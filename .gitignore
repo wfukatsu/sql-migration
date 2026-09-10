@@ -1,0 +1,10 @@
+.venv/
+out/
+__pycache__/
+.pytest_cache/
+runtime-java/build/
+runtime-java/.gradle/
+difftest/work/
+difftest/license.properties
+difftest/.env
+.DS_Store

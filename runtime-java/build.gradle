@@ -1,0 +1,36 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.scalar.migrate'
+version = '0.1.0'
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(17) }
+}
+
+repositories { mavenCentral() }
+
+ext { scalardbVersion = '3.19.1' }
+
+dependencies {
+    // ScalarDB Core (Apache 2): transactional CRUD API, used by CoreFetcher / Loader (no license required)
+    implementation "com.scalar-labs:scalardb:${scalardbVersion}"
+    // ScalarDB SQL JDBC driver + Cluster client SDK: used by JdbcFetcher (requires ScalarDB Cluster, licensed)
+    implementation "com.scalar-labs:scalardb-sql-jdbc:${scalardbVersion}"
+    implementation "com.scalar-labs:scalardb-cluster-java-client-sdk:${scalardbVersion}"
+    // Residual engine: pure-Java in-memory SQL with Oracle / PostgreSQL / MySQL compatibility modes
+    implementation 'com.h2database:h2:2.2.224'
+    implementation 'com.google.code.gson:gson:2.11.0'
+    runtimeOnly 'org.postgresql:postgresql:42.7.4'
+    // Oracle JDBC: used ONLY by the benchmark (Bench.java) to time the migration-source database from the same JVM
+    implementation 'com.oracle.database.jdbc:ojdbc11:23.5.0.24.07'
+}
+
+application {
+    mainClass = 'com.scalar.migrate.runtime.Runner'
+    applicationName = 'residual-runner'
+    // Oracle-style TO_CHAR('DAY'/'MON') depends on the JVM locale; Oracle's default NLS_DATE_LANGUAGE is AMERICAN
+    applicationDefaultJvmArgs = ['-Duser.language=en', '-Duser.country=US']
+}
