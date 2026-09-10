@@ -1,0 +1,15 @@
+{
+  "emp": [
+    {"empno": 1, "ename": "smith", "sal": 800,  "comm": null, "deptno": 10, "hiredate": "2021-03-01"},
+    {"empno": 2, "ename": "allen", "sal": 1600, "comm": 300,  "deptno": 30, "hiredate": "2019-05-02"},
+    {"empno": 3, "ename": "ward",  "sal": 1250, "comm": 500,  "deptno": 30, "hiredate": "2022-01-15"},
+    {"empno": 4, "ename": "jones", "sal": 2975, "comm": null, "deptno": 20, "hiredate": "2020-11-11"},
+    {"empno": 5, "ename": "blake", "sal": 2850, "comm": null, "deptno": 99, "hiredate": "2018-07-07"}
+  ],
+  "dept": [
+    {"deptno": 10, "dname": "ACCOUNTING"}, {"deptno": 20, "dname": "RESEARCH"}, {"deptno": 30, "dname": "SALES"}
+  ],
+  "bonus": [
+    {"empno": 2, "amount": 100}, {"empno": 4, "amount": 200}
+  ]
+}

@@ -1,0 +1,143 @@
+"""Offline differential tests for the decomposer.
+
+Full tables live in an in-memory SQLite database (standing in for the source database).
+For each statement: run the ORIGINAL SQL on the full tables (expected), then simulate the plan:
+fetch = run each fetch's ScalarDB SQL on the full tables, residual = run the plan's python (sqlite) SQL
+on the fetched rows only. Both must agree, which proves the pushdown never drops needed rows.
+"""
+
+import sqlite3
+
+import pytest
+import sqlglot
+
+from scalardb_migrate.converter import convert_script
+
+DDL = """
+CREATE TABLE emp (empno INT, ename VARCHAR(10), sal DOUBLE, comm DOUBLE, deptno INT, hiredate DATE, PRIMARY KEY (empno));
+CREATE TABLE dept (deptno INT PRIMARY KEY, dname VARCHAR(20));
+CREATE TABLE bonus (empno INT PRIMARY KEY, amount INT);
+CREATE INDEX ix ON emp (deptno);
+"""
+EMP = [(1, "smith", 800, None, 10, "2021-03-01"), (2, "allen", 1600, 300, 30, "2019-05-02"),
+       (3, "ward", 1250, 500, 30, "2022-01-15"), (4, "jones", 2975, None, 20, "2020-11-11")]
+DEPT = [(10, "ACCOUNTING"), (20, "RESEARCH"), (30, "SALES")]
+BONUS = [(2, 100), (4, 200)]
+
+CASES = [
+    ("mysql", "SELECT ename, IFNULL(comm, 0) AS c FROM emp WHERE deptno = 30", "P1"),
+    ("mysql", "SELECT UPPER(ename) FROM emp WHERE deptno IN (10, 20) AND sal > 700", "P1"),
+    ("postgres", "SELECT DISTINCT deptno FROM emp ORDER BY deptno", "P3"),
+    ("postgres", "SELECT ename FROM emp ORDER BY sal DESC LIMIT 2 OFFSET 1", "P4"),
+    ("postgres", "SELECT ename FROM emp WHERE empno IN (SELECT empno FROM bonus WHERE amount > 150)", "P5"),
+    ("postgres", "WITH big AS (SELECT * FROM emp WHERE sal > 1000) SELECT COUNT(*) FROM big", "P6"),
+    ("postgres", "SELECT ename FROM emp WHERE deptno = 10 UNION SELECT ename FROM emp WHERE sal > 2000", "P6"),
+    ("postgres", "SELECT e.ename, d.dname FROM emp e JOIN dept d ON e.deptno = d.deptno WHERE d.dname = 'SALES' AND LENGTH(e.ename) > 3", "P8"),
+    ("postgres", "SELECT e.ename, d.dname FROM emp e LEFT JOIN dept d ON e.deptno = d.deptno WHERE d.dname IS NULL OR e.sal > 2000", "P8"),
+    ("postgres", "SELECT deptno, COUNT(*) FROM emp WHERE NOT (sal < 1000) GROUP BY deptno HAVING MAX(sal) - MIN(sal) > 0", "P2"),
+    ("postgres", "SELECT ename FROM emp e WHERE EXISTS (SELECT 1 FROM bonus b WHERE b.empno = e.empno)", "P5"),
+    ("oracle", "SELECT ename, sal * 2 AS s2 FROM emp WHERE deptno = 30 AND ROWNUM <= 1", "P1",
+     "SELECT ename, sal * 2 AS s2 FROM emp WHERE deptno = 30 LIMIT 1"),  # SQLite has no ROWNUM: expected via LIMIT
+]
+CASES = [c if len(c) == 4 else (*c, None) for c in CASES]
+
+
+def _db():
+    con = sqlite3.connect(":memory:")
+    con.executescript("CREATE TABLE emp (empno, ename, sal, comm, deptno, hiredate); CREATE TABLE dept (deptno, dname);"
+                      "CREATE TABLE bonus (empno, amount);")
+    con.executemany("INSERT INTO emp VALUES (?,?,?,?,?,?)", EMP)
+    con.executemany("INSERT INTO dept VALUES (?,?)", DEPT)
+    con.executemany("INSERT INTO bonus VALUES (?,?)", BONUS)
+    return con
+
+
+def _plan(dialect, sql):
+    results, _ = convert_script(DDL + sql, "mysql" if dialect == "mysql" else dialect)
+    r = results[-1]
+    assert r.status == "PLANNED", [(i.code, i.message) for i in r.issues]
+    return r.plan
+
+
+@pytest.mark.parametrize("dialect,sql,pattern,expected_sql", CASES)
+def test_fetch_plus_residual_equals_original(dialect, sql, pattern, expected_sql):
+    plan = _plan(dialect, sql)
+    assert pattern in plan["pattern"]
+    assert not plan["unresolved"], plan["unresolved"]
+    full = _db()
+    expected = full.execute(expected_sql or sqlglot.transpile(sql, read=dialect, write="sqlite")[0]).fetchall()
+    # simulate: fetch each table with the plan's ScalarDB SQL, then run the residual on the fetched rows only
+    sim = sqlite3.connect(":memory:")
+    for f in plan["fetch"]:
+        rows = full.execute(f["scalardb_sql"].replace(":", "")).fetchall()  # ScalarDB SQL is plain enough for SQLite
+        cols = f["columns"] or [d[0] for d in full.execute(f"SELECT * FROM {f['table']} LIMIT 0").description]
+        sim.execute(f"CREATE TABLE {f['table']} ({', '.join(cols)})")  # one fetch per table by construction
+        sim.executemany(f"INSERT INTO {f['table']} VALUES ({', '.join('?' for _ in cols)})", rows)
+        assert len(rows) <= len(full.execute(f"SELECT * FROM {f['table']}").fetchall())
+    actual = sim.execute(plan["residual"]["python"]["sql"]).fetchall()
+    assert sorted(map(str, actual)) == sorted(map(str, expected))
+
+
+def test_pushdown_predicates_and_access_path():
+    plan = _plan("mysql", "SELECT UPPER(ename) FROM emp WHERE deptno IN (10, 20) AND sal > 700")
+    f = plan["fetch"][0]
+    assert f["table"] == "emp" and f["columns"] == ["empno", "ename", "sal", "deptno"]
+    assert f["scalardb_sql"] == "SELECT empno, ename, sal, deptno FROM emp WHERE (deptno = 10 OR deptno = 20) AND sal > 700"
+    plan = _plan("postgres", "SELECT UPPER(ename) FROM emp WHERE empno = 1")
+    assert plan["fetch"][0]["access_path"] == "GET"
+    plan = _plan("postgres", "SELECT UPPER(ename) FROM emp WHERE deptno = 1")
+    assert plan["fetch"][0]["access_path"] == "INDEX_SCAN"
+
+
+def test_outer_join_null_test_is_not_pushed_down():
+    plan = _plan("postgres", "SELECT e.ename FROM emp e LEFT JOIN dept d ON e.deptno = d.deptno WHERE d.dname IS NULL")
+    dept = [f for f in plan["fetch"] if f["table"] == "dept"][0]
+    assert dept["predicates"] == []
+
+
+def test_oracle_join_mark_outer_join_keeps_null_test_out_of_fetch():
+    plan = _plan("oracle", "SELECT e.ename, d.dname FROM emp e, dept d WHERE e.deptno = d.deptno(+) "
+                           "AND (d.dname LIKE 'S%' OR d.dname IS NULL)")
+    dept = [f for f in plan["fetch"] if f["table"] == "dept"][0]
+    assert dept["predicates"] == []
+    assert "LEFT JOIN dept d ON e.deptno = d.deptno" in plan["residual"]["java"]["sql"]
+
+
+def test_correlated_scalar_subquery_fetches_outer_columns_and_minus_is_planned():
+    plan = _plan("oracle", "SELECT e.ename, (SELECT d.dname FROM dept d WHERE d.deptno = e.deptno) AS dn FROM emp e")
+    emp = [f for f in plan["fetch"] if f["table"] == "emp"][0]
+    assert "deptno" in emp["columns"]
+    plan = _plan("oracle", "SELECT deptno FROM dept MINUS SELECT deptno FROM emp")
+    assert {f["table"] for f in plan["fetch"]} == {"dept", "emp"}
+
+
+def test_h2_date_rewrites():
+    plan = _plan("oracle", "SELECT ename, TRUNC(hiredate, 'MM') AS m, DATE '1982-01-01' - hiredate AS d FROM emp")
+    sql = plan["residual"]["java"]["sql"]
+    assert "DATE_TRUNC('MONTH', hiredate)" in sql and "DAYS_BETWEEN(" in sql
+
+
+def test_residual_java_keeps_original_sql_and_h2_mode():
+    plan = _plan("mysql", "SELECT DATE_FORMAT(hiredate, '%Y-%m') AS ym FROM emp WHERE deptno = 30")
+    assert plan["residual"]["java"]["mode"] == "MySQL"
+    assert "FORMATDATETIME(hiredate, 'yyyy-MM')" in plan["residual"]["java"]["sql"]
+    plan = _plan("oracle", "SELECT NVL(comm, 0) FROM emp WHERE deptno = 30")
+    assert plan["residual"]["java"]["sql"] == "SELECT NVL(comm, 0) FROM emp WHERE deptno = 30"
+
+
+def test_write_statements_are_not_planned():
+    results, _ = convert_script(DDL + "UPDATE emp SET sal = sal + 1 WHERE empno = 1", "postgres")
+    assert results[-1].status == "ERROR" and results[-1].plan is None
+
+
+def test_residual_makes_source_null_ordering_explicit():
+    """H2 sorts NULLs first for ASC; Oracle and PostgreSQL sort them last. The residual SQL must say which."""
+    sql = _plan("oracle", "SELECT NVL(comm, 0) AS c FROM emp ORDER BY comm")["residual"]["java"]["sql"]
+    assert "ORDER BY comm NULLS LAST" in sql
+    sql = _plan("oracle", "SELECT NVL(comm, 0) AS c FROM emp ORDER BY comm DESC")["residual"]["java"]["sql"]
+    assert "ORDER BY comm DESC NULLS FIRST" in sql
+    sql = _plan("postgres", "SELECT COALESCE(comm, 0) AS c FROM emp ORDER BY comm")["residual"]["java"]["sql"]
+    assert "ORDER BY comm NULLS LAST" in sql
+    # MySQL sorts NULLs first for ASC, which is also H2's rule, so nothing has to be added
+    sql = _plan("mysql", "SELECT IFNULL(comm, 0) AS c FROM emp ORDER BY comm")["residual"]["java"]["sql"]
+    assert "NULLS" not in sql

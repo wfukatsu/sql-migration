@@ -1,0 +1,187 @@
+# Oracle Database と ScalarDB 経由の互換性・性能比較
+
+作成日: 2026-09-10
+関連文書: `docs/test-report.md` (仕組みとテスト報告)、`docs/oracle-sql-report.md` (Oracle 固有 SQL の網羅調査)、`docs/app-side-processing-plan.md` (実装計画)
+
+## 1. 何を測ったか
+
+同じデータ、同じ SQL を 2 つの経路で実行し、**結果が一致するか (互換性)** と **応答時間の差 (性能)** を同時に測った。
+
+| 経路 | 実行方法 |
+|---|---|
+| Oracle (基準) | 元の SQL を Oracle Database 23ai Free に Oracle JDBC Thin ドライバで実行 |
+| ScalarDB SQL | 変換ツールが出力した ScalarDB SQL を ScalarDB JDBC ドライバ (Cluster) で実行 |
+| plan (アプリ側処理) | ScalarDB SQL に収まらない文。1 トランザクション内で ScalarDB から行を取得し、インメモリ H2 (Oracle 互換モード) で元 SQL を実行 |
+
+計測は 1 つの JVM (`residual-runner bench`) から行い、Oracle と ScalarDB の接続はどちらも計測前に確立して再利用する (コネクションプールを持つアプリケーションを想定)。ウォームアップ 2 回のあとの 10〜15 回の実測値から p50 を取る。各反復で結果集合を突き合わせ、値まで比較する。
+
+主キー指定の文には反復ごとに異なる主キー値を与え、1 行だけを繰り返し読む形にならないようにしている。
+
+### データセット
+
+| テーブル | 行数 (基本ケース) | 構造 |
+|---|---|---|
+| `emp` | 20,000 (5,000 / 40,000 でも測定) | 主キー `empno`、`deptno` にセカンダリインデックス、`sal` は無索引、`comm` は 1/3 が NULL |
+| `dept` | 40 | 主キー `deptno` |
+| `bonus` | `emp` の 1/5 | 主キー `empno` |
+
+`deptno` は 40 種類なので、インデックス等値検索は表の 1/40 (40,000 行で 1,000 行) を返す。
+
+### 実行環境
+
+| 項目 | 値 |
+|---|---|
+| ホスト | Apple M3 Pro / 36 GiB / macOS 15 (Darwin 25.6.0) |
+| Oracle | Oracle Database 23ai Free (`gvenzl/oracle-free:23-slim-faststart`)、Docker、統計収集済み |
+| ScalarDB | ScalarDB Cluster 3.19.1 (standalone、トライアルライセンス)、Consensus Commit / SERIALIZABLE |
+| ScalarDB バックエンド | PostgreSQL 16 (Docker) |
+| Docker | 28.3.2 (Apple Silicon 上のLinux VM) |
+| JVM | OpenJDK 17 |
+
+すべて同一ホストのコンテナで動くため、ネットワーク遅延はほぼゼロである。実運用では Oracle 側にもネットワーク往復が乗るので、**下表の倍率は ScalarDB 側に最も不利な条件での値**と読むべきである。
+
+## 2. 互換性の結果
+
+**15 文すべてで結果集合が Oracle と一致した** (値まで比較。更新系は影響行数で比較)。ScalarDB SQL に変換できた文が 10、アプリ側計画になった文が 5 である。
+
+比較の過程で 2 件の不一致を検出し、いずれも修正した。
+
+| 検出した不一致 | 原因 | 対処 |
+|---|---|---|
+| `ORDER BY` で NULL の位置が違う (`GROUP BY TO_CHAR(hiredate,'YYYY')` の NULL グループが Oracle では末尾、残余処理では先頭) | Oracle は昇順で NULLS LAST、H2 は NULLS FIRST。H2 の Oracle 互換モードはこの規則を再現しない | 残余 SQL を生成するとき、ソース方言の NULL 順序を `NULLS FIRST` / `NULLS LAST` として明示する (`decomposer.py`)。Oracle と PostgreSQL は昇順 NULLS LAST、MySQL は逆 |
+| — | ScalarDB SQL 側の NULL 順序は Oracle と一致することを別途確認した (昇順で末尾、降順で先頭) | 対処不要 |
+
+なお、これは PoC 実装側の不具合であって ScalarDB の非互換ではない。ScalarDB SQL 経路には元から差異が無かった。
+
+## 3. 性能の結果
+
+### 3.1 応答時間 (emp 40,000 行、p50)
+
+| # | 文 | ScalarDB 経路 | 結果行 | 一致 | Oracle (ms) | ScalarDB (ms) | 倍率 | 取得行 |
+|---|---|---|---|---|---|---|---|---|
+| Q5 | 主キー 1 件検索 | ScalarDB SQL | 1 | PASS | 1.18 | 3.94 | 3.3 | — |
+| Q6 | インデックス等値 (表の 1/40) | ScalarDB SQL | 1000 | PASS | 3.17 | 27.81 | 8.8 | — |
+| Q7 | インデックス等値 + 先頭 10 行 | ScalarDB SQL | 10 | PASS | 0.65 | 5.58 | 8.6 | — |
+| Q8 | 無索引列の範囲条件 | ScalarDB SQL | 443 | PASS | 1.88 | 19.80 | 10.5 | — |
+| Q9 | 主キーの範囲条件 | ScalarDB SQL | 100 | PASS | 1.01 | 5.44 | 5.4 | — |
+| Q10 | 全表集約 (`GROUP BY deptno`) | ScalarDB SQL | 40 | PASS | 2.70 | 932.37 | 345 | — |
+| Q11 | 主キー駆動の JOIN | ScalarDB SQL | 1 | PASS | 0.96 | 6.20 | 6.5 | — |
+| Q12 | インデックス駆動の JOIN | ScalarDB SQL | 1000 | PASS | 2.39 | 29.29 | 12.3 | — |
+| Q13 | 式射影 (`NVL` / 四則) + インデックス条件 | plan / P1 | 1000 | PASS | 2.54 | 36.10 | 14.2 | 1,000 |
+| Q14 | 全表 `DISTINCT` | plan / P3 | 40 | PASS | 2.59 | 1024.25 | 396 | 40,000 |
+| Q15 | ウィンドウ関数 + インデックス条件 | plan / P1 | 1000 | PASS | 2.65 | 28.32 | 10.7 | 1,000 |
+| Q16 | `IN (サブクエリ)` | plan / P5 | 796 | PASS | 2.56 | 1005.91 | 393 | 40,796 |
+| Q17 | 日付式での `GROUP BY` | plan / P1 | 9 | PASS | 2.95 | 979.12 | 332 | 40,000 |
+| Q18 | 主キー 1 行 `UPDATE` | ScalarDB SQL | 1 | PASS | 0.92 | 4.17 | 4.5 | — |
+| Q19 | 1 行 upsert (`MERGE` → `UPSERT`) | ScalarDB SQL | 1 | PASS | 1.56 | 2.98 | 1.9 | — |
+
+### 3.2 表サイズに対する伸び (ScalarDB p50、ms)
+
+| # | 文 | 経路 | 5,000 行 | 20,000 行 | 40,000 行 |
+|---|---|---|---|---|---|
+| Q5 | 主キー 1 件検索 | ScalarDB SQL | 5.60 | 4.96 | 3.94 |
+| Q7 | インデックス等値 + 先頭 10 行 | ScalarDB SQL | 4.86 | 3.75 | 5.58 |
+| Q9 | 主キーの範囲条件 (100 行) | ScalarDB SQL | 6.54 | 6.04 | 5.44 |
+| Q18 | 主キー 1 行 `UPDATE` | ScalarDB SQL | 3.78 | 4.46 | 4.17 |
+| Q19 | 1 行 upsert | ScalarDB SQL | 2.74 | 3.03 | 2.98 |
+| Q6 | インデックス等値 (表の 1/40) | ScalarDB SQL | 8.30 | 16.66 | 27.81 |
+| Q12 | インデックス駆動の JOIN | ScalarDB SQL | 9.06 | 21.64 | 29.29 |
+| Q13 | 式射影 + インデックス条件 | plan / P1 | 12.84 | 23.34 | 36.10 |
+| Q15 | ウィンドウ関数 + インデックス条件 | plan / P1 | 9.06 | 18.01 | 28.32 |
+| Q8 | 無索引列の範囲条件 | ScalarDB SQL | 6.72 | 11.47 | 19.80 |
+| Q10 | 全表集約 | ScalarDB SQL | 101.10 | 535.68 | 932.37 |
+| Q14 | 全表 `DISTINCT` | plan / P3 | 115.90 | 536.44 | 1024.25 |
+| Q16 | `IN (サブクエリ)` | plan / P5 | 116.41 | 494.24 | 1005.91 |
+| Q17 | 日付式での `GROUP BY` | plan / P1 | 130.47 | 518.33 | 979.12 |
+
+結果行数が表サイズに依らない文 (Q5、Q7、Q9、Q18、Q19) は**表が 8 倍になっても応答時間が変わらない**。取得行数に比例する文は**行数に線形**で伸びる。二次的に悪化する挙動は残っていない。
+
+### 3.3 plan 経路の内訳 (emp 40,000 行、最終反復)
+
+| # | 取得行 | ScalarDB からの fetch (ms) | H2 での残余処理 (ms) |
+|---|---|---|---|
+| Q13 | 1,000 | 31.4 | 1.3 |
+| Q15 | 1,000 | 26.7 | 1.1 |
+| Q17 | 40,000 | 865.8 | 26.3 |
+| Q14 | 40,000 | 1029.8 | 15.4 |
+| Q16 | 40,796 | 969.2 | 21.1 |
+
+**アプリ側処理のコストはほぼ全部が ScalarDB からの行取得**で、H2 での残余 SQL 実行は 40,000 行でも 15〜26 ms しかかからない。ScalarDB SQL でそのまま実行できる Q10 (932 ms / 40,000 行) と、全行を取得して H2 で処理する Q14・Q16・Q17 (約 1,000 ms / 40,000 行) がほぼ同じ時間なのは、どちらも同じ全表走査を ScalarDB に課しているからである。つまり **H2 を挟むこと自体の追加コストは小さく、決定的なのは走査行数**である。
+
+### 3.4 計測中に見つけて直した性能不具合
+
+残余処理ランタイムが取得行を H2 に投入する際、複数スコープの重複除去のために全列をキーにした `MERGE` を使っていた。H2 は全列に索引を持たないので 1 行ごとに全表走査が発生し、**行数の二乗**で悪化していた (5,000 行 415 ms → 20,000 行 4,610 ms → 40,000 行 16,600 ms)。1 回の fetch は重複行を返さないため初回投入を `INSERT` に変え、同じ表を 2 回以上取得する場合だけ `MERGE` を使うようにした。
+
+| 取得行 | 修正前 (ms) | 修正後 (ms) |
+|---|---|---|
+| 5,000 | 415 | 116 |
+| 20,000 | 4,610 | 536 |
+| 40,000 | 16,600 | 1,024 |
+
+## 4. 読み取り方と移行時の指針
+
+### 4.1 3 つの層に分かれる
+
+| 分類 | 該当 | ScalarDB の応答 | Oracle 比 | 移行時の扱い |
+|---|---|---|---|---|
+| キー指定の点アクセス | Q5、Q7、Q9、Q11、Q18、Q19 | 3〜6 ms、表サイズに依らず一定 | 2〜9 倍 | そのまま移行できる。絶対値が小さく、実運用ではネットワーク往復に埋もれる |
+| 索引で絞れる範囲アクセス | Q6、Q8、Q12、Q13、Q15 | 20〜36 ms / 1,000 行 | 9〜14 倍 | 移行できる。取得行数を絞る設計 (インデックス、`LIMIT`) が効く |
+| 全表走査 | Q10、Q14、Q16、Q17 | 0.9〜1.0 秒 / 40,000 行 | 330〜400 倍 | オンライン処理では避ける。設計変更かバッチ化が必要 |
+
+倍率の大きさは「ScalarDB が遅い」というより **1 行あたりの固定コストの差**である。ScalarDB は Consensus Commit のトランザクション層を通して 1 行ずつ読むため、40,000 行の走査に約 25 µs/行 かかる。Oracle はブロック単位で読んで表内で集約するため、同じ走査が 2.7 ms で終わる。行数が小さいうちは差が出ず、走査行数に比例して開く。
+
+### 4.2 具体的な指針
+
+1. **全表走査を前提にした SQL は移行前に設計を変える。** `GROUP BY` の集計、`DISTINCT`、相関のないサブクエリなど、表全体を読む文は 1 万行を超えたあたりから秒のオーダーになる。集計値を別テーブルに持つ、パーティションキーで絞る、といった変更が要る。
+2. **アプリ側処理 (plan) を使うかどうかは、ScalarDB SQL に収まるかどうかで決めてよい。** 取得行数が同じなら plan 経路と ScalarDB SQL 経路の速度差はほとんどない (全表走査で Q10 が 932 ms、Q14・Q17 が約 1,000 ms)。H2 を挟むコストは無視できる。
+3. **plan 経路では取得行数の上限 (ガードレール) を必ず設定する。** 既定は 1 テーブルあたり 10,000 行。上限を超えると `RowLimitExceededException` で失敗する。全表を H2 に載せる計画は、行数が読めない本番表では危険である。
+4. **plan 経路の fetch は ScalarDB SQL 経由 (`--fetcher jdbc`) の方が Core API 経由 (`--fetcher core`) より速い。** 40,000 行の同一データで比較すると、全表取得で 1,024 ms 対 1,289 ms (26% 増)、索引で 1,000 行取得で 36 ms 対 50 ms (38% 増) だった。Core API 経路はライセンス不要という利点があるので、その差を許容できるかで選ぶ。
+
+| # | 取得行 | jdbc fetch 経路 (ms) | core fetch 経路 (ms) |
+|---|---|---|---|
+| Q13 | 1,000 | 36.10 | 49.81 |
+| Q15 | 1,000 | 28.32 | 38.41 |
+| Q14 | 40,000 | 1024.25 | 1289.07 |
+| Q16 | 40,796 | 1005.91 | 1289.38 |
+| Q17 | 40,000 | 979.12 | 1265.37 |
+
+5. **書き込みは差が小さい。** 1 行 `UPDATE` が 4.2 ms (Oracle 0.9 ms)、1 行 upsert が 3.0 ms (Oracle 1.6 ms)。Consensus Commit のコミットコストを含んでこの水準である。
+
+### 4.3 この測定で分からないこと
+
+- **同時実行性能**: 単一クライアント・単一スレッドの応答時間だけを測った。スループット、競合時の再試行、Consensus Commit の衝突は未測定である。
+- **本番規模**: 最大 40,000 行である。100 万行以上での挙動、特に全表走査の実用限界は別途測る必要がある。
+- **ネットワーク**: すべて同一ホスト上のコンテナである。実運用の Oracle は多くの場合ネットワーク越しで、点アクセスの倍率は今回より小さくなる。
+- **ストレージ**: ScalarDB バックエンドは PostgreSQL 16。Cassandra や DynamoDB では走査特性が変わる。
+- **Oracle 側のキャッシュ**: バッファキャッシュが暖まった状態での値である。ScalarDB 側も同条件だが、キャッシュの効き方は両者で異なる。
+
+### 4.4 再現しなかった事象 (記録)
+
+一連の計測のあと、Oracle 方言の差分テスト (`difftest/run.py … --fetcher jdbc`) が 17 文すべて FAIL する実行が 1 回だけ発生した。同じコマンドを続けて 6 回 (ベンチ実行直後に走らせる順序を含む) 試したがすべて 17/17 PASS で、原因は特定できていない。ベンチが移行元 Oracle と ScalarDB の両方に大量データを投入した直後だったため、テーブル再作成と計測の間の状態が絡んだ可能性がある。単体テスト 68 件、Oracle 固有機能の網羅調査 (51 PASS / 9 FAIL、既存レポートと完全一致)、PostgreSQL 方言 15/15 はいずれも通っているため、変換ツール側の退行ではない。
+
+## 5. 再現手順
+
+```
+# 前提: ScalarDB Cluster (ライセンス)、Oracle、バックエンド PostgreSQL が起動していること
+cd difftest && ./make-cluster-conf.sh && docker compose --profile cluster --profile oracle up -d && cd ..
+cd runtime-java && gradle installDist && cd ..
+
+# 20,000 行、15 反復 (データ投入からやり直す)
+.venv/bin/python difftest/bench.py --rows 20000 --iterations 15 --fetcher jdbc --out out/bench-jdbc
+
+# 投入済みデータで経路だけ変える
+.venv/bin/python difftest/bench.py --rows 20000 --iterations 15 --fetcher core --skip-setup --out out/bench-core
+
+# 表サイズを変えて 3 通り測り、比較表を出す
+for n in 5000 20000 40000; do .venv/bin/python difftest/bench.py --rows $n --iterations 10 --fetcher jdbc --out out/bench-$n; done
+.venv/bin/python difftest/bench_report.py out/bench-5000 out/bench-20000 out/bench-40000
+```
+
+計測対象の SQL は `difftest/cases/bench.sql` にあり、`-- @bench:` 注釈を付けた文が測定される。出力は `out/<name>/bench.json` (全反復の生データを含む) と `out/<name>/bench.md`。
+
+| ファイル | 役割 |
+|---|---|
+| `difftest/cases/bench.sql` | 計測対象の Oracle SQL |
+| `difftest/bench.py` | データ生成、Oracle と ScalarDB への投入、変換、計測の起動、結果比較 |
+| `runtime-java/.../Bench.java` | 1 JVM から Oracle と ScalarDB の両方を計測する実行部 |
+| `difftest/bench_report.py` | 複数回の測定結果から比較表を生成 |
