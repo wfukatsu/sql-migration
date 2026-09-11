@@ -72,6 +72,50 @@ DDL または `--schema` からテーブル定義が分かる場合、各 SELECT
 GET (主キー完全指定) / パーティション SCAN / インデックス SCAN / クロスパーティション SCAN (WARN) を判定し、
 JOIN の結合条件が相手テーブルの主キーまたはセカンダリインデックスを覆っているかを検査します。
 
+## sql-transpile スキル (任意の方言への変換)
+
+`skills/sql-transpile/` は、SQL を Source 方言から Target 方言 (SQLGlot の 32 方言) または
+ScalarDB SQL に変換する Claude Code スキルです。素の `sqlglot.transpile()` が黙って通してしまう構文
+(ROWNUM、Oracle 外部結合 `(+)`、CONNECT BY、NEXTVAL、ROWID、方言固有の関数) を前処理で直すか、
+直せないものを理由つきで報告し、変換率を出します。
+
+```
+.venv/bin/python skills/sql-transpile/scripts/transpile.py samples/oracle.sql \
+    --source oracle --target postgres --out-dir out/transpile
+.venv/bin/python skills/sql-transpile/scripts/transpile.py samples/oracle.sql \
+    --source oracle --target scalardb --out-dir out/transpile
+```
+
+ScalarDB 変換は `scalardb_migrate/` のコピーを `skills/sql-transpile/scripts/_scalardb/` に同梱しており、
+リポジトリ本体に依存せず単体で動きます。本体を変更したら同梱コピーの鮮度を確認してください。
+
+```
+.venv/bin/python skills/sql-transpile/scripts/vendor_sync.py --check    # 差分があれば終了コード 1
+.venv/bin/python skills/sql-transpile/scripts/vendor_sync.py --update   # 本体から取り込む
+```
+
+### スキルの実行検証
+
+`skills/sql-transpile/examples/` のテスト用 SQL (Oracle / PostgreSQL / MySQL、各 20 文の準備 + 27〜53 文のテスト) を
+実データベースで動かし、スキルの判定が実際の動作と合っているかを確かめます。変換元でそのまま実行した結果を正解とし、
+変換先で「スキルの変換結果」と「素の `sqlglot.transpile` の結果」を実行して突き合わせます。
+
+```
+# Oracle と PostgreSQL は difftest の Docker Compose、MySQL は使い捨てコンテナ、DuckDB はプロセス内
+cd difftest && docker compose --profile oracle up -d source-oracle source-postgres && cd ..
+docker run -d --name transpile-verify-mysql -e MYSQL_ROOT_PASSWORD=verify -e MYSQL_DATABASE=verify \
+    -p 13306:3306 mysql:8.4
+.venv/bin/pip install pymysql
+.venv/bin/python difftest/transpile_verify.py                  # 9 ペア全部
+.venv/bin/python difftest/transpile_verify.py --pair oracle:postgres
+docker rm -f transpile-verify-mysql                            # 終わったら削除
+```
+
+結果は `out/transpile-verify/report.md` に出ます。
+
+Claude Code から使うには `ln -s "$PWD/skills/sql-transpile" ~/.claude/skills/sql-transpile` でリンクします。
+手順と指摘コードの意味は `skills/sql-transpile/SKILL.md` と `references/` を参照してください。
+
 ## 関連ドキュメント
 
 - `docs/app-side-processing-plan.md`: ScalarDB 非対応 SQL をアプリケーション側で処理するための実装計画 (H2 / sqlite3 方式)
