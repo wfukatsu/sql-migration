@@ -94,6 +94,25 @@ ScalarDB 変換は `scalardb_migrate/` のコピーを `skills/sql-transpile/scr
 .venv/bin/python skills/sql-transpile/scripts/vendor_sync.py --update   # 本体から取り込む
 ```
 
+### スキルの実行検証
+
+`skills/sql-transpile/examples/` のテスト用 SQL (Oracle / PostgreSQL / MySQL、各 20 文の準備 + 27〜53 文のテスト) を
+実データベースで動かし、スキルの判定が実際の動作と合っているかを確かめます。変換元でそのまま実行した結果を正解とし、
+変換先で「スキルの変換結果」と「素の `sqlglot.transpile` の結果」を実行して突き合わせます。
+
+```
+# Oracle と PostgreSQL は difftest の Docker Compose、MySQL は使い捨てコンテナ、DuckDB はプロセス内
+cd difftest && docker compose --profile oracle up -d source-oracle source-postgres && cd ..
+docker run -d --name transpile-verify-mysql -e MYSQL_ROOT_PASSWORD=verify -e MYSQL_DATABASE=verify \
+    -p 13306:3306 mysql:8.4
+.venv/bin/pip install pymysql
+.venv/bin/python difftest/transpile_verify.py                  # 9 ペア全部
+.venv/bin/python difftest/transpile_verify.py --pair oracle:postgres
+docker rm -f transpile-verify-mysql                            # 終わったら削除
+```
+
+結果は `out/transpile-verify/report.md` に出ます。
+
 Claude Code から使うには `ln -s "$PWD/skills/sql-transpile" ~/.claude/skills/sql-transpile` でリンクします。
 手順と指摘コードの意味は `skills/sql-transpile/SKILL.md` と `references/` を参照してください。
 
