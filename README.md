@@ -72,6 +72,31 @@ DDL または `--schema` からテーブル定義が分かる場合、各 SELECT
 GET (主キー完全指定) / パーティション SCAN / インデックス SCAN / クロスパーティション SCAN (WARN) を判定し、
 JOIN の結合条件が相手テーブルの主キーまたはセカンダリインデックスを覆っているかを検査します。
 
+## sql-transpile スキル (任意の方言への変換)
+
+`skills/sql-transpile/` は、SQL を Source 方言から Target 方言 (SQLGlot の 32 方言) または
+ScalarDB SQL に変換する Claude Code スキルです。素の `sqlglot.transpile()` が黙って通してしまう構文
+(ROWNUM、Oracle 外部結合 `(+)`、CONNECT BY、NEXTVAL、ROWID、方言固有の関数) を前処理で直すか、
+直せないものを理由つきで報告し、変換率を出します。
+
+```
+.venv/bin/python skills/sql-transpile/scripts/transpile.py samples/oracle.sql \
+    --source oracle --target postgres --out-dir out/transpile
+.venv/bin/python skills/sql-transpile/scripts/transpile.py samples/oracle.sql \
+    --source oracle --target scalardb --out-dir out/transpile
+```
+
+ScalarDB 変換は `scalardb_migrate/` のコピーを `skills/sql-transpile/scripts/_scalardb/` に同梱しており、
+リポジトリ本体に依存せず単体で動きます。本体を変更したら同梱コピーの鮮度を確認してください。
+
+```
+.venv/bin/python skills/sql-transpile/scripts/vendor_sync.py --check    # 差分があれば終了コード 1
+.venv/bin/python skills/sql-transpile/scripts/vendor_sync.py --update   # 本体から取り込む
+```
+
+Claude Code から使うには `ln -s "$PWD/skills/sql-transpile" ~/.claude/skills/sql-transpile` でリンクします。
+手順と指摘コードの意味は `skills/sql-transpile/SKILL.md` と `references/` を参照してください。
+
 ## 関連ドキュメント
 
 - `docs/app-side-processing-plan.md`: ScalarDB 非対応 SQL をアプリケーション側で処理するための実装計画 (H2 / sqlite3 方式)
