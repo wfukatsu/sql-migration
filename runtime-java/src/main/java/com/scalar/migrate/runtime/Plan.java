@@ -25,6 +25,7 @@ public class Plan {
     public String scalardb_sql;
     public String access_path;
     public int max_rows;
+    public List<List<String>> index_columns;  // indexes Residual builds on the fetched table before the query
   }
 
   public static class Residual {
