@@ -2,13 +2,13 @@
 
 作成日: 2026-09-15
 関連文書: `skills/sql-transpile/examples/dml/`（テスト用 SQL）、`docs/bench-report.md`（性能測定の基準）、`docs/app-side-benchmark-comparison.md`（変換ツールの新旧比較）
-説明資料: [Google スライド 24 枚](https://docs.google.com/presentation/d/1UhrBmfdDSfL2xWHXmRFuyMvYBKrrElPHXHG8D4CXP_0/edit)（生成元 `docs/slides/dml-benchmark-deck.py`）
+説明資料: [Google スライド 26 枚](https://docs.google.com/presentation/d/1xYj2NKQJ3uX_j0ZWRcwjzx3bGtORr1p_sbAf9EXlHcc/edit)（生成元 `docs/slides/dml-benchmark-deck.py`）
 
 ## 結論
 
 - **ScalarDB で実行できるのは 51 文中 31〜32 文。** 書き込み 33 文のうち 17〜18 文は ScalarDB SQL にできず、アプリ側で「読む → 計算する → キーを指定して書く」実装が要る。SELECT 17 文はすべて実行でき、うち 10〜11 文は実行計画（ScalarDB から取得して H2 で処理）になる
 - **変換できた書き込みは速い。** ScalarDB 側の p50 の中央値は 3.3〜6.4 ms（COMMIT 込み、変換元 DB の 7〜20 倍）。キーで絞る読み取りも 4.5〜5.6 ms（6〜13 倍）
-- **実行計画の読み取りは遅い。** 中央値 0.6 秒前後（変換元の 118〜210 倍）。3 表結合（S04）と反結合（S05）は 26〜28 秒かかり、その 9 割以上は H2 の処理だった。取得した表に索引が無く、結合が総当たりになるため
+- **実行計画の読み取りは、読む行数で決まる。** 中央値 0.6 秒前後。3 表結合（S04）と反結合（S05）は当初 26〜28 秒かかり、その 9 割以上は H2 の処理だった（取得した表に索引が無く、結合が総当たりになる）。H2 に主キーと結合列の索引を作る改善で 1.5〜1.9 秒（14〜17 倍）になり、残りのほとんどは ScalarDB からの取得
 - **変換ツールが OK / WARN と判定したのに、ScalarDB で失敗するか結果が変わる文があった。** Oracle 1 文、PostgreSQL 3 文、MySQL 5 文（ほかに実行計画の S11 が 3 方言とも失敗）。原因は PostgreSQL の型付き日付リテラル、MySQL の真偽値リテラルと照合順序、落ちる NULLS LAST、H2 の予約語で、いずれも変換ツールで直せる
 
 ---
@@ -58,11 +58,13 @@ ScalarDB 側だけ、`audit_log` の採番（IDENTITY / AUTO_INCREMENT）を外�
 
 ### 3.1 方言ごとの集計
 
+読み取りは H2 に索引を作った後の計測（3.4）。書き込みは変わらない。
+
 | dialect | statements | timed | PASS | FAIL | not convertible | writes p50 ratio (median) | reads p50 ratio (median) |
 |---|---|---|---|---|---|---|---|
-| Oracle | 51 | 31 | 29 | 2 | 20 | 7.5x | 76.8x |
-| PostgreSQL | 51 | 31 | 27 | 4 | 20 | 19.6x | 78.5x |
-| MySQL | 51 | 32 | 26 | 6 | 19 | 6.7x | 48.2x |
+| Oracle | 51 | 31 | 29 | 2 | 20 | 7.5x | 51.0x |
+| PostgreSQL | 51 | 31 | 27 | 4 | 20 | 19.6x | 68.5x |
+| MySQL | 51 | 32 | 26 | 6 | 19 | 6.7x | 50.0x |
 
 ### 3.2 文ごとの結果（変換元 p50 / ScalarDB p50 ms、倍率）
 
@@ -101,23 +103,23 @@ ScalarDB 側だけ、`audit_log` の採番（IDENTITY / AUTO_INCREMENT）を外�
 | D07 | 別の表を条件にした DELETE（Oracle は IN 副問合せ、PostgreSQL は USING、MySQL は複数表の DELETE） | ERROR | — | ERROR | — | ERROR | — |
 | D08 | 並べた先頭 1 行だけを DELETE（Oracle は ROWNUM、PostgreSQL は副問合せの LIMIT、MySQL は ORDER BY ... LIMIT） | ERROR | — | ERROR | — | ERROR | — |
 | D09 | 消した行を返す DELETE（PostgreSQL は RETURNING。Oracle と MySQL の SQL には無いので主キーで消すだけ） | OK | 0.4 / 2.5 (6.2x) | ERROR | — | OK | 0.9 / 3.0 (3.3x) |
-| S01 | パーティションキーの等値とクラスタリングキーの範囲 | OK | 0.5 / 4.0 (8.4x) | OK | 0.5 / 8.4 (18.8x) | OK | 1.0 / 5.2 (5.3x) |
-| S02 | キーセットページング（行値の比較。Oracle は OR で書く） | WARN | 0.4 / 27.6 (76.8x) | PLANNED | 0.4 / 1559.9 (3999.8x) | PLANNED | 0.6 / 1317.0 (2310.6x) |
-| S03 | OFFSET ページング | PLANNED | 1.5 / 578.1 (393.3x) | PLANNED | 1.9 / 647.7 (335.6x) | PLANNED | 2.3 / 539.1 (231.4x) |
-| S04 | 3 表の結合と集約・HAVING | PLANNED | 9.1 / 26300.0 (2902.9x) | PLANNED | 36.2 / 26090.9 (720.7x) | PLANNED | 30.7 / 27210.8 (886.3x) |
-| S05 | LEFT JOIN と IS NULL による反結合（明細の無い注文） | PLANNED | 4.1 / 26163.4 (6396.9x) | PLANNED | 5.1 / 28194.3 (5506.7x) | PLANNED | 10.2 / 27335.1 (2666.8x) |
-| S06 | SELECT 句の相関スカラー副問合せ | PLANNED | 5.3 / 1854.6 (350.6x) | PLANNED | 8.9 / 1946.3 (219.7x) | PLANNED | 3.5 / 1888.8 (535.1x) |
-| S07 | グループごとの上位 1 件（ROW_NUMBER） | PLANNED | 7.8 / 583.8 (74.4x) | PLANNED | 7.3 / 570.0 (78.5x) | PLANNED | 12.7 / 579.1 (45.7x) |
-| S08 | CASE を使った条件付き集約 | PLANNED | 6.2 / 603.8 (97.1x) | PLANNED | 4.9 / 610.9 (125.7x) | PLANNED | 12.2 / 619.8 (50.8x) |
-| S09 | LIKE の ESCAPE（% を含むメールアドレス） | WARN | 0.3 / 5.8 (16.5x) | WARN | 0.5 / 5.6 (10.7x) | WARN | 1.1 / 4.2 (3.7x) |
-| S10 | 大文字小文字を区別しない検索（Oracle は UPPER、PostgreSQL は ILIKE、MySQL は既定の照合順序） | PLANNED | 0.4 / 50.9 (118.4x) | WARN | 0.9 / 4.5 (4.7x) | WARN | FAIL |
+| S01 | パーティションキーの等値とクラスタリングキーの範囲 | OK | 0.5 / 23.8 (50.6x) | OK | 0.4 / 25.4 (60.5x) | OK | 0.7 / 22.6 (30.6x) |
+| S02 | キーセットページング（行値の比較。Oracle は OR で書く） | WARN | 0.9 / 41.2 (45.8x) | PLANNED | 0.7 / 1314.8 (1933.5x) | PLANNED | 0.6 / 1247.3 (2188.3x) |
+| S03 | OFFSET ページング | PLANNED | 2.4 / 639.0 (268.5x) | PLANNED | 1.7 / 529.1 (304.1x) | PLANNED | 2.8 / 572.9 (208.3x) |
+| S04 | 3 表の結合と集約・HAVING | PLANNED | 8.1 / 1857.9 (230.5x) | PLANNED | 26.9 / 1725.0 (64.1x) | PLANNED | 31.6 / 1820.6 (57.5x) |
+| S05 | LEFT JOIN と IS NULL による反結合（明細の無い注文） | PLANNED | 3.1 / 1517.3 (495.9x) | PLANNED | 5.0 / 1727.4 (346.2x) | PLANNED | 10.7 / 1643.6 (153.3x) |
+| S06 | SELECT 句の相関スカラー副問合せ | PLANNED | 4.9 / 613.6 (125.5x) | PLANNED | 8.4 / 575.1 (68.5x) | PLANNED | 3.5 / 622.0 (178.7x) |
+| S07 | グループごとの上位 1 件（ROW_NUMBER） | PLANNED | 8.3 / 575.7 (69.3x) | PLANNED | 6.2 / 613.9 (99.8x) | PLANNED | 12.4 / 585.0 (47.0x) |
+| S08 | CASE を使った条件付き集約 | PLANNED | 6.4 / 618.0 (96.3x) | PLANNED | 4.5 / 590.9 (130.4x) | PLANNED | 12.1 / 651.8 (54.0x) |
+| S09 | LIKE の ESCAPE（% を含むメールアドレス） | WARN | 0.3 / 6.5 (18.7x) | WARN | 0.5 / 5.7 (12.1x) | WARN | 0.7 / 5.8 (8.4x) |
+| S10 | 大文字小文字を区別しない検索（Oracle は UPPER、PostgreSQL は ILIKE、MySQL は既定の照合順序） | PLANNED | 0.4 / 58.2 (145.5x) | WARN | 0.8 / 6.2 (7.5x) | WARN | FAIL |
 | S11 | 月ごとに丸めて集計（Oracle は TRUNC、PostgreSQL は DATE_TRUNC、MySQL は DATE_FORMAT） | PLANNED | FAIL | PLANNED | FAIL | PLANNED | FAIL |
-| S12 | NULL の並び位置を指定（MySQL には NULLS LAST が無いので IS NULL で並べる） | WARN | FAIL | WARN | FAIL | PLANNED | 0.9 / 8.0 (8.9x) |
-| S13 | UNION ALL で 2 つの表の行を並べる | PLANNED | 1.7 / 17.5 (10.3x) | PLANNED | 0.8 / 17.8 (23.4x) | PLANNED | 0.8 / 19.9 (26.5x) |
-| S14 | EXISTS による半結合（支払い済みの注文がある顧客） | PLANNED | 3.1 / 338.6 (110.3x) | PLANNED | 2.0 / 401.3 (199.7x) | PLANNED | 5.3 / 345.1 (65.6x) |
-| S15 | FOR UPDATE で行をロックして読む | WARN | 0.5 / 4.9 (9.5x) | WARN | 0.4 / 6.0 (16.3x) | WARN | 0.4 / 3.4 (7.8x) |
-| S16 | 真偽値の列で絞る（Oracle は NUMBER(1)、PostgreSQL は BOOLEAN、MySQL は TINYINT(1)） | WARN | 0.9 / 8.6 (9.1x) | PLANNED | 0.8 / 55.6 (74.1x) | WARN | FAIL |
-| S17 | セカンダリインデックスで絞った集約 | OK | 0.2 / 5.2 (21.7x) | OK | 0.5 / 4.3 (9.2x) | OK | 0.5 / 4.8 (9.3x) |
+| S12 | NULL の並び位置を指定（MySQL には NULLS LAST が無いので IS NULL で並べる） | WARN | FAIL | WARN | FAIL | PLANNED | 0.6 / 10.0 (18.1x) |
+| S13 | UNION ALL で 2 つの表の行を並べる | PLANNED | 1.2 / 18.4 (15.4x) | PLANNED | 0.6 / 21.9 (36.5x) | PLANNED | 0.8 / 21.8 (28.3x) |
+| S14 | EXISTS による半結合（支払い済みの注文がある顧客） | PLANNED | 3.3 / 170.4 (51.0x) | PLANNED | 2.0 / 277.4 (138.7x) | PLANNED | 3.4 / 182.7 (53.1x) |
+| S15 | FOR UPDATE で行をロックして読む | WARN | 0.6 / 5.0 (9.0x) | WARN | 0.4 / 5.0 (12.6x) | WARN | 0.5 / 4.0 (8.6x) |
+| S16 | 真偽値の列で絞る（Oracle は NUMBER(1)、PostgreSQL は BOOLEAN、MySQL は TINYINT(1)） | WARN | 1.0 / 12.4 (12.2x) | PLANNED | 0.6 / 60.7 (94.8x) | WARN | FAIL |
+| S17 | セカンダリインデックスで絞った集約 | OK | 0.3 / 5.3 (16.2x) | OK | 0.4 / 4.2 (10.7x) | OK | 0.4 / 7.3 (17.4x) |
 | T01 | SAVEPOINT（ScalarDB にはセーブポイントが無い） | ERROR | — | ERROR | — | ERROR | — |
 
 ### 3.3 失敗した文
@@ -137,15 +139,41 @@ ScalarDB 側だけ、`audit_log` の採番（IDENTITY / AUTO_INCREMENT）を外�
 | MySQL | S11 | PLANNED | JdbcSQLSyntaxErrorException: Syntax error in SQL statement "SELECT FORMATDATETIME(order_date, 'yyyy-MM-01') AS [*]month, COUNT(*) AS n, SUM(total) AS amount FROM orders GROUP BY FORMATDATETIME(order_d |
 | MySQL | S16 | WARN | SQLSyntaxErrorException: Invalid query (INVALID_ARGUMENT: DB-SQL-10052: Unmatched column type. The type of the column vip should be INT, but a boolean value (BOOLEAN) is specified) |
 
+### 3.4 H2 の索引による改善（実行計画の読み取り）
+
+実行計画に、取得する表ごとの索引の列（主キーと、結合・相関・IN 副問合せの列）を `index_columns` として出力し、`runtime-java` の `Residual` が行を入れた後、問い合わせの前に一度だけ索引を作るようにした。索引を作る時間は H2 の処理に含む。同じ条件（注文 20,008 行、ウォームアップ 3 回 + 15 回）で読み取りを測り直した。
+
+| dialect | id | statement | before p50 (ms) | after p50 (ms) | speed-up | before fetch + H2 (ms) | after fetch + H2 (ms) |
+|---|---|---|---|---|---|---|---|
+| Oracle | S04 | 3 表の結合と集約・HAVING | 26,300.0 | 1,857.9 | 14.2x | 2,545 + 26,522 | 1,520 + 153 |
+| Oracle | S05 | LEFT JOIN と IS NULL による反結合（明細の | 26,163.4 | 1,517.3 | 17.2x | 1,994 + 22,938 | 1,596 + 96 |
+| Oracle | S06 | SELECT 句の相関スカラー副問合せ | 1,854.6 | 613.6 | 3.0x | 591 + 1,142 | 478 + 66 |
+| Oracle | S14 | EXISTS による半結合（支払い済みの注文がある顧客） | 338.6 | 170.4 | 2.0x | 253 + 173 | 421 + 30 |
+| PostgreSQL | S04 | 3 表の結合と集約・HAVING | 26,090.9 | 1,725.0 | 15.1x | 1,914 + 25,205 | 1,514 + 181 |
+| PostgreSQL | S05 | LEFT JOIN と IS NULL による反結合（明細の | 28,194.3 | 1,727.4 | 16.3x | 1,888 + 25,967 | 1,748 + 93 |
+| PostgreSQL | S06 | SELECT 句の相関スカラー副問合せ | 1,946.3 | 575.1 | 3.4x | 517 + 1,409 | 626 + 62 |
+| PostgreSQL | S14 | EXISTS による半結合（支払い済みの注文がある顧客） | 401.3 | 277.4 | 1.4x | 322 + 196 | 353 + 11 |
+| MySQL | S04 | 3 表の結合と集約・HAVING | 27,210.8 | 1,820.6 | 14.9x | 1,828 + 27,709 | 1,558 + 239 |
+| MySQL | S05 | LEFT JOIN と IS NULL による反結合（明細の | 27,335.1 | 1,643.6 | 16.6x | 1,867 + 25,468 | 1,543 + 94 |
+| MySQL | S06 | SELECT 句の相関スカラー副問合せ | 1,888.8 | 622.0 | 3.0x | 706 + 1,274 | 614 + 38 |
+| MySQL | S14 | EXISTS による半結合（支払い済みの注文がある顧客） | 345.1 | 182.7 | 1.9x | 178 + 189 | 163 + 26 |
+
+- **3 表結合（S04）と反結合（S05）は 14〜17 倍速くなった。** 26〜28 秒が 1.5〜1.9 秒になり、H2 の処理は 23〜28 秒から 0.1〜0.2 秒に縮んだ
+- **相関スカラー副問合せ（S06）は約 3 倍、半結合（S14）は 1.4〜2 倍。** 1.9 秒前後が 0.6 秒前後、0.3〜0.4 秒が 0.2〜0.3 秒になった
+- **1 つの表を読む文（S03・S07・S08 など）は変わらない。** 索引を作る分（数十 ms）だけわずかに増えることがある
+- **残る時間のほとんどは ScalarDB からの取得。** S04・S05 は約 67,000〜70,000 行を 1.5 秒前後で取得している。これ以上縮めるには、読む行数を減らす設計（集計表、キーで絞る取得）が要る
+
+全文の比較は `.venv/bin/python difftest/bench_dml_compare.py`（改善前の結果は `out/dml-bench-before-h2index/`）。
+
 ---
 
 ## 4. 見つかった問題
 
-### 4.1 実行計画の H2 が表の結合で遅い（S04・S05）
+### 4.1 実行計画の H2 が表の結合で遅い（S04・S05）→ 改善済み
 
 3 表の結合（S04）と、LEFT JOIN による反結合（S05）は、ScalarDB 側が 26〜28 秒かかった。内訳は、ScalarDB からの取得（約 67,000〜70,000 行）が約 2 秒、H2 での処理が 23〜26 秒。
 
-`runtime-java` の `Residual.load` は、取得した行を主キーもインデックスも無い H2 の表に入れている（`CREATE TABLE` だけ）。このため H2 の結合が入れ子ループになり、注文 2 万行 × 明細 5 万行を総当たりする。取得した表に主キーと結合列のインデックスを作れば、H2 の処理は大きく縮むと考えられる。
+`runtime-java` の `Residual.load` は、取得した行を主キーもインデックスも無い H2 の表に入れている（`CREATE TABLE` だけ）。このため H2 の結合が入れ子ループになり、注文 2 万行 × 明細 5 万行を総当たりする。対策として、実行計画に索引の列を出力し、`Residual` が問い合わせの前に索引を作るようにした。S04・S05 の H2 の処理は 0.1〜0.2 秒になり、全体で 14〜17 倍速くなった（3.4）。
 
 ### 4.2 H2 の予約語を列の別名に使うと実行計画が失敗する（S11）
 
@@ -176,8 +204,8 @@ S10 の `name LIKE 'FRANK%'` は、MySQL では既定の照合順序が大文字
 ## 5. 考察
 
 1. **時間を決めるのは経路で、方言ではない。** ScalarDB 側の p50 は、書き込み 3〜6 ms、キーで絞る読み取り 4〜6 ms、実行計画 0.6 秒前後で、3 方言でほぼ同じだった。倍率が方言で違って見えるのは、主に変換元 DB の速さの違い（書き込みの中央値は PostgreSQL 0.33 ms、Oracle 0.46 ms、MySQL 0.85 ms）による
-2. **移行の見積もりは、書き込みは実装の量、読み取りは読む行数で考える。** 書き込みは変換できない文が多いが、変換できれば数 ms で動く。読み取りは全部動くが、表を読む文は行数に比例して遅く、数万行の結合は数十秒になる
-3. **実行計画の改善は H2 の索引が最も効く見込み。** S04・S05 は取得が約 2 秒、H2 の処理が 23〜28 秒で、取得よりも H2 の処理が支配的だった。取得した表に主キーと結合列の索引を作れば、H2 の処理は大きく縮むと考えられる（未計測）。取得そのものを減らすには、集計表などで読む行数を減らす設計が要る
+2. **移行の見積もりは、書き込みは実装の量、読み取りは読む行数で考える。** 書き込みは変換できない文が多いが、変換できれば数 ms で動く。読み取りは全部動くが、表を読む文は行数に比例して遅く、数万行を読む文は索引を作っても 1〜2 秒かかる
+3. **H2 の索引で、結合の時間は取得の時間まで縮んだ。** S04・S05 は 26〜28 秒から 1.5〜1.9 秒になり、H2 の処理は 0.2 秒以下になった。残る時間は ScalarDB からの取得（数万行で 1.5 秒前後）で、これを減らすには集計表などで読む行数を減らす設計が要る
 4. **変換結果の判定だけでは不十分で、実データでの実行確認が要る。** 型付きの日付リテラル（PostgreSQL）や真偽値リテラル（MySQL）は、変換ツールが OK と判定したのに ScalarDB で構文エラーや型エラーになった。これまでの SELECT 中心の検証では見えなかった、書き込み側の問題である
 5. **計測の限界。** 単一クライアント、書き込みは 42 行の小さいデータ、各条件 1 回、バックエンドは PostgreSQL のみ。同時実行時のスループットと競合時の再試行は評価していない
 
@@ -194,6 +222,7 @@ for d in oracle postgres mysql; do
   .venv/bin/python difftest/bench_dml.py --dialect $d --restart-cluster --orders 20000 --out out/dml-bench
 done
 .venv/bin/python difftest/bench_dml_report.py out/dml-bench      # 方言をまたいだ集計表
+.venv/bin/python difftest/bench_dml_compare.py out/dml-bench-before-h2index out/dml-bench  # 索引の前後の比較
 ```
 
 変換結果だけなら DB は要らない:
