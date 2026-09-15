@@ -1,6 +1,7 @@
 package com.scalar.migrate.runtime;
 
 import com.google.gson.reflect.TypeToken;
+import com.scalar.migrate.appside.AppSideQuery;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -78,6 +79,15 @@ public class Bench {
           scalarResult = measure(() -> new Exec() {
             public Map<String, Object> call(int i) throws Exception {
               return planRun(fetcher, plan, verifyRows);
+            }
+          }, iterations, warmup);
+        } else if ("appside".equals(q.get("path"))) {
+          AppSideQuery impl = (AppSideQuery) Class.forName((String) q.get("appside_class"))
+              .getDeclaredConstructor().newInstance();
+          List<Map<String, Object>> fetches = (List<Map<String, Object>>) q.get("fetch");
+          scalarResult = measure(() -> new Exec() {
+            public Map<String, Object> call(int i) throws Exception {
+              return appsideRun(scalar, impl, fetches, verifyRows);
             }
           }, iterations, warmup);
         } else {
@@ -185,6 +195,60 @@ public class Bench {
       res.put("residual_ms", (t2 - t1) / 1_000_000.0);
       return res;
     }
+  }
+
+  /**
+   * One request of the hand-written app-side path: fetch every input table through ScalarDB SQL in one transaction,
+   * then run the AppSideQuery implementation on the rows. fetch_ms / residual_ms split the time the same way as a plan.
+   */
+  static Map<String, Object> appsideRun(Connection scalar, AppSideQuery impl, List<Map<String, Object>> fetches,
+      int verifyRows) throws Exception {
+    long t0 = System.nanoTime();
+    int fetched = 0;
+    Map<String, List<Map<String, Object>>> tables = new LinkedHashMap<>();
+    try {
+      for (Map<String, Object> f : fetches) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        try (PreparedStatement ps = scalar.prepareStatement((String) f.get("sql")); ResultSet rs = ps.executeQuery()) {
+          ResultSetMetaData m = rs.getMetaData();
+          while (rs.next()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            for (int c = 1; c <= m.getColumnCount(); c++) {
+              row.put(m.getColumnLabel(c).toLowerCase(), javaTime(rs.getObject(c)));
+            }
+            rows.add(row);
+          }
+        }
+        fetched += rows.size();
+        tables.put(((String) f.get("table")).toLowerCase(), rows);
+      }
+      scalar.commit();
+    } catch (Exception e) {
+      scalar.rollback();
+      throw e;
+    }
+    long t1 = System.nanoTime();
+    List<Map<String, Object>> result = impl.run(tables);
+    long t2 = System.nanoTime();
+    List<String> columns = result.isEmpty() ? List.of() : new ArrayList<>(result.get(0).keySet());
+    List<List<Object>> sample = new ArrayList<>();
+    for (Map<String, Object> r : result.subList(0, Math.min(verifyRows, result.size()))) {
+      List<Object> row = new ArrayList<>();
+      for (String c : columns) row.add(Values.toJson(r.get(c)));
+      sample.add(row);
+    }
+    Map<String, Object> res = map("columns", columns, "rows", result.size(), "sample", sample);
+    res.put("fetched_rows", fetched);
+    res.put("fetch_ms", (t1 - t0) / 1_000_000.0);
+    res.put("residual_ms", (t2 - t1) / 1_000_000.0);
+    return res;
+  }
+
+  /** JDBC temporal values as the java.time types AppSideQuery implementations work with. */
+  static Object javaTime(Object v) {
+    if (v instanceof java.sql.Timestamp) return ((java.sql.Timestamp) v).toLocalDateTime();
+    if (v instanceof java.sql.Date) return ((java.sql.Date) v).toLocalDate();
+    return v;
   }
 
   static Map<String, Object> map(String k1, Object v1, String k2, Object v2, String k3, Object v3) {
