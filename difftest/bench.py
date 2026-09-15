@@ -70,15 +70,44 @@ def nosql_dataset(n_orders: int) -> dict:
     return {"customers": customers, "orders_rdb": orders, "orders_by_customer": [dict(o) for o in orders]}
 
 
-DATASETS = {"bench": dataset, "nosql-patterns": nosql_dataset}
+def area_sales_dataset(n_sales: int) -> dict:
+    """Organization tree + sales (difftest/cases/bench-area-sales.sql). Two head offices, 10 areas, 20 shops per area at
+    level 3, plus nodes the query leaves out (a level-4 corner, an orphan). Sales spread over 2025-10-01 .. 2027-02 so
+    that about 73 % fall inside the 2026 range; 1 % of the amounts are NULL, none is 0 (no zero divisor)."""
+    nodes = [{"node_id": 1, "parent_id": None, "node_name": "本部"}, {"node_id": 2, "parent_id": None, "node_name": "第2本部"}]
+    shops = []
+    for a in range(10):
+        area = 100 + a
+        nodes.append({"node_id": area, "parent_id": 1 if a < 7 else 2, "node_name": f"エリア{a:02d}"})
+        for s in range(20):
+            shop = 1000 + a * 100 + s
+            nodes.append({"node_id": shop, "parent_id": area, "node_name": f"店舗{shop}"})
+            shops.append(shop)
+    nodes += [{"node_id": 90000, "parent_id": 1000, "node_name": "直営コーナー"},
+              {"node_id": 90001, "parent_id": 99999, "node_name": "孤立店"}]
+    targets = shops + [90000, 90001, 100]
+    base = datetime.datetime(2025, 10, 1)
+    sales = [{"shop_id": targets[(i * 7919) % len(targets)],
+              "sales_date": (base + datetime.timedelta(minutes=(i * 104729) % (500 * 24 * 60))).isoformat(),
+              "order_id": i,
+              "amount": None if i % 100 == 0 else 100 + (i * 37) % 50000}
+             for i in range(n_sales)]
+    return {"organization_master": nodes, "sales_transactions": sales}
+
+
+DATASETS = {"bench": dataset, "nosql-patterns": nosql_dataset, "bench-area-sales": area_sales_dataset}
+PATH_LABEL = {"scalardb_sql": "ScalarDB SQL", "plan": "plan", "appside": "app-side Java"}
 
 
 def annotations(sql: str) -> dict:
     out = {}
-    for key in ("bench", "iterate", "compare"):
+    for key in ("bench", "iterate", "compare", "appside"):
         m = re.search(rf"--\s*@{key}:\s*(.+)", sql)
         if m:
             out[key] = m.group(1).strip()
+    fetches = re.findall(r"--\s*@fetch:\s*(\w+)\s*=\s*(.+)", sql)
+    if fetches:
+        out["fetch"] = [{"table": t, "sql": s.strip()} for t, s in fetches]
     return out
 
 
@@ -154,10 +183,17 @@ def build_spec(results, args) -> tuple[dict, list[dict]]:
             entry["fetcher"] = args.fetcher
             info["scalardb_sql"] = " ; ".join(f["scalardb_sql"] for f in plan["fetch"])
             info["residual_sql"] = plan["residual"]["java"]["sql"]
+        elif "appside" in ann and "fetch" in ann:
+            # not convertible and not plannable: the hand-written AppSideQuery implementation
+            entry["path"] = "appside"
+            entry["appside_class"] = ann["appside"]
+            entry["fetch"] = ann["fetch"]
+            info["scalardb_sql"] = " ; ".join(f["sql"] for f in ann["fetch"])
         else:
             info["note"] = "; ".join(i.message for i in r.issues if i.severity == "ERROR")[:300]
             meta.append(info)
             continue
+        info["path"] = entry["path"]
         if "iterate" in ann:
             if entry["path"] == "plan":
                 info["note"] = "@iterate ignored: the plan carries the literal inside the fetch predicates"
@@ -286,13 +322,13 @@ def main() -> int:
 
 
 def print_table(report: list[dict]) -> None:
-    print(f"\n{'id':<5}{'verdict':<16}{'path':<10}{'rows':>7}{'oracle p50':>12}{'scalardb p50':>14}{'x':>7}  label")
+    print(f"\n{'id':<5}{'verdict':<16}{'path':<14}{'rows':>7}{'oracle p50':>12}{'scalardb p50':>14}{'x':>7}  label")
     for r in report:
         o = r.get("oracle_ms", {}).get("p50")
         s = r.get("scalardb_ms", {}).get("p50")
-        path = "plan" if r.get("pattern") else ("scalardb-sql" if r["status"] in ("OK", "WARN") else "-")
+        path = PATH_LABEL.get(r.get("path"), "-")
         ratio = r.get("ratio")
-        cells = [f"{r['id']:<5}", f"{r['verdict']:<16}", f"{path:<10}", f"{str(r.get('rows', '-')):>7}",
+        cells = [f"{r['id']:<5}", f"{r['verdict']:<16}", f"{path:<14}", f"{str(r.get('rows', '-')):>7}",
                  f"{'-' if o is None else format(o, '.2f'):>12}", f"{'-' if s is None else format(s, '.2f'):>14}",
                  f"{'-' if ratio is None else format(ratio, '.1f'):>7}", f"  {r['label']}"]
         print("".join(cells))
@@ -311,7 +347,7 @@ def markdown(report: list[dict], args) -> str:
              "| # | statement | ScalarDB path | rows | verdict | Oracle p50 (ms) | ScalarDB p50 (ms) | ratio | fetched rows |",
              "|---|---|---|---|---|---|---|---|---|"]
     for r in report:
-        path = "plan (" + str(r.get("pattern")) + ")" if r.get("pattern") else ("ScalarDB SQL" if r["status"] in ("OK", "WARN") else "—")
+        path = f"plan ({r.get('pattern')})" if r.get("path") == "plan" else PATH_LABEL.get(r.get("path"), "—")
         o = r.get("oracle_ms", {}).get("p50")
         s = r.get("scalardb_ms", {}).get("p50")
         lines.append(f"| {r['id']} | {r['label']} | {path} | {r.get('rows', '—')} | {r['verdict']} | "
