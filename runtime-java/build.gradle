@@ -24,6 +24,8 @@ dependencies {
     implementation 'com.h2database:h2:2.2.224'
     implementation 'com.google.code.gson:gson:2.11.0'
     runtimeOnly 'org.postgresql:postgresql:42.7.4'
+    // MySQL JDBC: used only by the DML benchmark (difftest/bench_dml.py) to time MySQL as the migration source
+    runtimeOnly 'com.mysql:mysql-connector-j:8.4.0'
     // Oracle JDBC: used ONLY by the benchmark (Bench.java) to time the migration-source database from the same JVM
     implementation 'com.oracle.database.jdbc:ojdbc11:23.5.0.24.07'
 
