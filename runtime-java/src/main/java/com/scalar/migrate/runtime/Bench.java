@@ -53,7 +53,10 @@ public class Bench {
     String coreProps = (String) spec.get("core_properties");
 
     List<Map<String, Object>> out = new ArrayList<>();
-    try (Connection oracle = DriverManager.getConnection((String) ora.get("url"), (String) ora.get("user"), (String) ora.get("password"));
+    // the harness names the environment variable holding the password, so that the spec file carries no secret
+    String sourcePassword = ora.containsKey("password_env") ? System.getenv((String) ora.get("password_env"))
+        : (String) ora.get("password");
+    try (Connection oracle = DriverManager.getConnection((String) ora.get("url"), (String) ora.get("user"), sourcePassword);
          Connection scalar = DriverManager.getConnection("jdbc:scalardb:" + sqlProps);
          Fetcher core = coreProps == null ? null : new CoreFetcher(coreProps);
          Fetcher sqlFetcher = new JdbcFetcher(sqlProps)) {
