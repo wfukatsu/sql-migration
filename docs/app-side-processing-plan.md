@@ -47,6 +47,9 @@ ScalarDB で実行できない文は、次の 2 段に分解して実行する�
 | DO_NOTHING / INSERT_IGNORE | 存在すればスキップ | P10 条件付き書き込み | B | 低 |
 | SEQUENCE / AUTO_INC | 連番採番 | P11 ID 生成 | B | 中 |
 | NOW | `NOW()` / `SYSDATE` | P12 アプリ時計 | B | 低 |
+| ORDER_STORAGE (非 JDBC バックエンドのみ) | パーティション内のクラスタリング順以外の `ORDER BY` (集約なし)。Cassandra では ScalarDB が実行を拒否する (DB-CORE-10006 / 10007) | P13 アプリ内ソート | A (ORDER BY を外してキー指定で fetch、H2 で並べ替え) | 低 |
+| OR_KEYS (非 JDBC バックエンドのみ) | 単一列のパーティションキーまたはインデックス列に対する `IN` / `OR` | P14 キーごとの分割 fetch | A (値ごとにパーティション / インデックス走査、H2 で合成) | 低 |
+| NO_CROSS_PARTITION / FULL_SCAN (非 JDBC バックエンドのみ) | キーでもインデックスでも絞れない読み取り・更新。クロスパーティション走査は JDBC (RDBMS) バックエンドでのみ使うため、Cassandra では取得できない | キーで取得できる部分があれば P15 (キー指定 fetch + アプリ側処理)、無ければ変換不可 (FULL_SCAN) | 設計変更 (キー・インデックスの追加、集計表の保持、ScalarDB Analytics) | 高 |
 | ORACLE_JOIN_MARK / ROWNUM | `(+)` 外部結合、`ROWNUM` | 静的書き換え (LEFT/RIGHT JOIN、LIMIT) の後 A | 変換ツール | 低 |
 | 関数互換ギャップ | H2 互換モードに無い関数 (`DATE_FORMAT` など) | 静的書き換え (H2 の同等関数へ) | 変換ツール | 中 |
 | DDL (VIEW / TRIGGER / PROCEDURE) | ビュー、トリガー、ストアド | ビューは残余 SQL に展開、トリガー・ストアドはアプリロジックへ移植 | 手作業 | 高 |

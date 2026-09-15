@@ -8,7 +8,8 @@
 
 The harness is the ONLY component that connects to the source database. Nothing here connects to ScalarDB's backend.
 
-  .venv/bin/python difftest/run.py difftest/cases/postgres.sql --dialect postgres [--fetcher core|jdbc]
+  .venv/bin/python difftest/run.py difftest/cases/postgres.sql --dialect postgres [--fetcher core|jdbc] \
+      [--backend postgres|cassandra]
 """
 
 from __future__ import annotations
@@ -28,7 +29,9 @@ import psycopg
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "difftest"))
 from scalardb_migrate.converter import convert_script  # noqa: E402
+from backends import BACKENDS, schema_loader  # noqa: E402
 
 NAMESPACE = "difftest"
 RUNNER = ROOT / "runtime-java/build/install/residual-runner/bin/residual-runner"
@@ -145,6 +148,9 @@ def main() -> int:
     ap.add_argument("case_file")
     ap.add_argument("--dialect", required=True, choices=["postgres", "oracle"])
     ap.add_argument("--fetcher", default="core", choices=["core", "jdbc"])
+    ap.add_argument("--backend", default="postgres", choices=sorted(BACKENDS), help="storage behind ScalarDB")
+    ap.add_argument("--convert-storage", choices=["jdbc", "cassandra"],
+                    help="storage the converter targets (default: the backend's; jdbc = conversion unaware of Cassandra)")
     ap.add_argument("--skip-setup", action="store_true", help="tables and data already loaded")
     ap.add_argument("--json-out", help="write structured per-statement results here")
     args = ap.parse_args()
@@ -153,7 +159,7 @@ def main() -> int:
     case = Path(args.case_file)
     text = case.read_text(encoding="utf-8")
     data = json.loads(case.with_suffix(".data.json").read_text(encoding="utf-8"))
-    results, registry = convert_script(text, args.dialect)
+    results, registry = convert_script(text, args.dialect, storage=args.convert_storage or BACKENDS[args.backend].storage)
     work = ROOT / "difftest/work"
     work.mkdir(exist_ok=True)
 
@@ -161,7 +167,8 @@ def main() -> int:
     schema = {f"{NAMESPACE}.{t.name}": t.to_schema_loader() for t in registry.tables()}
     (work / "schema.json").write_text(json.dumps(schema, indent=2))
 
-    props = str(ROOT / "difftest/conf/scalardb.properties")
+    backend = BACKENDS[args.backend]
+    props = backend.core
     if not args.skip_setup:
         print(f"== source database ({args.dialect}): DDL + data")
         src = Source(args.dialect)
@@ -172,11 +179,10 @@ def main() -> int:
             meta = registry.get(table)
             src.insert(table, rows, meta.columns if meta else {})
         src.close()
-        print("== ScalarDB: Schema Loader + data through ScalarDB Core")
-        compose = ["docker", "compose", "-f", str(ROOT / "difftest/docker-compose.yml"), "--profile", "tools", "run", "--rm",
-                   "schema-loader", "--config", "/conf/scalardb-in-docker.properties", "--schema-file", "/work/schema.json"]
-        sh(*compose, "--delete-all", check=False)  # idempotent re-runs: drop the tables from a previous run
-        sh(*compose, "--coordinator")
+        print(f"== ScalarDB ({args.backend}): Schema Loader + data through ScalarDB Core")
+        delete, create = schema_loader(backend, "/work/schema.json")
+        sh(*delete, check=False)  # idempotent re-runs: drop the tables from a previous run
+        sh(*create)
         for table, rows in data.items():
             rows_file = work / f"{table}.rows.json"
             rows_file.write_text(json.dumps(rows))
@@ -212,7 +218,7 @@ def main() -> int:
             plan_file.write_text(json.dumps(plan))
             try:
                 out = json.loads(sh(str(RUNNER), "run", "--plan", str(plan_file), "--properties",
-                                    props if args.fetcher == "core" else str(ROOT / "difftest/conf/scalardb-sql-jdbc.properties"),
+                                    props if args.fetcher == "core" else backend.sql,
                                     "--fetcher", args.fetcher))
             except RuntimeError as e:
                 summary["FAIL"] += 1
@@ -228,8 +234,8 @@ def main() -> int:
                 print(f"      expected {expected}\n      actual   {out['rows']}")
         elif r.status in ("OK", "WARN") and args.fetcher == "jdbc":
             try:
-                out = json.loads(sh(str(RUNNER), "sql", "--properties", str(ROOT / "difftest/conf/scalardb-sql-jdbc.properties"),
-                                    "--sql", r.converted[0]))  # default namespace comes from scalardb-sql-jdbc.properties
+                out = json.loads(sh(str(RUNNER), "sql", "--properties", backend.sql,
+                                    "--sql", r.converted[0]))  # default namespace comes from the client properties
             except RuntimeError as e:
                 summary["FAIL"] += 1
                 rec["result"], rec["error"] = "FAIL", str(e)

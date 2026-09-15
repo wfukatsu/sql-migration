@@ -12,6 +12,8 @@ public class Plan {
   public Map<String, Residual> residual;
   public Map<String, Object> guardrails;
   public List<String> unresolved;
+  public Map<String, Object> transaction;        // {"read_only": true}
+  public Map<String, Object> recommended_config; // ScalarDB settings the fetches benefit from
 
   public static class Fetch {
     public String table;

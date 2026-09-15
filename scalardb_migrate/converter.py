@@ -20,7 +20,8 @@ from sqlglot.optimizer.normalize import normalize
 from sqlglot.tokens import TokenType
 from sqlglot.transforms import eliminate_join_marks
 
-from .decomposer import Decomposer, NotDecomposable
+from . import appside
+from .decomposer import DEFAULT_ROW_LIMIT, ORDERED_SCAN_STORAGES, Decomposer, NotDecomposable, PlanBlocked
 from .dialect import Upsert, to_scalardb_sql
 from .schema import SchemaRegistry, TableMeta
 from .types import map_type
@@ -142,11 +143,17 @@ def _split_statements(text: str, dialect: str) -> list[str]:
 
 class StatementConverter:
     def __init__(self, dialect: str, registry: SchemaRegistry, key_hints: dict[str, tuple[list[str], list[str]]],
-                 decompose: bool = True):
+                 decompose: bool = True, storage: str = "jdbc",
+                 expected_rows: dict[str, tuple[int, int | None]] | None = None, isolation: str = "SERIALIZABLE",
+                 row_limit: int = DEFAULT_ROW_LIMIT):
         self.dialect = dialect
         self.registry = registry
         self.key_hints = key_hints
         self.decompose = decompose
+        self.storage = storage  # storage behind ScalarDB: "jdbc" or a non-JDBC one such as "cassandra"
+        self.expected_rows = expected_rows or {}  # table -> (rows, rows per key), for cost estimates
+        self.isolation = isolation  # ScalarDB Consensus Commit isolation level the estimates assume
+        self.row_limit = row_limit
         self.issues: list[Issue] = []
 
     # -- issue helpers ------------------------------------------------------------------------------
@@ -195,20 +202,60 @@ class StatementConverter:
         except UnsupportedError as e:
             self.issues.append(Issue("ERROR", "UNSUPPORTED", str(e)))
         res.issues = list(self.issues)
+        query = isinstance(node, appside.QUERY_TYPES)
         if any(i.severity == "ERROR" for i in res.issues):
             res.status, res.converted = "ERROR", []
-            if self.decompose and isinstance(node, (exp.Select, exp.Union, exp.Except, exp.Intersect)):
+            fresh = self._reparse(src) if query else None  # the converter mutated the first AST
+            if fresh is not None:
+                self._inventory(res, fresh)
+            if self.decompose and query:
                 self._try_plan(res, src)
+            if fresh is not None:
+                self._advise(res, fresh)
         elif any(i.severity == "WARN" for i in res.issues):
             res.status = "WARN"
+        if res.status == "WARN" and isinstance(node, exp.Select) and any(i.code == "CROSS_PARTITION" for i in res.issues):
+            self._cost(res, [(_from(node).this.name, "CROSS_PARTITION")], row_limit=None)
         return res
+
+    def _reparse(self, src: str) -> exp.Expression | None:
+        try:
+            return sqlglot.parse_one(src, read=self.dialect)
+        except ParseError:
+            return None
+
+    def _inventory(self, res: Result, fresh: exp.Expression) -> None:
+        """List every construct that has to move to the application, not only the first one select() failed on.
+        The converter's own ERROR is replaced when the inventory reports the same construct in more detail."""
+        found = appside.inventory(fresh, self.dialect)
+        codes = {c for c, _ in found}
+        res.issues = [i for i in res.issues if not (i.severity == "ERROR" and i.code in codes)]
+        res.issues.extend(Issue("ERROR", c, m) for c, m in found)
+
+    def _advise(self, res: Result, fresh: exp.Expression) -> None:
+        if res.status == "ERROR":  # a plan runs the original SQL in H2, which keeps these semantics itself
+            res.issues.extend(Issue("WARN", "APP_SEMANTICS", m)
+                              for m in appside.semantic_notes(fresh, self.dialect, self.registry))
+        res.issues.extend(Issue("INFO", "DESIGN", m)
+                          for m in appside.design_advice(fresh, self.registry, self.storage, self.dialect))
+
+    def _cost(self, res: Result, fetches: list[tuple[str, str]], row_limit: int | None) -> dict:
+        cfg = appside.recommended_config([p for _, p in fetches], self.isolation)
+        res.issues.append(Issue("INFO", "CONFIG", appside.config_message(cfg)))
+        res.issues.extend(Issue(sev, code, msg) for sev, code, msg in
+                          appside.estimate_cost(fetches, self.expected_rows, self.isolation, row_limit))
+        return cfg
 
     def _try_plan(self, res: Result, src: str) -> None:
         """ERROR statement that is read-only: build a fetch + residual plan (docs/app-side-processing-plan.md)."""
         codes = {i.code for i in res.issues if i.severity == "ERROR"}
         try:
             fresh = sqlglot.parse_one(src, read=self.dialect)  # the converter mutated the first AST
-            plan = Decomposer(self.dialect, self.registry).decompose(fresh, src.strip(), codes)
+            plan = Decomposer(self.dialect, self.registry, row_limit=self.row_limit,
+                              storage=self.storage).decompose(fresh, src.strip(), codes)
+        except PlanBlocked as e:
+            res.issues.extend(Issue("ERROR", code, msg) for code, msg in e.problems)
+            return
         except (NotDecomposable, Exception) as e:  # noqa: BLE001
             res.issues.append(Issue("INFO", "PLAN", f"not decomposable: {e}"))
             return
@@ -222,6 +269,7 @@ class StatementConverter:
             res.issues.append(Issue("WARN", "PLAN_UNRESOLVED", u))
         if plan.guardrails["requires_cross_partition_scan"]:
             res.issues.append(Issue("WARN", "PLAN_CROSS_PARTITION", "a fetch needs a cross-partition scan"))
+        res.plan["recommended_config"] = self._cost(res, [(f.table, f.access_path) for f in plan.fetch], self.row_limit)
 
     def _dispatch(self, node: exp.Expression) -> list:
         if isinstance(node, exp.Select):
@@ -287,6 +335,11 @@ class StatementConverter:
             return e
         if isinstance(e, exp.Cast) and isinstance(e.this, exp.Literal):
             return e
+        # DATE '2020-01-01' / TIMESTAMP '2020-01-01 10:00:00': SQLGlot represents Oracle's ANSI date and timestamp
+        # literals as DateStrToDate / TimeStrToTime. They are ISO by definition, so the plain literal is exact.
+        if isinstance(e, (exp.DateStrToDate, exp.TimeStrToTime)) and isinstance(e.this, exp.Literal):
+            self.info("DATE_LIT", f"{ctx}: {e.sql(dialect=self.dialect)} written as the plain literal '{e.this.name}'")
+            return exp.Literal.string(e.this.name)
         # TO_DATE('2020-01-01','YYYY-MM-DD') / TO_TIMESTAMP(...) / '...'::date with constant args
         if isinstance(e, (exp.StrToDate, exp.StrToTime, exp.TsOrDsToDate, exp.TsOrDsToTimestamp)) \
                 and isinstance(e.this, exp.Literal):
@@ -455,15 +508,29 @@ class StatementConverter:
 
     # -- access path analysis -----------------------------------------------------------------------
     def _access_path(self, meta: TableMeta | None, cond: exp.Expression | None, order: exp.Order | None,
-                     ctx: str) -> None:
+                     ctx: str, grouped: bool = False) -> None:
+        """Classify GET / partition SCAN / index SCAN / cross-partition SCAN. On a storage that is not given
+        cross-partition scans (non-JDBC), fail every access that would need one -- ORDER BYs ScalarDB would push down
+        to the storage, key IN-lists, predicates without a key -- so that the decomposer fetches by key and processes
+        the rows in the application, or reports that nothing can be fetched by key (grouped queries over a keyed
+        access are sorted by the SQL layer after aggregation and are unaffected)."""
         if meta is None:
             self.info("SCHEMA", f"{ctx}: table definition unknown, access path (GET / SCAN / cross-partition) not analysed")
             return
+        ordered_scan = self.storage in ORDERED_SCAN_STORAGES
+        pk = [c.lower() for c in meta.primary_key]
+        pkey = [c.lower() for c in meta.partition_key]
+        idx = [c.lower() for c in meta.secondary_indexes]
+        keyish = set(idx) | ({pkey[0]} if len(pkey) == 1 else set())
         eq_cols: set[str] = set()
         range_cols: set[str] = set()
+        key_or = None  # column of an OR / IN group over one partition-key or indexed column
         if cond is not None:
             if isinstance(_unparen(cond), exp.Or):
-                self.warn("CROSS_PARTITION", f"{ctx}: top-level OR forces a cross-partition scan on {meta.name}")
+                if order is not None and not grouped and not ordered_scan:
+                    self._no_ordered_scan(order, ctx)
+                self._key_or_or_cross_partition(meta, self._key_or(cond, keyish), ctx,
+                                                f"{ctx}: top-level OR forces a cross-partition scan on {meta.name}")
                 return
             for leaf in _flatten(cond, exp.And):
                 leaf = _unparen(leaf)
@@ -472,28 +539,63 @@ class StatementConverter:
                 elif isinstance(leaf, (exp.GT, exp.GTE, exp.LT, exp.LTE, exp.Between)) and isinstance(leaf.this, exp.Column):
                     range_cols.add(leaf.this.name.lower())
                 else:
+                    if isinstance(leaf, exp.Or) and key_or is None:
+                        key_or = self._key_or(leaf, keyish)
                     range_cols.add("?")
-        pk = [c.lower() for c in meta.primary_key]
-        pkey = [c.lower() for c in meta.partition_key]
         if pk and all(c in eq_cols for c in pk):
             self.info("ACCESS", f"{ctx}: full primary key specified -> GET (single record)")
             return
         if pkey and all(c in eq_cols for c in pkey):
             self.info("ACCESS", f"{ctx}: full partition key specified -> partition SCAN")
-            if order is not None:
+            if order is not None and not grouped:
                 ck = [c.lower() for c in meta.clustering_key]
-                ocols = [o.this.name.lower() for o in order.expressions if isinstance(o.this, exp.Column)]
-                if ocols != ck[:len(ocols)]:
+                ords = [o for o in order.expressions if isinstance(o.this, exp.Column)]
+                ocols = [o.this.name.lower() for o in ords]
+                if len(ords) != len(order.expressions) or ocols != ck[:len(ocols)]:
+                    if not ordered_scan:
+                        self._no_ordered_scan(order, ctx, f" (not a prefix of the clustering key {ck})")
                     self.warn("ORDER", f"{ctx}: ORDER BY {ocols} is not a prefix of the clustering key {ck}; "
                                        f"ScalarDB falls back to a cross-partition scan with ordering (JDBC backends only)")
+                elif not ordered_scan:
+                    order_of = {c.lower(): o.upper() for c, o in meta.clustering_order.items()}
+                    reversed_ = {bool(o.args.get("desc")) != (order_of.get(c, "ASC") == "DESC") for o, c in zip(ords, ocols)}
+                    if len(reversed_) > 1:
+                        self._no_ordered_scan(order, ctx, " (mixes the clustering order and its reverse)")
             return
-        idx = [c.lower() for c in meta.secondary_indexes]
         if any(c in eq_cols for c in idx) and order is None:
             self.info("ACCESS", f"{ctx}: equality on secondary index -> index SCAN")
             return
-        self.warn("CROSS_PARTITION", f"{ctx}: predicates do not cover the partition key {meta.partition_key} of "
-                                     f"{meta.name} -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; "
-                                     f"filtering/ordering across partitions is only recommended on JDBC backends)")
+        if order is not None and not grouped and not ordered_scan:
+            self._no_ordered_scan(order, ctx)
+        self._key_or_or_cross_partition(meta, key_or, ctx,
+                                        f"{ctx}: predicates do not cover the partition key {meta.partition_key} of "
+                                        f"{meta.name} -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; "
+                                        f"filtering/ordering across partitions is only recommended on JDBC backends)")
+
+    @staticmethod
+    def _key_or(e: exp.Expression, keyish: set[str]) -> str | None:
+        leaves = [_unparen(x) for x in _flatten(e, exp.Or)]
+        cols = {x.this.name.lower() for x in leaves if isinstance(x, exp.EQ) and isinstance(x.this, exp.Column)}
+        if len(cols) == 1 and all(isinstance(x, exp.EQ) and isinstance(x.this, exp.Column) for x in leaves) \
+                and next(iter(cols)) in keyish:
+            return next(iter(cols))
+        return None
+
+    def _key_or_or_cross_partition(self, meta: TableMeta, key_or: str | None, ctx: str, message: str) -> None:
+        if self.storage not in ORDERED_SCAN_STORAGES:
+            if key_or and ctx == "SELECT":
+                self.fail("OR_KEYS", f"{ctx}: OR / IN over {meta.name}.{key_or} runs as a scan of every partition on "
+                                     f"{self.storage}; fetch each key with its own partition / index scan instead")
+            self.fail("NO_CROSS_PARTITION",
+                      message.split(" (requires")[0] + f"; cross-partition scans are used with JDBC backends only, so on "
+                      f"{self.storage} " + ("the rows must be fetched by key and processed in the application"
+                                             if ctx == "SELECT" else "select the keys first and write by primary key"))
+        self.warn("CROSS_PARTITION", message)
+
+    def _no_ordered_scan(self, order: exp.Order, ctx: str, why: str = "") -> None:
+        cols = [o.this.sql() for o in order.expressions]
+        self.fail("ORDER_STORAGE", f"{ctx}: ORDER BY {cols}{why} needs a cross-partition scan with ordering, which "
+                                   f"ScalarDB does not support on {self.storage} (DB-CORE-10007); sort in the application")
 
     # -- SELECT ------------------------------------------------------------------------------------
     def select(self, s: exp.Select) -> exp.Select:
@@ -504,7 +606,11 @@ class StatementConverter:
             self.fail("DISTINCT", "SELECT DISTINCT is not supported; de-duplicate in the application")
         if s.args.get("offset"):
             self.fail("OFFSET", "OFFSET is not supported; paginate with a clustering-key range predicate instead")
-        for k in ("windows", "qualify", "laterals", "pivots", "sample", "into", "connect", "cluster"):
+        if s.args.get("connect"):
+            self.fail("HIERARCHICAL", "START WITH / CONNECT BY (hierarchical query) is not supported")
+        if s.args.get("pivots"):
+            self.fail("PIVOT", "PIVOT / UNPIVOT is not supported")
+        for k in ("windows", "qualify", "laterals", "sample", "into", "cluster"):
             if s.args.get(k):
                 self.fail("CLAUSE", f"{k.upper()} clause is not supported")
         if s.args.get("locks"):
@@ -558,8 +664,10 @@ class StatementConverter:
             self.info("LIMIT", "FETCH FIRST n ROWS ONLY rewritten to LIMIT n")
         elif isinstance(lim, exp.Limit) and not _is_literal(lim.expression):
             self.fail("LIMIT", "LIMIT must be a literal or bind marker")
+        grouped = bool(s.args.get("group")) or any(_is_aggregate(p.this if isinstance(p, exp.Alias) else p)
+                                                   for p in s.expressions)
         self._access_path(self._meta(from_.this), s.args["where"].this if s.args.get("where") else None,
-                          s.args.get("order"), ctx)
+                          s.args.get("order"), ctx, grouped)
         return s
 
     def _check_projection(self, p: exp.Expression) -> None:
@@ -1034,9 +1142,15 @@ class StatementConverter:
 
 def convert_script(text: str, dialect: str, registry: SchemaRegistry | None = None,
                    key_hints: dict[str, tuple[list[str], list[str]]] | None = None,
-                   decompose: bool = True) -> tuple[list[Result], SchemaRegistry]:
+                   decompose: bool = True, storage: str = "jdbc",
+                   expected_rows: dict[str, tuple[int, int | None]] | None = None, isolation: str = "SERIALIZABLE",
+                   row_limit: int = DEFAULT_ROW_LIMIT) -> tuple[list[Result], SchemaRegistry]:
+    """storage: the storage behind ScalarDB ("jdbc", or a non-JDBC one such as "cassandra"); it decides whether a
+    cross-partition ORDER BY can be pushed down and whether a key IN-list is worth splitting.
+    expected_rows / isolation / row_limit only feed the cost estimates (appside.estimate_cost)."""
     registry = registry or SchemaRegistry()
-    conv = StatementConverter(dialect, registry, key_hints or {}, decompose=decompose)
+    conv = StatementConverter(dialect, registry, key_hints or {}, decompose=decompose, storage=storage,
+                              expected_rows=expected_rows, isolation=isolation, row_limit=row_limit)
     results = []
     for i, stmt in enumerate(_split_statements(text, dialect), start=1):
         r = conv.convert(stmt)

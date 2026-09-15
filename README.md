@@ -10,8 +10,13 @@ Oracle / PostgreSQL / MySQL の SQL を [SQLGlot](https://github.com/tobymao/sql
 .venv/bin/python -m scalardb_migrate.cli samples/mysql.sql    --dialect mysql    --out-dir out \
     --keys orders=customer_id/order_no          # パーティションキー / クラスタリングキーの指定
 .venv/bin/python -m scalardb_migrate.cli app.sql --dialect postgres --schema existing-schema.json
+.venv/bin/python -m scalardb_migrate.cli app.sql --source oracle \
+    --expected-rows sales_transactions=1000000:1000 --isolation SERIALIZABLE   # 取得コストの見積もり
 .venv/bin/python -m pytest -q
+(cd runtime-java && gradle test)
 ```
+
+`--dialect` は `--source` とも書ける (スキルの `transpile.py` と同じ)。
 
 出力 (`--out-dir`):
 
@@ -28,9 +33,37 @@ Oracle / PostgreSQL / MySQL の SQL を [SQLGlot](https://github.com/tobymao/sql
 | `scalardb_migrate/dialect.py` | SQLGlot の `Dialect` サブクラス `ScalarDB`。Generator 側で ScalarDB 文法に無い構文 (サブクエリ、CASE、関数、OFFSET、CAST など) を `UnsupportedError` にする「厳格な出力側」 |
 | `scalardb_migrate/types.py` | ソース型 → ScalarDB 11 型 (BOOLEAN/INT/BIGINT/FLOAT/DOUBLE/TEXT/BLOB/DATE/TIME/TIMESTAMP/TIMESTAMPTZ) の対応と精度警告 |
 | `scalardb_migrate/converter.py` | 文種別ごとの解析・書き換えルール (下表) とアクセスパス分析 |
+| `scalardb_migrate/appside.py` | 変換できない読み取り文の分析: アプリ側に移す構文の全列挙、H2 で実行できない構文、結果を変えないための注意、設計の提案、取得コストの見積もり、推奨設定 |
 | `scalardb_migrate/schema.py` | テーブル定義レジストリ (DDL から構築、または Schema Loader JSON を読み込み) |
 | `scalardb_migrate/cli.py` | CLI とレポート出力 |
-| `tests/test_converter.py`, `tests/test_decomposer.py` | ルール単位のテスト (45 件) と分解のオフライン差分テスト (17 件) |
+| `tests/test_converter.py`, `tests/test_decomposer.py`, `tests/test_appside.py` | ルール単位のテスト、分解のオフライン差分テスト、アプリ側分析のテスト |
+| `runtime-java/src/main/java/com/scalar/migrate/appside/` | アプリ側で Oracle の動きを再現する補助クラス (`Hierarchy`、`Windows`、`OracleNumbers`、`OracleOrdering`、`OracleDates`) と golden 比較 (`golden/GoldenCheck`) |
+| `difftest/golden.py` | Oracle で正解 (入力の表と結果) を 1 回取り、アプリ側の実装と DB なしで比べる |
+
+## 変換できない読み取り文の分析
+
+ERROR になった読み取り文には、文全体 (CTE の本体・サブクエリを含む) を調べた結果が付き、レポートの
+「Application-side work」節に文ごとにまとまる。
+
+- **アプリ側に移す構文**: `CTE`、`HIERARCHICAL`、`WINDOW`、`PROJECTION`、`GROUP` など。最初の 1 つで止めずに全部挙げる
+- **H2 で実行できない構文** (`RESIDUAL_H2`): `CONNECT BY`、`ROLLUP` / `CUBE` / `GROUPING SETS`、`PIVOT` / `UNPIVOT`、`KEEP` を含む文は実行計画にしない (以前は PLANNED にしていたが、実行時に失敗していた)
+- **Cassandra でキーが無い表** (`FULL_SCAN`): すべての表を挙げ、結合相手のキーで読む方法を提案する (CTE の列もたどる)
+- **結果を変えないための注意** (`APP_SEMANTICS`): 0 除算、`ROUND` の丸め方、NULL と文字列の並び順、`LAG` が暦の前月ではないこと など
+- **設計の提案** (`DESIGN`)、**取得コストの見積もり** (`COST` / `ROW_LIMIT` / `COST_DEADLINE`)、**推奨設定** (`CONFIG`)
+
+実行計画には `transaction: {"read_only": true}` と `recommended_config` が付き、`CoreFetcher` は読み取り専用トランザクションで取得する。
+WITH の中の `DATE '...'` リテラルも取得用 SQL に押し下げる (TIMESTAMP 列には時刻 `00:00:00` を付ける)。
+
+アプリ側の実装は golden で確かめる。
+
+```
+.venv/bin/python difftest/golden.py capture --setup difftest/golden/area-sales/setup.sql \
+    --query difftest/golden/area-sales/query.sql --tables organization_master,sales_transactions \
+    --out difftest/golden/area-sales                                       # Oracle が要る (1 回だけ)
+(cd runtime-java && gradle installDist)
+.venv/bin/python difftest/golden.py check --golden difftest/golden/area-sales \
+    --impl com.scalar.migrate.examples.AreaSalesReport                    # DB 不要
+```
 
 ## 変換ルール概要
 
@@ -72,12 +105,39 @@ DDL または `--schema` からテーブル定義が分かる場合、各 SELECT
 GET (主キー完全指定) / パーティション SCAN / インデックス SCAN / クロスパーティション SCAN (WARN) を判定し、
 JOIN の結合条件が相手テーブルの主キーまたはセカンダリインデックスを覆っているかを検査します。
 
+## バックエンドを Oracle / Cassandra にした検証
+
+ScalarDB のバックエンドを移行元と同じ Oracle Database、または Apache Cassandra 5.0 にして、同じ Oracle SQL の互換性と
+応答時間を比べる。まとめは `docs/scalardb-backend-comparison.md`、計画は `docs/oracle-backend-verification-plan.md` と
+`docs/cassandra-verification-plan.md`、Cassandra の詳細は `docs/cassandra-verification-report.md`。
+
+```
+difftest/oracle-backend-init.sh                                                          # ScalarDB 用の Oracle ユーザー (1 回)
+cd difftest && docker compose stop scalardb-cluster && docker compose --profile oracle --profile oracle-backend up -d scalardb-cluster-oracle && cd ..
+difftest/backend_compare.sh oracle out/cassandra-verify/oracle-backend
+```
+
+
+ScalarDB のバックエンドを PostgreSQL から Apache Cassandra 5.0 に替えて、同じ Oracle SQL の互換性と応答時間を比べる。
+計画は `docs/cassandra-verification-plan.md`、結果は `docs/cassandra-verification-report.md`。
+
+```
+.venv/bin/python -m scalardb_migrate.cli app.sql --dialect oracle --storage cassandra   # Cassandra 向けに変換
+cd difftest && ./make-cluster-conf.sh && docker compose stop scalardb-cluster && docker compose --profile cassandra up -d && cd ..
+difftest/backend_compare.sh cassandra out/cassandra-verify/after                        # 互換性テスト + ベンチ
+```
+
+`--storage cassandra` を付けると、Cassandra では ScalarDB が実行できないパーティションをまたぐ `ORDER BY` を
+アプリ側計画 (H2 で並べ替え) に回し、キー列の `IN` をキーごとのパーティション走査に分ける。既定の `jdbc` では従来どおり。
+
 ## sql-transpile スキル (任意の方言への変換)
 
 `skills/sql-transpile/` は、SQL を Source 方言から Target 方言 (SQLGlot の 32 方言) または
 ScalarDB SQL に変換する Claude Code スキルです。素の `sqlglot.transpile()` が黙って通してしまう構文
 (ROWNUM、Oracle 外部結合 `(+)`、CONNECT BY、NEXTVAL、ROWID、方言固有の関数) を前処理で直すか、
-直せないものを理由つきで報告し、変換率を出します。
+直せないものを理由つきで報告し、変換率を出します。整数どうしの除算や日付の引き算のように型で意味が変わるものは、
+入力スクリプト内の `CREATE TABLE` (または `--schema`) から型を付けて書き換えます。関数の有無は、PostgreSQL・Oracle・
+MySQL・DuckDB の実際の組み込み関数一覧 (`skills/sql-transpile/scripts/catalogs/`) で判定します。
 
 ```
 .venv/bin/python skills/sql-transpile/scripts/transpile.py samples/oracle.sql \
@@ -111,7 +171,8 @@ docker run -d --name transpile-verify-mysql -e MYSQL_ROOT_PASSWORD=verify -e MYS
 docker rm -f transpile-verify-mysql                            # 終わったら削除
 ```
 
-結果は `out/transpile-verify/report.md` に出ます。
+結果は `out/transpile-verify/report.md` に出ます。修正前後の比較は `docs/transpile-fix-research.md` の
+「修正後の実測」節にあります。関数一覧を作り直すときは `skills/sql-transpile/scripts/build_catalogs.py` を使います。
 
 Claude Code から使うには `ln -s "$PWD/skills/sql-transpile" ~/.claude/skills/sql-transpile` でリンクします。
 手順と指摘コードの意味は `skills/sql-transpile/SKILL.md` と `references/` を参照してください。

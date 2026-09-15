@@ -363,8 +363,9 @@ class PairResult:
     cases: list[Case] = field(default_factory=list)
 
 
-def convert_skill(sql: str, src: str, tgt: str):
-    r = generic.convert_statement(sql, src, tgt)
+def convert_skill(sql: str, src: str, tgt: str, schema: dict | None = None):
+    # CLI と同じく、スクリプト内の CREATE TABLE から作った表定義を型の判定に渡す
+    r = generic.convert_statement(sql, src, tgt, schema)
     return r.status, (r.converted[0] if r.converted else ""), sorted({i.code for i in r.issues if i.severity != "INFO"})
 
 
@@ -384,6 +385,7 @@ def verify_pair(src_db: DB, tgt_db: DB, stmts: list[Stmt]) -> PairResult:
                    for n, k in [created_object(s.body, src)] if n and k == "SEQUENCE"})
     src_db.reset(tables, seqs)
     tgt_db.reset(tables, seqs)
+    schema = generic.schema_from_ddl([s.body for s in stmts if s.kind == "DDL"], src) or None
 
     # 準備（変換元）: そのまま実行する
     for s in (x for x in stmts if x.setup):
@@ -395,7 +397,7 @@ def verify_pair(src_db: DB, tgt_db: DB, stmts: list[Stmt]) -> PairResult:
 
     # 準備の変換そのものを測る: スキルで変換した DDL とデータ投入が変換先で通るか
     for s in (x for x in stmts if x.setup):
-        _, sql, codes = convert_skill(s.body, src, tgt)
+        _, sql, codes = convert_skill(s.body, src, tgt, schema)
         if not sql:
             res.setup_conversion.append(f"#{s.index} スキルが変換できない ({', '.join(codes)})")
             continue
@@ -424,7 +426,7 @@ def verify_pair(src_db: DB, tgt_db: DB, stmts: list[Stmt]) -> PairResult:
             res.source_errors.append(f"#{s.index} {s.note}: {truth.error}")
             continue
 
-        verdict, skill_sql, codes = convert_skill(s.body, src, tgt)
+        verdict, skill_sql, codes = convert_skill(s.body, src, tgt, schema)
         raw_sql = convert_raw(s.body, src, tgt)
         raw_check = convert_raw(s.check, src, tgt) if s.check else None
         raw = run(tgt_db, raw_sql, raw_check, s.kind, keep_ddl=False) if raw_sql else Run(False, error="生成できない")
@@ -434,11 +436,11 @@ def verify_pair(src_db: DB, tgt_db: DB, stmts: list[Stmt]) -> PairResult:
         if skill_sql:
             skill_check = None
             if s.check:
-                _, skill_check, _ = convert_skill(s.check, src, tgt)
+                _, skill_check, _ = convert_skill(s.check, src, tgt, schema)
                 skill_check = skill_check or raw_check
             skill_state, skill_detail = state(truth, run(tgt_db, skill_sql, skill_check, s.kind, keep_ddl=False), ordered)
 
-        comment_verdict, _, _ = convert_skill(s.text, src, tgt)
+        comment_verdict, _, _ = convert_skill(s.text, src, tgt, schema)
         res.cases.append(Case(s.index, s.note, s.body, verdict, codes, skill_sql, raw_sql, skill_state,
                               skill_detail, raw_state, raw_detail, classify(verdict, skill_state, raw_state),
                               comment_verdict, kind=s.kind))
