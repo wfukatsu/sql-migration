@@ -145,7 +145,7 @@ class StatementConverter:
     def __init__(self, dialect: str, registry: SchemaRegistry, key_hints: dict[str, tuple[list[str], list[str]]],
                  decompose: bool = True, storage: str = "jdbc",
                  expected_rows: dict[str, tuple[int, int | None]] | None = None, isolation: str = "SERIALIZABLE",
-                 row_limit: int = DEFAULT_ROW_LIMIT):
+                 row_limit: int = DEFAULT_ROW_LIMIT, h2_indexes: bool = False):
         self.dialect = dialect
         self.registry = registry
         self.key_hints = key_hints
@@ -154,6 +154,7 @@ class StatementConverter:
         self.expected_rows = expected_rows or {}  # table -> (rows, rows per key), for cost estimates
         self.isolation = isolation  # ScalarDB Consensus Commit isolation level the estimates assume
         self.row_limit = row_limit
+        self.h2_indexes = h2_indexes  # plans ask the runtime to build H2 indexes (joins over large fetches)
         self.issues: list[Issue] = []
 
     # -- issue helpers ------------------------------------------------------------------------------
@@ -251,8 +252,8 @@ class StatementConverter:
         codes = {i.code for i in res.issues if i.severity == "ERROR"}
         try:
             fresh = sqlglot.parse_one(src, read=self.dialect)  # the converter mutated the first AST
-            plan = Decomposer(self.dialect, self.registry, row_limit=self.row_limit,
-                              storage=self.storage).decompose(fresh, src.strip(), codes)
+            plan = Decomposer(self.dialect, self.registry, row_limit=self.row_limit, storage=self.storage,
+                              h2_indexes=self.h2_indexes).decompose(fresh, src.strip(), codes)
         except PlanBlocked as e:
             res.issues.extend(Issue("ERROR", code, msg) for code, msg in e.problems)
             return
@@ -264,7 +265,8 @@ class StatementConverter:
         for f in plan.fetch:
             res.issues.append(Issue("INFO", "PLAN_FETCH", f"{f.access_path}: {f.scalardb_sql}"))
         res.issues.append(Issue("INFO", "PLAN_RESIDUAL", f"H2 {plan.residual['java']['mode']} mode runs the original SQL "
-                                                        f"(pattern {plan.pattern})"))
+                                                        f"(pattern {plan.pattern}, H2 indexes "
+                                                        f"{'on' if self.h2_indexes else 'off'})"))
         for u in plan.unresolved:
             res.issues.append(Issue("WARN", "PLAN_UNRESOLVED", u))
         if plan.guardrails["requires_cross_partition_scan"]:
@@ -1147,13 +1149,15 @@ def convert_script(text: str, dialect: str, registry: SchemaRegistry | None = No
                    key_hints: dict[str, tuple[list[str], list[str]]] | None = None,
                    decompose: bool = True, storage: str = "jdbc",
                    expected_rows: dict[str, tuple[int, int | None]] | None = None, isolation: str = "SERIALIZABLE",
-                   row_limit: int = DEFAULT_ROW_LIMIT) -> tuple[list[Result], SchemaRegistry]:
+                   row_limit: int = DEFAULT_ROW_LIMIT, h2_indexes: bool = False) -> tuple[list[Result], SchemaRegistry]:
     """storage: the storage behind ScalarDB ("jdbc", or a non-JDBC one such as "cassandra"); it decides whether a
     cross-partition ORDER BY can be pushed down and whether a key IN-list is worth splitting.
-    expected_rows / isolation / row_limit only feed the cost estimates (appside.estimate_cost)."""
+    expected_rows / isolation / row_limit only feed the cost estimates (appside.estimate_cost).
+    h2_indexes: plans tell the runtime to index the fetched tables in H2 (for batch jobs joining large fetches)."""
     registry = registry or SchemaRegistry()
     conv = StatementConverter(dialect, registry, key_hints or {}, decompose=decompose, storage=storage,
-                              expected_rows=expected_rows, isolation=isolation, row_limit=row_limit)
+                              expected_rows=expected_rows, isolation=isolation, row_limit=row_limit,
+                              h2_indexes=h2_indexes)
     results = []
     for i, stmt in enumerate(_split_statements(text, dialect), start=1):
         r = conv.convert(stmt)
