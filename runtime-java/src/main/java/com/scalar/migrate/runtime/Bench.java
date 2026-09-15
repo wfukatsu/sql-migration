@@ -9,6 +9,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,7 +45,8 @@ public class Bench {
     int iterations = num(spec.get("iterations"), 20);
     int warmup = num(spec.get("warmup"), 3);
     int verifyRows = num(spec.get("verify_rows"), 200);
-    Map<String, Object> ora = (Map<String, Object>) spec.get("oracle");
+    // "source" is any JDBC source database (Oracle / PostgreSQL / MySQL); "oracle" is the older name of the same key
+    Map<String, Object> ora = (Map<String, Object>) (spec.containsKey("source") ? spec.get("source") : spec.get("oracle"));
     String sqlProps = (String) spec.get("scalardb_sql_properties");
     String coreProps = (String) spec.get("core_properties");
 
@@ -65,12 +67,14 @@ public class Bench {
         boolean write = Boolean.TRUE.equals(q.get("write"));
         System.err.println("bench " + id + " ...");
         Object base = q.get("iterate_base");
+        Reset resetSource = resetWith(oracle, (List<String>) q.get("reset_source"));
+        Reset resetScalar = resetWith(scalar, (List<String>) q.get("reset_scalardb"));
         rec.put("oracle", measure(() -> new Exec() {
           public Map<String, Object> call(int i) throws Exception {
             return write ? jdbcUpdate(oracle, iterate((String) q.get("oracle_sql"), i, base))
                          : jdbcQuery(oracle, iterate((String) q.get("oracle_sql"), i, base), verifyRows);
           }
-        }, iterations, warmup));
+        }, iterations, warmup, resetSource));
 
         Map<String, Object> scalarResult;
         if ("plan".equals(q.get("path"))) {
@@ -96,7 +100,7 @@ public class Bench {
               return write ? jdbcUpdate(scalar, iterate((String) q.get("scalardb_sql"), i, base))
                            : jdbcQuery(scalar, iterate((String) q.get("scalardb_sql"), i, base), verifyRows);
             }
-          }, iterations, warmup);
+          }, iterations, warmup, resetScalar);
         }
         rec.put("scalardb", scalarResult);
         out.add(rec);
@@ -112,15 +116,39 @@ public class Bench {
 
   interface ExecFactory { Exec get(); }
 
-  /** Run warmup + measured iterations, collecting per-iteration wall-clock milliseconds and the last result. */
+  /** Restores the data set before an iteration (untimed), so that a write applies to the same state every time. */
+  interface Reset { void run() throws Exception; }
+
+  static Reset resetWith(Connection c, List<String> statements) {
+    if (statements == null || statements.isEmpty()) return null;
+    return () -> {
+      try (Statement st = c.createStatement()) {
+        for (String sql : statements) st.execute(sql);
+        c.commit();
+      } catch (Exception e) {
+        c.rollback();
+        throw e;
+      }
+    };
+  }
+
   static Map<String, Object> measure(ExecFactory factory, int iterations, int warmup) {
+    return measure(factory, iterations, warmup, null);
+  }
+
+  /** Run warmup + measured iterations, collecting per-iteration wall-clock milliseconds and the last result. */
+  static Map<String, Object> measure(ExecFactory factory, int iterations, int warmup, Reset reset) {
     Exec exec = factory.get();
     Map<String, Object> res = new LinkedHashMap<>();
     List<Double> ms = new ArrayList<>();
     Map<String, Object> last = null;
     try {
-      for (int i = 0; i < warmup; i++) exec.call(i);
+      for (int i = 0; i < warmup; i++) {
+        if (reset != null) reset.run();
+        exec.call(i);
+      }
       for (int i = 0; i < iterations; i++) {
+        if (reset != null) reset.run();
         long t0 = System.nanoTime();
         last = exec.call(warmup + i);
         ms.add((System.nanoTime() - t0) / 1_000_000.0);
