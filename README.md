@@ -71,7 +71,7 @@ python3 -m venv .venv
 [  4] ERROR CREATE       CREATE SEQUENCE emp_seq START WITH 1
         ERROR DDL: CREATE SEQUENCE is not supported (no views, sequences, triggers, procedures in ScalarDB)
 [  8] PLANNED SELECT       SELECT e.ename, NVL(e.sal, 0) AS sal FROM emp e WHERE e.deptno IN (10,
-        ERROR PROJECTION: main query: expressions in the select list (COALESCE) -- compute them in the application
+        ERROR PROJECTION: main query: expressions in the select list (NVL(e.sal, 0)) -- compute them in the application
         INFO  PLAN_FETCH: CROSS_PARTITION: SELECT empno, ename, sal, deptno FROM emp WHERE (deptno = 10 OR deptno = 20 OR deptno = 30)
         INFO  PLAN_RESIDUAL: H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)
         WARN  PLAN_CROSS_PARTITION: a fetch needs a cross-partition scan
