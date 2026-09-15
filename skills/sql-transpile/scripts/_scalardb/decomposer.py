@@ -56,6 +56,9 @@ class FetchSpec:
     scalardb_sql: str
     access_path: str
     max_rows: int = DEFAULT_ROW_LIMIT
+    # indexes the residual engine builds on the fetched table: the primary key and the columns compared with another
+    # table's columns (joins, correlated subqueries, IN (subquery)). Without them H2 joins by nested loops.
+    index_columns: list[list[str]] = field(default_factory=list)
 
 
 @dataclass
@@ -310,6 +313,7 @@ class Decomposer:
         fetch: list[FetchSpec] = []
         full_scans: list[str] = []
         cross_partition = False
+        join_columns = self._join_columns(node, global_alias, cte_names)
         for key, spec in specs.items():
             used = columns_used.get(key, set())
             meta = self.registry.get(spec.table)
@@ -326,6 +330,7 @@ class Decomposer:
                 if missing:
                     unresolved.append(f"{spec.table}: columns {missing} not in schema")
                 spec.columns = cols
+            spec.index_columns = self._index_columns(meta, join_columns.get(key, []), spec.columns)
             spec.access_path = self._access_path(meta, spec.predicates)
             spec.max_rows = self.row_limit
             parts = [spec]
@@ -509,6 +514,49 @@ class Decomposer:
                          f"({self.storage} would scan every partition for the OR)")
             return parts
         return None
+
+    def _join_columns(self, node: exp.Expression, global_alias: dict[str, str], cte_names: set[str]) -> dict[str, list[str]]:
+        """Per base table, the columns compared with a column (join ON, correlated subqueries) or fed to / from an
+        IN (subquery). They are what the residual engine joins on."""
+        out: dict[str, list[str]] = {}
+
+        def add(scope: Scope, col: exp.Column) -> None:
+            owner = scope.owner(col)
+            table = scope.tables[owner].name.lower() if owner else global_alias.get((col.table or "").lower())
+            if table and table not in cte_names and col.name.lower() not in out.setdefault(table, []):
+                out[table].append(col.name.lower())
+
+        for sel in node.find_all(exp.Select):
+            scope = Scope(sel, self.registry)
+            for eq in sel.find_all(exp.EQ):
+                if eq.find_ancestor(exp.Select) is sel and isinstance(eq.this, exp.Column) \
+                        and isinstance(eq.expression, exp.Column):
+                    add(scope, eq.this)
+                    add(scope, eq.expression)
+            for cond in sel.find_all(exp.In):
+                query = cond.args.get("query")
+                if cond.find_ancestor(exp.Select) is not sel or query is None:
+                    continue
+                if isinstance(cond.this, exp.Column):
+                    add(scope, cond.this)
+                sub = query.this if isinstance(query, exp.Subquery) else query
+                if isinstance(sub, exp.Select) and len(sub.expressions) == 1 and isinstance(sub.expressions[0], exp.Column):
+                    add(Scope(sub, self.registry), sub.expressions[0])
+        return out
+
+    @staticmethod
+    def _index_columns(meta: TableMeta | None, joins: list[str], columns: list[str] | None) -> list[list[str]]:
+        """The primary key (when fetched) as one index, then one index per join column not already leading an index."""
+        spelled = {c.lower(): c for c in (columns or (list(meta.columns) if meta else []))}
+        out: list[list[str]] = []
+        if meta and meta.primary_key and all(c.lower() in spelled for c in meta.primary_key):
+            out.append([spelled[c.lower()] for c in meta.primary_key])
+        for c in joins:
+            if c in spelled and all(ix[0].lower() != c for ix in out):
+                out.append([spelled[c]])
+            elif not spelled and all(ix[0].lower() != c for ix in out):  # schema unknown: the runtime skips a bad index
+                out.append([c])
+        return out
 
     def _key_feeds(self, node: exp.Expression, table: str) -> list[tuple[str, str]]:
         """Joins that hand `table` its keys: `table.k = other.c` where k is its single-column partition key or an
