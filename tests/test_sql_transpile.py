@@ -32,9 +32,12 @@ def _run(code: str):
     return json.loads(p.stdout.strip().splitlines()[-1])
 
 
-def convert(sql: str, source: str = "oracle", target: str = "postgres") -> dict:
+def convert(sql: str, source: str = "oracle", target: str = "postgres", ddl: str = "",
+            case_insensitive: bool = False) -> dict:
+    """1 文を変換する。ddl を渡すと、CLI と同じくスクリプト内の CREATE TABLE を型の判定に使う。"""
     return _run(
-        f"r = generic.convert_statement({sql!r}, {source!r}, {target!r})\n"
+        f"schema = generic.schema_from_ddl([{ddl!r}], {source!r}) if {ddl!r} else None\n"
+        f"r = generic.convert_statement({sql!r}, {source!r}, {target!r}, schema, {case_insensitive!r})\n"
         "print(json.dumps({'status': r.status, 'sql': r.converted[0] if r.converted else '',"
         " 'codes': sorted({i.code for i in r.issues}), 'all_codes': [i.code for i in r.issues],"
         " 'sev': {i.code: i.severity for i in r.issues}}))")
@@ -62,6 +65,120 @@ def test_oracle_outer_join_becomes_left_join():
     assert r["status"] == "OK" and "LEFT JOIN dept AS d ON e.deptno = d.deptno" in r["sql"]
 
 
+def test_outer_join_with_marked_table_first_in_from():
+    # (+) の付いた表が FROM の先頭にあると、SQLGlot の書き換えは表が重複した SQL を作っていた
+    r = convert("SELECT d.dname, e.ename FROM dept d, emp e WHERE d.deptno(+) = e.deptno")
+    assert r["status"] == "OK" and "FROM emp AS e LEFT JOIN dept AS d ON d.deptno = e.deptno" in r["sql"]
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT * FROM a, b WHERE a.id(+) = b.id AND a.x = b.x(+)",       # 向きが混ざっている
+    "SELECT * FROM a, b, c WHERE a.id = b.id(+) AND c.id = b.id(+)",  # 1 つの表を 2 つの表に外部結合
+    "SELECT * FROM a, b WHERE a.id(+) = b.id(+)",                     # 両側に (+)
+])
+def test_outer_join_that_cannot_be_rewritten_is_error(sql):
+    r = convert(sql)
+    assert r["status"] == "ERROR" and "ORACLE_JOIN_MARK" in r["codes"]
+
+
+# ---- 前処理: 方言の差を構文木の上で埋める ---------------------------------------------------
+
+@pytest.mark.parametrize("sql,source,target,expected", [
+    # TRUNC(date, 'MM') の書式を単位名にする。MySQL では日単位の切り捨てに化けていた
+    ("SELECT TRUNC(hiredate, 'MM') FROM emp", "oracle", "postgres", "DATE_TRUNC('MONTH', hiredate)"),
+    # FROM dual を落とす。MySQL では引用符付きの表名になって失敗していた
+    ("SELECT SYSDATE FROM dual", "oracle", "mysql", "SELECT CURRENT_TIMESTAMP()"),
+    # 再帰 CTE の RECURSIVE を変換先に合わせる
+    ("WITH t (n) AS (SELECT 1 FROM dual UNION ALL SELECT n + 1 FROM t WHERE n < 3) SELECT n FROM t",
+     "oracle", "postgres", "WITH RECURSIVE t(n) AS (SELECT 1 UNION ALL"),
+    ("WITH RECURSIVE t AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM t WHERE n < 3) SELECT n FROM t",
+     "postgres", "oracle", "WITH t(n) AS (SELECT 1 AS n UNION ALL"),
+    # 日付リテラルは書式を明示した TO_DATE にする。Oracle の CAST は既定の日付書式に依存する
+    ("SELECT ename FROM emp WHERE hiredate > DATE '1981-01-01'", "postgres", "oracle",
+     "hiredate > TO_DATE('1981-01-01', 'YYYY-MM-DD')"),
+    # MySQL の DIV は切り捨て。SQLGlot の CAST は四捨五入になる
+    ("SELECT empno DIV 4 FROM emp", "mysql", "oracle", "SELECT TRUNC(empno / 4) FROM emp"),
+    # INTERVAL の月加算は ADD_MONTHS にする（複数形の単位は Oracle が拒む）
+    ("SELECT hiredate + INTERVAL '6 months' FROM emp", "postgres", "oracle", "SELECT ADD_MONTHS(hiredate, 6) FROM emp"),
+    # MySQL の DATEDIFF は Oracle に無いので日付の引き算にする
+    ("SELECT DATEDIFF(hiredate, '1981-01-01') FROM emp", "mysql", "oracle",
+     "(TRUNC(hiredate) - TO_DATE('1981-01-01', 'YYYY-MM-DD'))"),
+    # WITH ROLLUP は標準の ROLLUP にする
+    ("SELECT deptno, SUM(sal) FROM emp GROUP BY deptno WITH ROLLUP", "mysql", "postgres", "GROUP BY ROLLUP (deptno)"),
+    # MySQL と SQL Server は派生表に別名を要求する
+    ("SELECT * FROM (SELECT 1 AS a)", "postgres", "mysql", "(SELECT 1 AS a) AS subq1"),
+    # 結果を変えないヒントは外す
+    ("SELECT /*+ INDEX(emp ix) */ ename FROM emp", "oracle", "postgres", "SELECT ename FROM emp"),
+])
+def test_rewrite(sql, source, target, expected):
+    r = convert(sql, source, target)
+    assert r["status"] == "OK" and expected in r["sql"], r
+
+
+def test_distinct_on_for_oracle_uses_valid_identifiers():
+    # SQLGlot の書き換えはアンダースコアで始まる別名を作り、Oracle はそれを拒む
+    r = convert("SELECT DISTINCT ON (deptno) deptno, ename FROM emp ORDER BY deptno, sal DESC", "postgres", "oracle")
+    assert r["status"] == "OK" and "ROW_NUMBER() OVER (PARTITION BY deptno" in r["sql"]
+    assert " _" not in r["sql"] and "(_" not in r["sql"]
+
+
+@pytest.mark.parametrize("target,expected", [("oracle", 'SELECT ename, "ORDER" FROM emp'),
+                                             ("postgres", 'SELECT ename, "order" FROM emp')])
+def test_backticks_follow_target_case_folding(target, expected):
+    # バッククォートは大文字小文字の区別に意味を持たない。予約語だけ引用符を残し、変換先の畳み方にそろえる
+    assert convert("SELECT `ename`, `order` FROM `emp`", "mysql", target)["sql"] == expected
+
+
+# ---- 型に依存する意味の差: 表定義から型を付けて書き換える ------------------------------------
+
+EMP_DDL = "CREATE TABLE emp (empno INT, ename VARCHAR(10), sal DECIMAL(7,2), hiredate DATE, deptno INT)"
+
+
+@pytest.mark.parametrize("target,expected", [("oracle", "TRUNC(empno / 4)"), ("mysql", "TRUNCATE(empno / 4, 0)"),
+                                             ("duckdb", "empno // 4")])
+def test_integer_division_keeps_truncation(target, expected):
+    # PostgreSQL の整数どうしの除算は切り捨て。Oracle・MySQL・DuckDB は小数を返す
+    r = convert("SELECT empno / 4 FROM emp", "postgres", target, EMP_DDL)
+    assert r["status"] == "OK" and expected in r["sql"]
+
+
+def test_decimal_division_is_left_alone():
+    r = convert("SELECT sal / 4 FROM emp", "postgres", "oracle", EMP_DDL)
+    assert r["status"] == "OK" and r["sql"] == "SELECT sal / 4 FROM emp"
+
+
+def test_division_without_schema_warns():
+    r = convert("SELECT empno / 4 FROM emp", "postgres", "oracle")
+    assert r["status"] == "WARN" and "DIVISION" in r["codes"]
+
+
+def test_date_difference_for_mysql_becomes_datediff():
+    # MySQL で日付どうしを引いても日数にならない
+    r = convert("SELECT hiredate - DATE '1981-01-01' FROM emp", "postgres", "mysql", EMP_DDL)
+    assert r["status"] == "OK" and "DATEDIFF(hiredate, " in r["sql"]
+
+
+# ---- 変換先の能力 -----------------------------------------------------------------------
+
+def test_aggregate_filter_depends_on_target():
+    sql = "SELECT COUNT(*) FILTER (WHERE sal > 1000) FROM emp"
+    assert convert(sql, "postgres", "oracle")["status"] == "OK"
+    r = convert(sql, "postgres", "mysql")
+    assert r["status"] == "ERROR" and "AGG_FILTER" in r["codes"]
+
+
+def test_mysql_collation_warns_by_default():
+    r = convert("SELECT ename FROM emp WHERE ename LIKE 'k%'", "mysql", "postgres")
+    assert r["status"] == "WARN" and "COLLATION" in r["codes"]
+
+
+def test_mysql_collation_rewrite_is_opt_in():
+    r = convert("SELECT ename FROM emp WHERE ename LIKE 'k%' AND job = 'Clerk'", "mysql", "postgres",
+                case_insensitive=True)
+    assert r["status"] == "OK"
+    assert r["sql"] == "SELECT ename FROM emp WHERE ename ILIKE 'k%' AND LOWER(job) = LOWER('Clerk')"
+
+
 # ---- 残存構文の検出: 素の transpile が素通りさせるもの ------------------------------------
 
 SILENT = [
@@ -84,6 +201,38 @@ def test_skill_reports_it(sql, code, marker):
     assert r["status"] == "ERROR" and code in r["codes"]
 
 
+def test_simple_connect_by_to_duckdb_is_rewritten_by_sqlglot():
+    # DuckDB の生成器は単純な形を再帰 CTE に書き換え、結果が一致することを実行して確かめた
+    r = convert("SELECT ename, LEVEL FROM emp START WITH mgr IS NULL CONNECT BY PRIOR empno = mgr", "oracle", "duckdb")
+    assert r["status"] == "OK" and r["sql"].startswith("WITH RECURSIVE")
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT SYS_CONNECT_BY_PATH(ename, '/') FROM emp START WITH mgr IS NULL CONNECT BY PRIOR empno = mgr",
+    "SELECT ename FROM emp START WITH mgr IS NULL CONNECT BY NOCYCLE PRIOR empno = mgr",
+    "SELECT LEVEL FROM dual CONNECT BY LEVEL <= 3",
+])
+def test_other_connect_by_to_duckdb_is_error(sql):
+    r = convert(sql, "oracle", "duckdb")
+    assert r["status"] == "ERROR" and "CONNECT_BY" in r["codes"]
+
+
+def test_nextval_to_target_with_sequences_warns():
+    # DuckDB にも nextval はあるが、PostgreSQL の SERIAL が暗黙に作るシーケンスは DuckDB には無い
+    r = convert("SELECT nextval('emp_id_seq')", "postgres", "duckdb")
+    assert r["status"] == "WARN" and "SEQUENCE" in r["codes"]
+
+
+def test_auto_increment_to_oracle_becomes_identity():
+    r = convert("CREATE TABLE t (id INT AUTO_INCREMENT PRIMARY KEY, v INT)", "mysql", "oracle")
+    assert r["status"] == "OK" and "GENERATED BY DEFAULT AS IDENTITY" in r["sql"]
+
+
+def test_within_group_and_on_conflict_are_not_functions():
+    assert convert("SELECT STRING_AGG(ename, ',' ORDER BY ename) FROM emp", "postgres", "oracle")["status"] == "OK"
+    assert convert("INSERT INTO t (id) VALUES (1) ON CONFLICT (id) DO NOTHING", "postgres", "duckdb")["status"] == "OK"
+
+
 def test_connect_by_is_reported_once():
     # CONNECT BY / START WITH / PRIOR は同じ問題。指摘は 1 件にまとめる
     assert convert(SILENT[0][0])["all_codes"].count("CONNECT_BY") == 1
@@ -93,9 +242,22 @@ def test_keyword_inside_string_literal_is_not_flagged():
     assert convert("SELECT 'CONNECT BY ROWID' AS note FROM emp")["status"] == "OK"
 
 
-def test_create_sequence_is_error():
-    r = convert("CREATE SEQUENCE emp_seq START WITH 1")
+def test_create_sequence_is_error_only_where_there_are_no_sequences():
+    # 変換先の能力で判定する。PostgreSQL と Oracle にはシーケンスがあり、MySQL には無い
+    assert convert("CREATE SEQUENCE emp_seq START WITH 1", "postgres", "oracle")["status"] == "OK"
+    r = convert("CREATE SEQUENCE emp_seq START WITH 1", "postgres", "mysql")
     assert r["status"] == "ERROR" and "SEQUENCE" in r["codes"]
+
+
+def test_keyword_inside_comment_is_not_flagged():
+    # 以前は正規表現で文面を見ていたので、コメント中の PRIOR を CONNECT BY と誤認していた
+    r = convert("SELECT ename FROM emp -- PRIOR to 1990\nWHERE ROWNUM <= 3")
+    assert r["status"] == "OK" and "LIMIT 3" in r["sql"]
+
+
+def test_rownum_that_cannot_become_limit_is_error():
+    r = convert("SELECT ROWNUM, ename FROM emp")
+    assert r["status"] == "ERROR" and "ROWNUM" in r["codes"]
 
 
 # ---- 関数の移植性 ----------------------------------------------------------------------
@@ -113,6 +275,25 @@ def test_source_specific_function_needs_review():
 ])
 def test_rewritten_or_portable_functions_pass(sql):
     assert convert(sql)["status"] == "OK"
+
+
+def test_function_missing_from_target_catalog_warns():
+    # 変換先の組み込み関数一覧で判定する。generate_series は SQLGlot の内部名が別なので、以前は見逃していた
+    r = convert("SELECT generate_series(1, 3)", "postgres", "oracle")
+    assert r["status"] == "WARN" and "FUNC_PORTABILITY" in r["codes"]
+
+
+def test_catalog_does_not_flag_table_names_or_types():
+    r = convert("INSERT INTO emp (empno, ename) VALUES (1, CAST('x' AS VARCHAR(10)))", "postgres", "mysql")
+    assert r["status"] == "OK"
+
+
+@pytest.mark.parametrize("sql", [
+    "CREATE TABLE t (id INT PRIMARY KEY, v INT, INDEX idx_v (v))",   # 索引の名前
+    "REPLACE INTO customers (id, name) VALUES (1, 'A')",              # SQLGlot が解析できない文
+])
+def test_catalog_does_not_flag_index_or_unparsed_table_names(sql):
+    assert "FUNC_PORTABILITY" not in convert(sql, "mysql", "postgres")["codes"]
 
 
 def test_same_dialect_does_not_flag_functions():
@@ -217,6 +398,20 @@ def test_cli_scalardb_target(tmp_path):
     ddl = "CREATE TABLE emp (empno NUMBER(4) PRIMARY KEY, sal NUMBER(7,2));\nSELECT empno FROM emp WHERE empno = 1;"
     p = _cli(tmp_path, ddl, "--source", "oracle", "--target", "scalardb")
     assert p.returncode == 0 and "CONVERTED=2" in p.stdout
+
+
+def test_cli_reads_types_from_create_table_in_the_script(tmp_path):
+    sql = EMP_DDL + ";\nSELECT empno / 4 FROM emp;"
+    out = tmp_path / "out"
+    p = _cli(tmp_path, sql, "--source", "postgres", "--target", "oracle", "--out-dir", str(out))
+    assert p.returncode == 0 and "TRUNC(empno / 4)" in (out / "in.oracle.sql").read_text(encoding="utf-8")
+
+
+def test_cli_mysql_case_insensitive(tmp_path):
+    out = tmp_path / "out"
+    p = _cli(tmp_path, "SELECT ename FROM emp WHERE ename LIKE 'k%';", "--source", "mysql", "--target", "postgres",
+             "--mysql-case-insensitive", "--out-dir", str(out))
+    assert p.returncode == 0 and "ILIKE 'k%'" in (out / "in.postgres.sql").read_text(encoding="utf-8")
 
 
 def test_cli_ignores_scalardb_only_options_for_other_targets(tmp_path):
