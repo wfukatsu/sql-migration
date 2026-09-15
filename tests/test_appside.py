@@ -100,6 +100,16 @@ def test_date_literals_in_a_cte_are_pushed_into_the_fetch():
     assert "APP_SEMANTICS" not in codes(r)  # H2 runs the original SQL and keeps the semantics itself
 
 
+def test_plan_lists_indexes_for_the_residual_joins():
+    q = ("SELECT c.name, COUNT(*) AS n FROM customers c JOIN orders o ON o.customer_id = c.customer_id "
+         "WHERE c.region = 'X' AND NOT EXISTS (SELECT 1 FROM orders x WHERE x.order_no = o.order_no) GROUP BY c.name")
+    r = last(ORDERS_DDL + q)
+    assert r.status == "PLANNED", r.issues
+    ix = {f["table"]: f["index_columns"] for f in r.plan["fetch"]}
+    assert ix["customers"] == [["customer_id"]]                     # primary key, also the join column
+    assert ix["orders"] == [["customer_id", "order_no"], ["order_no"]]  # key (leads with the join column) + correlation
+
+
 def test_cassandra_full_scan_suggests_fetching_by_joined_keys():
     q = "SELECT c.name, SUM(o.amount) * 2 AS s FROM customers c JOIN orders o ON o.customer_id = c.customer_id " \
         "WHERE c.region = 'X' GROUP BY c.name"
