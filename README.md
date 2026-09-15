@@ -168,10 +168,25 @@ docker run -d --name transpile-verify-mysql -e MYSQL_ROOT_PASSWORD=verify -e MYS
 .venv/bin/pip install pymysql
 .venv/bin/python difftest/transpile_verify.py                  # 9 ペア全部
 .venv/bin/python difftest/transpile_verify.py --pair oracle:postgres
+.venv/bin/python difftest/transpile_verify.py --examples-dir skills/sql-transpile/examples/dml \
+    --out-dir out/transpile-verify-dml                         # DML 中心のテスト用 SQL
 docker rm -f transpile-verify-mysql                            # 終わったら削除
 ```
 
-結果は `out/transpile-verify/report.md` に出ます。修正前後の比較は `docs/transpile-fix-research.md` の
+結果は `out/transpile-verify/report.md` に出ます。`skills/sql-transpile/examples/dml/` は INSERT・UPDATE・DELETE と
+実用的な SELECT を中心にした 3 方言共通の 51 文（注文管理の 8 表）で、各文に ScalarDB への変換結果の期待値
+（`@expect-scalardb`）を付けています。期待値は `tests/test_dml_examples.py` が確かめます。
+
+同じテスト用 SQL を ScalarDB SQL に変換し、変換元 DB に直接実行した場合と ScalarDB Cluster で実行した場合を比べる
+ベンチマークもあります（書き込みは毎回データを戻して COMMIT 込み、読み取りは 2 万注文に増やしたデータ）。
+結果は `docs/dml-benchmark-report.md`、説明資料の生成元は `docs/slides/dml-benchmark-deck.py` です。
+
+```
+for d in oracle postgres mysql; do
+  .venv/bin/python difftest/bench_dml.py --dialect $d --restart-cluster --orders 20000 --out out/dml-bench
+done
+.venv/bin/python difftest/bench_dml_report.py out/dml-bench      # 方言をまたいだ集計表
+```修正前後の比較は `docs/transpile-fix-research.md` の
 「修正後の実測」節にあります。関数一覧を作り直すときは `skills/sql-transpile/scripts/build_catalogs.py` を使います。
 
 Claude Code から使うには `ln -s "$PWD/skills/sql-transpile" ~/.claude/skills/sql-transpile` でリンクします。
