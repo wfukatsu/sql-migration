@@ -22,7 +22,9 @@ holds the rows of the dumped tables -- keep a capture of real data out of the re
   .venv/bin/python difftest/golden.py check --golden difftest/golden/area-sales \
       --impl com.scalar.migrate.examples.AreaSalesReport
 
-golden.json: {"query", "ordered", "tables": {name: [{col: value}]}, "expected": {"columns", "rows": [[value]]}}
+golden.json: {"source", "query", "ordered", "tables": {name: [{col: value}]}, "expected": {"columns", "rows": [[value]]}}
+"source" names the database the expected rows came from (GoldenCheck shows it in its summary line; the diffs say
+expected / actual, so they read the same whichever database produced the golden data).
 with Decimal -> {"$dec": "1.5"}, datetime -> {"$ts": ISO}, date -> {"$date": ISO}, NULL -> null.
 """
 
@@ -114,7 +116,7 @@ def capture(args) -> int:
     finally:
         con.close()
 
-    golden = {"query": query, "ordered": is_ordered(query), "tables": dumped,
+    golden = {"source": "oracle", "query": query, "ordered": is_ordered(query), "tables": dumped,
               "expected": {"columns": columns, "rows": rows}}
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
