@@ -7,6 +7,15 @@ Oracle's behaviour once and checks the Java implementation against it afterwards
   capture : run setup + query on Oracle, write the input tables and the result to <out>/golden.json   (needs Oracle)
   check   : run the Java implementation on golden.json with GoldenCheck                               (JVM only)
 
+The Oracle connection comes from a profile (difftest/sources.py; default difftest/conf/sources/oracle-local.json).
+capture runs the setup script, so it only accepts a disposable database. To take the golden data from an existing
+database that is not disposable (e.g. the production source, read once), pass --no-setup --allow-production with a
+profile whose values come from environment variables; the capture then runs in a read-only transaction. golden.json
+holds the rows of the dumped tables -- keep a capture of real data out of the repository.
+
+  .venv/bin/python difftest/golden.py capture --profile oracle=difftest/conf/sources/oracle-production.example.json \
+      --no-setup --allow-production --query query.sql --tables organization_master,sales_transactions --out /secure/dir
+
   .venv/bin/python difftest/golden.py capture --setup difftest/golden/area-sales/setup.sql \
       --query difftest/golden/area-sales/query.sql --tables organization_master,sales_transactions \
       --out difftest/golden/area-sales
@@ -32,8 +41,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 LIB = ROOT / "runtime-java/build/install/residual-runner/lib"
 MAIN = "com.scalar.migrate.appside.golden.GoldenCheck"
-# same as difftest/run.py (not imported: run.py pulls in psycopg and the converter at import time)
-ORACLE = dict(user="source", password="source", dsn="localhost:1521/FREEPDB1")
+sys.path.insert(0, str(ROOT / "difftest"))
+from sources import DISPOSABLE, ProfileError, parse_profile_args, source_config  # noqa: E402
 
 
 def split_statements(text: str) -> list[str]:
@@ -69,20 +78,27 @@ def encode(v):
 def capture(args) -> int:
     import oracledb
 
+    # check the database before reading anything else, so a refused profile is reported first
+    cfg = source_config("oracle", parse_profile_args(args.profile), writes=not args.no_setup,
+                        allow_production=args.allow_production)
     oracledb.defaults.fetch_decimals = True  # NUMBER as Decimal, not float
     query = Path(args.query).read_text().strip().rstrip(";").rstrip()
     tables = [t.strip().lower() for t in args.tables.split(",") if t.strip()]
-    con = oracledb.connect(**ORACLE)
+    print(f"capture from {cfg.label()}{' (read-only, no setup)' if args.no_setup else ''}")
+    con = oracledb.connect(**cfg.oracle_kwargs())
     try:
         cur = con.cursor()
-        for stmt in split_statements(Path(args.setup).read_text()):
-            try:
-                cur.execute(stmt)
-            except oracledb.DatabaseError:
-                body = "\n".join(l for l in stmt.splitlines() if not l.strip().startswith("--")).lstrip()
-                if not body.upper().startswith("DROP"):
-                    raise
-        con.commit()
+        if args.no_setup:
+            cur.execute("SET TRANSACTION READ ONLY")  # the dumps and the query see one consistent, unmodifiable state
+        else:
+            for stmt in split_statements(Path(args.setup).read_text()):
+                try:
+                    cur.execute(stmt)
+                except oracledb.DatabaseError:
+                    body = "\n".join(l for l in stmt.splitlines() if not l.strip().startswith("--")).lstrip()
+                    if not body.upper().startswith("DROP"):
+                        raise
+            con.commit()
 
         dumped = {}
         for t in tables:
@@ -93,6 +109,8 @@ def capture(args) -> int:
         cur.execute(query)
         columns = [d[0].lower() for d in cur.description]
         rows = [[encode(v) for v in r] for r in cur.fetchall()]
+        if args.no_setup:
+            con.rollback()  # end the read-only transaction
     finally:
         con.close()
 
@@ -103,6 +121,8 @@ def capture(args) -> int:
     (out / "golden.json").write_text(json.dumps(golden, ensure_ascii=False, indent=1) + "\n")
     sizes = ", ".join(f"{t}={len(r)}" for t, r in dumped.items())
     print(f"wrote {out / 'golden.json'}: {sizes}, expected={len(rows)} rows, ordered={golden['ordered']}")
+    if cfg.environment not in DISPOSABLE:
+        print(f"note: golden.json holds rows from environment {cfg.environment!r}; do not commit it", file=sys.stderr)
     return 0
 
 
@@ -121,7 +141,13 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("capture", help="run setup + query on Oracle and write golden.json")
-    c.add_argument("--setup", required=True)
+    c.add_argument("--setup", help="script creating and filling the tables (required unless --no-setup)")
+    c.add_argument("--no-setup", action="store_true",
+                   help="read existing tables only, in a read-only transaction (no setup script is run)")
+    c.add_argument("--allow-production", action="store_true",
+                   help="with --no-setup: allow a profile whose environment is not disposable (e.g. production)")
+    c.add_argument("--profile", action="append", metavar="oracle=PATH",
+                   help="Oracle profile (difftest/sources.py); default difftest/conf/sources/oracle-local.json")
     c.add_argument("--query", required=True)
     c.add_argument("--tables", required=True, help="comma-separated tables to dump as the implementation's input")
     c.add_argument("--out", required=True, help="directory for golden.json")
@@ -130,7 +156,24 @@ def main() -> int:
     k.add_argument("--impl", required=True, help="fully qualified AppSideQuery class name")
     k.add_argument("--cp", help="extra classpath for the implementation")
     args = ap.parse_args()
-    return capture(args) if args.cmd == "capture" else check(args)
+    if args.cmd == "check":
+        return check(args)
+    if not args.no_setup and not args.setup:
+        ap.error("capture needs --setup, or --no-setup to read existing tables")
+    if args.allow_production and not args.no_setup:
+        ap.error("--allow-production is only for a read-only capture (--no-setup)")
+    try:
+        return capture(args)
+    except ProfileError as e:
+        print(f"refused: {e}", file=sys.stderr)
+        return 2
+    except Exception as e:  # noqa: BLE001
+        if args.no_setup and "ORA-01466" in str(e):
+            # a read-only transaction cannot read a table whose definition changed within the last few seconds
+            print("capture failed: ORA-01466 -- the tables were (re)created moments ago; retry in a few seconds",
+                  file=sys.stderr)
+            return 1
+        raise
 
 
 if __name__ == "__main__":

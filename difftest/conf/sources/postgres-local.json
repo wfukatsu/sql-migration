@@ -1,0 +1,10 @@
+{
+  "product": "postgresql",
+  "environment": "local",
+  "host_env": "SRC_PG_HOST",
+  "port_env": "SRC_PG_PORT",
+  "user_env": "SRC_PG_USER",
+  "password_env": "SRC_PG_PASSWORD",
+  "database_env": "SRC_PG_DB",
+  "local_defaults": {"host": "localhost", "port": 15432, "user": "postgres", "password": "postgres", "database": "source"}
+}

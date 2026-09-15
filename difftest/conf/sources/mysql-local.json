@@ -1,0 +1,10 @@
+{
+  "product": "mysql",
+  "environment": "local",
+  "host_env": "SRC_MYSQL_HOST",
+  "port_env": "SRC_MYSQL_PORT",
+  "user_env": "SRC_MYSQL_USER",
+  "password_env": "SRC_MYSQL_PASSWORD",
+  "database_env": "SRC_MYSQL_DB",
+  "local_defaults": {"host": "127.0.0.1", "port": 13306, "user": "root", "password": "verify", "database": "verify"}
+}

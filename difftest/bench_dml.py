@@ -37,7 +37,8 @@ from scalardb_migrate.cli import render_markdown  # noqa: E402
 from scalardb_migrate.converter import _split_statements, convert_script  # noqa: E402
 from backends import BACKENDS, schema_loader  # noqa: E402
 from bench import compare_samples, stats, strip_comments  # noqa: E402
-from run import ORACLE, RUNNER, sh  # noqa: E402
+from run import RUNNER, sh  # noqa: E402
+from sources import PROFILES, ProfileError, jdbc_spec, parse_profile_args, source_config  # noqa: E402
 
 logging.getLogger("sqlglot").setLevel(logging.ERROR)
 DML = ROOT / "skills/sql-transpile/examples/dml"
@@ -46,13 +47,6 @@ WORK = ROOT / "difftest/work/dml-bench"
 READ_KINDS = ("SELECT", "UNION", "INTERSECT", "EXCEPT")
 PG_SCHEMA = "dml_bench"
 
-JDBC = {
-    "oracle": {"url": "jdbc:oracle:thin:@//localhost:1521/FREEPDB1", "user": ORACLE["user"], "password": ORACLE["password"]},
-    "postgres": {"url": f"jdbc:postgresql://localhost:15432/source?currentSchema={PG_SCHEMA}", "user": "postgres",
-                 "password": "postgres"},
-    "mysql": {"url": "jdbc:mysql://127.0.0.1:13306/verify?useSSL=false&allowPublicKeyRetrieval=true", "user": "root",
-              "password": "verify"},
-}
 
 
 # --------------------------------------------------------------------------------------------------
@@ -64,13 +58,13 @@ class Source:
         self.dialect = dialect
         if dialect == "oracle":
             import oracledb
-            self.con = oracledb.connect(**ORACLE)
+            self.con = oracledb.connect(**source_config("oracle", PROFILES).oracle_kwargs())
         elif dialect == "postgres":
             import psycopg
-            self.con = psycopg.connect("postgresql://postgres:postgres@localhost:15432/source")
+            self.con = psycopg.connect(**source_config("postgres", PROFILES).psycopg_kwargs())
         else:
             import pymysql
-            self.con = pymysql.connect(host="127.0.0.1", port=13306, user="root", password="verify", database="verify")
+            self.con = pymysql.connect(**source_config("mysql", PROFILES).pymysql_kwargs())
 
     def execute(self, sql: str) -> None:
         cur = self.con.cursor()
@@ -267,7 +261,7 @@ def build_spec(args, dialect: str, cases: list[dict], reset: dict | None) -> dic
             q["reset_source"], q["reset_scalardb"] = reset["source"], reset["scalardb"]
         queries.append(q)
     return {"iterations": args.iterations, "warmup": args.warmup, "verify_rows": args.verify_rows,
-            "source": JDBC[dialect], "scalardb_sql_properties": BACKENDS["postgres"].sql_bench,
+            "source": jdbc_spec(source_config(dialect, PROFILES), PG_SCHEMA if dialect == "postgres" else None), "scalardb_sql_properties": BACKENDS["postgres"].sql_bench,
             "core_properties": BACKENDS["postgres"].core, "h2_indexes": args.h2_indexes, "queries": queries}
 
 
@@ -293,7 +287,15 @@ def main() -> int:
     ap.add_argument("--restart-cluster", action="store_true",
                     help="restart ScalarDB Cluster first (needed when a previous run used other column types)")
     ap.add_argument("--out", default=str(ROOT / "out/dml-bench"))
+    ap.add_argument("--profile", action="append", metavar="DIALECT=PATH",
+                    help="source-database profile (difftest/sources.py); default difftest/conf/sources/<dialect>-local.json")
     args = ap.parse_args()
+    try:
+        PROFILES.update(parse_profile_args(args.profile))
+        source_config(args.dialect, PROFILES)  # refuse a non-disposable database before converting or connecting
+    except ProfileError as e:
+        print(f"refused: {e}", file=sys.stderr)
+        return 2
     dialect = args.dialect
     out = Path(args.out) / dialect
     out.mkdir(parents=True, exist_ok=True)
