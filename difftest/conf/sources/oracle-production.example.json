@@ -1,0 +1,9 @@
+{
+  "product": "oracle",
+  "environment": "production",
+  "host_env": "PROD_ORACLE_HOST",
+  "port_env": "PROD_ORACLE_PORT",
+  "user_env": "PROD_ORACLE_USER",
+  "password_env": "PROD_ORACLE_PASSWORD",
+  "database_env": "PROD_ORACLE_SERVICE"
+}

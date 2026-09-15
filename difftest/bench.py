@@ -29,12 +29,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "difftest"))
 from scalardb_migrate.converter import convert_script  # noqa: E402
-from run import ORACLE, RUNNER, Source, norm, sh  # noqa: E402
+from run import RUNNER, Source, norm, sh  # noqa: E402
+from sources import PROFILES, ProfileError, jdbc_spec, parse_profile_args, source_config  # noqa: E402
 from backends import BACKENDS, schema_loader  # noqa: E402
 
 NAMESPACE = "bench"
 WORK = ROOT / "difftest/work/bench"
-ORACLE_URL = "jdbc:oracle:thin:@//localhost:1521/FREEPDB1"
 
 
 def dataset(n_emp: int) -> dict:
@@ -205,7 +205,7 @@ def build_spec(results, args) -> tuple[dict, list[dict]]:
         queries.append(entry)
         meta.append(info)
     spec = {"iterations": args.iterations, "warmup": args.warmup, "verify_rows": args.verify_rows,
-            "oracle": {"url": ORACLE_URL, "user": ORACLE["user"], "password": ORACLE["password"]},
+            "oracle": jdbc_spec(source_config("oracle", PROFILES)),
             "scalardb_sql_properties": BACKENDS[args.backend].sql_bench,
             "core_properties": BACKENDS[args.backend].core,
             "queries": queries}
@@ -264,7 +264,15 @@ def main() -> int:
     ap.add_argument("--skip-setup", action="store_true")
     ap.add_argument("--chunk", type=int, default=500, help="rows per ScalarDB load transaction")
     ap.add_argument("--out", default=str(ROOT / "out/bench"))
+    ap.add_argument("--profile", action="append", metavar="DIALECT=PATH",
+                    help="source-database profile (difftest/sources.py); default difftest/conf/sources/<dialect>-local.json")
     args = ap.parse_args()
+    try:
+        PROFILES.update(parse_profile_args(args.profile))
+        source_config("oracle", PROFILES)  # refuse a non-disposable database before converting or connecting
+    except ProfileError as e:
+        print(f"refused: {e}", file=sys.stderr)
+        return 2
 
     WORK.mkdir(parents=True, exist_ok=True)
     text = Path(args.case).read_text(encoding="utf-8")

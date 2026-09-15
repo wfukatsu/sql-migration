@@ -32,11 +32,10 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "difftest"))
 from scalardb_migrate.converter import convert_script  # noqa: E402
 from backends import BACKENDS, schema_loader  # noqa: E402
+from sources import PROFILES, ProfileError, jdbc_spec, parse_profile_args, source_config  # noqa: E402
 
 NAMESPACE = "difftest"
 RUNNER = ROOT / "runtime-java/build/install/residual-runner/bin/residual-runner"
-SOURCE_DSN = "postgresql://postgres:postgres@localhost:15432/source"
-ORACLE = dict(user="source", password="source", dsn="localhost:1521/FREEPDB1")
 
 
 class Source:
@@ -44,7 +43,9 @@ class Source:
 
     def __init__(self, dialect: str):
         self.dialect = dialect
-        self.con = psycopg.connect(SOURCE_DSN, autocommit=True) if dialect == "postgres" else oracledb.connect(**ORACLE)
+        self.config = source_config(dialect, PROFILES)
+        self.con = psycopg.connect(**self.config.psycopg_kwargs(), autocommit=True) if dialect == "postgres" \
+            else oracledb.connect(**self.config.oracle_kwargs())
 
     def execute(self, sql: str, params=None):
         cur = self.con.cursor()
@@ -153,7 +154,15 @@ def main() -> int:
                     help="storage the converter targets (default: the backend's; jdbc = conversion unaware of Cassandra)")
     ap.add_argument("--skip-setup", action="store_true", help="tables and data already loaded")
     ap.add_argument("--json-out", help="write structured per-statement results here")
+    ap.add_argument("--profile", action="append", metavar="DIALECT=PATH",
+                    help="source-database profile (difftest/sources.py); default difftest/conf/sources/<dialect>-local.json")
     args = ap.parse_args()
+    try:
+        PROFILES.update(parse_profile_args(args.profile))
+        source_config(args.dialect, PROFILES)  # refuse a non-disposable database before converting or connecting
+    except ProfileError as e:
+        print(f"refused: {e}", file=sys.stderr)
+        return 2
     records: list[dict] = []
 
     case = Path(args.case_file)
@@ -170,8 +179,8 @@ def main() -> int:
     backend = BACKENDS[args.backend]
     props = backend.core
     if not args.skip_setup:
-        print(f"== source database ({args.dialect}): DDL + data")
         src = Source(args.dialect)
+        print(f"== source database ({args.dialect}, {src.config.label()}): DDL + data")
         for r in results:
             if r.kind == "CREATE":
                 src.ddl(r.source_sql.strip())

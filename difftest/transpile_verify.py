@@ -19,7 +19,7 @@
   -- @note: 説明      レポートに出す説明
   -- @check: SELECT  DML の後に実行して結果を比べる問合せ（変換元の方言で書く）
 
-接続先（difftest の Docker Compose と同じ）:
+接続先（既定は difftest/conf/sources/<方言>-local.json。--profile 方言=パス で変える。使い捨ての DB だけ）:
   Oracle     localhost:1521/FREEPDB1   (docker compose --profile oracle up -d source-oracle)
   PostgreSQL localhost:15432/source    スキーマ transpile_verify を作り直して使う
   MySQL      localhost:13306/verify    使い捨てコンテナ (README 参照)
@@ -60,6 +60,8 @@ from _scalardb.converter import _split_statements  # noqa: E402
 logging.getLogger("sqlglot").setLevel(logging.CRITICAL)
 
 EXAMPLES = SKILL / "examples"
+from sources import PROFILES, ProfileError, jdbc_spec, parse_profile_args, source_config
+
 TARGETS = {"oracle": ["postgres", "mysql", "duckdb"],
            "postgres": ["oracle", "mysql", "duckdb"],
            "mysql": ["oracle", "postgres", "duckdb"]}
@@ -98,7 +100,7 @@ class Oracle(DB):
 
     def __init__(self):
         import oracledb
-        self.con = oracledb.connect(user="source", password="source", dsn="localhost:1521/FREEPDB1")
+        self.con = oracledb.connect(**source_config("oracle", PROFILES).oracle_kwargs())
 
     def reset(self, tables, sequences):
         cur = self.con.cursor()
@@ -121,7 +123,7 @@ class Postgres(DB):
 
     def __init__(self):
         import psycopg
-        self.con = psycopg.connect("postgresql://postgres:postgres@localhost:15432/source")
+        self.con = psycopg.connect(**source_config("postgres", PROFILES).psycopg_kwargs())
 
     def reset(self, tables, sequences):
         cur = self.con.cursor()
@@ -137,8 +139,7 @@ class MySQL(DB):
 
     def __init__(self):
         import pymysql
-        self.con = pymysql.connect(host="127.0.0.1", port=13306, user="root", password="verify",
-                                   database="verify", autocommit=False)
+        self.con = pymysql.connect(**source_config("mysql", PROFILES).pymysql_kwargs(), autocommit=False)
 
     def reset(self, tables, sequences):
         cur = self.con.cursor()
@@ -534,7 +535,16 @@ def main(argv=None) -> int:
     ap.add_argument("--out-dir", default=str(ROOT / "out" / "transpile-verify"))
     ap.add_argument("--examples-dir", default=str(EXAMPLES),
                     help="<方言>.sql を置いたテスト用 SQL のディレクトリ (例 skills/sql-transpile/examples/dml)")
+    ap.add_argument("--profile", action="append", metavar="DIALECT=PATH",
+                    help="source-database profile (difftest/sources.py); default difftest/conf/sources/<dialect>-local.json")
     args = ap.parse_args(argv)
+    try:
+        PROFILES.update(parse_profile_args(args.profile))
+        for d in PROFILES:
+            source_config(d, PROFILES)  # refuse a non-disposable database before connecting
+    except ProfileError as e:
+        print(f"refused: {e}", file=sys.stderr)
+        return 2
     EXAMPLES = Path(args.examples_dir).resolve()
 
     pairs = [(s, t) for s in TARGETS for t in TARGETS[s]]

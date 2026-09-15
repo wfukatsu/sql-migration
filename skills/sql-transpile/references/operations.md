@@ -18,6 +18,15 @@ SKILL.md の Workflow から外した、ときどきしか使わない手順と�
 
 実装クラスは `com.scalar.migrate.appside.AppSideQuery` を実装する。例は `runtime-java/src/main/java/com/scalar/migrate/examples/AreaSalesReport.java`。`capture` を代わりに実行するのは、利用者が Oracle の接続先を用意しているときだけ。
 
+接続先はプロファイル（`difftest/conf/sources/oracle-local.json`、値は環境変数）で渡す。`capture` は準備の SQL を実行するので、使い捨ての DB（`environment` が `local` / `dev` / `test` / `ci`）にしか接続しない。本番の移行元にある表から一度だけ取るときは、利用者に環境変数を設定してもらい、読み取りだけで取る。
+
+```bash
+.venv/bin/python difftest/golden.py capture --profile oracle=<プロファイル.json> --no-setup --allow-production \
+  --query <query.sql> --tables <表1>,<表2> --out <リポジトリ外の保存先>
+```
+
+本番のデータを含む golden.json はコミットしないよう伝える。
+
 ---
 
 ## 同梱コピーの鮮度を確かめる（ScalarDB を Target にしたとき）

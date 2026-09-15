@@ -1,0 +1,10 @@
+{
+  "product": "oracle",
+  "environment": "local",
+  "host_env": "SRC_ORACLE_HOST",
+  "port_env": "SRC_ORACLE_PORT",
+  "user_env": "SRC_ORACLE_USER",
+  "password_env": "SRC_ORACLE_PASSWORD",
+  "database_env": "SRC_ORACLE_SERVICE",
+  "local_defaults": {"host": "localhost", "port": 1521, "user": "source", "password": "source", "database": "FREEPDB1"}
+}
