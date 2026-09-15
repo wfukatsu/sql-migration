@@ -147,6 +147,8 @@ runtime-java/build/install/residual-runner/bin/residual-runner run --plan out/pl
 | `sql` | ScalarDB SQL を 1 文実行する |
 | `bench` | 移行元 DB と ScalarDB の応答時間を同じ JVM から測る |
 
+結果は標準出力に JSON で、ログ（ScalarDB のログを含む）は標準エラーに WARN 以上だけ出ます。詳しいログが要るときは `RESIDUAL_RUNNER_OPTS=-Dorg.slf4j.simpleLogger.defaultLogLevel=info` を付けて実行します。
+
 ### sql-transpile スキル
 
 任意の方言どうし（SQLGlot の 32 方言）または ScalarDB SQL に変換します。素の `sqlglot.transpile()` が黙って通してしまう構文（`ROWNUM`、Oracle の外部結合 `(+)`、`CONNECT BY`、`NEXTVAL` など）を直すか、理由付きで報告します。
