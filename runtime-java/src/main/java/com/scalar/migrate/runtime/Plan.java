@@ -32,6 +32,7 @@ public class Plan {
     public String engine;
     public String mode;
     public String sql;
+    public boolean build_indexes;  // build the fetches' index_columns in H2 before the query (off by default)
   }
 
   public static class Predicate {

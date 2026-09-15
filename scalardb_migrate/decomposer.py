@@ -233,11 +233,14 @@ class Scope:
 
 class Decomposer:
     def __init__(self, dialect: str, registry: SchemaRegistry, row_limit: int = DEFAULT_ROW_LIMIT,
-                 storage: str = "jdbc"):
+                 storage: str = "jdbc", h2_indexes: bool = False):
         self.dialect = dialect
         self.registry = registry
         self.row_limit = row_limit
         self.storage = storage
+        # build the fetch's index_columns in H2 before the query: worth it for joins over large fetches (batch jobs),
+        # pure overhead for small requests and single-table plans, so off unless asked for
+        self.h2_indexes = h2_indexes
 
     # -- entry point --------------------------------------------------------------------------------
     def decompose(self, node: exp.Expression, source_sql: str, error_codes: set[str]) -> Plan:
@@ -624,7 +627,7 @@ class Decomposer:
         except Exception as e:  # noqa: BLE001
             python_sql = ""
             unresolved.append(f"python: sqlite transpile failed: {e}")
-        return {"java": {"engine": "h2", "mode": H2_MODE[self.dialect], "sql": java_sql},
+        return {"java": {"engine": "h2", "mode": H2_MODE[self.dialect], "sql": java_sql, "build_indexes": self.h2_indexes},
                 "python": {"engine": "sqlite3", "sql": python_sql}}
 
     _TRUNC_UNITS = {"MM": "MONTH", "MON": "MONTH", "MONTH": "MONTH", "RM": "MONTH", "YYYY": "YEAR", "YEAR": "YEAR",
