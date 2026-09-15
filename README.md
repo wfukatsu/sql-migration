@@ -291,3 +291,22 @@ docs/                      設計・検証レポート・調査、slides/（説�
 - **ScalarDB のバックエンド DB には直接接続しません。** 取得も書き込みも、ScalarDB（SQL / JDBC または Core API）を通します
 - **パーティションをまたぐ走査は RDBMS のバックエンドでだけ使います。** Cassandra ではキーで取得し、残りはアプリ側で処理します
 - 調査用の PoC です。性能の数値は Apple M3 Pro 上の Docker（1 ノードの ScalarDB Cluster、単一クライアント）での計測です
+
+---
+
+## ライセンス
+
+[MIT License](LICENSE)（Copyright (c) 2026 Wataru Fukatsu）
+
+依存するソフトウェアは、それぞれのライセンスに従います。リポジトリには含めず、pip と Gradle が取得します。
+
+| ソフトウェア | ライセンス | 用途 |
+|---|---|---|
+| [SQLGlot](https://github.com/tobymao/sqlglot)、DuckDB、pytest | MIT | 変換ツール・テスト |
+| ScalarDB（Core）、Gson | Apache-2.0 | 実行基盤（Core API 経路） |
+| ScalarDB SQL JDBC、ScalarDB Cluster Java Client SDK | Scalar Commercial License | 実行基盤の ScalarDB SQL 経路。**ScalarDB Cluster のライセンスが要ります** |
+| H2 Database | MPL 2.0 / EPL 1.0 | 実行計画の残りの処理 |
+| PostgreSQL JDBC | BSD-2-Clause | 検証基盤 |
+| MySQL Connector/J | GPLv2 with Universal FOSS Exception | DML ベンチマークの移行元 |
+| Oracle JDBC（ojdbc11） | Oracle Free Use Terms and Conditions | ベンチマークの移行元 |
+| JUnit | EPL 2.0 | テスト |
