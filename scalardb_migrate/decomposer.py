@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import functools
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
 import sqlglot
@@ -22,6 +22,7 @@ from sqlglot import exp
 from sqlglot.optimizer.normalize import normalize
 from sqlglot.transforms import eliminate_join_marks
 
+from .appside import h2_unsupported
 from .schema import SchemaRegistry, TableMeta
 
 DEFAULT_ROW_LIMIT = 10_000
@@ -68,6 +69,8 @@ class Plan:
     guardrails: dict
     unresolved: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    # the fetches only read: run them in a read-only transaction (ScalarDB 3.16+), which skips the Coordinator write
+    transaction: dict = field(default_factory=lambda: {"read_only": True})
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -75,6 +78,28 @@ class Plan:
 
 class NotDecomposable(Exception):
     pass
+
+
+class PlanBlocked(NotDecomposable):
+    """A plan cannot run: a fetch would scan every partition on a storage not given cross-partition scans
+    (FULL_SCAN), or the residual engine lacks a construct (RESIDUAL_H2). Every problem is collected, not the first."""
+
+    def __init__(self, problems: list[tuple[str, str]]):
+        super().__init__("; ".join(m for _, m in problems))
+        self.problems = problems
+
+
+FullScanRequired = PlanBlocked
+
+
+# Storages on which ScalarDB is given cross-partition scans. Cross-partition scans are used with JDBC (RDBMS) backends
+# only: ScalarDB supports ordering there alone ("available only for JDBC databases", ScalarDB Core Configurations; on
+# Cassandra 5.0 the cluster node refuses to start with ordering enabled, DB-CORE-10128), and on non-JDBC storages a
+# cross-partition scan is not serializable even under SERIALIZABLE. On the other storages ScalarDB does key access only
+# (GET / partition SCAN / index SCAN): rows are fetched by key and filtered, sorted and aggregated in the application,
+# and a statement that has no key or index condition to fetch by cannot be served (docs/cassandra-verification-report.md).
+ORDERED_SCAN_STORAGES = {"jdbc"}
+MAX_KEY_SPLIT = 100  # an IN / OR over more keys than this stays one cross-partition fetch
 
 
 # --------------------------------------------------------------------------------------------------
@@ -123,7 +148,9 @@ def _literal_value(e: exp.Expression):
         return {"param": e.name}
     if isinstance(e, exp.Cast) and isinstance(e.this, exp.Literal):  # DATE '...' style
         return e.this.name
-    if isinstance(e, (exp.StrToDate, exp.StrToTime, exp.TsOrDsToDate)) and isinstance(e.this, exp.Literal):
+    # DATE '2026-01-01' / TIMESTAMP '...' (Oracle ANSI literals) and TO_DATE('...', fmt) with a constant
+    if isinstance(e, (exp.DateStrToDate, exp.TimeStrToTime, exp.StrToDate, exp.StrToTime, exp.TsOrDsToDate)) \
+            and isinstance(e.this, exp.Literal):
         return e.this.name
     raise NotDecomposable(f"not a literal: {e.sql()}")
 
@@ -138,6 +165,19 @@ def _sql_value(v) -> str:
     if isinstance(v, str):
         return "'" + v.replace("'", "''") + "'"
     return str(v)
+
+
+def _fit_temporal(p: Predicate, types: dict[str, str]) -> Predicate:
+    """A date-only literal compared with a TIMESTAMP column gets a midnight time: ScalarDB parses TIMESTAMP literals
+    as 'YYYY-MM-DD HH:MM:SS[.FFF]'."""
+    ty = next((t for c, t in types.items() if c.lower() == p.column.lower()), None)
+
+    def fit(v):
+        if ty == "TIMESTAMP" and isinstance(v, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
+            return v + " 00:00:00"
+        return v
+
+    return Predicate(p.column, p.op, [fit(v) for v in p.value] if isinstance(p.value, list) else fit(p.value))
 
 
 def _pred_sql(p: Predicate) -> str:
@@ -189,10 +229,12 @@ class Scope:
 
 
 class Decomposer:
-    def __init__(self, dialect: str, registry: SchemaRegistry, row_limit: int = DEFAULT_ROW_LIMIT):
+    def __init__(self, dialect: str, registry: SchemaRegistry, row_limit: int = DEFAULT_ROW_LIMIT,
+                 storage: str = "jdbc"):
         self.dialect = dialect
         self.registry = registry
         self.row_limit = row_limit
+        self.storage = storage
 
     # -- entry point --------------------------------------------------------------------------------
     def decompose(self, node: exp.Expression, source_sql: str, error_codes: set[str]) -> Plan:
@@ -202,6 +244,8 @@ class Decomposer:
             break
         unresolved: list[str] = []
         notes: list[str] = []
+        problems = [("RESIDUAL_H2", f"the H2 residual engine cannot run {what}; implement this part in the application")
+                    for what in h2_unsupported(node)]
         self._rewritten = False
         for c in node.find_all(exp.Column):
             if c.name.upper() in ("ROWID", "ROWSCN", "ORA_ROWSCN"):
@@ -264,6 +308,7 @@ class Decomposer:
                             columns_used[t.name.lower()].add("*")
         # build fetch specs
         fetch: list[FetchSpec] = []
+        full_scans: list[str] = []
         cross_partition = False
         for key, spec in specs.items():
             used = columns_used.get(key, set())
@@ -282,11 +327,35 @@ class Decomposer:
                     unresolved.append(f"{spec.table}: columns {missing} not in schema")
                 spec.columns = cols
             spec.access_path = self._access_path(meta, spec.predicates)
-            cross_partition |= spec.access_path == "CROSS_PARTITION"
             spec.max_rows = self.row_limit
-            spec.scalardb_sql = self._fetch_sql(spec)
-            fetch.append(spec)
-        # merge duplicate fetches of the same table (same alias in different scopes)
+            parts = [spec]
+            if spec.access_path == "CROSS_PARTITION" and self.storage not in ORDERED_SCAN_STORAGES:
+                parts = self._split_key_or(spec, meta, notes) or parts
+            for part in parts:
+                if self.storage not in ORDERED_SCAN_STORAGES and part.access_path in ("CROSS_PARTITION", "UNKNOWN"):
+                    full_scans.append(part.table)
+                    break
+                cross_partition |= part.access_path == "CROSS_PARTITION"
+                part.scalardb_sql = self._fetch_sql(part)
+                fetch.append(part)
+        blocked = {t.lower() for t in full_scans}
+        for table in full_scans:
+            feeds = self._key_feeds(node, table)
+            usable = [f for t2, f in feeds if t2 not in blocked]
+            stuck = sorted({t2 for t2, _ in feeds if t2 in blocked})
+            if usable:
+                advice = f"fetch by key instead: {'; '.join(usable)}"
+            elif stuck:
+                advice = (f"its keys come from {', '.join(stuck)}, which cannot be fetched by key either: start from key "
+                          f"values the application already holds (for example a list kept in a table keyed by a known "
+                          f"value), keep a summary table, or run the query in ScalarDB Analytics")
+            else:
+                advice = "add a key or index, keep a summary table, or run the query in ScalarDB Analytics"
+            problems.append(("FULL_SCAN", f"{table}: no key or index condition to fetch by; a scan of every partition is "
+                                          f"not used on {self.storage} (cross-partition scans are for JDBC backends only) "
+                                          f"-- {advice}"))
+        if problems:
+            raise PlanBlocked(problems)
         residual = self._residual(node, source_sql, unresolved, notes)
         pattern = self._pattern(error_codes, node)
         return Plan(pattern=pattern, source_dialect=self.dialect, source_sql=source_sql, fetch=fetch,
@@ -410,11 +479,88 @@ class Decomposer:
             return "INDEX_SCAN"
         return "CROSS_PARTITION"
 
+    def _split_key_or(self, spec: FetchSpec, meta: TableMeta | None, notes: list[str]) -> list[FetchSpec] | None:
+        """`key IN (v1, v2, ...)` on a single-column partition key or an indexed column: one fetch per value.
+
+        On a non-JDBC storage ScalarDB runs such an OR as a scan over every partition with a filter; one partition
+        (or index) scan per value reads only the matching rows. The fetches go into the same H2 table, and the
+        residual SQL still applies the original predicate."""
+        if meta is None:
+            return None
+        pkey = [c.lower() for c in meta.partition_key]
+        keyish = {c.lower() for c in meta.secondary_indexes} | ({pkey[0]} if len(pkey) == 1 else set())
+        for i, g in enumerate(spec.predicates):
+            if not (isinstance(g, list) and all(isinstance(p, Predicate) and p.op == "=" for p in g)):
+                continue
+            cols = {p.column.lower() for p in g}
+            values = list(dict.fromkeys(repr(p.value) for p in g))
+            if len(cols) != 1 or next(iter(cols)) not in keyish or not 1 < len(values) <= MAX_KEY_SPLIT:
+                continue
+            rest = spec.predicates[:i] + spec.predicates[i + 1:]
+            parts, seen = [], set()
+            for p in g:
+                if repr(p.value) in seen:
+                    continue
+                seen.add(repr(p.value))
+                part = replace(spec, predicates=[p] + rest)
+                part.access_path = self._access_path(meta, part.predicates)
+                parts.append(part)
+            notes.append(f"{spec.table}: OR over {g[0].column} split into {len(parts)} {parts[0].access_path} fetches "
+                         f"({self.storage} would scan every partition for the OR)")
+            return parts
+        return None
+
+    def _key_feeds(self, node: exp.Expression, table: str) -> list[tuple[str, str]]:
+        """Joins that hand `table` its keys: `table.k = other.c` where k is its single-column partition key or an
+        indexed column, as (other table, advice). Columns of a CTE are traced back to the base-table column they select."""
+        meta = self.registry.get(table)
+        if meta is None:
+            return []
+        pkey = [c.lower() for c in meta.partition_key]
+        keyish = {c.lower() for c in meta.secondary_indexes} | ({pkey[0]} if len(pkey) == 1 else set())
+        feeds = []
+        for sel in node.find_all(exp.Select):
+            scope = Scope(sel, self.registry)
+            conds = [j.args["on"] for j in sel.args.get("joins") or [] if j.args.get("on")]
+            if sel.args.get("where"):
+                conds.append(sel.args["where"].this)
+            for cond in conds:
+                for leaf in _flatten(cond, exp.And):
+                    leaf = _unparen(leaf)
+                    if not (isinstance(leaf, exp.EQ) and isinstance(leaf.this, exp.Column)
+                            and isinstance(leaf.expression, exp.Column)):
+                        continue
+                    a, b = self._trace(node, scope, leaf.this), self._trace(node, scope, leaf.expression)
+                    for (t1, c1), (t2, c2) in ((a, b), (b, a)):
+                        if t1 == table.lower() and c1 in keyish and t2 and t2 != t1:
+                            path = "partition scan" if c1 in pkey else "index scan"
+                            feeds.append((t2, f"read {t2} first, then {table} with one {path} per {t2}.{c2} value "
+                                              f"(WHERE {c1} = ?)"))
+        return list(dict.fromkeys(feeds))
+
+    def _trace(self, node: exp.Expression, scope: Scope, col: exp.Column, depth: int = 0) -> tuple[str | None, str]:
+        """(base table, column) a column comes from, following CTE select lists."""
+        owner = scope.owner(col)
+        if owner is None or depth > 5:
+            return None, col.name.lower()
+        name = scope.tables[owner].name.lower()
+        cte = next((c for c in node.find_all(exp.CTE) if c.alias.lower() == name), None)
+        if cte is None:
+            return name, col.name.lower()
+        if isinstance(cte.this, exp.Select):
+            for p in cte.this.expressions:
+                inner = p.this if isinstance(p, exp.Alias) else p
+                if p.alias_or_name.lower() == col.name.lower() and isinstance(inner, exp.Column):
+                    return self._trace(node, Scope(cte.this, self.registry), inner, depth + 1)
+        return None, col.name.lower()
+
     @staticmethod
     def _fetch_sql(spec: FetchSpec) -> str:
         cols = ", ".join(spec.columns) if spec.columns else "*"
         name = f"{spec.namespace}.{spec.table}" if spec.namespace else spec.table
-        where = " AND ".join(Decomposer._group_sql(g) for g in spec.predicates)
+        where = " AND ".join(Decomposer._group_sql(
+            _fit_temporal(g, spec.column_types) if isinstance(g, Predicate)
+            else [_fit_temporal(p, spec.column_types) for p in g]) for g in spec.predicates)
         return f"SELECT {cols} FROM {name}" + (f" WHERE {where}" if where else "")
 
     # -- residual -----------------------------------------------------------------------------------
@@ -521,7 +667,8 @@ class Decomposer:
     def _pattern(codes: set[str], node: exp.Expression) -> str:
         order = [("PROJECTION", "P1"), ("PRED", "P2"), ("COL_COL", "P2"), ("DISTINCT", "P3"), ("AGG_DISTINCT", "P3"),
                  ("OFFSET", "P4"), ("SUBQUERY", "P5"), ("CTE", "P6"), ("SET_OP", "P6"), ("AGG", "P7"),
-                 ("JOIN_KEY", "P8"), ("JOIN", "P8"), ("JOIN_ON", "P8"), ("JOIN_SCOPE", "P8"), ("ORACLE_JOIN_MARK", "P8")]
+                 ("JOIN_KEY", "P8"), ("JOIN", "P8"), ("JOIN_ON", "P8"), ("JOIN_SCOPE", "P8"), ("ORACLE_JOIN_MARK", "P8"),
+                 ("ORDER_STORAGE", "P13"), ("OR_KEYS", "P14"), ("NO_CROSS_PARTITION", "P15")]
         found = [p for c, p in order if c in codes]
         return "+".join(dict.fromkeys(found)) if found else "P1"
 
