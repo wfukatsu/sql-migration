@@ -120,7 +120,8 @@ ERROR の読み取り文には、文全体（CTE の本体、サブクエリを�
 | `CTE` / `SUBQUERY` / `SET_OP` | ERROR | WITH、サブクエリ、UNION などをアプリで評価する |
 | `HIERARCHICAL` | ERROR | `START WITH` / `CONNECT BY`。アプリで木をたどるか、階層を表に事前計算する |
 | `WINDOW` / `KEEP` | ERROR | ウィンドウ関数、`KEEP (DENSE_RANK FIRST/LAST)` |
-| `PROJECTION` / `GROUP` / `PRED` / `ORDER` | ERROR | 射影・GROUP BY・WHERE・ORDER BY の式や関数。どのスコープのどの関数かを列挙する |
+| `PROJECTION` / `GROUP` / `PRED` / `ORDER` | ERROR | 射影・GROUP BY・WHERE・ORDER BY の式や関数。どのスコープかと、射影と GROUP BY は式そのもの、WHERE と ORDER BY は関数名を列挙する |
+| `AGG` | ERROR | 集約関数が対応外（COUNT / SUM / AVG / MIN / MAX 以外）か、対応する関数の引数が列でなく式（`SUM(qty * price)`） |
 | `PIVOT` / `DISTINCT` / `OFFSET` / `NOW` | ERROR | それぞれの構文。`NOW` は時刻をアプリで計算してバインドする |
 | `RESIDUAL_H2` | ERROR | 実行計画の H2 が実行できない構文（`CONNECT BY`、`ROLLUP` / `CUBE` / `GROUPING SETS`、`PIVOT` / `UNPIVOT`、`KEEP`）。計画を作らない |
 | `FULL_SCAN` | ERROR | `--storage cassandra` で、キーでもインデックスでも読めない表。すべての表を列挙し、結合相手のキーで読む方法（CTE の列もたどる）を提案する |
