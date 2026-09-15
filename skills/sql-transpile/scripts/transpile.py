@@ -2,7 +2,7 @@
 """SQL を、Source 方言から Target 方言 (SQLGlot の 32 方言) または ScalarDB SQL に変換する。
 
 SQL を一度 AST に抽象化してから Target 向けに生成し直す。素の sqlglot.transpile() が
-黙って通してしまう構文 (ROWNUM / CONNECT BY / NEXTVAL / ROWID など) を検出して報告する。
+黙って通してしまう構文 (ROWNUM / CONNECT BY / NEXTVAL / ROWID など) を直すか、検出して報告する。
 
 使い方 (リポジトリルートから):
     .venv/bin/python skills/sql-transpile/scripts/transpile.py samples/oracle.sql \\
@@ -41,8 +41,11 @@ import sqlglot  # noqa: E402
 
 import generic  # noqa: E402
 import report  # noqa: E402
+from _scalardb.appside import parse_expected_rows  # noqa: E402
 from _scalardb.converter import convert_script as scalardb_convert  # noqa: E402
 from _scalardb.schema import SchemaRegistry  # noqa: E402
+
+SCALARDB_ONLY = ("keys", "storage", "plan_dir", "expected_rows")
 
 SQLGLOT_DIALECTS = sorted(d.value for d in sqlglot.Dialects if d.value)
 TARGETS = sorted(set(SQLGLOT_DIALECTS) | {"scalardb"})
@@ -60,6 +63,11 @@ def _parse_keys(items: list[str] | None) -> dict[str, tuple[list[str], list[str]
     return out
 
 
+def _generic_schema(registry: SchemaRegistry) -> dict:
+    """Schema Loader JSON の表定義を、型の判定に使う {表名: {列名: 型}} にする。ScalarDB の型名はそのまま SQL の型名になる。"""
+    return {meta.name: dict(meta.columns) for meta in registry.tables()}
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="SQL を Source 方言から Target 方言 または ScalarDB SQL に変換する",
@@ -70,9 +78,23 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--target", required=True, choices=TARGETS, metavar="DIALECT",
                     help="変換先の方言。scalardb で ScalarDB SQL")
     ap.add_argument("--out-dir", help="出力先ディレクトリ。省略時は標準出力にサマリのみ")
-    ap.add_argument("--schema", help="[scalardb のみ] 既存テーブル定義 (Schema Loader JSON)")
+    ap.add_argument("--schema",
+                    help="既存の表定義 (ScalarDB Schema Loader JSON)。ScalarDB 向けはキー設計に、"
+                         "ほかの変換先は整数除算などの型に依存する書き換えに使う")
     ap.add_argument("--keys", action="append",
                     help="[scalardb のみ] キー指定 table=p1,p2/c1,c2 (パーティション/クラスタリング)")
+    ap.add_argument("--mysql-case-insensitive", action="store_true",
+                    help="MySQL の大文字小文字を区別しない文字列比較を、変換先でも区別しない形に書き換える。"
+                         "索引が使われなくなることがある")
+    ap.add_argument("--storage", default="jdbc", choices=["jdbc", "cassandra"],
+                    help="[scalardb のみ] ScalarDB の背後のストレージ。cassandra ではクロスパーティションスキャンを使わない前提で判定する")
+    ap.add_argument("--plan-dir",
+                    help="[scalardb のみ] 変換できない読み取り文を実行計画（ScalarDB から取得し、残りを H2 で実行）に分解し、"
+                         "計画の JSON をここに書く")
+    ap.add_argument("--expected-rows", action="append", metavar="TABLE=N[:PER_KEY]",
+                    help="[scalardb のみ] 表の行数（: の後にキーあたりの行数）。取得コストの見積もりに使う")
+    ap.add_argument("--isolation", default="SERIALIZABLE", choices=["SERIALIZABLE", "SNAPSHOT", "READ_COMMITTED"],
+                    help="[scalardb のみ] 見積もりの前提にする分離レベル。SERIALIZABLE はコミット時にスキャンを読み直す")
     args = ap.parse_args(argv)
 
     path = Path(args.file)
@@ -84,17 +106,24 @@ def main(argv: list[str] | None = None) -> int:
     # SQLGlot の「未対応」警告は Issue として回収済みなので、標準エラーの重複表示を抑える
     logging.getLogger("sqlglot").setLevel(logging.ERROR)
 
+    registry = SchemaRegistry.from_schema_loader_json(args.schema) if args.schema else SchemaRegistry()
     if args.target == "scalardb":
         if args.source not in SCALARDB_SOURCES:
             print(f"注意: ScalarDB の型対応表は {', '.join(sorted(SCALARDB_SOURCES))} 向けに作り込まれています。"
                   f"{args.source} では型変換の精度が落ちることがあります。", file=sys.stderr)
-        registry = SchemaRegistry.from_schema_loader_json(args.schema) if args.schema else SchemaRegistry()
-        # 出力範囲は変換 + 診断レポート。実行計画への分解は行わない
-        results, _ = scalardb_convert(text, args.source, registry, _parse_keys(args.keys), decompose=False)
+        if args.mysql_case_insensitive:
+            print("注意: --mysql-case-insensitive は ScalarDB 向けには効きません。無視します。", file=sys.stderr)
+        # 実行計画への分解は --plan-dir を指定したときだけ行う
+        results, _ = scalardb_convert(text, args.source, registry, _parse_keys(args.keys), decompose=bool(args.plan_dir),
+                                      storage=args.storage, expected_rows=parse_expected_rows(args.expected_rows),
+                                      isolation=args.isolation)
     else:
-        if args.schema or args.keys:
-            print("注意: --schema / --keys は --target scalardb のときだけ有効です。無視します。", file=sys.stderr)
-        results = generic.convert_script(text, args.source, args.target)
+        for name in SCALARDB_ONLY:
+            if getattr(args, name) not in (None, "jdbc"):
+                print(f"注意: --{name.replace('_', '-')} は --target scalardb のときだけ有効です。無視します。", file=sys.stderr)
+        results = generic.convert_script(text, args.source, args.target,
+                                         schema=_generic_schema(registry) if args.schema else None,
+                                         case_insensitive=args.mysql_case_insensitive)
 
     for r in results:
         head = r.source_sql.splitlines()[0][:66] if r.source_sql else ""
@@ -104,12 +133,16 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"        {i.severity:<5} {i.code}: {i.message}")
 
     s = report.summarize(results)
-    print(f"\n{args.source} → {args.target}: {s['total']} 文 / OK {s['ok']} / WARN {s['warn']} / ERROR {s['error']}")
+    planned = f" / PLANNED {s['planned']}" if s["planned"] else ""
+    print(f"\n{args.source} → {args.target}: {s['total']} 文 / OK {s['ok']} / WARN {s['warn']}{planned} / ERROR {s['error']}")
     print(f"変換率 {s['rate']}% ({s['converted']}/{s['total']})")
 
     if args.out_dir:
         for f in report.write_outputs(results, Path(args.out_dir), path.stem, args.source, args.target, str(path)):
             print(f"  出力: {f}")
+    if args.target == "scalardb" and args.plan_dir:
+        for f in report.write_plans(results, Path(args.plan_dir), path.stem):
+            print(f"  計画: {f}")
 
     print(f"TOTAL={s['total']}")
     print(f"CONVERTED={s['converted']}")

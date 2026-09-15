@@ -31,7 +31,7 @@ REPO_ROOT = SKILL_DIR.parent.parent
 UPSTREAM = REPO_ROOT / "scalardb_migrate"
 VENDORED = SKILL_DIR / "scripts" / "_scalardb"
 
-MODULES = ("__init__.py", "converter.py", "decomposer.py", "dialect.py", "schema.py", "types.py")
+MODULES = ("__init__.py", "appside.py", "converter.py", "decomposer.py", "dialect.py", "schema.py", "types.py")
 
 
 def digest(path: Path) -> str | None:

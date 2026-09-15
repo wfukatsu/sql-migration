@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
+from .appside import group_issues, parse_expected_rows
 from .converter import convert_script
+from .decomposer import DEFAULT_ROW_LIMIT
 from .schema import SchemaRegistry
+
+# reported in the application-side section instead of the per-statement table
+GROUPED_CODES = {"APP_SEMANTICS", "DESIGN", "COST", "ROW_LIMIT", "COST_DEADLINE", "CONFIG"}
 
 
 def _parse_keys(items: list[str]) -> dict[str, tuple[list[str], list[str]]]:
@@ -38,30 +44,55 @@ def render_markdown(results, dialect: str, source: str) -> str:
         src = src[:90] + ("…" if len(src) > 90 else "")
         out = "; ".join(r.converted).replace("\n", " ").replace("|", "\\|")
         out = out[:90] + ("…" if len(out) > 90 else "")
-        iss = "<br>".join(f"**{i.severity}** {i.code}: {i.message}".replace("|", "\\|") for i in r.issues)
+        iss = "<br>".join(f"**{i.severity}** {i.code}: {i.message}".replace("|", "\\|")
+                          for i in r.issues if i.code not in GROUPED_CODES)
         lines.append(f"| {r.index} | {r.kind} | {icon[r.status]} {r.status} | `{src}` | `{out}` | {iss} |")
     code_counts = Counter((i.severity, i.code) for r in results for i in r.issues)
     lines += ["", "## Issue summary", "", "| severity | code | count |", "|---|---|---|"]
     for (sev, code), n in sorted(code_counts.items(), key=lambda kv: (-{'ERROR': 2, 'WARN': 1, 'INFO': 0}[kv[0][0]], -kv[1])):
         lines.append(f"| {sev} | {code} | {n} |")
+    sections = (("Move to the application", "app_side"), ("Semantics the application must keep", "semantics"),
+                ("Design", "design"), ("Read cost", "cost"), ("Settings", "config"))
+    work = [(r, group_issues(r.issues)) for r in results]
+    work = [(r, g) for r, g in work if r.status in ("ERROR", "PLANNED") or g["cost"]]
+    if work:
+        lines += ["", "## Application-side work", ""]
+        for r, g in work:
+            lines += [f"### #{r.index} {r.status}: `{r.source_sql.splitlines()[0][:80]}`", ""]
+            if r.status == "PLANNED":
+                lines += ["The plan fetches through ScalarDB and runs the original SQL in H2.", ""]
+            for title, key in sections:
+                if g[key]:
+                    lines += [f"**{title}**", ""] + [f"- {i.code}: {i.message}" for i in g[key]] + [""]
     return "\n".join(lines) + "\n"
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Analyse and convert SQL to ScalarDB SQL (PoC)")
     ap.add_argument("file")
-    ap.add_argument("--dialect", required=True, choices=["oracle", "postgres", "mysql"])
+    ap.add_argument("--dialect", "--source", dest="dialect", required=True, choices=["oracle", "postgres", "mysql"],
+                    help="source dialect (--source is accepted, as in skills/sql-transpile/scripts/transpile.py)")
     ap.add_argument("--schema", help="ScalarDB Schema Loader JSON with existing table definitions")
     ap.add_argument("--keys", action="append", help="partition/clustering key hint: table=p1,p2/c1,c2")
     ap.add_argument("--out-dir", default=None, help="write <name>.scalardb.sql, <name>.report.md, "
                                                      "<name>.report.json, <name>.schema.json here")
     ap.add_argument("--plan-dir", default=None, help="write one <name>.<n>.plan.json per PLANNED statement here")
     ap.add_argument("--no-plan", action="store_true", help="do not build app-side plans for unconvertible SELECTs")
+    ap.add_argument("--storage", default="jdbc", choices=["jdbc", "cassandra"],
+                    help="storage behind ScalarDB: on cassandra, cross-partition ORDER BY and key IN-lists are planned")
+    ap.add_argument("--expected-rows", action="append", metavar="TABLE=N[:PER_KEY]",
+                    help="rows in a table (and rows per partition / index key) for read-cost estimates")
+    ap.add_argument("--isolation", default="SERIALIZABLE", choices=["SERIALIZABLE", "SNAPSHOT", "READ_COMMITTED"],
+                    help="Consensus Commit isolation level the estimates assume (SERIALIZABLE re-reads scans at commit)")
+    ap.add_argument("--row-limit", type=int, default=DEFAULT_ROW_LIMIT, help="plan guardrail: max rows fetched per table")
     args = ap.parse_args(argv)
+    logging.getLogger("sqlglot").setLevel(logging.ERROR)  # unsupported-argument warnings are reported as issues
 
     text = Path(args.file).read_text(encoding="utf-8")
     registry = SchemaRegistry.from_schema_loader_json(args.schema) if args.schema else SchemaRegistry()
-    results, registry = convert_script(text, args.dialect, registry, _parse_keys(args.keys), decompose=not args.no_plan)
+    results, registry = convert_script(text, args.dialect, registry, _parse_keys(args.keys), decompose=not args.no_plan,
+                                       storage=args.storage, expected_rows=parse_expected_rows(args.expected_rows),
+                                       isolation=args.isolation, row_limit=args.row_limit)
 
     for r in results:
         print(f"[{r.index:>3}] {r.status:<5} {r.kind:<12} {r.source_sql.splitlines()[0][:70]}")
