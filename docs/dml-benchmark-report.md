@@ -141,7 +141,7 @@ ScalarDB 側だけ、`audit_log` の採番（IDENTITY / AUTO_INCREMENT）を外�
 
 ### 3.4 H2 の索引による改善（実行計画の読み取り）
 
-実行計画に、取得する表ごとの索引の列（主キーと、結合・相関・IN 副問合せの列）を `index_columns` として出力し、`runtime-java` の `Residual` が行を入れた後、問い合わせの前に一度だけ索引を作るようにした。索引を作る時間は H2 の処理に含む。同じ条件（注文 20,008 行、ウォームアップ 3 回 + 15 回）で読み取りを測り直した。
+実行計画に、取得する表ごとの索引の列（主キーと、結合・相関・IN 副問合せの列）を `index_columns` として出力し、`runtime-java` の `Residual` が行を入れた後、問い合わせの前に一度だけ索引を作るようにした。索引を作るかはオプションで、既定はオフ（変換時の `--h2-indexes` で計画に `build_indexes: true` を入れるか、実行時に `residual-runner run --h2-indexes` / `bench_dml.py --h2-indexes` を指定する）。1 表だけの計画や小さな要求では構築の分だけ遅くなるため（`docs/dml-followup-research.md` 3 章）、大きな表を結合するバッチ処理などで使う。本節の「索引あり」はこのオプションを有効にした計測。索引を作る時間は H2 の処理に含む。同じ条件（注文 20,008 行、ウォームアップ 3 回 + 15 回）で読み取りを測り直した。
 
 | dialect | id | statement | before p50 (ms) | after p50 (ms) | speed-up | before fetch + H2 (ms) | after fetch + H2 (ms) |
 |---|---|---|---|---|---|---|---|
@@ -173,7 +173,7 @@ ScalarDB 側だけ、`audit_log` の採番（IDENTITY / AUTO_INCREMENT）を外�
 
 3 表の結合（S04）と、LEFT JOIN による反結合（S05）は、ScalarDB 側が 26〜28 秒かかった。内訳は、ScalarDB からの取得（約 67,000〜70,000 行）が約 2 秒、H2 での処理が 23〜26 秒。
 
-`runtime-java` の `Residual.load` は、取得した行を主キーもインデックスも無い H2 の表に入れている（`CREATE TABLE` だけ）。このため H2 の結合が入れ子ループになり、注文 2 万行 × 明細 5 万行を総当たりする。対策として、実行計画に索引の列を出力し、`Residual` が問い合わせの前に索引を作るようにした。S04・S05 の H2 の処理は 0.1〜0.2 秒になり、全体で 14〜17 倍速くなった（3.4）。
+`runtime-java` の `Residual.load` は、取得した行を主キーもインデックスも無い H2 の表に入れている（`CREATE TABLE` だけ）。このため H2 の結合が入れ子ループになり、注文 2 万行 × 明細 5 万行を総当たりする。対策として、実行計画に索引の列を出力し、`Residual` が問い合わせの前に索引を作れるようにした（オプション、既定はオフ）。S04・S05 の H2 の処理は 0.1〜0.2 秒になり、全体で 14〜17 倍速くなった（3.4）。
 
 ### 4.2 H2 の予約語を列の別名に使うと実行計画が失敗する（S11）
 
@@ -219,7 +219,7 @@ cd difftest && ./make-cluster-conf.sh \
 docker run -d --name transpile-verify-mysql -e MYSQL_ROOT_PASSWORD=verify -e MYSQL_DATABASE=verify -p 13306:3306 mysql:8.4
 (cd runtime-java && gradle installDist)
 for d in oracle postgres mysql; do
-  .venv/bin/python difftest/bench_dml.py --dialect $d --restart-cluster --orders 20000 --out out/dml-bench
+  .venv/bin/python difftest/bench_dml.py --dialect $d --restart-cluster --orders 20000 --h2-indexes --out out/dml-bench
 done
 .venv/bin/python difftest/bench_dml_report.py out/dml-bench      # 方言をまたいだ集計表
 .venv/bin/python difftest/bench_dml_compare.py out/dml-bench-before-h2index out/dml-bench  # 索引の前後の比較

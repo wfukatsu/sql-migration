@@ -13,7 +13,8 @@ import java.util.Map;
 /**
  * CLI for the residual runtime.
  *
- *   run      --plan p.json --properties scalardb.properties [--fetcher core|jdbc] [--param name=value]...
+ *   run      --plan p.json --properties scalardb.properties [--fetcher core|jdbc] [--h2-indexes] [--param name=value]...
+ *            --h2-indexes builds the plan's H2 indexes even when the plan does not ask for them (residual.java.build_indexes)
  *   load     --properties scalardb.properties --namespace ns --table t --rows rows.json      (through ScalarDB Core)
  *   validate --plan p.json                       (compile the residual SQL against empty H2 tables, no database needed)
  *   bench    --spec bench-spec.json --out result.json   (time Oracle vs ScalarDB for the same workload; see Bench)
@@ -31,6 +32,8 @@ public class Runner {
       if ("--param".equals(argv[i])) {
         String[] kv = argv[++i].split("=", 2);
         params.put(kv[0], parseParam(kv[1]));
+      } else if ("--h2-indexes".equals(argv[i])) {
+        opt.put("h2-indexes", "true");  // a flag, takes no value
       } else if (argv[i].startsWith("--")) {
         opt.put(argv[i].substring(2), argv[++i]);
       }
@@ -52,7 +55,7 @@ public class Runner {
     long t0 = System.nanoTime();
     boolean needsFetch = plan.fetch != null && !plan.fetch.isEmpty();
     try (Fetcher fetcher = !needsFetch ? null : "jdbc".equals(fetcherKind) ? new JdbcFetcher(opt.get("properties")) : new CoreFetcher(opt.get("properties"));
-         Residual h2 = new Residual(residual.mode)) {
+         Residual h2 = new Residual(residual.mode, residual.build_indexes || opt.containsKey("h2-indexes"))) {
       int fetched = 0;
       if (needsFetch) {
         fetcher.begin();

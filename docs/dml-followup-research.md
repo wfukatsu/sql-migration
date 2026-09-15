@@ -184,6 +184,10 @@ H2 のヒープ（3 表を投入した状態）:
 
 ### 3.3 対策案
 
+**実施済み: 索引の構築をオプションにした（既定はオフ）。** 変換時の `--h2-indexes`（`scalardb_migrate.cli` / `transpile.py`）で計画に `residual.java.build_indexes: true` を入れるか、実行時に `residual-runner run --h2-indexes`、ベンチマークの `"h2_indexes": true`（`bench_dml.py --h2-indexes`）を指定したときだけ作る。`index_columns` は常に計画に出す。大きな表を結合するバッチ処理で有効にし、オンライン処理の小さな要求では使わない。
+
+オプションを有効にしたときの改善案:
+
 | 対策 | 箇所 | 効果 |
 |---|---|---|
 | 結合・相関・IN 副問合せの無い計画では、主キーの索引も作らない | `decomposer._index_columns` | 1 表の文の +30〜40 ms（100 万行で +0.2 秒）が無くなる |

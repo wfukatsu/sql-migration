@@ -45,7 +45,7 @@ from _scalardb.appside import parse_expected_rows  # noqa: E402
 from _scalardb.converter import convert_script as scalardb_convert  # noqa: E402
 from _scalardb.schema import SchemaRegistry  # noqa: E402
 
-SCALARDB_ONLY = ("keys", "storage", "plan_dir", "expected_rows")
+SCALARDB_ONLY = ("keys", "storage", "plan_dir", "expected_rows", "h2_indexes")
 
 SQLGLOT_DIALECTS = sorted(d.value for d in sqlglot.Dialects if d.value)
 TARGETS = sorted(set(SQLGLOT_DIALECTS) | {"scalardb"})
@@ -95,6 +95,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="[scalardb のみ] 表の行数（: の後にキーあたりの行数）。取得コストの見積もりに使う")
     ap.add_argument("--isolation", default="SERIALIZABLE", choices=["SERIALIZABLE", "SNAPSHOT", "READ_COMMITTED"],
                     help="[scalardb のみ] 見積もりの前提にする分離レベル。SERIALIZABLE はコミット時にスキャンを読み直す")
+    ap.add_argument("--h2-indexes", action="store_true",
+                    help="[scalardb のみ] 実行計画に、取得した表へ H2 の索引を作る指定を入れる。大きな表を結合するバッチ処理向け"
+                         "（小さな要求や 1 表だけの計画では、索引を作る時間とメモリの分だけ遅くなる）")
     args = ap.parse_args(argv)
 
     path = Path(args.file)
@@ -116,10 +119,10 @@ def main(argv: list[str] | None = None) -> int:
         # 実行計画への分解は --plan-dir を指定したときだけ行う
         results, _ = scalardb_convert(text, args.source, registry, _parse_keys(args.keys), decompose=bool(args.plan_dir),
                                       storage=args.storage, expected_rows=parse_expected_rows(args.expected_rows),
-                                      isolation=args.isolation)
+                                      isolation=args.isolation, h2_indexes=args.h2_indexes)
     else:
         for name in SCALARDB_ONLY:
-            if getattr(args, name) not in (None, "jdbc"):
+            if getattr(args, name) not in (None, "jdbc", False):
                 print(f"注意: --{name.replace('_', '-')} は --target scalardb のときだけ有効です。無視します。", file=sys.stderr)
         results = generic.convert_script(text, args.source, args.target,
                                          schema=_generic_schema(registry) if args.schema else None,

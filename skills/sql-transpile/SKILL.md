@@ -99,6 +99,7 @@ ScalarDB を Target にするときは、バックエンド・実行計画・見
 | `--plan-dir` | ScalarDB のみ。変換できない読み取り文を実行計画に分解し、`<stem>.<n>.plan.json` を書く。指定しないと分解しない |
 | `--expected-rows` | ScalarDB のみ。`テーブル=行数[:キーあたりの行数]`。取得コストの見積もりと行数上限の判定に使う |
 | `--isolation` | ScalarDB のみ。見積もりの前提にする分離レベル（既定 `SERIALIZABLE`） |
+| `--h2-indexes` | ScalarDB のみ。実行計画に、取得した表へ H2 の索引を作る指定（`build_indexes: true`）を入れる。既定はオフ。大きな表を結合するバッチ処理向けで、小さな要求では索引を作る分だけ遅くなる |
 | `--mysql-case-insensitive` | ScalarDB 以外。Source が MySQL のときだけ意味がある |
 
 ### Step 3: 結果を読む

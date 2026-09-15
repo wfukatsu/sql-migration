@@ -26,9 +26,21 @@ public class Residual implements AutoCloseable {
   private final Set<String> created = new HashSet<>();
   // table -> indexes from the plan (primary key, join columns); built once, after every fetch is loaded
   private final Map<String, List<List<String>>> indexes = new LinkedHashMap<>();
+  private final boolean buildIndexes;
   private boolean indexed;
 
+  /** Without indexes: the right default for small requests, where building them costs more than it saves. */
   public Residual(String mode) throws Exception {
+    this(mode, false);
+  }
+
+  /**
+   * @param buildIndexes build the plan's index_columns before the first query. Joins over tens of thousands of fetched
+   *     rows (batch jobs) go from nested-loop scans to index lookups; single-table plans only pay the build time and
+   *     the index memory (about 1.6x the rows, docs/dml-followup-research.md).
+   */
+  public Residual(String mode, boolean buildIndexes) throws Exception {
+    this.buildIndexes = buildIndexes;
     h2 = DriverManager.getConnection("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=" + mode + ";DATABASE_TO_UPPER=FALSE");
     if ("Oracle".equalsIgnoreCase(mode)) OracleFunctions.register(h2);
   }
@@ -99,7 +111,7 @@ public class Residual implements AutoCloseable {
    * An index that cannot be built -- a column the fetch did not return -- only costs speed, so it is skipped.
    */
   void ensureIndexes() {
-    if (indexed) return;
+    if (!buildIndexes || indexed) return;
     indexed = true;
     int n = 0;
     for (Map.Entry<String, List<List<String>>> e : indexes.entrySet()) {

@@ -85,6 +85,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--isolation", default="SERIALIZABLE", choices=["SERIALIZABLE", "SNAPSHOT", "READ_COMMITTED"],
                     help="Consensus Commit isolation level the estimates assume (SERIALIZABLE re-reads scans at commit)")
     ap.add_argument("--row-limit", type=int, default=DEFAULT_ROW_LIMIT, help="plan guardrail: max rows fetched per table")
+    ap.add_argument("--h2-indexes", action="store_true",
+                    help="plans build H2 indexes on the fetched tables (joins over large fetches, e.g. batch jobs; "
+                         "overhead for small requests)")
     args = ap.parse_args(argv)
     logging.getLogger("sqlglot").setLevel(logging.ERROR)  # unsupported-argument warnings are reported as issues
 
@@ -92,7 +95,8 @@ def main(argv: list[str] | None = None) -> int:
     registry = SchemaRegistry.from_schema_loader_json(args.schema) if args.schema else SchemaRegistry()
     results, registry = convert_script(text, args.dialect, registry, _parse_keys(args.keys), decompose=not args.no_plan,
                                        storage=args.storage, expected_rows=parse_expected_rows(args.expected_rows),
-                                       isolation=args.isolation, row_limit=args.row_limit)
+                                       isolation=args.isolation, row_limit=args.row_limit,
+                                       h2_indexes=args.h2_indexes)
 
     for r in results:
         print(f"[{r.index:>3}] {r.status:<5} {r.kind:<12} {r.source_sql.splitlines()[0][:70]}")
