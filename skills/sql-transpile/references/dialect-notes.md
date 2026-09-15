@@ -2,21 +2,26 @@
 
 レポートに出る指摘コードごとに、なぜ危険か・どう書き換えるかをまとめる。
 コード名はレポートの「指摘」列と「指摘の集計」表に出るものと同じ。
+変換先の能力は PostgreSQL 16、Oracle Database 23ai、MySQL 8.4、DuckDB 1.5 で実測して決めた。ほかの方言は公開文書に基づく。
 
 ---
 
 ## 素の sqlglot.transpile が素通りさせるもの
 
 SQLGlot は、Source 方言の構文を Target 方言が持っていなくても、例外を出さずにそのまま出力することがある。
-Oracle → PostgreSQL の実測:
+実測した例:
 
-| 入力 | sqlglot.transpile の出力 | 何が起きるか |
-|---|---|---|
-| `WHERE ROWNUM <= 5` | `WHERE ROWNUM <= 5` | 実行時に列が無いエラー |
-| `WHERE e.deptno = d.deptno(+)` | `WHERE e.deptno = d.deptno` | 外部結合が内部結合になり、**結果が静かに変わる** |
-| `CONNECT BY PRIOR empno = mgr` | そのまま | 構文エラー |
-| `VALUES (emp_seq.NEXTVAL)` | そのまま | 実行時エラー |
-| `SELECT ROWID` | そのまま | 実行時エラー |
+| 入力 | 変換 | sqlglot.transpile の出力 | 何が起きるか |
+|---|---|---|---|
+| `WHERE ROWNUM <= 5` | Oracle → PostgreSQL | そのまま | 実行時に列が無いエラー |
+| `WHERE e.deptno = d.deptno(+)` | Oracle → PostgreSQL | `WHERE e.deptno = d.deptno` | 外部結合が内部結合になり、**結果が静かに変わる** |
+| `CONNECT BY PRIOR empno = mgr` | Oracle → PostgreSQL | そのまま | 構文エラー |
+| `VALUES (emp_seq.NEXTVAL)` | Oracle → PostgreSQL | そのまま | 実行時エラー |
+| `TRUNC(hiredate, 'MM')` | Oracle → MySQL | `DATE(hiredate)` | 月初めでなく日単位の切り捨てになり、**結果が静かに変わる** |
+| `empno / 4`（整数どうし） | PostgreSQL → Oracle | そのまま | 切り捨てが小数になり、**結果が静かに変わる** |
+| `empno DIV 4` | MySQL → Oracle | `CAST(empno / 4 AS NUMBER)` | 切り捨てが四捨五入になる（7499 DIV 4 が 1875） |
+| `DATE '1981-01-01'` | PostgreSQL → Oracle | `CAST('1981-01-01' AS DATE)` | Oracle の既定の日付書式に依存して失敗する |
+| `` `emp` `` | MySQL → Oracle | `"emp"` | 大文字小文字を区別する名前になり、表が見つからない |
 
 `(+)` だけは `unsupported_level=ErrorLevel.RAISE` で検出できる。残りは SQLGlot が未対応と認識していないため、どのエラーレベルでも検出されない。このスキルは、前処理で直せるものを直し、直せないものを下の各コードで報告する。
 
@@ -24,18 +29,21 @@ Oracle → PostgreSQL の実測:
 
 ## 前処理で自動的に直すもの
 
+指摘コードの無いものは、直してもレポートに何も出ない。
+
 ### ORACLE_JOIN_MARK（INFO / ERROR）
 
 Oracle の外部結合記法 `(+)` を `LEFT JOIN` に書き換える（`sqlglot.transforms.eliminate_join_marks`）。
+SQLGlot の書き換えは FROM の先頭の表を保持される側とみなすので、`(+)` の付いた表が先頭にあるときは、先に記号の付かない表と入れ替える。
 
 ```sql
 -- 変換前
-SELECT e.ename, d.dname FROM emp e, dept d WHERE e.deptno = d.deptno(+);
+SELECT d.dname, e.ename FROM dept d, emp e WHERE d.deptno(+) = e.deptno;
 -- 変換後
-SELECT e.ename, d.dname FROM emp AS e LEFT JOIN dept AS d ON e.deptno = d.deptno;
+SELECT d.dname, e.ename FROM emp AS e LEFT JOIN dept AS d ON d.deptno = e.deptno;
 ```
 
-**ERROR になる場合**: `(+)` が FROM 句の先頭テーブル側に付いていると、SQLGlot の書き換えが壊れた SQL を作る。結合の向きを入れ替え、`(+)` を相手側に付け直してから再変換する。
+**ERROR になる場合**: 同じ 2 表の間で向きが混ざっている、1 つの表を 2 つの表に外部結合している、両辺に `(+)` がある。いずれも Oracle 自身も拒む形（ORA-01416、ORA-01417、ORA-01468）。明示的な `JOIN` で書き直す。
 
 ### ROWNUM（INFO / WARN / ERROR）
 
@@ -45,13 +53,112 @@ SELECT e.ename, d.dname FROM emp AS e LEFT JOIN dept AS d ON e.deptno = d.deptno
 
 **ERROR になる場合**: `ROWNUM` が WHERE の単純な上限以外に出てくる（射影、OR の中、`ROWNUM > n` など）。`ROW_NUMBER() OVER (ORDER BY ...)` を使う形に書き直す。
 
+### 再帰 CTE
+
+Oracle は `RECURSIVE` を書かず、PostgreSQL・MySQL・DuckDB は必須。Oracle は逆に `RECURSIVE` を拒み、再帰 CTE に列名の並びを要求する。自己参照する CTE を見て、Target に合わせて付け外しする。
+
+```sql
+-- PostgreSQL
+WITH RECURSIVE t AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM t WHERE n < 3) SELECT n FROM t;
+-- Oracle
+WITH t(n) AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM t WHERE n < 3) SELECT n FROM t;
+```
+
+### FROM dual
+
+Oracle 以外へは `FROM dual` を落とす。MySQL は `DUAL` を持つが、SQLGlot が引用符で囲むので表として解決されずに失敗する。
+
+### TRUNC の書式（Source が Oracle）
+
+`TRUNC(date, 'MM')` の書式（`MM`、`YYYY`、`DD`、`HH24`、`Q`、`IW` など）を標準の単位名（`MONTH`、`YEAR` …）にする。直さないと PostgreSQL と DuckDB は受け付けず、MySQL では日単位の切り捨てに化ける。
+
+### 日付リテラル（Target が Oracle）
+
+`DATE '1981-01-01'` や `'1981-01-01'::date` は SQLGlot の内部で `CAST` になり、Oracle の `CAST` は既定の日付書式に依存する。書式を明示した `TO_DATE('1981-01-01', 'YYYY-MM-DD')` にする。日時は `TO_TIMESTAMP`。
+
+### INTERVAL（Target が Oracle）
+
+SQLGlot は PostgreSQL の `INTERVAL '6 months'` を `INTERVAL '6' MONTHS` と複数形のまま出し、Oracle は拒む。単数形に直すだけでは 1 月 31 日に 1 か月足すと失敗するので、月と年の加算は `ADD_MONTHS(d, n)` にする。
+
+### 整数除算 DIV（Target が Oracle）
+
+MySQL の `a DIV b` は 0 方向への切り捨て。SQLGlot の `CAST(a / b AS NUMBER)` は四捨五入になるので、`TRUNC(a / b)` にする。
+
+### DISTINCT ON（Source が PostgreSQL）
+
+SQLGlot は MySQL 向けには `ROW_NUMBER()` を使う形に書き換えるが、Oracle 向けの書き換えはアンダースコアで始まる別名を作り、Oracle はそれを拒む。Oracle 向けは別名の先頭に `x` を付ける。DuckDB は `DISTINCT ON` をそのまま受け付ける。
+
+### 引用符付きの識別子（Source が MySQL / SQL Server）
+
+バッククォートと角括弧は大文字小文字の区別に意味を持たない。二重引用符に写すと Oracle や PostgreSQL では区別する名前になり、表が見つからなくなる。予約語でなければ引用符を外し、予約語なら引用符を残して Target の畳み方にそろえる（Oracle は大文字、PostgreSQL は小文字）。
+
+```sql
+-- MySQL
+SELECT `ename`, `order` FROM `emp`;
+-- Oracle
+SELECT ename, "ORDER" FROM emp;
+```
+
+### WITH ROLLUP（Source が MySQL）
+
+`GROUP BY a WITH ROLLUP` を標準の `GROUP BY ROLLUP (a)` にする。書き換えられない形が残ると ERROR `WITH_ROLLUP`。
+
+### 派生表の別名
+
+MySQL と SQL Server は派生表に別名を要求する。別名の無い派生表に `subq1` のような別名を付ける。
+
+### HINT（INFO）
+
+オプティマイザヒント（`/*+ ... */`）と MySQL の `STRAIGHT_JOIN` を外す。実行計画にしか効かず、結果は変わらない。
+
+### MERGE の UPDATE SET（Target が PostgreSQL / DuckDB）
+
+Oracle の `UPDATE SET t.v = s.v` の表名修飾を外す。PostgreSQL と DuckDB は修飾を受け付けない。
+
+### DATEDIFF（Source が MySQL、Target が Oracle）
+
+Oracle に `DATEDIFF` は無い。日付の引き算 `(TRUNC(a) - TRUNC(b))` にする。日付の文字列リテラルは `TO_DATE` にする。
+
+### AUTO_INCREMENT（Source が MySQL、Target が Oracle）
+
+SQLGlot は Oracle 向けに `AUTO_INCREMENT` をそのまま出す。`GENERATED BY DEFAULT AS IDENTITY` にする。PostgreSQL と SQL Server 向けは SQLGlot が IDENTITY 列にする。DuckDB 向けは SQLGlot が採番を落とすので ERROR `UNSUPPORTED` になる。シーケンスと `DEFAULT nextval('seq')` で書き直す。
+
+---
+
+## 型に依存するもの
+
+列の型が分かって初めて直せる。型は入力スクリプト内の `CREATE TABLE` と `--schema` から取る。
+
+### DIVISION（INFO / WARN）
+
+PostgreSQL・SQL Server・SQLite の整数どうしの除算は小数部を切り捨てる。Oracle・MySQL・DuckDB・Snowflake・BigQuery は小数を返す。
+
+| Target | 書き換え |
+|---|---|
+| Oracle / Snowflake | `TRUNC(a / b)` |
+| MySQL | `TRUNCATE(a / b, 0)` |
+| DuckDB | `a // b` |
+| BigQuery | `DIV(a, b)` |
+
+SQLGlot 自身の模倣（`CAST(a / b AS INT)`）は四捨五入になるので使わない。
+
+**WARN になる場合**: 除算の両辺の型が分からない。表定義を渡せば自動で直る。
+
+### DATE_ARITH（INFO / WARN、Target が MySQL）
+
+MySQL で日付どうしを引いても日数にならない（`'1981-02-01' - '1981-01-31'` は 70）。両辺が日付なら `DATEDIFF(a, b)` にする。片方の型が分からないと WARN。
+
 ---
 
 ## 手作業が要るもの
 
-### CONNECT_BY（ERROR）
+### CONNECT_BY（ERROR / INFO）
 
-階層問合せ（`CONNECT BY` / `START WITH` / `PRIOR` / `LEVEL` / `SYS_CONNECT_BY_PATH`）。再帰 CTE に書き換える。
+階層問合せ（`CONNECT BY` / `START WITH` / `PRIOR` / `LEVEL` / `SYS_CONNECT_BY_PATH`）。Oracle と Snowflake はそのまま使える。
+
+DuckDB 向けは、SQLGlot の生成器が 1 表の `START WITH ... CONNECT BY PRIOR ...` だけの単純な形を再帰 CTE に書き換え、実行して結果が一致することを確かめた（INFO）。`SYS_CONNECT_BY_PATH`・`CONNECT_BY_ISLEAF`・`ORDER SIBLINGS BY`・結合・`FROM dual` は失敗し、`NOCYCLE` は循環を検出しないので ERROR にする。
+
+ほかの Target では再帰 CTE に書き換える。
 
 ```sql
 -- Oracle
@@ -66,9 +173,12 @@ WITH RECURSIVE tree AS (
 SELECT ename, level FROM tree;
 ```
 
-### SEQUENCE（ERROR）
+### SEQUENCE（ERROR / WARN）
 
 `CREATE SEQUENCE`、`seq.NEXTVAL`、`seq.CURRVAL`、PostgreSQL の `nextval()`。
+
+- `CREATE SEQUENCE` は PostgreSQL・Oracle・DuckDB・SQL Server・Snowflake へはそのまま通す。MySQL と SQLite には無いので ERROR
+- `nextval('seq')` は DuckDB も同じ形で持つが、PostgreSQL の SERIAL 列が暗黙に作るシーケンスは DuckDB には作られないので WARN
 
 | Target | 代替 |
 |---|---|
@@ -92,9 +202,9 @@ SELECT deptno, MAX(ename) KEEP (DENSE_RANK FIRST ORDER BY hiredate) FROM emp GRO
 SELECT DISTINCT deptno, FIRST_VALUE(ename) OVER (PARTITION BY deptno ORDER BY hiredate) FROM emp;
 ```
 
-### PIVOT / UNPIVOT（ERROR）
+### PIVOT / UNPIVOT（ERROR `UNSUPPORTED`）
 
-行列変換。`PIVOT` は `CASE` 式と集約、`UNPIVOT` は `UNION ALL` に展開する。
+行列変換。SQLGlot 自身が未対応として例外にする。`PIVOT` は `CASE` 式と集約、`UNPIVOT` は `UNION ALL` に展開する。
 
 ```sql
 -- PIVOT の代替
@@ -106,19 +216,34 @@ SELECT deptno,
 
 ### PLSQL（ERROR）
 
-`DBMS_OUTPUT`・`DBMS_LOB` などの PL/SQL パッケージ呼び出し。アプリケーション側の実装に置き換える。
+`DBMS_OUTPUT`・`DBMS_LOB` などの PL/SQL パッケージ呼び出し。アプリケーション側の実装に置き換える。SQLGlot が標準の関数に写すもの（`DBMS_RANDOM.VALUE` → `RANDOM()`）は対象外。
+
+### PG_CATALOG（ERROR、Source が PostgreSQL）
+
+`::regclass` などシステムカタログ型へのキャスト。Target には無い。
 
 ### TRIGGER / PROCEDURE / FUNCTION（ERROR）
 
 トリガー・ストアドプロシージャ・ユーザー定義関数の DDL。方言差が大きく機械変換の対象外。Target の手続き言語で書き直す。
 
-### DISTINCT_ON（ERROR、Source が PostgreSQL）
+### Target に無い構文（ERROR）
 
-`SELECT DISTINCT ON (a) ...` は PostgreSQL 固有。`ROW_NUMBER() OVER (PARTITION BY a ORDER BY ...) = 1` で先頭行を取る形に書き換える。
+生成した SQL に、Target が持っていない構文が残った。
 
-### AUTO_INC / UPSERT（ERROR、Source が MySQL）
-
-`AUTO_INCREMENT` と `ON DUPLICATE KEY UPDATE`。Target の採番機能と upsert 構文（PostgreSQL なら `ON CONFLICT ... DO UPDATE`、SQL Server なら `MERGE`）に書き換える。
+| コード | 構文 | 使える Target | 書き換え方 |
+|---|---|---|---|
+| `MERGE` | `MERGE INTO` | PostgreSQL・Oracle・DuckDB・SQL Server・Snowflake・BigQuery | 存在確認と INSERT / UPDATE を 1 トランザクションで行う |
+| `ON_CONFLICT` | `ON CONFLICT` | PostgreSQL・DuckDB・SQLite | Target の upsert 構文（`MERGE`、`ON DUPLICATE KEY UPDATE`） |
+| `ON_DUPLICATE_KEY` | `ON DUPLICATE KEY UPDATE` | MySQL | Target の upsert 構文 |
+| `RETURNING` | `RETURNING` | PostgreSQL・DuckDB・SQLite | 変更後に SELECT で読み直す |
+| `SERIAL` | `SERIAL` 型 | PostgreSQL・MySQL | IDENTITY 列 |
+| `AUTO_INC` | `AUTO_INCREMENT` | MySQL | IDENTITY 列 |
+| `AGG_FILTER` | `COUNT(*) FILTER (WHERE ...)` | PostgreSQL・DuckDB・SQLite・Oracle 23ai | `SUM(CASE WHEN ... THEN 1 END)` |
+| `WITH_ROLLUP` | `WITH ROLLUP` | MySQL | `GROUP BY ROLLUP (...)` |
+| `UPDATE_JOIN` | 結合つき UPDATE | MySQL | `UPDATE ... FROM` か相関サブクエリ |
+| `UPDATE_LIMIT` | ORDER BY / LIMIT つき UPDATE・DELETE | MySQL | 主キーで対象行を絞る |
+| `UPDATE_SELF_SUBQUERY` | 更新対象の表を読むサブクエリ | MySQL 以外 | サブクエリを派生表で包むか、先に読み取る |
+| `DUPLICATE_ALIAS` | 1 つの FROM に同じ別名 | なし | 変換の結果が壊れている。元の SQL を見直す |
 
 ---
 
@@ -126,15 +251,13 @@ SELECT deptno,
 
 ### FUNC_PORTABILITY（WARN）
 
-Source 固有の関数が、元の名前のまま出力に残った。
+出力に書かれた関数が、Target の組み込み関数一覧に無い。
 
-SQLGlot は `MONTHS_BETWEEN` や `INITCAP` のような関数を方言非依存の型付きノードとして扱う。そのため Target 方言で読み直しても「未知の関数」にはならず、Target にその関数が実在しなくても素通りする。このスキルは次のように判定する。
+PostgreSQL・Oracle・MySQL・DuckDB は、実際のデータベースから取った一覧（`scripts/catalogs/<方言>.json`）と照合する。表名・別名・型名の直後の括弧や、`ON CONFLICT (...)`・`WITHIN GROUP (...)` は関数とみなさない。スキーマやパッケージで修飾された呼び出しは対象外。
 
-- `NVL` → `COALESCE`、`DECODE` → `CASE` のように **書き換えられた関数は安全**とみなす
-- `COUNT`・`UPPER`・`COALESCE` など **移植性の高い関数**は対象外
-- それ以外で **名前がそのまま残ったもの**を WARN にする
+**利用者定義の関数も WARN になる**。Target にも同じ関数を作るなら問題ない。
 
-**誤検出がある**。Target が同名・同じ意味の関数を持っていても WARN になる（例: Oracle → PostgreSQL の `INITCAP`。PostgreSQL にも `INITCAP` がある）。WARN は「動かない」ではなく「Target のドキュメントで確かめる」という意味。
+一覧の無い Target（SQL Server・Snowflake・BigQuery など）では、Source 固有の関数名が元の名前のまま残っているかで判定する。Target が同名の関数を持っていても WARN になる（例: Oracle → SQL Server の `INITCAP`）。
 
 よく出る例:
 
@@ -145,13 +268,19 @@ SQLGlot は `MONTHS_BETWEEN` や `INITCAP` のような関数を方言非依存�
 | `INITCAP(s)` | `INITCAP(s)`（あり） | なし（自前で組む） | なし |
 | `LAST_DAY(d)` | `date_trunc('month', d) + interval '1 month - 1 day'` | `LAST_DAY(d)`（あり） | `EOMONTH(d)` |
 
+| 関数（PostgreSQL） | Oracle | MySQL |
+|---|---|---|
+| `generate_series(a, b)` | `SELECT LEVEL + a - 1 FROM dual CONNECT BY LEVEL <= b - a + 1` | 再帰 CTE |
+
 ### UNKNOWN_FUNC（WARN）
 
-生成した SQL を Target 方言で読み直したとき、SQLGlot が関数として認識できなかった。Target に同等の関数があるか確認する。
+一覧の無い Target で、生成した SQL を Target 方言で読み直したとき、SQLGlot が関数として認識できなかった。Target に同等の関数があるか確認する。
 
-### HINT（WARN）
+### COLLATION（WARN / INFO、Source が MySQL）
 
-オプティマイザヒント（Oracle の `/*+ ... */`、MySQL の `STRAIGHT_JOIN`）。Target では効かないので、削除してよいことが多い。
+MySQL の既定の照合順序は大文字小文字を区別しない。PostgreSQL・Oracle・DuckDB・SQLite・Snowflake は区別するので、`=`・`LIKE`・`IN` で英字を含む文字列と比べると結果が変わりうる。
+
+`--mysql-case-insensitive` を付けると、`LIKE` を `ILIKE`（Oracle は `LOWER(a) LIKE LOWER(b)`）に、`=` と `IN` を両辺の `LOWER()` にする（INFO）。索引が使われなくなることがある。列ごとに照合順序を変えている場合は、その列だけ手で直す。
 
 ---
 
@@ -165,9 +294,26 @@ SQLGlot 自身が「Target では表現できない」と判断した。メッ�
 
 生成した SQL を Target 方言としてパースできなかった。SQLGlot の生成器の不具合か、Target 方言の対応不足の可能性がある。
 
+### GENERATE（ERROR）
+
+SQLGlot の生成器が予期しない例外を出した。メッセージに例外の種類が出る。
+
 ### PARSE（ERROR）
 
 元の SQL を Source 方言として読めなかった。`--source` が実際の方言と合っているか確認する。
+
+---
+
+## 関数一覧の作り直し
+
+一覧はデータベースのバージョンに依存する。Target のバージョンが違うときは `scripts/build_catalogs.py` で作り直す。
+
+| 方言 | 取り方 |
+|---|---|
+| PostgreSQL | `pg_proc` の `pg_catalog` スキーマ分 |
+| Oracle | `V$SQLFN_METADATA` と `SYS.STANDARD` のプロシージャ |
+| MySQL | `mysql.help_topic` の関数と演算子の分類 |
+| DuckDB | `duckdb_functions()` |
 
 ---
 
