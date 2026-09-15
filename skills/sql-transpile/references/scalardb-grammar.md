@@ -100,11 +100,36 @@ ScalarDB の型は 11 種（`BOOLEAN` / `INT` / `BIGINT` / `FLOAT` / `DOUBLE` / 
 | `ON CONFLICT DO NOTHING` / `INSERT IGNORE` / 表ソースの `MERGE` | 存在確認と書き込みを 1 トランザクションにまとめる |
 | ビュー・トリガー・ストアドプロシージャ・複合列インデックス | 設計を変える |
 
-読み取り系の ERROR は、ScalarDB から行を取得してインメモリの H2 で元の SQL を実行する「実行計画」に分解できることが多い。このスキルは分解まではしない。必要なら本体の CLI を使う。
+読み取り系の ERROR は、ScalarDB から行を取得してインメモリの H2 で元の SQL を実行する「実行計画」に分解できることが多い。`--plan-dir` を付けると分解する。
 
 ```bash
-.venv/bin/python -m scalardb_migrate.cli <入力.sql> --dialect oracle --out-dir out --plan-dir out/plans
+.venv/bin/python skills/sql-transpile/scripts/transpile.py <入力.sql> --source oracle --target scalardb \
+  --out-dir out --plan-dir out/plans
 ```
+
+---
+
+## アプリ側に移す処理の指摘コード
+
+ERROR の読み取り文には、文全体（CTE の本体、サブクエリを含む）を調べた結果が付く。
+
+| コード | 重要度 | 意味 |
+|---|---|---|
+| `CTE` / `SUBQUERY` / `SET_OP` | ERROR | WITH、サブクエリ、UNION などをアプリで評価する |
+| `HIERARCHICAL` | ERROR | `START WITH` / `CONNECT BY`。アプリで木をたどるか、階層を表に事前計算する |
+| `WINDOW` / `KEEP` | ERROR | ウィンドウ関数、`KEEP (DENSE_RANK FIRST/LAST)` |
+| `PROJECTION` / `GROUP` / `PRED` / `ORDER` | ERROR | 射影・GROUP BY・WHERE・ORDER BY の式や関数。どのスコープのどの関数かを列挙する |
+| `PIVOT` / `DISTINCT` / `OFFSET` / `NOW` | ERROR | それぞれの構文。`NOW` は時刻をアプリで計算してバインドする |
+| `RESIDUAL_H2` | ERROR | 実行計画の H2 が実行できない構文（`CONNECT BY`、`ROLLUP` / `CUBE` / `GROUPING SETS`、`PIVOT` / `UNPIVOT`、`KEEP`）。計画を作らない |
+| `FULL_SCAN` | ERROR | `--storage cassandra` で、キーでもインデックスでも読めない表。すべての表を列挙し、結合相手のキーで読む方法（CTE の列もたどる）を提案する |
+| `APP_SEMANTICS` | WARN | アプリで書き換えるときに結果を変えないための注意。計画（H2 が元の SQL を実行する）には付かない |
+| `DESIGN` | INFO | 集計表、階層の事前計算、結合列のキー・インデックス、ScalarDB Analytics の提案 |
+| `COST` | INFO | 取得コストの見積もり。スキャン 1 行 約 25 µs、キー指定 約 5 ms（`docs/bench-report.md`）。`SERIALIZABLE` はスキャンを 2 倍にする |
+| `ROW_LIMIT` | WARN | 計画の行数上限（既定 1 万行）を超える見込み |
+| `COST_DEADLINE` | WARN | 見積もりが ScalarDB Cluster の gRPC 期限（既定 60 秒）を超える |
+| `CONFIG` | INFO | 読み取り専用トランザクション、`scan_fetch_size`、クロスパーティションスキャン、分離レベルの影響 |
+
+`--storage cassandra` での `FULL_SCAN` の提案は、結合相手がキーで読める場合だけ「read X first, then Y」になる。相手もキーで読めない（循環する）場合は、アプリが既に持っているキーから始める設計が要ると書く。
 
 ---
 

@@ -52,11 +52,27 @@ def _db():
     return con
 
 
-def _plan(dialect, sql):
-    results, _ = convert_script(DDL + sql, "mysql" if dialect == "mysql" else dialect)
+def _plan(dialect, sql, storage="jdbc"):
+    results, _ = convert_script(DDL + sql, "mysql" if dialect == "mysql" else dialect, storage=storage)
     r = results[-1]
     assert r.status == "PLANNED", [(i.code, i.message) for i in r.issues]
     return r.plan
+
+
+def _simulate(dialect, sql, plan, expected_sql=None):
+    """Run the original SQL on the full tables and the plan (fetches + residual) on the fetched rows only."""
+    full = _db()
+    expected = full.execute(expected_sql or sqlglot.transpile(sql, read=dialect, write="sqlite")[0]).fetchall()
+    sim = sqlite3.connect(":memory:")
+    for f in plan["fetch"]:
+        rows = full.execute(f["scalardb_sql"].replace(":", "")).fetchall()  # ScalarDB SQL is plain enough for SQLite
+        cols = f["columns"] or [d[0] for d in full.execute(f"SELECT * FROM {f['table']} LIMIT 0").description]
+        # a split IN-list fetches one table several times (disjoint rows); the runtime merges them the same way
+        sim.execute(f"CREATE TABLE IF NOT EXISTS {f['table']} ({', '.join(cols)})")
+        sim.executemany(f"INSERT INTO {f['table']} VALUES ({', '.join('?' for _ in cols)})", rows)
+        assert len(rows) <= len(full.execute(f"SELECT * FROM {f['table']}").fetchall())
+    actual = sim.execute(plan["residual"]["python"]["sql"]).fetchall()
+    return expected, actual
 
 
 @pytest.mark.parametrize("dialect,sql,pattern,expected_sql", CASES)
@@ -64,17 +80,7 @@ def test_fetch_plus_residual_equals_original(dialect, sql, pattern, expected_sql
     plan = _plan(dialect, sql)
     assert pattern in plan["pattern"]
     assert not plan["unresolved"], plan["unresolved"]
-    full = _db()
-    expected = full.execute(expected_sql or sqlglot.transpile(sql, read=dialect, write="sqlite")[0]).fetchall()
-    # simulate: fetch each table with the plan's ScalarDB SQL, then run the residual on the fetched rows only
-    sim = sqlite3.connect(":memory:")
-    for f in plan["fetch"]:
-        rows = full.execute(f["scalardb_sql"].replace(":", "")).fetchall()  # ScalarDB SQL is plain enough for SQLite
-        cols = f["columns"] or [d[0] for d in full.execute(f"SELECT * FROM {f['table']} LIMIT 0").description]
-        sim.execute(f"CREATE TABLE {f['table']} ({', '.join(cols)})")  # one fetch per table by construction
-        sim.executemany(f"INSERT INTO {f['table']} VALUES ({', '.join('?' for _ in cols)})", rows)
-        assert len(rows) <= len(full.execute(f"SELECT * FROM {f['table']}").fetchall())
-    actual = sim.execute(plan["residual"]["python"]["sql"]).fetchall()
+    expected, actual = _simulate(dialect, sql, plan, expected_sql)
     assert sorted(map(str, actual)) == sorted(map(str, expected))
 
 
@@ -141,3 +147,43 @@ def test_residual_makes_source_null_ordering_explicit():
     # MySQL sorts NULLs first for ASC, which is also H2's rule, so nothing has to be added
     sql = _plan("mysql", "SELECT IFNULL(comm, 0) AS c FROM emp ORDER BY comm")["residual"]["java"]["sql"]
     assert "NULLS" not in sql
+
+
+CASSANDRA_CASES = [  # (sql, pattern, access paths of the fetches)
+    ("SELECT ename FROM emp WHERE deptno = 30 ORDER BY ename", "P13", ["INDEX_SCAN"]),
+    ("SELECT ename FROM emp WHERE empno IN (1, 3, 4)", "P14", ["GET", "GET", "GET"]),
+    ("SELECT ename FROM emp WHERE deptno IN (10, 30) AND sal > 900", "P14", ["INDEX_SCAN", "INDEX_SCAN"]),
+    ("SELECT ename FROM emp WHERE empno IN (1, 2, 3) ORDER BY sal", "P13", ["GET", "GET", "GET"]),
+]
+
+
+@pytest.mark.parametrize("sql,pattern,paths", CASSANDRA_CASES)
+def test_cassandra_plans_sort_in_h2_and_split_key_in_lists(sql, pattern, paths):
+    plan = _plan("postgres", sql, storage="cassandra")
+    assert pattern in plan["pattern"]
+    assert [f["access_path"] for f in plan["fetch"]] == paths
+    assert all("ORDER BY" not in f["scalardb_sql"] for f in plan["fetch"])
+    expected, actual = _simulate("postgres", sql, plan)
+    assert actual == expected if "ORDER BY" in sql and "LIMIT" in sql else sorted(map(str, actual)) == sorted(map(str, expected))
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT ename, sal FROM emp ORDER BY sal DESC LIMIT 2",
+    "SELECT e.ename, d.dname FROM emp e JOIN dept d ON e.deptno = d.deptno ORDER BY e.ename",
+    "SELECT deptno, COUNT(*) FROM emp GROUP BY deptno",
+    "SELECT UPPER(ename) FROM emp WHERE sal > 1000",
+])
+def test_cassandra_statements_without_a_key_to_fetch_by_are_not_executable(sql):
+    results, _ = convert_script(DDL + sql, "postgres", storage="cassandra")
+    r = results[-1]
+    assert r.status == "ERROR" and r.plan is None and "FULL_SCAN" in {i.code for i in r.issues}
+    results, _ = convert_script(DDL + sql, "postgres")  # the same statement on a JDBC backend
+    assert results[-1].status in ("WARN", "PLANNED")
+
+
+def test_jdbc_plans_are_not_split():
+    plan = _plan("postgres", "SELECT UPPER(ename) FROM emp WHERE empno IN (1, 3)")
+    assert len(plan["fetch"]) == 1 and plan["fetch"][0]["access_path"] == "CROSS_PARTITION"
+    plan = _plan("postgres", "SELECT UPPER(ename) FROM emp WHERE empno IN (1, 3)", storage="cassandra")
+    assert [f["scalardb_sql"] for f in plan["fetch"]] == ["SELECT empno, ename FROM emp WHERE empno = 1",
+                                                          "SELECT empno, ename FROM emp WHERE empno = 3"]

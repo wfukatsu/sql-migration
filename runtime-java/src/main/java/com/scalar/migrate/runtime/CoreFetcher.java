@@ -40,7 +40,8 @@ public class CoreFetcher implements Fetcher {
 
   @Override
   public void begin() throws Exception {
-    tx = manager.start();
+    // plans only read: a read-only transaction skips the Coordinator write at commit (ScalarDB 3.16+)
+    tx = manager.startReadOnly();
   }
 
   @Override

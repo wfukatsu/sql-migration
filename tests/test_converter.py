@@ -176,6 +176,14 @@ def test_to_date_literal():
     assert r.converted[0].endswith("WHERE hiredate > '2020-01-01'")
 
 
+
+@pytest.mark.parametrize("literal,value", [("DATE '2020-01-01'", "'2020-01-01'"),
+                                           ("TIMESTAMP '2020-01-01 10:00:00'", "'2020-01-01 10:00:00'")])
+def test_ansi_date_literal(literal, value):
+    # Oracle の ANSI 日付リテラル。SQLGlot は DateStrToDate / TimeStrToTime として表す
+    r = run(f"SELECT ename FROM emp WHERE hiredate > {literal}", "oracle", with_schema=False)
+    assert r.status != "ERROR" and r.converted[0].endswith(f"WHERE hiredate > {value}")
+
 def test_bind_markers():
     assert run("SELECT * FROM emp WHERE empno = :id", "oracle", with_schema=False).converted[0].endswith("= :id")
     assert run("SELECT * FROM emp WHERE empno = $1", "postgres", with_schema=False).converted[0].endswith("= ?")
@@ -273,3 +281,68 @@ def test_timestamp_literal_against_date_column_is_trimmed():
     assert results[-1].converted[0].endswith("WHERE hiredate > '1981-06-01'")
     results, _ = convert_script(ddl + "SELECT empno FROM emp WHERE hiredate < TIMESTAMP '1982-06-01 00:00:00'", "oracle", decompose=False)
     assert results[-1].converted[0].endswith("WHERE hiredate < '1982-06-01'")
+
+
+# ---------------------------------------------------------------- storage-aware conversion (non-JDBC: Cassandra)
+def run_on(sql, storage):
+    results, _ = convert_script(SCHEMA_DDL["mysql"] + sql, "mysql", decompose=False, storage=storage)
+    return results[-1]
+
+
+def test_cross_partition_order_by_is_pushed_down_on_jdbc_only():
+    sql = "SELECT order_no FROM orders WHERE status = 'X' ORDER BY amount"
+    assert run_on(sql, "jdbc").status == "WARN"
+    r = run_on(sql, "cassandra")
+    assert r.status == "ERROR" and "ORDER_STORAGE" in codes(r)
+    assert "ORDER_STORAGE" in codes(run_on("SELECT order_no FROM orders ORDER BY amount LIMIT 10", "cassandra"))
+
+
+def test_partition_scan_in_clustering_order_is_kept_on_cassandra():
+    for order in ("order_no", "order_no DESC"):
+        r = run_on(f"SELECT order_no FROM orders WHERE customer_id = 1 ORDER BY {order} LIMIT 10", "cassandra")
+        assert r.status == "OK", codes(r)
+    r = run_on("SELECT order_no FROM orders WHERE customer_id = 1 ORDER BY amount", "cassandra")
+    assert "ORDER_STORAGE" in codes(r)
+
+
+def test_mixed_directions_against_the_clustering_order_fail_on_cassandra():
+    ddl = "CREATE TABLE ev (dev INT, ts INT, seq INT, v INT, PRIMARY KEY (dev, ts, seq));"
+    results, _ = convert_script(ddl + "SELECT v FROM ev WHERE dev = 1 ORDER BY ts DESC, seq", "mysql",
+                                decompose=False, storage="cassandra")
+    assert "ORDER_STORAGE" in codes(results[-1])
+    results, _ = convert_script(ddl + "SELECT v FROM ev WHERE dev = 1 ORDER BY ts DESC, seq DESC", "mysql",
+                                decompose=False, storage="cassandra")
+    assert results[-1].status == "OK"
+
+
+def test_grouped_order_by_is_sorted_by_the_sql_layer():
+    r = run_on("SELECT status, COUNT(*) FROM orders WHERE customer_id = 1 GROUP BY status ORDER BY status", "cassandra")
+    assert r.status == "OK", codes(r)
+    r = run_on("SELECT status, COUNT(*) FROM orders GROUP BY status ORDER BY status", "jdbc")
+    assert r.status == "WARN"
+
+
+def test_no_cross_partition_scan_on_cassandra():
+    for sql in ("SELECT status, COUNT(*) FROM orders GROUP BY status",
+                "SELECT order_no FROM orders WHERE amount > 10",
+                "SELECT order_no FROM orders WHERE amount = 1 OR amount = 2"):
+        assert run_on(sql, "jdbc").status == "WARN"
+        r = run_on(sql, "cassandra")
+        assert r.status == "ERROR" and "NO_CROSS_PARTITION" in codes(r), (sql, codes(r))
+    for sql in ("UPDATE orders SET amount = 0 WHERE amount > 1", "DELETE FROM orders WHERE amount > 10"):
+        r = run_on(sql, "cassandra")
+        assert r.status == "ERROR" and "NO_CROSS_PARTITION" in codes(r), (sql, codes(r))
+    # a key or index condition plus a non-key filter is served without a cross-partition scan (verified on Cassandra)
+    for sql in ("UPDATE orders SET amount = 0 WHERE customer_id = 1 AND order_no = 2",
+                "UPDATE orders SET amount = 0 WHERE status = 'X' AND amount > 1",
+                "SELECT order_no FROM orders WHERE customer_id = 1 AND amount > 1"):
+        assert run_on(sql, "cassandra").status == "OK", sql
+
+
+def test_key_in_list_is_split_only_on_cassandra_selects():
+    sql = "SELECT order_no FROM orders WHERE customer_id IN (1, 2, 3)"
+    assert run_on(sql, "jdbc").status == "WARN"
+    assert "OR_KEYS" in codes(run_on(sql, "cassandra"))
+    assert "OR_KEYS" in codes(run_on("SELECT order_no FROM orders WHERE status IN ('A', 'B') AND amount > 1", "cassandra"))
+    r = run_on("UPDATE orders SET amount = 0 WHERE customer_id IN (1, 2)", "cassandra")  # writes are not planned
+    assert r.status == "ERROR" and "OR_KEYS" not in codes(r) and "NO_CROSS_PARTITION" in codes(r)

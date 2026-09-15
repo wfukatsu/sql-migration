@@ -6,7 +6,8 @@
   4. hand both variants of every statement to `residual-runner bench`, which times them from one JVM
   5. compare the result sets (compatibility) and summarise the latencies (performance)
 
-  .venv/bin/python difftest/bench.py --rows 20000 --iterations 20
+  .venv/bin/python difftest/bench.py --rows 20000 --iterations 20 [--backend postgres|cassandra]
+  .venv/bin/python difftest/bench.py --case difftest/cases/nosql-patterns.sql --rows 40000 --backend cassandra
 
 Only the harness talks to Oracle. Everything on the ScalarDB side goes through ScalarDB (SQL/JDBC or the Core API).
 """
@@ -29,6 +30,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "difftest"))
 from scalardb_migrate.converter import convert_script  # noqa: E402
 from run import ORACLE, RUNNER, Source, norm, sh  # noqa: E402
+from backends import BACKENDS, schema_loader  # noqa: E402
 
 NAMESPACE = "bench"
 WORK = ROOT / "difftest/work/bench"
@@ -48,6 +50,27 @@ def dataset(n_emp: int) -> dict:
     dept = [{"deptno": d, "dname": f"dept{d:02d}"} for d in range(40)]
     bonus = [{"empno": i, "amount": (i * 13) % 10000} for i in range(0, n_emp, 5)]
     return {"emp": emp, "dept": dept, "bonus": bonus}
+
+
+def nosql_dataset(n_orders: int) -> dict:
+    """Customers and orders (difftest/cases/nosql-patterns.sql). 40 orders per customer; the same orders go into the
+    RDB-style table (key order_id) and the NoSQL-style table (partition customer_id, clustering order_date, order_id).
+    status has 5 values (1/5 of the table each), amount spreads over 1..10000 so that >9900 selects about 1 %,
+    order_date spreads over 2020-01-01 .. 2025-06 so that one customer has about 13 orders since 2024-01-01."""
+    base = datetime.date(2020, 1, 1)
+    n_cust = max(1, n_orders // 40)
+    customers = [{"customer_id": c, "name": f"cust{c:05d}", "region": f"R{c % 10}"} for c in range(n_cust)]
+    orders = [{"order_id": i,
+               "customer_id": i // 40,
+               "order_date": (base + datetime.timedelta(days=(i * 13) % 2000)).isoformat(),
+               "status": f"S{i % 5}",
+               "amount": 1 + (i * 37) % 10000,
+               "memo": "init"}
+              for i in range(n_cust * 40)]
+    return {"customers": customers, "orders_rdb": orders, "orders_by_customer": [dict(o) for o in orders]}
+
+
+DATASETS = {"bench": dataset, "nosql-patterns": nosql_dataset}
 
 
 def annotations(sql: str) -> dict:
@@ -85,19 +108,18 @@ def setup_oracle(results, data: dict, registry) -> None:
     src.close()
 
 
-def setup_scalardb(registry, data: dict, chunk: int) -> None:
-    print("== ScalarDB: Schema Loader + data through the ScalarDB Core API")
+def setup_scalardb(registry, data: dict, chunk: int, backend) -> None:
+    print(f"== ScalarDB ({backend.name}): Schema Loader + data through the ScalarDB Core API")
     WORK.mkdir(parents=True, exist_ok=True)
     schema = {f"{NAMESPACE}.{t.name}": t.to_schema_loader() for t in registry.tables()}
     (WORK / "schema.json").write_text(json.dumps(schema, indent=2))
-    compose = ["docker", "compose", "-f", str(ROOT / "difftest/docker-compose.yml"), "--profile", "tools", "run", "--rm",
-               "schema-loader", "--config", "/conf/scalardb-in-docker.properties", "--schema-file", "/work/bench/schema.json"]
-    sh(*compose, "--delete-all", check=False)
-    sh(*compose, "--coordinator")
+    delete, create = schema_loader(backend, "/work/bench/schema.json")
+    sh(*delete, check=False)
+    sh(*create)
     for table, rows in data.items():
         rows_file = WORK / f"{table}.rows.json"
         rows_file.write_text(json.dumps(rows))
-        out = sh(str(RUNNER), "load", "--properties", str(ROOT / "difftest/conf/scalardb.properties"),
+        out = sh(str(RUNNER), "load", "--properties", backend.core,
                  "--namespace", NAMESPACE, "--table", table, "--rows", str(rows_file), "--chunk", str(chunk))
         print("   ", out.strip())
 
@@ -148,8 +170,8 @@ def build_spec(results, args) -> tuple[dict, list[dict]]:
         meta.append(info)
     spec = {"iterations": args.iterations, "warmup": args.warmup, "verify_rows": args.verify_rows,
             "oracle": {"url": ORACLE_URL, "user": ORACLE["user"], "password": ORACLE["password"]},
-            "scalardb_sql_properties": str(ROOT / "difftest/conf/scalardb-sql-jdbc-bench.properties"),
-            "core_properties": str(ROOT / "difftest/conf/scalardb.properties"),
+            "scalardb_sql_properties": BACKENDS[args.backend].sql_bench,
+            "core_properties": BACKENDS[args.backend].core,
             "queries": queries}
     return spec, meta
 
@@ -195,8 +217,14 @@ def main() -> int:
     ap.add_argument("--iterations", type=int, default=20)
     ap.add_argument("--warmup", type=int, default=3)
     ap.add_argument("--verify-rows", type=int, default=5000, help="rows compared value by value per query")
-    ap.add_argument("--row-limit", type=int, default=100_000, help="plan guardrail: max rows fetched per table")
+    ap.add_argument("--row-limit", type=int, default=100_000,
+                    help="plan guardrail: max rows fetched per table (the converter's default is 10,000; raised here so "
+                         "the full-scan queries can be timed at 40k rows)")
     ap.add_argument("--fetcher", default="jdbc", choices=["core", "jdbc"], help="how a plan fetches through ScalarDB")
+    ap.add_argument("--backend", default="postgres", choices=sorted(BACKENDS), help="storage behind ScalarDB")
+    ap.add_argument("--convert-storage", choices=["jdbc", "cassandra"],
+                    help="storage the converter targets (default: the backend's; jdbc = conversion unaware of Cassandra)")
+    ap.add_argument("--dataset", choices=sorted(DATASETS), help="data generator (default: named after the case file)")
     ap.add_argument("--skip-setup", action="store_true")
     ap.add_argument("--chunk", type=int, default=500, help="rows per ScalarDB load transaction")
     ap.add_argument("--out", default=str(ROOT / "out/bench"))
@@ -204,12 +232,14 @@ def main() -> int:
 
     WORK.mkdir(parents=True, exist_ok=True)
     text = Path(args.case).read_text(encoding="utf-8")
-    results, registry = convert_script(text, "oracle")
-    data = dataset(args.rows)
+    convert_storage = args.convert_storage or BACKENDS[args.backend].storage
+    results, registry = convert_script(text, "oracle", storage=convert_storage)
+    args.convert_storage = convert_storage
+    data = DATASETS[args.dataset or Path(args.case).stem](args.rows)
 
     if not args.skip_setup:
         setup_oracle(results, data, registry)
-        setup_scalardb(registry, data, args.chunk)
+        setup_scalardb(registry, data, args.chunk, BACKENDS[args.backend])
 
     spec, meta = build_spec(results, args)
     spec_file, result_file = WORK / "spec.json", WORK / "result.json"
@@ -244,7 +274,10 @@ def main() -> int:
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "bench.json").write_text(json.dumps({"config": {"rows": args.rows, "iterations": args.iterations,
-                                                               "warmup": args.warmup, "fetcher": args.fetcher},
+                                                               "warmup": args.warmup, "fetcher": args.fetcher,
+                                                               "backend": args.backend, "case": Path(args.case).name,
+                                                               "convert_storage": convert_storage,
+                                                               "tables": {t: len(r) for t, r in data.items()}},
                                                     "results": report}, indent=2, ensure_ascii=False))
     print_table(report)
     (out_dir / "bench.md").write_text(markdown(report, args))
@@ -271,7 +304,8 @@ def print_table(report: list[dict]) -> None:
 
 def markdown(report: list[dict], args) -> str:
     lines = ["# Oracle Database vs ScalarDB: compatibility and performance", "",
-             f"- data set: emp {args.rows} rows / dept 40 / bonus {args.rows // 5}",
+             f"- ScalarDB backend: {args.backend}; converter storage: {args.convert_storage}; case: {Path(args.case).name}",
+             f"- data set: {args.rows} rows ({args.dataset or Path(args.case).stem} generator)",
              f"- {args.iterations} measured iterations after {args.warmup} warm-up iterations, single client thread",
              f"- app-side plans fetch through `--fetcher {args.fetcher}`", "",
              "| # | statement | ScalarDB path | rows | verdict | Oracle p50 (ms) | ScalarDB p50 (ms) | ratio | fetched rows |",

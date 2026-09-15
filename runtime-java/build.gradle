@@ -26,7 +26,13 @@ dependencies {
     runtimeOnly 'org.postgresql:postgresql:42.7.4'
     // Oracle JDBC: used ONLY by the benchmark (Bench.java) to time the migration-source database from the same JVM
     implementation 'com.oracle.database.jdbc:ojdbc11:23.5.0.24.07'
+
+    testImplementation platform('org.junit:junit-bom:5.14.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
+
+test { useJUnitPlatform() }
 
 application {
     mainClass = 'com.scalar.migrate.runtime.Runner'
