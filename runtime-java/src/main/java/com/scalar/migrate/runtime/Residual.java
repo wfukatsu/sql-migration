@@ -8,6 +8,7 @@ import java.sql.ResultSetMetaData;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -23,6 +24,9 @@ public class Residual implements AutoCloseable {
   private static final Pattern NAMED = Pattern.compile("(?<![:\\w])[:](\\w+)");
   private final Connection h2;
   private final Set<String> created = new HashSet<>();
+  // table -> indexes from the plan (primary key, join columns); built once, after every fetch is loaded
+  private final Map<String, List<List<String>>> indexes = new LinkedHashMap<>();
+  private boolean indexed;
 
   public Residual(String mode) throws Exception {
     h2 = DriverManager.getConnection("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=" + mode + ";DATABASE_TO_UPPER=FALSE");
@@ -46,6 +50,10 @@ public class Residual implements AutoCloseable {
       try (Statement s = h2.createStatement()) { s.execute(ddl.toString()); }
       created.add(table.toLowerCase());
     }
+    if (spec.index_columns != null) {
+      List<List<String>> ixs = indexes.computeIfAbsent(table, k -> new ArrayList<>());
+      for (List<String> cols : spec.index_columns) if (!cols.isEmpty() && !ixs.contains(cols)) ixs.add(cols);
+    }
     if (rows.rows.isEmpty()) return;
     String cols = String.join(", ", rows.columns);
     String marks = String.join(", ", java.util.Collections.nCopies(rows.columns.size(), "?"));
@@ -66,6 +74,7 @@ public class Residual implements AutoCloseable {
 
   /** Run the residual SQL and return the result as columns + rows (JSON-friendly values). */
   public Map<String, Object> query(String sql, Map<String, Object> params) throws Exception {
+    ensureIndexes();
     List<Object> binds = new ArrayList<>();
     String bound = bindNamed(sql, params, binds);
     try (PreparedStatement ps = h2.prepareStatement(bound)) {
@@ -81,6 +90,26 @@ public class Residual implements AutoCloseable {
           out.add(row);
         }
         return Map.of("columns", columns, "rows", out);
+      }
+    }
+  }
+
+  /**
+   * Build the plan's indexes once, after the rows are in (building them before the bulk INSERT would slow the load).
+   * An index that cannot be built -- a column the fetch did not return -- only costs speed, so it is skipped.
+   */
+  void ensureIndexes() {
+    if (indexed) return;
+    indexed = true;
+    int n = 0;
+    for (Map.Entry<String, List<List<String>>> e : indexes.entrySet()) {
+      for (List<String> cols : e.getValue()) {
+        String sql = "CREATE INDEX " + e.getKey() + "_ix" + (n++) + " ON " + e.getKey() + " (" + String.join(", ", cols) + ")";
+        try (Statement s = h2.createStatement()) {
+          s.execute(sql);
+        } catch (Exception ignored) {
+          // fall back to the unindexed table
+        }
       }
     }
   }
