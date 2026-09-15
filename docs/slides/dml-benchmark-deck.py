@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DML テスト SQL の ScalarDB 変換とベンチマーク（24 枚）— slide-forge の code-first デッキ。
+"""DML テスト SQL の ScalarDB 変換とベンチマーク（26 枚）— slide-forge の code-first デッキ。
 
 数値は out/dml-bench/<dialect>/bench.json と difftest/work/dml-bench/result.<dialect>-reads.json を生成時に読む
 （difftest/bench_dml.py の出力、2026-09-15）。文書版は docs/dml-benchmark-report.md。
@@ -32,6 +32,11 @@ DATA = {d: json.loads((REPO / "out/dml-bench" / d / "bench.json").read_text(enco
 RAW = {d: {q["id"]: q for q in json.loads((REPO / "difftest/work/dml-bench" / f"result.{d}-reads.json")
                                           .read_text(encoding="utf-8"))["queries"]} for d in DIALECTS}
 SRC = "出典: 本検証（2026-09-15）。ScalarDB Cluster 3.19.1 + PostgreSQL 16、ウォームアップ 3 回 + 15 回の p50"
+# the read results before H2 got indexes (difftest/bench_dml.py output saved before the change)
+BEFORE_DIR = REPO / "out/dml-bench-before-h2index"
+BEFORE = {d: json.loads((BEFORE_DIR / d / "bench.json").read_text(encoding="utf-8")) for d in DIALECTS}
+BEFORE_RAW = {d: {q["id"]: q for q in json.loads((BEFORE_DIR / "raw" / f"result.{d}-reads.json")
+                                                 .read_text(encoding="utf-8"))["queries"]} for d in DIALECTS}
 
 SHORT = {
     "I01": "列リスト付き INSERT", "I02": "列リストなし INSERT", "I03": "複数行 INSERT", "I10": "一部の列を上書き upsert",
@@ -105,6 +110,41 @@ def split(d: str, i: str) -> tuple[float, float]:
     return round(s.get("fetch_ms", 0)), round(s.get("residual_ms", 0))
 
 
+def before(d: str, i: str) -> dict | None:
+    return next((r for r in BEFORE[d]["results"] if r["id"] == i), None)
+
+
+def split_before(d: str, i: str) -> tuple[float, float]:
+    s = BEFORE_RAW[d].get(i, {}).get("scalardb", {})
+    return round(s.get("fetch_ms", 0)), round(s.get("residual_ms", 0))
+
+
+def p50s(getter, i: str) -> list[float]:
+    return [p50(getter(x, i), "scalardb_ms") for x in DIALECTS if passed(getter(x, i))]
+
+
+def speedup(d: str, i: str) -> float | None:
+    b, a = before(d, i), result(d, i)
+    return p50(b, "scalardb_ms") / p50(a, "scalardb_ms") if passed(b) and passed(a) else None
+
+
+def span(vals: list[float]) -> str:
+    return f"{fmt_ms(min(vals))}〜{fmt_ms(max(vals))}" if vals else "—"
+
+
+S04_BEFORE, S04_AFTER = p50s(before, "S04"), p50s(result, "S04")
+S04_SPEEDUP = [s for s in (speedup(x, "S04") for x in DIALECTS) if s]
+def sec_span(vals: list[float]) -> str:
+    lo, hi = min(vals) / 1000, max(vals) / 1000
+    f = "{:.0f}" if lo >= 10 else "{:.1f}"
+    return f"{f.format(lo)}〜{f.format(hi)} 秒"
+
+
+S04_CHANGE = f"{sec_span(S04_BEFORE)} → {sec_span(S04_AFTER)}" if S04_AFTER else "—"
+JOIN_AFTER = [p50(result(x, i), "scalardb_ms") for x in DIALECTS for i in ("S02", "S03", "S04", "S05", "S06", "S14")
+              if passed(result(x, i)) and result(x, i)["path"] == "plan"]
+
+
 # =====================================================================
 # 表紙・要約
 # =====================================================================
@@ -116,18 +156,17 @@ plain(layout="COVER",
       notes="作成したテスト用 SQL を ScalarDB SQL に変換し、変換元のデータベースに直接実行した場合と ScalarDB Cluster で実行した場合の結果と応答時間を比べました。")
 
 
-@slide("書き込みは半分以上がアプリ側の実装に、読み取りは結合が遅い",
+@slide("書き込みは半分以上がアプリ実装に、読み取りは読む行数で決まる",
        note="状況・課題・答えの順に 1 枚でまとめています。倍率は変換元 DB に直接実行した場合との p50 の比です。")
 def s_exec(d):
-    s04 = [p50(result(x, "S04"), "scalardb_ms") for x in DIALECTS if passed(result(x, "S04"))]
     d.exec_summary(
         X0, DY0, W, 3.34,
         "Oracle・PostgreSQL・MySQL の DML 中心のテスト SQL（各 51 文）を ScalarDB SQL に変換し、変換元 DB と性能を比べた",
         "書き込み 33 文のうち 17〜18 文は ScalarDB SQL にできない。変換できた読み取りも、多くは表を読んでアプリ側で処理する",
-        "変換できた書き込みは ScalarDB で数 ms。表を結合する読み取りは H2 の処理が遅く、索引を作る改善が要る",
+        "書き込みは ScalarDB で数 ms。結合は H2 の索引で大きく縮んだが、読む行数に比例する時間は残る",
         points=[f"書き込み（COMMIT 込み）: 変換元の {ratio_range('write')}（中央値）",
                 f"実行計画の読み取り: 変換元の {ratio_range('read', 'plan')}（中央値）",
-                f"3 表結合: ScalarDB 側 {fmt_ms(min(s04))} 以上。ほとんどが H2 の処理" if s04 else "3 表結合: 失敗"],
+                f"3 表結合: {S04_CHANGE}（H2 に索引を作った後）" if S04_AFTER else "3 表結合: 失敗"],
         size=9.5)
 
 
@@ -286,8 +325,8 @@ def s_key_reads(d):
 PLAN_JOIN = ("S02", "S03", "S04", "S05", "S06", "S14")
 
 
-@slide("結合・副問合せ・ページングは表を読み、0.3〜28 秒かかる",
-       note="ScalarDB から表を取得して H2 で処理する文です。数万行を取得する結合は数十秒かかりました。")
+@slide(f"結合・副問合せ・ページングは表を読み、{span(JOIN_AFTER)}",
+       note="ScalarDB から表を取得して H2 で処理する文です（H2 に索引を作った後の計測）。時間のほとんどは取得です。")
 def s_plan_join(d):
     result_table(d, [i for i in ids("read", "plan") if i in PLAN_JOIN], "文（実行計画で実行）", "plan")
     foot(d, None, edition="— = その方言では ScalarDB SQL か変換不可。15 回の p50")
@@ -320,18 +359,47 @@ def s_medians(d):
     foot(d, None, edition=SRC + "。結果が一致した文だけで集計")
 
 
-@slide("3 表結合の時間は、取得ではなく H2 の処理がほとんど",
-       note="S04 は注文 2 万・明細 5 万行を取得して H2 で結合します。取得は 2 秒前後、H2 の処理は 20 秒以上でした。")
+@slide("索引が無いと、3 表結合の時間のほとんどが H2 の処理だった",
+       note="改善前の計測です。S04 は注文 2 万・明細 5 万行を取得して H2 で結合します。取得は 2 秒前後、H2 の処理は 20 秒以上でした。")
 def s_h2(d):
-    fetch = [split(x, "S04")[0] for x in DIALECTS]
-    resid = [split(x, "S04")[1] for x in DIALECTS]
+    fetch = [split_before(x, "S04")[0] for x in DIALECTS]
+    resid = [split_before(x, "S04")[1] for x in DIALECTS]
     d.vbars_grouped(X0, DY0, 5.9, 3.42, [NAMES[x] for x in DIALECTS],
                     [("ScalarDB から取得", fetch), ("H2 で処理", resid)], unit="ms")
-    d.metric(6.7, DY0 + 0.05, 2.8, 1.1, f"{max(resid) / 1000:.0f} 秒", "S04 の H2 の処理（最大）", color=d.P.danger)
+    d.metric(6.7, DY0 + 0.05, 2.8, 1.1, f"{max(resid) / 1000:.0f} 秒", "S04 の H2 の処理（改善前、最大）", color=d.P.danger)
     d.label(6.7, DY0 + 1.4, 2.8, 1.9,
-            "取得した表に主キーも\nインデックスも作っていない\n（Residual.load の CREATE TABLE）\n\n"
-            "結合が入れ子ループになり、\n注文 × 明細を総当たりする", size=9, color=d.P.text)
-    foot(d, None, edition="出典: 本検証、S04（3 表結合 + 集約）の最終回の内訳。S05（反結合）も同じ傾向")
+            "取得した表に主キーも\nインデックスも作っていなかった\n（Residual.load の CREATE TABLE）\n\n"
+            "結合が入れ子ループになり、\n注文 × 明細を総当たりしていた", size=9, color=d.P.text)
+    foot(d, None, edition="出典: 本検証（改善前）、S04（3 表結合 + 集約）の最終回の内訳。S05（反結合）も同じ傾向")
+
+
+@slide(f"H2 に索引を作ると、3 表結合は {min(S04_SPEEDUP):.0f}〜{max(S04_SPEEDUP):.0f} 倍速くなった" if S04_SPEEDUP
+       else "H2 に索引を作った後の 3 表結合",
+       note="実行計画に主キーと結合列を記録し、H2 に行を入れた後で索引を作るようにしました。索引を作る時間も H2 の処理に含みます。")
+def s_h2_after(d):
+    b = [p50(before(x, "S04"), "scalardb_ms") or 0 for x in DIALECTS]
+    a = [p50(result(x, "S04"), "scalardb_ms") or 0 for x in DIALECTS]
+    d.vbars_grouped(X0, DY0, 5.9, 3.42, [NAMES[x] for x in DIALECTS], [("索引なし", b), ("索引あり", a)], unit="ms")
+    d.metric(6.7, DY0 + 0.05, 2.8, 1.1, S04_CHANGE.replace(" 秒 → ", "→").replace("〜", "–"), "S04 の p50（3 方言の範囲）",
+             color=d.P.success, value_size=13)
+    lines = "\n".join(f"{NAMES[x]}: {split(x, 'S04')[0]:,} + {split(x, 'S04')[1]:,} ms" for x in DIALECTS)
+    d.label(6.7, DY0 + 1.4, 2.8, 1.9, "索引ありの内訳（取得 + H2）\n" + lines + "\n\n残る時間のほとんどは\nScalarDB からの取得",
+            size=9, color=d.P.text)
+    foot(d, None, edition="出典: 本検証、S04（3 表結合 + 集約）の p50 と最終回の内訳。索引あり = Residual が主キーと結合列に索引を作る")
+
+
+@slide("索引が効くのは結合と副問合せで、1 表だけ読む文は変わらない",
+       note="実行計画の読み取りの、索引を作る前と後の ScalarDB 側 p50 です。1 つの表を読んで集計する文は、索引の有無で変わりません。")
+def s_h2_table(d):
+    def pair(x, i):
+        bb, aa = before(x, i), result(x, i)
+        if not (passed(bb) and passed(aa)) or aa["path"] != "plan":
+            return "—"
+        return f"{fmt_ms(p50(bb, 'scalardb_ms'))} → {fmt_ms(p50(aa, 'scalardb_ms'))}"
+    rows = [[f"{i} {SHORT.get(i, '')}"] + [pair(x, i) for x in DIALECTS] for i in ("S04", "S05", "S06", "S14", "S03", "S07", "S08")]
+    d.table(X0, DY0, W, ["文（実行計画、索引なし → あり）", "Oracle", "PostgreSQL", "MySQL"], rows,
+            col_widths=[2.7, 2.1, 2.1, 2.1], row_h=0.34, header_h=0.34, size=8.5, aligns=["START", "CENTER", "CENTER", "CENTER"])
+    foot(d, None, edition="上 4 行は複数の表を結合・参照する文、下 3 行は 1 つの表を読む文。— = 実行計画ではない")
 
 
 @slide("失敗の原因は、H2 の予約語と、方言ごとのリテラルと型の差",
@@ -373,11 +441,11 @@ def s_contrast(d):
     foot(d, None, edition=SRC)
 
 
-@slide("効くのは H2 の索引と、方言ごとのリテラルの書き換え",
-       note="変換ツールと実行基盤で直せる点です。H2 の索引は S04・S05 の数十秒を大きく縮める見込みです（未計測）。")
+@slide("H2 の索引は実施済み。次は方言ごとのリテラルと読む行数",
+       note="変換ツールと実行基盤で直せる点です。H2 の索引は実装して計測しました。ほかは本検証の内訳からの見込みです。")
 def s_improve(d):
     d.table(X0, DY0, W, ["改善点", "対象", "効果の見込み"], [
-        ["取得した表に主キーと結合列のインデックスを作る", "runtime-java（Residual.load）", "結合の H2 処理が数十秒から大きく縮む"],
+        ["実施済み: 取得した表に主キーと結合列の索引を作る", "runtime-java（Residual）", f"S04 が {S04_CHANGE}"],
         ["H2 の予約語の別名を引用符で囲む", "変換ツール（実行計画の SQL）", "S11 のような構文エラーが無くなる"],
         ["NULLS LAST / FIRST を含む ORDER BY は計画に回す", "変換ツール", "並び順の不一致が無くなる"],
         ["MySQL の照合順序と真偽値リテラルを警告・書き換える", "変換ツール", "S10・S16・I01 など MySQL の失敗が無くなる"],
@@ -385,16 +453,16 @@ def s_improve(d):
         ["表を作り直したら ScalarDB Cluster を再起動する", "運用・計測手順", "cached plan のエラーを防ぐ"],
         ["読む行数を減らす（集計表、キーでの取得）", "設計", "実行計画の読み取り全般が速くなる"],
     ], col_widths=[3.6, 2.5, 2.9], row_h=0.42, header_h=0.36, size=8.5, aligns=["START", "START", "START"])
-    foot(d, None, edition="効果の見込みは本検証の内訳からの推定。改善後の計測はまだ行っていない")
+    foot(d, None, edition="索引以外の効果の見込みは、本検証の内訳からの推定")
 
 
-@slide("次は H2 の索引を入れて測り直し、同時実行と本番規模を確かめる",
+@slide("次は読む行数を減らす設計と、同時実行・本番規模の計測",
        note="この計測は単一クライアント・最大 5 万行です。書き込みは小さいデータで測っています。")
 def s_next(d):
     pw = (W - 0.3) / 2
     zone(d, X0, DY0, pw, 3.38, "次にやること", fill="#F8FAFC", stroke=lighten(d.P.primary, 0.6))
     checklist(d, X0 + 0.15, DY0 + 0.45, pw - 0.3, [
-        ("H2 の索引を入れて S04・S05 を再計測", "todo"),
+        ("集計表などで読む行数を減らして再計測", "todo"),
         ("予約語と NULLS LAST の変換を直す", "todo"),
         ("変換できない書き込みをアプリ側で実装して計測", "todo"),
         ("scan_fetch_size 1000 で読み取りを再計測", "todo"),

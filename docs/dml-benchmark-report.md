@@ -2,7 +2,7 @@
 
 作成日: 2026-09-15
 関連文書: `skills/sql-transpile/examples/dml/`（テスト用 SQL）、`docs/bench-report.md`（性能測定の基準）、`docs/app-side-benchmark-comparison.md`（変換ツールの新旧比較）
-説明資料: [Google スライド 26 枚](https://docs.google.com/presentation/d/1xYj2NKQJ3uX_j0ZWRcwjzx3bGtORr1p_sbAf9EXlHcc/edit)（生成元 `docs/slides/dml-benchmark-deck.py`）
+説明資料: [Google スライド 26 枚](https://docs.google.com/presentation/d/1DQJZKhjteIoAxuSTsPqmW4cF15VovnDhT2nL-2TVn-c/edit)（生成元 `docs/slides/dml-benchmark-deck.py`）
 
 ## 結論
 
