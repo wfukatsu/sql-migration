@@ -937,7 +937,10 @@ class StatementConverter:
 
     def delete(self, d: exp.Delete) -> exp.Delete:
         self._tables = [d.this] if isinstance(d.this, exp.Table) else []
-        if d.args.get("using") or d.args.get("joins"):
+        # MySQL multi-table DELETE (DELETE t FROM t JOIN u ...): sqlglot keeps the targets in `tables` and the joins on
+        # the table itself
+        if d.args.get("using") or d.args.get("joins") or d.args.get("tables") or \
+                (isinstance(d.this, exp.Table) and d.this.args.get("joins")):
             self.fail("DELETE_JOIN", "DELETE ... USING / JOIN is not supported; SELECT the keys first, then DELETE by key")
         if d.args.get("returning"):
             self.fail("RETURNING", "RETURNING is not supported")
