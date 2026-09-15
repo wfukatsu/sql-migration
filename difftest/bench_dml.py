@@ -268,7 +268,7 @@ def build_spec(args, dialect: str, cases: list[dict], reset: dict | None) -> dic
         queries.append(q)
     return {"iterations": args.iterations, "warmup": args.warmup, "verify_rows": args.verify_rows,
             "source": JDBC[dialect], "scalardb_sql_properties": BACKENDS["postgres"].sql_bench,
-            "core_properties": BACKENDS["postgres"].core, "queries": queries}
+            "core_properties": BACKENDS["postgres"].core, "h2_indexes": args.h2_indexes, "queries": queries}
 
 
 def run_spec(spec: dict, name: str) -> dict:
@@ -288,6 +288,8 @@ def main() -> int:
     ap.add_argument("--verify-rows", type=int, default=5000)
     ap.add_argument("--row-limit", type=int, default=200_000, help="plan guardrail: max rows fetched per table")
     ap.add_argument("--only", choices=["reads", "writes"], help="run one phase only")
+    ap.add_argument("--h2-indexes", action="store_true",
+                    help="build the plans' H2 indexes (off by default; the joins of the read data need them)")
     ap.add_argument("--restart-cluster", action="store_true",
                     help="restart ScalarDB Cluster first (needed when a previous run used other column types)")
     ap.add_argument("--out", default=str(ROOT / "out/dml-bench"))

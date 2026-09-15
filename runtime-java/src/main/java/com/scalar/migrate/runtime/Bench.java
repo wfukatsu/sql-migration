@@ -45,6 +45,8 @@ public class Bench {
     int iterations = num(spec.get("iterations"), 20);
     int warmup = num(spec.get("warmup"), 3);
     int verifyRows = num(spec.get("verify_rows"), 200);
+    // "h2_indexes": build every plan's H2 indexes (a plan can also ask for them with residual.java.build_indexes)
+    boolean h2Indexes = Boolean.TRUE.equals(spec.get("h2_indexes"));
     // "source" is any JDBC source database (Oracle / PostgreSQL / MySQL); "oracle" is the older name of the same key
     Map<String, Object> ora = (Map<String, Object>) (spec.containsKey("source") ? spec.get("source") : spec.get("oracle"));
     String sqlProps = (String) spec.get("scalardb_sql_properties");
@@ -82,7 +84,7 @@ public class Bench {
           Fetcher fetcher = "core".equals(q.getOrDefault("fetcher", "jdbc")) ? core : sqlFetcher;
           scalarResult = measure(() -> new Exec() {
             public Map<String, Object> call(int i) throws Exception {
-              return planRun(fetcher, plan, verifyRows);
+              return planRun(fetcher, plan, verifyRows, h2Indexes);
             }
           }, iterations, warmup);
         } else if ("appside".equals(q.get("path"))) {
@@ -195,11 +197,11 @@ public class Bench {
   }
 
   /** One request of the app-side path: fetch through ScalarDB inside a transaction, then the residual SQL in H2. */
-  static Map<String, Object> planRun(Fetcher fetcher, Plan plan, int verifyRows) throws Exception {
+  static Map<String, Object> planRun(Fetcher fetcher, Plan plan, int verifyRows, boolean h2Indexes) throws Exception {
     Plan.Residual residual = plan.residual.get("java");
     long t0 = System.nanoTime();
     int fetched = 0;
-    try (Residual h2 = new Residual(residual.mode)) {
+    try (Residual h2 = new Residual(residual.mode, residual.build_indexes || h2Indexes)) {
       fetcher.begin();
       try {
         for (Plan.Fetch f : plan.fetch) {

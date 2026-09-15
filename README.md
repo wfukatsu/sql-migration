@@ -203,7 +203,7 @@ Claude Code から使うには `ln -s "$PWD/skills/sql-transpile" ~/.claude/skil
 
 | 作業 | 場所 | 状態 |
 |---|---|---|
-| 1. Java ランタイム (ScalarDB から fetch → H2 で残余 SQL 実行) | `runtime-java/` | 実装済み。`gradle installDist` で `build/install/residual-runner/bin/residual-runner` を生成。`run` / `load` / `validate` / `sql` サブコマンド。fetch は ScalarDB Core (Apache 2、ライセンス不要) と ScalarDB SQL JDBC (Cluster、要ライセンス) の 2 実装 |
+| 1. Java ランタイム (ScalarDB から fetch → H2 で残余 SQL 実行) | `runtime-java/` | 実装済み。`gradle installDist` で `build/install/residual-runner/bin/residual-runner` を生成。`run` / `load` / `validate` / `sql` サブコマンド。`run --h2-indexes`（または計画の `build_indexes`）で、取得した表に H2 の索引を作る（既定はオフ。大きな表を結合するバッチ処理向け）。fetch は ScalarDB Core (Apache 2、ライセンス不要) と ScalarDB SQL JDBC (Cluster、要ライセンス) の 2 実装 |
 | 2. decomposer (ERROR 文 → 実行計画 JSON) | `scalardb_migrate/decomposer.py` | 実装済み。読み取り系の ERROR 文は `PLANNED` になり、`--plan-dir` で計画 JSON を出力。サンプルでは 21 件中 10 件 |
 | 3. 差分テスト環境 | `difftest/` | 実装済み。Docker Compose (移行元 PostgreSQL / ScalarDB バックエンド PostgreSQL / Schema Loader / 任意の ScalarDB Cluster) とハーネス `difftest/run.py` |
 

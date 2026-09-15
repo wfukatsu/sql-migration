@@ -107,6 +107,8 @@ ScalarDB の型は 11 種（`BOOLEAN` / `INT` / `BIGINT` / `FLOAT` / `DOUBLE` / 
   --out-dir out --plan-dir out/plans
 ```
 
+計画の各取得には、H2 に作ると結合が速くなる索引の列（`index_columns`: 主キーと、結合・相関・IN 副問合せの列）が付く。索引を作るかはオプションで、既定はオフ。`--h2-indexes` を付けると計画に `build_indexes: true` が入り、ランタイムが問い合わせの前に索引を作る（`residual-runner run --h2-indexes` でも有効にできる）。数万行以上の表を結合するバッチ処理では数十秒が数秒になる一方、1 表だけの計画や小さな要求では、索引を作る時間（投入と同程度）とメモリ（行の約 1.6 倍）の分だけ遅くなる（`docs/dml-followup-research.md`）。
+
 ---
 
 ## アプリ側に移す処理の指摘コード

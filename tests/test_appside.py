@@ -108,6 +108,8 @@ def test_plan_lists_indexes_for_the_residual_joins():
     ix = {f["table"]: f["index_columns"] for f in r.plan["fetch"]}
     assert ix["customers"] == [["customer_id"]]                     # primary key, also the join column
     assert ix["orders"] == [["customer_id", "order_no"], ["order_no"]]  # key (leads with the join column) + correlation
+    assert r.plan["residual"]["java"]["build_indexes"] is False     # listed, but only built when asked for
+    assert last(ORDERS_DDL + q, h2_indexes=True).plan["residual"]["java"]["build_indexes"] is True
 
 
 def test_cassandra_full_scan_suggests_fetching_by_joined_keys():

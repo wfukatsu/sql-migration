@@ -56,7 +56,7 @@ public class H2Index {
   /** One request: load the fetched tables, (maybe) build indexes, run the query. Returns ms per phase. */
   static long[] run(boolean indexed, String sql, boolean join) throws Exception {
     long t0 = System.nanoTime(), t1, t2, t3;
-    try (Residual h2 = new Residual("PostgreSQL")) {
+    try (Residual h2 = new Residual("PostgreSQL", indexed)) {
       if (join) {
         h2.load(spec("customers", indexed ? List.of(List.of("customer_id")) : null), customers);
         h2.load(spec("order_items", indexed ? List.of(List.of("order_id", "line_no")) : null), items);
@@ -85,7 +85,7 @@ public class H2Index {
   /** Heap held by one loaded H2 database, before and after building the indexes. */
   static void memory() throws Exception {
     long base = usedHeap();
-    try (Residual h2 = new Residual("PostgreSQL")) {
+    try (Residual h2 = new Residual("PostgreSQL", true)) {
       h2.load(spec("customers", List.of(List.of("customer_id"))), customers);
       h2.load(spec("order_items", List.of(List.of("order_id", "line_no"))), items);
       h2.load(spec("orders", List.of(List.of("order_id"), List.of("customer_id"))), orders);
