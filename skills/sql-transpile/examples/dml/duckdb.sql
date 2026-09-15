@@ -1,0 +1,54 @@
+-- sql-transpile のテスト用 SQL: DML パターンの表とデータ（DuckDB 用の準備だけ。テスト文は無い）
+-- difftest/transpile_verify.py で DuckDB を変換先にしたとき、変換先の表とデータを他の方言と同じにそろえるために使う。
+-- postgres.sql の準備部分と同じ内容で、IDENTITY 列だけを DuckDB のシーケンスに置き換えている。
+
+CREATE TABLE customers (customer_id INTEGER PRIMARY KEY, name VARCHAR(40), email VARCHAR(60), region VARCHAR(10), vip BOOLEAN, created_at DATE);
+CREATE TABLE products (product_id INTEGER PRIMARY KEY, name VARCHAR(40), category VARCHAR(20), price NUMERIC(9,2), active BOOLEAN);
+CREATE TABLE orders (order_id INTEGER PRIMARY KEY, customer_id INTEGER, order_date DATE, status VARCHAR(10) DEFAULT 'NEW', total NUMERIC(10,2), note VARCHAR(100));
+CREATE INDEX idx_orders_customer ON orders (customer_id);
+CREATE TABLE order_items (order_id INTEGER, line_no INTEGER, product_id INTEGER, qty INTEGER, unit_price NUMERIC(9,2), PRIMARY KEY (order_id, line_no));
+CREATE TABLE stock (warehouse_id INTEGER, product_id INTEGER, qty INTEGER, updated_at TIMESTAMP, PRIMARY KEY (warehouse_id, product_id));
+CREATE SEQUENCE audit_log_seq START 100;
+CREATE TABLE audit_log (log_id BIGINT DEFAULT nextval('audit_log_seq') PRIMARY KEY, table_name VARCHAR(30), action VARCHAR(10), logged_at TIMESTAMP);
+CREATE TABLE seq_counter (name VARCHAR(30) PRIMARY KEY, next_val BIGINT);
+CREATE SEQUENCE order_seq START 5000;
+INSERT INTO customers VALUES (1, 'Alice Smith', 'alice@example.com', 'EAST', TRUE, DATE '2024-01-10');
+INSERT INTO customers VALUES (2, 'Bob Jones', 'bob@example.com', 'WEST', FALSE, DATE '2024-02-15');
+INSERT INTO customers VALUES (3, 'Carol White', NULL, 'EAST', FALSE, DATE '2024-03-01');
+INSERT INTO customers VALUES (4, 'Dave Brown', 'dave_b@example.com', 'NORTH', TRUE, DATE '2024-03-20');
+INSERT INTO customers VALUES (5, 'Eve Black', 'eve%promo@example.com', 'WEST', FALSE, DATE '2024-04-05');
+INSERT INTO customers VALUES (6, 'frank green', 'frank@example.com', NULL, FALSE, DATE '2024-05-12');
+INSERT INTO products VALUES (101, 'Keyboard', 'PERIPHERAL', 49.99, TRUE);
+INSERT INTO products VALUES (102, 'Mouse', 'PERIPHERAL', 19.50, TRUE);
+INSERT INTO products VALUES (103, 'Monitor', 'DISPLAY', 199.00, TRUE);
+INSERT INTO products VALUES (104, 'Laptop', 'COMPUTER', 1200.00, TRUE);
+INSERT INTO products VALUES (105, 'USB Cable', 'ACCESSORY', 5.25, FALSE);
+INSERT INTO products VALUES (106, 'Webcam', 'PERIPHERAL', NULL, TRUE);
+INSERT INTO orders VALUES (1001, 1, DATE '2024-06-01', 'SHIPPED', 69.49, NULL);
+INSERT INTO orders VALUES (1002, 1, DATE '2024-06-15', 'NEW', 199.00, 'gift');
+INSERT INTO orders VALUES (1003, 2, DATE '2024-06-20', 'CANCELLED', 19.50, NULL);
+INSERT INTO orders VALUES (1004, 3, DATE '2024-07-02', 'SHIPPED', 1249.99, NULL);
+INSERT INTO orders VALUES (1005, 4, DATE '2024-07-10', 'NEW', 10.50, 'rush');
+INSERT INTO orders VALUES (1006, 4, DATE '2024-07-11', 'PAID', 398.00, NULL);
+INSERT INTO orders VALUES (1007, 5, DATE '2024-08-01', 'PAID', 1200.00, NULL);
+INSERT INTO orders VALUES (1008, 2, DATE '2024-08-15', 'NEW', 0, NULL);
+INSERT INTO order_items VALUES (1001, 1, 101, 1, 49.99);
+INSERT INTO order_items VALUES (1001, 2, 102, 1, 19.50);
+INSERT INTO order_items VALUES (1002, 1, 103, 1, 199.00);
+INSERT INTO order_items VALUES (1003, 1, 102, 1, 19.50);
+INSERT INTO order_items VALUES (1004, 1, 104, 1, 1200.00);
+INSERT INTO order_items VALUES (1004, 2, 101, 1, 49.99);
+INSERT INTO order_items VALUES (1005, 1, 105, 2, 5.25);
+INSERT INTO order_items VALUES (1006, 1, 103, 2, 199.00);
+INSERT INTO order_items VALUES (1007, 1, 104, 1, 1200.00);
+INSERT INTO stock VALUES (1, 101, 50, TIMESTAMP '2024-08-01 09:00:00');
+INSERT INTO stock VALUES (1, 102, 120, TIMESTAMP '2024-08-01 09:00:00');
+INSERT INTO stock VALUES (1, 103, 15, TIMESTAMP '2024-08-01 09:00:00');
+INSERT INTO stock VALUES (1, 104, 5, TIMESTAMP '2024-08-01 09:00:00');
+INSERT INTO stock VALUES (2, 101, 30, TIMESTAMP '2024-08-01 09:00:00');
+INSERT INTO stock VALUES (2, 103, 0, TIMESTAMP '2024-08-01 09:00:00');
+INSERT INTO stock VALUES (2, 104, 8, TIMESTAMP '2024-08-01 09:00:00');
+INSERT INTO stock VALUES (2, 105, 200, TIMESTAMP '2024-08-01 09:00:00');
+INSERT INTO audit_log (log_id, table_name, action, logged_at) VALUES (1, 'orders', 'INSERT', TIMESTAMP '2024-08-01 10:00:00');
+INSERT INTO audit_log (log_id, table_name, action, logged_at) VALUES (2, 'stock', 'UPDATE', TIMESTAMP '2024-08-01 11:00:00');
+INSERT INTO seq_counter VALUES ('order_seq', 5000);

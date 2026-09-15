@@ -29,6 +29,8 @@
   .venv/bin/python difftest/transpile_verify.py                    # 全ペア
   .venv/bin/python difftest/transpile_verify.py --source oracle    # 変換元を絞る
   .venv/bin/python difftest/transpile_verify.py --pair oracle:postgres
+  .venv/bin/python difftest/transpile_verify.py --examples-dir skills/sql-transpile/examples/dml \
+      --out-dir out/transpile-verify-dml                           # DML 中心のテスト用 SQL
 """
 
 from __future__ import annotations
@@ -411,8 +413,12 @@ def verify_pair(src_db: DB, tgt_db: DB, stmts: list[Stmt]) -> PairResult:
     # 3 方言のテスト用 SQL は同じ表とデータなので、準備の変換の不具合がテスト文の評価に波及しない
     native = EXAMPLES / f"{tgt}.sql"
     if native.exists():
-        tgt_db.reset(tables, seqs)
-        for s in (x for x in parse_corpus(native, tgt) if x.setup):
+        native_stmts = parse_corpus(native, tgt)
+        # 変換先の自前の準備が作る表・シーケンスも消す（変換元に無いシーケンスが残ると CREATE SEQUENCE が失敗する）
+        own = [created_object(s.body, tgt) for s in native_stmts if s.setup and s.kind == "DDL"]
+        tgt_db.reset(sorted(set(tables) | {n for n, k in own if n and k == "TABLE"}),
+                     sorted(set(seqs) | {n for n, k in own if n and k == "SEQUENCE"}))
+        for s in (x for x in native_stmts if x.setup):
             try:
                 tgt_db.execute(s.body); tgt_db.commit()  # noqa: E702
             except Exception as e:  # noqa: BLE001
@@ -521,11 +527,15 @@ def render(results: list[PairResult], sdb: dict, skipped: list[str]) -> str:
 
 
 def main(argv=None) -> int:
+    global EXAMPLES
     ap = argparse.ArgumentParser(description="sql-transpile スキルを実データベースで検証する")
     ap.add_argument("--source", choices=list(TARGETS))
     ap.add_argument("--pair", help="変換元:変換先 (例 oracle:postgres)")
     ap.add_argument("--out-dir", default=str(ROOT / "out" / "transpile-verify"))
+    ap.add_argument("--examples-dir", default=str(EXAMPLES),
+                    help="<方言>.sql を置いたテスト用 SQL のディレクトリ (例 skills/sql-transpile/examples/dml)")
     args = ap.parse_args(argv)
+    EXAMPLES = Path(args.examples_dir).resolve()
 
     pairs = [(s, t) for s in TARGETS for t in TARGETS[s]]
     if args.source:
