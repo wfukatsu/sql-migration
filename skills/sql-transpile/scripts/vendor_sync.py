@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """同梱した ScalarDB 変換モジュールと、リポジトリ本体との差分を管理する。
 
-このスキルは単体で動くよう scalardb_migrate/ の 5 モジュールを
+このスキルは単体で動くよう scalardb_migrate/ の 7 モジュール（MODULES）を
 scripts/_scalardb/ にコピー（vendoring）して持っている。
 本体を改善してもコピーには自動で反映されないため、乖離を「見える」状態にするのがこのツール。
 
