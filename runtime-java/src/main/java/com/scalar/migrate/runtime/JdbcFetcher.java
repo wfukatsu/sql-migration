@@ -15,10 +15,34 @@ import java.util.Map;
  */
 public class JdbcFetcher implements Fetcher {
   private final Connection conn;
+  private final boolean ownsTransaction;
 
+  /** Own everything: open a connection from the properties file and end its transaction here. */
   public JdbcFetcher(String propertiesPath) throws Exception {
     conn = DriverManager.getConnection("jdbc:scalardb:" + propertiesPath);
     conn.setAutoCommit(false);
+    ownsTransaction = true;
+  }
+
+  private JdbcFetcher(Connection conn) {
+    this.conn = conn;
+    this.ownsTransaction = false;
+  }
+
+  /**
+   * Run the plan's fetches on a connection whose transaction the caller owns, so that the reads see the routine's
+   * own writes and share its rollback scope. The connection is neither committed nor closed by this fetcher.
+   *
+   * <p>The same Consensus Commit restriction as {@link CoreFetcher#joining} applies underneath: a fetch that scans
+   * rows already written by this transaction fails.
+   */
+  public static JdbcFetcher joining(Connection conn) {
+    return new JdbcFetcher(java.util.Objects.requireNonNull(conn, "conn"));
+  }
+
+  @Override
+  public boolean ownsTransaction() {
+    return ownsTransaction;
   }
 
   @Override
@@ -53,16 +77,19 @@ public class JdbcFetcher implements Fetcher {
 
   @Override
   public void commit() throws Exception {
+    if (!ownsTransaction) throw new IllegalStateException("this fetcher joined a transaction the caller owns");
     conn.commit();
   }
 
   @Override
   public void rollback() {
+    if (!ownsTransaction) throw new IllegalStateException("this fetcher joined a transaction the caller owns");
     try { conn.rollback(); } catch (Exception ignored) { }
   }
 
   @Override
   public void close() throws Exception {
+    if (!ownsTransaction) return;  // the caller owns the connection
     conn.close();
   }
 }
