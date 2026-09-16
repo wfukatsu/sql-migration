@@ -1,0 +1,191 @@
+{
+ "id": "pkg_customer_import",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "pkg_customer_import",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "pkg_customer_import.pkb",
+    "startLine": 2,
+    "endLine": 21,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "pkg_customer_import",
+   "moduleKind": "package",
+   "routines": [
+    {
+     "id": "pkg_customer_import.import",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_customer_import.pkb",
+      "startLine": 4,
+      "endLine": 14,
+      "startColumn": 3,
+      "endColumn": 13
+     },
+     "name": "import",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_customer_import.import#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_customer_import.pkb",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 20,
+        "endColumn": 29
+       },
+       "type": {
+        "oracle": "t_id_list",
+        "resolved": "t_id_list",
+        "origin": "declared"
+       },
+       "name": "p_ids",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_customer_import.import#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_customer_import.pkb",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 40,
+        "endColumn": 51
+       },
+       "type": {
+        "oracle": "t_name_list",
+        "resolved": "t_name_list",
+        "origin": "declared"
+       },
+       "name": "p_names",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_customer_import.import#stmt-1",
+       "kind": "Loop",
+       "sourceRange": {
+        "file": "pkg_customer_import.pkb",
+        "startLine": 6,
+        "endLine": 13,
+        "startColumn": 5,
+        "endColumn": 58
+       },
+       "loopKind": "forall",
+       "cursor": "1 .. p_ids.COUNT",
+       "body": [
+        {
+         "id": "pkg_customer_import.import#stmt-2",
+         "kind": "SqlOperation",
+         "sourceRange": {
+          "file": "pkg_customer_import.pkb",
+          "startLine": 7,
+          "endLine": 13,
+          "startColumn": 7,
+          "endColumn": 58
+         },
+         "sqlKind": "SELECT",
+         "originalSql": "MERGE INTO customers c\n      USING (SELECT p_ids(i) AS customer_id, p_names(i) AS name FROM dual) s\n         ON (c.customer_id = s.customer_id)\n       WHEN MATCHED THEN UPDATE SET c.name = s.name\n       WHEN NOT MATCHED THEN\n         INSERT (customer_id, name, tier, registered_on)\n         VALUES (s.customer_id, s.name, 'BRONZE', SYSDATE)",
+         "cardinality": "UNKNOWN"
+        }
+       ]
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_customer_import.truncate_staging",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_customer_import.pkb",
+      "startLine": 16,
+      "endLine": 19,
+      "startColumn": 3,
+      "endColumn": 23
+     },
+     "name": "truncate_staging",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_customer_import.truncate_staging#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_customer_import.pkb",
+        "startLine": 16,
+        "endLine": 16,
+        "startColumn": 30,
+        "endColumn": 46
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_table_name",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_customer_import.truncate_staging#stmt-1",
+       "kind": "DynamicSql",
+       "sourceRange": {
+        "file": "pkg_customer_import.pkb",
+        "startLine": 18,
+        "endLine": 18,
+        "startColumn": 5,
+        "endColumn": 84
+       },
+       "diagnostics": [
+        {
+         "severity": "WARN",
+         "code": "DYNAMIC_SQL",
+         "message": "the statement is built at run time; only a finite set of variants can be converted",
+         "range": {
+          "file": "pkg_customer_import.pkb",
+          "startLine": 18,
+          "endLine": 18,
+          "startColumn": 5,
+          "endColumn": 84
+         }
+        }
+       ],
+       "expression": "'TRUNCATE TABLE ' || DBMS_ASSERT.SIMPLE_SQL_NAME(p_table_name)"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": true
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}

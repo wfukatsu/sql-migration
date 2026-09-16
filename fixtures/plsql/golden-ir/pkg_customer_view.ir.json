@@ -1,0 +1,332 @@
+{
+ "id": "pkg_customer_view",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "pkg_customer_view",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "pkg_customer_view.pkb",
+    "startLine": 3,
+    "endLine": 27,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "pkg_customer_view",
+   "moduleKind": "package",
+   "routines": [
+    {
+     "id": "pkg_customer_view.load",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_customer_view.pkb",
+      "startLine": 5,
+      "endLine": 10,
+      "startColumn": 3,
+      "endColumn": 11
+     },
+     "name": "load",
+     "routineKind": "function",
+     "parameters": [
+      {
+       "id": "pkg_customer_view.load#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_customer_view.pkb",
+        "startLine": 5,
+        "endLine": 5,
+        "startColumn": 17,
+        "endColumn": 34
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_customer_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "returnType": {
+      "oracle": "customers%ROWTYPE",
+      "resolved": "RECORD(customer_id NUMBER(19), name VARCHAR2(100), email VARCHAR2(200), tier VARCHAR2(10), credit_limit NUMBER(12, 2), registered_on DATE)",
+      "origin": "rowtype",
+      "schemaSnapshot": "schema.sql@17852f40"
+     },
+     "declarations": [
+      {
+       "id": "pkg_customer_view.load#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_customer_view.pkb",
+        "startLine": 6,
+        "endLine": 6,
+        "startColumn": 5,
+        "endColumn": 28
+       },
+       "type": {
+        "oracle": "customers%ROWTYPE",
+        "origin": "unresolved"
+       },
+       "name": "v_row",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_customer_view.load#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_customer_view.pkb",
+        "startLine": 8,
+        "endLine": 8,
+        "startColumn": 5,
+        "endColumn": 60
+       },
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT * INTO v_row FROM customers WHERE customer_id = p_customer_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "pkg_customer_view.load#stmt-2",
+       "kind": "Return",
+       "sourceRange": {
+        "file": "pkg_customer_view.pkb",
+        "startLine": 9,
+        "endLine": 9,
+        "startColumn": 5,
+        "endColumn": 12
+       },
+       "expression": "v_row"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_customer_view.summary",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_customer_view.pkb",
+      "startLine": 12,
+      "endLine": 18,
+      "startColumn": 3,
+      "endColumn": 14
+     },
+     "name": "summary",
+     "routineKind": "function",
+     "parameters": [
+      {
+       "id": "pkg_customer_view.summary#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_customer_view.pkb",
+        "startLine": 12,
+        "endLine": 12,
+        "startColumn": 20,
+        "endColumn": 37
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_customer_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "returnType": {
+      "oracle": "t_customer_rec",
+      "resolved": "t_customer_rec",
+      "origin": "declared"
+     },
+     "declarations": [
+      {
+       "id": "pkg_customer_view.summary#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_customer_view.pkb",
+        "startLine": 13,
+        "endLine": 13,
+        "startColumn": 5,
+        "endColumn": 25
+       },
+       "type": {
+        "oracle": "t_customer_rec",
+        "resolved": "t_customer_rec",
+        "origin": "declared"
+       },
+       "name": "v_rec",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_customer_view.summary#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_customer_view.pkb",
+        "startLine": 15,
+        "endLine": 16,
+        "startColumn": 5,
+        "endColumn": 42
+       },
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT customer_id, name, tier INTO v_rec.customer_id, v_rec.name, v_rec.tier\n      FROM customers WHERE customer_id = p_customer_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "pkg_customer_view.summary#stmt-2",
+       "kind": "Return",
+       "sourceRange": {
+        "file": "pkg_customer_view.pkb",
+        "startLine": 17,
+        "endLine": 17,
+        "startColumn": 5,
+        "endColumn": 12
+       },
+       "expression": "v_rec"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_customer_view.copy_limit",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_customer_view.pkb",
+      "startLine": 20,
+      "endLine": 25,
+      "startColumn": 3,
+      "endColumn": 17
+     },
+     "name": "copy_limit",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_customer_view.copy_limit#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_customer_view.pkb",
+        "startLine": 20,
+        "endLine": 20,
+        "startColumn": 24,
+        "endColumn": 34
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_from",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_customer_view.copy_limit#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_customer_view.pkb",
+        "startLine": 20,
+        "endLine": 20,
+        "startColumn": 42,
+        "endColumn": 50
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_to",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "declarations": [
+      {
+       "id": "pkg_customer_view.copy_limit#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_customer_view.pkb",
+        "startLine": 21,
+        "endLine": 21,
+        "startColumn": 5,
+        "endColumn": 40
+       },
+       "type": {
+        "oracle": "customers.credit_limit%TYPE",
+        "origin": "unresolved"
+       },
+       "name": "v_limit",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_customer_view.copy_limit#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_customer_view.pkb",
+        "startLine": 23,
+        "endLine": 23,
+        "startColumn": 5,
+        "endColumn": 73
+       },
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT credit_limit INTO v_limit FROM customers WHERE customer_id = p_from",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "pkg_customer_view.copy_limit#stmt-2",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_customer_view.pkb",
+        "startLine": 24,
+        "endLine": 24,
+        "startColumn": 5,
+        "endColumn": 69
+       },
+       "sqlKind": "UPDATE",
+       "originalSql": "UPDATE customers SET credit_limit = v_limit WHERE customer_id = p_to",
+       "cardinality": "UNKNOWN"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}

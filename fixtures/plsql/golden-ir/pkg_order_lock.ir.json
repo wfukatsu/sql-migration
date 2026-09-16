@@ -1,0 +1,373 @@
+{
+ "id": "pkg_order_lock",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "pkg_order_lock",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "pkg_order_lock.pkb",
+    "startLine": 2,
+    "endLine": 29,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "pkg_order_lock",
+   "moduleKind": "package",
+   "routines": [
+    {
+     "id": "pkg_order_lock.is_cancellable",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_order_lock.pkb",
+      "startLine": 4,
+      "endLine": 7,
+      "startColumn": 3,
+      "endColumn": 21
+     },
+     "name": "is_cancellable",
+     "routineKind": "function",
+     "parameters": [
+      {
+       "id": "pkg_order_lock.is_cancellable#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_order_lock.pkb",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 27,
+        "endColumn": 39
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_status",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "returnType": {
+      "oracle": "BOOLEAN",
+      "resolved": "BOOLEAN",
+      "origin": "declared"
+     },
+     "body": [
+      {
+       "id": "pkg_order_lock.is_cancellable#stmt-1",
+       "kind": "Return",
+       "sourceRange": {
+        "file": "pkg_order_lock.pkb",
+        "startLine": 6,
+        "endLine": 6,
+        "startColumn": 5,
+        "endColumn": 43
+       },
+       "expression": "p_status IN ('NEW', 'CONFIRMED')"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "private",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_order_lock.snapshot",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_order_lock.pkb",
+      "startLine": 9,
+      "endLine": 14,
+      "startColumn": 3,
+      "endColumn": 15
+     },
+     "name": "snapshot",
+     "routineKind": "function",
+     "parameters": [
+      {
+       "id": "pkg_order_lock.snapshot#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_order_lock.pkb",
+        "startLine": 9,
+        "endLine": 9,
+        "startColumn": 21,
+        "endColumn": 35
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "returnType": {
+      "oracle": "orders%ROWTYPE",
+      "resolved": "RECORD(order_id NUMBER(19), customer_id NUMBER(19), status VARCHAR2(20), ordered_at DATE, shipped_at TIMESTAMP(6), total_amount NUMBER(14, 2), note VARCHAR2(400))",
+      "origin": "rowtype",
+      "schemaSnapshot": "schema.sql@17852f40"
+     },
+     "declarations": [
+      {
+       "id": "pkg_order_lock.snapshot#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_order_lock.pkb",
+        "startLine": 10,
+        "endLine": 10,
+        "startColumn": 5,
+        "endColumn": 25
+       },
+       "type": {
+        "oracle": "orders%ROWTYPE",
+        "origin": "unresolved"
+       },
+       "name": "v_row",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_order_lock.snapshot#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_order_lock.pkb",
+        "startLine": 12,
+        "endLine": 12,
+        "startColumn": 5,
+        "endColumn": 54
+       },
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT * INTO v_row FROM orders WHERE order_id = p_order_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "pkg_order_lock.snapshot#stmt-2",
+       "kind": "Return",
+       "sourceRange": {
+        "file": "pkg_order_lock.pkb",
+        "startLine": 13,
+        "endLine": 13,
+        "startColumn": 5,
+        "endColumn": 12
+       },
+       "expression": "v_row"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_order_lock.cancel",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_order_lock.pkb",
+      "startLine": 16,
+      "endLine": 27,
+      "startColumn": 3,
+      "endColumn": 13
+     },
+     "name": "cancel",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_order_lock.cancel#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_order_lock.pkb",
+        "startLine": 16,
+        "endLine": 16,
+        "startColumn": 20,
+        "endColumn": 34
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_order_lock.cancel#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_order_lock.pkb",
+        "startLine": 16,
+        "endLine": 16,
+        "startColumn": 42,
+        "endColumn": 54
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_reason",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "declarations": [
+      {
+       "id": "pkg_order_lock.cancel#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_order_lock.pkb",
+        "startLine": 17,
+        "endLine": 17,
+        "startColumn": 5,
+        "endColumn": 25
+       },
+       "type": {
+        "oracle": "orders%ROWTYPE",
+        "origin": "unresolved"
+       },
+       "name": "v_row",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_order_lock.cancel#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_order_lock.pkb",
+        "startLine": 19,
+        "endLine": 19,
+        "startColumn": 5,
+        "endColumn": 81
+       },
+       "diagnostics": [
+        {
+         "severity": "WARN",
+         "code": "ROW_LOCK",
+         "message": "FOR UPDATE WAIT 5 is row locking; the target has to provide the same guarantee another way",
+         "range": {
+          "file": "pkg_order_lock.pkb",
+          "startLine": 19,
+          "endLine": 19,
+          "startColumn": 5,
+          "endColumn": 81
+         }
+        }
+       ],
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT * INTO v_row FROM orders WHERE order_id = p_order_id FOR UPDATE WAIT 5",
+       "cardinality": "UNKNOWN",
+       "lockingMode": "FOR UPDATE WAIT 5"
+      },
+      {
+       "id": "pkg_order_lock.cancel#stmt-2",
+       "kind": "If",
+       "sourceRange": {
+        "file": "pkg_order_lock.pkb",
+        "startLine": 20,
+        "endLine": 22,
+        "startColumn": 5,
+        "endColumn": 9
+       },
+       "branches": [
+        {
+         "condition": "NOT is_cancellable(v_row.status)",
+         "body": [
+          {
+           "id": "pkg_order_lock.cancel#stmt-3",
+           "kind": "Raise",
+           "sourceRange": {
+            "file": "pkg_order_lock.pkb",
+            "startLine": 21,
+            "endLine": 21,
+            "startColumn": 7,
+            "endColumn": 105
+           },
+           "errorCode": -20060,
+           "message": "'order ' || p_order_id || ' cannot be cancelled: ' || v_row.status"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "pkg_order_lock.cancel#stmt-4",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_order_lock.pkb",
+        "startLine": 23,
+        "endLine": 23,
+        "startColumn": 5,
+        "endColumn": 78
+       },
+       "sqlKind": "UPDATE",
+       "originalSql": "UPDATE orders SET status = 'CANCELLED', note = p_reason WHERE order_id = p_order_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "pkg_order_lock.cancel#stmt-5",
+       "kind": "Loop",
+       "sourceRange": {
+        "file": "pkg_order_lock.pkb",
+        "startLine": 24,
+        "endLine": 26,
+        "startColumn": 5,
+        "endColumn": 9
+       },
+       "loopKind": "cursor-for",
+       "cursor": "r IN (SELECT line_no, product_id, qty FROM order_lines WHERE order_id = p_order_id)",
+       "body": [
+        {
+         "id": "pkg_order_lock.cancel#stmt-6",
+         "kind": "SqlOperation",
+         "sourceRange": {
+          "file": "pkg_order_lock.pkb",
+          "startLine": 25,
+          "endLine": 25,
+          "startColumn": 7,
+          "endColumn": 78
+         },
+         "sqlKind": "UPDATE",
+         "originalSql": "UPDATE products SET stock_qty = stock_qty + r.qty WHERE product_id = r.product_id",
+         "cardinality": "UNKNOWN"
+        }
+       ]
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}

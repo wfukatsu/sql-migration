@@ -1,0 +1,607 @@
+{
+ "id": "pkg_bulk_load",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "pkg_bulk_load",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "pkg_bulk_load.pkb",
+    "startLine": 4,
+    "endLine": 53,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "pkg_bulk_load",
+   "moduleKind": "package",
+   "routines": [
+    {
+     "id": "pkg_bulk_load.restock",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_bulk_load.pkb",
+      "startLine": 6,
+      "endLine": 26,
+      "startColumn": 3,
+      "endColumn": 14
+     },
+     "name": "restock",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_bulk_load.restock#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 6,
+        "endLine": 6,
+        "startColumn": 21,
+        "endColumn": 38
+       },
+       "type": {
+        "oracle": "t_id_list",
+        "resolved": "t_id_list",
+        "origin": "declared"
+       },
+       "name": "p_product_ids",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_bulk_load.restock#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 6,
+        "endLine": 6,
+        "startColumn": 49,
+        "endColumn": 61
+       },
+       "type": {
+        "oracle": "t_qty_list",
+        "resolved": "t_qty_list",
+        "origin": "declared"
+       },
+       "name": "p_deltas",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "declarations": [
+      {
+       "id": "pkg_bulk_load.restock#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 7,
+        "endLine": 7,
+        "startColumn": 5,
+        "endColumn": 30
+       },
+       "type": {
+        "oracle": "PLS_INTEGER",
+        "resolved": "PLS_INTEGER",
+        "origin": "declared"
+       },
+       "name": "v_error_index",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "pkg_bulk_load.restock#decl-2",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 8,
+        "endLine": 8,
+        "startColumn": 5,
+        "endColumn": 32
+       },
+       "type": {
+        "oracle": "VARCHAR2(400)",
+        "resolved": "VARCHAR2(400)",
+        "origin": "declared"
+       },
+       "name": "v_error_text",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_bulk_load.restock#stmt-1",
+       "kind": "Loop",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 10,
+        "endLine": 11,
+        "startColumn": 5,
+        "endColumn": 97
+       },
+       "diagnostics": [
+        {
+         "severity": "WARN",
+         "code": "FORALL_SAVE_EXCEPTIONS",
+         "message": "SAVE EXCEPTIONS lets some items fail and the rest commit; the atomicity is a business decision, not a translation",
+         "range": {
+          "file": "pkg_bulk_load.pkb",
+          "startLine": 10,
+          "endLine": 11,
+          "startColumn": 5,
+          "endColumn": 97
+         }
+        }
+       ],
+       "loopKind": "forall",
+       "cursor": "1 .. p_product_ids.COUNT",
+       "body": [
+        {
+         "id": "pkg_bulk_load.restock#stmt-2",
+         "kind": "SqlOperation",
+         "sourceRange": {
+          "file": "pkg_bulk_load.pkb",
+          "startLine": 11,
+          "endLine": 11,
+          "startColumn": 7,
+          "endColumn": 97
+         },
+         "sqlKind": "UPDATE",
+         "originalSql": "UPDATE products SET stock_qty = stock_qty + p_deltas(i) WHERE product_id = p_product_ids(i)",
+         "cardinality": "UNKNOWN"
+        }
+       ]
+      }
+     ],
+     "exceptionHandlers": [
+      {
+       "id": "pkg_bulk_load.restock#handler-1",
+       "kind": "ExceptionHandler",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 13,
+        "endLine": 25,
+        "startColumn": 5,
+        "endColumn": 13
+       },
+       "exceptions": [
+        "OTHERS"
+       ],
+       "body": [
+        {
+         "id": "pkg_bulk_load.restock#stmt-3",
+         "kind": "If",
+         "sourceRange": {
+          "file": "pkg_bulk_load.pkb",
+          "startLine": 14,
+          "endLine": 25,
+          "startColumn": 7,
+          "endColumn": 11
+         },
+         "branches": [
+          {
+           "condition": "SQLCODE = -24381",
+           "body": [
+            {
+             "id": "pkg_bulk_load.restock#stmt-4",
+             "kind": "Loop",
+             "sourceRange": {
+              "file": "pkg_bulk_load.pkb",
+              "startLine": 15,
+              "endLine": 22,
+              "startColumn": 9,
+              "endColumn": 13
+             },
+             "loopKind": "for",
+             "cursor": "i IN 1 .. SQL%BULK_EXCEPTIONS.COUNT",
+             "body": [
+              {
+               "id": "pkg_bulk_load.restock#stmt-5",
+               "kind": "Assignment",
+               "sourceRange": {
+                "file": "pkg_bulk_load.pkb",
+                "startLine": 17,
+                "endLine": 17,
+                "startColumn": 11,
+                "endColumn": 51
+               },
+               "target": "v_error_index",
+               "expression": "SQL%BULK_EXCEPTIONS(i).ERROR_INDEX"
+              },
+              {
+               "id": "pkg_bulk_load.restock#stmt-6",
+               "kind": "Assignment",
+               "sourceRange": {
+                "file": "pkg_bulk_load.pkb",
+                "startLine": 18,
+                "endLine": 18,
+                "startColumn": 11,
+                "endColumn": 70
+               },
+               "target": "v_error_text",
+               "expression": "SQLERRM(-SQL%BULK_EXCEPTIONS(i).ERROR_CODE)"
+              },
+              {
+               "id": "pkg_bulk_load.restock#stmt-7",
+               "kind": "SqlOperation",
+               "sourceRange": {
+                "file": "pkg_bulk_load.pkb",
+                "startLine": 19,
+                "endLine": 21,
+                "startColumn": 11,
+                "endColumn": 62
+               },
+               "sqlKind": "INSERT",
+               "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, new_value, changed_at, changed_by)\n          VALUES (seq_audit_id.NEXTVAL, 'PRODUCTS', TO_CHAR(v_error_index),\n                  'BULKERR', v_error_text, SYSTIMESTAMP, USER)",
+               "cardinality": "UNKNOWN"
+              }
+             ]
+            }
+           ]
+          }
+         ],
+         "elseBody": [
+          {
+           "id": "pkg_bulk_load.restock#stmt-8",
+           "kind": "Raise",
+           "sourceRange": {
+            "file": "pkg_bulk_load.pkb",
+            "startLine": 24,
+            "endLine": 24,
+            "startColumn": 9,
+            "endColumn": 9
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_bulk_load.collect_open_orders",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_bulk_load.pkb",
+      "startLine": 28,
+      "endLine": 40,
+      "startColumn": 3,
+      "endColumn": 26
+     },
+     "name": "collect_open_orders",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_bulk_load.collect_open_orders#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 28,
+        "endLine": 28,
+        "startColumn": 33,
+        "endColumn": 44
+       },
+       "type": {
+        "oracle": "PLS_INTEGER",
+        "resolved": "PLS_INTEGER",
+        "origin": "declared"
+       },
+       "name": "p_limit",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_bulk_load.collect_open_orders#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 28,
+        "endLine": 28,
+        "startColumn": 57,
+        "endColumn": 69
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_count",
+       "direction": "OUT",
+       "nocopy": false
+      }
+     ],
+     "declarations": [
+      {
+       "id": "pkg_bulk_load.collect_open_orders#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 29,
+        "endLine": 29,
+        "startColumn": 5,
+        "endColumn": 65
+       },
+       "name": "c",
+       "declarationKind": "cursor",
+       "initial": "SELECT order_id FROM orders WHERE status = 'NEW'"
+      },
+      {
+       "id": "pkg_bulk_load.collect_open_orders#decl-2",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 30,
+        "endLine": 30,
+        "startColumn": 5,
+        "endColumn": 20
+       },
+       "type": {
+        "oracle": "t_id_list",
+        "resolved": "t_id_list",
+        "origin": "declared"
+       },
+       "name": "v_ids",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_bulk_load.collect_open_orders#stmt-1",
+       "kind": "Assignment",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 32,
+        "endLine": 32,
+        "startColumn": 5,
+        "endColumn": 16
+       },
+       "target": "p_count",
+       "expression": "0"
+      },
+      {
+       "id": "pkg_bulk_load.collect_open_orders#stmt-2",
+       "kind": "OpenCursor",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 33,
+        "endLine": 33,
+        "startColumn": 5,
+        "endColumn": 10
+       },
+       "cursor": "c"
+      },
+      {
+       "id": "pkg_bulk_load.collect_open_orders#stmt-3",
+       "kind": "Loop",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 34,
+        "endLine": 38,
+        "startColumn": 5,
+        "endColumn": 9
+       },
+       "loopKind": "basic",
+       "body": [
+        {
+         "id": "pkg_bulk_load.collect_open_orders#stmt-4",
+         "kind": "Fetch",
+         "sourceRange": {
+          "file": "pkg_bulk_load.pkb",
+          "startLine": 35,
+          "endLine": 35,
+          "startColumn": 7,
+          "endColumn": 45
+         },
+         "cursor": "c",
+         "intoTargets": [
+          "p_limit"
+         ]
+        },
+        {
+         "id": "pkg_bulk_load.collect_open_orders#stmt-5",
+         "kind": "Exit",
+         "sourceRange": {
+          "file": "pkg_bulk_load.pkb",
+          "startLine": 36,
+          "endLine": 36,
+          "startColumn": 7,
+          "endColumn": 31
+         },
+         "condition": "v_ids.COUNT = 0"
+        },
+        {
+         "id": "pkg_bulk_load.collect_open_orders#stmt-6",
+         "kind": "Assignment",
+         "sourceRange": {
+          "file": "pkg_bulk_load.pkb",
+          "startLine": 37,
+          "endLine": 37,
+          "startColumn": 7,
+          "endColumn": 34
+         },
+         "target": "p_count",
+         "expression": "p_count + v_ids.COUNT"
+        }
+       ]
+      },
+      {
+       "id": "pkg_bulk_load.collect_open_orders#stmt-7",
+       "kind": "CloseCursor",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 39,
+        "endLine": 39,
+        "startColumn": 5,
+        "endColumn": 11
+       },
+       "cursor": "c"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_bulk_load.archive_lines",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_bulk_load.pkb",
+      "startLine": 42,
+      "endLine": 51,
+      "startColumn": 3,
+      "endColumn": 20
+     },
+     "name": "archive_lines",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_bulk_load.archive_lines#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 42,
+        "endLine": 42,
+        "startColumn": 27,
+        "endColumn": 41
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "declarations": [
+      {
+       "id": "pkg_bulk_load.archive_lines#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 43,
+        "endLine": 43,
+        "startColumn": 5,
+        "endColumn": 25
+       },
+       "type": {
+        "oracle": "t_id_list",
+        "resolved": "t_id_list",
+        "origin": "declared"
+       },
+       "name": "v_products",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "pkg_bulk_load.archive_lines#decl-2",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 44,
+        "endLine": 44,
+        "startColumn": 5,
+        "endColumn": 26
+       },
+       "type": {
+        "oracle": "t_qty_list",
+        "resolved": "t_qty_list",
+        "origin": "declared"
+       },
+       "name": "v_qtys",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_bulk_load.archive_lines#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 46,
+        "endLine": 47,
+        "startColumn": 5,
+        "endColumn": 41
+       },
+       "diagnostics": [
+        {
+         "severity": "WARN",
+         "code": "BULK_COLLECT",
+         "message": "BULK COLLECT needs a row limit and a memory bound",
+         "range": {
+          "file": "pkg_bulk_load.pkb",
+          "startLine": 46,
+          "endLine": 47,
+          "startColumn": 5,
+          "endColumn": 41
+         }
+        }
+       ],
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT product_id, qty BULK COLLECT INTO v_products, v_qtys\n      FROM order_lines WHERE order_id = p_order_id",
+       "cardinality": "MANY"
+      },
+      {
+       "id": "pkg_bulk_load.archive_lines#stmt-2",
+       "kind": "Loop",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 48,
+        "endLine": 50,
+        "startColumn": 5,
+        "endColumn": 79
+       },
+       "loopKind": "forall",
+       "cursor": "1 .. v_products.COUNT",
+       "body": [
+        {
+         "id": "pkg_bulk_load.archive_lines#stmt-3",
+         "kind": "SqlOperation",
+         "sourceRange": {
+          "file": "pkg_bulk_load.pkb",
+          "startLine": 49,
+          "endLine": 50,
+          "startColumn": 7,
+          "endColumn": 79
+         },
+         "sqlKind": "INSERT",
+         "originalSql": "INSERT INTO inventory_tx (tx_id, product_id, delta_qty, reason, created_at)\n      VALUES (seq_tx_id.NEXTVAL, v_products(i), -v_qtys(i), 'ARCHIVE', SYSDATE)",
+         "cardinality": "UNKNOWN"
+        }
+       ]
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}

@@ -1,0 +1,220 @@
+{
+ "id": "prc_audit_autonomous",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "prc_audit_autonomous",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "prc_audit_autonomous.prc",
+    "startLine": 4,
+    "endLine": 19,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "prc_audit_autonomous",
+   "moduleKind": "procedure",
+   "routines": [
+    {
+     "id": "prc_audit_autonomous",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "prc_audit_autonomous.prc",
+      "startLine": 4,
+      "endLine": 19,
+      "startColumn": 1,
+      "endColumn": 5
+     },
+     "name": "prc_audit_autonomous",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "prc_audit_autonomous#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "prc_audit_autonomous.prc",
+        "startLine": 5,
+        "endLine": 5,
+        "startColumn": 3,
+        "endColumn": 19
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_table_name",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "prc_audit_autonomous#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "prc_audit_autonomous.prc",
+        "startLine": 6,
+        "endLine": 6,
+        "startColumn": 3,
+        "endColumn": 19
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_key_value",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "prc_audit_autonomous#param-3",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "prc_audit_autonomous.prc",
+        "startLine": 7,
+        "endLine": 7,
+        "startColumn": 3,
+        "endColumn": 19
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_action",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "prc_audit_autonomous#param-4",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "prc_audit_autonomous.prc",
+        "startLine": 8,
+        "endLine": 8,
+        "startColumn": 3,
+        "endColumn": 19
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_new_value",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "prc_audit_autonomous#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "prc_audit_autonomous.prc",
+        "startLine": 12,
+        "endLine": 13,
+        "startColumn": 3,
+        "endColumn": 101
+       },
+       "sqlKind": "INSERT",
+       "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, new_value, changed_at, changed_by)\n  VALUES (seq_audit_id.NEXTVAL, p_table_name, p_key_value, p_action, p_new_value, SYSTIMESTAMP, USER)",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "prc_audit_autonomous#stmt-2",
+       "kind": "Commit",
+       "sourceRange": {
+        "file": "prc_audit_autonomous.prc",
+        "startLine": 14,
+        "endLine": 14,
+        "startColumn": 3,
+        "endColumn": 3
+       },
+       "diagnostics": [
+        {
+         "severity": "WARN",
+         "code": "TRANSACTION_IN_ROUTINE",
+         "message": "Commit inside a routine cannot be translated literally; the transaction boundary belongs to the application service",
+         "range": {
+          "file": "prc_audit_autonomous.prc",
+          "startLine": 14,
+          "endLine": 14,
+          "startColumn": 3,
+          "endColumn": 3
+         }
+        }
+       ]
+      }
+     ],
+     "exceptionHandlers": [
+      {
+       "id": "prc_audit_autonomous#handler-1",
+       "kind": "ExceptionHandler",
+       "sourceRange": {
+        "file": "prc_audit_autonomous.prc",
+        "startLine": 16,
+        "endLine": 18,
+        "startColumn": 3,
+        "endColumn": 10
+       },
+       "exceptions": [
+        "OTHERS"
+       ],
+       "body": [
+        {
+         "id": "prc_audit_autonomous#stmt-3",
+         "kind": "Rollback",
+         "sourceRange": {
+          "file": "prc_audit_autonomous.prc",
+          "startLine": 17,
+          "endLine": 17,
+          "startColumn": 5,
+          "endColumn": 5
+         },
+         "diagnostics": [
+          {
+           "severity": "WARN",
+           "code": "TRANSACTION_IN_ROUTINE",
+           "message": "Rollback inside a routine cannot be translated literally; the transaction boundary belongs to the application service",
+           "range": {
+            "file": "prc_audit_autonomous.prc",
+            "startLine": 17,
+            "endLine": 17,
+            "startColumn": 5,
+            "endColumn": 5
+           }
+          }
+         ]
+        },
+        {
+         "id": "prc_audit_autonomous#stmt-4",
+         "kind": "Raise",
+         "sourceRange": {
+          "file": "prc_audit_autonomous.prc",
+          "startLine": 18,
+          "endLine": 18,
+          "startColumn": 5,
+          "endColumn": 5
+         }
+        }
+       ]
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 1,
+      "rollbacks": 1,
+      "savepoints": 0,
+      "autonomous": true
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}

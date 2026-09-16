@@ -189,8 +189,12 @@ AUTO とするのは confidence >= 0.95 かつ §2 の禁止条件に 1 つも�
 ## 4. 計測の再現手順
 
 ```bash
+# KPI-2 symbol / type 解決率
+.venv/bin/python -m pytest tests/test_plsql_symbols.py -q
+
 # KPI-1 parse 率 / corpus の健全性
-.venv/bin/python -m pytest tests/test_plsql_corpus.py -q
+.venv/bin/python -m pytest tests/test_plsql_corpus.py tests/test_plsql_frontend.py -q
+.venv/bin/python -c "from plsql.frontend import parse_directory, coverage; c = coverage(parse_directory('fixtures/plsql/src')); print(f'parse rate {c.rate:.1%}', c.failed)"
 
 # KPI-3 の正解（manifest）と corpus のずれが無いこと
 .venv/bin/python -m pytest tests/test_plsql_manifest.py -q
@@ -200,5 +204,12 @@ AUTO とするのは confidence >= 0.95 かつ §2 の禁止条件に 1 つも�
 .venv/bin/python difftest/plsql_run.py run --out fixtures/plsql/golden
 ```
 
-KPI-2 / KPI-4 / KPI-5 / KPI-6 / KPI-7 の計測コマンドは、対応するフェーズの実装（P1-7 / P2-8 / P3-2 /
-P3-5）が入った時点でここに追記する。
+KPI-1 と KPI-2 はレポートが同時に出す（P1-7）。
+
+```bash
+.venv/bin/python -m plsql.cli fixtures/plsql/src --out-dir out/plsql
+# parse rate / type resolution が標準出力に、詳細が out/plsql/inventory.json に出る
+```
+
+KPI-4 / KPI-5 / KPI-6 / KPI-7 の計測コマンドは、対応するフェーズの実装（P2-8 / P3-2 / P3-5）が
+入った時点でここに追記する。

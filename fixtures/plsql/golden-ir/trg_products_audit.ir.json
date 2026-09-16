@@ -1,0 +1,97 @@
+{
+ "id": "trg_products_audit",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "trg_products_audit",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "trg_products_audit.trg",
+    "startLine": 2,
+    "endLine": 12,
+    "startColumn": 1,
+    "endColumn": 1
+   },
+   "name": "trg_products_audit",
+   "moduleKind": "trigger",
+   "routines": [
+    {
+     "id": "trg_products_audit.body",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "trg_products_audit.trg",
+      "startLine": 2,
+      "endLine": 12,
+      "startColumn": 1,
+      "endColumn": 1
+     },
+     "name": "body",
+     "routineKind": "trigger-body",
+     "body": [
+      {
+       "id": "trg_products_audit.body#stmt-1",
+       "kind": "If",
+       "sourceRange": {
+        "file": "trg_products_audit.trg",
+        "startLine": 6,
+        "endLine": 8,
+        "startColumn": 3,
+        "endColumn": 7
+       },
+       "branches": [
+        {
+         "condition": ":NEW.unit_price < :OLD.unit_price * 0.5",
+         "body": [
+          {
+           "id": "trg_products_audit.body#stmt-2",
+           "kind": "Raise",
+           "sourceRange": {
+            "file": "trg_products_audit.trg",
+            "startLine": 7,
+            "endLine": 7,
+            "startColumn": 5,
+            "endColumn": 97
+           },
+           "errorCode": -20050,
+           "message": "'price drop over 50% requires approval: ' || :NEW.product_id"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "trg_products_audit.body#stmt-3",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "trg_products_audit.trg",
+        "startLine": 9,
+        "endLine": 11,
+        "startColumn": 3,
+        "endColumn": 81
+       },
+       "sqlKind": "INSERT",
+       "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, old_value, new_value, changed_at, changed_by)\n  VALUES (seq_audit_id.NEXTVAL, 'PRODUCTS', TO_CHAR(:NEW.product_id), 'PRICE',\n          TO_CHAR(:OLD.unit_price), TO_CHAR(:NEW.unit_price), SYSTIMESTAMP, USER)",
+       "cardinality": "UNKNOWN"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "private",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ],
+   "triggerEvent": "UPDATE",
+   "triggerTable": "products",
+   "triggerTiming": "BEFORE"
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}

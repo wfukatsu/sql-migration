@@ -1,0 +1,457 @@
+{
+ "id": "pkg_money_calc",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "pkg_money_calc",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "pkg_money_calc.pkb",
+    "startLine": 7,
+    "endLine": 43,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "pkg_money_calc",
+   "moduleKind": "package",
+   "routines": [
+    {
+     "id": "pkg_money_calc.rounded_total",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_money_calc.pkb",
+      "startLine": 9,
+      "endLine": 15,
+      "startColumn": 3,
+      "endColumn": 20
+     },
+     "name": "rounded_total",
+     "routineKind": "function",
+     "parameters": [
+      {
+       "id": "pkg_money_calc.rounded_total#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 9,
+        "endLine": 9,
+        "startColumn": 26,
+        "endColumn": 40
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "returnType": {
+      "oracle": "NUMBER",
+      "resolved": "NUMBER",
+      "origin": "declared"
+     },
+     "declarations": [
+      {
+       "id": "pkg_money_calc.rounded_total#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 10,
+        "endLine": 10,
+        "startColumn": 5,
+        "endColumn": 37
+       },
+       "type": {
+        "oracle": "orders.total_amount%TYPE",
+        "origin": "unresolved"
+       },
+       "name": "v_total",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_money_calc.rounded_total#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 12,
+        "endLine": 12,
+        "startColumn": 5,
+        "endColumn": 67
+       },
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT total_amount INTO v_total FROM orders WHERE order_id = p_order_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "pkg_money_calc.rounded_total#stmt-2",
+       "kind": "Return",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 14,
+        "endLine": 14,
+        "startColumn": 5,
+        "endColumn": 36
+       },
+       "expression": "ROUND(NVL(v_total, 0), 2)"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_money_calc.days_since_order",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_money_calc.pkb",
+      "startLine": 17,
+      "endLine": 23,
+      "startColumn": 3,
+      "endColumn": 23
+     },
+     "name": "days_since_order",
+     "routineKind": "function",
+     "parameters": [
+      {
+       "id": "pkg_money_calc.days_since_order#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 17,
+        "endLine": 17,
+        "startColumn": 29,
+        "endColumn": 43
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "returnType": {
+      "oracle": "NUMBER",
+      "resolved": "NUMBER",
+      "origin": "declared"
+     },
+     "declarations": [
+      {
+       "id": "pkg_money_calc.days_since_order#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 18,
+        "endLine": 18,
+        "startColumn": 5,
+        "endColumn": 40
+       },
+       "type": {
+        "oracle": "orders.ordered_at%TYPE",
+        "origin": "unresolved"
+       },
+       "name": "v_ordered_at",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_money_calc.days_since_order#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 20,
+        "endLine": 20,
+        "startColumn": 5,
+        "endColumn": 70
+       },
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT ordered_at INTO v_ordered_at FROM orders WHERE order_id = p_order_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "pkg_money_calc.days_since_order#stmt-2",
+       "kind": "Return",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 22,
+        "endLine": 22,
+        "startColumn": 5,
+        "endColumn": 47
+       },
+       "expression": "TRUNC(SYSDATE) - TRUNC(v_ordered_at)"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_money_calc.display_note",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_money_calc.pkb",
+      "startLine": 25,
+      "endLine": 34,
+      "startColumn": 3,
+      "endColumn": 19
+     },
+     "name": "display_note",
+     "routineKind": "function",
+     "parameters": [
+      {
+       "id": "pkg_money_calc.display_note#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 25,
+        "endLine": 25,
+        "startColumn": 25,
+        "endColumn": 39
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "returnType": {
+      "oracle": "VARCHAR2",
+      "resolved": "VARCHAR2",
+      "origin": "declared"
+     },
+     "declarations": [
+      {
+       "id": "pkg_money_calc.display_note#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 26,
+        "endLine": 26,
+        "startColumn": 5,
+        "endColumn": 28
+       },
+       "type": {
+        "oracle": "orders.note%TYPE",
+        "origin": "unresolved"
+       },
+       "name": "v_note",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_money_calc.display_note#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 28,
+        "endLine": 28,
+        "startColumn": 5,
+        "endColumn": 58
+       },
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT note INTO v_note FROM orders WHERE order_id = p_order_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "pkg_money_calc.display_note#stmt-2",
+       "kind": "If",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 30,
+        "endLine": 32,
+        "startColumn": 5,
+        "endColumn": 9
+       },
+       "branches": [
+        {
+         "condition": "v_note = '' OR v_note IS NULL",
+         "body": [
+          {
+           "id": "pkg_money_calc.display_note#stmt-3",
+           "kind": "Return",
+           "sourceRange": {
+            "file": "pkg_money_calc.pkb",
+            "startLine": 31,
+            "endLine": 31,
+            "startColumn": 7,
+            "endColumn": 14
+           },
+           "expression": "'(none)'"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "pkg_money_calc.display_note#stmt-4",
+       "kind": "Return",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 33,
+        "endLine": 33,
+        "startColumn": 5,
+        "endColumn": 67
+       },
+       "expression": "RTRIM(v_note) || ' / ' || TO_CHAR(SYSDATE, 'YYYY-MM-DD')"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_money_calc.apply_rate",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_money_calc.pkb",
+      "startLine": 36,
+      "endLine": 41,
+      "startColumn": 3,
+      "endColumn": 17
+     },
+     "name": "apply_rate",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_money_calc.apply_rate#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 36,
+        "endLine": 36,
+        "startColumn": 24,
+        "endColumn": 38
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_money_calc.apply_rate#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 36,
+        "endLine": 36,
+        "startColumn": 46,
+        "endColumn": 56
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_rate",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "declarations": [
+      {
+       "id": "pkg_money_calc.apply_rate#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 37,
+        "endLine": 37,
+        "startColumn": 5,
+        "endColumn": 37
+       },
+       "type": {
+        "oracle": "orders.total_amount%TYPE",
+        "origin": "unresolved"
+       },
+       "name": "v_total",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_money_calc.apply_rate#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 39,
+        "endLine": 39,
+        "startColumn": 5,
+        "endColumn": 67
+       },
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT total_amount INTO v_total FROM orders WHERE order_id = p_order_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "pkg_money_calc.apply_rate#stmt-2",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_money_calc.pkb",
+        "startLine": 40,
+        "endLine": 40,
+        "startColumn": 5,
+        "endColumn": 82
+       },
+       "sqlKind": "UPDATE",
+       "originalSql": "UPDATE orders SET total_amount = ROUND(v_total * p_rate, 2) WHERE order_id = p_order_id",
+       "cardinality": "UNKNOWN"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}

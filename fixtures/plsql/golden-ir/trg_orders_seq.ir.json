@@ -1,0 +1,65 @@
+{
+ "id": "trg_orders_seq",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "trg_orders_seq",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "trg_orders_seq.trg",
+    "startLine": 4,
+    "endLine": 10,
+    "startColumn": 1,
+    "endColumn": 1
+   },
+   "name": "trg_orders_seq",
+   "moduleKind": "trigger",
+   "routines": [
+    {
+     "id": "trg_orders_seq.body",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "trg_orders_seq.trg",
+      "startLine": 4,
+      "endLine": 10,
+      "startColumn": 1,
+      "endColumn": 1
+     },
+     "name": "body",
+     "routineKind": "trigger-body",
+     "body": [
+      {
+       "id": "trg_orders_seq.body#stmt-1",
+       "kind": "Assignment",
+       "sourceRange": {
+        "file": "trg_orders_seq.trg",
+        "startLine": 9,
+        "endLine": 9,
+        "startColumn": 3,
+        "endColumn": 33
+       },
+       "target": ":NEW.order_id",
+       "expression": "seq_order_id.NEXTVAL"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "private",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ],
+   "triggerEvent": "INSERT",
+   "triggerTable": "orders",
+   "triggerTiming": "BEFORE"
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}
