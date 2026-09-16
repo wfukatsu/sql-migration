@@ -401,6 +401,20 @@
           "startColumn": 7,
           "endColumn": 45
          },
+         "diagnostics": [
+          {
+           "severity": "WARN",
+           "code": "BULK_COLLECT",
+           "message": "BULK COLLECT needs a row limit and a memory bound",
+           "range": {
+            "file": "pkg_bulk_load.pkb",
+            "startLine": 35,
+            "endLine": 35,
+            "startColumn": 7,
+            "endColumn": 45
+           }
+          }
+         ],
          "cursor": "c",
          "intoTargets": [
           "p_limit"

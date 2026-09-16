@@ -15,6 +15,9 @@ corpus は全件が合成である（計画 §9 の決定、2026-09-17）。し�
 - レポートには必ずその旨を併記する。
 - 判定適合率（KPI-3）の最終的な根拠には、ルール・grammar の作成時に参照しない
   **holdout**（`fixtures/plsql/src/holdout/`、全 20 ユニット中 5 ユニット = 25%）上の値を用いる。
+  ただし **2026-09-17 時点で holdout の独立性は失われている**。P2-2 のルール開発中に期待値との差分一覧を
+  繰り返し出力し、そこに holdout の routine 名と期待判定が含まれていたためである
+  （`fixtures/plsql/README.md` に経緯を記録）。現在の holdout 上の値は独立した証拠として読めない。
 - 実案件由来のコードが入手できた時点で corpus に追加し、出自別（`real-anonymized` / `synthetic`）に
   集計し直す。
 
@@ -192,8 +195,11 @@ AUTO とするのは confidence >= 0.95 かつ §2 の禁止条件に 1 つも�
 ## 4. 計測の再現手順
 
 ```bash
-# KPI-3 判定適合率（ルール判定 vs manifest）
-.venv/bin/python -m pytest tests/test_plsql_rules.py -q
+# KPI-3 判定適合率（ルール判定 vs manifest）。ScalarDB の能力判定まで含めた値は capability 側で測る
+.venv/bin/python -m pytest tests/test_plsql_rules.py tests/test_plsql_safety.py tests/test_plsql_capability.py -q
+
+# ScalarDB で実行できる文の割合（P2-4）
+.venv/bin/python -m plsql.cli fixtures/plsql/src --scalardb-schema fixtures/plsql/scalardb-schema.json
 
 # KPI-2 symbol / type 解決率
 .venv/bin/python -m pytest tests/test_plsql_symbols.py -q

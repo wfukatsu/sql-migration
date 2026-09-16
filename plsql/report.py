@@ -36,6 +36,7 @@ class Analysis:
     parsed: list[ParsedFile] = field(default_factory=list)
     symbols: list[SymbolTable] = field(default_factory=list)
     schema: OracleSchema | None = None
+    capability: "object | None" = None   # CapabilityReport when P2-4 has run
 
     def issues(self) -> list[Issue]:
         out: list[Issue] = []
@@ -54,12 +55,31 @@ class Analysis:
                         out.extend(statement.diagnostics)
         return out
 
+    def symbol_table(self) -> SymbolTable:
+        """Every scope of every file in one table.
+
+        The SQL bridge resolves a name against the routine it is in, so it needs the scopes of the file that
+        routine came from. Handing it one file's table -- which is what a list invites -- silently turns every
+        variable in the other files into an unknown column.
+        """
+        merged = SymbolTable(schema_snapshot=self.schema.snapshot if self.schema else None)
+        for table in self.symbols:
+            merged.scopes.update(table.scopes)
+            merged.overloads.update(table.overloads)
+            merged.unresolved.extend(table.unresolved)
+        return merged
+
     def routines(self) -> list[tuple[M.Module, M.Routine]]:
         return [(m, r) for m in self.program.modules for r in m.routines]
 
 
-def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: str = "corpus") -> Analysis:
-    """Parse, resolve and lower every source file under `root`. Nothing raises; failures become diagnostics."""
+def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: str = "corpus",
+            scalardb_schema: str | Path | None = None) -> Analysis:
+    """Parse, resolve and lower every source file under `root`. Nothing raises; failures become diagnostics.
+
+    With `scalardb_schema`, every SQL statement is also checked against the target (P2-4) and the answer lands on
+    the IR, so the report can say what ScalarDB can run rather than leaving it unasked.
+    """
     root = Path(root)
     schema = OracleSchema.from_ddl(schema_ddl) if schema_ddl else None
     program = M.Program(id=program_id, kind="Program",
@@ -89,6 +109,14 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
         parsed = parse_file(spec)
         analysis.parsed.append(parsed)
         program.modules.extend(lower_file(parsed, None, schema, set()))
+
+    if scalardb_schema is not None:
+        from .capability import annotate, check
+        from scalardb_migrate.schema import SchemaRegistry
+
+        registry = SchemaRegistry.from_schema_loader_json(str(scalardb_schema))
+        analysis.capability = check(program, registry, analysis.symbol_table())
+        annotate(program, analysis.capability)
     return analysis
 
 
@@ -142,6 +170,9 @@ def inventory(analysis: Analysis) -> dict:
                    "statements": sum(statements.values()), "issues": len(issues),
                    "errors": sum(1 for i in issues if i.severity == "ERROR")},
         "statementKinds": dict(statements.most_common()),
+        "targetCapability": ({"statuses": analysis.capability.counts(),
+                              "runnableRate": round(analysis.capability.rate(), 4)}
+                             if analysis.capability is not None else None),
         "modules": modules,
         "schemaSnapshot": analysis.program.schema_snapshot,
     }
