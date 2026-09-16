@@ -165,7 +165,7 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 | P0-2 | 各 corpus に期待値タグと出自を付与 | `fixtures/plsql/manifest.yaml` | 全ファイルにタグ（機能タグ、期待判定 AUTO/REVIEW/REDESIGN、期待挙動）と**出自欄（`real-anonymized` / `synthetic`）**、holdout フラグが付く。判定根拠を 1 行で書く | P0-1 | 1d |
 | P0-3 | corpus 表の ScalarDB スキーマ設計 | `fixtures/plsql/scalardb-schema.json`（Schema Loader JSON）、キー設計の根拠メモ | 全表の partition key / clustering key / secondary index が決まり、既存 `SchemaRegistry.from_schema_loader_json()` で読める。cross-partition scan になるアクセスを事前に洗い出して記録 | P0-1 | 2d |
 | P0-4 | Oracle characterization ランナー | `difftest/plsql_run.py` | corpus を Oracle 上で fixture 込みで実行し、戻り値・OUT・例外・DB 全行を canonical JSON 化する。順序非仕様の結果は正規化するが重複除去はしない。**採取形式（canonical JSON）と正規化規則をここで確定する** | P0-1 | 3d |
-| P0-5 | Oracle 上で golden を採取 | `fixtures/plsql/golden/*.json`（戻り値・OUT・例外・DB 差分） | P0-4 のランナーで採取する。**非決定要素を固定したうえで**（`SYSDATE`/`SYSTIMESTAMP` は fixture が与える固定時刻へ差し替え、Sequence は各実行前に固定値へ再初期化）2 回実行して同一。固定した時刻・採番開始値を golden JSON に記録する | P0-4 | 2d |
+| P0-5 | Oracle 上で golden を採取 | `fixtures/plsql/golden/*.json`（戻り値・OUT・例外・DB 差分） | P0-4 のランナーで採取する。**非決定要素を固定したうえで** 2 回実行して同一。`SYSDATE` は `ALTER SYSTEM SET FIXED_DATE`、Sequence は実行前に `START WITH` で再作成。**`SYSTIMESTAMP` / `CURRENT_DATE` / `LOCALTIMESTAMP` は固定できない**ため（P0-4 で実測）、それらから書かれる列はシナリオの `mask` で宣言して比較対象から外す。固定した時刻・採番開始値とマスクした列を capture に記録する | P0-4 | 2d |
 | P0-6 | ANTLR grammar と依存の固定 | `plsql/grammar/`（grammars-v4 の commit hash 明記。`PlSqlLexer.g4` / `PlSqlParser.g4` と Python3 ターゲットの `PlSqlLexerBase.py` / `PlSqlParserBase.py` / `transformGrammar.py` を含む）、`requirements.txt` に `antlr4-python3-runtime` 追加、`Makefile` に再生成手順（transformGrammar.py 適用 → antlr4 生成の順） | クリーン環境で `pip install -r requirements.txt` 後に parser が import でき、生成コードを commit 済み | — | 1d |
 | P0-7 | KPI・AUTO 禁止条件・確信度の定義 | `docs/plsql-kpi.md` | §8 の全 KPI の測り方が定義済み。AUTO 禁止条件（COMMIT、Package 変数、動的 SQL、Trigger、AUTHID）が列挙済み。**確信度 5 因子それぞれの算出方法（0〜1 の測り方）と、AUTO とする下限しきい値が数値で決まっている**（P2-2 はこの定義を実装するだけにする） | P0-2 | 1d |
 
@@ -176,7 +176,7 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 | ID | タスク | 成果物 | 受入条件 | 依存 | 見積 |
 |---|---|---|---|---|---|
 | P1-1 | SQL*Plus 前処理と Source Map | `plsql/preprocess.py` | `SET`/`SHOW`/`@`/`/` 区切り/コメントを処理し、前処理後の (行, 列) から元ファイル位置へ逆写像できる。単体テストあり。**入力の大文字化は行わない**（P0-6 で確認: 文法はキーワードの大小文字を問わず、大文字化すると文字列リテラルの元の表記が壊れる） | P0-6 | 2d |
-| P1-2 | ANTLR フロントエンド | `plsql/frontend.py` | corpus の **90% 以上**を構文エラーなく parse。構文エラーは例外でなく `Issue(ERROR, PARSE, ...)` + source range で返る。1 ファイルの失敗が他を止めない | P1-1 | 2d |
+| P1-2 | ANTLR フロントエンド | `plsql/frontend.py` | corpus の **90% 以上**を構文エラーなく parse。構文エラーは例外でなく `Issue(ERROR, PARSE, ...)` + source range で返る。1 ファイルの失敗が他を止めない。**parse 成功はコンパイル可能性を意味しない**（P0-4 で、ANTLR が通した 32 ファイルのうち 2 件が Oracle のコンパイルで落ちた）ため、parse 率は parser coverage としてのみ扱う | P1-1 | 2d |
 | P1-3 | Symbol Table・型解決 | `plsql/symbols.py` | 変数・定数・引数・戻り値・package 公開要素を解決。`%TYPE`/`%ROWTYPE` を DDL スナップショット（`SchemaRegistry`）から解決し、参照した DDL snapshot ID を記録。未解決シンボルを一覧できる | P1-2, P0-3 | 3d |
 | P1-4 | Migration IR v1 とシリアライザ | `plsql/ir/model.py`, `ir/schema.json`, `ir/serde.py` | 設計書 §5.2 のノードを表現。全ノードが `id` / `sourceRange` / `type` / `confidence` / `diagnostics` を持つ。JSON Schema 検証を通る。`schemaVersion` を持つ | P1-2 | 2d |
 | P1-5 | Parse Tree → IR の lowering | `plsql/lower.py` | MVP 対象（設計書 §2.1）の構文が IR に落ちる。golden IR 比較テストが **parse に成功した corpus 全件**で一致（parse 失敗ファイルは P1-2 の診断側で数える） | P1-3, P1-4 | 4d |
@@ -251,6 +251,7 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 | grammars-v4 の PL/SQL grammar が実案件の構文を取りこぼす | parse 率が Phase 1 の受入条件に届かない | grammar は fork せず、まず**未対応構文を診断として可視化**する。修正が必要なら vendor 化した grammar に最小パッチを当て、パッチを `plsql/grammar/patches/` に残す |
 | Python ANTLR ランタイムの性能 | 大規模 schema の解析が遅い | routine 単位で並列化（`multiprocessing`）。schema snapshot は不変にして共有。**P0-6 時点の実測: package body 15 行の初回 parse が約 2.4 秒**（ATN のシリアライズ解凍を含む。2 回目以降は解凍済み）。プロセスを使い捨てると毎回この初期化を払うため、並列化はワーカー再利用を前提にする。Phase 1 終了時に再実測し、必要なら D1 の退避経路を検討 |
 | routine が書いた表を後続の `PLANNED` 読み取りが走査する | 実行時に ScalarDB が拒否する（1 トランザクションで実行できない） | P2-4 で静的に検出して REDESIGN とする。実行時には `ScanAfterWriteException`（対象表つき）で落とし、黙って古い像を読ませない |
+| `SYSTIMESTAMP` 由来の値が golden と一致しない | 差分テストが恒常的に落ちる、あるいは時刻列を無検査にしてしまう | Oracle では `SYSDATE` しか固定できない（P0-4 で実測）。固定できない時計から書かれる列はシナリオが `mask` で宣言し、マスクした列を capture に残して黙って落とさない |
 | `NUMBER` の精度・丸めが Java 側でずれる | 意味的同等性テストが落ちる | 精度不明な `NUMBER` は `BigDecimal` 固定。ScalarDB に DECIMAL 型がない（`types.py` が DOUBLE/BIGINT へ落とす）ため、**金額列はスケール済み整数 + BIGINT** を設計上の既定とし、REVIEW で明示する |
 | routine 内 COMMIT が corpus に大量に含まれ、ほとんどが REDESIGN になる | 自動変換率が低く見える | KPI を行数ベースの変換率にしない（P0-7）。REDESIGN は「検出できたこと」を成果として数える |
 | ScalarDB の cross-partition scan 制約（Cassandra バックエンド） | 生成 Repository が実行時に失敗する | 既存 `decomposer` の `PlanBlocked` / `requires_cross_partition_scan` をそのまま判定に使い、`--storage cassandra` では該当 routine を REVIEW 以上にする |
