@@ -100,7 +100,7 @@ tests/plsql/                pytest
 | 変換不能 SELECT の実行計画 | `decomposer.Decomposer.decompose()` → `plan.json` | PL/SQL 変数を**名前付きプレースホルダのまま**計画化し、実行時に値を埋めるためのパラメータ化（§4.1） |
 | アプリ側へ移る処理の列挙・意味注意 | `appside.inventory()` / `semantic_notes()` / `design_advice()` / `estimate_cost()` | 出力を IR の診断として持ち上げる |
 | スキーマ情報 | `schema.SchemaRegistry`（Schema Loader JSON 入出力） | DDL スナップショットから `%TYPE`/`%ROWTYPE` 解決に使う |
-| 実行計画の実行 | `runtime-java` `Runner` / `Plan` / `Residual` / `CoreFetcher` | **外部トランザクションに参加できる API の切り出しが必要**（現状の `Fetcher.begin()` は自前でトランザクションを開始する契約。P2-9） |
+| 実行計画の実行 | `runtime-java` `PlanRunner` / `Plan` / `Residual` / `CoreFetcher` | 外部トランザクションに参加する API は P2-9 で切り出し済み（`PlanRunner.join(tx, admin, plan, params)`）。生成 Repository はこれを呼ぶ |
 | アプリ側関数の Java 実装 | `com.scalar.migrate.appside.{OracleDates,OracleNumbers,OracleOrdering,Windows,Hierarchy}` | PL/SQL 組込み関数の不足分を追加 |
 | Oracle との差分検証 | `difftest/`（docker-compose、`run.py`、`golden.py`、`backends.py`） | PL/SQL の実行と結果・DB 状態の突き合わせランナーを追加 |
 
@@ -175,7 +175,7 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 
 | ID | タスク | 成果物 | 受入条件 | 依存 | 見積 |
 |---|---|---|---|---|---|
-| P1-1 | SQL*Plus 前処理と Source Map | `plsql/preprocess.py` | `SET`/`SHOW`/`@`/`/` 区切り/コメントを処理し、前処理後の (行, 列) から元ファイル位置へ逆写像できる。単体テストあり | P0-6 | 2d |
+| P1-1 | SQL*Plus 前処理と Source Map | `plsql/preprocess.py` | `SET`/`SHOW`/`@`/`/` 区切り/コメントを処理し、前処理後の (行, 列) から元ファイル位置へ逆写像できる。単体テストあり。**入力の大文字化は行わない**（P0-6 で確認: 文法はキーワードの大小文字を問わず、大文字化すると文字列リテラルの元の表記が壊れる） | P0-6 | 2d |
 | P1-2 | ANTLR フロントエンド | `plsql/frontend.py` | corpus の **90% 以上**を構文エラーなく parse。構文エラーは例外でなく `Issue(ERROR, PARSE, ...)` + source range で返る。1 ファイルの失敗が他を止めない | P1-1 | 2d |
 | P1-3 | Symbol Table・型解決 | `plsql/symbols.py` | 変数・定数・引数・戻り値・package 公開要素を解決。`%TYPE`/`%ROWTYPE` を DDL スナップショット（`SchemaRegistry`）から解決し、参照した DDL snapshot ID を記録。未解決シンボルを一覧できる | P1-2, P0-3 | 3d |
 | P1-4 | Migration IR v1 とシリアライザ | `plsql/ir/model.py`, `ir/schema.json`, `ir/serde.py` | 設計書 §5.2 のノードを表現。全ノードが `id` / `sourceRange` / `type` / `confidence` / `diagnostics` を持つ。JSON Schema 検証を通る。`schemaVersion` を持つ | P1-2 | 2d |
@@ -186,21 +186,28 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 **Phase 1 完了条件**: corpus の 90% 以上を parse し、資産・依存・未解決理由を一覧できる。
 （変換率ではなく **parser coverage** の目標である点に注意。）
 
-### Phase 2: Safe Generator（合計 29d）
+### Phase 2: Safe Generator（合計 30d）
 
 | ID | タスク | 成果物 | 受入条件 | 依存 | 見積 |
 |---|---|---|---|---|---|
 | P2-1 | プログラム解析（CFG / call graph / read-write set / transaction graph） | `plsql/analysis.py` | routine 単位の CFG、package 内外の call graph、SQL から得た read/write set、COMMIT/ROLLBACK/SAVEPOINT の位置を IR に付与。GOTO は region 解析で検出のみ | P1-5 | 4d |
 | P2-2 | ルールエンジン | `plsql/rules/engine.py` + YAML | 設計書 §8 の YAML 形式を評価し、判定・理由・対策・必要テストを出す。**P0-7 が定義した確信度式としきい値を実装する**。ルールは全て YAML 側にあり Python に判定を埋め込まない | P2-1, P0-7 | 3d |
 | P2-3 | 安全側ルールセット（AUTO 禁止条件） | `rules/transaction.yaml`, `state.yaml`, `dynamic_sql.yaml`, `trigger.yaml`, `authid.yaml` | routine 内 COMMIT、Package 変数、`EXECUTE IMMEDIATE`/`DBMS_SQL`、Trigger、`AUTHID CURRENT_USER`、Autonomous Transaction を REDESIGN として必ず検出。corpus の期待判定と突き合わせて**取りこぼし 0**（false negative を許さない） | P2-2 | 2d |
-| P2-4 | ScalarDB capability checker | `rules/scalardb_capability.yaml` + `sqlbridge` 連携 | 許可 AST ノードの allowlist 方式。converter が `ERROR` を返した SQL を含む routine は AUTO にしない。`PLANNED` は REVIEW 以上 | P1-6, P2-2 | 2d |
+| P2-4 | ScalarDB capability checker | `rules/scalardb_capability.yaml` + `sqlbridge` 連携 | 許可 AST ノードの allowlist 方式。converter が `ERROR` を返した SQL を含む routine は AUTO にしない。`PLANNED` は REVIEW 以上。**write-then-scan の検出**: P2-1 の write set と `PLANNED` の fetch 対象表が同じ routine 内で交差し、その fetch が走査（`access_path` がキーアクセスでない）なら REDESIGN とし、durable boundary での分割かキーアクセス化を対策として出す | P1-6, P2-1, P2-2 | 3d |
 | P2-5 | 型・DTO・例外の生成 | `plsql/gen_java/dto.py`, `exception.py` | 設計書 §5.3 の対応表どおりに Java 型を決める。`NUMBER` は精度不明なら `BigDecimal`。`%ROWTYPE` は列名対応の record。user exception と `RAISE_APPLICATION_ERROR` のコード registry を生成 | P1-3 | 3d |
 | P2-6 | 制御構造と本体の Java 生成 | `plsql/gen_java/service.py`, `emit.py` | IF/CASE/LOOP/WHILE/FOR/EXIT/CONTINUE、代入、ローカル呼び出し、例外ハンドラを生成。`@Transactional` 相当の境界は公開 Service にのみ置き、private/Repository には置かない。全 statement に元 PL/SQL 行へのコメント付き traceability | P2-1, P2-5 | 4d |
 | P2-7 | Repository 生成（SELECT / DML / Cursor / 実行計画） | `plsql/gen_java/repository.py` | ScalarDB SQL で通る文は直接発行。`PLANNED` は `plan.json` を同梱して `runtime-java` の `Runner` を呼ぶ。`SELECT INTO` は 0 件→`NoDataFoundException`、複数件→`TooManyRowsException` を再現。影響行数を返す。**Static Cursor（OPEN/FETCH/CLOSE）と Cursor FOR LOOP を生成し、BULK COLLECT/FORALL は行数上限つきで生成するか REVIEW に落とすかをルールで明示する** | P1-6, P2-6, P2-9 | 4d |
 | P2-8 | 生成物の compile / golden テスト | `tests/plsql/test_generate.py`, `fixtures/plsql/golden/java/` | AUTO 判定の routine が生成 → `gradle compileJava` **全件成功**。golden 比較で生成差分が検知できる | P2-6, P2-7, P2-10 | 1d |
-| P2-9 | runtime-java: 外部トランザクション参加 API | `runtime-java` の `Fetcher` / `Residual` / `Runner` 改修 | `Runner.run` と `Fetcher` が外部から `DistributedTransaction`（または ScalarDB SQL の `Connection`）を受け取って実行できる。生成 Repository が呼び出し側 Service のトランザクションに参加でき、同一 routine 内の DML を後続の `PLANNED` 読み取りが見られる。既存の自前トランザクション経路は後方互換で残す | — | 3d |
+| P2-9 | runtime-java: 外部トランザクション参加 API | `runtime-java` の `Fetcher` / `PlanRunner` / `Runner` 改修 | `PlanRunner` が外部から `DistributedTransaction`（または ScalarDB SQL の `Connection`）を受け取って実行計画を実行できる。生成 Repository が呼び出し側 Service のトランザクションに参加し、**ロールバック範囲が routine の書き込みと一致する**。既存の自前トランザクション経路は後方互換で残す。**自分の書き込みが後続の読み取りに見えるのはキーアクセスのみ**（下記の制約）。走査になる場合は `ScanAfterWriteException` に変換して対象表を示す | — | 3d |
 | P2-10 | 生成コード用 Gradle 構成 | `runtime-java/build.gradle`（または `generated/build.gradle`） | `generated/` をソースセットに載せ、§9 で決めたトランザクション方式に必要な依存（Spring 採用時は Spring Boot）を追加。空の `generated/` でも `gradle compileJava` が通る | §9「Spring Boot / トランザクション方式」の確定 | 1d |
 | P2-11 | 先行差分検証（意味的同等性の早期信号） | `difftest/plsql_diff.py` の最小版、`runtime-java` の最小ハーネス | 単純 CRUD と `SELECT INTO` の 2〜3 本について、Oracle 実行結果（P0-5 の golden）と生成 Java の実行結果が一致する。ここで出た差分は生成規約（例外再現・数値精度・日付）へ反映してから残りの生成に進む | P2-7, P0-5 | 2d |
+
+> **ScalarDB の制約（3.19.1 + PostgreSQL 16 で実測）**: 同一トランザクション内で自分の書き込みが見えるのは
+> キーアクセス（`get`）だけで、走査（`scan`）は `Scanning data already-written or already-deleted by the same
+> transaction is not allowed` で失敗する。したがって「routine 内で書いた表を、後続の `PLANNED` 読み取りが走査する」
+> 形は 1 トランザクションでは実行できない。ランタイムで吸収できる種類の制約ではないため、**変換側で検出して
+> REVIEW 以上に落とす**（P2-4）。当初 P2-9 の受入条件に置いていた「DML を後続の `PLANNED` 読み取りが見られる」は、
+> キーアクセスに限る条件へ改めた。
 
 **Phase 2 完了条件**: AUTO 対象が全件 compile し、重大な意味欠落（黙って落ちた SQL 構文・未検出の副作用）がゼロ。
 **加えて、P2-11 の先行 2〜3 本の差分比較が一致していること**（compile が通ることは意味が保存されている証拠にならない）。
@@ -242,7 +249,8 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 | リスク | 影響 | 対処 |
 |---|---|---|
 | grammars-v4 の PL/SQL grammar が実案件の構文を取りこぼす | parse 率が Phase 1 の受入条件に届かない | grammar は fork せず、まず**未対応構文を診断として可視化**する。修正が必要なら vendor 化した grammar に最小パッチを当て、パッチを `plsql/grammar/patches/` に残す |
-| Python ANTLR ランタイムの性能 | 大規模 schema の解析が遅い | routine 単位で並列化（`multiprocessing`）。schema snapshot は不変にして共有。Phase 1 終了時に実測し、必要なら D1 の退避経路を検討 |
+| Python ANTLR ランタイムの性能 | 大規模 schema の解析が遅い | routine 単位で並列化（`multiprocessing`）。schema snapshot は不変にして共有。**P0-6 時点の実測: package body 15 行の初回 parse が約 2.4 秒**（ATN のシリアライズ解凍を含む。2 回目以降は解凍済み）。プロセスを使い捨てると毎回この初期化を払うため、並列化はワーカー再利用を前提にする。Phase 1 終了時に再実測し、必要なら D1 の退避経路を検討 |
+| routine が書いた表を後続の `PLANNED` 読み取りが走査する | 実行時に ScalarDB が拒否する（1 トランザクションで実行できない） | P2-4 で静的に検出して REDESIGN とする。実行時には `ScanAfterWriteException`（対象表つき）で落とし、黙って古い像を読ませない |
 | `NUMBER` の精度・丸めが Java 側でずれる | 意味的同等性テストが落ちる | 精度不明な `NUMBER` は `BigDecimal` 固定。ScalarDB に DECIMAL 型がない（`types.py` が DOUBLE/BIGINT へ落とす）ため、**金額列はスケール済み整数 + BIGINT** を設計上の既定とし、REVIEW で明示する |
 | routine 内 COMMIT が corpus に大量に含まれ、ほとんどが REDESIGN になる | 自動変換率が低く見える | KPI を行数ベースの変換率にしない（P0-7）。REDESIGN は「検出できたこと」を成果として数える |
 | ScalarDB の cross-partition scan 制約（Cassandra バックエンド） | 生成 Repository が実行時に失敗する | 既存 `decomposer` の `PlanBlocked` / `requires_cross_partition_scan` をそのまま判定に使い、`--storage cassandra` では該当 routine を REVIEW 以上にする |
@@ -274,6 +282,6 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 - corpus の入手元（実案件の匿名化が可能か、合成で代替するか）。P0-1 開始前に確定が必要。
 - 差分テストで使う Oracle のバージョンとエディション（既存 `difftest` の Oracle Database Free を流用する想定。接続プール設定は `docs/oracle-backend-verification-plan.md` の知見を引き継ぐ）。
 - 生成先の Spring Boot バージョンと、`@Transactional` を Spring の宣言的トランザクションにするか ScalarDB の try-with-resources 定型にするか。Phase 2 の P2-6 / P2-10 開始までに決める。
-- 生成 Repository が ScalarDB にアクセスする経路（Core API / ScalarDB SQL JDBC / Cluster client SDK）。既存 `runtime-java/build.gradle` は 3 つとも依存に持つが、生成器がどれを前提にするかは未定。P2-9 の設計で決める。
+- 生成 Repository が ScalarDB にアクセスする経路。P2-9 の `PlanRunner` は Core API（`DistributedTransaction`）と ScalarDB SQL JDBC（`Connection`）の両方に参加できるようにしたが、生成器がどちらを既定にするかは配備形態（Cluster の有無とライセンス）次第で未定。P2-7 開始までに決める。
 - PoC の成功を誰が、どの対象に対して判定するか（社内 corpus での KPI 達成をもって成功とするのか、特定顧客の PL/SQL 一式で判定するのか）。
 - 移行完了後、生成 Java の所有権が顧客へ移った時点で再生成モデル（手編集禁止 + CI 検証）を継続するか終了するか。
