@@ -1,0 +1,159 @@
+{
+ "id": "prc_remote_sync",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "prc_remote_sync",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "prc_remote_sync.prc",
+    "startLine": 4,
+    "endLine": 15,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "prc_remote_sync",
+   "moduleKind": "procedure",
+   "routines": [
+    {
+     "id": "prc_remote_sync",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "prc_remote_sync.prc",
+      "startLine": 4,
+      "endLine": 15,
+      "startColumn": 1,
+      "endColumn": 5
+     },
+     "name": "prc_remote_sync",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "prc_remote_sync#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "prc_remote_sync.prc",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 45,
+        "endColumn": 59
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "declarations": [
+      {
+       "id": "prc_remote_sync#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "prc_remote_sync.prc",
+        "startLine": 5,
+        "endLine": 5,
+        "startColumn": 3,
+        "endColumn": 30
+       },
+       "type": {
+        "oracle": "orders.status%TYPE",
+        "origin": "unresolved"
+       },
+       "name": "v_status",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "prc_remote_sync#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "prc_remote_sync.prc",
+        "startLine": 7,
+        "endLine": 7,
+        "startColumn": 3,
+        "endColumn": 60
+       },
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT status INTO v_status FROM orders WHERE order_id = p_order_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "prc_remote_sync#stmt-2",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "prc_remote_sync.prc",
+        "startLine": 9,
+        "endLine": 9,
+        "startColumn": 3,
+        "endColumn": 71
+       },
+       "sqlKind": "UPDATE",
+       "originalSql": "UPDATE orders@warehouse_link SET status = v_status WHERE order_id = p_order_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "prc_remote_sync#stmt-3",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "prc_remote_sync.prc",
+        "startLine": 11,
+        "endLine": 12,
+        "startColumn": 3,
+        "endColumn": 30
+       },
+       "sqlKind": "INSERT",
+       "originalSql": "INSERT INTO shipment_queue@warehouse_link (order_id, requested_at)\n  VALUES (p_order_id, SYSDATE)",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "prc_remote_sync#stmt-4",
+       "kind": "Commit",
+       "sourceRange": {
+        "file": "prc_remote_sync.prc",
+        "startLine": 14,
+        "endLine": 14,
+        "startColumn": 3,
+        "endColumn": 3
+       },
+       "diagnostics": [
+        {
+         "severity": "WARN",
+         "code": "TRANSACTION_IN_ROUTINE",
+         "message": "Commit inside a routine cannot be translated literally; the transaction boundary belongs to the application service",
+         "range": {
+          "file": "prc_remote_sync.prc",
+          "startLine": 14,
+          "endLine": 14,
+          "startColumn": 3,
+          "endColumn": 3
+         }
+        }
+       ]
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 1,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [
+       "warehouse_link"
+      ],
+      "dynamicSql": false
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}

@@ -1,0 +1,474 @@
+{
+ "id": "prc_nightly_close",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "prc_nightly_close",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "prc_nightly_close.prc",
+    "startLine": 4,
+    "endLine": 39,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "prc_nightly_close",
+   "moduleKind": "procedure",
+   "routines": [
+    {
+     "id": "prc_nightly_close",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "prc_nightly_close.prc",
+      "startLine": 4,
+      "endLine": 39,
+      "startColumn": 1,
+      "endColumn": 5
+     },
+     "name": "prc_nightly_close",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "prc_nightly_close#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "prc_nightly_close.prc",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 47,
+        "endColumn": 63
+       },
+       "type": {
+        "oracle": "DATE",
+        "resolved": "DATE",
+        "origin": "declared"
+       },
+       "name": "p_batch_date",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "declarations": [
+      {
+       "id": "prc_nightly_close#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "prc_nightly_close.prc",
+        "startLine": 5,
+        "endLine": 5,
+        "startColumn": 3,
+        "endColumn": 27
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "v_processed",
+       "declarationKind": "variable",
+       "initial": "0"
+      },
+      {
+       "id": "prc_nightly_close#decl-2",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "prc_nightly_close.prc",
+        "startLine": 6,
+        "endLine": 6,
+        "startColumn": 3,
+        "endColumn": 29
+       },
+       "type": {
+        "oracle": "VARCHAR2(400)",
+        "resolved": "VARCHAR2(400)",
+        "origin": "declared"
+       },
+       "name": "v_error_text",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "prc_nightly_close#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "prc_nightly_close.prc",
+        "startLine": 8,
+        "endLine": 8,
+        "startColumn": 3,
+        "endColumn": 89
+       },
+       "sqlKind": "UPDATE",
+       "originalSql": "UPDATE batch_control SET status = 'RUNNING', last_run_at = SYSDATE WHERE batch_name = 'NIGHTLY_CLOSE'",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "prc_nightly_close#stmt-2",
+       "kind": "Commit",
+       "sourceRange": {
+        "file": "prc_nightly_close.prc",
+        "startLine": 9,
+        "endLine": 9,
+        "startColumn": 3,
+        "endColumn": 3
+       },
+       "diagnostics": [
+        {
+         "severity": "WARN",
+         "code": "TRANSACTION_IN_ROUTINE",
+         "message": "Commit inside a routine cannot be translated literally; the transaction boundary belongs to the application service",
+         "range": {
+          "file": "prc_nightly_close.prc",
+          "startLine": 9,
+          "endLine": 9,
+          "startColumn": 3,
+          "endColumn": 3
+         }
+        }
+       ]
+      },
+      {
+       "id": "prc_nightly_close#stmt-3",
+       "kind": "Loop",
+       "sourceRange": {
+        "file": "prc_nightly_close.prc",
+        "startLine": 11,
+        "endLine": 29,
+        "startColumn": 3,
+        "endColumn": 7
+       },
+       "loopKind": "cursor-for",
+       "cursor": "r IN (SELECT order_id FROM orders WHERE status = 'SHIPPED' AND ordered_at < p_batch_date)",
+       "body": [
+        {
+         "id": "prc_nightly_close#stmt-4",
+         "kind": "Savepoint",
+         "sourceRange": {
+          "file": "prc_nightly_close.prc",
+          "startLine": 12,
+          "endLine": 12,
+          "startColumn": 5,
+          "endColumn": 15
+         },
+         "diagnostics": [
+          {
+           "severity": "WARN",
+           "code": "TRANSACTION_IN_ROUTINE",
+           "message": "Savepoint inside a routine cannot be translated literally; the transaction boundary belongs to the application service",
+           "range": {
+            "file": "prc_nightly_close.prc",
+            "startLine": 12,
+            "endLine": 12,
+            "startColumn": 5,
+            "endColumn": 15
+           }
+          }
+         ],
+         "savepoint": "sp_order"
+        },
+        {
+         "id": "prc_nightly_close#stmt-5",
+         "kind": "SqlOperation",
+         "sourceRange": {
+          "file": "prc_nightly_close.prc",
+          "startLine": 14,
+          "endLine": 14,
+          "startColumn": 7,
+          "endColumn": 62
+         },
+         "sqlKind": "UPDATE",
+         "originalSql": "UPDATE orders SET status = 'CLOSED' WHERE order_id = r.order_id",
+         "cardinality": "UNKNOWN"
+        },
+        {
+         "id": "prc_nightly_close#stmt-6",
+         "kind": "SqlOperation",
+         "sourceRange": {
+          "file": "prc_nightly_close.prc",
+          "startLine": 15,
+          "endLine": 16,
+          "startColumn": 7,
+          "endColumn": 105
+         },
+         "sqlKind": "INSERT",
+         "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, new_value, changed_at, changed_by)\n      VALUES (seq_audit_id.NEXTVAL, 'ORDERS', TO_CHAR(r.order_id), 'CLOSE', 'CLOSED', SYSTIMESTAMP, USER)",
+         "cardinality": "UNKNOWN"
+        },
+        {
+         "id": "prc_nightly_close#stmt-7",
+         "kind": "Assignment",
+         "sourceRange": {
+          "file": "prc_nightly_close.prc",
+          "startLine": 17,
+          "endLine": 17,
+          "startColumn": 7,
+          "endColumn": 36
+         },
+         "target": "v_processed",
+         "expression": "v_processed + 1"
+        },
+        {
+         "id": "prc_nightly_close#stmt-8",
+         "kind": "If",
+         "sourceRange": {
+          "file": "prc_nightly_close.prc",
+          "startLine": 18,
+          "endLine": 20,
+          "startColumn": 7,
+          "endColumn": 11
+         },
+         "branches": [
+          {
+           "condition": "MOD(v_processed, 100) = 0",
+           "body": [
+            {
+             "id": "prc_nightly_close#stmt-9",
+             "kind": "Commit",
+             "sourceRange": {
+              "file": "prc_nightly_close.prc",
+              "startLine": 19,
+              "endLine": 19,
+              "startColumn": 9,
+              "endColumn": 9
+             },
+             "diagnostics": [
+              {
+               "severity": "WARN",
+               "code": "TRANSACTION_IN_ROUTINE",
+               "message": "Commit inside a routine cannot be translated literally; the transaction boundary belongs to the application service",
+               "range": {
+                "file": "prc_nightly_close.prc",
+                "startLine": 19,
+                "endLine": 19,
+                "startColumn": 9,
+                "endColumn": 9
+               }
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "prc_nightly_close#stmt-10",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "prc_nightly_close.prc",
+        "startLine": 31,
+        "endLine": 31,
+        "startColumn": 3,
+        "endColumn": 63
+       },
+       "sqlKind": "UPDATE",
+       "originalSql": "UPDATE batch_control SET status = 'DONE' WHERE batch_name = 'NIGHTLY_CLOSE'",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "prc_nightly_close#stmt-11",
+       "kind": "Commit",
+       "sourceRange": {
+        "file": "prc_nightly_close.prc",
+        "startLine": 32,
+        "endLine": 32,
+        "startColumn": 3,
+        "endColumn": 3
+       },
+       "diagnostics": [
+        {
+         "severity": "WARN",
+         "code": "TRANSACTION_IN_ROUTINE",
+         "message": "Commit inside a routine cannot be translated literally; the transaction boundary belongs to the application service",
+         "range": {
+          "file": "prc_nightly_close.prc",
+          "startLine": 32,
+          "endLine": 32,
+          "startColumn": 3,
+          "endColumn": 3
+         }
+        }
+       ]
+      }
+     ],
+     "exceptionHandlers": [
+      {
+       "id": "prc_nightly_close#handler-1",
+       "kind": "ExceptionHandler",
+       "sourceRange": {
+        "file": "prc_nightly_close.prc",
+        "startLine": 22,
+        "endLine": 27,
+        "startColumn": 7,
+        "endColumn": 112
+       },
+       "exceptions": [
+        "OTHERS"
+       ],
+       "body": [
+        {
+         "id": "prc_nightly_close#stmt-12",
+         "kind": "Rollback",
+         "sourceRange": {
+          "file": "prc_nightly_close.prc",
+          "startLine": 23,
+          "endLine": 23,
+          "startColumn": 9,
+          "endColumn": 21
+         },
+         "diagnostics": [
+          {
+           "severity": "WARN",
+           "code": "TRANSACTION_IN_ROUTINE",
+           "message": "Rollback inside a routine cannot be translated literally; the transaction boundary belongs to the application service",
+           "range": {
+            "file": "prc_nightly_close.prc",
+            "startLine": 23,
+            "endLine": 23,
+            "startColumn": 9,
+            "endColumn": 21
+           }
+          }
+         ],
+         "savepoint": "sp_order"
+        },
+        {
+         "id": "prc_nightly_close#stmt-13",
+         "kind": "Assignment",
+         "sourceRange": {
+          "file": "prc_nightly_close.prc",
+          "startLine": 25,
+          "endLine": 25,
+          "startColumn": 9,
+          "endColumn": 25
+         },
+         "target": "v_error_text",
+         "expression": "SQLERRM"
+        },
+        {
+         "id": "prc_nightly_close#stmt-14",
+         "kind": "SqlOperation",
+         "sourceRange": {
+          "file": "prc_nightly_close.prc",
+          "startLine": 26,
+          "endLine": 27,
+          "startColumn": 9,
+          "endColumn": 111
+         },
+         "sqlKind": "INSERT",
+         "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, new_value, changed_at, changed_by)\n        VALUES (seq_audit_id.NEXTVAL, 'ORDERS', TO_CHAR(r.order_id), 'ERROR', v_error_text, SYSTIMESTAMP, USER)",
+         "cardinality": "UNKNOWN"
+        }
+       ]
+      },
+      {
+       "id": "prc_nightly_close#handler-2",
+       "kind": "ExceptionHandler",
+       "sourceRange": {
+        "file": "prc_nightly_close.prc",
+        "startLine": 34,
+        "endLine": 38,
+        "startColumn": 3,
+        "endColumn": 10
+       },
+       "exceptions": [
+        "OTHERS"
+       ],
+       "body": [
+        {
+         "id": "prc_nightly_close#stmt-15",
+         "kind": "Rollback",
+         "sourceRange": {
+          "file": "prc_nightly_close.prc",
+          "startLine": 35,
+          "endLine": 35,
+          "startColumn": 5,
+          "endColumn": 5
+         },
+         "diagnostics": [
+          {
+           "severity": "WARN",
+           "code": "TRANSACTION_IN_ROUTINE",
+           "message": "Rollback inside a routine cannot be translated literally; the transaction boundary belongs to the application service",
+           "range": {
+            "file": "prc_nightly_close.prc",
+            "startLine": 35,
+            "endLine": 35,
+            "startColumn": 5,
+            "endColumn": 5
+           }
+          }
+         ]
+        },
+        {
+         "id": "prc_nightly_close#stmt-16",
+         "kind": "SqlOperation",
+         "sourceRange": {
+          "file": "prc_nightly_close.prc",
+          "startLine": 36,
+          "endLine": 36,
+          "startColumn": 5,
+          "endColumn": 67
+         },
+         "sqlKind": "UPDATE",
+         "originalSql": "UPDATE batch_control SET status = 'FAILED' WHERE batch_name = 'NIGHTLY_CLOSE'",
+         "cardinality": "UNKNOWN"
+        },
+        {
+         "id": "prc_nightly_close#stmt-17",
+         "kind": "Commit",
+         "sourceRange": {
+          "file": "prc_nightly_close.prc",
+          "startLine": 37,
+          "endLine": 37,
+          "startColumn": 5,
+          "endColumn": 5
+         },
+         "diagnostics": [
+          {
+           "severity": "WARN",
+           "code": "TRANSACTION_IN_ROUTINE",
+           "message": "Commit inside a routine cannot be translated literally; the transaction boundary belongs to the application service",
+           "range": {
+            "file": "prc_nightly_close.prc",
+            "startLine": 37,
+            "endLine": 37,
+            "startColumn": 5,
+            "endColumn": 5
+           }
+          }
+         ]
+        },
+        {
+         "id": "prc_nightly_close#stmt-18",
+         "kind": "Raise",
+         "sourceRange": {
+          "file": "prc_nightly_close.prc",
+          "startLine": 38,
+          "endLine": 38,
+          "startColumn": 5,
+          "endColumn": 5
+         }
+        }
+       ]
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 4,
+      "rollbacks": 2,
+      "savepoints": 1,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}

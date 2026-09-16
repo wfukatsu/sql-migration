@@ -1,0 +1,142 @@
+{
+ "id": "prc_add_product",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "prc_add_product",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "prc_add_product.prc",
+    "startLine": 3,
+    "endLine": 12,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "prc_add_product",
+   "moduleKind": "procedure",
+   "routines": [
+    {
+     "id": "prc_add_product",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "prc_add_product.prc",
+      "startLine": 3,
+      "endLine": 12,
+      "startColumn": 1,
+      "endColumn": 5
+     },
+     "name": "prc_add_product",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "prc_add_product#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "prc_add_product.prc",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 3,
+        "endColumn": 19
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_product_id",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "prc_add_product#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "prc_add_product.prc",
+        "startLine": 5,
+        "endLine": 5,
+        "startColumn": 3,
+        "endColumn": 19
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_name",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "prc_add_product#param-3",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "prc_add_product.prc",
+        "startLine": 6,
+        "endLine": 6,
+        "startColumn": 3,
+        "endColumn": 19
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_unit_price",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "prc_add_product#param-4",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "prc_add_product.prc",
+        "startLine": 7,
+        "endLine": 7,
+        "startColumn": 3,
+        "endColumn": 34
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_stock_qty",
+       "direction": "IN",
+       "default": "0",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "prc_add_product#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "prc_add_product.prc",
+        "startLine": 10,
+        "endLine": 11,
+        "startColumn": 3,
+        "endColumn": 63
+       },
+       "sqlKind": "INSERT",
+       "originalSql": "INSERT INTO products (product_id, name, unit_price, stock_qty, discontinued)\n  VALUES (p_product_id, p_name, p_unit_price, p_stock_qty, 'N')",
+       "cardinality": "UNKNOWN"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}

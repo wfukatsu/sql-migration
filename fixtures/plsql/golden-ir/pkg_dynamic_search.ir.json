@@ -1,0 +1,380 @@
+{
+ "id": "pkg_dynamic_search",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "pkg_dynamic_search",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "pkg_dynamic_search.pkb",
+    "startLine": 6,
+    "endLine": 32,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "pkg_dynamic_search",
+   "moduleKind": "package",
+   "routines": [
+    {
+     "id": "pkg_dynamic_search.refresh_stats",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_dynamic_search.pkb",
+      "startLine": 8,
+      "endLine": 11,
+      "startColumn": 3,
+      "endColumn": 20
+     },
+     "name": "refresh_stats",
+     "routineKind": "procedure",
+     "body": [
+      {
+       "id": "pkg_dynamic_search.refresh_stats#stmt-1",
+       "kind": "DynamicSql",
+       "sourceRange": {
+        "file": "pkg_dynamic_search.pkb",
+        "startLine": 10,
+        "endLine": 10,
+        "startColumn": 5,
+        "endColumn": 23
+       },
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "DYNAMIC_SQL",
+         "message": "the statement folds to a constant and can be analysed",
+         "range": {
+          "file": "pkg_dynamic_search.pkb",
+          "startLine": 10,
+          "endLine": 10,
+          "startColumn": 5,
+          "endColumn": 23
+         }
+        }
+       ],
+       "expression": "'UPDATE batch_control SET last_run_at = SYSDATE WHERE batch_name = ''STATS'''",
+       "constantSql": "UPDATE batch_control SET last_run_at = SYSDATE WHERE batch_name = 'STATS'"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": true
+     }
+    },
+    {
+     "id": "pkg_dynamic_search.count_orders",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_dynamic_search.pkb",
+      "startLine": 13,
+      "endLine": 25,
+      "startColumn": 3,
+      "endColumn": 19
+     },
+     "name": "count_orders",
+     "routineKind": "function",
+     "parameters": [
+      {
+       "id": "pkg_dynamic_search.count_orders#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_dynamic_search.pkb",
+        "startLine": 13,
+        "endLine": 13,
+        "startColumn": 25,
+        "endColumn": 37
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_status",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_dynamic_search.count_orders#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_dynamic_search.pkb",
+        "startLine": 13,
+        "endLine": 13,
+        "startColumn": 47,
+        "endColumn": 64
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_sort_column",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "returnType": {
+      "oracle": "NUMBER",
+      "resolved": "NUMBER",
+      "origin": "declared"
+     },
+     "declarations": [
+      {
+       "id": "pkg_dynamic_search.count_orders#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_dynamic_search.pkb",
+        "startLine": 14,
+        "endLine": 14,
+        "startColumn": 5,
+        "endColumn": 26
+       },
+       "type": {
+        "oracle": "VARCHAR2(400)",
+        "resolved": "VARCHAR2(400)",
+        "origin": "declared"
+       },
+       "name": "v_sql",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "pkg_dynamic_search.count_orders#decl-2",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_dynamic_search.pkb",
+        "startLine": 15,
+        "endLine": 15,
+        "startColumn": 5,
+        "endColumn": 19
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "v_count",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_dynamic_search.count_orders#stmt-1",
+       "kind": "Assignment",
+       "sourceRange": {
+        "file": "pkg_dynamic_search.pkb",
+        "startLine": 17,
+        "endLine": 17,
+        "startColumn": 5,
+        "endColumn": 14
+       },
+       "target": "v_sql",
+       "expression": "'SELECT COUNT(*) FROM orders WHERE status = :s'"
+      },
+      {
+       "id": "pkg_dynamic_search.count_orders#stmt-2",
+       "kind": "If",
+       "sourceRange": {
+        "file": "pkg_dynamic_search.pkb",
+        "startLine": 18,
+        "endLine": 22,
+        "startColumn": 5,
+        "endColumn": 9
+       },
+       "branches": [
+        {
+         "condition": "p_sort_column = 'ordered_at'",
+         "body": [
+          {
+           "id": "pkg_dynamic_search.count_orders#stmt-3",
+           "kind": "Assignment",
+           "sourceRange": {
+            "file": "pkg_dynamic_search.pkb",
+            "startLine": 19,
+            "endLine": 19,
+            "startColumn": 7,
+            "endColumn": 25
+           },
+           "target": "v_sql",
+           "expression": "v_sql || ' AND ordered_at IS NOT NULL'"
+          }
+         ]
+        },
+        {
+         "condition": "p_sort_column = 'total_amount'",
+         "body": [
+          {
+           "id": "pkg_dynamic_search.count_orders#stmt-4",
+           "kind": "Assignment",
+           "sourceRange": {
+            "file": "pkg_dynamic_search.pkb",
+            "startLine": 21,
+            "endLine": 21,
+            "startColumn": 7,
+            "endColumn": 25
+           },
+           "target": "v_sql",
+           "expression": "v_sql || ' AND total_amount IS NOT NULL'"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "pkg_dynamic_search.count_orders#stmt-5",
+       "kind": "DynamicSql",
+       "sourceRange": {
+        "file": "pkg_dynamic_search.pkb",
+        "startLine": 23,
+        "endLine": 23,
+        "startColumn": 5,
+        "endColumn": 48
+       },
+       "diagnostics": [
+        {
+         "severity": "WARN",
+         "code": "DYNAMIC_SQL",
+         "message": "the statement is built at run time; only a finite set of variants can be converted",
+         "range": {
+          "file": "pkg_dynamic_search.pkb",
+          "startLine": 23,
+          "endLine": 23,
+          "startColumn": 5,
+          "endColumn": 48
+         }
+        }
+       ],
+       "expression": "v_sql",
+       "intoTargets": [
+        "INTO v_count"
+       ]
+      },
+      {
+       "id": "pkg_dynamic_search.count_orders#stmt-6",
+       "kind": "Return",
+       "sourceRange": {
+        "file": "pkg_dynamic_search.pkb",
+        "startLine": 24,
+        "endLine": 24,
+        "startColumn": 5,
+        "endColumn": 12
+       },
+       "expression": "v_count"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": true
+     }
+    },
+    {
+     "id": "pkg_dynamic_search.purge",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_dynamic_search.pkb",
+      "startLine": 27,
+      "endLine": 30,
+      "startColumn": 3,
+      "endColumn": 12
+     },
+     "name": "purge",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_dynamic_search.purge#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_dynamic_search.pkb",
+        "startLine": 27,
+        "endLine": 27,
+        "startColumn": 19,
+        "endColumn": 35
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_table_name",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_dynamic_search.purge#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_dynamic_search.pkb",
+        "startLine": 27,
+        "endLine": 27,
+        "startColumn": 45,
+        "endColumn": 57
+       },
+       "type": {
+        "oracle": "DATE",
+        "resolved": "DATE",
+        "origin": "declared"
+       },
+       "name": "p_before",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_dynamic_search.purge#stmt-1",
+       "kind": "DynamicSql",
+       "sourceRange": {
+        "file": "pkg_dynamic_search.pkb",
+        "startLine": 29,
+        "endLine": 29,
+        "startColumn": 5,
+        "endColumn": 88
+       },
+       "diagnostics": [
+        {
+         "severity": "WARN",
+         "code": "DYNAMIC_SQL",
+         "message": "the statement is built at run time; only a finite set of variants can be converted",
+         "range": {
+          "file": "pkg_dynamic_search.pkb",
+          "startLine": 29,
+          "endLine": 29,
+          "startColumn": 5,
+          "endColumn": 88
+         }
+        }
+       ],
+       "expression": "'DELETE FROM ' || p_table_name || ' WHERE created_at < :d'"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": true
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}

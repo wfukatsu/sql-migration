@@ -1,0 +1,279 @@
+{
+ "id": "prc_reprice_all",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "prc_reprice_all",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "prc_reprice_all.prc",
+    "startLine": 2,
+    "endLine": 21,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "prc_reprice_all",
+   "moduleKind": "procedure",
+   "routines": [
+    {
+     "id": "prc_reprice_all",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "prc_reprice_all.prc",
+      "startLine": 2,
+      "endLine": 21,
+      "startColumn": 1,
+      "endColumn": 5
+     },
+     "name": "prc_reprice_all",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "prc_reprice_all#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "prc_reprice_all.prc",
+        "startLine": 2,
+        "endLine": 2,
+        "startColumn": 45,
+        "endColumn": 55
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_tier",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "declarations": [
+      {
+       "id": "prc_reprice_all#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "prc_reprice_all.prc",
+        "startLine": 3,
+        "endLine": 5,
+        "startColumn": 3,
+        "endColumn": 48
+       },
+       "name": "c_orders",
+       "declarationKind": "cursor"
+      },
+      {
+       "id": "prc_reprice_all#decl-2",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "prc_reprice_all.prc",
+        "startLine": 6,
+        "endLine": 6,
+        "startColumn": 3,
+        "endColumn": 34
+       },
+       "type": {
+        "oracle": "orders.order_id%TYPE",
+        "origin": "unresolved"
+       },
+       "name": "v_order_id",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "prc_reprice_all#decl-3",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "prc_reprice_all.prc",
+        "startLine": 7,
+        "endLine": 7,
+        "startColumn": 3,
+        "endColumn": 25
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "v_done",
+       "declarationKind": "variable",
+       "initial": "0"
+      }
+     ],
+     "body": [
+      {
+       "id": "prc_reprice_all#stmt-1",
+       "kind": "OpenCursor",
+       "sourceRange": {
+        "file": "prc_reprice_all.prc",
+        "startLine": 9,
+        "endLine": 9,
+        "startColumn": 3,
+        "endColumn": 8
+       },
+       "cursor": "c_orders"
+      },
+      {
+       "id": "prc_reprice_all#stmt-2",
+       "kind": "Loop",
+       "sourceRange": {
+        "file": "prc_reprice_all.prc",
+        "startLine": 10,
+        "endLine": 18,
+        "startColumn": 3,
+        "endColumn": 7
+       },
+       "loopKind": "basic",
+       "body": [
+        {
+         "id": "prc_reprice_all#stmt-3",
+         "kind": "Fetch",
+         "sourceRange": {
+          "file": "prc_reprice_all.prc",
+          "startLine": 11,
+          "endLine": 11,
+          "startColumn": 5,
+          "endColumn": 25
+         },
+         "cursor": "c_orders"
+        },
+        {
+         "id": "prc_reprice_all#stmt-4",
+         "kind": "Exit",
+         "sourceRange": {
+          "file": "prc_reprice_all.prc",
+          "startLine": 12,
+          "endLine": 12,
+          "startColumn": 5,
+          "endColumn": 23
+         },
+         "condition": "c_orders%NOTFOUND"
+        },
+        {
+         "id": "prc_reprice_all#stmt-5",
+         "kind": "Call",
+         "sourceRange": {
+          "file": "prc_reprice_all.prc",
+          "startLine": 13,
+          "endLine": 13,
+          "startColumn": 5,
+          "endColumn": 47
+         },
+         "callee": "pkg_order_pricing.reprice_order",
+         "arguments": [
+          "v_order_id"
+         ]
+        },
+        {
+         "id": "prc_reprice_all#stmt-6",
+         "kind": "Assignment",
+         "sourceRange": {
+          "file": "prc_reprice_all.prc",
+          "startLine": 14,
+          "endLine": 14,
+          "startColumn": 5,
+          "endColumn": 24
+         },
+         "target": "v_done",
+         "expression": "v_done + 1"
+        },
+        {
+         "id": "prc_reprice_all#stmt-7",
+         "kind": "If",
+         "sourceRange": {
+          "file": "prc_reprice_all.prc",
+          "startLine": 15,
+          "endLine": 17,
+          "startColumn": 5,
+          "endColumn": 9
+         },
+         "branches": [
+          {
+           "condition": "MOD(v_done, 50) = 0",
+           "body": [
+            {
+             "id": "prc_reprice_all#stmt-8",
+             "kind": "Commit",
+             "sourceRange": {
+              "file": "prc_reprice_all.prc",
+              "startLine": 16,
+              "endLine": 16,
+              "startColumn": 7,
+              "endColumn": 7
+             },
+             "diagnostics": [
+              {
+               "severity": "WARN",
+               "code": "TRANSACTION_IN_ROUTINE",
+               "message": "Commit inside a routine cannot be translated literally; the transaction boundary belongs to the application service",
+               "range": {
+                "file": "prc_reprice_all.prc",
+                "startLine": 16,
+                "endLine": 16,
+                "startColumn": 7,
+                "endColumn": 7
+               }
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "prc_reprice_all#stmt-9",
+       "kind": "CloseCursor",
+       "sourceRange": {
+        "file": "prc_reprice_all.prc",
+        "startLine": 19,
+        "endLine": 19,
+        "startColumn": 3,
+        "endColumn": 9
+       },
+       "cursor": "c_orders"
+      },
+      {
+       "id": "prc_reprice_all#stmt-10",
+       "kind": "Commit",
+       "sourceRange": {
+        "file": "prc_reprice_all.prc",
+        "startLine": 20,
+        "endLine": 20,
+        "startColumn": 3,
+        "endColumn": 3
+       },
+       "diagnostics": [
+        {
+         "severity": "WARN",
+         "code": "TRANSACTION_IN_ROUTINE",
+         "message": "Commit inside a routine cannot be translated literally; the transaction boundary belongs to the application service",
+         "range": {
+          "file": "prc_reprice_all.prc",
+          "startLine": 20,
+          "endLine": 20,
+          "startColumn": 3,
+          "endColumn": 3
+         }
+        }
+       ]
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 2,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}

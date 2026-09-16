@@ -29,6 +29,9 @@ NODE_TYPES: dict[str, type] = {
     "Call": M.Call, "Raise": M.Raise, "Return": M.Return, "Commit": M.TransactionStatement,
     "Rollback": M.TransactionStatement, "Savepoint": M.TransactionStatement, "If": M.If, "Case": M.Case,
     "Loop": M.Loop, "SqlOperation": M.SqlOperation, "DynamicSql": M.DynamicSql, "Statement": M.Statement,
+    "OpenCursor": M.CursorStatement, "Fetch": M.CursorStatement, "CloseCursor": M.CursorStatement,
+    "Exit": M.ControlStatement, "Continue": M.ControlStatement, "Goto": M.ControlStatement,
+    "Null": M.ControlStatement, "Unsupported": M.Unsupported,
 }
 
 _CAMEL = {

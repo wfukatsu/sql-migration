@@ -1,0 +1,440 @@
+{
+ "id": "pkg_customer_crud",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "pkg_customer_crud",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "pkg_customer_crud.pkb",
+    "startLine": 3,
+    "endLine": 34,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "pkg_customer_crud",
+   "moduleKind": "package",
+   "routines": [
+    {
+     "id": "pkg_customer_crud.create_customer",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_customer_crud.pkb",
+      "startLine": 5,
+      "endLine": 9,
+      "startColumn": 3,
+      "endColumn": 22
+     },
+     "name": "create_customer",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_customer_crud.create_customer#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_customer_crud.pkb",
+        "startLine": 5,
+        "endLine": 5,
+        "startColumn": 29,
+        "endColumn": 46
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_customer_id",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_customer_crud.create_customer#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_customer_crud.pkb",
+        "startLine": 5,
+        "endLine": 5,
+        "startColumn": 54,
+        "endColumn": 64
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_name",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_customer_crud.create_customer#param-3",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_customer_crud.pkb",
+        "startLine": 5,
+        "endLine": 5,
+        "startColumn": 74,
+        "endColumn": 85
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_email",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_customer_crud.create_customer#param-4",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_customer_crud.pkb",
+        "startLine": 5,
+        "endLine": 5,
+        "startColumn": 95,
+        "endColumn": 105
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_tier",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_customer_crud.create_customer#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_customer_crud.pkb",
+        "startLine": 7,
+        "endLine": 8,
+        "startColumn": 5,
+        "endColumn": 75
+       },
+       "sqlKind": "INSERT",
+       "originalSql": "INSERT INTO customers (customer_id, name, email, tier, registered_on)\n    VALUES (p_customer_id, p_name, p_email, NVL(p_tier, 'BRONZE'), SYSDATE)",
+       "cardinality": "UNKNOWN"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_customer_crud.update_email",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_customer_crud.pkb",
+      "startLine": 11,
+      "endLine": 17,
+      "startColumn": 3,
+      "endColumn": 19
+     },
+     "name": "update_email",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_customer_crud.update_email#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_customer_crud.pkb",
+        "startLine": 11,
+        "endLine": 11,
+        "startColumn": 26,
+        "endColumn": 43
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_customer_id",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_customer_crud.update_email#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_customer_crud.pkb",
+        "startLine": 11,
+        "endLine": 11,
+        "startColumn": 51,
+        "endColumn": 62
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_email",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_customer_crud.update_email#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_customer_crud.pkb",
+        "startLine": 13,
+        "endLine": 13,
+        "startColumn": 5,
+        "endColumn": 62
+       },
+       "sqlKind": "UPDATE",
+       "originalSql": "UPDATE customers SET email = p_email WHERE customer_id = p_customer_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "pkg_customer_crud.update_email#stmt-2",
+       "kind": "If",
+       "sourceRange": {
+        "file": "pkg_customer_crud.pkb",
+        "startLine": 14,
+        "endLine": 16,
+        "startColumn": 5,
+        "endColumn": 9
+       },
+       "branches": [
+        {
+         "condition": "SQL%ROWCOUNT = 0",
+         "body": [
+          {
+           "id": "pkg_customer_crud.update_email#stmt-3",
+           "kind": "Raise",
+           "sourceRange": {
+            "file": "pkg_customer_crud.pkb",
+            "startLine": 15,
+            "endLine": 15,
+            "startColumn": 7,
+            "endColumn": 78
+           },
+           "errorCode": -20010,
+           "message": "'customer not found: ' || p_customer_id"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_customer_crud.delete_customer",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_customer_crud.pkb",
+      "startLine": 19,
+      "endLine": 22,
+      "startColumn": 3,
+      "endColumn": 22
+     },
+     "name": "delete_customer",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_customer_crud.delete_customer#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_customer_crud.pkb",
+        "startLine": 19,
+        "endLine": 19,
+        "startColumn": 29,
+        "endColumn": 46
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_customer_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_customer_crud.delete_customer#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_customer_crud.pkb",
+        "startLine": 21,
+        "endLine": 21,
+        "startColumn": 5,
+        "endColumn": 47
+       },
+       "sqlKind": "DELETE",
+       "originalSql": "DELETE FROM customers WHERE customer_id = p_customer_id",
+       "cardinality": "UNKNOWN"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_customer_crud.customer_name",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_customer_crud.pkb",
+      "startLine": 24,
+      "endLine": 32,
+      "startColumn": 3,
+      "endColumn": 20
+     },
+     "name": "customer_name",
+     "routineKind": "function",
+     "parameters": [
+      {
+       "id": "pkg_customer_crud.customer_name#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_customer_crud.pkb",
+        "startLine": 24,
+        "endLine": 24,
+        "startColumn": 26,
+        "endColumn": 43
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_customer_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "returnType": {
+      "oracle": "VARCHAR2",
+      "resolved": "VARCHAR2",
+      "origin": "declared"
+     },
+     "declarations": [
+      {
+       "id": "pkg_customer_crud.customer_name#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_customer_crud.pkb",
+        "startLine": 25,
+        "endLine": 25,
+        "startColumn": 5,
+        "endColumn": 31
+       },
+       "type": {
+        "oracle": "customers.name%TYPE",
+        "origin": "unresolved"
+       },
+       "name": "v_name",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_customer_crud.customer_name#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_customer_crud.pkb",
+        "startLine": 27,
+        "endLine": 27,
+        "startColumn": 5,
+        "endColumn": 64
+       },
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT name INTO v_name FROM customers WHERE customer_id = p_customer_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "pkg_customer_crud.customer_name#stmt-2",
+       "kind": "Return",
+       "sourceRange": {
+        "file": "pkg_customer_crud.pkb",
+        "startLine": 28,
+        "endLine": 28,
+        "startColumn": 5,
+        "endColumn": 12
+       },
+       "expression": "v_name"
+      }
+     ],
+     "exceptionHandlers": [
+      {
+       "id": "pkg_customer_crud.customer_name#handler-1",
+       "kind": "ExceptionHandler",
+       "sourceRange": {
+        "file": "pkg_customer_crud.pkb",
+        "startLine": 30,
+        "endLine": 31,
+        "startColumn": 5,
+        "endColumn": 18
+       },
+       "exceptions": [
+        "NO_DATA_FOUND"
+       ],
+       "body": [
+        {
+         "id": "pkg_customer_crud.customer_name#stmt-3",
+         "kind": "Return",
+         "sourceRange": {
+          "file": "pkg_customer_crud.pkb",
+          "startLine": 31,
+          "endLine": 31,
+          "startColumn": 7,
+          "endColumn": 14
+         },
+         "expression": "NULL"
+        }
+       ]
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}

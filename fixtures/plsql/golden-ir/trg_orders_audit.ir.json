@@ -1,0 +1,66 @@
+{
+ "id": "trg_orders_audit",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "trg_orders_audit",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "trg_orders_audit.trg",
+    "startLine": 4,
+    "endLine": 12,
+    "startColumn": 1,
+    "endColumn": 1
+   },
+   "name": "trg_orders_audit",
+   "moduleKind": "trigger",
+   "routines": [
+    {
+     "id": "trg_orders_audit.body",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "trg_orders_audit.trg",
+      "startLine": 4,
+      "endLine": 12,
+      "startColumn": 1,
+      "endColumn": 1
+     },
+     "name": "body",
+     "routineKind": "trigger-body",
+     "body": [
+      {
+       "id": "trg_orders_audit.body#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "trg_orders_audit.trg",
+        "startLine": 9,
+        "endLine": 11,
+        "startColumn": 3,
+        "endColumn": 55
+       },
+       "sqlKind": "INSERT",
+       "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, old_value, new_value, changed_at, changed_by)\n  VALUES (seq_audit_id.NEXTVAL, 'ORDERS', TO_CHAR(:NEW.order_id), 'UPDATE',\n          :OLD.status, :NEW.status, SYSTIMESTAMP, USER)",
+       "cardinality": "UNKNOWN"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "private",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ],
+   "triggerEvent": "UPDATE",
+   "triggerTable": "orders",
+   "triggerTiming": "AFTER"
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}

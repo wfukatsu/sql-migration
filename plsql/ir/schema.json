@@ -203,6 +203,15 @@
           "$ref": "#/$defs/dynamicSql"
         },
         {
+          "$ref": "#/$defs/cursorStatement"
+        },
+        {
+          "$ref": "#/$defs/controlStatement"
+        },
+        {
+          "$ref": "#/$defs/unsupported"
+        },
+        {
           "$ref": "#/$defs/statement"
         }
       ]
@@ -1185,6 +1194,156 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "cursorStatement": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "sourceRange": {
+          "$ref": "#/$defs/sourceRange"
+        },
+        "type": {
+          "$ref": "#/$defs/typeRef"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/issue"
+          }
+        },
+        "cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "intoTargets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "arguments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "controlStatement": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "sourceRange": {
+          "$ref": "#/$defs/sourceRange"
+        },
+        "type": {
+          "$ref": "#/$defs/typeRef"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/issue"
+          }
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "condition": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "unsupported": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "sourceRange": {
+          "$ref": "#/$defs/sourceRange"
+        },
+        "type": {
+          "$ref": "#/$defs/typeRef"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/issue"
+          }
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "construct": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },

@@ -1,0 +1,471 @@
+{
+ "id": "pkg_order_pricing",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "pkg_order_pricing",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "pkg_order_pricing.pkb",
+    "startLine": 4,
+    "endLine": 45,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "pkg_order_pricing",
+   "moduleKind": "package",
+   "routines": [
+    {
+     "id": "pkg_order_pricing.tier_discount",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_order_pricing.pkb",
+      "startLine": 6,
+      "endLine": 13,
+      "startColumn": 3,
+      "endColumn": 20
+     },
+     "name": "tier_discount",
+     "routineKind": "function",
+     "parameters": [
+      {
+       "id": "pkg_order_pricing.tier_discount#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 6,
+        "endLine": 6,
+        "startColumn": 26,
+        "endColumn": 36
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_tier",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "returnType": {
+      "oracle": "NUMBER",
+      "resolved": "NUMBER",
+      "origin": "declared"
+     },
+     "body": [
+      {
+       "id": "pkg_order_pricing.tier_discount#stmt-1",
+       "kind": "Return",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 8,
+        "endLine": 12,
+        "startColumn": 5,
+        "endColumn": 12
+       },
+       "expression": "CASE p_tier\n             WHEN 'GOLD'   THEN 0.10\n             WHEN 'SILVER' THEN 0.05\n             ELSE 0\n           END"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "private",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_order_pricing.line_amount",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_order_pricing.pkb",
+      "startLine": 15,
+      "endLine": 18,
+      "startColumn": 3,
+      "endColumn": 18
+     },
+     "name": "line_amount",
+     "routineKind": "function",
+     "parameters": [
+      {
+       "id": "pkg_order_pricing.line_amount#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 15,
+        "endLine": 15,
+        "startColumn": 24,
+        "endColumn": 33
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_qty",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_order_pricing.line_amount#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 15,
+        "endLine": 15,
+        "startColumn": 41,
+        "endColumn": 57
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_unit_price",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "returnType": {
+      "oracle": "NUMBER",
+      "resolved": "NUMBER",
+      "origin": "declared"
+     },
+     "body": [
+      {
+       "id": "pkg_order_pricing.line_amount#stmt-1",
+       "kind": "Return",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 17,
+        "endLine": 17,
+        "startColumn": 5,
+        "endColumn": 20
+       },
+       "expression": "p_qty * p_unit_price"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "private",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_order_pricing.customer_tier",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_order_pricing.pkb",
+      "startLine": 20,
+      "endLine": 27,
+      "startColumn": 3,
+      "endColumn": 20
+     },
+     "name": "customer_tier",
+     "routineKind": "function",
+     "parameters": [
+      {
+       "id": "pkg_order_pricing.customer_tier#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 20,
+        "endLine": 20,
+        "startColumn": 26,
+        "endColumn": 40
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "returnType": {
+      "oracle": "VARCHAR2",
+      "resolved": "VARCHAR2",
+      "origin": "declared"
+     },
+     "declarations": [
+      {
+       "id": "pkg_order_pricing.customer_tier#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 21,
+        "endLine": 21,
+        "startColumn": 5,
+        "endColumn": 31
+       },
+       "type": {
+        "oracle": "customers.tier%TYPE",
+        "origin": "unresolved"
+       },
+       "name": "v_tier",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_order_pricing.customer_tier#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 23,
+        "endLine": 25,
+        "startColumn": 5,
+        "endColumn": 25
+       },
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT c.tier INTO v_tier\n      FROM customers c JOIN orders o ON o.customer_id = c.customer_id\n     WHERE o.order_id = p_order_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "pkg_order_pricing.customer_tier#stmt-2",
+       "kind": "Return",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 26,
+        "endLine": 26,
+        "startColumn": 5,
+        "endColumn": 12
+       },
+       "expression": "v_tier"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "private",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_order_pricing.order_total",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_order_pricing.pkb",
+      "startLine": 29,
+      "endLine": 38,
+      "startColumn": 3,
+      "endColumn": 18
+     },
+     "name": "order_total",
+     "routineKind": "function",
+     "parameters": [
+      {
+       "id": "pkg_order_pricing.order_total#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 29,
+        "endLine": 29,
+        "startColumn": 24,
+        "endColumn": 38
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "returnType": {
+      "oracle": "NUMBER",
+      "resolved": "NUMBER",
+      "origin": "declared"
+     },
+     "declarations": [
+      {
+       "id": "pkg_order_pricing.order_total#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 30,
+        "endLine": 30,
+        "startColumn": 5,
+        "endColumn": 30
+       },
+       "type": {
+        "oracle": "NUMBER(14,2)",
+        "resolved": "NUMBER(14,2)",
+        "origin": "declared"
+       },
+       "name": "v_gross",
+       "declarationKind": "variable",
+       "initial": "0"
+      },
+      {
+       "id": "pkg_order_pricing.order_total#decl-2",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 31,
+        "endLine": 31,
+        "startColumn": 5,
+        "endColumn": 32
+       },
+       "type": {
+        "oracle": "customers.tier%TYPE",
+        "origin": "unresolved"
+       },
+       "name": "v_tier",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_order_pricing.order_total#stmt-1",
+       "kind": "Loop",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 33,
+        "endLine": 35,
+        "startColumn": 5,
+        "endColumn": 9
+       },
+       "loopKind": "cursor-for",
+       "cursor": "r IN (SELECT qty, unit_price FROM order_lines WHERE order_id = p_order_id)",
+       "body": [
+        {
+         "id": "pkg_order_pricing.order_total#stmt-2",
+         "kind": "Assignment",
+         "sourceRange": {
+          "file": "pkg_order_pricing.pkb",
+          "startLine": 34,
+          "endLine": 34,
+          "startColumn": 7,
+          "endColumn": 59
+         },
+         "target": "v_gross",
+         "expression": "v_gross + line_amount(r.qty, r.unit_price)"
+        }
+       ]
+      },
+      {
+       "id": "pkg_order_pricing.order_total#stmt-3",
+       "kind": "Assignment",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 36,
+        "endLine": 36,
+        "startColumn": 5,
+        "endColumn": 39
+       },
+       "target": "v_tier",
+       "expression": "customer_tier(p_order_id)"
+      },
+      {
+       "id": "pkg_order_pricing.order_total#stmt-4",
+       "kind": "Return",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 37,
+        "endLine": 37,
+        "startColumn": 5,
+        "endColumn": 58
+       },
+       "expression": "ROUND(v_gross * (1 - tier_discount(v_tier)), 2)"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_order_pricing.reprice_order",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_order_pricing.pkb",
+      "startLine": 40,
+      "endLine": 43,
+      "startColumn": 3,
+      "endColumn": 20
+     },
+     "name": "reprice_order",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_order_pricing.reprice_order#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 40,
+        "endLine": 40,
+        "startColumn": 27,
+        "endColumn": 41
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_order_pricing.reprice_order#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 42,
+        "endLine": 42,
+        "startColumn": 5,
+        "endColumn": 79
+       },
+       "sqlKind": "UPDATE",
+       "originalSql": "UPDATE orders SET total_amount = order_total(p_order_id) WHERE order_id = p_order_id",
+       "cardinality": "UNKNOWN"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}
