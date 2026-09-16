@@ -1,0 +1,15 @@
+name: status_for_customer_multiple
+unit: pkg_order_status
+routine: status_for_customer
+pinned:
+  sysdate: "2026-01-15 09:30:00"
+setup:
+  - "INSERT INTO customers (customer_id, name, tier, registered_on) VALUES (1, 'Acme', 'GOLD', DATE '2025-04-01')"
+  - "INSERT INTO orders (order_id, customer_id, status, ordered_at) VALUES (1001, 1, 'NEW', TIMESTAMP '2026-01-10 11:00:00')"
+  - "INSERT INTO orders (order_id, customer_id, status, ordered_at) VALUES (1002, 1, 'SHIPPED', TIMESTAMP '2026-01-11 11:00:00')"
+call:
+  kind: procedure
+  name: pkg_order_status.status_for_customer
+  args: {p_customer_id: 1}
+  out: {p_status: VARCHAR2}
+capture_tables: [orders]

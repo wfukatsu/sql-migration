@@ -36,6 +36,9 @@ fixtures/plsql/
     *.prc           単独 procedure
     *.trg           trigger
     holdout/        上記と同じ形式。ルール作成時は参照しない
+  manifest.yaml     期待判定・出自・holdout フラグ（P0-2）
+  scenarios/        Oracle 実行シナリオ（P0-4）。形式は scenarios/README.md
+  golden/           シナリオごとの capture（P0-5 が採取する）
 ```
 
 計画の P0-1 成果物欄には `*.pks,*.pkb,*.prc` と書いているが、カテゴリ 9（Trigger / DB Link）を満たすために
@@ -84,3 +87,20 @@ ANTLR パーサで取り出した定義名と突き合わせて確認する。
 - 32 ファイルすべてが P0-6 の parser で構文エラーなく parse できる（`tests/test_plsql_corpus.py`）。
   これは parser coverage の確認であって、意味が保存できるかの確認ではない。
 - 合成であるため parse 率 100% は当然に近い。実案件コードでの parse 率はこの数値から予測できない。
+
+## Oracle 上で動かす（P0-4）
+
+```bash
+(cd difftest && docker compose --profile oracle up -d source-oracle)
+.venv/bin/pip install oracledb
+.venv/bin/python difftest/plsql_run.py deploy                 # スキーマ作成 + corpus のコンパイル
+.venv/bin/python difftest/plsql_run.py run --out fixtures/plsql/golden
+```
+
+`deploy` は 32 ユニットすべてをコンパイルする。`prc_remote_sync` だけは DB Link が存在しないため INVALID
+のまま残るが、これは想定内としてランナーが許容している。
+
+**parse できることとコンパイルできることは別である。** P0-1 の時点で 32 ファイルすべてが ANTLR で parse
+できていたが、Oracle に流したところ 2 件がコンパイルに失敗した（`SQL%BULK_EXCEPTIONS` と `SQLERRM` を
+SQL 文の中で参照していた）。corpus 側を直してある。Phase 1 の parse 率は、この意味でコンパイル可能性を
+保証しない。

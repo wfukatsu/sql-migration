@@ -4,6 +4,8 @@
 CREATE OR REPLACE PACKAGE BODY pkg_bulk_load AS
 
   PROCEDURE restock(p_product_ids IN t_id_list, p_deltas IN t_qty_list) IS
+    v_error_index PLS_INTEGER;
+    v_error_text  VARCHAR2(400);
   BEGIN
     FORALL i IN 1 .. p_product_ids.COUNT SAVE EXCEPTIONS
       UPDATE products SET stock_qty = stock_qty + p_deltas(i) WHERE product_id = p_product_ids(i);
@@ -11,9 +13,12 @@ CREATE OR REPLACE PACKAGE BODY pkg_bulk_load AS
     WHEN OTHERS THEN
       IF SQLCODE = -24381 THEN
         FOR i IN 1 .. SQL%BULK_EXCEPTIONS.COUNT LOOP
+          -- SQL%BULK_EXCEPTIONS は SQL 文の中では参照できないので、いったん変数へ取る
+          v_error_index := SQL%BULK_EXCEPTIONS(i).ERROR_INDEX;
+          v_error_text  := SQLERRM(-SQL%BULK_EXCEPTIONS(i).ERROR_CODE);
           INSERT INTO audit_log (audit_id, table_name, key_value, action, new_value, changed_at, changed_by)
-          VALUES (seq_audit_id.NEXTVAL, 'PRODUCTS', TO_CHAR(SQL%BULK_EXCEPTIONS(i).ERROR_INDEX),
-                  'BULKERR', SQLERRM(-SQL%BULK_EXCEPTIONS(i).ERROR_CODE), SYSTIMESTAMP, USER);
+          VALUES (seq_audit_id.NEXTVAL, 'PRODUCTS', TO_CHAR(v_error_index),
+                  'BULKERR', v_error_text, SYSTIMESTAMP, USER);
         END LOOP;
       ELSE
         RAISE;
