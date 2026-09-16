@@ -19,6 +19,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m plsql.cli", description=__doc__.splitlines()[0])
     parser.add_argument("root", help="directory holding the PL/SQL sources")
     parser.add_argument("--schema", help="Oracle DDL snapshot used to resolve %%TYPE / %%ROWTYPE")
+    parser.add_argument("--scalardb-schema", help="Schema Loader JSON; enables the ScalarDB capability check")
     parser.add_argument("--out-dir", help="write inventory.json / diagnostics.sarif / summary.md here")
     parser.add_argument("--quiet", action="store_true", help="print nothing but the exit status")
     args = parser.parse_args(argv)
@@ -28,7 +29,11 @@ def main(argv: list[str] | None = None) -> int:
         candidate = Path(args.root) / "schema.sql"
         schema = str(candidate) if candidate.exists() else None
 
-    analysis = analyse(args.root, schema)
+    scalardb = args.scalardb_schema
+    if scalardb is None:
+        candidate = Path(args.root).parent / "scalardb-schema.json"
+        scalardb = str(candidate) if candidate.exists() else None
+    analysis = analyse(args.root, schema, scalardb_schema=scalardb)
     data = inventory(analysis)
     kpi, totals = data["kpi"], data["totals"]
 
@@ -38,6 +43,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"type resolution {kpi['typeResolutionRate']:.1%}  "
               f"({kpi['resolvedSymbols']}/{kpi['typedSymbols']} typed symbols)")
         print(f"issues={totals['issues']} errors={totals['errors']}")
+        capability = data.get("targetCapability")
+        if capability:
+            print(f"scalardb        {capability['runnableRate']:.1%} runnable  {capability['statuses']}")
         for failed in kpi["failedFiles"]:
             print(f"  PARSE FAILED {failed}")
     if args.out_dir:
