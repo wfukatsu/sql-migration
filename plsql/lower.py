@@ -234,7 +234,11 @@ class _Lowerer:
                     continue
                 text = _text(declaration)
                 spec = _child(declaration, "Type_specContext")
-                initial = _first(re.search(r":=\s*(.+?);?\s*$", text, re.DOTALL))
+                if kind == "cursor":
+                    # a cursor's query is its definition: keep it, or `FOR UPDATE` in a cursor becomes invisible
+                    initial = _first(re.search(r"\bIS\b\s*(.+?);?\s*$", text, re.DOTALL | re.IGNORECASE))
+                else:
+                    initial = _first(re.search(r":=\s*(.+?);?\s*$", text, re.DOTALL))
                 out.append(M.Declaration(
                     id=ids.next("decl"), kind="Declaration", name=_text(identifier),
                     declaration_kind="constant" if re.search(r"\bCONSTANT\b", text, re.I) else kind,

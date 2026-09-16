@@ -61,7 +61,8 @@
         "endColumn": 48
        },
        "name": "c_orders",
-       "declarationKind": "cursor"
+       "declarationKind": "cursor",
+       "initial": "SELECT o.order_id FROM orders o JOIN customers c ON c.customer_id = o.customer_id\n     WHERE c.tier = p_tier AND o.status = 'NEW'"
       },
       {
        "id": "prc_reprice_all#decl-2",

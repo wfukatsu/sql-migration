@@ -331,7 +331,8 @@
         "endColumn": 65
        },
        "name": "c",
-       "declarationKind": "cursor"
+       "declarationKind": "cursor",
+       "initial": "SELECT order_id FROM orders WHERE status = 'NEW'"
       },
       {
        "id": "pkg_bulk_load.collect_open_orders#decl-2",

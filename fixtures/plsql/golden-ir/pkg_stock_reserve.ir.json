@@ -497,7 +497,8 @@
         "endColumn": 29
        },
        "name": "c",
-       "declarationKind": "cursor"
+       "declarationKind": "cursor",
+       "initial": "SELECT order_id FROM orders WHERE status = 'NEW' AND ROWNUM <= p_limit\n      FOR UPDATE SKIP LOCKED"
       }
      ],
      "body": [

@@ -415,7 +415,8 @@
         "endColumn": 99
        },
        "name": "c_amounts",
-       "declarationKind": "cursor"
+       "declarationKind": "cursor",
+       "initial": "SELECT total_amount FROM orders WHERE customer_id = p_customer_id ORDER BY total_amount DESC"
       },
       {
        "id": "pkg_order_report.largest_order#decl-2",
