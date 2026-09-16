@@ -1,0 +1,36 @@
+# Trigger と DB Link（設計書 §6.9 / §6.7、docs/plsql-kpi.md §2 の 5・7）
+
+rules:
+  - id: TRG-001
+    match: {moduleKind: trigger}
+    decision: REDESIGN
+    severity: critical
+    message: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります
+    remediation:
+      - validation は Service の検証と DB 制約へ
+      - audit は interceptor / outbox へ
+      - before/after 値と失敗時の挙動を保つ
+    requiredTests:
+      - all_write_paths_covered
+
+  - id: LINK-001
+    match: {dbLink: true}
+    decision: REDESIGN
+    severity: critical
+    message: DB Link 越しの操作は分散トランザクションです
+    remediation:
+      - 参加 DB・timeout・再試行を設計する
+      - ScalarDB の分散トランザクションか API 連携へ
+    requiredTests:
+      - distributed_failure
+
+  - id: EXT-001
+    match: {externalPackage: true}
+    decision: REDESIGN
+    severity: critical
+    message: UTL_* / DBMS_SCHEDULER / AQ などの外部副作用があります
+    remediation:
+      - adapter 経由の外部 Service にする
+      - timeout・再試行・冪等性を決める
+    requiredTests:
+      - external_failure

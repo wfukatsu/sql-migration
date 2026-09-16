@@ -1,0 +1,23 @@
+# Package 状態と権限（設計書 §6.1 / §6.2、docs/plsql-kpi.md §2 の 3・6）
+
+rules:
+  - id: STATE-001
+    match: {packageState: true}
+    decision: REDESIGN
+    severity: critical
+    message: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります
+    remediation:
+      - 引数で渡す
+      - 明示的な SessionContext か永続化に移す
+    requiredTests:
+      - state_isolation_between_calls
+
+  - id: AUTHID-001
+    match: {authId: CURRENT_USER}
+    decision: REDESIGN
+    severity: critical
+    message: AUTHID CURRENT_USER は呼出者権限で動きます。認証・認可モデルを別に設計する必要があります
+    remediation:
+      - Service の identity と認可を設計する
+    requiredTests:
+      - caller_context_authorization

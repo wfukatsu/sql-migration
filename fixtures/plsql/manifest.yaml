@@ -21,7 +21,10 @@ units:
     origin: synthetic
     holdout: false
     routines:
-      - {name: create_customer, expected: AUTO,   reason: "主キー INSERT のみ。routine 内に COMMIT がない"}
+      # 2026-09-17 修正: P2-2 のルール SEM-002 との不一致を調べ、manifest 側の誤りと判断した。
+      # SYSDATE は DB サーバのクロックとタイムゾーンで決まり、JVM の時刻とは別物である。
+      # 既存の scalardb_migrate/appside.py も以前から APP_SEMANTICS として警告している。
+      - {name: create_customer, expected: REVIEW, reason: "主キー INSERT のみだが registered_on に SYSDATE を書く。時刻の出所が DB サーバであることを保つ必要がある"}
       - {name: update_email,    expected: AUTO,   reason: "主キー UPDATE と SQL%ROWCOUNT。影響行数を Result に保持すれば足りる"}
       - {name: delete_customer, expected: AUTO,   reason: "主キー DELETE のみ"}
       - {name: customer_name,   expected: AUTO,   reason: "主キーの SELECT INTO と NO_DATA_FOUND の握り潰し"}

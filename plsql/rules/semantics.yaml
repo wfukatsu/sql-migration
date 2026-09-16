@@ -1,0 +1,73 @@
+# Oracle 固有の意味（設計書 §6.4 / §6.5、実装計画 §10.2）
+#
+# ここは「変換できない」ではなく「変換候補は出せるが人の判断が要る」= REVIEW の領域である。
+# どれも差分テストで落ちる典型で、Phase 3 の比較対象（§10.2）と 1 対 1 に対応させてある。
+#
+# アクセスパスに依存する判定（主キーでない列の SELECT INTO など）はここには無い。
+# ScalarDB のスキーマを知る必要があり、P2-4 の担当になる。
+
+rules:
+  - id: SEM-001
+    match: {statementKind: [SqlOperation, Assignment, Return, If], textMatches: '\bROUND\s*\('}
+    decision: REVIEW
+    message: Oracle の ROUND は half-up です。Java の BigDecimal 既定（HALF_EVEN）と結果が割れます
+    requiredTests:
+      - rounding_boundary
+
+  - id: SEM-002
+    match: {statementKind: [SqlOperation, Assignment, Return, If], textMatches: '\bTRUNC\s*\(|\bSYSDATE\b|\bSYSTIMESTAMP\b'}
+    decision: REVIEW
+    message: Oracle の DATE は時刻成分を持ち、SYSDATE はサーバのクロックとタイムゾーンで決まります
+    requiredTests:
+      - date_time_component
+      - timezone
+
+  - id: SEM-003
+    match: {statementKind: [SqlOperation, Assignment, Return, If], textMatches: "=\\s*''|<>\\s*''|\\bNVL\\s*\\(|\\bRTRIM\\s*\\("}
+    decision: REVIEW
+    message: Oracle では空文字が NULL と同一で、末尾空白の扱いも Java と違います
+    requiredTests:
+      - null_and_empty_string
+
+  - id: SEM-004
+    match: {statementKind: SqlOperation, textMatches: '\b(SUM|COUNT|AVG|MIN|MAX)\s*\([^)]*\)[\s\S]{0,80}?\bINTO\b'}
+    decision: REVIEW
+    message: 集約は 0 件でも 1 行返ります。NO_DATA_FOUND にならず NULL になる差を保つ必要があります
+    requiredTests:
+      - aggregate_zero_rows
+
+  - id: SEM-005
+    match: {statementKind: SqlOperation, textMatches: '\bJOIN\b|\bFROM\b[^)]*,'}
+    decision: REVIEW
+    message: 結合です。ScalarDB SQL の結合制約に当たるか、実行計画へ分解されるかを確認してください
+    requiredTests:
+      - equivalent_result
+
+  - id: SEM-006
+    match: {statementKind: SqlOperation, textMatches: '\bMERGE\b'}
+    decision: REVIEW
+    message: MERGE は upsert の原子性と競合条件を個別に確認する必要があります
+    requiredTests:
+      - concurrent_upsert
+
+  - id: CUR-001
+    match: {statementKind: [OpenCursor, Fetch, CloseCursor]}
+    decision: REVIEW
+    message: 明示 cursor は寿命がトランザクション境界をまたぎます
+    requiredTests:
+      - cursor_lifetime
+
+  - id: CUR-002
+    match: {statementKind: Loop, loopKind: cursor-for}
+    decision: REVIEW
+    message: Cursor FOR LOOP は N+1 とメモリ、fetch size を確認する必要があります
+    requiredTests:
+      - row_limit
+      - performance
+
+  - id: BULK-003
+    match: {statementKind: Fetch, textMatches: '\bBULK\s+COLLECT\b'}
+    decision: REVIEW
+    message: BULK COLLECT は LIMIT とメモリ上限が要ります
+    requiredTests:
+      - row_limit
