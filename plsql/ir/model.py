@@ -86,7 +86,15 @@ class Declaration(Node):
 
 @dataclass
 class Statement(Node):
-    """Base for every statement. `kind` says which one."""
+    """Base for every statement. `kind` says which one.
+
+    `read_set` / `write_set` live here rather than on `SqlOperation` because a cursor FOR loop reads tables too:
+    its query is part of the loop, not a separate statement, and leaving the fields off the base made every table
+    such a loop iterates invisible to the analysis.
+    """
+
+    read_set: list[str] = field(default_factory=list)
+    write_set: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -167,8 +175,6 @@ class SqlOperation(Statement):
     into_targets: list[str] = field(default_factory=list)
     cardinality: str = "UNKNOWN"
     locking_mode: str | None = None       # FOR UPDATE / NOWAIT / SKIP LOCKED / WAIT n
-    read_set: list[str] = field(default_factory=list)
-    write_set: list[str] = field(default_factory=list)
     target_status: str | None = None      # OK | WARN | PLANNED | ERROR, from scalardb_migrate
     target_sql: list[str] = field(default_factory=list)
     plan_id: str | None = None            # the plan.json this statement needs at run time
