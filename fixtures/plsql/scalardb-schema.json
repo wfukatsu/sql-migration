@@ -87,11 +87,11 @@
   "plsqlpoc.inventory_tx": {
     "transaction": true,
     "partition-key": [
-      "tx_id"
+      "entry_id"
     ],
     "clustering-key": [],
     "columns": {
-      "tx_id": "BIGINT",
+      "entry_id": "BIGINT",
       "product_id": "BIGINT",
       "delta_qty": "BIGINT",
       "reason": "TEXT",

@@ -359,7 +359,7 @@
         "oracle": "customers.name%TYPE",
         "resolved": "VARCHAR2(100)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@17852f40"
+        "schemaSnapshot": "schema.sql@23623f44"
        },
        "name": "v_name",
        "declarationKind": "variable"
@@ -438,5 +438,5 @@
    ]
   }
  ],
- "schemaSnapshot": "schema.sql@17852f40"
+ "schemaSnapshot": "schema.sql@23623f44"
 }

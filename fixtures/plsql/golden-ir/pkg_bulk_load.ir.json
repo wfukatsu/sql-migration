@@ -596,7 +596,7 @@
           "endColumn": 79
          },
          "sqlKind": "INSERT",
-         "originalSql": "INSERT INTO inventory_tx (tx_id, product_id, delta_qty, reason, created_at)\n      VALUES (seq_tx_id.NEXTVAL, v_products(i), -v_qtys(i), 'ARCHIVE', SYSDATE)",
+         "originalSql": "INSERT INTO inventory_tx (entry_id, product_id, delta_qty, reason, created_at)\n      VALUES (seq_tx_id.NEXTVAL, v_products(i), -v_qtys(i), 'ARCHIVE', SYSDATE)",
          "cardinality": "UNKNOWN"
         }
        ]
@@ -617,5 +617,5 @@
    ]
   }
  ],
- "schemaSnapshot": "schema.sql@17852f40"
+ "schemaSnapshot": "schema.sql@23623f44"
 }

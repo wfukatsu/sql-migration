@@ -53,7 +53,7 @@
       "oracle": "customers%ROWTYPE",
       "resolved": "RECORD(customer_id NUMBER(19), name VARCHAR2(100), email VARCHAR2(200), tier VARCHAR2(10), credit_limit NUMBER(12, 2), registered_on DATE)",
       "origin": "rowtype",
-      "schemaSnapshot": "schema.sql@17852f40"
+      "schemaSnapshot": "schema.sql@23623f44"
      },
      "declarations": [
       {
@@ -70,7 +70,7 @@
         "oracle": "customers%ROWTYPE",
         "resolved": "RECORD(customer_id NUMBER(19), name VARCHAR2(100), email VARCHAR2(200), tier VARCHAR2(10), credit_limit NUMBER(12, 2), registered_on DATE)",
         "origin": "rowtype",
-        "schemaSnapshot": "schema.sql@17852f40"
+        "schemaSnapshot": "schema.sql@23623f44"
        },
        "name": "v_row",
        "declarationKind": "variable"
@@ -281,7 +281,7 @@
         "oracle": "customers.credit_limit%TYPE",
         "resolved": "NUMBER(12, 2)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@17852f40"
+        "schemaSnapshot": "schema.sql@23623f44"
        },
        "name": "v_limit",
        "declarationKind": "variable"
@@ -332,5 +332,5 @@
    ]
   }
  ],
- "schemaSnapshot": "schema.sql@17852f40"
+ "schemaSnapshot": "schema.sql@23623f44"
 }

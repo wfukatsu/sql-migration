@@ -31,6 +31,10 @@ COMPARISONS = (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE)
 FLIP = {exp.EQ: exp.EQ, exp.NEQ: exp.NEQ, exp.GT: exp.LT, exp.LT: exp.GT, exp.GTE: exp.LTE, exp.LTE: exp.GTE}
 NEGATE = {exp.EQ: exp.NEQ, exp.NEQ: exp.EQ, exp.GT: exp.LTE, exp.LTE: exp.GT, exp.LT: exp.GTE, exp.GTE: exp.LT}
 LITERAL_TYPES = (exp.Literal, exp.Null, exp.Boolean, exp.Placeholder, exp.Parameter, exp.HexString)
+# Consensus Commit keeps its metadata in the same row, so these column names are unavailable to the application
+# (DB-CORE-10101 / DB-CORE-10102). A schema using one is rejected by Schema Loader, not by the converter --
+# which is why the converter has to say so first.
+CONSENSUS_COMMIT_COLUMNS = {"tx_id", "tx_state", "tx_version", "tx_prepared_at", "tx_committed_at"}
 
 
 @dataclass
@@ -356,6 +360,10 @@ class StatementConverter:
         self.fail("EXPR", f"{ctx}: only literals and bind markers are allowed, got '{e.sql(dialect=self.dialect)}'")
 
     def _column_type(self, col: exp.Column) -> str | None:
+        return self._column_type_by_name(col.name, col.table)
+
+    def _column_type_by_name(self, name: str, qualifier: str = "") -> str | None:
+        col = exp.column(name, table=qualifier) if qualifier else exp.column(name)
         for t in getattr(self, "_tables", []):
             meta = self.registry.get(t.name)
             if meta and (not col.table or col.table.lower() in ((t.alias or "").lower(), t.name.lower())):
@@ -364,21 +372,37 @@ class StatementConverter:
                         return ty
         return None
 
-    def _fit_date_literal(self, col: exp.Column, value: exp.Expression, ctx: str) -> exp.Expression:
-        """Oracle DATE carries a time; ScalarDB DATE does not. Strip a midnight time from literals compared to DATE columns."""
-        if self._column_type(col) != "DATE":
-            return value
+    def _fit_temporal_literal(self, column: str, value: exp.Expression, ctx: str,
+                              qualifier: str = "") -> exp.Expression:
+        """Make a date/time literal fit the ScalarDB column it lands in.
+
+        The two types carry different amounts of information and ScalarDB parses each strictly, so a literal that
+        is exact for the Oracle column can be unparseable for the ScalarDB one. Oracle DATE carries a time and
+        ScalarDB DATE does not, so a midnight time part is dropped; Oracle's ANSI ``DATE '2025-04-01'`` carries no
+        time and ScalarDB TIMESTAMP requires one, so midnight is supplied. Neither changes the instant.
+        """
+        kind = self._column_type_by_name(column, qualifier)
         lit = value.this if isinstance(value, exp.Cast) and isinstance(value.this, exp.Literal) else value
-        if isinstance(lit, exp.Literal) and lit.is_string:
+        if not isinstance(lit, exp.Literal) or not lit.is_string:
+            return value
+        if kind == "DATE":
             m = re.fullmatch(r"(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(:\d{2}(\.\d+)?)?)", lit.name)
             if m and re.fullmatch(r"00:00(:00(\.0+)?)?", m.group(2)):
-                self.info("DATE_LIT", f"{ctx}: midnight time part dropped from '{lit.name}' for DATE column {col.name}")
+                self.info("DATE_LIT", f"{ctx}: midnight time part dropped from '{lit.name}' for DATE column {column}")
                 return exp.Literal.string(m.group(1))
             if m:
-                self.warn("DATE_LIT", f"{ctx}: '{lit.name}' has a time part but {col.name} is a ScalarDB DATE; "
+                self.warn("DATE_LIT", f"{ctx}: '{lit.name}' has a time part but {column} is a ScalarDB DATE; "
                                       f"the time is dropped (use TIMESTAMP for the column if the time matters)")
                 return exp.Literal.string(m.group(1))
+            return value
+        if kind in ("TIMESTAMP", "TIMESTAMPTZ") and re.fullmatch(r"\d{4}-\d{2}-\d{2}", lit.name):
+            self.info("DATE_LIT", f"{ctx}: '{lit.name}' padded to '{lit.name} 00:00:00' for {kind} column "
+                                  f"{column}; ScalarDB does not parse a date-only literal as a timestamp")
+            return exp.Literal.string(lit.name + " 00:00:00")
         return value
+
+    def _fit_date_literal(self, col: exp.Column, value: exp.Expression, ctx: str) -> exp.Expression:
+        return self._fit_temporal_literal(col.name, value, ctx, col.table)
 
     # -- predicates ---------------------------------------------------------------------------------
     def _push_not(self, e: exp.Expression, negate: bool) -> exp.Expression:
@@ -817,12 +841,20 @@ class StatementConverter:
         cols = [c.name for c in ins.this.expressions] if isinstance(ins.this, exp.Schema) else []
         if not cols:
             self.warn("INSERT_COLS", "no column list: ScalarDB uses table definition order; add an explicit column list")
+        # INSERT never recorded its target, so no VALUES literal could be checked against the column it lands
+        # in -- which is how a date-only literal reached a TIMESTAMP column unpadded.
+        target = ins.this.this if isinstance(ins.this, exp.Schema) else ins.this
+        self._tables = [target] if isinstance(target, exp.Table) else []
         vals = ins.expression
         if not isinstance(vals, exp.Values):
             self.fail("INSERT_SELECT", "INSERT ... SELECT is not supported; read rows in the application then insert")
         for tup in vals.expressions:
             for i, v in enumerate(tup.expressions):
-                tup.expressions[i].replace(self._value(v, f"VALUES column {cols[i] if i < len(cols) else i + 1}"))
+                name = cols[i] if i < len(cols) else ""
+                ctx = f"VALUES column {name or i + 1}"
+                converted = self._value(v, ctx)
+                tup.expressions[i].replace(
+                    self._fit_temporal_literal(name, converted, ctx) if name else converted)
         meta = self._meta(ins.this)
         if meta and cols:
             missing = [c for c in meta.primary_key if c.lower() not in {x.lower() for x in cols}]
@@ -1046,7 +1078,27 @@ class StatementConverter:
         exists = "IF NOT EXISTS " if c.args.get("exists") else ""
         return [f"CREATE TABLE {exists}{tname} (\n  {cols_sql}{pk_sql}\n)"] + extra_stmts
 
+    def _check_reserved(self, name: str, is_key: bool) -> None:
+        """Consensus Commit stores its own columns in the same table, and those names are taken.
+
+        A schema that uses one loads fine until Schema Loader runs, which is late: the whole corpus has to be
+        renamed at that point. Found by deploying the PoC corpus, which had an `inventory_tx.tx_id`.
+        """
+        lowered = name.lower()
+        if lowered in CONSENSUS_COMMIT_COLUMNS:
+            self.fail("RESERVED_COLUMN",
+                      f"column {name}: '{lowered}' is reserved by ScalarDB for transaction metadata; "
+                      "rename it in the source schema before migrating")
+        if lowered.startswith("before_") and not is_key:
+            self.fail("RESERVED_COLUMN",
+                      f"column {name}: non-key columns with the 'before_' prefix are reserved by ScalarDB "
+                      "for transaction metadata; rename it in the source schema before migrating")
+
     def _column_def(self, cd: exp.ColumnDef, columns: dict[str, str], pk: list[str]) -> None:
+        # a column may be the key by an inline PRIMARY KEY as well as by the table-level clause
+        inline_key = any(isinstance(c.kind, exp.PrimaryKeyColumnConstraint)
+                         for c in cd.args.get("constraints") or [])
+        self._check_reserved(cd.name, inline_key or cd.name.lower() in [k.lower() for k in pk])
         name = cd.this.name
         if cd.kind is None:
             self.fail("DDL", f"column {name} has no data type")
