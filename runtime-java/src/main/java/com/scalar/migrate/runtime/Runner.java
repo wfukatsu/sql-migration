@@ -51,34 +51,16 @@ public class Runner {
     }
   }
 
+  /** The CLI owns its transaction; generated repositories join the caller's instead (see PlanRunner). */
   static void run(Map<String, String> opt, Map<String, Object> params) throws Exception {
-    Plan plan = GSON.fromJson(Files.readString(Path.of(opt.get("plan"))), Plan.class);
+    Plan plan = PlanRunner.load(Path.of(opt.get("plan")));
     Plan.Residual residual = plan.residual.get("java");
     String fetcherKind = opt.getOrDefault("fetcher", "core");
-    long t0 = System.nanoTime();
     boolean needsFetch = plan.fetch != null && !plan.fetch.isEmpty();
-    try (Fetcher fetcher = !needsFetch ? null : "jdbc".equals(fetcherKind) ? new JdbcFetcher(opt.get("properties")) : new CoreFetcher(opt.get("properties"));
-         Residual h2 = new Residual(residual.mode, residual.build_indexes || opt.containsKey("h2-indexes"))) {
-      int fetched = 0;
-      if (needsFetch) {
-        fetcher.begin();
-        try {
-          for (Plan.Fetch f : plan.fetch) {
-            Rows rows = fetcher.fetch(f, params);
-            fetched += rows.rows.size();
-            h2.load(f, rows);
-          }
-          fetcher.commit();
-        } catch (Exception e) {
-          fetcher.rollback();
-          throw e;
-        }
-      }
-      long t1 = System.nanoTime();
-      Map<String, Object> result = new LinkedHashMap<>(h2.query(residual.sql, params));
-      long t2 = System.nanoTime();
-      result.put("stats", Map.of("fetched_rows", fetched, "fetch_ms", (t1 - t0) / 1_000_000, "residual_ms", (t2 - t1) / 1_000_000,
-          "fetcher", fetcherKind, "h2_mode", residual.mode));
+    try (Fetcher fetcher = !needsFetch ? null : "jdbc".equals(fetcherKind) ? new JdbcFetcher(opt.get("properties")) : new CoreFetcher(opt.get("properties"))) {
+      PlanRunner.Result r = PlanRunner.execute(plan, fetcher, params, opt.containsKey("h2-indexes"));
+      Map<String, Object> result = new LinkedHashMap<>(r.query());
+      result.put("stats", r.stats(fetcherKind, residual.mode));
       System.out.println(GSON.toJson(result));
     }
   }
