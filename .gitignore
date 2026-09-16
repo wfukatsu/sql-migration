@@ -9,3 +9,4 @@ difftest/license.properties
 difftest/.env
 .DS_Store
 /build/
+/generated/

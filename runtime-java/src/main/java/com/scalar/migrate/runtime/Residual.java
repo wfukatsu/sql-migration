@@ -134,7 +134,14 @@ public class Residual implements AutoCloseable {
   }
 
   /** Replace :name markers by ? and collect the bind values in order (positional ? are taken from params "1","2",...). */
-  static String bindNamed(String sql, Map<String, Object> params, List<Object> binds) {
+  /**
+   * Rewrite named placeholders as positional ones, collecting the values in order.
+   *
+   * <p>Public because generated repositories need it: the converter emits {@code :name} and JDBC only
+   * understands {@code ?}, and having the generator reimplement the rewrite would give two versions of
+   * one rule.
+   */
+  public static String bindNamed(String sql, Map<String, Object> params, List<Object> binds) {
     StringBuilder sb = new StringBuilder();
     Matcher m = NAMED.matcher(sql);
     int last = 0;
