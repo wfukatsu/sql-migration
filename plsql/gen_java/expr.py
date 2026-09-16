@@ -23,6 +23,8 @@ HELPER_IMPORT = "com.scalar.migrate.plsql.Plsql"
 TOKEN = re.compile(r"""
     (?P<string>'(?:[^']|'')*')
   | (?P<number>\d+(?:\.\d+)?)
+  | (?P<bind>:[A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)?)
+  | (?P<attribute>[A-Za-z][\w$#]*\s*%\s*[A-Za-z][\w$#]*)
   | (?P<name>[A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)*)
   | (?P<op><=|>=|<>|!=|\|\||:=|[-+*/(),=<>%])
   | (?P<space>\s+)
@@ -200,15 +202,61 @@ class _Parser:
             self.take()
         return out
 
+    ARITHMETIC = {"+": "add", "-": "sub", "*": "mul", "/": "div"}
+
+    def parse_arithmetic(self) -> str:
+        """`a + b` on a BigDecimal does not compile in Java, and on a boxed null it throws."""
+        left = self.parse_primary()
+        while True:
+            token = self.peek()
+            if token is None or token[0] != "op" or token[1] not in self.ARITHMETIC:
+                return left
+            operator = self.take()[1]
+            right = self.parse_primary()
+            self.result.imports.add(HELPER_IMPORT)
+            left = f"{HELPER}.{self.ARITHMETIC[operator]}({left}, {right})"
+
     def parse_concat(self) -> str:
-        parts = [self.parse_primary()]
+        parts = [self.parse_arithmetic()]
         while self.peek() is not None and self.peek()[1] == "||":
             self.take()
-            parts.append(self.parse_primary())
+            parts.append(self.parse_arithmetic())
         if len(parts) == 1:
             return parts[0]
         self.result.imports.add(HELPER_IMPORT)
         return f"{HELPER}.concat({', '.join(parts)})"
+
+    def parse_case(self) -> str:
+        """`CASE x WHEN a THEN b ... ELSE c END` as a chain of ternaries.
+
+        A CASE expression is not a statement, so the statement lowering never sees it; without this every routine
+        holding one is refused, which is how `tier_discount` -- a three-line pure function -- failed to generate.
+        """
+        self.take()  # CASE
+        selector = None
+        if not self.at_word("WHEN"):
+            selector = self.parse_or()
+        branches: list[tuple[str, str]] = []
+        while self.at_word("WHEN"):
+            self.take()
+            condition = self.parse_or()
+            if self.at_word("THEN"):
+                self.take()
+            branches.append((condition, self.parse_or()))
+        otherwise = "null"
+        if self.at_word("ELSE"):
+            self.take()
+            otherwise = self.parse_or()
+        if self.at_word("END"):
+            self.take()
+
+        rendered = otherwise
+        for condition, value in reversed(branches):
+            if selector is not None:
+                self.result.imports.add(HELPER_IMPORT)
+                condition = f"{HELPER}.eq({selector}, {condition})"
+            rendered = f"({condition} ? {value} : {rendered})"
+        return rendered
 
     def parse_primary(self) -> str:
         """Everything tighter than concatenation: literals, names, calls, parentheses, arithmetic.
@@ -219,12 +267,19 @@ class _Parser:
         out: list[str] = []
         while self.position < len(self.tokens):
             kind, value = self.peek()
-            if value == "||" or (kind == "op" and value in COMPARISONS) \
-                    or (kind == "name" and value.upper() in ("AND", "OR", "IS", "NOT",
-                                                             "IN", "BETWEEN", "LIKE")):
+            if value == "," and not out:
+                break
+            if value == "," :
+                break
+            if value == "||" or (kind == "op" and (value in COMPARISONS or value in self.ARITHMETIC)) \
+                    or (kind == "name" and value.upper() in ("AND", "OR", "IS", "NOT", "IN", "BETWEEN",
+                                                             "LIKE", "WHEN", "THEN", "ELSE", "END")):
                 break
             if kind == "op" and value == ")":
                 break
+            if kind == "name" and value.upper() == "CASE":
+                out.append(self.parse_case())
+                continue
             if kind == "op" and value == "(":
                 self.take()
                 inner = self.parse_or()
@@ -256,6 +311,19 @@ class _Parser:
         return f"{name}({', '.join(a for a in arguments if a)})"
 
     def _atom(self, kind: str, value: str) -> str:
+        if kind == "bind":
+            # `:NEW.col` / `:OLD.col` in a trigger, or a host variable. Neither has a Java equivalent here, and
+            # triggers are a REDESIGN anyway, so this is refused rather than rendered.
+            self.result.unknown.append(value)
+            return value
+        if kind == "attribute":
+            # `SQL%ROWCOUNT`, `c%NOTFOUND`: one name, not a modulo
+            key = " ".join(value.split()).replace(" ", "").lower()
+            mapped = self.scope.get(key)
+            if mapped is None:
+                self.result.unknown.append(value)
+                return value
+            return mapped
         if kind == "string":
             return _string(value)
         if kind == "number":
@@ -287,7 +355,12 @@ class _Parser:
             return function
         if "." in value:
             head, _, tail = value.partition(".")
-            return f"{self.scope.get(head.lower(), java_name(head))}.{java_name(tail)}()"
+            if head.lower() not in self.scope:
+                # `v_ids.COUNT` on a collection, or a package-qualified name: neither is a record field, and
+                # rendering it as one produces a call to a method that does not exist
+                self.result.unknown.append(value)
+                return value
+            return f"{self.scope[head.lower()]}.{java_name(tail)}()"
         if value.lower() in self.scope:
             return self.scope[value.lower()]
         self.result.unknown.append(value)

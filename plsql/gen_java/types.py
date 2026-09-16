@@ -144,13 +144,25 @@ def _split_column(text: str) -> tuple[str, str]:
     return name.strip(), type_.strip()
 
 
+# PL/SQL happily names a procedure `import`; Java does not. Renaming is the only option, and doing it in one
+# place keeps the service and the repository agreeing on the name.
+JAVA_KEYWORDS = {
+    "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char", "class", "const", "continue",
+    "default", "do", "double", "else", "enum", "extends", "final", "finally", "float", "for", "goto", "if",
+    "implements", "import", "instanceof", "int", "interface", "long", "native", "new", "package", "private",
+    "protected", "public", "return", "short", "static", "strictfp", "super", "switch", "synchronized", "this",
+    "throw", "throws", "transient", "try", "void", "volatile", "while", "true", "false", "null", "var", "record",
+}
+
+
 def java_name(identifier: str) -> str:
     """`v_order_id` -> `vOrderId`. Names come from PL/SQL, so they are snake_case and sometimes prefixed."""
     parts = [p for p in re.split(r"[_$#]+", identifier.strip()) if p]
     if not parts:
         return "value"
     head, *rest = parts
-    return head.lower() + "".join(p[:1].upper() + p[1:].lower() for p in rest)
+    name = head.lower() + "".join(p[:1].upper() + p[1:].lower() for p in rest)
+    return f"{name}_" if name in JAVA_KEYWORDS else name
 
 
 def java_class_name(identifier: str) -> str:

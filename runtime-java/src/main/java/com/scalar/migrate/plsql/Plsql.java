@@ -88,6 +88,20 @@ public final class Plsql {
     return isNull(value) ? fallback : value;
   }
 
+  /**
+   * Overloads for the shapes generated code produces.
+   *
+   * <p>`NVL(x, 0)` mixes a {@code BigDecimal} with an {@code int}, and the generic method cannot infer a type
+   * from that. Naming the combinations the generator emits is simpler than making it wrap every literal.
+   */
+  public static BigDecimal nvl(BigDecimal value, long fallback) {
+    return isNull(value) ? BigDecimal.valueOf(fallback) : value;
+  }
+
+  public static BigDecimal nvl(Object value, long fallback) {
+    return isNull(value) ? BigDecimal.valueOf(fallback) : OracleNumbers.toBigDecimal(value);
+  }
+
   /** Oracle's ROUND is half-up; BigDecimal's default is half-even. */
   public static BigDecimal round(Object value, int scale) {
     return value == null ? null : OracleNumbers.round(OracleNumbers.toBigDecimal(value), scale);
@@ -96,6 +110,59 @@ public final class Plsql {
   /** Oracle's TRUNC on a DATE drops the time of day. */
   public static LocalDateTime trunc(LocalDateTime value) {
     return value == null ? null : value.toLocalDate().atStartOfDay();
+  }
+
+  /**
+   * Arithmetic, with Oracle's NULL rule: any operand null makes the result null.
+   *
+   * <p>Java's {@code +} on a boxed null throws, and on a {@code BigDecimal} does not compile at all. Routing
+   * arithmetic through here is what lets a generated expression mix a literal, an {@code Integer} and a
+   * {@code BigDecimal} the way the PL/SQL did.
+   */
+  public static BigDecimal add(Object a, Object b) {
+    return arith(a, b, BigDecimal::add);
+  }
+
+  public static BigDecimal sub(Object a, Object b) {
+    if (a instanceof LocalDateTime x && b instanceof LocalDateTime y) {
+      // Oracle subtracts two DATEs into a number of days, fraction included
+      return BigDecimal.valueOf(java.time.Duration.between(y, x).toSeconds())
+          .divide(BigDecimal.valueOf(86400), OracleNumbers.NUMBER);
+    }
+    return arith(a, b, BigDecimal::subtract);
+  }
+
+  public static BigDecimal mul(Object a, Object b) {
+    return arith(a, b, OracleNumbers::multiply);
+  }
+
+  public static BigDecimal div(Object a, Object b) {
+    return arith(a, b, OracleNumbers::divide);
+  }
+
+  private static BigDecimal arith(Object a, Object b,
+      java.util.function.BinaryOperator<BigDecimal> operator) {
+    if (a == null || b == null) return null;
+    return operator.apply(OracleNumbers.toBigDecimal(a), OracleNumbers.toBigDecimal(b));
+  }
+
+  /** {@code TO_CHAR(value, format)}. Only the formats the corpus uses are mapped; the rest raise. */
+  public static String text(Object value, String format) {
+    if (value == null) return null;
+    String pattern = switch (format.toUpperCase()) {
+      case "YYYY-MM-DD" -> "yyyy-MM-dd";
+      case "YYYY-MM-DD HH24:MI:SS" -> "yyyy-MM-dd HH:mm:ss";
+      case "YYYYMM" -> "yyyyMM";
+      case "YYYY" -> "yyyy";
+      default -> throw new UnsupportedOperationException("TO_CHAR format not mapped: " + format);
+    };
+    if (value instanceof LocalDateTime d) return d.format(java.time.format.DateTimeFormatter.ofPattern(pattern));
+    return text(value);
+  }
+
+  /** Coerce to Oracle's NUMBER. Generated code uses it wherever a literal or a ternary lands in a NUMBER. */
+  public static BigDecimal dec(Object value) {
+    return isNull(value) ? null : OracleNumbers.toBigDecimal(value);
   }
 
   public static BigDecimal number(long value) {
