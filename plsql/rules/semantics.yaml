@@ -66,7 +66,7 @@ rules:
       - performance
 
   - id: BULK-003
-    match: {statementKind: Fetch, textMatches: '\bBULK\s+COLLECT\b'}
+    match: {statementKind: Fetch, hasDiagnostic: BULK_COLLECT}
     decision: REVIEW
     message: BULK COLLECT は LIMIT とメモリ上限が要ります
     requiredTests:

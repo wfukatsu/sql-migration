@@ -21,3 +21,14 @@ rules:
     message: 動的 SQL は定数に畳み込めても bind の復元と権限の確認が要ります
     requiredTests:
       - bind_restoration
+
+  - id: DYN-003
+    match: {statementKind: [Call, SqlOperation, Assignment], textMatches: '\bDBMS_SQL\b'}
+    decision: REDESIGN
+    severity: critical
+    message: DBMS_SQL は静的解析だけでは追えません。実行ログも使って query family を洗い出す必要があります
+    remediation:
+      - 実行ログから実際に流れた SQL を集める
+      - allowlist 型の専用 Repository にする
+    requiredTests:
+      - dynamic_sql_variants
