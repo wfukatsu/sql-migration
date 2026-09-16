@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""P2-11: the first semantic signal -- generated Java against what Oracle actually did.
+
+Phase 2's exit condition is that AUTO code compiles, and compiling says nothing about meaning. This regenerates
+the Java and runs it against the P0-5 captures, so that a mistake in the generation rules -- an exception not
+reproduced, a number rounded the other way -- shows up now rather than after every routine has been generated
+the same wrong way.
+
+    .venv/bin/python difftest/plsql_diff.py
+
+The driver is H2, not ScalarDB. What is under test is the generated Java: its control flow, its exceptions, its
+arithmetic. Whether ScalarDB executes the same SQL the same way is a different question, and P3-1 asks it against
+a real cluster. Keeping this one free of a licensed cluster is what makes it runnable on every change.
+"""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+HARNESS = "com.scalar.migrate.plsql.GeneratedDiffTest"
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--src", default=str(ROOT / "fixtures" / "plsql" / "src"))
+    parser.add_argument("--out-dir", default=str(ROOT / "generated"))
+    parser.add_argument("--skip-generate", action="store_true")
+    args = parser.parse_args(argv)
+
+    if not args.skip_generate:
+        print("generating...")
+        generated = subprocess.run(
+            [sys.executable, "-m", "plsql.generate", args.src, "--out-dir", args.out_dir],
+            cwd=str(ROOT), capture_output=True, text=True)
+        print(generated.stdout.strip())
+        if generated.returncode != 0:
+            print(generated.stderr.strip(), file=sys.stderr)
+            return generated.returncode
+
+    print(f"running {HARNESS} against the P0-5 captures...")
+    finished = subprocess.run(
+        ["gradle", "test", "-Dplsql.generated=1", "--tests", f"*{HARNESS.rsplit('.', 1)[-1]}*"],
+        cwd=str(ROOT / "runtime-java"), capture_output=True, text=True)
+    print(_summary(ROOT / "runtime-java" / "build" / "test-results" / "test"))
+    if finished.returncode != 0:
+        print(finished.stdout[-3000:], file=sys.stderr)
+    return finished.returncode
+
+
+def _summary(results: Path) -> str:
+    import xml.etree.ElementTree as ET
+
+    for path in sorted(results.glob("TEST-*GeneratedDiffTest.xml")):
+        root = ET.parse(path).getroot()
+        failures = int(root.get("failures", 0)) + int(root.get("errors", 0))
+        lines = [f"{root.get('tests')} comparisons, {failures} disagreeing with Oracle"]
+        for case in root.iter("testcase"):
+            for failure in list(case.iter("failure")) + list(case.iter("error")):
+                lines.append(f"  {case.get('name')}: {(failure.get('message') or '')[:200]}")
+        return "\n".join(lines)
+    return "no results: did the harness run?"
+
+
+if __name__ == "__main__":
+    sys.exit(main())

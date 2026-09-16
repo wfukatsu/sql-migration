@@ -36,6 +36,15 @@ corpus ではすべて `SYSDATE` で書き込んでいるため時刻成分を�
 `pkg_money_calc.days_since_order` が `TRUNC(SYSDATE) - TRUNC(v_ordered_at)` をしているので、
 時刻成分を落とすとこの関数の結果が変わる。
 
+### 3'. NUMBER(10) を INT ではなく BIGINT にする（2026-09-17 修正）
+
+当初 `products.stock_qty` / `order_lines.qty` / `inventory_tx.delta_qty` を手で `INT` にしていたが、
+**`NUMBER(10)` の最大値 9,999,999,999 は 32bit 整数（最大 2,147,483,647）に収まらない**。
+変換ツールの自動生成は最初から `BIGINT` を出しており、手で変えたところが誤っていた。
+
+P2-5 の型生成（`plsql/gen_java/types.py`）がデプロイ済みスキーマと突き合わせたときに出た差分で気づいた。
+生成器とスキーマが同じ判断をしているかを検査に入れてある。
+
 ### 3. 複合索引を単一列索引へ
 
 `CREATE INDEX ix_orders_status ON orders (status, ordered_at)` は通らない。
