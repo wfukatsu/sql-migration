@@ -45,6 +45,18 @@ corpus ではすべて `SYSDATE` で書き込んでいるため時刻成分を�
 P2-5 の型生成（`plsql/gen_java/types.py`）がデプロイ済みスキーマと突き合わせたときに出た差分で気づいた。
 生成器とスキーマが同じ判断をしているかを検査に入れてある。
 
+### 3''. 予約列名 tx_id を避ける（2026-09-17 修正）
+
+`inventory_tx` の主キーを `tx_id` としていたが、**ScalarDB の Consensus Commit がその名前を
+トランザクションメタデータ用に予約している**（DB-CORE-10101）。Schema Loader が拒否して初めて分かった。
+
+列名を `entry_id` に変えた。実案件でも、移行にあたって元スキーマの列名を変える必要が出る類の制約である。
+
+変換ツールにはこの検査が無く、`tx_id` を含む DDL を WARN のまま通していた。
+`RESERVED_COLUMN` として ERROR にする検査を `scalardb_migrate/converter.py` に足した。
+予約されるのは `tx_id` / `tx_state` / `tx_version` / `tx_prepared_at` / `tx_committed_at` と、
+主キー以外の `before_` 接頭辞である。
+
 ### 3. 複合索引を単一列索引へ
 
 `CREATE INDEX ix_orders_status ON orders (status, ordered_at)` は通らない。
@@ -63,7 +75,7 @@ P2-5 の型生成（`plsql/gen_java/types.py`）がデプロイ済みスキー�
 | `orders` | `order_id` | — | `customer_id`, `status` | corpus の非キー絞り込みはこの 2 列だけ |
 | `order_lines` | `order_id` | `line_no ASC` | — | 明細は常に `WHERE order_id = ?` で読む。親キーを partition key に置くとパーティション SCAN 1 回で足りる |
 | `payments` | `payment_id` | — | `order_id` | `paid_total` / `last_paid_at` が `order_id` で集約する |
-| `inventory_tx` | `tx_id` | — | `product_id` | 追記専用。商品別の参照に備える |
+| `inventory_tx` | `entry_id` | — | `product_id` | 追記専用。商品別の参照に備える |
 | `audit_log` | `audit_id` | — | — | 追記専用。corpus に読み出しがない |
 | `counters` | `counter_name` | — | — | 主キーアクセスのみ |
 | `batch_control` | `batch_name` | — | — | 主キーアクセスのみ |

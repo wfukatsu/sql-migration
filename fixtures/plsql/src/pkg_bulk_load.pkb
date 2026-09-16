@@ -46,7 +46,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_bulk_load AS
     SELECT product_id, qty BULK COLLECT INTO v_products, v_qtys
       FROM order_lines WHERE order_id = p_order_id;
     FORALL i IN 1 .. v_products.COUNT
-      INSERT INTO inventory_tx (tx_id, product_id, delta_qty, reason, created_at)
+      INSERT INTO inventory_tx (entry_id, product_id, delta_qty, reason, created_at)
       VALUES (seq_tx_id.NEXTVAL, v_products(i), -v_qtys(i), 'ARCHIVE', SYSDATE);
   END archive_lines;
 

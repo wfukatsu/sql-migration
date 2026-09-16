@@ -83,7 +83,7 @@
         "oracle": "orders.order_id%TYPE",
         "resolved": "NUMBER(19)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@17852f40"
+        "schemaSnapshot": "schema.sql@23623f44"
        },
        "name": "v_order_id",
        "declarationKind": "variable"
@@ -102,7 +102,7 @@
         "oracle": "orders.customer_id%TYPE",
         "resolved": "NUMBER(19)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@17852f40"
+        "schemaSnapshot": "schema.sql@23623f44"
        },
        "name": "v_customer_id",
        "declarationKind": "variable"
@@ -121,7 +121,7 @@
         "oracle": "orders.total_amount%TYPE",
         "resolved": "NUMBER(14, 2)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@17852f40"
+        "schemaSnapshot": "schema.sql@23623f44"
        },
        "name": "v_total",
        "declarationKind": "variable"
@@ -438,7 +438,7 @@
         "oracle": "orders.total_amount%TYPE",
         "resolved": "NUMBER(14, 2)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@17852f40"
+        "schemaSnapshot": "schema.sql@23623f44"
        },
        "name": "v_amount",
        "declarationKind": "variable"
@@ -540,5 +540,5 @@
    ]
   }
  ],
- "schemaSnapshot": "schema.sql@17852f40"
+ "schemaSnapshot": "schema.sql@23623f44"
 }
