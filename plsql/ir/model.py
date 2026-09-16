@@ -185,6 +185,36 @@ class DynamicSql(Statement):
 
 
 @dataclass
+class CursorStatement(Statement):
+    """OPEN / FETCH / CLOSE. The cursor's lifetime crosses statements, which is why it is not a SqlOperation."""
+
+    cursor: str = ""
+    into_targets: list[str] = field(default_factory=list)
+    arguments: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ControlStatement(Statement):
+    """EXIT / CONTINUE / GOTO / NULL. `label` and `condition` are kept: EXIT WHEN is not the same as EXIT."""
+
+    label: str | None = None
+    condition: str | None = None
+
+
+@dataclass
+class Unsupported(Statement):
+    """A construct the lowering does not model yet.
+
+    It is a node rather than a silent omission on purpose: the plan's non-functional requirements say a warning
+    must never be hidden behind a success, and a routine holding one of these cannot reach AUTO because
+    `ruleCoverage` counts nodes the rules can decide.
+    """
+
+    text: str = ""
+    construct: str = ""
+
+
+@dataclass
 class ExceptionHandler(Node):
     exceptions: list[str] = field(default_factory=list)   # names, or OTHERS
     body: list[Statement] = field(default_factory=list)
