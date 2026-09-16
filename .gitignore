@@ -8,3 +8,4 @@ difftest/work/
 difftest/license.properties
 difftest/.env
 .DS_Store
+/build/
