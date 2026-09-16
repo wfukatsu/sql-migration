@@ -1,0 +1,15 @@
+name: import_truncate_staging
+unit: pkg_customer_import
+routine: truncate_staging
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO inventory_tx (tx_id, product_id, delta_qty, reason, created_at) VALUES (1, 10, 5, 'IN', DATE '2026-01-01')
+call:
+  kind: procedure
+  name: pkg_customer_import.truncate_staging
+  args:
+    p_table_name: inventory_tx
+capture_tables:
+- inventory_tx
+note: DBMS_ASSERT で名前を検証してから TRUNCATE する

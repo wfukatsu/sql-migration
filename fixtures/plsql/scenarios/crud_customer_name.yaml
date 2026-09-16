@@ -1,0 +1,15 @@
+name: crud_customer_name
+unit: pkg_customer_crud
+routine: customer_name
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'GOLD', NULL, DATE '2025-04-01')
+call:
+  kind: function
+  name: pkg_customer_crud.customer_name
+  args:
+    p_customer_id: 1
+  returns: VARCHAR2
+capture_tables:
+- customers

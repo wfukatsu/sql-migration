@@ -1,0 +1,32 @@
+{
+ "scenario": "status_for_customer_none",
+ "unit": "pkg_order_status",
+ "routine": "status_for_customer",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": null,
+  "out": {
+   "p_status": "NONE"
+  }
+ },
+ "exception": null,
+ "tables": {
+  "orders": {
+   "columns": [
+    "order_id",
+    "customer_id",
+    "status",
+    "ordered_at",
+    "shipped_at",
+    "total_amount",
+    "note"
+   ],
+   "rows": []
+  }
+ },
+ "masked": {}
+}

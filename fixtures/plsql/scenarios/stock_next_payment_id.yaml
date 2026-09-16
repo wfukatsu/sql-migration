@@ -1,0 +1,15 @@
+name: stock_next_payment_id
+unit: pkg_stock_reserve
+routine: next_payment_id
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO counters (counter_name, next_value) VALUES ('PAYMENT_ID', 5000)
+call:
+  kind: function
+  name: pkg_stock_reserve.next_payment_id
+  args: {}
+  returns: NUMBER
+capture_tables:
+- counters
+note: 行ロックで直列化する採番

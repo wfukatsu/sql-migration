@@ -1,0 +1,46 @@
+{
+ "scenario": "money_days_since_order",
+ "unit": "pkg_money_calc",
+ "routine": "days_since_order",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": 5,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "orders": {
+   "columns": [
+    "order_id",
+    "customer_id",
+    "status",
+    "ordered_at",
+    "shipped_at",
+    "total_amount",
+    "note"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1001"
+     },
+     {
+      "$dec": "1"
+     },
+     "NEW",
+     {
+      "$ts": "2026-01-10T23:59:59"
+     },
+     null,
+     null,
+     null
+    ]
+   ]
+  }
+ },
+ "masked": {}
+}

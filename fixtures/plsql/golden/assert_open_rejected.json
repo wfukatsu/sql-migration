@@ -1,0 +1,49 @@
+{
+ "scenario": "assert_open_rejected",
+ "unit": "pkg_order_status",
+ "routine": "assert_open",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": {
+  "code": -20022,
+  "message": "ORA-20022: order 1001 is not open: CLOSED"
+ },
+ "tables": {
+  "orders": {
+   "columns": [
+    "order_id",
+    "customer_id",
+    "status",
+    "ordered_at",
+    "shipped_at",
+    "total_amount",
+    "note"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1001"
+     },
+     {
+      "$dec": "1"
+     },
+     "CLOSED",
+     {
+      "$ts": "2026-01-10T11:00:00"
+     },
+     null,
+     null,
+     null
+    ]
+   ]
+  }
+ },
+ "masked": {}
+}

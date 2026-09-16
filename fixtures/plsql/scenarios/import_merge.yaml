@@ -1,0 +1,20 @@
+name: import_merge
+unit: pkg_customer_import
+routine: import
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'GOLD', NULL, DATE '2025-04-01')
+call:
+  kind: procedure
+  name: pkg_customer_import.import
+  args:
+    p_ids:
+    - 1
+    - 3
+    p_names:
+    - Renamed
+    - Brand New
+capture_tables:
+- customers
+note: FORALL の中の MERGE。更新と挿入が混じる

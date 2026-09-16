@@ -1,0 +1,99 @@
+{
+ "scenario": "report_mark_reviewed",
+ "unit": "pkg_order_report",
+ "routine": "mark_reviewed",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "orders": {
+   "columns": [
+    "order_id",
+    "customer_id",
+    "status",
+    "ordered_at",
+    "shipped_at",
+    "total_amount",
+    "note"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1001"
+     },
+     {
+      "$dec": "1"
+     },
+     "NEW",
+     {
+      "$ts": "2026-01-10T11:00:00"
+     },
+     null,
+     {
+      "$dec": "300"
+     },
+     "reviewed"
+    ],
+    [
+     {
+      "$dec": "1002"
+     },
+     {
+      "$dec": "1"
+     },
+     "NEW",
+     {
+      "$ts": "2026-01-09T11:00:00"
+     },
+     null,
+     {
+      "$dec": "900"
+     },
+     "reviewed"
+    ],
+    [
+     {
+      "$dec": "1003"
+     },
+     {
+      "$dec": "1"
+     },
+     "SHIPPED",
+     {
+      "$ts": "2026-01-08T11:00:00"
+     },
+     null,
+     {
+      "$dec": "100"
+     },
+     null
+    ]
+   ]
+  },
+  "audit_log": {
+   "columns": [
+    "audit_id",
+    "table_name",
+    "key_value",
+    "action",
+    "old_value",
+    "new_value",
+    "changed_at",
+    "changed_by"
+   ],
+   "rows": []
+  }
+ },
+ "masked": {
+  "audit_log": [
+   "changed_at"
+  ]
+ }
+}

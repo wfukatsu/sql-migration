@@ -1,0 +1,14 @@
+name: dynamic_refresh_stats
+unit: pkg_dynamic_search
+routine: refresh_stats
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO batch_control (batch_name, status) VALUES ('STATS', 'IDLE')
+call:
+  kind: procedure
+  name: pkg_dynamic_search.refresh_stats
+  args: {}
+capture_tables:
+- batch_control
+note: 定数 EXECUTE IMMEDIATE。SYSDATE を書くので固定が効いていることも見える

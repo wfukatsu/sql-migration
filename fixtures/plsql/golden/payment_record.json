@@ -1,0 +1,48 @@
+{
+ "scenario": "payment_record",
+ "unit": "pkg_payment",
+ "routine": "record_payment",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "payments": {
+   "columns": [
+    "payment_id",
+    "order_id",
+    "amount",
+    "method",
+    "paid_at"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "5001"
+     },
+     {
+      "$dec": "1001"
+     },
+     {
+      "$dec": "99.99"
+     },
+     "CARD",
+     {
+      "$masked": "clock the harness cannot pin"
+     }
+    ]
+   ]
+  }
+ },
+ "masked": {
+  "payments": [
+   "paid_at"
+  ]
+ }
+}

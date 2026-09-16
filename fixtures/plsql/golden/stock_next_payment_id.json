@@ -1,0 +1,32 @@
+{
+ "scenario": "stock_next_payment_id",
+ "unit": "pkg_stock_reserve",
+ "routine": "next_payment_id",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": 5000,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "counters": {
+   "columns": [
+    "counter_name",
+    "next_value"
+   ],
+   "rows": [
+    [
+     "PAYMENT_ID",
+     {
+      "$dec": "5001"
+     }
+    ]
+   ]
+  }
+ },
+ "masked": {}
+}

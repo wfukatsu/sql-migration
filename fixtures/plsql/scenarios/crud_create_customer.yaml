@@ -1,0 +1,17 @@
+name: crud_create_customer
+unit: pkg_customer_crud
+routine: create_customer
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup: []
+call:
+  kind: procedure
+  name: pkg_customer_crud.create_customer
+  args:
+    p_customer_id: 7
+    p_name: New Co
+    p_email: n@example.com
+    p_tier: null
+capture_tables:
+- customers
+note: p_tier に NULL を渡して NVL の既定値 BRONZE を踏む

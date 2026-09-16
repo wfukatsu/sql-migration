@@ -1,0 +1,35 @@
+{
+ "scenario": "payment_record_cancelled",
+ "unit": "pkg_payment",
+ "routine": "record_payment",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": {
+  "code": -20040,
+  "message": "ORA-20040: cannot pay a cancelled order: 1001"
+ },
+ "tables": {
+  "payments": {
+   "columns": [
+    "payment_id",
+    "order_id",
+    "amount",
+    "method",
+    "paid_at"
+   ],
+   "rows": []
+  }
+ },
+ "masked": {
+  "payments": [
+   "paid_at"
+  ]
+ }
+}

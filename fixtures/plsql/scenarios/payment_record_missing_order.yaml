@@ -1,0 +1,19 @@
+name: payment_record_missing_order
+unit: pkg_payment
+routine: record_payment
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup: []
+call:
+  kind: procedure
+  name: pkg_payment.record_payment
+  args:
+    p_payment_id: 5001
+    p_order_id: 7777
+    p_amount: 1.0
+    p_method: CARD
+capture_tables:
+- payments
+mask:
+  payments:
+  - paid_at

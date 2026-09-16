@@ -1,0 +1,63 @@
+{
+ "scenario": "reprice_all_gold",
+ "unit": "prc_reprice_all",
+ "routine": "prc_reprice_all",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "orders": {
+   "columns": [
+    "order_id",
+    "customer_id",
+    "status",
+    "ordered_at",
+    "shipped_at",
+    "total_amount",
+    "note"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1001"
+     },
+     {
+      "$dec": "1"
+     },
+     "NEW",
+     {
+      "$ts": "2026-01-10T11:00:00"
+     },
+     null,
+     {
+      "$dec": "180"
+     },
+     null
+    ],
+    [
+     {
+      "$dec": "1002"
+     },
+     {
+      "$dec": "2"
+     },
+     "NEW",
+     {
+      "$ts": "2026-01-10T11:00:00"
+     },
+     null,
+     null,
+     null
+    ]
+   ]
+  }
+ },
+ "masked": {}
+}

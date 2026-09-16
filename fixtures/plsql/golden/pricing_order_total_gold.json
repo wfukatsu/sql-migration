@@ -1,0 +1,63 @@
+{
+ "scenario": "pricing_order_total_gold",
+ "unit": "pkg_order_pricing",
+ "routine": "order_total",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": 900,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "order_lines": {
+   "columns": [
+    "order_id",
+    "line_no",
+    "product_id",
+    "qty",
+    "unit_price"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1001"
+     },
+     {
+      "$dec": "1"
+     },
+     {
+      "$dec": "10"
+     },
+     {
+      "$dec": "3"
+     },
+     {
+      "$dec": "333.33"
+     }
+    ],
+    [
+     {
+      "$dec": "1001"
+     },
+     {
+      "$dec": "2"
+     },
+     {
+      "$dec": "10"
+     },
+     {
+      "$dec": "1"
+     },
+     {
+      "$dec": "0.01"
+     }
+    ]
+   ]
+  }
+ },
+ "masked": {}
+}

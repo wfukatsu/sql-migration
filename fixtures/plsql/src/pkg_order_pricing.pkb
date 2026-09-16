@@ -38,8 +38,12 @@ CREATE OR REPLACE PACKAGE BODY pkg_order_pricing AS
   END order_total;
 
   PROCEDURE reprice_order(p_order_id IN NUMBER) IS
+    v_total orders.total_amount%TYPE;
   BEGIN
-    UPDATE orders SET total_amount = order_total(p_order_id) WHERE order_id = p_order_id;
+    -- order_total は orders を読む。UPDATE の SET 句で直接呼ぶと更新中の表を読むことになり
+    -- ORA-04091 (mutating table) になるため、先に値を確定させてから更新する
+    v_total := order_total(p_order_id);
+    UPDATE orders SET total_amount = v_total WHERE order_id = p_order_id;
   END reprice_order;
 
 END pkg_order_pricing;

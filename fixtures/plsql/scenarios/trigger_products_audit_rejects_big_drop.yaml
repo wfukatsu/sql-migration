@@ -1,0 +1,22 @@
+name: trigger_products_audit_rejects_big_drop
+unit: trg_products_audit
+routine: trg_products_audit
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+  sequences:
+    seq_audit_id: 1
+setup:
+- INSERT INTO products (product_id, name, unit_price, stock_qty, discontinued) VALUES (10, 'Widget', 100.0, 5, 'N')
+call:
+  kind: block
+  body: "BEGIN\n  UPDATE products SET unit_price = :p_price WHERE product_id = :p_product_id;\nEND;"
+  args:
+    p_price: 10.0
+    p_product_id: 10
+capture_tables:
+- products
+- audit_log
+mask:
+  audit_log:
+  - changed_at
+note: 50% 超の値下げを trigger が -20050 で止める

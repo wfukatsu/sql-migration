@@ -1,0 +1,20 @@
+name: dynamic_count_orders
+unit: pkg_dynamic_search
+routine: count_orders
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'GOLD', NULL, DATE '2025-04-01')
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1001, 1, 'NEW', TIMESTAMP '2026-01-10 11:00:00', 300.00, NULL)
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1002, 1, 'NEW', TIMESTAMP '2026-01-09 11:00:00', 900.00, NULL)
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1003, 1, 'SHIPPED', TIMESTAMP '2026-01-08 11:00:00', 100.00, NULL)
+call:
+  kind: function
+  name: pkg_dynamic_search.count_orders
+  args:
+    p_status: NEW
+    p_sort_column: ordered_at
+  returns: NUMBER
+capture_tables:
+- orders
+note: 条件分岐で SQL が変わる有限 variant

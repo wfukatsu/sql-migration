@@ -1,0 +1,15 @@
+name: payment_paid_total_none
+unit: pkg_payment
+routine: paid_total
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup: []
+call:
+  kind: function
+  name: pkg_payment.paid_total
+  args:
+    p_order_id: 1001
+  returns: NUMBER
+capture_tables:
+- payments
+note: 集約は 0 件でも 1 行返る。NO_DATA_FOUND にならず NVL で 0 になる

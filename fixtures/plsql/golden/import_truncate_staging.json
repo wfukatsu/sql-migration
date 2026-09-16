@@ -1,0 +1,28 @@
+{
+ "scenario": "import_truncate_staging",
+ "unit": "pkg_customer_import",
+ "routine": "truncate_staging",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "inventory_tx": {
+   "columns": [
+    "tx_id",
+    "product_id",
+    "delta_qty",
+    "reason",
+    "created_at"
+   ],
+   "rows": []
+  }
+ },
+ "masked": {}
+}

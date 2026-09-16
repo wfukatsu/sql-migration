@@ -1,0 +1,17 @@
+name: pricing_order_total_bronze_empty
+unit: pkg_order_pricing
+routine: order_total
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'BRONZE', NULL, DATE '2025-04-01')
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1001, 1, 'NEW', TIMESTAMP '2026-01-10 11:00:00', NULL, NULL)
+call:
+  kind: function
+  name: pkg_order_pricing.order_total
+  args:
+    p_order_id: 1001
+  returns: NUMBER
+capture_tables:
+- order_lines
+note: 明細 0 件のとき 0 を返す

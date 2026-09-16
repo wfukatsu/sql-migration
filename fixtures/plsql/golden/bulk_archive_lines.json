@@ -1,0 +1,61 @@
+{
+ "scenario": "bulk_archive_lines",
+ "unit": "pkg_bulk_load",
+ "routine": "archive_lines",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {
+   "seq_tx_id": 1
+  }
+ },
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "inventory_tx": {
+   "columns": [
+    "tx_id",
+    "product_id",
+    "delta_qty",
+    "reason",
+    "created_at"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     {
+      "$dec": "10"
+     },
+     {
+      "$dec": "-2"
+     },
+     "ARCHIVE",
+     {
+      "$ts": "2026-01-15T09:30:00"
+     }
+    ],
+    [
+     {
+      "$dec": "2"
+     },
+     {
+      "$dec": "10"
+     },
+     {
+      "$dec": "-4"
+     },
+     "ARCHIVE",
+     {
+      "$ts": "2026-01-15T09:30:00"
+     }
+    ]
+   ]
+  }
+ },
+ "masked": {}
+}

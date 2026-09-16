@@ -1,0 +1,42 @@
+{
+ "scenario": "stock_reserve_ok",
+ "unit": "pkg_stock_reserve",
+ "routine": "reserve",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "products": {
+   "columns": [
+    "product_id",
+    "name",
+    "unit_price",
+    "stock_qty",
+    "discontinued"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "10"
+     },
+     "Widget",
+     {
+      "$dec": "10"
+     },
+     {
+      "$dec": "2"
+     },
+     "N"
+    ]
+   ]
+  }
+ },
+ "masked": {}
+}

@@ -1,0 +1,63 @@
+{
+ "scenario": "payment_paid_total",
+ "unit": "pkg_payment",
+ "routine": "paid_total",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": 300.75,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "payments": {
+   "columns": [
+    "payment_id",
+    "order_id",
+    "amount",
+    "method",
+    "paid_at"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "5001"
+     },
+     {
+      "$dec": "1001"
+     },
+     {
+      "$dec": "100.5"
+     },
+     "CARD",
+     {
+      "$masked": "clock the harness cannot pin"
+     }
+    ],
+    [
+     {
+      "$dec": "5002"
+     },
+     {
+      "$dec": "1001"
+     },
+     {
+      "$dec": "200.25"
+     },
+     "BANK",
+     {
+      "$masked": "clock the harness cannot pin"
+     }
+    ]
+   ]
+  }
+ },
+ "masked": {
+  "payments": [
+   "paid_at"
+  ]
+ }
+}

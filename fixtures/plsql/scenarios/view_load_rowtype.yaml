@@ -1,0 +1,18 @@
+name: view_load_rowtype
+unit: pkg_customer_view
+routine: load
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'GOLD', 100000.00, DATE '2025-04-01')
+call:
+  kind: block
+  body: "DECLARE\n  v customers%ROWTYPE;\nBEGIN\n  v := pkg_customer_view.load(:p_customer_id);\n  :o_name := v.name;\n  :o_tier := v.tier;\nEND;"
+  args:
+    p_customer_id: 1
+  out:
+    o_name: VARCHAR2
+    o_tier: VARCHAR2
+capture_tables:
+- customers
+note: '%ROWTYPE 返却はブロック経由でしか捕まえられない'

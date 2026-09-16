@@ -13,9 +13,10 @@ pinned:                         # 非決定要素の固定
 setup:                          # 実行前に流す SQL。表は毎回空にしてから流す
   - "INSERT INTO orders (...) VALUES (...)"
 call:
-  kind: function                # function | procedure
+  kind: function                # function | procedure | block
   name: pkg_order_status.status_of
-  args: {p_order_id: 9999}      # IN 引数（名前つき）
+  args: {p_order_id: 9999}      # IN 引数（名前つき）。値がリストなら PL/SQL の
+                                #   索引付き表（TABLE OF ... INDEX BY PLS_INTEGER）として束縛する
   out: {}                       # OUT / IN OUT: 名前 -> Oracle 型
   returns: VARCHAR2             # kind: function のときだけ
 capture_tables: [orders, audit_log]
@@ -32,3 +33,23 @@ mask:                           # 固定できない時計から書かれる列
 
 corpus でこれに当たるのは `prc_audit_autonomous`、`trg_orders_audit`、`trg_products_audit`、
 `pkg_payment.record_payment`（いずれも `SYSTIMESTAMP` を書く）。
+
+## `kind: block`
+
+PL/SQL 専用の戻り値（`%ROWTYPE`、`BOOLEAN`）を返す function や、routine を経由しない経路
+（素の `INSERT` で trigger を踏むなど）は、function / procedure 呼び出しでは捕まえられない。
+その場合は無名ブロックを書き、結果を OUT バインドで受け取る。
+
+```yaml
+call:
+  kind: block
+  body: |
+    DECLARE
+      v_row orders%ROWTYPE;
+    BEGIN
+      v_row := pkg_order_lock.snapshot(:p_order_id);
+      :o_status := v_row.status;
+    END;
+  args: {p_order_id: 1001}
+  out: {o_status: VARCHAR2}
+```

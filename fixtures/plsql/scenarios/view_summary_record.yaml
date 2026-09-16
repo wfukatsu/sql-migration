@@ -1,0 +1,17 @@
+name: view_summary_record
+unit: pkg_customer_view
+routine: summary
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'GOLD', NULL, DATE '2025-04-01')
+call:
+  kind: block
+  body: "DECLARE\n  v pkg_customer_view.t_customer_rec;\nBEGIN\n  v := pkg_customer_view.summary(:p_customer_id);\n  :o_name := v.name;\n  :o_tier := v.tier;\nEND;"
+  args:
+    p_customer_id: 1
+  out:
+    o_name: VARCHAR2
+    o_tier: VARCHAR2
+capture_tables:
+- customers
