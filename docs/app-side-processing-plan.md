@@ -140,6 +140,39 @@ DECIMAL をスケール済み BIGINT にした列は、H2 投入時に `DECIMAL(
 
 Python の参照実装は同じ構造を `scalardb_migrate/runtime/` に持ち、エンジンだけ sqlite3 にする。差分テストと Java 実装の正解生成に使う。
 
+#### 3.3.1 呼び出し側のトランザクションで実行する（P2-9、実装済み）
+
+`PlanRunner` が実行計画をライブラリ呼び出しとして実行する。生成される Repository はこれを使う。
+
+```java
+// 呼び出し側の Service が開いたトランザクションに参加する
+PlanRunner.Result r = PlanRunner.join(tx, admin, PlanRunner.resource("plans/pkg_order.12.json"), params);
+// ScalarDB SQL (JDBC) なら
+PlanRunner.Result r = PlanRunner.join(connection, plan, params);
+```
+
+`Fetcher` は**トランザクションを所有するか、呼び出し側のものに参加するか**を `ownsTransaction()` で表す。
+
+| モード | 生成方法 | begin / commit / rollback | close |
+|---|---|---|---|
+| 所有 | `new CoreFetcher(props)` / `new JdbcFetcher(props)` | `PlanRunner` が呼ぶ | 自分の manager・connection を閉じる |
+| 参加 | `CoreFetcher.joining(tx, admin)` / `JdbcFetcher.joining(conn)` | 呼ぶと `IllegalStateException`。終了は呼び出し側の責務 | 何もしない |
+
+参加モードでは、fetch の失敗はそのまま伝播する。呼び出し側の rollback が、routine 自身の書き込みとこの読み取りの両方を巻き戻す。
+CLI（`residual-runner run`）は所有モードで、同じ `PlanRunner` を通る。
+
+**ScalarDB の制約（実機で確認、3.19.1 + PostgreSQL 16）**
+
+| 操作 | 同一トランザクション内で自分の書き込みが見えるか |
+|---|---|
+| キーアクセス（`get`） | **見える**（read-your-own-writes） |
+| 走査（`scan`） | **不可**。`Scanning data already-written or already-deleted by the same transaction is not allowed` |
+
+したがって「routine 内で書いた表を、後続の PLANNED 読み取りが走査する」形は 1 トランザクションでは実行できない。
+`PlanRunner` はこれを `ScanAfterWriteException`（対象表つき）に変換して、どの文を直すべきかを示す。
+変換側では、この形の routine を REVIEW 以上に落とし、durable boundary での分割かキーアクセス化を設計判断として提示する必要がある。
+検証は `ExternalTransactionIT`（`SCALARDB_IT=1` で有効化）。
+
 ### 3.4 書き込み系のトランザクションテンプレート (方式 B)
 
 すべて 1 つの ScalarDB トランザクション内で完結させ、競合例外はトランザクション全体をリトライする。
