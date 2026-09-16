@@ -161,7 +161,7 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 
 | ID | タスク | 成果物 | 受入条件 | 依存 | 見積 |
 |---|---|---|---|---|---|
-| P0-1 | PL/SQL corpus と元表 DDL の作成（設計書 §16 の 11 カテゴリを 1〜3 本ずつ、計 20〜30 本） | `fixtures/plsql/src/*.pks,*.pkb,*.prc`、`fixtures/plsql/src/schema.sql` | 11 カテゴリすべてに 1 本以上。実データ・機密を含まない。corpus が参照する全表の Oracle DDL が揃う。**ルール・grammar の作成時に参照しない holdout を 20% 以上確保する** | §9「corpus の入手元」の確定 | 3d |
+| P0-1 | PL/SQL corpus と元表 DDL の作成（設計書 §16 の 11 カテゴリを 1〜3 本ずつ、計 20〜30 本） | `fixtures/plsql/src/*.pks,*.pkb,*.prc`、`fixtures/plsql/src/schema.sql` | 11 カテゴリすべてに 1 本以上。実データ・機密を含まない。corpus が参照する全表の Oracle DDL が揃う。**ルール・grammar の作成時に参照しない holdout を 20% 以上確保する**。カテゴリ 9（Trigger / DB Link）のため `*.trg` も置く | — | 3d |
 | P0-2 | 各 corpus に期待値タグと出自を付与 | `fixtures/plsql/manifest.yaml` | 全ファイルにタグ（機能タグ、期待判定 AUTO/REVIEW/REDESIGN、期待挙動）と**出自欄（`real-anonymized` / `synthetic`）**、holdout フラグが付く。判定根拠を 1 行で書く | P0-1 | 1d |
 | P0-3 | corpus 表の ScalarDB スキーマ設計 | `fixtures/plsql/scalardb-schema.json`（Schema Loader JSON）、キー設計の根拠メモ | 全表の partition key / clustering key / secondary index が決まり、既存 `SchemaRegistry.from_schema_loader_json()` で読める。cross-partition scan になるアクセスを事前に洗い出して記録 | P0-1 | 2d |
 | P0-4 | Oracle characterization ランナー | `difftest/plsql_run.py` | corpus を Oracle 上で fixture 込みで実行し、戻り値・OUT・例外・DB 全行を canonical JSON 化する。順序非仕様の結果は正規化するが重複除去はしない。**採取形式（canonical JSON）と正規化規則をここで確定する** | P0-1 | 3d |
@@ -236,7 +236,7 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 
 ## 6. 直近 2 週間の着手順
 
-0. **先行条件**: §9 の「corpus の入手元」を決める。P0-1 はこれが決まるまで着手しない（合成で代替する場合は、その旨と §8 KPI の読み替えを先に §9 へ記録する）。
+0. **先行条件は解消済み**: corpus は合成で代替すると決めた（§9）。KPI の読み替えも §9 に記録済み。
 1. P0-6（grammar 固定）を先に片付ける。1d で終わり、他のどのタスクにも依存しないため、corpus の入手元を待つ間に parser を動く状態にできる。
 2. corpus の入手元が決まり次第 P0-1 を開始し、P1-1 → P1-2 を通して corpus の parse 率を最初の数値として出す。ここで grammar の穴が見えるため、Phase 0 の corpus 選定へ反映する。
 3. P1-4（IR）のうち §4.1 の SQL bridge 入出力 JSON 契約だけを先に固定すれば、P1-6 は IR 全体の完成を待たずに着手できる。bridge は既存 `converter` の上に薄く載るだけなので、先に単体で動かして `SELECT INTO` と名前付きプレースホルダの扱いを確定させる。
@@ -270,16 +270,27 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 | 人手修正時間 | corpus の routine 単位で、生成物を受け入れ可能にするまでの実作業時間を判定区分（AUTO / REVIEW / REDESIGN）別に記録（P3-5 の `decisions.json`） | Phase 3 で REVIEW 1 routine あたりの中央値をベースライン（手書き移行の実測値）として確定し、以降のトレンドを見る |
 | 1,000 行当たりの未解決重大リスク数 | `unresolved.md` の ERROR 件数 / corpus 行数 | 継続計測（削減トレンドを見る） |
 
-**全 KPI の読み方**: 上記はすべて出自別（`real-anonymized` / `synthetic`、P0-2 の manifest）に集計し、
-実案件由来サブセットの値を併記する。corpus が全件合成の場合、これらの数値は**合成 corpus 上の値であり
-実案件耐性の証拠にはならない**ことをレポートに明記する。ルール・grammar の作成時に参照しない holdout
-（P0-1 で 20% 以上確保）上の値を、最終的な判定適合率の根拠とする。
+**全 KPI の読み方**: corpus は全件合成と決まった（§9）ため、**これらの数値は合成 corpus 上の値であり、
+実案件耐性の証拠にはならない**。レポートには必ずその旨を併記する。最終的な判定適合率の根拠には、
+ルール・grammar の作成時に参照しない holdout（P0-1 で確保、全ユニットの 25%）上の値を用いる。
+実案件由来のコードが入手できた時点で corpus へ追加し、出自別（`real-anonymized` / `synthetic`、
+P0-2 の manifest）に集計し直す。
 
 ---
 
-## 9. 未決事項
+## 9. 決定事項と未決事項
 
-- corpus の入手元（実案件の匿名化が可能か、合成で代替するか）。P0-1 開始前に確定が必要。
+### 決定済み
+
+- **corpus の入手元: 合成で代替する**（2026-09-17）。実案件の匿名化コードは使わない。
+  この結果、§8 の KPI は合成 corpus 上の値になり、実案件耐性の証拠にはならない。
+  レポートには必ずその旨を併記し、実案件コードが入手できた時点で corpus へ追加して KPI を出自別に出し直す。
+  自己採点になるのを部分的に抑えるため、holdout（`fixtures/plsql/src/holdout/`、全ユニットの 25%）を
+  ルール・grammar の作成時には参照しない。
+
+### 未決
+
+
 - 差分テストで使う Oracle のバージョンとエディション（既存 `difftest` の Oracle Database Free を流用する想定。接続プール設定は `docs/oracle-backend-verification-plan.md` の知見を引き継ぐ）。
 - 生成先の Spring Boot バージョンと、`@Transactional` を Spring の宣言的トランザクションにするか ScalarDB の try-with-resources 定型にするか。Phase 2 の P2-6 / P2-10 開始までに決める。
 - 生成 Repository が ScalarDB にアクセスする経路。P2-9 の `PlanRunner` は Core API（`DistributedTransaction`）と ScalarDB SQL JDBC（`Connection`）の両方に参加できるようにしたが、生成器がどちらを既定にするかは配備形態（Cluster の有無とライセンス）次第で未定。P2-7 開始までに決める。
