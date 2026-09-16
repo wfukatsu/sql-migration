@@ -62,7 +62,7 @@ test {
     // Gradle runs tests in a forked JVM, so -D on the gradle command line does NOT reach @EnabledIfSystemProperty.
     // Without this, `gradle test -Dplsql.generated=1` disables the generated-code harnesses and the build passes
     // green having run nothing -- a silent skip that looks exactly like a pass.
-    for (String property : ['plsql.generated', 'plsql.namespace']) {
+    for (String property : ['plsql.generated', 'plsql.variant']) {
         if (System.getProperty(property) != null) systemProperty property, System.getProperty(property)
     }
     testLogging { showStandardStreams = true }
