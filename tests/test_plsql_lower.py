@@ -224,3 +224,29 @@ def test_a_program_gathers_the_unresolved_issues(schema: OracleSchema):
     program = lower_program([parse_file(SRC / "pkg_order_status.pkb")], schema=schema)
     assert program.schema_snapshot == schema.snapshot
     assert program.modules
+
+
+def test_the_ir_carries_the_types_the_symbol_table_resolved(schema: OracleSchema):
+    """The IR is what P2-5 reads to pick Java types.
+
+    Regression: the lowering built its own TypeRef and never consulted the symbol table, so every `%TYPE` in the
+    IR said `unresolved` while P1-3 had resolved it. KPI-2 looked fine because it is measured on the symbol table.
+    """
+    modules, _ = lower_source(SRC / "pkg_order_status.pkb", schema)
+    declaration = modules[0].routines[0].declarations[0]
+    assert declaration.type.oracle == "orders.status%TYPE"
+    assert declaration.type.resolved == "VARCHAR2(20)"
+    assert declaration.type.origin == "column-type"
+    assert declaration.type.schema_snapshot == schema.snapshot
+
+
+def test_no_corpus_declaration_is_left_unresolved_in_the_ir(schema: OracleSchema):
+    unresolved: list[str] = []
+    for body in BODIES:
+        modules, _ = lower_source(body, schema)
+        for module in modules:
+            for routine in module.routines:
+                for declaration in list(routine.declarations) + list(routine.parameters):
+                    if declaration.type is not None and not declaration.type.is_resolved():
+                        unresolved.append(f"{routine.id}.{declaration.name}: {declaration.type.oracle}")
+    assert unresolved == [], unresolved

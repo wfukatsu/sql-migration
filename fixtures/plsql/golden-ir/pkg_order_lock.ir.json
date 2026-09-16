@@ -132,7 +132,9 @@
        },
        "type": {
         "oracle": "orders%ROWTYPE",
-        "origin": "unresolved"
+        "resolved": "RECORD(order_id NUMBER(19), customer_id NUMBER(19), status VARCHAR2(20), ordered_at DATE, shipped_at TIMESTAMP(6), total_amount NUMBER(14, 2), note VARCHAR2(400))",
+        "origin": "rowtype",
+        "schemaSnapshot": "schema.sql@17852f40"
        },
        "name": "v_row",
        "declarationKind": "variable"
@@ -243,7 +245,9 @@
        },
        "type": {
         "oracle": "orders%ROWTYPE",
-        "origin": "unresolved"
+        "resolved": "RECORD(order_id NUMBER(19), customer_id NUMBER(19), status VARCHAR2(20), ordered_at DATE, shipped_at TIMESTAMP(6), total_amount NUMBER(14, 2), note VARCHAR2(400))",
+        "origin": "rowtype",
+        "schemaSnapshot": "schema.sql@17852f40"
        },
        "name": "v_row",
        "declarationKind": "variable"

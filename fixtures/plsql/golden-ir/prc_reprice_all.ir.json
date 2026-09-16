@@ -76,7 +76,9 @@
        },
        "type": {
         "oracle": "orders.order_id%TYPE",
-        "origin": "unresolved"
+        "resolved": "NUMBER(19)",
+        "origin": "column-type",
+        "schemaSnapshot": "schema.sql@17852f40"
        },
        "name": "v_order_id",
        "declarationKind": "variable"

@@ -357,7 +357,9 @@
        },
        "type": {
         "oracle": "customers.name%TYPE",
-        "origin": "unresolved"
+        "resolved": "VARCHAR2(100)",
+        "origin": "column-type",
+        "schemaSnapshot": "schema.sql@17852f40"
        },
        "name": "v_name",
        "declarationKind": "variable"

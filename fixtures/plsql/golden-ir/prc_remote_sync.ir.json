@@ -62,7 +62,9 @@
        },
        "type": {
         "oracle": "orders.status%TYPE",
-        "origin": "unresolved"
+        "resolved": "VARCHAR2(20)",
+        "origin": "column-type",
+        "schemaSnapshot": "schema.sql@17852f40"
        },
        "name": "v_status",
        "declarationKind": "variable"

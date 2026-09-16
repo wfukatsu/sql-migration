@@ -67,7 +67,9 @@
        },
        "type": {
         "oracle": "orders.total_amount%TYPE",
-        "origin": "unresolved"
+        "resolved": "NUMBER(14, 2)",
+        "origin": "column-type",
+        "schemaSnapshot": "schema.sql@17852f40"
        },
        "name": "v_total",
        "declarationKind": "variable"
@@ -164,7 +166,9 @@
        },
        "type": {
         "oracle": "orders.ordered_at%TYPE",
-        "origin": "unresolved"
+        "resolved": "DATE",
+        "origin": "column-type",
+        "schemaSnapshot": "schema.sql@17852f40"
        },
        "name": "v_ordered_at",
        "declarationKind": "variable"
@@ -261,7 +265,9 @@
        },
        "type": {
         "oracle": "orders.note%TYPE",
-        "origin": "unresolved"
+        "resolved": "VARCHAR2(400)",
+        "origin": "column-type",
+        "schemaSnapshot": "schema.sql@17852f40"
        },
        "name": "v_note",
        "declarationKind": "variable"
@@ -402,7 +408,9 @@
        },
        "type": {
         "oracle": "orders.total_amount%TYPE",
-        "origin": "unresolved"
+        "resolved": "NUMBER(14, 2)",
+        "origin": "column-type",
+        "schemaSnapshot": "schema.sql@17852f40"
        },
        "name": "v_total",
        "declarationKind": "variable"

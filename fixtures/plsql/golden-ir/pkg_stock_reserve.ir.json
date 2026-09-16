@@ -81,7 +81,9 @@
        },
        "type": {
         "oracle": "products.stock_qty%TYPE",
-        "origin": "unresolved"
+        "resolved": "NUMBER(10)",
+        "origin": "column-type",
+        "schemaSnapshot": "schema.sql@17852f40"
        },
        "name": "v_stock",
        "declarationKind": "variable"
@@ -240,7 +242,9 @@
        },
        "type": {
         "oracle": "products.stock_qty%TYPE",
-        "origin": "unresolved"
+        "resolved": "NUMBER(10)",
+        "origin": "column-type",
+        "schemaSnapshot": "schema.sql@17852f40"
        },
        "name": "v_stock",
        "declarationKind": "variable"
@@ -377,7 +381,9 @@
        },
        "type": {
         "oracle": "counters.next_value%TYPE",
-        "origin": "unresolved"
+        "resolved": "NUMBER(19)",
+        "origin": "column-type",
+        "schemaSnapshot": "schema.sql@17852f40"
        },
        "name": "v_next",
        "declarationKind": "variable"

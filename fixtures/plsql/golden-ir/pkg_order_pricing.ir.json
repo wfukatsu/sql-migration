@@ -9,7 +9,7 @@
    "sourceRange": {
     "file": "pkg_order_pricing.pkb",
     "startLine": 4,
-    "endLine": 45,
+    "endLine": 49,
     "startColumn": 1,
     "endColumn": 5
    },
@@ -214,7 +214,9 @@
        },
        "type": {
         "oracle": "customers.tier%TYPE",
-        "origin": "unresolved"
+        "resolved": "VARCHAR2(10)",
+        "origin": "column-type",
+        "schemaSnapshot": "schema.sql@17852f40"
        },
        "name": "v_tier",
        "declarationKind": "variable"
@@ -330,7 +332,9 @@
        },
        "type": {
         "oracle": "customers.tier%TYPE",
-        "origin": "unresolved"
+        "resolved": "VARCHAR2(10)",
+        "origin": "column-type",
+        "schemaSnapshot": "schema.sql@17852f40"
        },
        "name": "v_tier",
        "declarationKind": "variable"
@@ -409,7 +413,7 @@
      "sourceRange": {
       "file": "pkg_order_pricing.pkb",
       "startLine": 40,
-      "endLine": 43,
+      "endLine": 47,
       "startColumn": 3,
       "endColumn": 20
      },
@@ -436,19 +440,53 @@
        "nocopy": false
       }
      ],
+     "declarations": [
+      {
+       "id": "pkg_order_pricing.reprice_order#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 41,
+        "endLine": 41,
+        "startColumn": 5,
+        "endColumn": 37
+       },
+       "type": {
+        "oracle": "orders.total_amount%TYPE",
+        "resolved": "NUMBER(14, 2)",
+        "origin": "column-type",
+        "schemaSnapshot": "schema.sql@17852f40"
+       },
+       "name": "v_total",
+       "declarationKind": "variable"
+      }
+     ],
      "body": [
       {
        "id": "pkg_order_pricing.reprice_order#stmt-1",
+       "kind": "Assignment",
+       "sourceRange": {
+        "file": "pkg_order_pricing.pkb",
+        "startLine": 45,
+        "endLine": 45,
+        "startColumn": 5,
+        "endColumn": 38
+       },
+       "target": "v_total",
+       "expression": "order_total(p_order_id)"
+      },
+      {
+       "id": "pkg_order_pricing.reprice_order#stmt-2",
        "kind": "SqlOperation",
        "sourceRange": {
         "file": "pkg_order_pricing.pkb",
-        "startLine": 42,
-        "endLine": 42,
+        "startLine": 46,
+        "endLine": 46,
         "startColumn": 5,
-        "endColumn": 79
+        "endColumn": 63
        },
        "sqlKind": "UPDATE",
-       "originalSql": "UPDATE orders SET total_amount = order_total(p_order_id) WHERE order_id = p_order_id",
+       "originalSql": "UPDATE orders SET total_amount = v_total WHERE order_id = p_order_id",
        "cardinality": "UNKNOWN"
       }
      ],
