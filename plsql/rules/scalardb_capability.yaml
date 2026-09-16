@@ -1,0 +1,27 @@
+# ScalarDB の能力（設計書 §7.3、docs/plsql-kpi.md §2 の 9・10・11）
+#
+# ここは「ターゲットが何を実行できるか」だけを見る。判定の材料は P2-4 が IR に書き込んだ
+# target_status と診断であり、このファイルはその意味を決める。
+#
+# 完全な dialect 実装を先に書かないのは設計書 §7.3 の判断による。近似して黙って出す方が、
+# 断るより悪い。converter は未対応構文を ERROR にするので、ここはその答えを運ぶだけでよい。
+
+rules:
+  - id: SCAN-001
+    match: {statementKind: SqlOperation, hasDiagnostic: SCAN_AFTER_WRITE}
+    decision: REDESIGN
+    severity: critical
+    message: 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します
+    remediation:
+      - 耐久境界で routine を分割する
+      - 読み取りを主キーまたはパーティションキーのアクセスに変える
+    requiredTests:
+      - scan_after_write
+
+  - id: SELECT-001
+    match: {statementKind: SqlOperation, hasDiagnostic: MULTI_ROW_INTO}
+    decision: REVIEW
+    message: キーで届かない SELECT INTO です。0 件と複数件の意味（NO_DATA_FOUND / TOO_MANY_ROWS）を保つ必要があります
+    requiredTests:
+      - no_data_found
+      - too_many_rows

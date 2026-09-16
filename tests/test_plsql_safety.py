@@ -108,18 +108,29 @@ def test_package_state_is_seen_in_a_package_body(schema):
 def test_every_rule_fires_somewhere(schema, ruleset):
     """A rule nothing exercises is a rule nobody has checked.
 
-    Two rules are exempt and named here rather than silently skipped: SQL-001 and SQL-002 need a ScalarDB
-    capability verdict on the statement, which only P2-4 produces. `tests/test_plsql_capability.py` covers them.
+    The sweep includes the ScalarDB capability check, because the rules that need a target verdict (SQL-001,
+    SQL-002, SCAN-001, SELECT-001) can only fire once it has run. Nothing is exempt.
     """
+    from plsql.capability import annotate, check
+    from scalardb_migrate.schema import SchemaRegistry
+
+    registry = SchemaRegistry.from_schema_loader_json(str(FIXTURES / "scalardb-schema.json"))
     fired: set[str] = set()
-    corpus = build_analysis(SRC, SRC / "schema.sql")
+
+    corpus = build_analysis(SRC, SRC / "schema.sql", scalardb_schema=FIXTURES / "scalardb-schema.json")
     for decision in decide(corpus.program, analyse_program(corpus.program), ruleset, Evidence()).values():
         fired |= {m.rule.id for m in decision.matches}
-    for case in sorted(CASES.glob("*.sql")):
-        fired |= judge(case, schema, ruleset)[1]
 
-    owned_by_p2_4 = {"SQL-001", "SQL-002", "LOWER-001"}
-    never = {r.id for r in ruleset.rules} - fired - owned_by_p2_4
+    for case in sorted(CASES.glob("*.sql")):
+        parsed = parse_file(case)
+        symbols = build(parsed, schema)
+        program = M.Program(id=case.stem, kind="Program", modules=lower_file(parsed, symbols, schema))
+        report = check(program, registry, symbols)
+        annotate(program, report)
+        for decision in decide(program, analyse_program(program), ruleset, Evidence()).values():
+            fired |= {m.rule.id for m in decision.matches}
+
+    never = {r.id for r in ruleset.rules} - fired
     assert never == set(), f"rules nothing exercises: {sorted(never)}"
 
 
