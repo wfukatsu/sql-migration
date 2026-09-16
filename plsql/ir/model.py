@@ -1,0 +1,276 @@
+"""P1-4: the Migration IR.
+
+The IR is the contract between the PL/SQL side and everything downstream: analysis (P2-1), the rules (P2-2) and
+the generators (P2-5..P2-7) read it, and none of them may need the parse tree. Two design rules from the design
+document (§5.1) are load-bearing and every node here obeys them:
+
+* **Oracle meaning is kept, not erased.** A `COMMIT` is a node, not a missing feature; `%TYPE` keeps the column it
+  came from. Deciding what to do about them is the rule engine's job, later, with the evidence still attached.
+* **Nothing points into sqlglot or ANTLR.** A `SqlOperation` holds the SQL text and a stable, serialised
+  description of what was found in it, never a library object. The IR has to survive being written to disk and
+  read back by a different version of the tool -- that is what `SCHEMA_VERSION` is for.
+
+Every node carries `id`, `source_range`, `type`, `confidence` and `diagnostics`, so any of them can be pointed at
+in a report and traced back to the line the developer wrote.
+"""
+
+from __future__ import annotations
+
+import itertools
+from dataclasses import dataclass, field
+
+from ..source import Issue, SourceRange
+
+SCHEMA_VERSION = "1.0.0"
+
+# --- verdict / capability vocabularies (shared with docs/plsql-kpi.md) -------------------------------
+VERDICTS = ("AUTO", "REVIEW", "REDESIGN")
+CARDINALITIES = ("EXACTLY_ONE", "AT_MOST_ONE", "MANY", "NONE", "UNKNOWN")
+SQL_KINDS = ("SELECT", "INSERT", "UPDATE", "DELETE", "MERGE", "DDL", "UNKNOWN")
+
+
+@dataclass
+class TypeRef:
+    """A type as the source wrote it, plus what it resolved to.
+
+    `NUMBER` without precision is deliberately not collapsed to a Java type here: the design document (§5.3) keeps
+    `OracleType` and `TargetType` apart so that an unresolved precision stays visible instead of silently becoming
+    a `long`. `origin` records how the type was reached, which is what makes a `%TYPE` auditable.
+    """
+
+    oracle: str                      # as written: "NUMBER(19)", "orders.status%TYPE", "customers%ROWTYPE"
+    resolved: str | None = None      # after %TYPE / %ROWTYPE resolution: "VARCHAR2(20)"
+    origin: str = "declared"         # declared | rowtype | column-type | inferred | unresolved
+    schema_snapshot: str | None = None  # which DDL snapshot resolved it (design doc §5.3)
+    nullable: bool | None = None
+
+    def is_resolved(self) -> bool:
+        return self.resolved is not None
+
+
+@dataclass
+class Node:
+    """Common shape. `kind` is the discriminator; `type` is the data type where the node has one."""
+
+    id: str
+    kind: str
+    source_range: SourceRange | None = None
+    type: TypeRef | None = None
+    confidence: float | None = None
+    diagnostics: list[Issue] = field(default_factory=list)
+
+    def add(self, severity: str, code: str, message: str) -> None:
+        self.diagnostics.append(Issue(severity, code, message, self.source_range))
+
+
+# --- declarations -----------------------------------------------------------------------------------
+
+@dataclass
+class Parameter(Node):
+    name: str = ""
+    direction: str = "IN"        # IN | OUT | IN OUT
+    default: str | None = None
+    nocopy: bool = False
+
+
+@dataclass
+class Declaration(Node):
+    """A local variable, constant, cursor, exception or nested type."""
+
+    name: str = ""
+    declaration_kind: str = "variable"  # variable | constant | cursor | exception | type | record
+    initial: str | None = None
+
+
+# --- statements -------------------------------------------------------------------------------------
+
+@dataclass
+class Statement(Node):
+    """Base for every statement. `kind` says which one."""
+
+
+@dataclass
+class Assignment(Statement):
+    target: str = ""
+    expression: str = ""
+
+
+@dataclass
+class Call(Statement):
+    callee: str = ""
+    arguments: list[str] = field(default_factory=list)
+    resolved_to: str | None = None   # the routine id, once the call graph is built (P2-1)
+
+
+@dataclass
+class Raise(Statement):
+    exception: str | None = None
+    error_code: int | None = None    # RAISE_APPLICATION_ERROR(-20001, ...)
+    message: str | None = None
+
+
+@dataclass
+class Return(Statement):
+    expression: str | None = None
+
+
+@dataclass
+class TransactionStatement(Statement):
+    """COMMIT / ROLLBACK / SAVEPOINT / ROLLBACK TO. Kept as a node: the rules decide, not the lowering."""
+
+    savepoint: str | None = None
+
+
+@dataclass
+class If(Statement):
+    branches: list["Branch"] = field(default_factory=list)
+    else_body: list[Statement] = field(default_factory=list)
+
+
+@dataclass
+class Branch:
+    condition: str
+    body: list[Statement] = field(default_factory=list)
+
+
+@dataclass
+class Case(Statement):
+    selector: str | None = None
+    branches: list[Branch] = field(default_factory=list)
+    else_body: list[Statement] = field(default_factory=list)
+
+
+@dataclass
+class Loop(Statement):
+    loop_kind: str = "basic"     # basic | while | for | cursor-for | forall
+    label: str | None = None
+    condition: str | None = None
+    cursor: str | None = None
+    body: list[Statement] = field(default_factory=list)
+
+
+@dataclass
+class BindVariable:
+    name: str
+    direction: str = "IN"
+    oracle_type: str | None = None
+    plsql_variable: str | None = None
+
+
+@dataclass
+class SqlOperation(Statement):
+    """A SQL statement inside PL/SQL. The bridge (P1-6) fills the target-side fields."""
+
+    sql_kind: str = "UNKNOWN"
+    original_sql: str = ""
+    binds: list[BindVariable] = field(default_factory=list)
+    into_targets: list[str] = field(default_factory=list)
+    cardinality: str = "UNKNOWN"
+    locking_mode: str | None = None       # FOR UPDATE / NOWAIT / SKIP LOCKED / WAIT n
+    read_set: list[str] = field(default_factory=list)
+    write_set: list[str] = field(default_factory=list)
+    target_status: str | None = None      # OK | WARN | PLANNED | ERROR, from scalardb_migrate
+    target_sql: list[str] = field(default_factory=list)
+    plan_id: str | None = None            # the plan.json this statement needs at run time
+
+
+@dataclass
+class DynamicSql(Statement):
+    """EXECUTE IMMEDIATE / DBMS_SQL. The expression is kept unevaluated; P4 does partial evaluation."""
+
+    expression: str = ""
+    constant_sql: str | None = None       # set when the expression folds to a literal
+    using: list[BindVariable] = field(default_factory=list)
+    into_targets: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ExceptionHandler(Node):
+    exceptions: list[str] = field(default_factory=list)   # names, or OTHERS
+    body: list[Statement] = field(default_factory=list)
+
+
+# --- routines and modules ---------------------------------------------------------------------------
+
+@dataclass
+class TransactionEffects:
+    commits: int = 0
+    rollbacks: int = 0
+    savepoints: int = 0
+    autonomous: bool = False
+
+    @property
+    def controls_transaction(self) -> bool:
+        return bool(self.commits or self.rollbacks or self.savepoints or self.autonomous)
+
+
+@dataclass
+class ExternalEffects:
+    db_links: list[str] = field(default_factory=list)
+    packages: list[str] = field(default_factory=list)   # UTL_HTTP, DBMS_SCHEDULER, ...
+    dynamic_sql: bool = False
+
+
+@dataclass
+class Routine(Node):
+    name: str = ""
+    routine_kind: str = "procedure"   # procedure | function | trigger-body
+    parameters: list[Parameter] = field(default_factory=list)
+    return_type: TypeRef | None = None
+    declarations: list[Declaration] = field(default_factory=list)
+    body: list[Statement] = field(default_factory=list)
+    exception_handlers: list[ExceptionHandler] = field(default_factory=list)
+    auth_id: str | None = None        # DEFINER | CURRENT_USER
+    deterministic: bool = False
+    visibility: str = "public"        # public when declared in the package spec
+    transaction_effects: TransactionEffects = field(default_factory=TransactionEffects)
+    external_effects: ExternalEffects = field(default_factory=ExternalEffects)
+
+
+@dataclass
+class Module(Node):
+    """A package (spec + body), a standalone routine, or a trigger."""
+
+    name: str = ""
+    module_kind: str = "package"      # package | procedure | function | trigger
+    routines: list[Routine] = field(default_factory=list)
+    declarations: list[Declaration] = field(default_factory=list)   # package-level state
+    trigger_event: str | None = None
+    trigger_table: str | None = None
+    trigger_timing: str | None = None
+
+    @property
+    def has_package_state(self) -> bool:
+        return self.module_kind == "package" and any(
+            d.declaration_kind in ("variable", "constant") for d in self.declarations)
+
+
+@dataclass
+class Program(Node):
+    """Everything analysed in one run."""
+
+    schema_version: str = SCHEMA_VERSION
+    modules: list[Module] = field(default_factory=list)
+    unresolved: list[Issue] = field(default_factory=list)
+    schema_snapshot: str | None = None
+
+
+# --- stable identifiers ------------------------------------------------------------------------------
+
+class IdFactory:
+    """Deterministic ids: `pkg_order.create_order#stmt-12`, as in the design document §7.1.
+
+    They have to be stable across runs so a golden IR comparison (P1-5) and a decision recorded against a node
+    (P3-5) still line up after the tool changes. The counter is per scope, never global.
+    """
+
+    def __init__(self, scope: str) -> None:
+        self.scope = scope
+        self._counters: dict[str, itertools.count] = {}
+
+    def next(self, prefix: str = "stmt") -> str:
+        counter = self._counters.setdefault(prefix, itertools.count(1))
+        return f"{self.scope}#{prefix}-{next(counter)}"
+
+    def child(self, name: str) -> "IdFactory":
+        return IdFactory(f"{self.scope}.{name}" if self.scope else name)
