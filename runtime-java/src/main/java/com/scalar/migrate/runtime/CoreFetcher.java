@@ -28,18 +28,48 @@ import java.util.Map;
  * the full predicate anyway, so the fetch only has to be a superset.
  */
 public class CoreFetcher implements Fetcher {
-  private final DistributedTransactionManager manager;
+  private final DistributedTransactionManager manager;  // null when joining the caller's transaction
   private final DistributedTransactionAdmin admin;
+  private final boolean ownsTransaction;
   private DistributedTransaction tx;
 
+  /** Own everything: open a manager from the properties file and start a read-only transaction in {@link #begin()}. */
   public CoreFetcher(String propertiesPath) throws Exception {
     TransactionFactory factory = TransactionFactory.create(propertiesPath);
     manager = factory.getTransactionManager();
     admin = factory.getTransactionAdmin();
+    ownsTransaction = true;
+  }
+
+  private CoreFetcher(DistributedTransaction tx, DistributedTransactionAdmin admin) {
+    this.manager = null;
+    this.admin = admin;
+    this.tx = tx;
+    this.ownsTransaction = false;
+  }
+
+  /**
+   * Run the plan's fetches inside a transaction the caller already began, so that the reads share the caller's
+   * snapshot and rollback scope. Neither the transaction nor the admin is closed by this fetcher.
+   *
+   * <p>ScalarDB's Consensus Commit refuses to scan rows the same transaction has already written or deleted
+   * ("Scanning data already-written or already-deleted by the same transaction is not allowed"), so a plan whose
+   * fetch overlaps the routine's own writes fails at run time. {@link PlanRunner} turns that into a
+   * {@link ScanAfterWriteException} naming the table.
+   */
+  public static CoreFetcher joining(DistributedTransaction tx, DistributedTransactionAdmin admin) {
+    return new CoreFetcher(
+        java.util.Objects.requireNonNull(tx, "tx"), java.util.Objects.requireNonNull(admin, "admin"));
+  }
+
+  @Override
+  public boolean ownsTransaction() {
+    return ownsTransaction;
   }
 
   @Override
   public void begin() throws Exception {
+    if (!ownsTransaction) throw new IllegalStateException("this fetcher joined a transaction the caller owns");
     // plans only read: a read-only transaction skips the Coordinator write at commit (ScalarDB 3.16+)
     tx = manager.startReadOnly();
   }
@@ -125,16 +155,19 @@ public class CoreFetcher implements Fetcher {
 
   @Override
   public void commit() throws Exception {
+    if (!ownsTransaction) throw new IllegalStateException("this fetcher joined a transaction the caller owns");
     tx.commit();
   }
 
   @Override
   public void rollback() {
+    if (!ownsTransaction) throw new IllegalStateException("this fetcher joined a transaction the caller owns");
     try { if (tx != null) tx.abort(); } catch (Exception ignored) { }
   }
 
   @Override
   public void close() {
+    if (!ownsTransaction) return;  // the caller owns the transaction and the admin
     manager.close();
     admin.close();
   }
