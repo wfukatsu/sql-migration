@@ -208,6 +208,9 @@ AUTO とするのは confidence >= 0.95 かつ §2 の禁止条件に 1 つも�
 (cd runtime-java && gradle compileJava)
 PLSQL_COMPILE=1 .venv/bin/python -m pytest tests/test_plsql_generate.py -k compile -q
 
+# KPI-5 の早期信号（P2-11）。生成 Java を P0-5 の capture と突き合わせる。ScalarDB Cluster は要らない
+.venv/bin/python difftest/plsql_diff.py
+
 # KPI-2 symbol / type 解決率
 .venv/bin/python -m pytest tests/test_plsql_symbols.py -q
 
