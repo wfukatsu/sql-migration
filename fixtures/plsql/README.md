@@ -30,15 +30,14 @@ fixtures/plsql/
   manifest.yaml        期待判定・出自・holdout フラグ（P0-2）
   scalardb-schema.json ScalarDB の Schema Loader JSON（P0-3）
   KEY-DESIGN.md        キー設計の根拠とアクセスパスの洗い出し（P0-3）
+  scenarios/           Oracle 実行シナリオ（P0-4）。形式は scenarios/README.md
+  golden/              シナリオごとの capture（P0-5 が採取する）
   src/
     schema.sql      corpus が参照する表・順序・索引の Oracle DDL
     *.pks / *.pkb   package 仕様と本体
     *.prc           単独 procedure
     *.trg           trigger
     holdout/        上記と同じ形式。ルール作成時は参照しない
-  manifest.yaml     期待判定・出自・holdout フラグ（P0-2）
-  scenarios/        Oracle 実行シナリオ（P0-4）。形式は scenarios/README.md
-  golden/           シナリオごとの capture（P0-5 が採取する）
 ```
 
 計画の P0-1 成果物欄には `*.pks,*.pkb,*.prc` と書いているが、カテゴリ 9（Trigger / DB Link）を満たすために
