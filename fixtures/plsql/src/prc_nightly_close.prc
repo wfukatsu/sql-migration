@@ -2,7 +2,8 @@
 -- 期待判定: REDESIGN。routine 内の COMMIT / SAVEPOINT / ROLLBACK TO は逐語変換できない（設計書 §6.7）。
 -- use case 単位へ再境界化し、再試行と冪等性の方針を決める必要がある。
 CREATE OR REPLACE PROCEDURE prc_nightly_close(p_batch_date IN DATE) IS
-  v_processed NUMBER := 0;
+  v_processed  NUMBER := 0;
+  v_error_text VARCHAR2(400);
 BEGIN
   UPDATE batch_control SET status = 'RUNNING', last_run_at = SYSDATE WHERE batch_name = 'NIGHTLY_CLOSE';
   COMMIT;
@@ -20,8 +21,10 @@ BEGIN
     EXCEPTION
       WHEN OTHERS THEN
         ROLLBACK TO sp_order;
+        -- SQLERRM は SQL 文の中では参照できないので、いったん変数へ取る
+        v_error_text := SQLERRM;
         INSERT INTO audit_log (audit_id, table_name, key_value, action, new_value, changed_at, changed_by)
-        VALUES (seq_audit_id.NEXTVAL, 'ORDERS', TO_CHAR(r.order_id), 'ERROR', SQLERRM, SYSTIMESTAMP, USER);
+        VALUES (seq_audit_id.NEXTVAL, 'ORDERS', TO_CHAR(r.order_id), 'ERROR', v_error_text, SYSTIMESTAMP, USER);
     END;
   END LOOP;
 
