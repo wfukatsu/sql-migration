@@ -248,6 +248,25 @@ fixture の転記が 2 本になり、差分が「DB の違い」ではなく「
 スケールの明示が要る）か (b) DOUBLE（変換器の既定。金額に丸め差が出るので、それ自体が PoC の所見になる）。
 金額の正確性は本 PoC の主題に直結するため、勝手に倒さず決定を仰ぐ。
 
+#### P3-1 で判明した最大の所見: 生成コードは H2 では動くが ScalarDB へ自分の数値型を渡せない
+
+DOUBLE 系統で 52/59 を採取したところ、**うち 33 本が `DB-SQL-10016: The type java.math.BigDecimal is not
+supported` で失敗した**。生成 Repository は PL/SQL の `NUMBER` を `BigDecimal` に写し、`setObject` でそのまま
+束縛する。H2 はこれを受け取るので P2-11 は通っていたが、ScalarDB SQL の JDBC ドライバは受け取らない。
+
+これは金額の型の話ではなく、**生成器が束縛境界で ScalarDB の列型へ変換していない**という欠落である。
+P2-11 が H2 を driver にしていたために見えなかった種類の差で、「compile が通ることは意味が保存されている
+証拠にならない」の次の段として「H2 で通ることは ScalarDB で動く証拠にならない」が要ることを示している。
+
+残り 19 本の内訳は 18 本が生成器の意図的な拒否（cursor FOR loop / 動的 SQL / FORALL / sequence）、
+1 本が `ClassCastException`。拒否分は REVIEW / REDESIGN 判定どおりで、P3-2 の一致対象ではない。
+
+**この修正は scaled 系統（BIGINT x10^2）と同じ境界に入る。** 読み出し時に列のスケールを戻し、束縛時に
+列型へ変換する codec を Repository 生成器に入れれば、double 系統は `doubleValue()`、scaled 系統は
+`movePointRight(scale).longValueExact()` として同じ仕組みで両方を測れる。corpus の生成 SQL は金額列を
+素の select 項目・素の SET 対象・VALUES の位置・`SUM(amount)` としてしか使っておらず、DB 内での金額演算が
+無いため、束縛と列の対応は生成時に静的に決められる。
+
 P3-1 の過程で見つかり、この場で直したもの:
 
 - `gradle test -D...` はテスト用 JVM へ渡らないため、`@EnabledIfSystemProperty` で守った P2-11 のハーネスは
