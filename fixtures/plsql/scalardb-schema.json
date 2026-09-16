@@ -1,7 +1,9 @@
 {
   "plsqlpoc.customers": {
     "transaction": true,
-    "partition-key": ["customer_id"],
+    "partition-key": [
+      "customer_id"
+    ],
     "clustering-key": [],
     "columns": {
       "customer_id": "BIGINT",
@@ -11,23 +13,29 @@
       "credit_limit": "BIGINT",
       "registered_on": "TIMESTAMP"
     },
-    "secondary-index": ["tier"]
+    "secondary-index": [
+      "tier"
+    ]
   },
   "plsqlpoc.products": {
     "transaction": true,
-    "partition-key": ["product_id"],
+    "partition-key": [
+      "product_id"
+    ],
     "clustering-key": [],
     "columns": {
       "product_id": "BIGINT",
       "name": "TEXT",
       "unit_price": "BIGINT",
-      "stock_qty": "INT",
+      "stock_qty": "BIGINT",
       "discontinued": "TEXT"
     }
   },
   "plsqlpoc.orders": {
     "transaction": true,
-    "partition-key": ["order_id"],
+    "partition-key": [
+      "order_id"
+    ],
     "clustering-key": [],
     "columns": {
       "order_id": "BIGINT",
@@ -38,23 +46,32 @@
       "total_amount": "BIGINT",
       "note": "TEXT"
     },
-    "secondary-index": ["customer_id", "status"]
+    "secondary-index": [
+      "customer_id",
+      "status"
+    ]
   },
   "plsqlpoc.order_lines": {
     "transaction": true,
-    "partition-key": ["order_id"],
-    "clustering-key": ["line_no ASC"],
+    "partition-key": [
+      "order_id"
+    ],
+    "clustering-key": [
+      "line_no ASC"
+    ],
     "columns": {
       "order_id": "BIGINT",
       "line_no": "INT",
       "product_id": "BIGINT",
-      "qty": "INT",
+      "qty": "BIGINT",
       "unit_price": "BIGINT"
     }
   },
   "plsqlpoc.payments": {
     "transaction": true,
-    "partition-key": ["payment_id"],
+    "partition-key": [
+      "payment_id"
+    ],
     "clustering-key": [],
     "columns": {
       "payment_id": "BIGINT",
@@ -63,24 +80,32 @@
       "method": "TEXT",
       "paid_at": "TIMESTAMPTZ"
     },
-    "secondary-index": ["order_id"]
+    "secondary-index": [
+      "order_id"
+    ]
   },
   "plsqlpoc.inventory_tx": {
     "transaction": true,
-    "partition-key": ["tx_id"],
+    "partition-key": [
+      "tx_id"
+    ],
     "clustering-key": [],
     "columns": {
       "tx_id": "BIGINT",
       "product_id": "BIGINT",
-      "delta_qty": "INT",
+      "delta_qty": "BIGINT",
       "reason": "TEXT",
       "created_at": "TIMESTAMP"
     },
-    "secondary-index": ["product_id"]
+    "secondary-index": [
+      "product_id"
+    ]
   },
   "plsqlpoc.audit_log": {
     "transaction": true,
-    "partition-key": ["audit_id"],
+    "partition-key": [
+      "audit_id"
+    ],
     "clustering-key": [],
     "columns": {
       "audit_id": "BIGINT",
@@ -95,7 +120,9 @@
   },
   "plsqlpoc.counters": {
     "transaction": true,
-    "partition-key": ["counter_name"],
+    "partition-key": [
+      "counter_name"
+    ],
     "clustering-key": [],
     "columns": {
       "counter_name": "TEXT",
@@ -104,7 +131,9 @@
   },
   "plsqlpoc.batch_control": {
     "transaction": true,
-    "partition-key": ["batch_name"],
+    "partition-key": [
+      "batch_name"
+    ],
     "clustering-key": [],
     "columns": {
       "batch_name": "TEXT",
