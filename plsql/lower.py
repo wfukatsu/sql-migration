@@ -137,7 +137,7 @@ class _Lowerer:
         ids = M.IdFactory(name)
         for declaration in _descend(context, {"Declare_specContext"}, stop={"Procedure_bodyContext",
                                                                             "Function_bodyContext"}):
-            module.declarations.extend(self._declarations(declaration, ids))
+            module.declarations.extend(self._declarations(declaration, ids, name))
         if not spec:
             for body in _descend(context, {"Procedure_bodyContext", "Function_bodyContext"}):
                 module.routines.append(self._routine(body, module=name))
@@ -185,14 +185,14 @@ class _Lowerer:
         ids = M.IdFactory(routine_id)
 
         for parameter in _descend(context, {"ParameterContext"}, stop={"BodyContext"}):
-            routine.parameters.append(self._parameter(parameter, ids))
+            routine.parameters.append(self._parameter(parameter, ids, routine_id))
         if is_function:
             spec = next(iter(_children(context, "Type_specContext")), None)
             if spec is not None:
-                routine.return_type = self._type(routine_id, _text(spec))
+                routine.return_type = self._type(routine_id, _text(spec), "<return>")
 
         for declaration in _descend(context, {"Declare_specContext"}, stop={"BodyContext"}):
-            routine.declarations.extend(self._declarations(declaration, ids))
+            routine.declarations.extend(self._declarations(declaration, ids, routine_id))
 
         text = _text(context)
         if re.search(r"\bAUTHID\s+CURRENT_USER\b", text, re.IGNORECASE):
@@ -209,20 +209,23 @@ class _Lowerer:
         self._effects(routine, text)
         return routine
 
-    def _parameter(self, context: ParserRuleContext, ids: M.IdFactory) -> M.Parameter:
+    def _parameter(self, context: ParserRuleContext, ids: M.IdFactory,
+                   scope: str | None = None) -> M.Parameter:
         text = _text(context)
         direction = "IN OUT" if re.search(r"\bIN\s+OUT\b", text, re.I) else \
             "OUT" if re.search(r"\bOUT\b", text, re.I) else "IN"
         spec = _child(context, "Type_specContext")
         default = _first(re.search(r"(?::=|\bDEFAULT\b)\s*(.+)$", text, re.IGNORECASE | re.DOTALL))
+        name = _text(_child(context, "Parameter_nameContext"))
         return M.Parameter(
-            id=ids.next("param"), kind="Parameter", name=_text(_child(context, "Parameter_nameContext")),
+            id=ids.next("param"), kind="Parameter", name=name,
             direction=direction, source_range=self._range(context),
-            type=self._type(None, _text(spec)) if spec is not None else None,
+            type=self._type(scope, _text(spec), name) if spec is not None else None,
             default=default.strip() if default else None,
             nocopy=bool(re.search(r"\bNOCOPY\b", text, re.IGNORECASE)))
 
-    def _declarations(self, context: ParserRuleContext, ids: M.IdFactory) -> list[M.Declaration]:
+    def _declarations(self, context: ParserRuleContext, ids: M.IdFactory,
+                      scope: str | None = None) -> list[M.Declaration]:
         out: list[M.Declaration] = []
         for kind, context_name in (("variable", "Variable_declarationContext"),
                                    ("exception", "Exception_declarationContext"),
@@ -239,11 +242,12 @@ class _Lowerer:
                     initial = _first(re.search(r"\bIS\b\s*(.+?);?\s*$", text, re.DOTALL | re.IGNORECASE))
                 else:
                     initial = _first(re.search(r":=\s*(.+?);?\s*$", text, re.DOTALL))
+                declared_name = _text(identifier)
                 out.append(M.Declaration(
-                    id=ids.next("decl"), kind="Declaration", name=_text(identifier),
+                    id=ids.next("decl"), kind="Declaration", name=declared_name,
                     declaration_kind="constant" if re.search(r"\bCONSTANT\b", text, re.I) else kind,
                     source_range=self._range(declaration), initial=initial.strip() if initial else None,
-                    type=self._type(None, _text(spec)) if spec is not None else None))
+                    type=self._type(scope, _text(spec), declared_name) if spec is not None else None))
         return out
 
     def _handler(self, context: ParserRuleContext, ids: M.IdFactory) -> M.ExceptionHandler:
@@ -476,10 +480,17 @@ class _Lowerer:
         routine.external_effects.packages = sorted({m.upper() for m in EXTERNAL_PACKAGES.findall(text)})
 
     # -- helpers ---------------------------------------------------------------------------------------------
-    def _type(self, scope: str | None, written: str) -> M.TypeRef:
+    def _type(self, scope: str | None, written: str, name: str | None = None) -> M.TypeRef:
+        """Prefer what the symbol table already resolved.
+
+        P1-3 resolves `%TYPE` and `%ROWTYPE` against the DDL snapshot; recomputing that here would duplicate the
+        work, and *not* consulting it -- which is what this did at first -- leaves every attribute type in the IR
+        marked unresolved even though the resolution exists. The IR is what P2-5 reads to pick Java types, so the
+        difference is not cosmetic.
+        """
         written = written.strip()
-        if self.symbols is not None and scope is not None:
-            symbol = self.symbols.resolve(scope, "<return>")
+        if self.symbols is not None and scope is not None and name is not None:
+            symbol = self.symbols.resolve(scope, name)
             if symbol is not None and symbol.type is not None and symbol.type.oracle == written:
                 return symbol.type
         return M.TypeRef(oracle=written, resolved=written if "%" not in written else None,
