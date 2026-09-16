@@ -1,0 +1,97 @@
+{
+ "id": "trg_payments_guard",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "trg_payments_guard",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "trg_payments_guard.trg",
+    "startLine": 2,
+    "endLine": 12,
+    "startColumn": 1,
+    "endColumn": 1
+   },
+   "name": "trg_payments_guard",
+   "moduleKind": "trigger",
+   "routines": [
+    {
+     "id": "trg_payments_guard.body",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "trg_payments_guard.trg",
+      "startLine": 2,
+      "endLine": 12,
+      "startColumn": 1,
+      "endColumn": 1
+     },
+     "name": "body",
+     "routineKind": "trigger-body",
+     "body": [
+      {
+       "id": "trg_payments_guard.body#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "trg_payments_guard.trg",
+        "startLine": 8,
+        "endLine": 8,
+        "startColumn": 3,
+        "endColumn": 65
+       },
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT status INTO v_status FROM orders WHERE order_id = :NEW.order_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "trg_payments_guard.body#stmt-2",
+       "kind": "If",
+       "sourceRange": {
+        "file": "trg_payments_guard.trg",
+        "startLine": 9,
+        "endLine": 11,
+        "startColumn": 3,
+        "endColumn": 7
+       },
+       "branches": [
+        {
+         "condition": "v_status = 'CANCELLED'",
+         "body": [
+          {
+           "id": "trg_payments_guard.body#stmt-3",
+           "kind": "Raise",
+           "sourceRange": {
+            "file": "trg_payments_guard.trg",
+            "startLine": 10,
+            "endLine": 10,
+            "startColumn": 5,
+            "endColumn": 86
+           },
+           "errorCode": -20072,
+           "message": "'cannot pay a cancelled order: ' || :NEW.order_id"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "deterministic": false,
+     "visibility": "private",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ],
+   "triggerEvent": "INSERT",
+   "triggerTable": "payments",
+   "triggerTiming": "BEFORE"
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}

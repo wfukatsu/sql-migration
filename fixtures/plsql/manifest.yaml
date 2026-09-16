@@ -207,3 +207,45 @@ units:
       - {name: is_cancellable, expected: AUTO,     reason: "純粋関数。BOOLEAN は PL/SQL 専用型なので Java boolean へ"}
       - {name: snapshot,       expected: AUTO,     reason: "%ROWTYPE の主キーアクセス"}
       - {name: cancel,         expected: REDESIGN, reason: "FOR UPDATE WAIT 5 の行ロック。待ち時間つきロックの意味を保てない"}
+
+  # --- holdout2: ルールが固まった後（2026-09-17）に書き起こした独立ホールドアウト --------------------
+  #
+  # P2-2 のルール開発中に holdout の期待判定を参照してしまい、独立性が失われた（../README.md に経緯）。
+  # ここは「ルールを一度も調整していない routine」であり、期待判定はエンジンを走らせる前に確定させた。
+  # 結果が悪くてもルールを直さず、数字をそのまま報告する。
+
+  - name: pkg_shipment
+    files: [holdout2/pkg_shipment.pks, holdout2/pkg_shipment.pkb]
+    categories: [select-into-exception, private-call, datatype-edge]
+    origin: synthetic
+    holdout: true
+    routines:
+      - {name: line_count,      expected: REVIEW, reason: "集約の SELECT INTO。0 件でも 1 行返るため NO_DATA_FOUND にならない"}
+      - {name: is_shippable,    expected: REVIEW, reason: "主キーの SELECT INTO だが line_count を呼ぶ。呼び出し先の判断に従う"}
+      - {name: mark_shipped,    expected: AUTO,   reason: "主キー UPDATE と SQL%ROWCOUNT。影響行数を Result に保持すれば足りる"}
+      - {name: days_in_transit, expected: REVIEW, reason: "TRUNC と SYSDATE と TIMESTAMP から DATE への CAST。日付の意味を保つ必要がある"}
+
+  - name: prc_purge_audit
+    files: [holdout2/prc_purge_audit.prc]
+    categories: [commit-in-routine, cursor-loop]
+    origin: synthetic
+    holdout: true
+    routines:
+      - {name: prc_purge_audit, expected: REDESIGN, reason: "明示 cursor で回しながら 200 件ごとに COMMIT する"}
+
+  - name: trg_payments_guard
+    files: [holdout2/trg_payments_guard.trg]
+    categories: [trigger-dblink]
+    origin: synthetic
+    holdout: true
+    routines:
+      - {name: trg_payments_guard, expected: REDESIGN, reason: "検証 trigger。全書込経路を Service 側で統制する必要がある"}
+
+  - name: pkg_tier_admin
+    files: [holdout2/pkg_tier_admin.pks, holdout2/pkg_tier_admin.pkb]
+    categories: [concurrency-lock, simple-crud]
+    origin: synthetic
+    holdout: true
+    routines:
+      - {name: promote,          expected: REDESIGN, reason: "SELECT FOR UPDATE の行ロック"}
+      - {name: set_credit_limit, expected: AUTO,     reason: "主キー UPDATE のみ"}

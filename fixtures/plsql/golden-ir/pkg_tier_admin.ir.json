@@ -1,0 +1,262 @@
+{
+ "id": "pkg_tier_admin",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "pkg_tier_admin",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "pkg_tier_admin.pkb",
+    "startLine": 2,
+    "endLine": 19,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "pkg_tier_admin",
+   "moduleKind": "package",
+   "routines": [
+    {
+     "id": "pkg_tier_admin.promote",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_tier_admin.pkb",
+      "startLine": 4,
+      "endLine": 12,
+      "startColumn": 3,
+      "endColumn": 14
+     },
+     "name": "promote",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_tier_admin.promote#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_tier_admin.pkb",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 21,
+        "endColumn": 38
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_customer_id",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_tier_admin.promote#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_tier_admin.pkb",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 46,
+        "endColumn": 56
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_tier",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "declarations": [
+      {
+       "id": "pkg_tier_admin.promote#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_tier_admin.pkb",
+        "startLine": 5,
+        "endLine": 5,
+        "startColumn": 5,
+        "endColumn": 34
+       },
+       "type": {
+        "oracle": "customers.tier%TYPE",
+        "resolved": "VARCHAR2(10)",
+        "origin": "column-type",
+        "schemaSnapshot": "schema.sql@17852f40"
+       },
+       "name": "v_current",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_tier_admin.promote#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_tier_admin.pkb",
+        "startLine": 7,
+        "endLine": 7,
+        "startColumn": 5,
+        "endColumn": 85
+       },
+       "diagnostics": [
+        {
+         "severity": "WARN",
+         "code": "ROW_LOCK",
+         "message": "FOR UPDATE is row locking; the target has to provide the same guarantee another way",
+         "range": {
+          "file": "pkg_tier_admin.pkb",
+          "startLine": 7,
+          "endLine": 7,
+          "startColumn": 5,
+          "endColumn": 85
+         }
+        }
+       ],
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT tier INTO v_current FROM customers WHERE customer_id = p_customer_id FOR UPDATE",
+       "cardinality": "UNKNOWN",
+       "lockingMode": "FOR UPDATE"
+      },
+      {
+       "id": "pkg_tier_admin.promote#stmt-2",
+       "kind": "If",
+       "sourceRange": {
+        "file": "pkg_tier_admin.pkb",
+        "startLine": 8,
+        "endLine": 10,
+        "startColumn": 5,
+        "endColumn": 9
+       },
+       "branches": [
+        {
+         "condition": "v_current = p_tier",
+         "body": [
+          {
+           "id": "pkg_tier_admin.promote#stmt-3",
+           "kind": "Return",
+           "sourceRange": {
+            "file": "pkg_tier_admin.pkb",
+            "startLine": 9,
+            "endLine": 9,
+            "startColumn": 7,
+            "endColumn": 7
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "pkg_tier_admin.promote#stmt-4",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_tier_admin.pkb",
+        "startLine": 11,
+        "endLine": 11,
+        "startColumn": 5,
+        "endColumn": 60
+       },
+       "sqlKind": "UPDATE",
+       "originalSql": "UPDATE customers SET tier = p_tier WHERE customer_id = p_customer_id",
+       "cardinality": "UNKNOWN"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_tier_admin.set_credit_limit",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_tier_admin.pkb",
+      "startLine": 14,
+      "endLine": 17,
+      "startColumn": 3,
+      "endColumn": 23
+     },
+     "name": "set_credit_limit",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_tier_admin.set_credit_limit#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_tier_admin.pkb",
+        "startLine": 14,
+        "endLine": 14,
+        "startColumn": 30,
+        "endColumn": 47
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_customer_id",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_tier_admin.set_credit_limit#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_tier_admin.pkb",
+        "startLine": 14,
+        "endLine": 14,
+        "startColumn": 55,
+        "endColumn": 66
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_limit",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_tier_admin.set_credit_limit#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_tier_admin.pkb",
+        "startLine": 16,
+        "endLine": 16,
+        "startColumn": 5,
+        "endColumn": 69
+       },
+       "sqlKind": "UPDATE",
+       "originalSql": "UPDATE customers SET credit_limit = p_limit WHERE customer_id = p_customer_id",
+       "cardinality": "UNKNOWN"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}

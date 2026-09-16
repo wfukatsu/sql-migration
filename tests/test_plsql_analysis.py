@@ -105,6 +105,7 @@ def test_the_corpus_call_graph_is_complete(corpus):
         ("pkg_order_pricing.reprice_order", "pkg_order_pricing.order_total"),
         ("pkg_order_status.assert_open", "pkg_order_status.status_of"),
         ("prc_reprice_all", "pkg_order_pricing.reprice_order"),
+        ("pkg_shipment.is_shippable", "pkg_shipment.line_count"),
     }
 
 
