@@ -60,12 +60,12 @@ CREATE TABLE payments (
 CREATE INDEX ix_payments_order ON payments (order_id);
 
 CREATE TABLE inventory_tx (
-  tx_id      NUMBER(19) NOT NULL,
+  entry_id      NUMBER(19) NOT NULL,
   product_id NUMBER(19) NOT NULL,
   delta_qty  NUMBER(10) NOT NULL,
   reason     VARCHAR2(40),
   created_at DATE       NOT NULL,
-  CONSTRAINT pk_inventory_tx PRIMARY KEY (tx_id)
+  CONSTRAINT pk_inventory_tx PRIMARY KEY (entry_id)
 );
 
 CREATE TABLE audit_log (

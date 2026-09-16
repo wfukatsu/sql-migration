@@ -34,6 +34,10 @@ dependencies {
 
     testImplementation platform('org.junit:junit-bom:5.14.4')
     testImplementation 'org.junit.jupiter:junit-jupiter'
+    // P3-1: the ScalarDB-side harness reads the same fixtures/plsql/scenarios/*.yaml the Oracle harness reads,
+    // so that a difference between the two captures is a difference between the databases and not between two
+    // transcriptions of the same case.
+    testImplementation 'org.yaml:snakeyaml:2.3'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
@@ -53,7 +57,16 @@ sourceSets {
     }
 }
 
-test { useJUnitPlatform() }
+test {
+    useJUnitPlatform()
+    // Gradle runs tests in a forked JVM, so -D on the gradle command line does NOT reach @EnabledIfSystemProperty.
+    // Without this, `gradle test -Dplsql.generated=1` disables the generated-code harnesses and the build passes
+    // green having run nothing -- a silent skip that looks exactly like a pass.
+    for (String property : ['plsql.generated', 'plsql.namespace']) {
+        if (System.getProperty(property) != null) systemProperty property, System.getProperty(property)
+    }
+    testLogging { showStandardStreams = true }
+}
 
 application {
     mainClass = 'com.scalar.migrate.runtime.Runner'

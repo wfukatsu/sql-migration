@@ -224,6 +224,39 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 
 **Phase 3 完了条件**: AUTO 対象の意味的同等性テストが 100%、REVIEW 対象は差分理由を説明できる。
 
+#### P3-1 実施結果（2026-09-17）
+
+`runtime-java` の `ScalarDbCaptureIT` が 59 シナリオを実 ScalarDB Cluster に対して実行し、**31 本の canonical
+JSON を採取**、残り 28 本は `difftest/work/plsql-scalardb/unrunnable.json` に理由つきで記録した。黙って飛ばした
+ものはない（「capture ファイルがあるか、名前つきの理由があるか」のどちらかであることをテストが検査する）。
+
+シナリオの setup SQL は `difftest/plsql_setup.py` が `scalardb_migrate` で変換する。ハーネス側で書き直すと
+fixture の転記が 2 本になり、差分が「DB の違い」ではなく「転記の食い違い」を意味してしまうため。
+
+採取できなかった 28 本の内訳:
+
+| 件数 | 理由 | 扱い |
+|---|---|---|
+| 21 | `NUMBER(12,2)` / `NUMBER(14,2)` の金額列が corpus スキーマで **BIGINT** になっており、`100000.00` を入れると ScalarDB が DB-SQL-10054 で拒否する | **未決**（下記） |
+| 5 | trigger 4 本と `pkg_customer_import.import` は生成器が意図的に拒否している | 仕様どおり。P3-2 の比較対象外 |
+| 2 | setup の `SYSTIMESTAMP` は ScalarDB SQL で書けず、変換器が正しく拒否する | fixture 側の課題。固定時刻へ直すのが筋 |
+
+**未決（P3-2 の前に決める必要がある）: ScalarDB 上で金額をどう持つか。**
+変換器は `NUMBER(p,2)` を DOUBLE（精度劣化の WARN つき）に落とし、注記で「金額はスケール済み整数を BIGINT へ」と
+勧める。P0-3 の corpus スキーマは型だけ BIGINT を採り、値のスケールを入れていなかったため、どちらの規約にも
+なっていない。選択肢は (a) BIGINT + スケール 10^2（正確。生成 Java の算術と fixture リテラル、P3-2 の比較に
+スケールの明示が要る）か (b) DOUBLE（変換器の既定。金額に丸め差が出るので、それ自体が PoC の所見になる）。
+金額の正確性は本 PoC の主題に直結するため、勝手に倒さず決定を仰ぐ。
+
+P3-1 の過程で見つかり、この場で直したもの:
+
+- `gradle test -D...` はテスト用 JVM へ渡らないため、`@EnabledIfSystemProperty` で守った P2-11 のハーネスは
+  **1 件も実行されないまま BUILD SUCCESSFUL になっていた**。`build.gradle` で明示的に転送するよう修正し、
+  P2-11 の 7 本が実際に走って通ることを確認した。緑のビルドが「何も走っていない」を意味しうる形だった。
+- 変換器の INSERT が対象表を記録しておらず、VALUES のリテラルを列型と突き合わせられていなかった。結果、
+  `DATE '2025-04-01'` が TIMESTAMP 列へ日付だけの文字列として書かれ、ScalarDB がパースできなかった。
+- 予約列チェックがインライン `PRIMARY KEY` を主キーとして認識せず、`before_` 始まりの主キーを誤って弾いていた。
+
 ### Phase 4 以降（概要のみ）
 
 - 動的 SQL の部分評価（定数畳み込み、条件分岐による有限 variant 列挙、上限つき）

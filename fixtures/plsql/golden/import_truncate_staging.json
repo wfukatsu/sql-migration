@@ -15,7 +15,7 @@
  "tables": {
   "inventory_tx": {
    "columns": [
-    "tx_id",
+    "entry_id",
     "product_id",
     "delta_qty",
     "reason",

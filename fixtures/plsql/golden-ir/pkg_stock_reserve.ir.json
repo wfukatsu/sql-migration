@@ -83,7 +83,7 @@
         "oracle": "products.stock_qty%TYPE",
         "resolved": "NUMBER(10)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@17852f40"
+        "schemaSnapshot": "schema.sql@23623f44"
        },
        "name": "v_stock",
        "declarationKind": "variable"
@@ -244,7 +244,7 @@
         "oracle": "products.stock_qty%TYPE",
         "resolved": "NUMBER(10)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@17852f40"
+        "schemaSnapshot": "schema.sql@23623f44"
        },
        "name": "v_stock",
        "declarationKind": "variable"
@@ -383,7 +383,7 @@
         "oracle": "counters.next_value%TYPE",
         "resolved": "NUMBER(19)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@17852f40"
+        "schemaSnapshot": "schema.sql@23623f44"
        },
        "name": "v_next",
        "declarationKind": "variable"
@@ -553,5 +553,5 @@
    ]
   }
  ],
- "schemaSnapshot": "schema.sql@17852f40"
+ "schemaSnapshot": "schema.sql@23623f44"
 }

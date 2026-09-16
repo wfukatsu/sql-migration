@@ -346,3 +346,57 @@ def test_key_in_list_is_split_only_on_cassandra_selects():
     assert "OR_KEYS" in codes(run_on("SELECT order_no FROM orders WHERE status IN ('A', 'B') AND amount > 1", "cassandra"))
     r = run_on("UPDATE orders SET amount = 0 WHERE customer_id IN (1, 2)", "cassandra")  # writes are not planned
     assert r.status == "ERROR" and "OR_KEYS" not in codes(r) and "NO_CROSS_PARTITION" in codes(r)
+
+
+# ---------------------------------------------------------------- reserved columns (P3-1)
+def test_create_table_rejects_consensus_commit_column_names():
+    """Consensus Commit keeps its own columns in the user's table, so those names are already taken.
+
+    Schema Loader reports this as DB-CORE-10101 at load time. The converter has the DDL in front of it, so the
+    name is knowable before anyone waits for a deployment to fail.
+    """
+    r = run("CREATE TABLE t (tx_id BIGINT PRIMARY KEY, note VARCHAR(10))", with_schema=False)
+    assert r.status == "ERROR" and "RESERVED_COLUMN" in codes(r)
+
+
+def test_create_table_rejects_before_prefixed_non_key_column():
+    r = run("CREATE TABLE t (id BIGINT PRIMARY KEY, before_x VARCHAR(10))", with_schema=False)
+    assert r.status == "ERROR" and "RESERVED_COLUMN" in codes(r)
+
+
+def test_create_table_allows_before_prefixed_key_column():
+    """Consensus Commit only shadows the non-key columns, so a key may legitimately start with before_."""
+    r = run("CREATE TABLE t (before_id BIGINT PRIMARY KEY, note VARCHAR(10))", with_schema=False)
+    assert "RESERVED_COLUMN" not in codes(r)
+
+
+# ---------------------------------------------------------------- temporal literals in INSERT (P3-1)
+TEMPORAL_DDL = ("CREATE TABLE ev (id BIGINT PRIMARY KEY, at_ts TIMESTAMP, on_date DATE);")
+
+
+def temporal(sql):
+    results, _ = convert_script(TEMPORAL_DDL + sql, "oracle", decompose=False)
+    return results[-1]
+
+
+def test_insert_pads_a_date_only_literal_for_a_timestamp_column():
+    """ScalarDB parses a TIMESTAMP strictly and rejects 'YYYY-MM-DD'; Oracle's DATE literal means midnight."""
+    r = temporal("INSERT INTO ev (id, at_ts) VALUES (1, DATE '2025-04-01');")
+    assert r.status in ("OK", "WARN")
+    assert "'2025-04-01 00:00:00'" in r.converted[0]
+    assert "DATE_LIT" in codes(r)
+
+
+def test_insert_keeps_a_date_only_literal_for_a_date_column():
+    r = temporal("INSERT INTO ev (id, on_date) VALUES (1, DATE '2025-04-01');")
+    assert "'2025-04-01'" in r.converted[0] and "00:00:00" not in r.converted[0]
+
+
+def test_insert_drops_a_midnight_time_for_a_date_column():
+    r = temporal("INSERT INTO ev (id, on_date) VALUES (1, TIMESTAMP '2025-04-01 00:00:00');")
+    assert "'2025-04-01'" in r.converted[0] and "00:00:00" not in r.converted[0]
+
+
+def test_insert_leaves_a_timestamp_literal_alone():
+    r = temporal("INSERT INTO ev (id, at_ts) VALUES (1, TIMESTAMP '2025-04-01 10:30:00');")
+    assert "'2025-04-01 10:30:00'" in r.converted[0]
