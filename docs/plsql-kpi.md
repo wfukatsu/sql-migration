@@ -190,7 +190,8 @@ AUTO とするのは confidence >= 0.95 かつ §2 の禁止条件に 1 つも�
 
 ```bash
 # KPI-1 parse 率 / corpus の健全性
-.venv/bin/python -m pytest tests/test_plsql_corpus.py -q
+.venv/bin/python -m pytest tests/test_plsql_corpus.py tests/test_plsql_frontend.py -q
+.venv/bin/python -c "from plsql.frontend import parse_directory, coverage; c = coverage(parse_directory('fixtures/plsql/src')); print(f'parse rate {c.rate:.1%}', c.failed)"
 
 # KPI-3 の正解（manifest）と corpus のずれが無いこと
 .venv/bin/python -m pytest tests/test_plsql_manifest.py -q
