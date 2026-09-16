@@ -670,6 +670,18 @@
             "$ref": "#/$defs/issue"
           }
         },
+        "readSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "target": {
           "type": [
             "string",
@@ -716,6 +728,18 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/issue"
+          }
+        },
+        "readSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
           }
         },
         "callee": {
@@ -772,6 +796,18 @@
             "$ref": "#/$defs/issue"
           }
         },
+        "readSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "exception": {
           "type": [
             "string",
@@ -826,6 +862,18 @@
             "$ref": "#/$defs/issue"
           }
         },
+        "readSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "expression": {
           "type": [
             "string",
@@ -868,6 +916,18 @@
             "$ref": "#/$defs/issue"
           }
         },
+        "readSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "savepoint": {
           "type": [
             "string",
@@ -908,6 +968,18 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/issue"
+          }
+        },
+        "readSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
           }
         },
         "branches": {
@@ -953,6 +1025,18 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/issue"
+          }
+        },
+        "readSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
           }
         },
         "selector": {
@@ -1004,6 +1088,18 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/issue"
+          }
+        },
+        "readSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
           }
         },
         "loopKind": {
@@ -1069,6 +1165,18 @@
             "$ref": "#/$defs/issue"
           }
         },
+        "readSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "sqlKind": {
           "type": [
             "string",
@@ -1104,18 +1212,6 @@
             "string",
             "null"
           ]
-        },
-        "readSet": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "writeSet": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
         },
         "targetStatus": {
           "type": [
@@ -1169,6 +1265,18 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/issue"
+          }
+        },
+        "readSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
           }
         },
         "expression": {
@@ -1231,6 +1339,18 @@
             "$ref": "#/$defs/issue"
           }
         },
+        "readSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "cursor": {
           "type": [
             "string",
@@ -1285,6 +1405,18 @@
             "$ref": "#/$defs/issue"
           }
         },
+        "readSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "label": {
           "type": [
             "string",
@@ -1333,6 +1465,18 @@
             "$ref": "#/$defs/issue"
           }
         },
+        "readSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "text": {
           "type": [
             "string",
@@ -1379,6 +1523,18 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/issue"
+          }
+        },
+        "readSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
           }
         }
       }
