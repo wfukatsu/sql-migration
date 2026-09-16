@@ -135,9 +135,10 @@ class _Lowerer:
         module = M.Module(id=name, kind="Module", name=name, module_kind="package",
                           source_range=self._range(context))
         ids = M.IdFactory(name)
-        for declaration in _descend(context, {"Declare_specContext"}, stop={"Procedure_bodyContext",
-                                                                            "Function_bodyContext"}):
-            module.declarations.extend(self._declarations(declaration, ids, name))
+        # a package body declares its state directly under `Package_obj_body`, not inside a `Declare_spec`.
+        # Descending only into `Declare_spec` made package state invisible -- and STATE-001 unable to fire.
+        module.declarations.extend(self._declarations(
+            context, ids, name, stop={"Procedure_bodyContext", "Function_bodyContext"}))
         if not spec:
             for body in _descend(context, {"Procedure_bodyContext", "Function_bodyContext"}):
                 module.routines.append(self._routine(body, module=name))
@@ -225,13 +226,13 @@ class _Lowerer:
             nocopy=bool(re.search(r"\bNOCOPY\b", text, re.IGNORECASE)))
 
     def _declarations(self, context: ParserRuleContext, ids: M.IdFactory,
-                      scope: str | None = None) -> list[M.Declaration]:
+                      scope: str | None = None, stop: set[str] | None = None) -> list[M.Declaration]:
         out: list[M.Declaration] = []
         for kind, context_name in (("variable", "Variable_declarationContext"),
                                    ("exception", "Exception_declarationContext"),
                                    ("cursor", "Cursor_declarationContext"),
                                    ("type", "Type_declarationContext")):
-            for declaration in _descend(context, {context_name}):
+            for declaration in _descend(context, {context_name}, stop=stop):
                 identifier = _child(declaration, "IdentifierContext")
                 if identifier is None:
                     continue
@@ -396,10 +397,15 @@ class _Lowerer:
         kind = {"Open_statementContext": "OpenCursor", "Fetch_statementContext": "Fetch",
                 "Close_statementContext": "CloseCursor"}[name]
         into = [_text(v) for v in _descend(context, {"Variable_nameContext"})]
-        return M.CursorStatement(id=ids.next("stmt"), kind=kind, source_range=source,
+        node = M.CursorStatement(id=ids.next("stmt"), kind=kind, source_range=source,
                                  cursor=_text(_child(context, "Cursor_nameContext")),
                                  into_targets=into[1:] if kind == "Fetch" else [],
                                  arguments=[_text(a) for a in _descend(context, {"ArgumentContext"})])
+        if re.search(r"\bBULK\s+COLLECT\b", text, re.IGNORECASE):
+            # the node keeps the cursor and the targets, not the text, so the fact has to be recorded here
+            # or no rule can see it
+            node.add("WARN", "BULK_COLLECT", "BULK COLLECT needs a row limit and a memory bound")
+        return node
 
     def _control(self, context, ids, text, source) -> M.Statement:
         kind = {"Exit_statementContext": "Exit", "Continue_statementContext": "Continue",

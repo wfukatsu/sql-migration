@@ -211,6 +211,10 @@ def _extra(criteria: dict, statement: M.Statement, module: M.Module, routine: M.
             return False
     if "loopKind" in criteria and getattr(statement, "loop_kind", None) not in _as_set(criteria["loopKind"]):
         return False
+    if "hasDiagnostic" in criteria:
+        codes = {d.code for d in statement.diagnostics}
+        if not (codes & _as_set(criteria["hasDiagnostic"])):
+            return False
     if "intoTargets" in criteria:
         has = bool(getattr(statement, "into_targets", None))
         if has is not criteria["intoTargets"]:

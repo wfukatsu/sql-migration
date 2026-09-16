@@ -165,7 +165,9 @@ class CallGraph:
             colour[node] = 1
             path.append(node)
             for callee in sorted(self.calls.get(node, set())):
-                if colour.get(callee, 0) == 0:
+                if callee == node:
+                    found.append([node, node])  # direct recursion
+                elif colour.get(callee, 0) == 0:
                     visit(callee)
                 elif colour.get(callee) == 1:
                     found.append(path[path.index(callee):] + [callee])
@@ -198,7 +200,7 @@ def build_call_graph(program: M.Program) -> CallGraph:
                     callee = statement.callee.strip().lower()
                     resolved = by_name.get(callee) or (
                         by_name.get(f"{module.name}.{callee}".lower()) if "." not in callee else None)
-                    if resolved is not None and resolved != routine.id:
+                    if resolved is not None:
                         graph.calls[routine.id].add(resolved)
                         statement.resolved_to = resolved
                     elif resolved is None:
@@ -229,12 +231,13 @@ def _expressions(statement: M.Statement) -> list[str]:
 
 
 def _called_in(expression: str, by_name: dict[str, str], module: str, caller: str) -> set[str]:
+    """Self-calls count. Direct recursion is a self-edge, and excluding it hides the plainest recursion there is."""
     found: set[str] = set()
     for name in _CALLABLE.findall(expression):
         lowered = name.lower()
         resolved = by_name.get(lowered) or (
             by_name.get(f"{module}.{lowered}") if "." not in lowered else None)
-        if resolved is not None and resolved != caller:
+        if resolved is not None:
             found.add(resolved)
     return found
 
