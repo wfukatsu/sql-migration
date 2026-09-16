@@ -44,11 +44,25 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 @EnabledIfSystemProperty(named = "plsql.generated", matches = "1")
 class ScalarDbCaptureIT {
   private static final Path SCENARIOS = Path.of("..", "fixtures", "plsql", "scenarios");
-  private static final Path SCHEMA = Path.of("..", "fixtures", "plsql", "scalardb-schema.json");
-  private static final Path OUT = Path.of("..", "difftest", "work", "plsql-scalardb");
-  private static final Path SETUP = Path.of("..", "difftest", "work", "plsql-setup.json");
   private static final String PACKAGE = "com.example.migrated";
-  private static final String NAMESPACE = System.getProperty("plsql.namespace", "plsqlpoc");
+
+  /**
+   * ScalarDB has no DECIMAL type, so Oracle money has to become something else, and the PoC measures both
+   * answers rather than asserting one (plan §5, Phase 3). Each variant is a namespace of its own with its own
+   * schema and its own converted setup, and the captures land in separate directories so that P3-2 can put the
+   * two side by side against the one Oracle capture.
+   *
+   * <p>Select with {@code -Dplsql.variant=scaled|double}; the default is the schema shipped in fixtures/.
+   */
+  private static final String VARIANT = System.getProperty("plsql.variant", "scaled");
+  private static final String NAMESPACE = VARIANT.equals("double") ? "plsqlpoc_dbl" : "plsqlpoc";
+  private static final Path SCHEMA = VARIANT.equals("double")
+      ? Path.of("..", "difftest", "work", "plsql-schema-double.json")
+      : Path.of("..", "fixtures", "plsql", "scalardb-schema.json");
+  private static final Path SETUP = VARIANT.equals("double")
+      ? Path.of("..", "difftest", "work", "plsql-setup-double.json")
+      : Path.of("..", "difftest", "work", "plsql-setup.json");
+  private static final Path OUT = Path.of("..", "difftest", "work", "plsql-scalardb-" + VARIANT);
   private static final Gson GSON = new GsonBuilder().serializeNulls().setPrettyPrinting().create();
 
   private static ScalarDbRunner runner;
@@ -88,7 +102,7 @@ class ScalarDbCaptureIT {
         }
         runner.commit();
 
-        Map<String, Object> capture = runner.capture(scenario, invoker);
+        Map<String, Object> capture = runner.capture(scenario, invoker, "scalardb:" + VARIANT);
         Files.writeString(OUT.resolve(scenario.name() + ".json"), GSON.toJson(capture) + "\n");
         captured.add(scenario.name());
       } catch (Unrunnable e) {
@@ -98,8 +112,8 @@ class ScalarDbCaptureIT {
     }
 
     Files.writeString(OUT.resolve("unrunnable.json"), GSON.toJson(unrunnable) + "\n");
-    System.out.printf("captured %d scenario(s); %d could not run (see %s/unrunnable.json)%n",
-        captured.size(), unrunnable.size(), OUT);
+    System.out.printf("variant %s (namespace %s): captured %d scenario(s); %d could not run "
+        + "(see %s/unrunnable.json)%n", VARIANT, NAMESPACE, captured.size(), unrunnable.size(), OUT);
     unrunnable.forEach((name, reason) -> System.out.printf("  %-34s %s%n", name, reason));
 
     assertFalse(captured.isEmpty(), "no scenario produced a ScalarDB capture; the harness is not wired up");

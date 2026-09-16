@@ -151,11 +151,15 @@ public final class ScalarDbRunner implements AutoCloseable {
    * clock or a counter the ScalarDB side never actually pinned cannot be mistaken for agreement.
    */
   public Map<String, Object> capture(Scenario scenario, Invocation invocation) throws Exception {
+    return capture(scenario, invocation, "scalardb");
+  }
+
+  public Map<String, Object> capture(Scenario scenario, Invocation invocation, String source) throws Exception {
     Map<String, Object> capture = new LinkedHashMap<>();
     capture.put("scenario", scenario.name());
     capture.put("unit", scenario.unit());
     capture.put("routine", scenario.routine());
-    capture.put("source", "scalardb");
+    capture.put("source", source);
     capture.put("pinned", scenario.pinned());
 
     Map<String, Object> result = new LinkedHashMap<>();
