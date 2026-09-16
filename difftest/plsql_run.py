@@ -79,6 +79,10 @@ DEPLOY_ORDER = [
     "prc_add_product.prc", "prc_nightly_close.prc", "prc_audit_autonomous.prc", "prc_remote_sync.prc",
     "holdout/prc_reprice_all.prc",
     "trg_orders_audit.trg", "trg_orders_seq.trg", "holdout/trg_products_audit.trg",
+    # holdout2: ルールを凍結した後に足した独立ホールドアウト（fixtures/plsql/README.md）
+    "holdout2/pkg_shipment.pks", "holdout2/pkg_tier_admin.pks",
+    "holdout2/pkg_shipment.pkb", "holdout2/pkg_tier_admin.pkb",
+    "holdout2/prc_purge_audit.prc", "holdout2/trg_payments_guard.trg",
 ]
 
 TABLES = ["customers", "products", "orders", "order_lines", "payments", "inventory_tx",

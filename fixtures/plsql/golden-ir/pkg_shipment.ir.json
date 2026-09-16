@@ -1,0 +1,551 @@
+{
+ "id": "pkg_shipment",
+ "kind": "Program",
+ "schemaVersion": "1.0.0",
+ "modules": [
+  {
+   "id": "pkg_shipment",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "pkg_shipment.pkb",
+    "startLine": 2,
+    "endLine": 45,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "pkg_shipment",
+   "moduleKind": "package",
+   "routines": [
+    {
+     "id": "pkg_shipment.line_count",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_shipment.pkb",
+      "startLine": 4,
+      "endLine": 9,
+      "startColumn": 3,
+      "endColumn": 17
+     },
+     "name": "line_count",
+     "routineKind": "function",
+     "parameters": [
+      {
+       "id": "pkg_shipment.line_count#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 23,
+        "endColumn": 37
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "returnType": {
+      "oracle": "NUMBER",
+      "resolved": "NUMBER",
+      "origin": "declared"
+     },
+     "declarations": [
+      {
+       "id": "pkg_shipment.line_count#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 5,
+        "endLine": 5,
+        "startColumn": 5,
+        "endColumn": 19
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "v_count",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_shipment.line_count#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 7,
+        "endLine": 7,
+        "startColumn": 5,
+        "endColumn": 68
+       },
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT COUNT(*) INTO v_count FROM order_lines WHERE order_id = p_order_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "pkg_shipment.line_count#stmt-2",
+       "kind": "Return",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 8,
+        "endLine": 8,
+        "startColumn": 5,
+        "endColumn": 12
+       },
+       "expression": "v_count"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "private",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_shipment.is_shippable",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_shipment.pkb",
+      "startLine": 11,
+      "endLine": 25,
+      "startColumn": 3,
+      "endColumn": 19
+     },
+     "name": "is_shippable",
+     "routineKind": "function",
+     "parameters": [
+      {
+       "id": "pkg_shipment.is_shippable#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 11,
+        "endLine": 11,
+        "startColumn": 25,
+        "endColumn": 39
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "returnType": {
+      "oracle": "VARCHAR2",
+      "resolved": "VARCHAR2",
+      "origin": "declared"
+     },
+     "declarations": [
+      {
+       "id": "pkg_shipment.is_shippable#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 12,
+        "endLine": 12,
+        "startColumn": 5,
+        "endColumn": 32
+       },
+       "type": {
+        "oracle": "orders.status%TYPE",
+        "resolved": "VARCHAR2(20)",
+        "origin": "column-type",
+        "schemaSnapshot": "schema.sql@17852f40"
+       },
+       "name": "v_status",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_shipment.is_shippable#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 14,
+        "endLine": 14,
+        "startColumn": 5,
+        "endColumn": 62
+       },
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT status INTO v_status FROM orders WHERE order_id = p_order_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "pkg_shipment.is_shippable#stmt-2",
+       "kind": "If",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 15,
+        "endLine": 17,
+        "startColumn": 5,
+        "endColumn": 9
+       },
+       "branches": [
+        {
+         "condition": "v_status <> 'CONFIRMED'",
+         "body": [
+          {
+           "id": "pkg_shipment.is_shippable#stmt-3",
+           "kind": "Return",
+           "sourceRange": {
+            "file": "pkg_shipment.pkb",
+            "startLine": 16,
+            "endLine": 16,
+            "startColumn": 7,
+            "endColumn": 14
+           },
+           "expression": "'NO'"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "pkg_shipment.is_shippable#stmt-4",
+       "kind": "If",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 18,
+        "endLine": 20,
+        "startColumn": 5,
+        "endColumn": 9
+       },
+       "branches": [
+        {
+         "condition": "line_count(p_order_id) = 0",
+         "body": [
+          {
+           "id": "pkg_shipment.is_shippable#stmt-5",
+           "kind": "Return",
+           "sourceRange": {
+            "file": "pkg_shipment.pkb",
+            "startLine": 19,
+            "endLine": 19,
+            "startColumn": 7,
+            "endColumn": 14
+           },
+           "expression": "'NO'"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "pkg_shipment.is_shippable#stmt-6",
+       "kind": "Return",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 21,
+        "endLine": 21,
+        "startColumn": 5,
+        "endColumn": 12
+       },
+       "expression": "'YES'"
+      }
+     ],
+     "exceptionHandlers": [
+      {
+       "id": "pkg_shipment.is_shippable#handler-1",
+       "kind": "ExceptionHandler",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 23,
+        "endLine": 24,
+        "startColumn": 5,
+        "endColumn": 73
+       },
+       "exceptions": [
+        "NO_DATA_FOUND"
+       ],
+       "body": [
+        {
+         "id": "pkg_shipment.is_shippable#stmt-7",
+         "kind": "Raise",
+         "sourceRange": {
+          "file": "pkg_shipment.pkb",
+          "startLine": 24,
+          "endLine": 24,
+          "startColumn": 7,
+          "endColumn": 72
+         },
+         "errorCode": -20070,
+         "message": "'order not found: ' || p_order_id"
+        }
+       ]
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_shipment.mark_shipped",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_shipment.pkb",
+      "startLine": 27,
+      "endLine": 33,
+      "startColumn": 3,
+      "endColumn": 19
+     },
+     "name": "mark_shipped",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_shipment.mark_shipped#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 27,
+        "endLine": 27,
+        "startColumn": 26,
+        "endColumn": 40
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_shipment.mark_shipped#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 27,
+        "endLine": 27,
+        "startColumn": 48,
+        "endColumn": 58
+       },
+       "type": {
+        "oracle": "TIMESTAMP",
+        "resolved": "TIMESTAMP",
+        "origin": "declared"
+       },
+       "name": "p_when",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_shipment.mark_shipped#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 29,
+        "endLine": 29,
+        "startColumn": 5,
+        "endColumn": 80
+       },
+       "sqlKind": "UPDATE",
+       "originalSql": "UPDATE orders SET shipped_at = p_when, status = 'SHIPPED' WHERE order_id = p_order_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "pkg_shipment.mark_shipped#stmt-2",
+       "kind": "If",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 30,
+        "endLine": 32,
+        "startColumn": 5,
+        "endColumn": 9
+       },
+       "branches": [
+        {
+         "condition": "SQL%ROWCOUNT = 0",
+         "body": [
+          {
+           "id": "pkg_shipment.mark_shipped#stmt-3",
+           "kind": "Raise",
+           "sourceRange": {
+            "file": "pkg_shipment.pkb",
+            "startLine": 31,
+            "endLine": 31,
+            "startColumn": 7,
+            "endColumn": 72
+           },
+           "errorCode": -20071,
+           "message": "'order not found: ' || p_order_id"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_shipment.days_in_transit",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_shipment.pkb",
+      "startLine": 35,
+      "endLine": 43,
+      "startColumn": 3,
+      "endColumn": 22
+     },
+     "name": "days_in_transit",
+     "routineKind": "function",
+     "parameters": [
+      {
+       "id": "pkg_shipment.days_in_transit#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 35,
+        "endLine": 35,
+        "startColumn": 28,
+        "endColumn": 42
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "returnType": {
+      "oracle": "NUMBER",
+      "resolved": "NUMBER",
+      "origin": "declared"
+     },
+     "declarations": [
+      {
+       "id": "pkg_shipment.days_in_transit#decl-1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 36,
+        "endLine": 36,
+        "startColumn": 5,
+        "endColumn": 37
+       },
+       "type": {
+        "oracle": "orders.shipped_at%TYPE",
+        "resolved": "TIMESTAMP(6)",
+        "origin": "column-type",
+        "schemaSnapshot": "schema.sql@17852f40"
+       },
+       "name": "v_shipped",
+       "declarationKind": "variable"
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_shipment.days_in_transit#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 38,
+        "endLine": 38,
+        "startColumn": 5,
+        "endColumn": 67
+       },
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT shipped_at INTO v_shipped FROM orders WHERE order_id = p_order_id",
+       "cardinality": "UNKNOWN"
+      },
+      {
+       "id": "pkg_shipment.days_in_transit#stmt-2",
+       "kind": "If",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 39,
+        "endLine": 41,
+        "startColumn": 5,
+        "endColumn": 9
+       },
+       "branches": [
+        {
+         "condition": "v_shipped IS NULL",
+         "body": [
+          {
+           "id": "pkg_shipment.days_in_transit#stmt-3",
+           "kind": "Return",
+           "sourceRange": {
+            "file": "pkg_shipment.pkb",
+            "startLine": 40,
+            "endLine": 40,
+            "startColumn": 7,
+            "endColumn": 14
+           },
+           "expression": "NULL"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "pkg_shipment.days_in_transit#stmt-4",
+       "kind": "Return",
+       "sourceRange": {
+        "file": "pkg_shipment.pkb",
+        "startLine": 42,
+        "endLine": 42,
+        "startColumn": 5,
+        "endColumn": 58
+       },
+       "expression": "TRUNC(SYSDATE) - TRUNC(CAST(v_shipped AS DATE))"
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@17852f40"
+}

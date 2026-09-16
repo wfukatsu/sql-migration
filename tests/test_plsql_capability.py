@@ -196,7 +196,7 @@ def test_agreement_with_the_manifest(checked):
     decisions = decide(analysis.program, program_analysis, RuleSet.load(), Evidence())
     agree, disagree, mismatches = agreement(decisions)
     assert disagree == 0, mismatches
-    assert agree == 48
+    assert agree == 56
 
 
 def test_agreement_on_the_holdout_is_reported_separately(checked):
@@ -204,7 +204,7 @@ def test_agreement_on_the_holdout_is_reported_separately(checked):
     analysis, program_analysis = checked
     decisions = decide(analysis.program, program_analysis, RuleSet.load(), Evidence())
     agree, disagree, mismatches = agreement(decisions, only_holdout=True)
-    assert agree + disagree == 10
+    assert agree + disagree == 18
     assert disagree == 0, mismatches
 
 

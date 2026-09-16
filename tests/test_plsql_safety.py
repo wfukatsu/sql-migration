@@ -146,4 +146,4 @@ def test_the_corpus_kpi_is_unchanged_by_the_rule_cases():
     inventory = build_analysis(SRC, SRC / "schema.sql")
     from plsql.report import inventory as build_inventory
 
-    assert build_inventory(inventory)["kpi"]["totalFiles"] == 32
+    assert build_inventory(inventory)["kpi"]["totalFiles"] == 38

@@ -98,7 +98,8 @@ def test_unit_fields_are_valid(unit: dict):
 
 @pytest.mark.parametrize("unit", units(), ids=lambda u: u["name"])
 def test_holdout_flag_matches_the_directory(unit: dict):
-    in_holdout_dir = all(f.startswith("holdout/") for f in unit["files"])
+    """`holdout/` is the original set; `holdout2/` was written after the rules were frozen (README.md)."""
+    in_holdout_dir = all(f.startswith(("holdout/", "holdout2/")) for f in unit["files"])
     assert unit["holdout"] == in_holdout_dir, f"{unit['name']}: holdout flag and location disagree"
 
 

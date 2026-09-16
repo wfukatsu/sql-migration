@@ -283,6 +283,28 @@ P0-2 の manifest）に集計し直す。
 
 ### 決定済み
 
+- **差分テストの Oracle: `gvenzl/oracle-free:23-slim-faststart`**（2026-09-17）。実機は Oracle AI Database 26ai Free
+  23.26.3.0.0 として応答する。既存 `difftest/docker-compose.yml` の `source-oracle` をそのまま使う。
+  接続プールの知見は `docs/oracle-backend-verification-plan.md` を引き継ぐ。
+  P0-4 / P0-5 はこの環境で動かし、59 capture を 2 回実行してバイト一致することを確認済み。
+
+- **生成コードは Spring に依存させない**（2026-09-17）。`@Transactional` は使わず、ScalarDB の
+  try-with-resources 定型を `runtime-java` のヘルパに集約し、commit / abort を 1 箇所で制御する（設計書 §6.7）。
+  - 理由: 注釈 1 つのために PoC のビルドへフレームワークを丸ごと持ち込むと、依存面と設定が大きく増える。
+    どの DI・どの Web 層に載せるかは移行先アプリケーション側の決定であって、移行ツールが決めることではない。
+  - 帰結: P2-10 は `generated/` をソースセットに載せるだけで済み、既存の単一モジュール・Java 17 構成を変えない。
+    Spring を使う現場では、生成された Application Service を `@Transactional` な bean で包めばよい。
+
+- **生成 Repository のアクセス経路: ScalarDB SQL（JDBC ドライバ）を既定とする**（2026-09-17）。
+  - 理由: 変換ツールが出すのは ScalarDB SQL であり、その SQL は `difftest` で移行元 DB と突き合わせて
+    検証してきた成果物そのものである。Core API 呼び出しへ翻訳し直すと、**同じ 1 文に対する 2 つ目の
+    翻訳**を持つことになり、検証されていない経路が増える。設計書 §7.3 が避けよと言っているのはこの形である。
+  - 対する材料: corpus のアクセスパスは 27 文中 24 がキーアクセス（GET 23 / partition SCAN 1）で、
+    Core API（Apache 2、ライセンス不要）でも大半は書ける。それでも上の理由を優先した。
+  - 帰結: 生成コードの実行には **ScalarDB Cluster（ライセンス）が要る**。実行計画の取得だけは
+    P2-9 の `PlanRunner` が Core API でも動くため、Cluster を持たない環境での部分的な検証は可能。
+    Core API 版の生成は必要になった時点で別途判断する。
+
 - **corpus の入手元: 合成で代替する**（2026-09-17）。実案件の匿名化コードは使わない。
   この結果、§8 の KPI は合成 corpus 上の値になり、実案件耐性の証拠にはならない。
   レポートには必ずその旨を併記し、実案件コードが入手できた時点で corpus へ追加して KPI を出自別に出し直す。
@@ -292,8 +314,7 @@ P0-2 の manifest）に集計し直す。
 ### 未決
 
 
-- 差分テストで使う Oracle のバージョンとエディション（既存 `difftest` の Oracle Database Free を流用する想定。接続プール設定は `docs/oracle-backend-verification-plan.md` の知見を引き継ぐ）。
-- 生成先の Spring Boot バージョンと、`@Transactional` を Spring の宣言的トランザクションにするか ScalarDB の try-with-resources 定型にするか。Phase 2 の P2-6 / P2-10 開始までに決める。
-- 生成 Repository が ScalarDB にアクセスする経路。P2-9 の `PlanRunner` は Core API（`DistributedTransaction`）と ScalarDB SQL JDBC（`Connection`）の両方に参加できるようにしたが、生成器がどちらを既定にするかは配備形態（Cluster の有無とライセンス）次第で未定。P2-7 開始までに決める。
-- PoC の成功を誰が、どの対象に対して判定するか（社内 corpus での KPI 達成をもって成功とするのか、特定顧客の PL/SQL 一式で判定するのか）。
-- 移行完了後、生成 Java の所有権が顧客へ移った時点で再生成モデル（手編集禁止 + CI 検証）を継続するか終了するか。
+- **PoC の成功を誰が、どの対象に対して判定するか**（社内 corpus での KPI 達成をもって成功とするのか、特定顧客の PL/SQL 一式で判定するのか）。
+  技術的に決められる事柄ではない。Phase 3 の完了報告より前に決める必要がある。
+- **移行完了後、生成 Java の所有権が顧客へ移った時点で再生成モデル（手編集禁止 + CI 検証）を継続するか終了するか**。
+  同上。契約と運用体制の話であり、実装からは決まらない。
