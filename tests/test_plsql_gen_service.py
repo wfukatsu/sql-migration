@@ -106,9 +106,19 @@ def test_out_parameters_leave_the_signature_and_come_back_in_a_result(program):
     assert "String pStatus = null;" in text, "the OUT value is a local, not a written-through argument"
 
 
-def test_a_function_that_falls_through_fails_loudly(program):
-    """Oracle raises ORA-06503 when a function ends without RETURN; silence would be a behaviour change."""
-    assert "function reached its end without RETURN" in rendered(program, "pkg_order_status")
+def test_a_function_that_falls_through_fails_loudly():
+    """Oracle raises ORA-06503 when a function ends without RETURN; silence would be a behaviour change.
+
+    The guard is emitted only where it is reachable -- Java rejects a statement after a path that always exits,
+    so a body whose every branch returns does not get one.
+    """
+    routine = M.Routine(id="r", kind="Routine", name="f", return_type=M.TypeRef("NUMBER(9)", "NUMBER(9)"),
+                        declarations=[M.Declaration(id="d", kind="Declaration", name="v",
+                                                    type=M.TypeRef("NUMBER(9)", "NUMBER(9)"))],
+                        body=[M.Assignment(id="r#1", kind="Assignment", target="v", expression="1")])
+    module = M.Module(id="m", kind="Module", name="m", module_kind="package", routines=[routine])
+    text = generate_module(module, APP, INFRA, DOMAIN).file.render()
+    assert "function reached its end without RETURN" in text
 
 
 def test_private_routines_become_private_methods(program):
@@ -186,8 +196,10 @@ def test_the_corpus_handlers_are_generated(program):
 # --- refusing rather than guessing ---------------------------------------------------------------------------------
 
 def test_an_untranslatable_statement_becomes_a_compile_time_refusal():
-    routine = M.Routine(id="r", kind="Routine", name="r", body=[
-        M.Assignment(id="r#1", kind="Assignment", target="v", expression="SYS_CONNECT_BY_PATH(x, '/')")])
+    routine = M.Routine(id="r", kind="Routine", name="r", declarations=[
+        M.Declaration(id="d", kind="Declaration", name="v", type=M.TypeRef("VARCHAR2(10)", "VARCHAR2(10)"))],
+        body=[M.Assignment(id="r#1", kind="Assignment", target="v",
+                           expression="SYS_CONNECT_BY_PATH(x, '/')")])
     module = M.Module(id="m", kind="Module", name="m", module_kind="package", routines=[routine])
     result = generate_module(module, APP, INFRA, DOMAIN)
     text = result.file.render()

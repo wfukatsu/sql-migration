@@ -203,6 +203,11 @@ AUTO とするのは confidence >= 0.95 かつ §2 の禁止条件に 1 つも�
 # ScalarDB で実行できる文の割合（P2-4）
 .venv/bin/python -m plsql.cli fixtures/plsql/src --scalardb-schema fixtures/plsql/scalardb-schema.json
 
+# KPI-4 AUTO 生成コードの compile 率（P2-7 / P2-8 / P2-10）
+.venv/bin/python -m plsql.generate fixtures/plsql/src --out-dir generated
+(cd runtime-java && gradle compileJava)
+PLSQL_COMPILE=1 .venv/bin/python -m pytest tests/test_plsql_generate.py -k compile -q
+
 # KPI-2 symbol / type 解決率
 .venv/bin/python -m pytest tests/test_plsql_symbols.py -q
 
