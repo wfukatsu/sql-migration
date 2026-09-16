@@ -1,0 +1,23 @@
+name: lock_cancel_rejected
+unit: pkg_order_lock
+routine: cancel
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+  sequences:
+    seq_audit_id: 1
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'A', NULL, 'GOLD', NULL, DATE '2025-04-01')
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1001, 1, 'CLOSED', TIMESTAMP '2026-01-10 11:00:00', NULL, NULL)
+call:
+  kind: procedure
+  name: pkg_order_lock.cancel
+  args:
+    p_order_id: 1001
+    p_reason: too late
+capture_tables:
+- orders
+- audit_log
+mask:
+  audit_log:
+  - changed_at
+note: CLOSED は取り消せず -20060

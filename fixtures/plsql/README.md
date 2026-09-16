@@ -31,7 +31,7 @@ fixtures/plsql/
   scalardb-schema.json ScalarDB の Schema Loader JSON（P0-3）
   KEY-DESIGN.md        キー設計の根拠とアクセスパスの洗い出し（P0-3）
   scenarios/           Oracle 実行シナリオ（P0-4）。形式は scenarios/README.md
-  golden/              シナリオごとの capture（P0-5 が採取する）
+  golden/              シナリオごとの capture（P0-5）。59 本。形式は golden/README.md
   src/
     schema.sql      corpus が参照する表・順序・索引の Oracle DDL
     *.pks / *.pkb   package 仕様と本体

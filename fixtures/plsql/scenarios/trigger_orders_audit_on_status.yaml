@@ -1,19 +1,22 @@
-name: status_for_customer_multiple
-unit: pkg_order_status
-routine: status_for_customer
+name: trigger_orders_audit_on_status
+unit: trg_orders_audit
+routine: trg_orders_audit
 pinned:
   sysdate: '2026-01-15 09:30:00'
+  sequences:
+    seq_audit_id: 1
 setup:
 - INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'GOLD', NULL, DATE '2025-04-01')
 - INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1001, 1, 'NEW', TIMESTAMP '2026-01-10 11:00:00', NULL, NULL)
-- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1002, 1, 'SHIPPED', TIMESTAMP '2026-01-11 11:00:00', NULL, NULL)
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1002, 1, 'NEW', TIMESTAMP '2026-01-11 11:00:00', NULL, NULL)
 call:
   kind: procedure
-  name: pkg_order_status.status_for_customer
+  name: pkg_stock_reserve.claim_batch
   args:
-    p_customer_id: 1
-  out:
-    p_status: VARCHAR2
+    p_limit: 2
 capture_tables:
 - orders
-note: TOO_MANY_ROWS の発火条件
+- audit_log
+mask:
+  audit_log:
+  - changed_at

@@ -1,0 +1,44 @@
+{
+ "scenario": "dynamic_purge",
+ "unit": "pkg_dynamic_search",
+ "routine": "purge",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "inventory_tx": {
+   "columns": [
+    "tx_id",
+    "product_id",
+    "delta_qty",
+    "reason",
+    "created_at"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "2"
+     },
+     {
+      "$dec": "10"
+     },
+     {
+      "$dec": "5"
+     },
+     "IN",
+     {
+      "$ts": "2026-02-01T00:00:00"
+     }
+    ]
+   ]
+  }
+ },
+ "masked": {}
+}

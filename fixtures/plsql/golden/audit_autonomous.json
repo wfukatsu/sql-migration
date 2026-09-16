@@ -1,0 +1,52 @@
+{
+ "scenario": "audit_autonomous",
+ "unit": "prc_audit_autonomous",
+ "routine": "prc_audit_autonomous",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {
+   "seq_audit_id": 1
+  }
+ },
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "audit_log": {
+   "columns": [
+    "audit_id",
+    "table_name",
+    "key_value",
+    "action",
+    "old_value",
+    "new_value",
+    "changed_at",
+    "changed_by"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     "ORDERS",
+     "1001",
+     "NOTE",
+     null,
+     "hello",
+     {
+      "$masked": "clock the harness cannot pin"
+     },
+     "SOURCE"
+    ]
+   ]
+  }
+ },
+ "masked": {
+  "audit_log": [
+   "changed_at"
+  ]
+ }
+}

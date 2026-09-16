@@ -267,7 +267,10 @@ def call_routine(cur, spec: dict) -> tuple[dict, dict | None]:
     """Run the scenario's call. Returns (result, exception)."""
     import oracledb
     call = spec["call"]
-    binds = dict(call.get("args") or {})
+    binds = {}
+    for name, value in (call.get("args") or {}).items():
+        # リストは PL/SQL の索引付き表（INDEX BY PLS_INTEGER）として束縛する
+        binds[name] = cur.arrayvar(_array_type(value), value) if isinstance(value, list) else value
     out_specs = call.get("out") or {}
     out_vars = {}
     for name, oracle_type in out_specs.items():
@@ -277,6 +280,11 @@ def call_routine(cur, spec: dict) -> tuple[dict, dict | None]:
     try:
         if call["kind"] == "function":
             returned = cur.callfunc(call["name"], _oracle_type(cur, call["returns"]), keyword_parameters=binds)
+        elif call["kind"] == "block":
+            # 無名ブロック。PL/SQL 専用の戻り（%ROWTYPE、BOOLEAN）や、routine を持たない経路
+            # （trigger を素の INSERT で踏むなど）はこれでないと捕まえられない
+            cur.execute(call["body"], binds)
+            returned = None
         else:
             cur.callproc(call["name"], keyword_parameters=binds)
             returned = None
@@ -288,6 +296,11 @@ def call_routine(cur, spec: dict) -> tuple[dict, dict | None]:
 
     return ({"returned": encode(returned),
              "out": {n: encode(v.getvalue()) for n, v in out_vars.items()}}, None)
+
+
+def _array_type(values: list):
+    import oracledb
+    return oracledb.DB_TYPE_VARCHAR if any(isinstance(v, str) for v in values) else oracledb.DB_TYPE_NUMBER
 
 
 def _oracle_type(cur, name: str):

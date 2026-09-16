@@ -1,0 +1,68 @@
+{
+ "scenario": "lock_cancel_rejected",
+ "unit": "pkg_order_lock",
+ "routine": "cancel",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {
+   "seq_audit_id": 1
+  }
+ },
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": {
+  "code": -20060,
+  "message": "ORA-20060: order 1001 cannot be cancelled: CLOSED"
+ },
+ "tables": {
+  "orders": {
+   "columns": [
+    "order_id",
+    "customer_id",
+    "status",
+    "ordered_at",
+    "shipped_at",
+    "total_amount",
+    "note"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1001"
+     },
+     {
+      "$dec": "1"
+     },
+     "CLOSED",
+     {
+      "$ts": "2026-01-10T11:00:00"
+     },
+     null,
+     null,
+     null
+    ]
+   ]
+  },
+  "audit_log": {
+   "columns": [
+    "audit_id",
+    "table_name",
+    "key_value",
+    "action",
+    "old_value",
+    "new_value",
+    "changed_at",
+    "changed_by"
+   ],
+   "rows": []
+  }
+ },
+ "masked": {
+  "audit_log": [
+   "changed_at"
+  ]
+ }
+}

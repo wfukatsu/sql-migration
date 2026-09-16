@@ -1,0 +1,47 @@
+{
+ "scenario": "view_load_rowtype",
+ "unit": "pkg_customer_view",
+ "routine": "load",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": null,
+  "out": {
+   "o_name": "Acme",
+   "o_tier": "GOLD"
+  }
+ },
+ "exception": null,
+ "tables": {
+  "customers": {
+   "columns": [
+    "customer_id",
+    "name",
+    "email",
+    "tier",
+    "credit_limit",
+    "registered_on"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     "Acme",
+     null,
+     "GOLD",
+     {
+      "$dec": "100000"
+     },
+     {
+      "$ts": "2025-04-01T00:00:00"
+     }
+    ]
+   ]
+  }
+ },
+ "masked": {}
+}

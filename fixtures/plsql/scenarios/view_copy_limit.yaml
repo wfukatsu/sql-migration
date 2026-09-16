@@ -1,0 +1,16 @@
+name: view_copy_limit
+unit: pkg_customer_view
+routine: copy_limit
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'GOLD', 100000.00, DATE '2025-04-01')
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (2, 'Beta', NULL, 'BRONZE', NULL, DATE '2025-04-01')
+call:
+  kind: procedure
+  name: pkg_customer_view.copy_limit
+  args:
+    p_from: 1
+    p_to: 2
+capture_tables:
+- customers

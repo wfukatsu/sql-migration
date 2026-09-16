@@ -1,0 +1,28 @@
+{
+ "scenario": "payment_paid_total_none",
+ "unit": "pkg_payment",
+ "routine": "paid_total",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": 0,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "payments": {
+   "columns": [
+    "payment_id",
+    "order_id",
+    "amount",
+    "method",
+    "paid_at"
+   ],
+   "rows": []
+  }
+ },
+ "masked": {}
+}

@@ -1,0 +1,16 @@
+name: stock_reserve_insufficient
+unit: pkg_stock_reserve
+routine: reserve
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO products (product_id, name, unit_price, stock_qty, discontinued) VALUES (10, 'Widget', 10.0, 5, 'N')
+call:
+  kind: procedure
+  name: pkg_stock_reserve.reserve
+  args:
+    p_product_id: 10
+    p_qty: 99
+capture_tables:
+- products
+note: 在庫不足で -20030

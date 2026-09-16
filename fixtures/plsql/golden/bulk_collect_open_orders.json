@@ -1,0 +1,84 @@
+{
+ "scenario": "bulk_collect_open_orders",
+ "unit": "pkg_bulk_load",
+ "routine": "collect_open_orders",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": null,
+  "out": {
+   "p_count": 2
+  }
+ },
+ "exception": null,
+ "tables": {
+  "orders": {
+   "columns": [
+    "order_id",
+    "customer_id",
+    "status",
+    "ordered_at",
+    "shipped_at",
+    "total_amount",
+    "note"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1001"
+     },
+     {
+      "$dec": "1"
+     },
+     "NEW",
+     {
+      "$ts": "2026-01-10T11:00:00"
+     },
+     null,
+     {
+      "$dec": "300"
+     },
+     null
+    ],
+    [
+     {
+      "$dec": "1002"
+     },
+     {
+      "$dec": "1"
+     },
+     "NEW",
+     {
+      "$ts": "2026-01-09T11:00:00"
+     },
+     null,
+     {
+      "$dec": "900"
+     },
+     null
+    ],
+    [
+     {
+      "$dec": "1003"
+     },
+     {
+      "$dec": "1"
+     },
+     "SHIPPED",
+     {
+      "$ts": "2026-01-08T11:00:00"
+     },
+     null,
+     {
+      "$dec": "100"
+     },
+     null
+    ]
+   ]
+  }
+ },
+ "masked": {}
+}

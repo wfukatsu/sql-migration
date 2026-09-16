@@ -102,8 +102,11 @@ def test_there_is_at_least_one_scenario():
 def test_scenario_has_the_required_shape(spec: dict):
     assert spec["name"] == spec["_file"].removesuffix(".yaml"), "file name and scenario name must agree"
     call = spec["call"]
-    assert call["kind"] in {"function", "procedure"}
-    assert "." in call["name"] or call["name"].startswith("prc_"), f"{call['name']} is not callable as written"
+    assert call["kind"] in {"function", "procedure", "block"}
+    if call["kind"] == "block":
+        assert call["body"].strip().upper().endswith("END;"), "a block scenario must be an anonymous block"
+    else:
+        assert "." in call["name"] or call["name"].startswith("prc_"), f"{call['name']} is not callable as written"
     if call["kind"] == "function":
         assert call.get("returns"), "a function scenario must say what it returns"
     for oracle_type in list((call.get("out") or {}).values()) + ([call["returns"]] if call.get("returns") else []):
@@ -142,3 +145,64 @@ def test_package_specs_are_deployed_before_their_bodies():
     for name in order:
         if name.endswith(".pkb"):
             assert order.index(name.removesuffix(".pkb") + ".pks") < order.index(name), f"{name} before its spec"
+
+
+# --- P0-5: golden capture ---------------------------------------------------------------------------
+
+GOLDEN = FIXTURES / "golden"
+
+
+def captures() -> list[pathlib.Path]:
+    return sorted(GOLDEN.glob("*.json"))
+
+
+def test_every_scenario_has_a_capture():
+    import json  # noqa: PLC0415
+    names = {s["name"] for s in scenarios()}
+    on_disk = {p.stem for p in captures()}
+    assert names == on_disk, f"missing: {sorted(names - on_disk)} / stale: {sorted(on_disk - names)}"
+    for path in captures():
+        json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_captures_record_what_was_pinned():
+    import json  # noqa: PLC0415
+    for path in captures():
+        capture = json.loads(path.read_text(encoding="utf-8"))
+        assert capture["pinned"]["sysdate"], f"{path.stem}: the pinned clock is not recorded"
+        assert capture["source"] == "oracle"
+        assert "exception" in capture and "result" in capture
+
+
+def test_masked_columns_are_recorded_in_the_capture():
+    """マスクは比較対象から外す操作なので、何を外したかが capture に残っていなければならない。"""
+    import json  # noqa: PLC0415
+    for spec in scenarios():
+        if not spec.get("mask"):
+            continue
+        capture = json.loads((GOLDEN / f"{spec['name']}.json").read_text(encoding="utf-8"))
+        assert capture["masked"], f"{spec['name']}: masked columns are missing from the capture"
+        for table, columns in spec["mask"].items():
+            assert set(capture["masked"].get(table, [])) == {c.lower() for c in columns}
+
+
+def test_business_error_codes_are_captured_as_data():
+    """例外は結果である。-20000 帯の業務エラーが実際に記録されていること。"""
+    import json  # noqa: PLC0415
+    codes = {json.loads(p.read_text(encoding="utf-8"))["exception"]["code"]
+             for p in captures() if json.loads(p.read_text(encoding="utf-8"))["exception"]}
+    assert {-20010, -20020, -20030, -20040, -20060} <= codes, f"captured codes: {sorted(codes)}"
+
+
+def test_routines_without_a_capture_are_only_the_documented_ones():
+    """capture が無い routine は testEvidence が 0 になり AUTO にならない。増えていないか見張る。"""
+    covered = {(s["unit"], s["routine"].lower()) for s in scenarios()}
+    uncovered = {f"{u['name']}.{r['name']}"
+                 for u in manifest()["units"] for r in u["routines"]
+                 if (u["name"], r["name"].lower()) not in covered}
+    documented = {
+        "pkg_order_pricing.tier_discount", "pkg_order_pricing.line_amount",
+        "pkg_order_pricing.customer_tier", "pkg_order_lock.is_cancellable",
+        "prc_remote_sync.prc_remote_sync",
+    }
+    assert uncovered == documented, f"undocumented gap: {sorted(uncovered - documented)}"

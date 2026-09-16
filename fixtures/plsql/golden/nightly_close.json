@@ -1,0 +1,168 @@
+{
+ "scenario": "nightly_close",
+ "unit": "prc_nightly_close",
+ "routine": "prc_nightly_close",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {
+   "seq_audit_id": 1
+  }
+ },
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "orders": {
+   "columns": [
+    "order_id",
+    "customer_id",
+    "status",
+    "ordered_at",
+    "shipped_at",
+    "total_amount",
+    "note"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1001"
+     },
+     {
+      "$dec": "1"
+     },
+     "CLOSED",
+     {
+      "$ts": "2026-01-10T11:00:00"
+     },
+     null,
+     null,
+     null
+    ],
+    [
+     {
+      "$dec": "1002"
+     },
+     {
+      "$dec": "1"
+     },
+     "CLOSED",
+     {
+      "$ts": "2026-01-11T11:00:00"
+     },
+     null,
+     null,
+     null
+    ],
+    [
+     {
+      "$dec": "1003"
+     },
+     {
+      "$dec": "1"
+     },
+     "NEW",
+     {
+      "$ts": "2026-01-12T11:00:00"
+     },
+     null,
+     null,
+     null
+    ]
+   ]
+  },
+  "batch_control": {
+   "columns": [
+    "batch_name",
+    "last_run_at",
+    "status"
+   ],
+   "rows": [
+    [
+     "NIGHTLY_CLOSE",
+     {
+      "$ts": "2026-01-15T09:30:00"
+     },
+     "DONE"
+    ]
+   ]
+  },
+  "audit_log": {
+   "columns": [
+    "audit_id",
+    "table_name",
+    "key_value",
+    "action",
+    "old_value",
+    "new_value",
+    "changed_at",
+    "changed_by"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     "ORDERS",
+     "1001",
+     "UPDATE",
+     "SHIPPED",
+     "CLOSED",
+     {
+      "$masked": "clock the harness cannot pin"
+     },
+     "SOURCE"
+    ],
+    [
+     {
+      "$dec": "2"
+     },
+     "ORDERS",
+     "1001",
+     "CLOSE",
+     null,
+     "CLOSED",
+     {
+      "$masked": "clock the harness cannot pin"
+     },
+     "SOURCE"
+    ],
+    [
+     {
+      "$dec": "3"
+     },
+     "ORDERS",
+     "1002",
+     "UPDATE",
+     "SHIPPED",
+     "CLOSED",
+     {
+      "$masked": "clock the harness cannot pin"
+     },
+     "SOURCE"
+    ],
+    [
+     {
+      "$dec": "4"
+     },
+     "ORDERS",
+     "1002",
+     "CLOSE",
+     null,
+     "CLOSED",
+     {
+      "$masked": "clock the harness cannot pin"
+     },
+     "SOURCE"
+    ]
+   ]
+  }
+ },
+ "masked": {
+  "audit_log": [
+   "changed_at"
+  ]
+ }
+}

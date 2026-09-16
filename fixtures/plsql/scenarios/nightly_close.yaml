@@ -1,0 +1,26 @@
+name: nightly_close
+unit: prc_nightly_close
+routine: prc_nightly_close
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+  sequences:
+    seq_audit_id: 1
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'GOLD', NULL, DATE '2025-04-01')
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1001, 1, 'SHIPPED', TIMESTAMP '2026-01-10 11:00:00', NULL, NULL)
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1002, 1, 'SHIPPED', TIMESTAMP '2026-01-11 11:00:00', NULL, NULL)
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1003, 1, 'NEW', TIMESTAMP '2026-01-12 11:00:00', NULL, NULL)
+- INSERT INTO batch_control (batch_name, status) VALUES ('NIGHTLY_CLOSE', 'IDLE')
+call:
+  kind: procedure
+  name: prc_nightly_close
+  args:
+    p_batch_date: 2026-01-20
+capture_tables:
+- orders
+- batch_control
+- audit_log
+mask:
+  audit_log:
+  - changed_at
+note: routine 内 COMMIT と SAVEPOINT。status 変更で監査 trigger も発火する

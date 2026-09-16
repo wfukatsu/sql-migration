@@ -1,0 +1,21 @@
+name: reprice_all_gold
+unit: prc_reprice_all
+routine: prc_reprice_all
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'A', NULL, 'GOLD', NULL, DATE '2025-04-01')
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (2, 'B', NULL, 'BRONZE', NULL, DATE '2025-04-01')
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1001, 1, 'NEW', TIMESTAMP '2026-01-10 11:00:00', NULL, NULL)
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1002, 2, 'NEW', TIMESTAMP '2026-01-10 11:00:00', NULL, NULL)
+- INSERT INTO products (product_id, name, unit_price, stock_qty, discontinued) VALUES (10, 'Widget', 100.0, 10, 'N')
+- INSERT INTO order_lines (order_id, line_no, product_id, qty, unit_price) VALUES (1001, 1, 10, 2, 100.0)
+- INSERT INTO order_lines (order_id, line_no, product_id, qty, unit_price) VALUES (1002, 1, 10, 2, 100.0)
+call:
+  kind: procedure
+  name: prc_reprice_all
+  args:
+    p_tier: GOLD
+capture_tables:
+- orders
+note: JOIN で絞った cursor を回しながら 50 件ごとに COMMIT する

@@ -1,0 +1,46 @@
+{
+ "scenario": "money_display_note_null",
+ "unit": "pkg_money_calc",
+ "routine": "display_note",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": "(none)",
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "orders": {
+   "columns": [
+    "order_id",
+    "customer_id",
+    "status",
+    "ordered_at",
+    "shipped_at",
+    "total_amount",
+    "note"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1001"
+     },
+     {
+      "$dec": "1"
+     },
+     "NEW",
+     {
+      "$ts": "2026-01-10T11:00:00"
+     },
+     null,
+     null,
+     null
+    ]
+   ]
+  }
+ },
+ "masked": {}
+}

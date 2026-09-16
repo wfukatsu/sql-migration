@@ -1,0 +1,16 @@
+name: money_apply_rate
+unit: pkg_money_calc
+routine: apply_rate
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'A', NULL, 'BRONZE', NULL, DATE '2025-04-01')
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1001, 1, 'NEW', TIMESTAMP '2026-01-10 11:00:00', 1234.565, NULL)
+call:
+  kind: procedure
+  name: pkg_money_calc.apply_rate
+  args:
+    p_order_id: 1001
+    p_rate: 1.08
+capture_tables:
+- orders

@@ -1,0 +1,17 @@
+name: pricing_reprice_order
+unit: pkg_order_pricing
+routine: reprice_order
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'SILVER', NULL, DATE '2025-04-01')
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1001, 1, 'NEW', TIMESTAMP '2026-01-10 11:00:00', NULL, NULL)
+- INSERT INTO products (product_id, name, unit_price, stock_qty, discontinued) VALUES (10, 'Widget', 100.0, 10, 'N')
+- INSERT INTO order_lines (order_id, line_no, product_id, qty, unit_price) VALUES (1001, 1, 10, 2, 100.0)
+call:
+  kind: procedure
+  name: pkg_order_pricing.reprice_order
+  args:
+    p_order_id: 1001
+capture_tables:
+- orders
