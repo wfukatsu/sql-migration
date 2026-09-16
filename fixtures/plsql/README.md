@@ -58,8 +58,15 @@ fixtures/plsql/
 
 ## 判定の期待値
 
-各ファイルの先頭コメントに、カテゴリと期待判定（AUTO / REVIEW / REDESIGN）とその理由を書いてある。
-機械可読な形（`manifest.yaml`）にするのは P0-2 の作業で、そこで holdout フラグと出自欄も持たせる。
+機械可読な形は `manifest.yaml`（P0-2）。粒度は **routine 単位**である。package の中で判定が割れるため
+（`pkg_dynamic_search` が典型: 定数の動的 SQL は REVIEW、表名が動的な SQL は REDESIGN）、ファイル単位では測れない。
+各ファイルの先頭コメントにも同じ内容を書いてあるが、判定適合率（§8）が突き合わせるのは manifest のほうである。
+
+`tests/test_plsql_manifest.py` が manifest と corpus のずれを検査する。manifest に書いた routine が
+ソースに存在すること、**ソースにある routine が manifest に漏れていないこと**の両方向を、
+ANTLR パーサで取り出した定義名と突き合わせて確認する。
+
+現在の分布は 48 routine 中 AUTO 14 / REVIEW 19 / REDESIGN 15。
 
 意図した分布は次のとおり。計画どおり、REDESIGN が多いのは**欠陥ではなく検出できたことの成果**である（§8）。
 

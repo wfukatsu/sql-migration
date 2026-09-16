@@ -1,0 +1,206 @@
+# P0-2: corpus の期待値タグ
+#
+# 判定適合率（計画 §8）は、ルールエンジンの出した判定をこのファイルの expected と突き合わせて測る。
+# 粒度は routine 単位である。package の中で判定が割れるため（pkg_dynamic_search が典型）、
+# ファイル単位では測れない。
+#
+# origin   : real-anonymized | synthetic   -- 現時点は全件 synthetic（計画 §9 の決定、2026-09-17）
+# holdout  : true のユニットは、grammar のパッチ作成とルール作成では参照しない。
+#            判定適合率はまず holdout 上の値を根拠にする
+# expected : AUTO | REVIEW | REDESIGN      -- 設計書 §6 の移行方針に対応する
+# reason   : なぜその判定なのかを 1 行で。ルールを書く側が根拠を読めるようにするためのもの
+
+version: 1
+corpus_root: src
+
+units:
+
+  - name: pkg_customer_crud
+    files: [pkg_customer_crud.pks, pkg_customer_crud.pkb]
+    categories: [simple-crud]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: create_customer, expected: AUTO,   reason: "主キー INSERT のみ。routine 内に COMMIT がない"}
+      - {name: update_email,    expected: AUTO,   reason: "主キー UPDATE と SQL%ROWCOUNT。影響行数を Result に保持すれば足りる"}
+      - {name: delete_customer, expected: AUTO,   reason: "主キー DELETE のみ"}
+      - {name: customer_name,   expected: AUTO,   reason: "主キーの SELECT INTO と NO_DATA_FOUND の握り潰し"}
+
+  - name: prc_add_product
+    files: [prc_add_product.prc]
+    categories: [simple-crud]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: prc_add_product, expected: AUTO, reason: "単独 procedure、主キー INSERT のみ"}
+
+  - name: pkg_order_status
+    files: [pkg_order_status.pks, pkg_order_status.pkb]
+    categories: [select-into-exception]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: status_of,            expected: AUTO,   reason: "主キーの SELECT INTO。NO_DATA_FOUND を業務例外へ写す"}
+      - {name: status_for_customer,  expected: REVIEW, reason: "非キー列の SELECT INTO。TOO_MANY_ROWS の発火条件を再現できるか要確認"}
+      - {name: assert_open,          expected: AUTO,   reason: "package 内呼び出しと PRAGMA EXCEPTION_INIT のローカル例外"}
+
+  - name: pkg_order_pricing
+    files: [pkg_order_pricing.pks, pkg_order_pricing.pkb]
+    categories: [private-call]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: tier_discount,  expected: AUTO,   reason: "純粋関数。spec に無いので private method"}
+      - {name: line_amount,    expected: AUTO,   reason: "純粋関数"}
+      - {name: customer_tier,  expected: REVIEW, reason: "2 表 JOIN。ScalarDB SQL の JOIN 制約に当たるか要確認"}
+      - {name: order_total,    expected: REVIEW, reason: "Cursor FOR LOOP で N+1。行数次第でアプリ集計へ寄せる"}
+      - {name: reprice_order,  expected: REVIEW, reason: "UPDATE の値に関数呼び出し。呼び出しを外へ出す書き換えが要る"}
+
+  - name: pkg_customer_view
+    files: [pkg_customer_view.pks, pkg_customer_view.pkb]
+    categories: [type-rowtype]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: load,       expected: AUTO,   reason: "%ROWTYPE を列名対応の record へ。主キーアクセス"}
+      - {name: summary,    expected: AUTO,   reason: "package ローカル record 型への SELECT INTO"}
+      - {name: copy_limit, expected: AUTO,   reason: "%TYPE 変数を介した主キー間コピー"}
+
+  - name: pkg_order_report
+    files: [pkg_order_report.pks, pkg_order_report.pkb]
+    categories: [cursor-loop]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: count_by_status, expected: REVIEW, reason: "package レベルの明示 cursor。寿命が routine をまたぐため Tx 境界の確認が要る"}
+      - {name: mark_reviewed,   expected: REVIEW, reason: "非キー列の走査で回しながら同じ表を更新する。走査行数の上限が要る"}
+      - {name: largest_order,   expected: REVIEW, reason: "索引列の ORDER BY + 先頭 1 行。ScalarDB の順序付き走査に載るか要確認"}
+
+  - name: pkg_bulk_load
+    files: [pkg_bulk_load.pks, pkg_bulk_load.pkb]
+    categories: [bulk]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: restock,             expected: REDESIGN, reason: "FORALL SAVE EXCEPTIONS。部分失敗を許す原子性は業務要件で決める"}
+      - {name: collect_open_orders, expected: REVIEW,   reason: "BULK COLLECT LIMIT。メモリ上限と走査行数の上限が要る"}
+      - {name: archive_lines,       expected: REVIEW,   reason: "BULK COLLECT + FORALL INSERT。採番に順序オブジェクトを使う点は別途 REDESIGN"}
+
+  - name: prc_nightly_close
+    files: [prc_nightly_close.prc]
+    categories: [commit-in-routine]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: prc_nightly_close, expected: REDESIGN, reason: "routine 内 COMMIT と SAVEPOINT / ROLLBACK TO。use case 単位へ再境界化が要る"}
+
+  - name: prc_audit_autonomous
+    files: [prc_audit_autonomous.prc]
+    categories: [commit-in-routine]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: prc_audit_autonomous, expected: REDESIGN, reason: "Autonomous Transaction。親が失敗しても残る意味を outbox 等で保つ必要がある"}
+
+  - name: pkg_dynamic_search
+    files: [pkg_dynamic_search.pks, pkg_dynamic_search.pkb]
+    categories: [dynamic-sql]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: refresh_stats, expected: REVIEW,   reason: "定数 EXECUTE IMMEDIATE。定数畳込み後に静的解析できる"}
+      - {name: count_orders,  expected: REVIEW,   reason: "条件分岐による有限 variant。variant ごとに静的 query 化する"}
+      - {name: purge,         expected: REDESIGN, reason: "表名が実行時に決まる。allowlist か専用 Repository へ"}
+
+  - name: trg_orders_audit
+    files: [trg_orders_audit.trg]
+    categories: [trigger-dblink]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: trg_orders_audit, expected: REDESIGN, reason: "監査 trigger。before/after 値と失敗時挙動を保って interceptor / outbox へ"}
+
+  - name: trg_orders_seq
+    files: [trg_orders_seq.trg]
+    categories: [trigger-dblink]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: trg_orders_seq, expected: REDESIGN, reason: "採番 trigger。ScalarDB に順序オブジェクトが無く、順序性と欠番の許容を要件化する"}
+
+  - name: prc_remote_sync
+    files: [prc_remote_sync.prc]
+    categories: [trigger-dblink]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: prc_remote_sync, expected: REDESIGN, reason: "DB Link 越しの分散トランザクション。参加 DB・timeout・再試行の設計が要る"}
+
+  - name: pkg_money_calc
+    files: [pkg_money_calc.pks, pkg_money_calc.pkb]
+    categories: [datatype-edge]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: rounded_total,    expected: REVIEW, reason: "ROUND は half-up。Java の BigDecimal 既定(HALF_EVEN)と異なる"}
+      - {name: days_since_order, expected: REVIEW, reason: "Oracle DATE の時刻成分と TRUNC。日付差の意味を保つ必要がある"}
+      - {name: display_note,     expected: REVIEW, reason: "空文字 = NULL。Java では別物になるため条件式の意味が変わる"}
+      - {name: apply_rate,       expected: REVIEW, reason: "NUMBER(14,2) の乗算と丸め。ScalarDB に DECIMAL が無くスケール済み整数を検討する"}
+
+  - name: pkg_stock_reserve
+    files: [pkg_stock_reserve.pks, pkg_stock_reserve.pkb]
+    categories: [concurrency-lock]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: reserve,          expected: REDESIGN, reason: "SELECT FOR UPDATE の行ロック。ScalarDB の分離レベル／楽観制御へ置き換える"}
+      - {name: reserve_nowait,   expected: REDESIGN, reason: "FOR UPDATE NOWAIT と ORA-54 の捕捉。待たない意味を別設計にする"}
+      - {name: next_payment_id,  expected: REDESIGN, reason: "行ロックで直列化する採番。競合と再試行の方針を決める"}
+      - {name: claim_batch,      expected: REDESIGN, reason: "FOR UPDATE SKIP LOCKED と WHERE CURRENT OF。取り合いの意味を保てない"}
+
+  # --- holdout: ルール・grammar の作成時は参照しない ---------------------------------------------
+
+  - name: pkg_payment
+    files: [holdout/pkg_payment.pks, holdout/pkg_payment.pkb]
+    categories: [select-into-exception, datatype-edge]
+    origin: synthetic
+    holdout: true
+    routines:
+      - {name: paid_total,   expected: REVIEW, reason: "集約は 0 件でも 1 行返る。NO_DATA_FOUND にならず NULL になる差を保つ"}
+      - {name: record_payment, expected: REVIEW, reason: "主キー SELECT INTO + INSERT。業務エラーコードの写像が要る"}
+      - {name: last_paid_at, expected: REVIEW, reason: "TIMESTAMP WITH TIME ZONE の MAX。セッション TZ 依存を検出する"}
+
+  - name: prc_reprice_all
+    files: [holdout/prc_reprice_all.prc]
+    categories: [cursor-loop, commit-in-routine]
+    origin: synthetic
+    holdout: true
+    routines:
+      - {name: prc_reprice_all, expected: REDESIGN, reason: "明示 cursor で回しながら 50 件ごとに COMMIT する。Tx 境界の再設計が要る"}
+
+  - name: pkg_customer_import
+    files: [holdout/pkg_customer_import.pks, holdout/pkg_customer_import.pkb]
+    categories: [bulk, dynamic-sql]
+    origin: synthetic
+    holdout: true
+    routines:
+      - {name: import,            expected: REVIEW,   reason: "FORALL の中の MERGE。upsert の原子性と競合条件を確認する"}
+      - {name: truncate_staging,  expected: REDESIGN, reason: "表名が実行時に決まる TRUNCATE。ScalarDB に TRUNCATE が無い点も含めて再設計"}
+
+  - name: trg_products_audit
+    files: [holdout/trg_products_audit.trg]
+    categories: [trigger-dblink]
+    origin: synthetic
+    holdout: true
+    routines:
+      - {name: trg_products_audit, expected: REDESIGN, reason: "検証と監査を兼ねる trigger。全書込経路を Service 側で統制する必要がある"}
+
+  - name: pkg_order_lock
+    files: [holdout/pkg_order_lock.pks, holdout/pkg_order_lock.pkb]
+    categories: [concurrency-lock, private-call, type-rowtype]
+    origin: synthetic
+    holdout: true
+    routines:
+      - {name: is_cancellable, expected: AUTO,     reason: "純粋関数。BOOLEAN は PL/SQL 専用型なので Java boolean へ"}
+      - {name: snapshot,       expected: AUTO,     reason: "%ROWTYPE の主キーアクセス"}
+      - {name: cancel,         expected: REDESIGN, reason: "FOR UPDATE WAIT 5 の行ロック。待ち時間つきロックの意味を保てない"}
