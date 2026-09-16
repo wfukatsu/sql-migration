@@ -1,0 +1,115 @@
+{
+  "plsqlpoc.customers": {
+    "transaction": true,
+    "partition-key": ["customer_id"],
+    "clustering-key": [],
+    "columns": {
+      "customer_id": "BIGINT",
+      "name": "TEXT",
+      "email": "TEXT",
+      "tier": "TEXT",
+      "credit_limit": "BIGINT",
+      "registered_on": "TIMESTAMP"
+    },
+    "secondary-index": ["tier"]
+  },
+  "plsqlpoc.products": {
+    "transaction": true,
+    "partition-key": ["product_id"],
+    "clustering-key": [],
+    "columns": {
+      "product_id": "BIGINT",
+      "name": "TEXT",
+      "unit_price": "BIGINT",
+      "stock_qty": "INT",
+      "discontinued": "TEXT"
+    }
+  },
+  "plsqlpoc.orders": {
+    "transaction": true,
+    "partition-key": ["order_id"],
+    "clustering-key": [],
+    "columns": {
+      "order_id": "BIGINT",
+      "customer_id": "BIGINT",
+      "status": "TEXT",
+      "ordered_at": "TIMESTAMP",
+      "shipped_at": "TIMESTAMP",
+      "total_amount": "BIGINT",
+      "note": "TEXT"
+    },
+    "secondary-index": ["customer_id", "status"]
+  },
+  "plsqlpoc.order_lines": {
+    "transaction": true,
+    "partition-key": ["order_id"],
+    "clustering-key": ["line_no ASC"],
+    "columns": {
+      "order_id": "BIGINT",
+      "line_no": "INT",
+      "product_id": "BIGINT",
+      "qty": "INT",
+      "unit_price": "BIGINT"
+    }
+  },
+  "plsqlpoc.payments": {
+    "transaction": true,
+    "partition-key": ["payment_id"],
+    "clustering-key": [],
+    "columns": {
+      "payment_id": "BIGINT",
+      "order_id": "BIGINT",
+      "amount": "BIGINT",
+      "method": "TEXT",
+      "paid_at": "TIMESTAMPTZ"
+    },
+    "secondary-index": ["order_id"]
+  },
+  "plsqlpoc.inventory_tx": {
+    "transaction": true,
+    "partition-key": ["tx_id"],
+    "clustering-key": [],
+    "columns": {
+      "tx_id": "BIGINT",
+      "product_id": "BIGINT",
+      "delta_qty": "INT",
+      "reason": "TEXT",
+      "created_at": "TIMESTAMP"
+    },
+    "secondary-index": ["product_id"]
+  },
+  "plsqlpoc.audit_log": {
+    "transaction": true,
+    "partition-key": ["audit_id"],
+    "clustering-key": [],
+    "columns": {
+      "audit_id": "BIGINT",
+      "table_name": "TEXT",
+      "key_value": "TEXT",
+      "action": "TEXT",
+      "old_value": "TEXT",
+      "new_value": "TEXT",
+      "changed_at": "TIMESTAMP",
+      "changed_by": "TEXT"
+    }
+  },
+  "plsqlpoc.counters": {
+    "transaction": true,
+    "partition-key": ["counter_name"],
+    "clustering-key": [],
+    "columns": {
+      "counter_name": "TEXT",
+      "next_value": "BIGINT"
+    }
+  },
+  "plsqlpoc.batch_control": {
+    "transaction": true,
+    "partition-key": ["batch_name"],
+    "clustering-key": [],
+    "columns": {
+      "batch_name": "TEXT",
+      "last_run_at": "TIMESTAMP",
+      "status": "TEXT"
+    }
+  }
+}

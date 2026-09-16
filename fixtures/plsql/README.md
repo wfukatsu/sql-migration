@@ -27,8 +27,11 @@ holdout を使ってよいのは、受入判定の計測時だけである。実
 
 ```text
 fixtures/plsql/
-  schema.sql は src/ にある（corpus が参照する表・順序・索引の Oracle DDL）
+  manifest.yaml        期待判定・出自・holdout フラグ（P0-2）
+  scalardb-schema.json ScalarDB の Schema Loader JSON（P0-3）
+  KEY-DESIGN.md        キー設計の根拠とアクセスパスの洗い出し（P0-3）
   src/
+    schema.sql      corpus が参照する表・順序・索引の Oracle DDL
     *.pks / *.pkb   package 仕様と本体
     *.prc           単独 procedure
     *.trg           trigger
