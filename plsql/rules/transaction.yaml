@@ -1,0 +1,50 @@
+# トランザクション境界（設計書 §6.7、docs/plsql-kpi.md §2 の 1・2・11）
+#
+# routine の中でトランザクションを制御しているものは、そのまま Service の境界へ写せない。
+# 逐語変換を禁じるのが目的で、判定を下げる材料は confidence 側には無い。
+
+rules:
+  - id: TX-001
+    match: {controlsTransaction: true}
+    decision: REDESIGN
+    severity: critical
+    message: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
+    remediation:
+      - use case の耐久境界で分割する
+      - 再試行と冪等性の方針を決める
+    requiredTests:
+      - rollback_boundary
+      - partial_failure
+
+  - id: TX-002
+    match: {autonomous: true}
+    decision: REDESIGN
+    severity: critical
+    message: Autonomous Transaction は親が失敗しても残るという意味を持ちます
+    remediation:
+      - audit / event / outbox として切り出す
+      - 親の失敗時に残ることが要件かを確認する
+    requiredTests:
+      - parent_rollback_keeps_audit
+
+  - id: TX-003
+    match: {statementKind: [Commit, Rollback], insideLoop: true}
+    decision: REDESIGN
+    severity: critical
+    message: ループの中の COMMIT はバッチを部分的に確定させるため、全体の再実行が再実行になりません
+    remediation:
+      - チャンク単位の再開位置を持たせる
+      - 冪等な書き込みにする
+    requiredTests:
+      - resume_after_partial_commit
+
+  - id: TX-004
+    match: {writeThenScan: true}
+    decision: REDESIGN
+    severity: critical
+    message: 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します（P2-9 で実測）
+    remediation:
+      - 耐久境界で routine を分割する
+      - 読み取りをキーアクセスに変える
+    requiredTests:
+      - scan_after_write

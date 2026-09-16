@@ -57,6 +57,8 @@ parse 率 = 構文エラーなく parse できたファイル数 / corpus の全
 - **AUTO 禁止条件（§2）に該当する routine を AUTO と判定したら、その時点で不合格**とする。
   適合率が何 % でも、この false negative は許さない。
 - **目標: Phase 2 で、AUTO 禁止条件の取りこぼし 0、全体一致 90% 以上**。
+比較するのは**ルール判定**（`Decision.rule_verdict`）である。証拠まで含めた最終判定（`Decision.verdict`）は
+Phase 3 が capture の合否を出すまで AUTO になり得ないため、それを manifest と比べるとルールの誤りに見えてしまう。
 - 最終的な根拠は holdout 上の値とする（§0）。
 
 補助指標として混同行列を出す。どちらへ間違えたかで意味が違うためである。
@@ -160,7 +162,7 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 | `ruleCoverage` | ルールが判定を出せた IR ノード数 / routine 内の全 IR ノード数 | 未知の構文を 1 つでも含む |
 | `symbolResolution` | 解決できた識別子参照 / 全識別子参照（KPI-2 の routine 単位版） | 未解決シンボルが 1 つでもある |
 | `typeResolution` | 型が確定した変数・引数・戻り値 / 全体 | 精度不明の `NUMBER` を Java 型へ確定できない、`%TYPE` の参照先 DDL が無い |
-| `targetCapability` | ScalarDB SQL で実行できる SQL 文 / routine 内の全 SQL 文。`PLANNED` は 0.5 として数える | converter が `ERROR` を返す SQL を含む |
+| `targetCapability` | ScalarDB SQL で実行できる SQL 文 / routine 内の全 SQL 文。`PLANNED` は 0.5 として数える。**まだ検査していない文は 0.5 ではなく 0** — 「未解析」は能力の半分ではない | converter が `ERROR` を返す SQL を含む、または P2-4 を通していない SQL を含む |
 | `testEvidence` | 意味的同等性テストに合格した capture 数 / その routine に紐づく capture 数 | capture が 1 つも無い、または 1 つでも落ちている |
 
 `testEvidence` の定義から、**capture が無い routine は AUTO にならない**。これは意図した性質である。
@@ -173,7 +175,8 @@ AUTO とするのは confidence >= 0.95 かつ §2 の禁止条件に 1 つも�
 0.95 未満は REVIEW。REDESIGN は §2 の条件か、ルールが明示的に REDESIGN を出した場合。
 ```
 
-0.95 という値の根拠は、5 因子の積であることによる。各因子が 0.99 でも積は 0.95 になる。
+0.95 という値の根拠は、5 因子の積であることによる。各因子が 0.99 なら積は 0.951 でちょうど境界に乗り、
+1 つでも 0.95 に落ちれば積は 0.912 で届かない。
 つまり **どの側面もほぼ完全なときだけ AUTO を許す**、という意味の閾値である。
 この値は PoC の結果を見て見直す。見直したらこの文書と `plsql/rules/` の両方を同時に更新する。
 
@@ -189,6 +192,9 @@ AUTO とするのは confidence >= 0.95 かつ §2 の禁止条件に 1 つも�
 ## 4. 計測の再現手順
 
 ```bash
+# KPI-3 判定適合率（ルール判定 vs manifest）
+.venv/bin/python -m pytest tests/test_plsql_rules.py -q
+
 # KPI-2 symbol / type 解決率
 .venv/bin/python -m pytest tests/test_plsql_symbols.py -q
 

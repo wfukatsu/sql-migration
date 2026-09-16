@@ -1,0 +1,22 @@
+# 変換基盤自身の限界（docs/plsql-kpi.md §2 の 12）
+#
+# 「まだ扱えない」は「変換できる」とは違う。黙って AUTO にしないために明示のルールにしてある。
+
+rules:
+  - id: LOWER-001
+    match: {statementKind: Unsupported}
+    decision: REVIEW
+    severity: critical
+    message: lowering がまだ模していない構文です。意味が保てる保証がありません
+    requiredTests:
+      - equivalent_result
+
+  - id: LOWER-002
+    match: {statementKind: Goto}
+    decision: REDESIGN
+    severity: critical
+    message: GOTO に構造化された等価物はありません。制御フローを組み直す必要があります
+    remediation:
+      - CFG で region 解析を行い、構造化制御へ再構成する
+    requiredTests:
+      - control_flow_equivalence

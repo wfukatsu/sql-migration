@@ -1,0 +1,65 @@
+# SQL とデータアクセス（設計書 §6.4 / §6.5、docs/plsql-kpi.md §2 の 8・9・10）
+
+rules:
+  - id: LOCK-001
+    match: {statementKind: SqlOperation, lockingMode: any}
+    decision: REDESIGN
+    severity: critical
+    message: 行ロックです。ターゲットで同じ保証を別の方法で与える設計が要ります
+    remediation:
+      - 楽観制御と再試行にする
+      - NOWAIT / SKIP LOCKED は待たない意味を個別に設計する
+    requiredTests:
+      - concurrent_update
+
+  - id: LOCK-002
+    match: {cursorLocking: true}
+    decision: REDESIGN
+    severity: critical
+    message: cursor の宣言で行ロックしています。文だけを見ると見えない形です
+    remediation:
+      - 楽観制御と再試行にする
+      - SKIP LOCKED の「取り合い」の意味を業務要件として決める
+    requiredTests:
+      - concurrent_claim
+
+  - id: BULK-002
+    match: {saveExceptions: true}
+    decision: REDESIGN
+    severity: critical
+    message: FORALL SAVE EXCEPTIONS は一部を失敗させたまま残りを確定させます。原子性は業務要件です
+    remediation:
+      - item 別の結果と再試行にする
+      - どこまで確定してよいかを要件として決める
+    requiredTests:
+      - partial_failure
+
+  - id: SQL-001
+    match: {statementKind: SqlOperation, targetStatus: ERROR}
+    decision: REVIEW
+    severity: critical
+    message: ScalarDB SQL で実行できない文があります
+    requiredTests:
+      - equivalent_result
+
+  - id: SQL-002
+    match: {statementKind: SqlOperation, targetStatus: PLANNED}
+    decision: REVIEW
+    message: 実行計画（取得 + H2）に分解される文です。行数上限と性能を確認してください
+    requiredTests:
+      - row_limit
+      - performance
+
+  - id: BULK-001
+    match: {statementKind: SqlOperation, textMatches: '\bBULK\s+COLLECT\b'}
+    decision: REVIEW
+    message: BULK COLLECT は行数上限とメモリ上限が要ります
+    requiredTests:
+      - row_limit
+
+  - id: RECUR-001
+    match: {recursive: true}
+    decision: REVIEW
+    message: 再帰です。スタックと DB ラウンドトリップの深さを確認してください
+    requiredTests:
+      - recursion_depth
