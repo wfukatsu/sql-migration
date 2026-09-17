@@ -78,10 +78,28 @@ def test_without_a_comparison_report_semantic_equivalence_is_unmeasured_not_zero
     assert entry["value"] is None and "比較結果が無い" in entry["detail"]
 
 
-def test_an_unmeasured_fix_time_stays_null(measured):
-    """The one KPI that measures the migration is the worst one to invent a number for."""
-    assert measured["kpi6"]["value"] is None
-    assert "unmeasured" in measured["kpi6"]["detail"]
+def test_kpi6_is_reported_as_a_decision_not_a_missed_target(measured):
+    """Not measured in this PoC (2026-09-17, plan §9). A decision is not a shortfall, and says so."""
+    entry = measured["kpi6"]
+    assert entry["value"] is None and entry["measured"] is False
+    assert entry["target"] is None, "a KPI nobody is measuring has no target to miss"
+    assert "計測しない" in entry["detail"]
+    assert "計測しない" in kpi.render(measured)
+
+
+def test_the_run_says_what_not_measuring_kpi6_costs(measured):
+    """The other six are about the tool. Nothing here says how long the migration takes."""
+    assert "移行工数を測っていない" in kpi.render(measured)
+
+
+def test_a_measured_fix_time_is_still_shown_if_somebody_supplies_one(tmp_path):
+    """The decision was to stop asking for the number, not to refuse it."""
+    from plsql import review
+
+    routines = ["pkg_customer_crud.update_email", "pkg_customer_crud.delete_customer"]
+    path = tmp_path / "fix-times.yaml"
+    path.write_text("minutes:\n" + "".join(f"  {r}: 30\n" for r in routines), encoding="utf-8")
+    assert review.FixTimes.load(path).for_routine(routines[0]) == 30
 
 
 def test_the_risk_density_is_per_thousand_lines_not_a_rate(measured):
@@ -91,9 +109,18 @@ def test_the_risk_density_is_per_thousand_lines_not_a_rate(measured):
 
 
 def test_render_marks_a_target_as_met_or_missed(measured):
+    assert "合格" in kpi.render(measured)
+
+
+def test_a_kpi_without_a_value_never_shows_a_number(measured):
+    """Either it was measured, or the line says why not. There is no third rendering."""
     text = kpi.render(measured)
-    assert "合格" in text
-    assert "未計測" in text, "an unmeasured KPI must say so rather than show a number"
+    for key in ("kpi1", "kpi2", "kpi3", "kpi4", "kpi5", "kpi6", "kpi7"):
+        entry = measured[key]
+        if entry["value"] is not None:
+            continue
+        line = next(ln for ln in text.splitlines() if ln.strip().startswith(key.upper()))
+        assert "計測しない" in line or "未計測" in line, line
 
 
 def test_the_numbers_round_trip_as_json(measured):
