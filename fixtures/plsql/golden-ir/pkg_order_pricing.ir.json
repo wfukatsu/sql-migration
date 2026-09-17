@@ -354,6 +354,22 @@
        },
        "loopKind": "cursor-for",
        "cursor": "r IN (SELECT qty, unit_price FROM order_lines WHERE order_id = p_order_id)",
+       "query": {
+        "id": "pkg_order_pricing.order_total#stmt-1#query",
+        "kind": "SqlOperation",
+        "sourceRange": {
+         "file": "pkg_order_pricing.pkb",
+         "startLine": 33,
+         "endLine": 35,
+         "startColumn": 5,
+         "endColumn": 9
+        },
+        "sqlKind": "SELECT",
+        "originalSql": "SELECT qty, unit_price FROM order_lines WHERE order_id = p_order_id",
+        "selectsStar": false,
+        "cardinality": "MANY"
+       },
+       "variable": "r",
        "body": [
         {
          "id": "pkg_order_pricing.order_total#stmt-2",

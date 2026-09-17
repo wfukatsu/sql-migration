@@ -141,6 +141,22 @@
        },
        "loopKind": "cursor-for",
        "cursor": "r IN (SELECT order_id FROM orders WHERE status = 'SHIPPED' AND ordered_at < p_batch_date)",
+       "query": {
+        "id": "prc_nightly_close#stmt-3#query",
+        "kind": "SqlOperation",
+        "sourceRange": {
+         "file": "prc_nightly_close.prc",
+         "startLine": 11,
+         "endLine": 29,
+         "startColumn": 3,
+         "endColumn": 7
+        },
+        "sqlKind": "SELECT",
+        "originalSql": "SELECT order_id FROM orders WHERE status = 'SHIPPED' AND ordered_at < p_batch_date",
+        "selectsStar": false,
+        "cardinality": "MANY"
+       },
+       "variable": "r",
        "body": [
         {
          "id": "prc_nightly_close#stmt-4",

@@ -77,6 +77,21 @@ def generate(program: M.Program, root: str | Path, base_package: str = "com.exam
     return project
 
 
+def _remove_stale(source_root: Path, written: set[Path]) -> list[Path]:
+    """Delete generated .java files this run did not produce, and any directory left empty."""
+    if not source_root.is_dir():
+        return []
+    removed = []
+    for path in sorted(source_root.rglob("*.java")):
+        if path.resolve() not in written:
+            path.unlink()
+            removed.append(path)
+    for directory in sorted(source_root.rglob("*"), reverse=True):
+        if directory.is_dir() and not any(directory.iterdir()):
+            directory.rmdir()
+    return removed
+
+
 def write(project: GeneratedProject, decisions: dict[str, Decision] | None = None) -> list[Path]:
     written: list[Path] = []
     source_root = project.root / SOURCE_ROOT
@@ -85,6 +100,11 @@ def write(project: GeneratedProject, decisions: dict[str, Decision] | None = Non
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(file.render(), encoding="utf-8")
         written.append(path)
+
+    # A file this run did not write is from an older one. Nothing edits `generated/` by hand, so leaving it
+    # there can only mislead: a renamed class leaves its old file behind and javac compiles both, failing on
+    # the stale one for a reason that has nothing to do with the current output (found in P4-5).
+    _remove_stale(source_root, {p.resolve() for p in written})
 
     report = project.root / "generation-report.json"
     payload = {"summary": project.summary(), "errorCodes": project.error_codes}

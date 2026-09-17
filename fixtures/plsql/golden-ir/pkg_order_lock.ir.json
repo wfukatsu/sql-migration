@@ -343,6 +343,22 @@
        },
        "loopKind": "cursor-for",
        "cursor": "r IN (SELECT line_no, product_id, qty FROM order_lines WHERE order_id = p_order_id)",
+       "query": {
+        "id": "pkg_order_lock.cancel#stmt-5#query",
+        "kind": "SqlOperation",
+        "sourceRange": {
+         "file": "pkg_order_lock.pkb",
+         "startLine": 24,
+         "endLine": 26,
+         "startColumn": 5,
+         "endColumn": 9
+        },
+        "sqlKind": "SELECT",
+        "originalSql": "SELECT line_no, product_id, qty FROM order_lines WHERE order_id = p_order_id",
+        "selectsStar": false,
+        "cardinality": "MANY"
+       },
+       "variable": "r",
        "body": [
         {
          "id": "pkg_order_lock.cancel#stmt-6",

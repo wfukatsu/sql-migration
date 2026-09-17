@@ -156,6 +156,12 @@ class Loop(Statement):
     label: str | None = None
     condition: str | None = None
     cursor: str | None = None
+    # P4-5: the query a cursor FOR loop iterates, as a statement in its own right. Kept as one so that the
+    # converter, the capability check and the generator all see it the way they see any other query -- before
+    # this it lived only as the text in `cursor`, which is why the loop could not be generated at all.
+    query: "SqlOperation | None" = None
+    # the loop variable: `FOR r IN (...)` binds `r`, and the body reads `r.column`
+    variable: str | None = None
     body: list[Statement] = field(default_factory=list)
 
 

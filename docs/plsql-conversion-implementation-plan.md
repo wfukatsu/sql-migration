@@ -604,6 +604,48 @@ P3-4 が置いた「行ロックを失った routine は、ロック無しで読
 | 2 | 列同士の比較（cursor FOR loop 由来） | P4-5 |
 | 1 each | `MERGE` のコレクション source、trigger の `:NEW`、`WHERE CURRENT OF`、JOIN の列スコープ、WHERE 内の関数 | それぞれの設計テンプレート |
 
+#### P4-5 実施結果（2026-09-17）
+
+`docs/plsql-cursor-patterns.md` に 6 つの形（A〜F）と、それぞれの ScalarDB での書き方・生成器の対応・
+**人が決めること**を書いた。判定の早見表が入口になる。
+
+**cursor FOR loop を拒否ではなく生成するようにした。** 根本は「ループのクエリが IR に文として載って
+いなかった」ことで、`cursor` フィールドの文字列でしかなかった。文にしたことで、変換・capability 検査・
+生成が他のクエリと同じ経路を通る。未変換文は 29 → 27。
+
+```java
+// the rows are read before the loop runs: ScalarDB has no cursor held across a transaction
+for (OrderTotalLoop1Row r : repository.orderTotalLoop1(pOrderId)) {
+    vGross = Plsql.dec(Plsql.add(vGross, lineAmount(r.qty(), r.unitPrice())));
+}
+```
+
+Oracle と違う点を 2 つ、コード中のコメントとテストで見えるようにしてある。**行数がメモリで決まる**こと
+（だから `CUR-002` は REVIEW のまま——走査行数の上限は業務の判断である）と、**ループ中の書き込みが
+回っている行集合を変えない**こと。
+
+**自分の表を書くループは拒否する。** ScalarDB は同じトランザクションが書いた物の走査を禁じており
+（P2-4）、先に全行読めば規則には触れるが Oracle と同じ意味にはならない。理由つきで拒否する:
+
+```
+cursor FOR loop whose body writes ['orders'], which its own query reads
+```
+
+ループ行の record は**列の型ではなく PL/SQL のループ変数**を写す（数値は全て `BigDecimal`）。列の幅を
+持ち込むと `NUMBER(10)` が `Long` になり、NUMBER を引数に取る routine へ渡せない——トランスレータは
+呼び出し先の引数型を知らないので、その場では直せない。
+
+**P4-1 の積み残しは解けなかった。** `order_total` のループは生成できるようになったが、この routine は
+`customer_tier` の **JOIN が PLANNED**（実行計画が要る）で止まる。ループが原因ではなかった。
+それに依存する `line_amount` / `tier_discount` / `reprice_order` も同じ理由で残る。
+
+**生成器が古いファイルを消すようにした。** クラス名を変えたとき前回のファイルが残り、javac が両方を
+コンパイルして、**今の出力と関係のない理由で落ちた**。`generated/` は手で触らないので、この run が書かな
+かった `.java` は前回の残骸でしかない。
+
+結果: KPI-3 100%（56/56）、KPI-5 100%（両規約で AUTO 19/19）、判定の内訳は変わらず（AUTO 13）。
+判定が動かないのは正しい——ループを生成できるようになっても、**行数の上限が未決である事実は変わらない**。
+
 **Phase 4 完了条件**: 非 AUTO の件数が半減し（56 → 28 以下）、残るものは設計テンプレートか、
 「この routine は人が決めるべき」という説明のどちらかを持つ。KPI-6 のベースラインが実測で出ている。
 
