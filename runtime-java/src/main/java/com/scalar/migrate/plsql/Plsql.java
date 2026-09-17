@@ -241,12 +241,24 @@ public final class Plsql {
 
   private static java.util.function.Supplier<LocalDateTime> CLOCK = LocalDateTime::now;
 
+  /**
+   * Oracle's RTRIM / LTRIM, including on the empty string.
+   *
+   * <p>Two places `''` bites, both found by replaying the recorded Oracle answers (P3-3). `RTRIM('')` is NULL
+   * because `''` already is one, which testing `value == null` misses. And `RTRIM(' ')` is NULL as well: the
+   * result is the empty string, and an empty string in Oracle is NULL however it was arrived at. {@link
+   * #concat} has always had the second rule; these did not.
+   */
   public static String rtrim(Object value) {
-    return value == null ? null : text(value).stripTrailing();
+    return isNull(value) ? null : emptyIsNull(text(value).stripTrailing());
   }
 
   public static String ltrim(Object value) {
-    return value == null ? null : text(value).stripLeading();
+    return isNull(value) ? null : emptyIsNull(text(value).stripLeading());
+  }
+
+  private static String emptyIsNull(String value) {
+    return value.isEmpty() ? null : value;
   }
 
   public static BigDecimal mod(Object a, Object b) {
