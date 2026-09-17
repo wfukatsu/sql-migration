@@ -26,7 +26,7 @@ from ..ir import model as M
 from ..lower import _walk
 from .emit import JavaFile
 from .expr import translate
-from .types import java_class_name, java_name, java_type
+from .types import java_class_name, java_name, java_type, record_columns
 
 # the module being generated, so an expression can resolve a sibling routine without threading it through
 # every statement helper
@@ -209,10 +209,19 @@ def _always_exits(routine: M.Routine, result: ServiceFile) -> bool:
 
 
 def _row_type(declaration: M.Declaration) -> str | None:
-    """A `%ROWTYPE` local has the record P2-5 generated for that table, not `Object`."""
-    if declaration.type is None or declaration.type.origin != "rowtype":
+    """A local whose type is a record has the record P2-5 generated for it, not `Object`.
+
+    Both shapes land here: a `%ROWTYPE` of a table, and a package-local `TYPE t IS RECORD (...)`. They are the
+    same thing -- a named list of typed fields -- and the generator names them apart only so that a table's row
+    and a package's record cannot collide.
+    """
+    if declaration.type is None:
         return None
-    return java_class_name(declaration.type.oracle.split("%")[0]) + "Row"
+    if declaration.type.origin == "rowtype":
+        return java_class_name(declaration.type.oracle.split("%")[0]) + "Row"
+    if declaration.type.origin == "record":
+        return java_class_name(declaration.type.oracle.rpartition(".")[2])
+    return None
 
 
 def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
@@ -379,18 +388,71 @@ def _sql(file: JavaFile, statement: M.SqlOperation, routine: M.Routine) -> None:
         # when there are none?), so it is left to the reviewer rather than guessed
         raise Untranslatable(["execution plan result"], statement.original_sql)
     targets = statement.into_targets
+    if targets and statement.cardinality == "MANY":
+        # BULK COLLECT fills collections from every matching row. Treating it as a one-row SELECT INTO, which
+        # is what the shape otherwise looks like, turns "no rows" and "many rows" into exceptions the original
+        # never raised -- and quietly loses every row after the first when it does not.
+        raise Untranslatable([f"BULK COLLECT INTO {', '.join(targets)}"], statement.original_sql)
     if targets and len(targets) == 1:
         file.line(f"{java_name(targets[0])} = ({_local_type(routine, targets[0])}) "
                   f"repository.{method}({arguments});")
     elif targets:
+        # the repository returns the columns positionally, in the order the SELECT names them
+        if any("." in target for target in targets):
+            _record_into(file, routine, targets, method, arguments, statement)
+            return
         file.comment(f"SELECT INTO {', '.join(targets)}")
         file.line(f"var row = repository.{method}({arguments});")
+        for index, target in enumerate(targets):
+            file.line(f"{java_name(target)} = ({_local_type(routine, target)}) row[{index}];")
     elif (statement.sql_kind or "").upper() in ("INSERT", "UPDATE", "DELETE", "MERGE"):
         # SQL%ROWCOUNT is part of the behaviour: `update_email` raises when it is zero. One variable per
         # statement, because a routine may hold several DML statements in one scope.
         file.line(f"rowCount = repository.{method}({arguments});")
     else:
         file.line(f"repository.{method}({arguments});")
+
+
+def _record_into(file: JavaFile, routine: M.Routine, targets: list[str], method: str, arguments: str,
+                 statement: M.SqlOperation) -> None:
+    """`SELECT a, b INTO v_rec.a, v_rec.b` builds the record in one go.
+
+    PL/SQL fills the fields one at a time; a Java record is immutable, so it is constructed once from all of
+    them. That is only the same thing if every field is assigned by this statement, so a statement that fills
+    part of a record is refused rather than silently constructed with nulls in the rest.
+    """
+    holders = {target.rpartition(".")[0] for target in targets}
+    if len(holders) != 1:
+        raise Untranslatable([f"SELECT INTO fields of more than one record ({', '.join(targets)})"],
+                             statement.original_sql)
+    holder = holders.pop()
+    record = _local_type(routine, holder)
+    fields = [target.rpartition(".")[2] for target in targets]
+    declared = _record_fields(routine, holder)
+    if declared is not None and [f.lower() for f in fields] != [f.lower() for f in declared]:
+        raise Untranslatable(
+            [f"SELECT INTO only part of {holder} ({', '.join(fields)} of {', '.join(declared)})"],
+            statement.original_sql)
+    file.comment(f"SELECT INTO {', '.join(targets)}")
+    file.line(f"var row = repository.{method}({arguments});")
+    casts = ", ".join(f"({java_type(kind).name}) row[{i}]"
+                      for i, kind in enumerate(_record_types(routine, holder) or [None] * len(fields)))
+    file.line(f"{java_name(holder)} = new {record}({casts});")
+
+
+def _record_fields(routine: M.Routine, holder: str) -> list[str] | None:
+    return [name for name, _ in _record_shape(routine, holder)] or None
+
+
+def _record_types(routine: M.Routine, holder: str) -> list[str] | None:
+    return [kind for _, kind in _record_shape(routine, holder)] or None
+
+
+def _record_shape(routine: M.Routine, holder: str) -> list[tuple[str, str]]:
+    for declaration in routine.declarations:
+        if declaration.name.lower() == holder.lower() and declaration.type is not None:
+            return record_columns(declaration.type.resolved or "")
+    return []
 
 
 def _coerce(file: JavaFile, value: str, target_type: str) -> str:
