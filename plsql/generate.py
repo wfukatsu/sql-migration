@@ -8,11 +8,18 @@ judge (P2-2), then write. Nothing new is decided here; this is the command that 
 Exit status is 1 when a routine the rules called AUTO could not be generated cleanly. Everything else -- REVIEW,
 REDESIGN, statements ScalarDB refuses -- is written with its refusal in place and reported, because those are
 findings, not failures of the run.
+
+"Cleanly" means two things, and `--verify-compile` is the second (#21). Without it the gate reads the IR only,
+which cannot see a body that reads a name its own signature does not provide -- `javac` can, and until it is
+asked, "AUTO" is a claim about code nobody has compiled. It is opt-in because it needs a JVM, Gradle and the
+dependency cache, which generating does not; `PLSQL_VERIFY_COMPILE=1` turns it on without changing the command,
+which is how CI asks for it.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -32,6 +39,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--limits", help="走査行数の上限を書いた YAML（既定と routine ごとの上書き）。"
                                         "渡さなければ組み込みの既定を使う")
+    parser.add_argument("--verify-compile", action="store_true",
+                        default=bool(os.environ.get("PLSQL_VERIFY_COMPILE")),
+                        help="compile the generated tree (gradle compileJava) and fail the run on any javac "
+                             "error, naming the routine each one came from. Needs a JVM and Gradle. "
+                             "PLSQL_VERIFY_COMPILE=1 has the same effect")
+    parser.add_argument("--no-verify-compile", action="store_false", dest="verify_compile",
+                        help="skip the compile check even when PLSQL_VERIFY_COMPILE is set")
     parser.add_argument("--handover", action="store_true",
                         help="write the handover banner instead of 'do not edit'. After handover the "
                              "regeneration model ends (plan §9) and the code is maintained by hand, so the "
@@ -65,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     summary = project.summary()
     auto = [r for r, d in decisions.items() if d.rule_verdict == "AUTO"]
     dirty = _dirty_auto(project, decisions)
+    report = _verify_compile(project, args) if args.verify_compile else None
 
     if not args.quiet:
         print(f"wrote {len(written)} files to {args.out_dir}/")
@@ -77,7 +92,37 @@ def main(argv: list[str] | None = None) -> int:
             print(f"names the translator could not place: {', '.join(summary['unknownNames'])}")
         for routine in dirty:
             print(f"  AUTO but not cleanly generated: {routine}")
-    return 1 if dirty else 0
+        if report is not None:
+            _print_compile(report, decisions)
+    return 1 if dirty or (report is not None and not report.ok) else 0
+
+
+def _verify_compile(project, args):
+    from .verify import verify
+
+    return verify(args.out_dir, project)
+
+
+def _print_compile(report, decisions: dict) -> None:
+    """What the compiler said, per routine, with the verdict the rules had given it.
+
+    An error under an AUTO routine is the one this check was added for: the rules said it could be generated
+    unattended and the compiler says it cannot be compiled at all.
+    """
+    if not report.ran:
+        print(f"  compile check did not run: {report.unavailable}")
+        print("  asked for --verify-compile, so this run fails rather than reporting an unverified AUTO")
+        return
+    if report.ok:
+        print("  compile check: gradle compileJava succeeded over the generated tree")
+        return
+    print(f"  compile check: {len(report.errors)} javac error(s)")
+    for error in report.errors:
+        verdict = decisions[error.routine].rule_verdict if error.routine in decisions else "?"
+        if error.routine:
+            print(f"    {error.routine} [{verdict}]: {error.message} ({Path(error.file).name}:{error.line})")
+        else:
+            print(f"    {Path(error.file).name}:{error.line}: {error.message}")
 
 
 def _dirty_auto(project, decisions) -> list[str]:

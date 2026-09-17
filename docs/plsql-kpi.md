@@ -82,6 +82,13 @@ compile 率 = compile が通った AUTO 対象 routine 数 / AUTO 判定され�
 
 - 計測は `gradle compileJava`。warning policy を満たすこと（警告を成功として隠さない）。
 - **目標: Phase 2 で 100%**。1 件でも落ちたら未達。
+- `python -m plsql.generate --verify-compile` が**生成の合否ゲートとして同じ検査を行う**（#21）。
+  javac のエラーは、その行を含むメソッドから **routine 名に帰属させて**報告される。
+  IR だけを見るゲートは「本体が読む名前」と「シグネチャが提供する名前」の食い違いを見られず、
+  そのまま `AUTO` と報告していた（MR !53 の 2 件）。コンパイルできないコードを AUTO と呼ぶのは
+  AUTO の定義違反なので、この検査が入って初めて KPI-4 は生成時に守られる。
+- 検査を頼んだのに**実行できなかった場合は失敗**として扱う（gradle が無い、JVM が無い）。
+  検証していない答えを検証済みとして報告するのは、この検査が消そうとしている失敗そのものである。
 
 ### KPI-5 意味的同等性テスト合格率
 
@@ -208,10 +215,11 @@ AUTO とするのは confidence >= 0.95 かつ §2 の禁止条件に 1 つも�
 # ScalarDB で実行できる文の割合（P2-4）
 .venv/bin/python -m plsql.cli fixtures/plsql/src --scalardb-schema fixtures/plsql/scalardb-schema.json
 
-# KPI-4 AUTO 生成コードの compile 率（P2-7 / P2-8 / P2-10）
-.venv/bin/python -m plsql.generate fixtures/plsql/src --out-dir generated
-(cd runtime-java && gradle compileJava)
-PLSQL_COMPILE=1 .venv/bin/python -m pytest tests/test_plsql_generate.py -k compile -q
+# KPI-4 AUTO 生成コードの compile 率（P2-7 / P2-8 / P2-10 / #21）
+# --verify-compile は生成後に gradle compileJava を走らせ、javac のエラーを routine に帰属させる。
+# PLSQL_VERIFY_COMPILE=1 でも同じ（CI はコマンドを変えずに有効化できる）
+.venv/bin/python -m plsql.generate fixtures/plsql/src --out-dir generated --verify-compile
+PLSQL_COMPILE=1 .venv/bin/python -m pytest tests/test_plsql_verify.py tests/test_plsql_generate.py -k compile -q
 
 # KPI-5 の早期信号（P2-11）。生成 Java を P0-5 の capture と突き合わせる。ScalarDB Cluster は要らない
 .venv/bin/python difftest/plsql_diff.py
@@ -259,5 +267,6 @@ python -m plsql.kpi --evidence difftest/work/plsql-diff.json --generated generat
 - **KPI-6 は `--fix-times` に人が測った値を渡さない限り `null`** のままで、`unmeasured` に routine 名が
   並ぶ。埋めるために数字を作れば、6 つのうち実際の移行工数を測る唯一の指標が最も信用できないものになる。
 - KPI-4 がここで測るのは「AUTO 判定の routine が生成しきれたか」まで。`javac` そのものは
-  `gradle compileJava` が担う。出力にもそう書いてある。
+  `gradle compileJava` が担う——`plsql.generate --verify-compile` はそれを生成の直後に呼び、
+  落ちた routine を名指しして終了ステータス 1 を返す。出力にもそう書いてある。
 - 出力は毎回 **corpus が合成であること**を先頭に印字する。脚注にすると落ちるため。

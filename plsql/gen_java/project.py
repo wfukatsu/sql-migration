@@ -32,6 +32,9 @@ class GeneratedProject:
     planned_sql: list[str] = field(default_factory=list)
     unknown_names: list[str] = field(default_factory=list)
     error_codes: dict = field(default_factory=dict)
+    # the program this was generated from, so a check made after the fact -- `verify`, which attributes a
+    # javac error to a routine (#21) -- can get back from a Java method name to the PL/SQL it came from
+    program: "M.Program | None" = None
 
     @property
     def app_package(self) -> str:
@@ -75,7 +78,7 @@ def regeneration_banner() -> None:
 
 def generate(program: M.Program, root: str | Path, base_package: str = "com.example.migrated",
              decisions: dict[str, Decision] | None = None) -> GeneratedProject:
-    project = GeneratedProject(root=Path(root), base_package=base_package)
+    project = GeneratedProject(root=Path(root), base_package=base_package, program=program)
 
     exception_files, registry = generate_exceptions(program, project.domain_package)
     project.files.extend(exception_files)
