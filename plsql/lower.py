@@ -344,10 +344,17 @@ class _Lowerer:
             kind = "cursor-for" if re.search(r"\b(IN\s*\(|IN\s+[\w$#.]+\s*(\(|$))", inner) and \
                 not re.search(r"\.\.", inner) else "for"
             cursor = inner
-        return M.Loop(id=ids.next("stmt"), kind="Loop", source_range=source, loop_kind=kind,
+        loop = M.Loop(id=ids.next("stmt"), kind="Loop", source_range=source, loop_kind=kind,
                       label=_first(re.match(r"^\s*<<\s*([\w$#]+)\s*>>", text)), condition=condition,
                       cursor=cursor, body=self._statements(
                           _child(context, "Seq_of_statementsContext") or context, ids))
+        if kind == "cursor-for" and cursor:
+            loop.variable, query = _cursor_for_parts(cursor)
+            if query:
+                loop.query = M.SqlOperation(id=loop.id + "#query", kind="SqlOperation",
+                                            source_range=source, sql_kind="SELECT", original_sql=query,
+                                            cardinality="MANY")
+        return loop
 
     def _forall(self, context, ids, text, source) -> M.Statement:
         node = M.Loop(id=ids.next("stmt"), kind="Loop", source_range=source, loop_kind="forall",
@@ -508,11 +515,25 @@ class _Lowerer:
         return SourceRange(start.file, start.line, stop.line, start.column, stop.column)
 
 
+def _cursor_for_parts(cursor: str) -> tuple[str | None, str | None]:
+    """`r IN (SELECT ...)` -> ("r", "SELECT ..."). A named cursor (`r IN c(x)`) has no inline query here."""
+    match = re.match(r"^\s*([\w$#]+)\s+IN\s*\((.*)\)\s*$", cursor, re.IGNORECASE | re.DOTALL)
+    if match:
+        return match.group(1), match.group(2).strip()
+    named = re.match(r"^\s*([\w$#]+)\s+IN\s+([\w$#.]+)", cursor, re.IGNORECASE)
+    return (named.group(1) if named else None), None
+
+
 def _walk(statements: list[M.Statement]) -> list[M.Statement]:
     """Every statement, including the ones nested inside branches and loops."""
     out: list[M.Statement] = []
     for statement in statements:
         out.append(statement)
+        # a cursor FOR loop's query is a statement too: it is converted, capability-checked and generated
+        # exactly like any other query, and leaving it out of the walk would silently skip all three (P4-5)
+        query = getattr(statement, "query", None)
+        if query is not None:
+            out.append(query)
         for branch in getattr(statement, "branches", []) or []:
             out.extend(_walk(branch.body))
         out.extend(_walk(getattr(statement, "else_body", []) or []))

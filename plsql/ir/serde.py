@@ -106,6 +106,8 @@ def _revive(name: str, value: Any) -> Any:
     if name == "branches" and isinstance(value, list):
         return [M.Branch(condition=item["condition"], body=[node(s) for s in item.get("body", [])])
                 for item in value]
+    if name == "query" and isinstance(value, dict):
+        return node(value)
     if name in _STATEMENT_LISTS and isinstance(value, list):
         return [node(v) for v in value]
     if name in ("modules", "routines", "parameters", "declarations", "exception_handlers") \

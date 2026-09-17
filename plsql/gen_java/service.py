@@ -33,6 +33,9 @@ from .types import java_class_name, java_name, java_type, record_columns
 _MODULE: "contextvars.ContextVar[M.Module | None]" = contextvars.ContextVar("module", default=None)
 _DOMAIN: "contextvars.ContextVar[str | None]" = contextvars.ContextVar("domain", default=None)
 _ROWCOUNT_SEEN: "contextvars.ContextVar[bool]" = contextvars.ContextVar("rowcount", default=False)
+# P4-5: `FOR r IN (SELECT qty, ...)` puts `r` in scope for the body, and the translator turns `r.qty` into the
+# record accessor `r.qty()`. Kept apart from the routine's own names so a nested loop restores the outer one.
+_LOOP_ROWS: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("loop_rows", default={})
 
 
 @dataclass
@@ -345,15 +348,58 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
     label = f"{java_name(statement.label)}: " if statement.label else ""
     if statement.loop_kind == "while":
         opening = f"{label}while ({_expr(file, statement.condition, routine, result)})"
+    elif statement.loop_kind == "cursor-for" and statement.query is not None:
+        _cursor_for(file, statement, routine, result)
+        return
     elif statement.loop_kind in ("cursor-for", "forall", "for"):
-        # The query of a cursor FOR loop, and the bounds of a numeric one, are not modelled as statements, so
-        # there is nothing to iterate yet. Emitting a call to a repository method that does not exist would give
+        # A numeric FOR loop's bounds, and a named cursor's query, are still not modelled as statements, so
+        # there is nothing to iterate. Emitting a call to a repository method that does not exist would give
         # code that cannot compile; refusing keeps the gap where a reviewer sees it.
         raise Untranslatable([f"{statement.loop_kind} loop"], statement.cursor or statement.kind)
     else:
         opening = f"{label}while (true)"
     with file.block(opening) as f:
         _statements(f, statement.body, routine, result)
+
+
+def _cursor_for(file: JavaFile, statement: M.Loop, routine: M.Routine, result: ServiceFile) -> None:
+    """`FOR r IN (SELECT ...) LOOP ... END LOOP` over rows the repository read.
+
+    The rows are read first and iterated afterwards, which is not what Oracle does -- a cursor there is a
+    position held open across the transaction. Two consequences are deliberate and visible rather than hidden:
+    the row count is bounded by memory, and a write inside the body does not change what the loop iterates.
+    The second is why a body that writes to a table the query reads is refused instead: ScalarDB forbids
+    scanning what the same transaction wrote (P2-4), and Oracle's answer there is its own, not reproducible by
+    reading first.
+    """
+    from .repository import loop_method, loop_record
+
+    query = statement.query
+    if query.target_status == "ERROR":
+        raise Untranslatable(["cursor FOR loop whose query ScalarDB cannot run"], query.original_sql)
+    written = {t for s in _walk(statement.body) for t in (getattr(s, "write_set", None) or [])}
+    conflict = written & set(query.read_set or [])
+    if conflict:
+        raise Untranslatable(
+            [f"cursor FOR loop whose body writes {sorted(conflict)}, which its own query reads"],
+            query.original_sql)
+
+    variable = java_name(statement.variable or "r")
+    # the translator renders `head.tail` as `scope[head].tail()`, so the loop variable itself is what goes in
+    columns = {statement.variable or "r": variable}
+    arguments = ", ".join(java_name(b.plsql_variable or b.name)
+                          for b in query.binds if not b.expression)
+    record = loop_record(routine, statement)
+    file.add_import(f"{_DOMAIN.get()}.{record}")
+    file.comment("the rows are read before the loop runs: ScalarDB has no cursor held across a transaction")
+    opening = (f"for ({record} {variable} : repository.{loop_method(routine, statement)}({arguments}))")
+    outer = _LOOP_ROWS.get()
+    _LOOP_ROWS.set({**outer, **columns})
+    try:
+        with file.block(opening) as f:
+            _statements(f, statement.body, routine, result)
+    finally:
+        _LOOP_ROWS.set(outer)
 
 
 def _raise(file: JavaFile, statement: M.Raise, routine: M.Routine, result: ServiceFile) -> None:
@@ -529,7 +575,7 @@ def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: ServiceF
     different semantics. Refusing turns the statement into a `throw` with the original next to it, which the
     compiler accepts and a reviewer can act on. Emitting it anyway is the one outcome that helps nobody.
     """
-    rendered = translate(text, _scope(routine, module or _MODULE.get()))
+    rendered = translate(text, {**_scope(routine, module or _MODULE.get()), **_LOOP_ROWS.get()})
     for name in rendered.unknown:
         if name not in result.unknown_names:
             result.unknown_names.append(name)
