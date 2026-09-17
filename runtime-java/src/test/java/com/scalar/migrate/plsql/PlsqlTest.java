@@ -60,4 +60,52 @@ class PlsqlTest {
     assertEquals("1.5", Plsql.text(new BigDecimal("1.50")));
     assertEquals("", Plsql.text(null));
   }
+
+  // --- the bind boundary (P3-1) -------------------------------------------------------------------------
+
+  @Test
+  void bindTurnsABigDecimalIntoTheColumnsOwnType() {
+    // ScalarDB's driver refuses a BigDecimal outright (DB-SQL-10016), so nothing may reach it as one
+    assertEquals(1500L, Plsql.bind(new BigDecimal("15.00"), "BIGINT", 2));
+    assertEquals(15L, Plsql.bind(new BigDecimal("15"), "BIGINT", 0));
+    assertEquals(15.5d, Plsql.bind(new BigDecimal("15.5"), "DOUBLE", 2));
+    assertEquals("15.50", Plsql.bind(new BigDecimal("15.50"), "TEXT", 2));
+  }
+
+  @Test
+  void bindRoundsToTheColumnScaleTheWayOracleDoes() {
+    // Oracle stores 1234.565 into a NUMBER(14,2) as 1234.57: half-up, not half-even, and never truncated
+    assertEquals(123457L, Plsql.bind(new BigDecimal("1234.565"), "BIGINT", 2));
+    assertEquals(123456L, Plsql.bind(new BigDecimal("1234.564"), "BIGINT", 2));
+  }
+
+  @Test
+  void bindLeavesNonNumbersAlone() {
+    assertEquals("GOLD", Plsql.bind("GOLD", "TEXT", 0));
+    assertNull(Plsql.bind(null, "BIGINT", 2));
+  }
+
+  @Test
+  void readUnscalesWhatBindScaled() {
+    assertEquals(0, new BigDecimal("15.00").compareTo(Plsql.read(1500L, "BIGINT", 2)));
+    assertEquals(0, new BigDecimal("15").compareTo(Plsql.read(15L, "BIGINT", 0)));
+    assertNull(Plsql.read(null, "BIGINT", 2));
+  }
+
+  @Test
+  void bindAndReadRoundTripEveryMoneyValueTheCorpusUses() {
+    for (String value : new String[] {"0", "0.01", "15.00", "100000.00", "1234.57", "-42.50"}) {
+      BigDecimal original = new BigDecimal(value);
+      Object stored = Plsql.bind(original, "BIGINT", 2);
+      assertEquals(0, original.compareTo(Plsql.read(stored, "BIGINT", 2)),
+          value + " did not survive the bind boundary");
+    }
+  }
+
+  @Test
+  void doubleStorageDoesNotPretendToBeExact() {
+    // the other money convention: this is the loss the PoC is measuring, not a bug to hide
+    Object stored = Plsql.bind(new BigDecimal("0.10"), "DOUBLE", 2);
+    assertEquals(0.10d, stored);
+  }
 }

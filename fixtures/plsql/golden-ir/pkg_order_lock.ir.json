@@ -153,6 +153,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT * INTO v_row FROM orders WHERE order_id = p_order_id",
+       "selects_star": false,
        "cardinality": "UNKNOWN"
       },
       {
@@ -280,6 +281,7 @@
        ],
        "sqlKind": "SELECT",
        "originalSql": "SELECT * INTO v_row FROM orders WHERE order_id = p_order_id FOR UPDATE WAIT 5",
+       "selects_star": false,
        "cardinality": "UNKNOWN",
        "lockingMode": "FOR UPDATE WAIT 5"
       },
@@ -326,6 +328,7 @@
        },
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE orders SET status = 'CANCELLED', note = p_reason WHERE order_id = p_order_id",
+       "selects_star": false,
        "cardinality": "UNKNOWN"
       },
       {
@@ -353,6 +356,7 @@
          },
          "sqlKind": "UPDATE",
          "originalSql": "UPDATE products SET stock_qty = stock_qty + r.qty WHERE product_id = r.product_id",
+         "selects_star": false,
          "cardinality": "UNKNOWN"
         }
        ]

@@ -354,6 +354,7 @@
          },
          "sqlKind": "UPDATE",
          "originalSql": "UPDATE orders SET note = 'reviewed' WHERE order_id = r.order_id",
+         "selects_star": false,
          "cardinality": "UNKNOWN"
         }
        ]

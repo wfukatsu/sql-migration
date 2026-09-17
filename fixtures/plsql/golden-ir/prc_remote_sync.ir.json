@@ -83,6 +83,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT status INTO v_status FROM orders WHERE order_id = p_order_id",
+       "selects_star": false,
        "cardinality": "UNKNOWN"
       },
       {
@@ -97,6 +98,7 @@
        },
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE orders@warehouse_link SET status = v_status WHERE order_id = p_order_id",
+       "selects_star": false,
        "cardinality": "UNKNOWN"
       },
       {
@@ -111,6 +113,7 @@
        },
        "sqlKind": "INSERT",
        "originalSql": "INSERT INTO shipment_queue@warehouse_link (order_id, requested_at)\n  VALUES (p_order_id, SYSDATE)",
+       "selects_star": false,
        "cardinality": "UNKNOWN"
       },
       {

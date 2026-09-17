@@ -28,12 +28,16 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
+import sqlglot
 import yaml
+from sqlglot import exp
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from difftest.plsql_schema import decimal_columns  # noqa: E402
 from scalardb_migrate.converter import convert_script  # noqa: E402
 from scalardb_migrate.schema import SchemaRegistry  # noqa: E402
 
@@ -43,11 +47,41 @@ SCHEMA = ROOT / "fixtures" / "plsql" / "scalardb-schema.json"
 OUT = ROOT / "difftest" / "work" / "plsql-setup.json"
 
 
-def convert(statements: list[str], registry: SchemaRegistry) -> list[str]:
+def scale_money(statement: str, scales: dict[str, dict[str, int]]) -> str:
+    """Write a decimal literal as the scaled integer the column holds under the scaled-money convention.
+
+    The generated repository does the same thing at the bind boundary (`Plsql.bind`), so the starting rows have
+    to be written the same way or the routine would read dollars where it stored cents.
+
+    A literal with more decimals than the column keeps is rounded half-up, because that is what Oracle does when
+    a value is stored into a NUMBER(p,s) -- the corpus relies on it, inserting 1234.565 into a NUMBER(14,2).
+    Refusing here would be stricter than the database being reproduced, which is a different kind of wrong.
+    """
+    tree = sqlglot.parse_one(statement, read="oracle")
+    if not isinstance(tree, exp.Insert) or not isinstance(tree.this, exp.Schema):
+        return statement
+    table = tree.this.this.name.lower()
+    columns = [c.name.lower() for c in tree.this.expressions]
+    for column, scale in scales.get(table, {}).items():
+        if column not in columns:
+            continue
+        index = columns.index(column)
+        for tuple_ in (tree.expression.expressions if isinstance(tree.expression, exp.Values) else []):
+            value = tuple_.expressions[index]
+            if isinstance(value, exp.Literal) and value.is_number:
+                scaled = Decimal(value.name).scaleb(scale).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+                tuple_.expressions[index].replace(exp.Literal.number(int(scaled)))
+    return tree.sql(dialect="oracle")
+
+
+def convert(statements: list[str], registry: SchemaRegistry,
+            scales: dict[str, dict[str, int]] | None = None) -> list[str]:
     """Every statement, converted. Raises when one of them cannot be, naming the statement."""
     out = []
     for statement in statements:
         text = statement.strip().rstrip(";")
+        if scales:
+            text = scale_money(text, scales)
         results, _ = convert_script(text + ";", "oracle", registry, {}, decompose=False)
         for result in results:
             if result.status == "ERROR" or not result.converted:
@@ -61,14 +95,19 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--schema", default=str(SCHEMA), help="Schema Loader JSON the setup rows must fit")
     ap.add_argument("--out", default=str(OUT))
+    ap.add_argument("--variant", choices=["scaled", "double"], default="scaled",
+                    help="scaled writes money as an integer times 10^scale, matching Plsql.bind in the "
+                         "generated repository; double writes it as it stands")
     args = ap.parse_args(argv)
 
     registry = SchemaRegistry.from_schema_loader_json(args.schema)
+    scales = decimal_columns(ROOT / "fixtures" / "plsql" / "src" / "schema.sql") \
+        if args.variant == "scaled" else None
     scenarios, unconvertible = {}, {}
     for path in sorted(SCENARIOS.glob("*.yaml")):
         spec = yaml.safe_load(path.read_text(encoding="utf-8"))
         try:
-            scenarios[spec["name"]] = {"setup": convert(spec.get("setup") or [], registry)}
+            scenarios[spec["name"]] = {"setup": convert(spec.get("setup") or [], registry, scales)}
         except ValueError as e:
             unconvertible[spec["name"]] = str(e)
 

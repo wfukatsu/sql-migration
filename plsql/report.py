@@ -62,7 +62,8 @@ class Analysis:
         routine came from. Handing it one file's table -- which is what a list invites -- silently turns every
         variable in the other files into an unknown column.
         """
-        merged = SymbolTable(schema_snapshot=self.schema.snapshot if self.schema else None)
+        merged = SymbolTable(schema_snapshot=self.schema.snapshot if self.schema else None,
+                             oracle_schema=self.schema)
         for table in self.symbols:
             merged.scopes.update(table.scopes)
             merged.overloads.update(table.overloads)
