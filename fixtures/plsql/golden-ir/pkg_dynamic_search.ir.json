@@ -1,7 +1,7 @@
 {
  "id": "pkg_dynamic_search",
  "kind": "Program",
- "schemaVersion": "1.0.0",
+ "schemaVersion": "1.1.0",
  "modules": [
   {
    "id": "pkg_dynamic_search",

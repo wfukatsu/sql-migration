@@ -1,7 +1,7 @@
 {
  "id": "prc_audit_autonomous",
  "kind": "Program",
- "schemaVersion": "1.0.0",
+ "schemaVersion": "1.1.0",
  "modules": [
   {
    "id": "prc_audit_autonomous",
@@ -119,7 +119,7 @@
        },
        "sqlKind": "INSERT",
        "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, new_value, changed_at, changed_by)\n  VALUES (seq_audit_id.NEXTVAL, p_table_name, p_key_value, p_action, p_new_value, SYSTIMESTAMP, USER)",
-       "selects_star": false,
+       "selectsStar": false,
        "cardinality": "UNKNOWN"
       },
       {

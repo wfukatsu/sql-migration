@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""P2-11: the first semantic signal -- generated Java against what Oracle actually did.
+"""P2-11 / P3-2: the generated Java against what Oracle actually did, at two levels of evidence.
 
-Phase 2's exit condition is that AUTO code compiles, and compiling says nothing about meaning. This regenerates
-the Java and runs it against the P0-5 captures, so that a mistake in the generation rules -- an exception not
-reproduced, a number rounded the other way -- shows up now rather than after every routine has been generated
-the same wrong way.
+Compiling says nothing about meaning, so both stages compare behaviour against the P0-5 Oracle captures. They
+differ in what they put underneath the generated code, and that difference is the point.
 
-    .venv/bin/python difftest/plsql_diff.py
+    .venv/bin/python difftest/plsql_diff.py              # both stages
+    .venv/bin/python difftest/plsql_diff.py --early      # stage 1 only, no cluster needed
+    .venv/bin/python difftest/plsql_diff.py --full       # stage 2 only
 
-The driver is H2, not ScalarDB. What is under test is the generated Java: its control flow, its exceptions, its
-arithmetic. Whether ScalarDB executes the same SQL the same way is a different question, and P3-1 asks it against
-a real cluster. Keeping this one free of a licensed cluster is what makes it runnable on every change.
+**Stage 1 (P2-11), H2.** What is under test is the generated Java: its control flow, its exceptions, its
+arithmetic. H2 needs no licensed cluster, which is what makes this runnable on every change.
+
+**Stage 2 (P3-2), a real ScalarDB Cluster.** H2 accepting something is not evidence that ScalarDB does -- it
+accepted a `BigDecimal` bind that ScalarDB refuses outright, which is how 33 scenarios looked fine until they
+met a cluster. This stage compares the captures P3-1 took, on every field the capture holds, for each money
+convention. It needs captures to exist: `difftest/plsql_capture.py --variant scaled|double` takes them.
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 HARNESS = "com.scalar.migrate.plsql.GeneratedDiffTest"
 
 
@@ -29,7 +34,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--src", default=str(ROOT / "fixtures" / "plsql" / "src"))
     parser.add_argument("--out-dir", default=str(ROOT / "generated"))
     parser.add_argument("--skip-generate", action="store_true")
+    parser.add_argument("--early", action="store_true", help="stage 1 only (H2)")
+    parser.add_argument("--full", action="store_true", help="stage 2 only (the ScalarDB captures)")
+    parser.add_argument("--json", help="write stage 2's report here, for P3-5")
     args = parser.parse_args(argv)
+
+    stages = (args.early, args.full)
+    early, full = stages if any(stages) else (True, True)
+
+    if full and not early:
+        return _compare(args.json)
 
     if not args.skip_generate:
         print("generating...")
@@ -48,7 +62,16 @@ def main(argv: list[str] | None = None) -> int:
     print(_summary(ROOT / "runtime-java" / "build" / "test-results" / "test"))
     if finished.returncode != 0:
         print(finished.stdout[-3000:], file=sys.stderr)
-    return finished.returncode
+        return finished.returncode
+    return _compare(args.json) if full else 0
+
+
+def _compare(report: str | None) -> int:
+    """Stage 2. Kept in its own module because it reads captures and runs nothing."""
+    from difftest.plsql_compare import main as compare
+
+    print("\ncomparing the ScalarDB captures with the P0-5 captures...")
+    return compare(["--json", report] if report else [])
 
 
 def _summary(results: Path) -> str:

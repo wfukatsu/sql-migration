@@ -1,7 +1,7 @@
 {
  "id": "prc_reprice_all",
  "kind": "Program",
- "schemaVersion": "1.0.0",
+ "schemaVersion": "1.1.0",
  "modules": [
   {
    "id": "prc_reprice_all",

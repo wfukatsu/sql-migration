@@ -80,6 +80,7 @@
           "enum": [
             "declared",
             "rowtype",
+            "record",
             "column-type",
             "inferred",
             "unresolved"
@@ -1201,25 +1202,25 @@
             "type": "string"
           }
         },
-        "into_columns": {
+        "intoColumns": {
           "type": [
             "string",
             "null"
           ]
         },
-        "into_types": {
+        "intoTypes": {
           "type": [
             "string",
             "null"
           ]
         },
-        "into_oracle_types": {
+        "intoOracleTypes": {
           "type": [
             "string",
             "null"
           ]
         },
-        "selects_star": {
+        "selectsStar": {
           "type": "boolean"
         },
         "cardinality": {

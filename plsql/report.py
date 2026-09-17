@@ -97,7 +97,7 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
             analysis.parsed.append(parsed_spec)
             public = public_routines(parsed_spec)
         parsed = parse_file(body)
-        symbols = build(parsed, schema, public)
+        symbols = build(parsed, schema, public, spec=parsed_spec if spec.exists() else None)
         analysis.parsed.append(parsed)
         analysis.symbols.append(symbols)
         program.modules.extend(lower_file(parsed, symbols, schema, public))

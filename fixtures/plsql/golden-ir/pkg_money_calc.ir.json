@@ -1,7 +1,7 @@
 {
  "id": "pkg_money_calc",
  "kind": "Program",
- "schemaVersion": "1.0.0",
+ "schemaVersion": "1.1.0",
  "modules": [
   {
    "id": "pkg_money_calc",
@@ -88,7 +88,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT total_amount INTO v_total FROM orders WHERE order_id = p_order_id",
-       "selects_star": false,
+       "selectsStar": false,
        "cardinality": "UNKNOWN"
       },
       {
@@ -188,7 +188,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT ordered_at INTO v_ordered_at FROM orders WHERE order_id = p_order_id",
-       "selects_star": false,
+       "selectsStar": false,
        "cardinality": "UNKNOWN"
       },
       {
@@ -288,7 +288,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT note INTO v_note FROM orders WHERE order_id = p_order_id",
-       "selects_star": false,
+       "selectsStar": false,
        "cardinality": "UNKNOWN"
       },
       {
@@ -432,7 +432,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT total_amount INTO v_total FROM orders WHERE order_id = p_order_id",
-       "selects_star": false,
+       "selectsStar": false,
        "cardinality": "UNKNOWN"
       },
       {
@@ -447,7 +447,7 @@
        },
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE orders SET total_amount = ROUND(v_total * p_rate, 2) WHERE order_id = p_order_id",
-       "selects_star": false,
+       "selectsStar": false,
        "cardinality": "UNKNOWN"
       }
      ],
