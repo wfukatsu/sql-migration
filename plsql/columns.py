@@ -72,19 +72,32 @@ def at_most_one_row(tree: exp.Expression) -> bool:
     select = tree if isinstance(tree, exp.Select) else tree.find(exp.Select)
     if select is None:
         return False
-    # `LIMIT 1` and `FETCH FIRST 1 ROWS ONLY` both land on `limit`, as an `exp.Limit` or an `exp.Fetch`, and
-    # the count sits on a different argument of each. `WITH TIES` is neither: it can return several.
-    limit = select.args.get("limit")
-    count = limit.args.get("count") if isinstance(limit, exp.Fetch) else \
-        (limit.expression if isinstance(limit, exp.Limit) else None)
-    options = limit.args.get("limit_options") if limit is not None else None
-    if isinstance(count, exp.Literal) and count.name == "1" and not (options and options.args.get("with_ties")):
+    count, with_ties = row_cap(select)
+    if isinstance(count, exp.Literal) and count.name == "1" and not with_ties:
         return True
     items = select.expressions or []
     if not items or select.args.get("group"):
         return False
     return all(isinstance(item.unalias() if hasattr(item, "unalias") else item, exp.AggFunc)
                for item in items)
+
+
+def row_cap(tree: exp.Expression) -> tuple[exp.Expression | None, bool]:
+    """The row count a query caps itself at, and whether the cap is `WITH TIES`.
+
+    `LIMIT 1` and `FETCH FIRST 1 ROWS ONLY` both land on `limit`, as an `exp.Limit` or an `exp.Fetch`, and
+    the count sits on a different argument of each. `WITH TIES` is not a cap of its own: it can return
+    several rows at the boundary. Callers use this both to tell that a query cannot return a second row and
+    to tell that it must not be rewritten into something the cap no longer applies to (`COUNT(*)`).
+    """
+    select = tree if isinstance(tree, exp.Select) else tree.find(exp.Select)
+    limit = select.args.get("limit") if select is not None else None
+    if limit is None:
+        return (None, False)
+    count = limit.args.get("count") if isinstance(limit, exp.Fetch) else \
+        (limit.expression if isinstance(limit, exp.Limit) else None)
+    options = limit.args.get("limit_options")
+    return (count, bool(options and options.args.get("with_ties")))
 
 
 def _insert_values(tree: exp.Expression, found: dict[str, str]) -> None:
