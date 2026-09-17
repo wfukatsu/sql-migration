@@ -18,6 +18,16 @@ rules:
     requiredTests:
       - scan_after_write
 
+  - id: SCAN-002
+    match: {statementKind: SqlOperation, hasDiagnostic: CROSS_PARTITION}
+    decision: REVIEW
+    message: パーティションキーで絞れない走査です。フィルタも順序もパーティションをまたぐため、JDBC バックエンド以外では同じ問い合わせが通りません
+    remediation:
+      - キーで届く読み取りに変える
+      - 全行を取得してアプリ側で絞る・並べる（docs/app-side-processing-plan.md）
+    requiredTests:
+      - cross_partition_scan
+
   - id: SELECT-001
     match: {statementKind: SqlOperation, hasDiagnostic: MULTI_ROW_INTO}
     decision: REVIEW

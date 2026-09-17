@@ -34,7 +34,7 @@ from sqlglot import exp
 from scalardb_migrate.converter import StatementConverter
 from scalardb_migrate.schema import SchemaRegistry
 
-from .columns import bind_columns, select_columns, selects_star
+from .columns import at_most_one_row, bind_columns, select_columns, selects_star
 from .ir.model import BindVariable, SqlOperation
 from .source import Issue, SourceRange
 from .symbols import SymbolTable
@@ -93,11 +93,14 @@ def analyse(operation: SqlOperation, scope: str, symbols: SymbolTable | None = N
     # after strip_into, not before: `INTO v_row` parses as a table, and a star is only expandable when the
     # statement reads exactly one table
     expand_star(tree, symbols)
-    operation.into_targets = [t for t in targets]
-    result.into_targets = [{"name": t} for t in targets]
     if targets:
+        operation.into_targets = list(targets)
         operation.cardinality = "EXACTLY_ONE" if len(targets) >= 1 and not _is_bulk(tree) else "MANY"
-        result.cardinality = operation.cardinality
+    # no INTO in the SQL does not mean no assignment targets: a cursor rewritten to the query it was (#11)
+    # carries them on the node, because the INTO was never part of its text
+    result.into_targets = [{"name": t} for t in operation.into_targets]
+    result.cardinality = operation.cardinality
+    operation.at_most_one_row = at_most_one_row(tree)
 
     binds = bind_variables(tree, scope, symbols, loop_variables)
     if lift:
