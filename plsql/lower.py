@@ -499,11 +499,7 @@ class _Lowerer:
                 break
         node = M.SqlOperation(id=ids.next("stmt"), kind="SqlOperation", source_range=source,
                               sql_kind=kind, original_sql=text.strip().rstrip(";").strip())
-        locking = re.search(r"\bFOR\s+UPDATE\b(\s+(NOWAIT|SKIP\s+LOCKED|WAIT\s+\d+))?", text, re.IGNORECASE)
-        if locking:
-            node.locking_mode = " ".join(locking.group(0).split()).upper()
-            node.add("WARN", "ROW_LOCK",
-                     f"{node.locking_mode} is row locking; the target has to provide the same guarantee another way")
+        mark_row_lock(node, text)
         if re.search(r"\bBULK\s+COLLECT\b", text, re.IGNORECASE):
             node.cardinality = "MANY"
             node.add("WARN", "BULK_COLLECT", "BULK COLLECT needs a row limit and a memory bound")
@@ -560,6 +556,23 @@ class _Lowerer:
         start = self.unit.origin(context.start.line, context.start.column + 1)
         stop = self.unit.origin(context.stop.line, context.stop.column + 1) if context.stop else start
         return SourceRange(start.file, start.line, stop.line, start.column, stop.column)
+
+
+ROW_LOCK = re.compile(r"\bFOR\s+UPDATE\b(\s+(NOWAIT|SKIP\s+LOCKED|WAIT\s+\d+))?", re.IGNORECASE)
+
+
+def mark_row_lock(node: M.SqlOperation, text: str) -> None:
+    """Record `FOR UPDATE` on the statement, with the warning that goes with it.
+
+    Shared with `cursors`, which resolves a named cursor's query out of its declaration (#11) -- the lock is
+    written there, and a query that arrived without it would look safe.
+    """
+    locking = ROW_LOCK.search(text)
+    if not locking:
+        return
+    node.locking_mode = " ".join(locking.group(0).split()).upper()
+    node.add("WARN", "ROW_LOCK",
+             f"{node.locking_mode} is row locking; the target has to provide the same guarantee another way")
 
 
 def _cursor_for_parts(cursor: str) -> tuple[str | None, str | None]:
