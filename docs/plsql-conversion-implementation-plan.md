@@ -224,6 +224,61 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 
 **Phase 3 完了条件**: AUTO 対象の意味的同等性テストが 100%、REVIEW 対象は差分理由を説明できる。
 
+#### P3-4 実施結果（2026-09-17）
+
+`runtime-java` の `TransactionIT` が 7 本。capture は transaction が終わった後に採るので、途中で commit した
+routine と最後に commit した routine は capture 上では区別がつかない。P3-4 が問うのは capture が答えられない
+ことである。生成コードは transaction を開始も commit もしない（境界は呼び出し側、計画 §9）ので、
+テストが境界を持つ——そのおかげで 2 つを同時に走らせることもできる。
+
+- **commit した仕事は別接続から見える**（durability であって、書いた側が自分の transaction を読み返して
+  いるのではないことを、2 本目の接続で確かめる）
+- **raise した routine は何も残さない**（`update_email` の -20010。Oracle も同じ、P0-5 の
+  `crud_update_email_missing`）
+- **書いた後に失敗したら、その書き込みも消える**（部分失敗）
+- **rollback した INSERT は最初から無かったことになる**
+- **REDESIGN の routine は、違う transaction 意味論で動く代わりに拒否する**。`prc_nightly_close` は 100 件
+  ごとに commit し savepoint へ rollback する、`prc_audit_autonomous` は呼び出し側の rollback を生き延びる
+  自律 transaction で書く。どちらも「1 つの囲む transaction」の下では意味を持たない。動いてしまう物を
+  生成するのが最悪の結果で、それは移行できたように見えるからである。
+- **行ロックを失った routine は、ロック無しで読んだ値に基づいて動く前に拒否する**。`pkg_stock_reserve.reserve`
+  の `FOR UPDATE` は変換で落ち（`WARN ROW_LOCK`）、UPDATE 側が `ERROR EXPR` で拒否になる。この拒否が、
+  落ちたロックが黙った read-modify-write に変わるのを止めている。
+
+**同時更新の測定**: 同じ行を 2 つの transaction が read-modify-write したとき、Consensus Commit は
+**片方を弾いた**（`DB-CORE-20013: The record being prepared already exists`）。更新は失われず、残った値は
+ちょうど 1 回分だった。これが REDESIGN 判定の根拠であり、再設計が引き受けるべきものでもある——
+アプリケーションが見るのは「待ち」ではなく「失敗した transaction」なので、**再試行が要る**。
+PL/SQL 側はそれを書く必要がなかった。
+
+#### P3-5 実施結果（2026-09-17）
+
+`plsql/review.py` が 3 つのファイルを出し、`python -m plsql.cli --out-dir ... --evidence ... --generated ...`
+から書かれる。
+
+| ファイル | 中身 |
+|---|---|
+| `decisions.json` | routine ごとに判定・証拠が無いときの rule 判定・確信度 5 因子・**どのルールがどのファイルで判定したか**・代替案・必要テスト・`whyNotAuto`・人手修正時間 |
+| `unresolved.md` | REVIEW / REDESIGN を REDESIGN 先頭で並べ、根拠・代替案・受け入れに必要なテスト・確信度が 0 の要因を付ける |
+| `traceability.csv` | 生成 Java の member → 元 PL/SQL の file:line。**生成ツリーと突き合わせ済み** |
+
+**`--evidence` が無いと何も AUTO にならない。** これは仕様である。確信度には「検証されたか」が含まれ、
+Oracle と突き合わせていない routine は検証されていない。P3-2 の比較結果を渡すと corpus では
+AUTO 9 / REVIEW 29 / REDESIGN 18 になる。既定では**全ての金額規約で一致した routine だけ**を credit する
+（片方でだけ一致するのは、まだ誰も取っていない決定に依存する結果であって一致ではない）。実行できなかった
+シナリオはどちらにも数えない——それは一致の証拠ではないし、失敗に数えれば「target が用意できなかった
+fixture」の責任を routine に着せることになる。
+
+`traceability.csv` の `generated` 列は 3 状態を区別する。`yes`（生成物のその位置に member がある）、
+`not-generated`（クラスごと無い＝module 全体が拒否された）、`not-translated`（クラスはあるがこの行は無い
+＝生成器がこの文を拒否してその旨を残した）。corpus では 182 / 71。`no` の一語にまとめると
+「何も作られなかった」と「作られた物が意図的にこれを省いている」が同じに見えてしまう。
+
+**KPI-6（人手修正時間）は測定値であって推定値ではない。** `decisions.json` は routine ごとに枠を持ち、
+人が保守する YAML（`--fix-times`）から埋める。誰も測っていなければ `null` で、`unmeasured` に名前が並ぶ。
+中央値には `measured` 件数を添える（1 件の中央値は中央値ではない）。6 つの KPI のうち実際の移行工数を
+測るのはこれだけなので、埋めるために数字を作れば、最も信用できない KPI がそれになってしまう。
+
 #### P3-3 実施結果（2026-09-17）
 
 生成コードが依存する式の意味論（三値比較、`''` は NULL、half-up 丸め、DATE の時刻成分）は全て「Oracle が
