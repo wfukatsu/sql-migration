@@ -51,6 +51,7 @@ _CAMEL = {
     "selects_star": "selectsStar", "into_columns": "intoColumns", "into_types": "intoTypes",
     "into_oracle_types": "intoOracleTypes", "scalardb_type": "scalardbType",
     "column_oracle_type": "columnOracleType",
+    "expression": "expression",
 }
 _SNAKE = {v: k for k, v in _CAMEL.items()}
 

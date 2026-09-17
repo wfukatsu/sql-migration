@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from ..ir import model as M
 from ..lower import _walk
 from .emit import JavaFile
+from .expr import translate
 from .types import java_class_name, java_name, java_type
 
 RUNNER_IMPORT = "com.scalar.migrate.runtime.PlanRunner"
@@ -89,8 +90,9 @@ def _direct(file: JavaFile, name: str, statement: M.SqlOperation, result: Reposi
                   " Residual.bindNamed is the rewrite the runtime already uses for plans")
         f.line(f'String sql = "{_escape(sql)}";')
         f.line("Map<String, Object> params = new HashMap<>();")
+        scope = {b.plsql_variable or b.name: java_name(b.name) for b in statement.binds if not b.expression}
         for bind in statement.binds:
-            f.line(f'params.put("{bind.name}", {_bound(file, bind)});')
+            f.line(f'params.put("{bind.name}", {_bound(file, bind, scope)});')
         f.line("List<Object> values = new ArrayList<>();")
         f.line("String bound = Residual.bindNamed(sql, params, values);")
         with f.block("try (PreparedStatement statement = connection.prepareStatement(bound))") as g:
@@ -183,7 +185,7 @@ def _scale(oracle_type: str | None) -> int:
     return java_type(oracle_type).scale or 0
 
 
-def _bound(file: JavaFile, bind: M.BindVariable) -> str:
+def _bound(file: JavaFile, bind: M.BindVariable, scope: dict[str, str] | None = None) -> str:
     """The expression that binds this value.
 
     The column's ScalarDB type comes from the schema that was actually loaded, not from the Oracle type, because
@@ -191,11 +193,26 @@ def _bound(file: JavaFile, bind: M.BindVariable) -> str:
     analysis could not attribute to exactly one column is passed through unchanged -- the old behaviour, which is
     right when there is nothing better to say.
     """
-    name = java_name(bind.name)
+    name = _java_value(file, bind, scope)
     if not bind.scalardb_type:
         return name
     file.add_import("com.scalar.migrate.plsql.Plsql")
     return f'Plsql.bind({name}, "{bind.scalardb_type}", {_scale(bind.column_oracle_type)})'
+
+
+def _java_value(file: JavaFile, bind: M.BindVariable, scope: dict[str, str] | None) -> str:
+    """The Java that produces this bind's value.
+
+    Usually the parameter itself. For a bind lifted out of SQL (P4-4) it is the PL/SQL expression, translated by
+    the same translator the service body uses -- so `ROUND(:v_total * :p_rate, 2)` becomes the same
+    `Plsql.round(Plsql.mul(...), 2)` it would have become anywhere else, and there is one implementation of
+    what those functions mean rather than two.
+    """
+    if not bind.expression:
+        return java_name(bind.name)
+    rendered = translate(bind.expression, scope or {})
+    file.add_import(*rendered.imports)
+    return rendered.java
 
 
 def _read(file: JavaFile, statement: M.SqlOperation, index: int) -> str:
@@ -245,7 +262,8 @@ def _column_scale(statement: M.SqlOperation, index: int) -> int:
 
 def _parameters(file: JavaFile, statement: M.SqlOperation) -> tuple[list[str], list[str]]:
     parameters, arguments = [], []
-    for bind in statement.binds:
+    # a lifted expression is computed here from the other binds, so it is not a parameter of its own
+    for bind in (b for b in statement.binds if not b.expression):
         mapped = java_type(bind.oracle_type)
         file.add_import(*mapped.imports)
         parameters.append(f"{mapped.name} {java_name(bind.name)}")

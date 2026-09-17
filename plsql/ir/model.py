@@ -173,6 +173,10 @@ class BindVariable:
     # what the Oracle DDL declares that column as. The variable's own type does not decide the storage scale:
     # `v_total NUMBER` assigned into a `NUMBER(14,2)` column is still cents in a scaled BIGINT.
     column_oracle_type: str | None = None
+    # P4-4: the PL/SQL expression whose value this bind carries. ScalarDB SQL evaluates almost nothing, so an
+    # expression in SET or VALUES is computed in the application and bound as a value instead. None means the
+    # bind is a plain variable reference.
+    expression: str | None = None
 
 
 @dataclass
