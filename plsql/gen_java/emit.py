@@ -85,7 +85,9 @@ class _Block:
         self.opening = opening
 
     def __enter__(self) -> JavaFile:
-        self.file.line(self.opening + " {")
+        # an empty opening is a bare block (a nested PL/SQL `BEGIN ... END`, #18); `" {"` would indent it by
+        # one stray space
+        self.file.line(f"{self.opening} {{" if self.opening else "{")
         self.file._indent += 1
         return self.file
 

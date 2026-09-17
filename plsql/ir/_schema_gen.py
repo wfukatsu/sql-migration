@@ -18,7 +18,7 @@ from .serde import SCHEMA_PATH, _key
 
 NODE_CLASSES = [M.Program, M.Module, M.Routine, M.Parameter, M.Declaration, M.ExceptionHandler,
                 M.Assignment, M.Call, M.Raise, M.Return, M.TransactionStatement, M.If, M.Case,
-                M.Loop, M.SqlOperation, M.DynamicSql, M.CursorStatement, M.ControlStatement,
+                M.Loop, M.Block, M.SqlOperation, M.DynamicSql, M.CursorStatement, M.ControlStatement,
                 M.Unsupported, M.Statement]
 
 _DEFS = {

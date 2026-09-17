@@ -130,6 +130,14 @@ def _link(cfg: ControlFlowGraph, statements: list[M.Statement], incoming: set[st
                 cfg._loop_members.add(node.id)
             cfg._loop_members.add(statement.id)
             current = {statement.id}
+        elif statement.kind == "Block":
+            # a nested `BEGIN ... EXCEPTION ... END` (#18). Its body runs in sequence; its handlers are
+            # reachable from anywhere in that body, because any statement in it can raise -- the same rule
+            # the routine's own handlers get, applied to the block's extent rather than the whole routine.
+            ends = _link(cfg, statement.body, {statement.id})
+            for handler in statement.exception_handlers:
+                ends |= _link(cfg, handler.body, {statement.id} | {s.id for s in _walk(statement.body)})
+            current = ends or {statement.id}
         elif statement.kind in TERMINATORS:
             cfg.edges.add((statement.id, cfg.exit))
             current = set()

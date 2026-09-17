@@ -64,6 +64,9 @@ def _sequence(statements: list[M.Statement], routine: M.Routine, symbols: Symbol
                 setattr(statement, attribute, _sequence(nested, routine, symbols, module, schema, rewritten))
         for branch in getattr(statement, "branches", []) or []:
             branch.body = _sequence(branch.body, routine, symbols, module, schema, rewritten)
+        # a nested block's handler is a statement sequence like any other (#18)
+        for handler in getattr(statement, "exception_handlers", []) or []:
+            handler.body = _sequence(handler.body, routine, symbols, module, schema, rewritten)
 
     out: list[M.Statement] = []
     index = 0
@@ -350,6 +353,8 @@ def _drop_isopen(statements: list[M.Statement], rewritten: set[str]) -> list[M.S
                 setattr(statement, attribute, _drop_isopen(nested, rewritten))
         for branch in getattr(statement, "branches", []) or []:
             branch.body = _drop_isopen(branch.body, rewritten)
+        for handler in getattr(statement, "exception_handlers", []) or []:
+            handler.body = _drop_isopen(handler.body, rewritten)
         if statement.kind == "If" and len(statement.branches) == 1 and not statement.else_body:
             match = ISOPEN.match(statement.branches[0].condition or "")
             body = statement.branches[0].body
