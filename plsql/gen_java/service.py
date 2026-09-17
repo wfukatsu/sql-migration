@@ -394,8 +394,8 @@ def _sql(file: JavaFile, statement: M.SqlOperation, routine: M.Routine) -> None:
         # never raised -- and quietly loses every row after the first when it does not.
         raise Untranslatable([f"BULK COLLECT INTO {', '.join(targets)}"], statement.original_sql)
     if targets and len(targets) == 1:
-        file.line(f"{java_name(targets[0])} = ({_local_type(routine, targets[0])}) "
-                  f"repository.{method}({arguments});")
+        file.line(f"{java_name(targets[0])} = "
+                  f"{_into(file, f'repository.{method}({arguments})', _local_type(routine, targets[0]))};")
     elif targets:
         # the repository returns the columns positionally, in the order the SELECT names them
         if any("." in target for target in targets):
@@ -404,13 +404,28 @@ def _sql(file: JavaFile, statement: M.SqlOperation, routine: M.Routine) -> None:
         file.comment(f"SELECT INTO {', '.join(targets)}")
         file.line(f"var row = repository.{method}({arguments});")
         for index, target in enumerate(targets):
-            file.line(f"{java_name(target)} = ({_local_type(routine, target)}) row[{index}];")
+            file.line(f"{java_name(target)} = "
+                      f"{_into(file, f'row[{index}]', _local_type(routine, target))};")
     elif (statement.sql_kind or "").upper() in ("INSERT", "UPDATE", "DELETE", "MERGE"):
         # SQL%ROWCOUNT is part of the behaviour: `update_email` raises when it is zero. One variable per
         # statement, because a routine may hold several DML statements in one scope.
         file.line(f"rowCount = repository.{method}({arguments});")
     else:
         file.line(f"repository.{method}({arguments});")
+
+
+def _into(file: JavaFile, value: str, target_type: str) -> str:
+    """Put a value the repository returned into a local of the declared type.
+
+    A cast is not enough for a number. The column a `SELECT INTO` reads decides what JDBC hands back -- a
+    ScalarDB `COUNT(*)` arrives as a Long -- while the local's type comes from the PL/SQL declaration, which for
+    any `NUMBER` is BigDecimal. Casting one to the other throws at run time, and only for the routines whose
+    SELECT happens to return the other kind. Coercing instead is what Oracle does on the same assignment.
+    """
+    if target_type == "BigDecimal":
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        return f"Plsql.dec({value})"
+    return f"({target_type}) {value}"
 
 
 def _record_into(file: JavaFile, routine: M.Routine, targets: list[str], method: str, arguments: str,
@@ -435,7 +450,7 @@ def _record_into(file: JavaFile, routine: M.Routine, targets: list[str], method:
             statement.original_sql)
     file.comment(f"SELECT INTO {', '.join(targets)}")
     file.line(f"var row = repository.{method}({arguments});")
-    casts = ", ".join(f"({java_type(kind).name}) row[{i}]"
+    casts = ", ".join(_into(file, f"row[{i}]", java_type(kind).name)
                       for i, kind in enumerate(_record_types(routine, holder) or [None] * len(fields)))
     file.line(f"{java_name(holder)} = new {record}({casts});")
 

@@ -69,15 +69,22 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  PARSE FAILED {failed}")
     if args.out_dir:
         written = write(analysis, args.out_dir)
-        evidence = review.evidence_from_diff(args.evidence, args.variant)
-        decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), evidence)
+        known = review.routine_ids(analysis.program)
+        program_analysis = analyse_program(analysis.program)
+        evidence = review.credit_private_callees(
+            review.evidence_from_diff(args.evidence, args.variant, known),
+            analysis.program, program_analysis.call_graph)
+        unmatched = review.unmatched_scenarios(args.evidence, known, args.variant)
+        decisions = decide(analysis.program, program_analysis, RuleSet.load(), evidence)
         written.update(review.write(analysis.program, decisions, args.out_dir,
                                     generated_root=args.generated, package=args.package,
-                                    fix_times=review.FixTimes.load(args.fix_times)))
+                                    fix_times=review.FixTimes.load(args.fix_times), unmatched=unmatched))
         if not args.quiet:
             counts: dict[str, int] = {}
             for decision in decisions.values():
                 counts[decision.verdict] = counts.get(decision.verdict, 0) + 1
+            if unmatched:
+                print(f"  {len(unmatched)} scenario(s) match no routine: {unmatched}")
             print(f"verdicts        {dict(sorted(counts.items()))}"
                   + ("" if args.evidence else "  (no --evidence: nothing can be AUTO)"))
             for name, path in written.items():
