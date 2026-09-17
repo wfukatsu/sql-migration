@@ -1,7 +1,7 @@
 {
  "id": "pkg_shipment",
  "kind": "Program",
- "schemaVersion": "1.0.0",
+ "schemaVersion": "1.1.0",
  "modules": [
   {
    "id": "pkg_shipment",
@@ -87,7 +87,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT COUNT(*) INTO v_count FROM order_lines WHERE order_id = p_order_id",
-       "selects_star": false,
+       "selectsStar": false,
        "cardinality": "UNKNOWN"
       },
       {
@@ -187,7 +187,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT status INTO v_status FROM orders WHERE order_id = p_order_id",
-       "selects_star": false,
+       "selectsStar": false,
        "cardinality": "UNKNOWN"
       },
       {
@@ -371,7 +371,7 @@
        },
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE orders SET shipped_at = p_when, status = 'SHIPPED' WHERE order_id = p_order_id",
-       "selects_star": false,
+       "selectsStar": false,
        "cardinality": "UNKNOWN"
       },
       {
@@ -490,7 +490,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT shipped_at INTO v_shipped FROM orders WHERE order_id = p_order_id",
-       "selects_star": false,
+       "selectsStar": false,
        "cardinality": "UNKNOWN"
       },
       {

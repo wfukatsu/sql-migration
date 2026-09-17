@@ -22,8 +22,12 @@ import org.yaml.snakeyaml.Yaml;
  *               scenarios are written in that order because Oracle binds them by name.
  */
 public record Scenario(String name, String unit, String routine, Map<String, Object> pinned, List<String> setup,
-                       String call, String kind, Map<String, Object> args, List<String> captureTables,
-                       Map<String, List<String>> mask, String note) {
+                       String call, String kind, String body, Map<String, Object> args,
+                       List<String> captureTables, Map<String, List<String>> mask, String note) {
+
+  /** `:o_status := v.status;` -- the field of a record a block scenario projects into an OUT bind. */
+  private static final java.util.regex.Pattern PROJECTION =
+      java.util.regex.Pattern.compile(":(\\w+)\\s*:=\\s*(\\w+)\\.(\\w+)\\s*;");
 
   public static Scenario read(Path file) throws Exception {
     try (Reader reader = Files.newBufferedReader(file)) {
@@ -53,6 +57,7 @@ public record Scenario(String name, String unit, String routine, Map<String, Obj
         or((List<String>) spec.get("setup")),
         (String) call.get("name"),
         (String) call.get("kind"),
+        (String) call.get("body"),
         call.get("args") == null ? new LinkedHashMap<>() : (Map<String, Object>) call.get("args"),
         or((List<String>) spec.get("capture_tables")),
         spec.get("mask") == null ? Map.of() : (Map<String, List<String>>) spec.get("mask"),
@@ -69,6 +74,36 @@ public record Scenario(String name, String unit, String routine, Map<String, Obj
 
   private static <T> List<T> or(List<T> value) {
     return value == null ? List.of() : value;
+  }
+
+  /**
+   * What a block scenario takes out of the record the routine returned, as {OUT bind: record field}.
+   *
+   * <p>A routine returning a `%ROWTYPE` cannot be bound straight out of Oracle, so those scenarios wrap the call
+   * in an anonymous block that projects the row down to a few fields. The ScalarDB side has the whole record in
+   * hand and has to make the same projection, or it would be compared against something the Oracle capture never
+   * contained.
+   *
+   * <p>Only the exact shape the corpus uses is read. A block doing anything else returns an empty map, and the
+   * caller reports the scenario as one it cannot run rather than guessing what the block meant.
+   */
+  public Map<String, String> projection() {
+    Map<String, String> out = new LinkedHashMap<>();
+    if (!"block".equals(kind) || body == null) return out;
+    java.util.regex.Matcher matcher = PROJECTION.matcher(body);
+    while (matcher.find()) {
+      out.put(matcher.group(1), matcher.group(3));
+    }
+    return out;
+  }
+
+  /** True when the block does something beyond calling the routine and projecting fields out of the result. */
+  public boolean blockIsMoreThanAProjection() {
+    if (!"block".equals(kind) || body == null) return false;
+    String stripped = PROJECTION.matcher(body).replaceAll("");
+    // what is left should be the DECLARE of the record, the call assigning into it, and BEGIN / END
+    return !stripped.replaceAll("(?s)DECLARE.*?BEGIN", "").replaceAll("\\s+", "")
+        .matches("(?i)\\w+:=[\\w.]+\\([^)]*\\);END;");
   }
 
   /** The PL/SQL routine's arguments, in declaration order. */

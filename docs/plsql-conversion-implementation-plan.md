@@ -224,6 +224,63 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 
 **Phase 3 完了条件**: AUTO 対象の意味的同等性テストが 100%、REVIEW 対象は差分理由を説明できる。
 
+#### P3-2 実施結果（2026-09-17）
+
+`difftest/plsql_compare.py` が Oracle の capture（P0-5）と ScalarDB の capture（P3-1）を突き合わせる。
+何も実行しない——両側とも記録済みなので、比較が比較対象を変えることはない。`difftest/plsql_diff.py` が
+H2 の早期信号（P2-11）と合わせて 1 コマンドで通す。
+
+比較するのは capture が持つ全項目。戻り値、OUT/IN OUT の各値、例外の有無と業務エラーコード、各表の列・
+行（多重集合として）・各値、NULL と空文字と末尾空白の区別、数値の値と scale、timestamp。
+監査ログなどの副作用表も他の表と同じに比較する（corpus の複数の routine はそれが主目的なので、対象外に
+しない）。マスク列は比較しないが、**マスク集合そのものは比較する**ので、片側だけマスクされていれば差分。
+
+| | scaled (`BIGINT ×10^2`) | double |
+|---|---|---|
+| 比較 | 52 | 52 |
+| 一致 | 26 | 25 |
+| 差異あり | 26 | 27 |
+| **AUTO で差異あり** | **0 / 14** | **0 / 14** |
+
+**AUTO 対象は両系統とも 100% 一致した。** 残る差異は全て REVIEW / REDESIGN で、24 件は生成器が意図的に
+拒否した構文（動的 SQL、cursor FOR loop、FORALL、sequence、BULK COLLECT）、残りは下記。
+
+#### 金額の規約についての測定結果
+
+**`scaled` は Oracle を再現し、`double` は再現しない。** 差が出たのは `money_rounded_total` 1 本:
+
+```
+table orders row order_id=1001: total_amount: expected=1234.57 actual=1234.565 (value)
+```
+
+Oracle は `NUMBER(14,2)` へ格納する際に half-up で丸めて `1234.57` を保持する。`double` 系統は
+`1234.565` をそのまま持つ。**金額の丸めを Oracle と同じにしたいなら scaled が要る**、というのが
+measurement の答えである。それ以外の 51 本では両系統は同じ結果を出した。
+
+なお「scale だけの差」（`190` と `190.00`）は独立した区分として集計し、差分には数えない。Oracle の
+ドライバは `NUMBER(14,2)` の末尾ゼロを落とすので、capture に届く scale はデータではなくドライバを
+表しているため。8 本がこれに該当する。
+
+#### P3-2 が見つけて直した 4 件
+
+いずれも「黙って違う答えを返す」種類で、compile も通り H2 でも通っていた。
+
+1. **`SELECT a, b INTO v_rec.a, v_rec.b`（package ローカル record 型）が一切代入されていなかった。**
+   生成コードは repository を呼んだ結果を捨て、record を null のまま返していた。原因は 3 段階で、
+   (a) `strip_into` が `v_rec.name` から修飾子を落として `name` にしていた、(b) package 仕様部の宣言は
+   `Package_obj_spec` 配下にあり、`Declare_spec` しか歩いていなかったため `TYPE t IS RECORD` が
+   シンボル表に入らなかった、(c) 複数ターゲットの `SELECT INTO` が代入文を生成していなかった。
+   3 つとも直し、record 型を Java の record として生成して 1 度で構築するようにした。
+   **部分的にしか埋まらない record は拒否する**（PL/SQL は 1 フィールドずつ埋めるが Java の record は
+   不変なので、全フィールドが埋まるときだけ等価）。
+2. **`BULK COLLECT INTO` が 1 行の `SELECT INTO` として扱われていた。** 「0 行」「複数行」が元にない例外に
+   なり、複数行のときは 2 行目以降を黙って捨てていた。拒否に変えた。
+3. **`SYSDATE` が ScalarDB 側で固定されていなかった。** Oracle 側ハーネスは `pinned.sysdate` に合わせて
+   DB のクロックを動かすが、Java 側は実時刻のままだった。`Plsql.setClock` は最初からあったのに、
+   ハーネスが呼んでいなかった。2 本の routine が別の日付で比較されていた。
+4. **timestamp の表記揺れ。** `LocalDateTime.toString()` は秒が 0 のとき秒を落とすので、同じ瞬間が
+   2 通りに書かれ、全 timestamp が差分に見えていた。Python の `isoformat()` と同じ表記に揃えた。
+
 #### P3-1 実施結果（2026-09-17）
 
 `runtime-java` の `ScalarDbCaptureIT` が 59 シナリオを実 ScalarDB Cluster に対して実行し、**31 本の canonical

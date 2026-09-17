@@ -9,6 +9,7 @@ import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -102,12 +103,17 @@ class ScalarDbCaptureIT {
         }
         runner.commit();
 
+        // Oracle's harness moves the database clock to `pinned.sysdate` before running the scenario; the Java
+        // side has to be moved with it, or every routine that reads SYSDATE is compared against a different day
+        pinClock(scenario);
         Map<String, Object> capture = runner.capture(scenario, invoker, "scalardb:" + VARIANT);
         Files.writeString(OUT.resolve(scenario.name() + ".json"), GSON.toJson(capture) + "\n");
         captured.add(scenario.name());
       } catch (Unrunnable e) {
         runner.rollback();
         unrunnable.put(scenario.name(), e.getMessage());
+      } finally {
+        Plsql.setClock(LocalDateTime::now);
       }
     }
 
@@ -147,6 +153,22 @@ class ScalarDbCaptureIT {
       }
       return statements;
     }
+  }
+
+  /**
+   * Move the generated code's clock to where the Oracle harness moved the database's.
+   *
+   * <p>A scenario that pins nothing is left on the real clock, and any column it writes from that clock is
+   * masked, so nothing unpinned reaches the comparison either way.
+   */
+  private static void pinClock(Scenario scenario) {
+    Object sysdate = scenario.pinned().get("sysdate");
+    if (sysdate == null) {
+      Plsql.setClock(LocalDateTime::now);
+      return;
+    }
+    LocalDateTime pinned = LocalDateTime.parse(String.valueOf(sysdate).replace(' ', 'T'));
+    Plsql.setClock(() -> pinned);
   }
 
   /** ScalarDB wraps its own message a few layers down; the outer JDBC exception says nothing useful. */
@@ -194,6 +216,10 @@ class ScalarDbCaptureIT {
         throw new Unrunnable("no generated service for unit " + scenario.unit() + " (" + e + ")");
       }
 
+      if (scenario.blockIsMoreThanAProjection()) {
+        throw new Unrunnable("the scenario's block does more than call the routine and project its result; "
+            + "running the routine alone would capture a different thing");
+      }
       String name = camelCase(scenario.routine());
       List<Object> raw = scenario.arguments();
       for (Method candidate : service.getClass().getMethods()) {

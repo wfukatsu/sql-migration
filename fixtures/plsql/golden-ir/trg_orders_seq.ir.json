@@ -1,7 +1,7 @@
 {
  "id": "trg_orders_seq",
  "kind": "Program",
- "schemaVersion": "1.0.0",
+ "schemaVersion": "1.1.0",
  "modules": [
   {
    "id": "trg_orders_seq",

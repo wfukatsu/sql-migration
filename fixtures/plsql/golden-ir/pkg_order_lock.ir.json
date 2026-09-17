@@ -1,7 +1,7 @@
 {
  "id": "pkg_order_lock",
  "kind": "Program",
- "schemaVersion": "1.0.0",
+ "schemaVersion": "1.1.0",
  "modules": [
   {
    "id": "pkg_order_lock",
@@ -153,7 +153,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT * INTO v_row FROM orders WHERE order_id = p_order_id",
-       "selects_star": false,
+       "selectsStar": false,
        "cardinality": "UNKNOWN"
       },
       {
@@ -281,7 +281,7 @@
        ],
        "sqlKind": "SELECT",
        "originalSql": "SELECT * INTO v_row FROM orders WHERE order_id = p_order_id FOR UPDATE WAIT 5",
-       "selects_star": false,
+       "selectsStar": false,
        "cardinality": "UNKNOWN",
        "lockingMode": "FOR UPDATE WAIT 5"
       },
@@ -328,7 +328,7 @@
        },
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE orders SET status = 'CANCELLED', note = p_reason WHERE order_id = p_order_id",
-       "selects_star": false,
+       "selectsStar": false,
        "cardinality": "UNKNOWN"
       },
       {
@@ -356,7 +356,7 @@
          },
          "sqlKind": "UPDATE",
          "originalSql": "UPDATE products SET stock_qty = stock_qty + r.qty WHERE product_id = r.product_id",
-         "selects_star": false,
+         "selectsStar": false,
          "cardinality": "UNKNOWN"
         }
        ]
