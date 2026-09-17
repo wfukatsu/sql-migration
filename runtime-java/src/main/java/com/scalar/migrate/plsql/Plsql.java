@@ -230,8 +230,16 @@ public final class Plsql {
     return CLOCK.get();
   }
 
+  /**
+   * Oracle's SYSTIMESTAMP, in the zone the migration fixed.
+   *
+   * <p>UTC, by decision (plan §9, 2026-09-17): everything is stored in UTC and converted for display. Using
+   * the JVM's default zone instead -- which this did -- makes the value depend on where the process happens to
+   * run, so two deployments of the same code would write different instants for the same moment, and a
+   * comparison against Oracle would pass or fail by accident of the machine.
+   */
   public static java.time.OffsetDateTime systimestamp() {
-    return sysdate().atZone(java.time.ZoneId.systemDefault()).toOffsetDateTime();
+    return sysdate().atOffset(java.time.ZoneOffset.UTC);
   }
 
   /** Pin the clock, for a test or for a run that has to be reproducible. */
