@@ -116,15 +116,25 @@ def generate_module(module: M.Module, package: str, domain_package: str) -> Repo
     file.add_import(CONNECTION_IMPORT, "java.sql.PreparedStatement", "java.sql.ResultSet", "java.sql.SQLException")
     file.add_import(f"{domain_package}.NoDataFoundException", f"{domain_package}.TooManyRowsException")
     file.domain_package = domain_package  # _row needs it to import the %ROWTYPE record
+    # 採番する statement があるときだけ Sequences を持たせる。使わないクラスに依存を足すと、移行先は
+    # 採番していない Repository にも実装を用意させられることになる
+    takes_sequences = _uses_sequences(module)
+    if takes_sequences:
+        file.add_import("com.scalar.migrate.plsql.Sequences")
 
     file.comment(
         f"SQL of {module.name}.\n"
         "Every method runs inside the caller's transaction: the connection comes in, and nothing here commits.")
     with file.block(f"public class {name}") as f:
         f.line("private final Connection connection;")
+        if takes_sequences:
+            f.line("private final Sequences sequences;")
         f.line()
-        with f.block(f"public {name}(Connection connection)") as g:
+        signature = "Connection connection" + (", Sequences sequences" if takes_sequences else "")
+        with f.block(f"public {name}({signature})") as g:
             g.line("this.connection = connection;")
+            if takes_sequences:
+                g.line("this.sequences = sequences;")
         for routine in module.routines:
             statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
             loop_queries = {loop.query.id: loop for loop in statements
@@ -142,6 +152,17 @@ def generate_module(module: M.Module, package: str, domain_package: str) -> Repo
                     continue
                 _method(f, routine, statement, result)
     return result
+
+
+def _uses_sequences(module: M.Module) -> bool:
+    """この module のどこかが採番するか。`seq_x.NEXTVAL` は式として持ち上げられている（P4-4 の仕組み）。"""
+    for routine in module.routines:
+        statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
+        for statement in statements:
+            for bind in getattr(statement, "binds", None) or []:
+                if bind.expression and ".NEXTVAL" in bind.expression.upper():
+                    return True
+    return False
 
 
 def loop_method(routine: M.Routine, loop: M.Loop) -> str:

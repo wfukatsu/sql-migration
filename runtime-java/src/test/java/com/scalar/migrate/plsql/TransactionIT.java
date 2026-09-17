@@ -254,8 +254,7 @@ class TransactionIT {
 
     Object service = Class.forName("com.example.migrated.application.PkgStockReserveService")
         .getConstructors()[0].newInstance(
-            Class.forName("com.example.migrated.infrastructure.PkgStockReserveRepository")
-                .getConstructor(java.sql.Connection.class).newInstance(runner.connection()));
+            repositoryOf("com.example.migrated.infrastructure.PkgStockReserveRepository"));
     Throwable raised = assertThrows(java.lang.reflect.InvocationTargetException.class,
         () -> service.getClass().getMethod("reserve", BigDecimal.class, BigDecimal.class)
             .invoke(service, new BigDecimal(10), new BigDecimal(1))).getCause();
@@ -371,11 +370,33 @@ class TransactionIT {
     });
   }
 
+  /**
+   * 採番する Repository は `Sequences` も受け取る（計画 §9）。受け取らない物に依存を足さない設計なので、
+   * コンストラクタは 2 種類ある。テストはどちらでも組み立てられる必要がある。
+   */
+  private Object repositoryOf(String repositoryClass) throws Exception {
+    Class<?> repository = Class.forName(repositoryClass);
+    for (var constructor : repository.getConstructors()) {
+      Class<?>[] parameters = constructor.getParameterTypes();
+      if (parameters.length == 1) {
+        return constructor.newInstance(runner.connection());
+      }
+      if (parameters.length == 2 && parameters[1] == Sequences.class) {
+        // 拒否されることを確かめるテストなので、採番が呼ばれたらそれ自体が失敗である
+        Sequences never = name -> {
+          throw new AssertionError("拒否されるはずの routine が採番した: " + name);
+        };
+        return constructor.newInstance(runner.connection(), never);
+      }
+    }
+    throw new AssertionError("組み立てられないコンストラクタ: " + repositoryClass);
+  }
+
   private void assertRefuses(String serviceClass, String repositoryClass, String method,
       Class<?>[] types, Object[] args) throws Exception {
     Class<?> repository = Class.forName(repositoryClass);
     Object service = Class.forName(serviceClass).getConstructor(repository)
-        .newInstance(repository.getConstructor(java.sql.Connection.class).newInstance(runner.connection()));
+        .newInstance(repositoryOf(repositoryClass));
     Throwable raised = assertThrows(java.lang.reflect.InvocationTargetException.class,
         () -> service.getClass().getMethod(method, types).invoke(service, args)).getCause();
     assertTrue(raised instanceof UnsupportedOperationException,
