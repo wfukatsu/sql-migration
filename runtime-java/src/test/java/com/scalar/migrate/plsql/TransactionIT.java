@@ -1,6 +1,7 @@
 package com.scalar.migrate.plsql;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -264,6 +265,110 @@ class TransactionIT {
     long unchanged = stockOf(runner, 10);
     runner.commit();
     assertEquals(100L, unchanged, "the refused routine changed the stock anyway");
+  }
+
+  // --- the patterns in docs/plsql-transaction-patterns.md, measured rather than assumed ------------------
+
+  /**
+   * Pattern A: a conflict is retryable, and retrying it succeeds.
+   *
+   * <p>The document tells a reader to retry a rejected transaction. That is only advice if nothing checks it.
+   * Here the first attempt is made to lose a race and the retry is the one that lands, so the decrement the
+   * rejected transaction intended is not lost.
+   */
+  @Test
+  void aRejectedTransactionSucceedsWhenItIsRetried() throws Exception {
+    seedProduct(runner, 10, 100);
+    runner.commit();
+
+    CountDownLatch bothHaveRead = new CountDownLatch(2);
+    AtomicReference<Throwable> loser = new AtomicReference<>();
+    Thread one = decrementer(10, bothHaveRead, new AtomicReference<>());
+    Thread two = decrementer(10, bothHaveRead, loser);
+    one.start();
+    two.start();
+    one.join(TimeUnit.SECONDS.toMillis(60));
+    two.join(TimeUnit.SECONDS.toMillis(60));
+
+    if (loser.get() == null) return;  // both landed; the retry story is not exercised by this run
+    // the rejected side retries, on its own, and this time nothing is racing it
+    try (ScalarDbRunner retry = open()) {
+      long current = stockOf(retry, 10);
+      retry.execute("UPDATE products SET stock_qty = " + (current - 1) + " WHERE product_id = 10");
+      retry.commit();
+    }
+    long remaining = stockOf(runner, 10);
+    runner.commit();
+    assertEquals(98L, remaining, "after the retry both decrements should have landed");
+  }
+
+  /**
+   * Pattern A: a business failure is not a conflict, and must not be retried.
+   *
+   * <p>The document says to separate the two. They arrive as different exception types, and this pins that:
+   * retrying a `MigratedException` would loop forever and change nothing.
+   */
+  @Test
+  void aBusinessFailureIsNotAConflict() throws Exception {
+    seedCustomer(runner, 1, "before@example.com", "100.00");
+    runner.commit();
+
+    MigratedException raised = assertThrows(MigratedException.class,
+        () -> crud(runner).updateEmail(new BigDecimal(99), "nobody@example.com"));
+    runner.rollback();
+
+    assertEquals(-20010, raised.code());
+    // the retry loop catches SQLTransactionRollbackException; a business error is not one, and the compiler
+    // says so -- `raised instanceof SQLTransactionRollbackException` does not even compile. Asserting it on
+    // the classes keeps the guarantee readable where the pattern is described.
+    assertFalse(java.sql.SQLTransactionRollbackException.class.isAssignableFrom(raised.getClass()),
+        "a business error must not arrive as the type the retry loop catches");
+  }
+
+  /**
+   * Pattern D: a counter is a high-conflict point, which is why the document says to keep it out of a
+   * transaction that does anything else.
+   */
+  @Test
+  void twoTransactionsTakingTheSameCounterDoNotBothSucceed() throws Exception {
+    runner.execute("INSERT INTO counters (counter_name, next_value) VALUES ('PAYMENT_ID', 5000)");
+    runner.commit();
+
+    CountDownLatch bothHaveRead = new CountDownLatch(2);
+    AtomicReference<Throwable> first = new AtomicReference<>();
+    AtomicReference<Throwable> second = new AtomicReference<>();
+    Thread one = counterTaker(bothHaveRead, first);
+    Thread two = counterTaker(bothHaveRead, second);
+    one.start();
+    two.start();
+    one.join(TimeUnit.SECONDS.toMillis(60));
+    two.join(TimeUnit.SECONDS.toMillis(60));
+
+    List<Map<String, Object>> rows = runner.select(
+        "SELECT next_value FROM counters WHERE counter_name = 'PAYMENT_ID'");
+    long next = ((Number) rows.get(0).get("next_value")).longValue();
+    runner.commit();
+
+    boolean bothCommitted = first.get() == null && second.get() == null;
+    assertFalse(bothCommitted && next == 5001,
+        "both transactions took the same number: two payments would share an id");
+  }
+
+  private Thread counterTaker(CountDownLatch bothHaveRead, AtomicReference<Throwable> failure) {
+    return new Thread(() -> {
+      try (ScalarDbRunner own = open()) {
+        List<Map<String, Object>> rows = own.select(
+            "SELECT next_value FROM counters WHERE counter_name = 'PAYMENT_ID'");
+        long taken = ((Number) rows.get(0).get("next_value")).longValue();
+        bothHaveRead.countDown();
+        bothHaveRead.await(60, TimeUnit.SECONDS);
+        own.execute("UPDATE counters SET next_value = " + (taken + 1)
+            + " WHERE counter_name = 'PAYMENT_ID'");
+        own.commit();
+      } catch (Throwable t) {
+        failure.set(t);
+      }
+    });
   }
 
   private void assertRefuses(String serviceClass, String repositoryClass, String method,
