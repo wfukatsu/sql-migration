@@ -169,6 +169,57 @@ public final class Plsql {
     return BigDecimal.valueOf(value);
   }
 
+  // --- the bind boundary (P3-1) -------------------------------------------------------------------------
+  //
+  // PL/SQL NUMBER becomes BigDecimal in the generated code, and ScalarDB's JDBC driver refuses a BigDecimal
+  // outright (DB-SQL-10016). So a value crossing into ScalarDB has to become the column's own type, and a value
+  // read back has to become a BigDecimal again. H2 accepted the BigDecimal, which is why this only showed up
+  // once the generated code met a real cluster.
+  //
+  // `scale` is how many decimal places the column keeps when it is stored as an integer. Oracle NUMBER(12,2) in
+  // a BIGINT column is scale 2 -- the column holds cents. Scale 0 means the column holds the value as it is.
+
+  /** A PL/SQL value on its way into a ScalarDB column of the given type. */
+  public static Object bind(Object value, String scalarDbType, int scale) {
+    if (isNull(value)) return null;
+    BigDecimal decimal = value instanceof BigDecimal d ? d
+        : value instanceof Number n ? OracleNumbers.toBigDecimal(n) : null;
+    if (decimal == null) return value;  // TEXT, DATE, TIMESTAMP and the like pass through untouched
+    switch (scalarDbType == null ? "" : scalarDbType.toUpperCase()) {
+      case "BIGINT":
+        return scaled(decimal, scale).longValueExact();
+      case "INT":
+        return scaled(decimal, scale).intValueExact();
+      case "DOUBLE":
+        return decimal.doubleValue();
+      case "FLOAT":
+        return decimal.floatValue();
+      case "TEXT":
+        return decimal.toPlainString();
+      default:
+        return decimal;
+    }
+  }
+
+  /**
+   * Round to the column's scale the way Oracle does when a value is stored into a NUMBER(p,s): half-up, not
+   * half-even, and never silently truncated. Refusing a value Oracle would have accepted would make the
+   * migrated code stricter than the database it is reproducing.
+   */
+  private static java.math.BigInteger scaled(BigDecimal value, int scale) {
+    return OracleNumbers.round(value, scale).movePointRight(scale).toBigIntegerExact();
+  }
+
+  /** A value read out of a ScalarDB column of the given type, on its way back into PL/SQL NUMBER. */
+  public static BigDecimal read(Object value, String scalarDbType, int scale) {
+    if (isNull(value)) return null;
+    if (value instanceof Long l) return BigDecimal.valueOf(l, scale);
+    if (value instanceof Integer i) return BigDecimal.valueOf(i, scale);
+    if (value instanceof BigDecimal d) return scale == 0 ? d : d.movePointLeft(scale);
+    if (value instanceof Number n) return OracleNumbers.toBigDecimal(n);
+    return OracleNumbers.toBigDecimal(value);
+  }
+
   /**
    * The database clock, which is not the JVM clock.
    *
