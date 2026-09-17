@@ -382,7 +382,10 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
 
 def _sql(file: JavaFile, statement: M.SqlOperation, routine: M.Routine) -> None:
     method = f"{java_name(routine.name)}{_sql_suffix(statement)}"
-    arguments = ", ".join(java_name(b.plsql_variable or b.name) for b in statement.binds)
+    # a bind lifted out of the SQL (P4-4) is computed inside the repository from the other binds, so it is not
+    # passed in. The repository's parameter list is built from the same rule; the two have to agree.
+    arguments = ", ".join(java_name(b.plsql_variable or b.name)
+                          for b in statement.binds if not b.expression)
     if statement.plan_id or statement.target_status == "PLANNED":
         # the plan hands back rows, and turning them into the PL/SQL variables is a decision (which row? what
         # when there are none?), so it is left to the reviewer rather than guessed
