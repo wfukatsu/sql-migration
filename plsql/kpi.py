@@ -7,8 +7,10 @@ numbers were typed by hand is a report nobody can re-check; this one can be re-r
 
 Two of the seven do not come out of an artifact and are reported as such rather than filled in:
 
-* **KPI-6** is measured human work. It is `null` until somebody records it (`--fix-times`), because the only KPI
-  that measures the migration rather than the tool is the worst one to invent a number for.
+* **KPI-6** is not measured in this PoC (decision of 2026-09-17, docs/plsql-kpi.md). It reports as a decision
+  rather than a shortfall, and the mechanism stays: `--fix-times` still takes a file of measured minutes if
+  somebody later wants the number. What the decision costs is stated on every run -- this PoC does not measure
+  migration effort, and the other six KPIs are about the tool, not about how long the migration takes.
 * **KPI-4** needs a compiler. This reports whether every AUTO routine was generated cleanly, which is the part
   that can be read off the artifacts, and says plainly that `gradle compileJava` is the other half.
 
@@ -150,13 +152,19 @@ def _kpi5(evidence_path: str | None, variant: str | None) -> dict:
 
 
 def _kpi6(document: dict) -> dict:
+    """Not measured, by decision. Reported as such rather than as a target that was missed.
+
+    If somebody does supply measured minutes, the number is shown -- the decision was to stop asking for it,
+    not to refuse it.
+    """
     measured = document["humanFixMinutes"]
     total = sum(entry["measured"] for entry in measured["byVerdict"].values())
-    return {"name": "人手修正時間", "unit": "minutes", "target": None,
+    return {"name": "人手修正時間", "unit": "minutes", "target": None, "measured": total > 0,
             "value": None if total == 0 else {k: v["median"] for k, v in measured["byVerdict"].items()},
-            "detail": f"{total} routine(s) measured, {len(measured['unmeasured'])} unmeasured",
+            "detail": (f"{total} routine(s) measured" if total else
+                       "計測しない（2026-09-17 の決定）。本 PoC は移行工数を測っていない"),
             "source": measured["source"],
-            "note": "測定値のみ。誰も測っていなければ null（計画 §9 / KPI 定義 §KPI-6）"}
+            "note": "他の 6 指標はツール内部の健全性であり、移行にかかる時間ではない"}
 
 
 def _kpi7(src: Path, analysis) -> dict:
@@ -170,11 +178,14 @@ def _kpi7(src: Path, analysis) -> dict:
 
 
 def render(result: dict) -> str:
-    lines = ["KPI (docs/plsql-kpi.md)", f"  corpus: {result['corpus']['note']}", ""]
+    lines = ["KPI (docs/plsql-kpi.md)", f"  corpus: {result['corpus']['note']}",
+             "  KPI-6 は計測しない（2026-09-17 の決定）。したがって本 PoC は移行工数を測っていない", ""]
     for key in ("kpi1", "kpi2", "kpi3", "kpi4", "kpi5", "kpi6", "kpi7"):
         entry = result[key]
         value = entry["value"]
-        if value is None:
+        if key == "kpi6" and value is None:
+            shown = "計測しない"
+        elif value is None:
             shown = "未計測"
         elif entry.get("unit") == "rate" and isinstance(value, float):
             shown = f"{value:.1%}"
