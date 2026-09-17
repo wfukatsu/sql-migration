@@ -25,18 +25,19 @@ class Dto:
     kind: str          # row | result
 
 
-def row_record(name: str, resolved: str, package: str, source: str = "") -> Dto | None:
+def row_record(name: str, resolved: str, package: str, source: str = "",
+               suffix: str = "Row", note: str | None = None) -> Dto | None:
     """A record for a `%ROWTYPE`, one component per column, in DDL order."""
     columns = record_columns(resolved)
     if not columns:
         return None
-    file = JavaFile(package=package, name=java_class_name(name) + "Row", source=source)
+    file = JavaFile(package=package, name=java_class_name(name) + suffix, source=source)
     components = []
     for column, oracle in columns:
         mapped = java_type(oracle)
         file.add_import(*mapped.imports)
         components.append(f"{mapped.name} {java_name(column)}")
-    file.comment(f"%ROWTYPE of {name}. Components follow the column names, never their order.")
+    file.comment(note or f"%ROWTYPE of {name}. Components follow the column names, never their order.")
     file.line(f"public record {file.name}({', '.join(components)}) {{}}")
     return Dto(file=file, kind="row")
 
@@ -72,12 +73,24 @@ def dtos_for(module: M.Module, package: str) -> list[Dto]:
     for routine in module.routines:
         source = f"{module.name}.{routine.name}"
         for declaration in routine.declarations:
-            if declaration.type and declaration.type.origin == "rowtype" and declaration.type.resolved:
+            if declaration.type is None or not declaration.type.resolved:
+                continue
+            if declaration.type.origin == "rowtype":
                 base = declaration.type.oracle.split("%")[0]
                 if base.lower() in seen:
                     continue
                 seen.add(base.lower())
                 record = row_record(base, declaration.type.resolved, package, source)
+                if record is not None:
+                    out.append(record)
+            elif declaration.type.origin == "record":
+                # a package-local `TYPE t IS RECORD (...)`: the same thing as a %ROWTYPE, named by the package
+                base = declaration.type.oracle.rpartition(".")[2]
+                if base.lower() in seen:
+                    continue
+                seen.add(base.lower())
+                record = row_record(base, declaration.type.resolved, package, source, suffix="",
+                                    note=f"PL/SQL record type {base}. Components follow the field names.")
                 if record is not None:
                     out.append(record)
         result = result_record(routine, package, source)

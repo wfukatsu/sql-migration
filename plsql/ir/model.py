@@ -21,7 +21,9 @@ from dataclasses import dataclass, field
 
 from ..source import Issue, SourceRange
 
-SCHEMA_VERSION = "1.0.0"
+# 1.1.0: P3-1 added what each bind and select item was attributed to (column, ScalarDB type, declared Oracle
+# type) and whether the SELECT asked for a star. All optional, so a 1.0.0 reader still reads a 1.1.0 document.
+SCHEMA_VERSION = "1.1.0"
 
 # --- verdict / capability vocabularies (shared with docs/plsql-kpi.md) -------------------------------
 VERDICTS = ("AUTO", "REVIEW", "REDESIGN")
@@ -40,7 +42,7 @@ class TypeRef:
 
     oracle: str                      # as written: "NUMBER(19)", "orders.status%TYPE", "customers%ROWTYPE"
     resolved: str | None = None      # after %TYPE / %ROWTYPE resolution: "VARCHAR2(20)"
-    origin: str = "declared"         # declared | rowtype | column-type | inferred | unresolved
+    origin: str = "declared"         # declared | rowtype | record | column-type | inferred | unresolved
     schema_snapshot: str | None = None  # which DDL snapshot resolved it (design doc §5.3)
     nullable: bool | None = None
 
@@ -188,7 +190,7 @@ class SqlOperation(Statement):
     into_oracle_types: list[str | None] = field(default_factory=list)
     # whether the SELECT asks for every column. One INTO target and a star means a %ROWTYPE read, which the
     # repository cannot build from a single result column (P3-1).
-    selects_star: bool = False
+    selects_star: bool = False  # serialised as selectsStar
     cardinality: str = "UNKNOWN"
     locking_mode: str | None = None       # FOR UPDATE / NOWAIT / SKIP LOCKED / WAIT n
     target_status: str | None = None      # OK | WARN | PLANNED | ERROR, from scalardb_migrate
