@@ -11,6 +11,7 @@ routine each error came from -- because "PkgXService.java:184" is not something 
 
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import textwrap
@@ -204,12 +205,56 @@ def test_the_exceptions_the_repository_throws_are_always_written(tmp_path):
     assert (domain / "TooManyRowsException.java").exists()
 
 
+def test_the_check_does_not_leave_its_classes_in_the_shared_build(tmp_path, monkeypatch):
+    """Compiling a throwaway tree into `runtime-java/build/` would replace the classes the rest of the
+    repository just built, and two checks at once would overwrite each other."""
+    seen = {}
+
+    class Finished:
+        returncode = 0
+        stdout = stderr = ""
+
+    def record(command, **kwargs):
+        seen["command"] = command
+        return Finished()
+
+    monkeypatch.setattr("plsql.verify.shutil.which", lambda _: "/usr/bin/gradle")
+    monkeypatch.setattr("plsql.verify.subprocess.run", record)
+    verify(tmp_path)
+    build = next(a for a in seen["command"] if a.startswith("-Pplsql.buildDir="))
+    assert ROOT.as_posix() not in build, "the check writes outside the repository's build directory"
+
+
+def test_the_exceptions_the_generator_raises_say_so_in_the_report(tmp_path):
+    """An empty `raisedBy` reads as 'nothing raises this', which is the opposite of why the class is there."""
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "schema.sql").write_text((SRC / "schema.sql").read_text(encoding="utf-8"), encoding="utf-8")
+    (source / "prc_twice.prc").write_text(textwrap.dedent(TWO_BLOCKS), encoding="utf-8")
+    out = tmp_path / "out"
+    assert main([str(source), "--scalardb-schema", str(SCALARDB), "--out-dir", str(out),
+                 "--quiet", "--no-verify-compile"]) == 0
+    report = json.loads((out / "generation-report.json").read_text(encoding="utf-8"))
+    codes = {c["code"]: c for c in report["errorCodes"]["codes"]}
+    assert codes[100]["raisedBy"] == [] and codes[100]["raisedByGenerator"] is True
+
+
 # --- the gate ------------------------------------------------------------------------------------------
 
 def test_the_run_fails_when_the_check_was_asked_for_and_could_not_run(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr("plsql.verify.shutil.which", lambda _: None)
     assert main([str(SRC), "--out-dir", str(tmp_path), "--verify-compile"]) == 1
     assert "compile check did not run" in capsys.readouterr().out
+
+
+def test_quiet_still_says_why_the_run_failed(tmp_path, monkeypatch, capsys):
+    """`--quiet` means 'say nothing when it goes well'. Returning 1 in silence is a failure nobody can act
+    on, so the reason goes to stderr."""
+    monkeypatch.setattr("plsql.verify.shutil.which", lambda _: None)
+    assert main([str(SRC), "--out-dir", str(tmp_path), "--verify-compile", "--quiet"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "compile check did not run" in captured.err
 
 
 def test_the_run_fails_on_a_javac_error_and_names_the_routine(tmp_path, monkeypatch, capsys):

@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -79,14 +80,18 @@ def verify(out_dir: str | Path, project: "GeneratedProject | None" = None,
         return CompileReport(ran=False, unavailable="gradle is not on PATH")
     if not gradle_project.is_dir():
         return CompileReport(ran=False, unavailable=f"no Gradle project at {gradle_project}")
-    command = [gradle, "compileJava", "--console=plain", "-q", "-Pplsql.verify=1",
-               f"-Pplsql.generatedDir={Path(out_dir).resolve()}", "--rerun-tasks"]
-    try:
-        finished = subprocess.run(command, cwd=str(gradle_project), capture_output=True, text=True,
-                                  timeout=timeout)
-    except (OSError, subprocess.SubprocessError) as problem:
-        return CompileReport(ran=False, unavailable=f"gradle could not be run: {problem}")
-    output = finished.stdout + finished.stderr
+    # a build directory of its own: compiling a throwaway tree into `runtime-java/build/` would replace the
+    # classes the rest of the repository just built, and two checks at once would overwrite each other
+    with tempfile.TemporaryDirectory(prefix="plsql-verify-") as build_dir:
+        command = [gradle, "compileJava", "--console=plain", "-q", "-Pplsql.verify=1",
+                   f"-Pplsql.generatedDir={Path(out_dir).resolve()}",
+                   f"-Pplsql.buildDir={build_dir}", "--rerun-tasks"]
+        try:
+            finished = subprocess.run(command, cwd=str(gradle_project), capture_output=True, text=True,
+                                      timeout=timeout)
+        except (OSError, subprocess.SubprocessError) as problem:
+            return CompileReport(ran=False, unavailable=f"gradle could not be run: {problem}")
+        output = finished.stdout + finished.stderr
     errors = _errors(output)
     if finished.returncode != 0 and not errors:
         # the build failed for a reason that is not the generated code -- a missing dependency, no network on

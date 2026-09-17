@@ -40,6 +40,9 @@ class ErrorCode:
     oracle_name: str
     message: str = ""
     routines: list[str] = field(default_factory=list)
+    # the generated code throws this one itself, from `SELECT INTO`. Without saying so, a class with an empty
+    # `raisedBy` reads as "nothing raises this", which is the opposite of why it is in the program.
+    by_generator: bool = False
 
 
 class Registry:
@@ -59,14 +62,17 @@ class Registry:
         generated code can throw it, not because a routine named it."""
         existing = self.codes.get(code)
         if existing is None:
-            entry = ErrorCode(code=code, class_name=class_name, oracle_name=oracle_name, message=message)
+            entry = ErrorCode(code=code, class_name=class_name, oracle_name=oracle_name, message=message,
+                              by_generator=routine is None)
             if routine is not None:
                 entry.routines.append(routine)
             self.codes[code] = entry
             return entry
         if existing.class_name != class_name:
             self.conflicts.append((code, existing.class_name, class_name))
-        if routine is not None and routine not in existing.routines:
+        if routine is None:
+            existing.by_generator = True
+        elif routine not in existing.routines:
             existing.routines.append(routine)
         return existing
 
@@ -74,7 +80,7 @@ class Registry:
         return {
             "codes": [
                 {"code": e.code, "class": e.class_name, "oracle": e.oracle_name,
-                 "message": e.message, "raisedBy": e.routines}
+                 "message": e.message, "raisedBy": e.routines, "raisedByGenerator": e.by_generator}
                 for e in sorted(self.codes.values(), key=lambda e: e.code)],
             "conflicts": [{"code": c, "first": a, "second": b} for c, a, b in self.conflicts],
         }
