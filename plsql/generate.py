@@ -94,7 +94,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  AUTO but not cleanly generated: {routine}")
         if report is not None:
             _print_compile(report, decisions)
-    return 1 if dirty or (report is not None and not report.ok) else 0
+    failed = bool(dirty) or (report is not None and not report.ok)
+    if args.quiet and failed:
+        # `--quiet` means "say nothing when it goes well". A run that returns 1 and says nothing about why is
+        # a failure nobody can act on, so the reason goes to stderr, where quiet output belongs anyway.
+        for routine in dirty:
+            print(f"  AUTO but not cleanly generated: {routine}", file=sys.stderr)
+        if report is not None and not report.ok:
+            _print_compile(report, decisions, stream=sys.stderr)
+    return 1 if failed else 0
 
 
 def _verify_compile(project, args):
@@ -103,26 +111,29 @@ def _verify_compile(project, args):
     return verify(args.out_dir, project)
 
 
-def _print_compile(report, decisions: dict) -> None:
+def _print_compile(report, decisions: dict, stream=None) -> None:
     """What the compiler said, per routine, with the verdict the rules had given it.
 
     An error under an AUTO routine is the one this check was added for: the rules said it could be generated
     unattended and the compiler says it cannot be compiled at all.
     """
+    out = stream or sys.stdout
     if not report.ran:
-        print(f"  compile check did not run: {report.unavailable}")
-        print("  asked for --verify-compile, so this run fails rather than reporting an unverified AUTO")
+        print(f"  compile check did not run: {report.unavailable}", file=out)
+        print("  asked for --verify-compile, so this run fails rather than reporting an "
+              "unverified AUTO", file=out)
         return
     if report.ok:
-        print("  compile check: gradle compileJava succeeded over the generated tree")
+        print("  compile check: gradle compileJava succeeded over the generated tree", file=out)
         return
-    print(f"  compile check: {len(report.errors)} javac error(s)")
+    print(f"  compile check: {len(report.errors)} javac error(s)", file=out)
     for error in report.errors:
         verdict = decisions[error.routine].rule_verdict if error.routine in decisions else "?"
         if error.routine:
-            print(f"    {error.routine} [{verdict}]: {error.message} ({Path(error.file).name}:{error.line})")
+            print(f"    {error.routine} [{verdict}]: {error.message} "
+                  f"({Path(error.file).name}:{error.line})", file=out)
         else:
-            print(f"    {Path(error.file).name}:{error.line}: {error.message}")
+            print(f"    {Path(error.file).name}:{error.line}: {error.message}", file=out)
 
 
 def _dirty_auto(project, decisions) -> list[str]:

@@ -66,6 +66,13 @@ ext {
     }
 }
 
+// The check must not leave its answer in the build the repository uses. Compiling a throwaway tree into
+// `build/` replaces the corpus's classes with someone else's, and two runs at once fight over the same
+// directory. `plsql.buildDir` gives the check its own; the default is the one every other build uses.
+if (providers.gradleProperty('plsql.buildDir').isPresent()) {
+    layout.buildDirectory = file(providers.gradleProperty('plsql.buildDir').get())
+}
+
 // The compile check reads javac's output to name the routine each error came from, and javac speaks the
 // JVM's language. Pinning it here means the reader does not have to enumerate languages -- the same reason
 // `applicationDefaultJvmArgs` pins the runner's locale. Only under `plsql.verify`: forking costs a JVM, and
