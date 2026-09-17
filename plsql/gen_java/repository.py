@@ -382,10 +382,17 @@ def _column_scale(statement: M.SqlOperation, index: int) -> int:
 
 
 def _parameters(file: JavaFile, statement: M.SqlOperation) -> tuple[list[str], list[str]]:
+    from .dto import loop_component_type
+
     parameters, arguments = [], []
     # a lifted expression is computed here from the other binds, so it is not a parameter of its own
     for bind in (b for b in statement.binds if not b.expression):
-        mapped = java_type(bind.oracle_type)
+        # a dotted PL/SQL name is a field of a row the caller is holding -- a cursor FOR loop's `r.qty` (#10).
+        # The record that row comes out of models the PL/SQL loop variable, where every number is a NUMBER
+        # (`loop_component_type`), so a parameter typed from the column's own width would be a Long the caller
+        # cannot pass a BigDecimal to.
+        mapped = (loop_component_type(bind.oracle_type) if "." in (bind.plsql_variable or "")
+                  else java_type(bind.oracle_type))
         file.add_import(*mapped.imports)
         parameters.append(f"{mapped.name} {java_name(bind.name)}")
         arguments.append(java_name(bind.name))

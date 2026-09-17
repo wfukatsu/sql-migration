@@ -541,6 +541,34 @@ def _walk(statements: list[M.Statement]) -> list[M.Statement]:
     return out
 
 
+def walk_scoped(statements: list[M.Statement],
+                loops: dict[str, M.Loop] | None = None) -> list[tuple[M.Statement, dict[str, M.Loop]]]:
+    """`_walk`, but each statement is paired with the cursor FOR loops whose variable is in scope where it sits.
+
+    `FOR r IN (...)` binds `r`, and a statement in the body may write `r.order_id`. That is not a column of any
+    table the statement names -- it is the loop's row, which the generated Java already holds (#10). Nothing
+    downstream can tell the two apart without knowing which loops enclose the statement, so the walk carries it.
+
+    A loop's own query is paired with the *outer* scope: the query is what binds the variable, so the variable
+    is not in scope inside it.
+    """
+    loops = loops or {}
+    out: list[tuple[M.Statement, dict[str, M.Loop]]] = []
+    for statement in statements:
+        out.append((statement, loops))
+        query = getattr(statement, "query", None)
+        if query is not None:
+            out.append((query, loops))
+        inner = loops
+        if getattr(statement, "loop_kind", None) == "cursor-for" and getattr(statement, "variable", None):
+            inner = {**loops, statement.variable.lower(): statement}
+        for branch in getattr(statement, "branches", []) or []:
+            out.extend(walk_scoped(branch.body, inner))
+        out.extend(walk_scoped(getattr(statement, "else_body", []) or [], inner))
+        out.extend(walk_scoped(getattr(statement, "body", []) or [], inner))
+    return out
+
+
 def _first(match) -> str | None:
     if match is None:
         return None
