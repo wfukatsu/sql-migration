@@ -14,12 +14,62 @@ rules:
     requiredTests:
       - rounding_boundary
 
+  # P4-3: SEM-002 はもともと TRUNC / SYSDATE / SYSTIMESTAMP を一括で REVIEW にしていた。
+  # P3-3 が Oracle の日付演算を実機から 2015 件記録し（fixtures/plsql/semantics.json）、PlsqlPropertyTest が
+  # Plsql の再現を検査するようになったので、**証拠が覆う範囲**は人手の確認を要求する理由が無くなった。
+  # 覆うのは TRUNC・日付同士の減算・記録済みの TO_CHAR 書式で、覆わないのは下の 2 つである。
+  # ルールが当たらない routine の判定は確信度に委ねられ、確信度は testEvidence を含む——つまり
+  # 「比較して一致した routine だけが AUTO になる」。ルールを緩めたのではなく、証拠に置き換えた。
   - id: SEM-002
-    match: {statementKind: [SqlOperation, Assignment, Return, If], textMatches: '\bTRUNC\s*\(|\bSYSDATE\b|\bSYSTIMESTAMP\b'}
+    match:
+      statementKind: [SqlOperation, Assignment, Return, If]
+      # タイムゾーンに依存する構文。SYSTIMESTAMP は TIME ZONE 付きで返り、CURRENT_* はセッションの
+      # タイムゾーンで決まる。記録した答えは 1 つのタイムゾーンの下のものなので、ここは証拠が無い
+      textMatches: '\bSYSTIMESTAMP\b|\bCURRENT_DATE\b|\bCURRENT_TIMESTAMP\b|\bLOCALTIMESTAMP\b|\bSESSIONTIMEZONE\b|\bDBTIMEZONE\b|AT\s+TIME\s+ZONE'
     decision: REVIEW
-    message: Oracle の DATE は時刻成分を持ち、SYSDATE はサーバのクロックとタイムゾーンで決まります
+    message: タイムゾーンに依存します。SYSTIMESTAMP と CURRENT_* はセッション／サーバのタイムゾーンで値が変わります
+    remediation:
+      - タイムゾーンを固定するか、UTC で保持して表示時に変換する
+      - どのタイムゾーンで比較するのかを要件として決める
+    requiredTests:
+      - timezone
+
+  - id: SEM-009
+    match:
+      statementKind: [SqlOperation, Assignment, Return, If]
+      # TIMESTAMP を DATE へ狭める CAST。Oracle は秒未満を捨てるが、Java 側は両方 LocalDateTime なので
+      # 捨てる相当の処理が無い。記録した答えにも CAST は無いので、ここは証拠が届いていない
+      textMatches: 'CAST\s*\([^)]*\bAS\s+DATE\b'
+    decision: REVIEW
+    message: TIMESTAMP から DATE への CAST です。Oracle は秒未満を捨てます。捨ててよいかは業務の判断です
+    remediation:
+      - 秒未満を捨ててよいなら、生成側でも明示的に捨てる
+      - 捨ててはいけないなら TIMESTAMP のまま扱う
     requiredTests:
       - date_time_component
+
+  - id: SEM-007
+    match:
+      clockReadsAtLeast: 2
+    decision: REVIEW
+    message: 1 つの routine が時計を 2 回以上読みます。2 回の読みは違う値を返しうるので、比較では区別できません
+    remediation:
+      - 冒頭で 1 度だけ読んで変数に入れ、その値を使い回す
+      - 業務上、別々の時刻であるべきかを確認する
+    requiredTests:
+      - date_time_component
+
+  - id: SEM-008
+    match:
+      statementKind: [SqlOperation, Assignment, Return, If]
+      # NLS の言語設定で出力が変わる TO_CHAR 書式。Plsql.text は未対応の書式で例外を上げるが、
+      # 実行時に落ちるより先に人が見るべきものである
+      textMatches: "TO_CHAR\\s*\\([^)]*'[^']*(DAY|DY|MONTH|MON|AM|PM|RM)[^']*'"
+    decision: REVIEW
+    message: TO_CHAR の書式が NLS の言語設定に依存します。NLS_DATE_LANGUAGE で出力が変わります
+    remediation:
+      - 言語に依存しない書式（YYYY-MM-DD など）にするか、表示層で変換する
+    requiredTests:
       - timezone
 
   - id: SEM-003
