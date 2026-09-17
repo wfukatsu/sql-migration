@@ -233,5 +233,26 @@ KPI-1 と KPI-2 はレポートが同時に出す（P1-7）。
 # parse rate / type resolution が標準出力に、詳細が out/plsql/inventory.json に出る
 ```
 
-KPI-4 / KPI-5 / KPI-6 / KPI-7 の計測コマンドは、対応するフェーズの実装（P2-8 / P3-2 / P3-5）が
-入った時点でここに追記する。
+### 計測コマンド
+
+7 指標をまとめて成果物から計算する。数値を手で書き写した報告は誰にも再確認できないので、報告に載せる値は
+必ずこのコマンドの出力にする。
+
+```
+# 1. 比較結果を作る（ScalarDB Cluster と Oracle が要る）
+python difftest/plsql_capture.py --variant scaled
+python difftest/plsql_capture.py --variant double
+python difftest/plsql_diff.py --full --json difftest/work/plsql-diff.json
+
+# 2. KPI を計算する（比較結果があれば KPI-5 も埋まる）
+python -m plsql.kpi --evidence difftest/work/plsql-diff.json --generated generated \
+    --json out/plsql/kpi.json
+```
+
+- `--evidence` を渡さないと **KPI-5 は「未計測」**になる。0% ではない。誰も聞いていないことと、聞いて
+  失敗したことは別の答えである。
+- **KPI-6 は `--fix-times` に人が測った値を渡さない限り `null`** のままで、`unmeasured` に routine 名が
+  並ぶ。埋めるために数字を作れば、6 つのうち実際の移行工数を測る唯一の指標が最も信用できないものになる。
+- KPI-4 がここで測るのは「AUTO 判定の routine が生成しきれたか」まで。`javac` そのものは
+  `gradle compileJava` が担う。出力にもそう書いてある。
+- 出力は毎回 **corpus が合成であること**を先頭に印字する。脚注にすると落ちるため。
