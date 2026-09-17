@@ -1,7 +1,7 @@
 {
  "id": "trg_payments_guard",
  "kind": "Program",
- "schemaVersion": "1.0.0",
+ "schemaVersion": "1.1.0",
  "modules": [
   {
    "id": "trg_payments_guard",
@@ -41,7 +41,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT status INTO v_status FROM orders WHERE order_id = :NEW.order_id",
-       "selects_star": false,
+       "selectsStar": false,
        "cardinality": "UNKNOWN"
       },
       {

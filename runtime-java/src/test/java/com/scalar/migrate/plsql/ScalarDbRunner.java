@@ -181,8 +181,10 @@ public final class ScalarDbRunner implements AutoCloseable {
       // invisible to the flag above; an invocation always counts as having begun a transaction
       inTransaction = true;
       Object returned = invocation.run();
-      result.put("returned", returned != null && returned.getClass().isRecord() ? null : encode(returned));
-      result.put("out", outOf(returned));
+      Map<String, String> projection = scenario.projection();
+      boolean carrier = returned != null && returned.getClass().isRecord();
+      result.put("returned", carrier || !projection.isEmpty() ? null : encode(returned));
+      result.put("out", projection.isEmpty() ? outOf(returned) : project(returned, projection));
       commit();
     } catch (Exception e) {
       rollback();
@@ -242,6 +244,32 @@ public final class ScalarDbRunner implements AutoCloseable {
         throw new IllegalStateException("cannot read " + component.getName(), e);
       }
     }
+    return out;
+  }
+
+  /**
+   * Take the fields a block scenario named out of the record the routine returned.
+   *
+   * <p>The record's components are named after the columns (P2-5), so the field the PL/SQL wrote as
+   * {@code v.status} is the component {@code status}. A field the record does not have is a difference worth
+   * seeing, so it is left out rather than filled with null.
+   */
+  private static Map<String, Object> project(Object returned, Map<String, String> projection) {
+    Map<String, Object> out = new LinkedHashMap<>();
+    if (returned == null || !returned.getClass().isRecord()) return out;
+    Map<String, java.lang.reflect.RecordComponent> components = new LinkedHashMap<>();
+    for (java.lang.reflect.RecordComponent component : returned.getClass().getRecordComponents()) {
+      components.put(snakeCase(component.getName()), component);
+    }
+    projection.forEach((bind, field) -> {
+      java.lang.reflect.RecordComponent component = components.get(field.toLowerCase());
+      if (component == null) return;
+      try {
+        out.put(bind, encode(component.getAccessor().invoke(returned)));
+      } catch (ReflectiveOperationException e) {
+        throw new IllegalStateException("cannot read " + field, e);
+      }
+    });
     return out;
   }
 
@@ -332,12 +360,25 @@ public final class ScalarDbRunner implements AutoCloseable {
   static Object encode(Object value) {
     if (value == null) return null;
     if (value instanceof BigDecimal d) return Map.of("$dec", d.toPlainString());
-    if (value instanceof LocalDateTime d) return Map.of("$ts", d.toString());
-    if (value instanceof OffsetDateTime d) return Map.of("$ts", d.toString());
-    if (value instanceof java.sql.Timestamp t) return Map.of("$ts", t.toLocalDateTime().toString());
+    if (value instanceof LocalDateTime d) return Map.of("$ts", isoformat(d));
+    if (value instanceof OffsetDateTime d) return Map.of("$ts", isoformat(d.toLocalDateTime()));
+    if (value instanceof java.sql.Timestamp t) return Map.of("$ts", isoformat(t.toLocalDateTime()));
     if (value instanceof byte[] b) return Map.of("$raw", java.util.HexFormat.of().formatHex(b));
     if (value instanceof Number || value instanceof String || value instanceof Boolean) return value;
     return Map.of("$str", String.valueOf(value));
+  }
+
+  /**
+   * The same text Python's {@code datetime.isoformat()} produces, which is what the Oracle capture holds.
+   *
+   * <p>{@code LocalDateTime.toString()} drops the seconds when they are zero, so the same instant would be
+   * written two ways and every timestamp would look like a difference. Comparing encodings instead of values is
+   * the failure mode this whole capture format exists to avoid.
+   */
+  static String isoformat(LocalDateTime value) {
+    String text = value.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"));
+    int micros = value.getNano() / 1000;
+    return micros == 0 ? text : text + String.format(".%06d", micros);
   }
 
   @Override

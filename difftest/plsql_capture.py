@@ -38,9 +38,11 @@ def schema_for(variant: str) -> Path:
     return out
 
 
-def run(command: list[str], **kwargs) -> None:
+def run(command: list[str], allow_failure: bool = False, **kwargs) -> None:
     print("$ " + " ".join(command))
-    subprocess.run(command, check=True, cwd=kwargs.pop("cwd", ROOT), **kwargs)
+    finished = subprocess.run(command, cwd=kwargs.pop("cwd", ROOT), **kwargs)
+    if finished.returncode and not allow_failure:
+        raise SystemExit(finished.returncode)
 
 
 def main(argv=None) -> int:
@@ -58,8 +60,10 @@ def main(argv=None) -> int:
         return 0
 
     setup = WORK / ("plsql-setup.json" if args.variant == "scaled" else "plsql-setup-double.json")
+    # a non-zero exit means a routine the rules called AUTO did not come out cleanly. That is worth knowing and
+    # worth measuring, so it is reported and the capture goes ahead: the comparison is what says what it cost.
     run([sys.executable, "-m", "plsql.generate", str(FIXTURES / "src"),
-         "--scalardb-schema", str(schema), "--out-dir", "generated", "--quiet"])
+         "--scalardb-schema", str(schema), "--out-dir", "generated"], allow_failure=True)
     run([sys.executable, str(ROOT / "difftest" / "plsql_setup.py"), "--variant", args.variant,
          "--schema", str(schema), "--out", str(setup)])
     run(["gradle", "test", "-Dplsql.generated=1", f"-Dplsql.variant={args.variant}",

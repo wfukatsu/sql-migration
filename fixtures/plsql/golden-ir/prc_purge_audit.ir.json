@@ -1,7 +1,7 @@
 {
  "id": "prc_purge_audit",
  "kind": "Program",
- "schemaVersion": "1.0.0",
+ "schemaVersion": "1.1.0",
  "modules": [
   {
    "id": "prc_purge_audit",
@@ -164,7 +164,7 @@
          },
          "sqlKind": "DELETE",
          "originalSql": "DELETE FROM audit_log WHERE audit_id = v_id",
-         "selects_star": false,
+         "selectsStar": false,
          "cardinality": "UNKNOWN"
         },
         {

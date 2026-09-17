@@ -129,17 +129,30 @@ def strip_into(tree: exp.Expression) -> list[str]:
 
     sqlglot stores one target on `Into.this` and several on `Into.expressions`; a caller that only handles one of
     those silently loses the other (this is why both shapes have a test).
+
+    The target is written whole, qualifier included. `INTO v_rec.name` assigns a field of a record, and taking
+    only `name` loses the one thing that says so -- after which the generator cannot tell it apart from a local
+    called `name`, and quietly assigns nothing.
     """
     into = tree.args.get("into") if isinstance(tree, exp.Select) else None
     if into is None:
         return []
     targets: list[str] = []
     if into.expressions:
-        targets = [e.name or e.sql(dialect="oracle") for e in into.expressions]
+        targets = [_target_name(e) for e in into.expressions]
     elif into.this is not None:
-        targets = [into.this.name or into.this.sql(dialect="oracle")]
+        targets = [_target_name(into.this)]
     tree.set("into", None)
     return targets
+
+
+def _target_name(node: exp.Expression) -> str:
+    """`v_rec.name` stays `v_rec.name`; a bare identifier stays itself."""
+    if isinstance(node, exp.Column) and node.table:
+        return f"{node.table}.{node.name}"
+    if isinstance(node, exp.Dot):
+        return node.sql(dialect="oracle")
+    return node.name or node.sql(dialect="oracle")
 
 
 def expand_star(tree: exp.Expression, symbols: SymbolTable | None) -> None:

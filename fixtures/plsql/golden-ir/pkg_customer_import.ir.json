@@ -1,7 +1,7 @@
 {
  "id": "pkg_customer_import",
  "kind": "Program",
- "schemaVersion": "1.0.0",
+ "schemaVersion": "1.1.0",
  "modules": [
   {
    "id": "pkg_customer_import",
@@ -94,7 +94,7 @@
          },
          "sqlKind": "SELECT",
          "originalSql": "MERGE INTO customers c\n      USING (SELECT p_ids(i) AS customer_id, p_names(i) AS name FROM dual) s\n         ON (c.customer_id = s.customer_id)\n       WHEN MATCHED THEN UPDATE SET c.name = s.name\n       WHEN NOT MATCHED THEN\n         INSERT (customer_id, name, tier, registered_on)\n         VALUES (s.customer_id, s.name, 'BRONZE', SYSDATE)",
-         "selects_star": false,
+         "selectsStar": false,
          "cardinality": "UNKNOWN"
         }
        ]
