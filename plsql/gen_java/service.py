@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import contextvars
+import re
 
 from ..ir import model as M
 from ..lower import _walk
@@ -75,6 +76,27 @@ def generate_module(module: M.Module, package: str, repository_package: str,
     return result
 
 
+AUDIT_VALUES = re.compile(r"\b(USER|SYSTIMESTAMP)\b", re.IGNORECASE)
+
+
+def needs_audit(routine: M.Routine) -> bool:
+    """Whether anything in this routine reads a value the caller supplies (#1, #8).
+
+    Both places count: an expression the routine evaluates itself (`v := SYSTIMESTAMP`), and one lifted out
+    of a statement's SQL (P4-4), which the repository computes but the service has to hand it the context for.
+    """
+    for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
+        for text in [getattr(statement, "expression", None), getattr(statement, "condition", None)] + \
+                [b.expression for b in getattr(statement, "binds", None) or []] + \
+                [a for a in getattr(statement, "arguments", None) or []]:
+            if isinstance(text, str) and AUDIT_VALUES.search(text):
+                return True
+        for branch in getattr(statement, "branches", []) or []:
+            if branch.condition and AUDIT_VALUES.search(branch.condition):
+                return True
+    return False
+
+
 def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]:
     """PL/SQL name -> Java name for everything visible inside the method, siblings included.
 
@@ -111,6 +133,12 @@ def _method(file: JavaFile, module: M.Module, routine: M.Routine, result: Servic
         mapped = java_type(parameter.type.resolved if parameter.type else None)
         file.add_import(*mapped.imports)
         parameters.append(f"{mapped.name} {java_name(parameter.name)}")
+
+    if needs_audit(routine):
+        # #1 / #8: who and when come from the caller. Last, so adding it does not renumber the parameters a
+        # caller already passes positionally.
+        file.add_import("com.scalar.migrate.plsql.AuditContext")
+        parameters.append("AuditContext audit")
 
     visibility = "public" if routine.visibility == "public" else "private"
     _ROWCOUNT_SEEN.set(False)
@@ -460,6 +488,9 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
             # another module's service would have to be injected; that is a composition decision, not a
             # translation, so it is refused rather than guessed
             raise Untranslatable([statement.resolved_to], f"call into {owner}")
+        callee = next((r for r in (module.routines if module else []) if r.id == statement.resolved_to), None)
+        if callee is not None and needs_audit(callee):
+            arguments = ", ".join(a for a in [arguments, "audit"] if a)
         file.line(f"{java_name(target.split('.')[-1])}({arguments});")
     else:
         file.comment(f"external call: {statement.callee}")
@@ -515,7 +546,9 @@ def _arguments(file: JavaFile, statement: M.SqlOperation, routine: M.Routine,
     holding -- so it goes through the expression translator, which renders it as the accessor the record
     generated for that loop actually has.
     """
-    out = []
+    from .repository import needs_audit as statement_needs_audit
+
+    out = ["audit"] if statement_needs_audit(statement) else []
     for bind in (b for b in statement.binds if not b.expression):
         name = bind.plsql_variable or bind.name
         out.append(_expr(file, name, routine, result) if "." in name else java_name(name))
