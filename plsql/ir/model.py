@@ -214,6 +214,13 @@ class DynamicSql(Statement):
 
     expression: str = ""
     constant_sql: str | None = None       # set when the expression folds to a literal
+    # P4-7: every statement this can run, when that is a finite knowable set. Each entry is
+    # {"guard": <the branch conditions that produce it>, "sql": <the statement>}. Empty when the set is not
+    # knowable, which is the honest answer for a table name decided at run time.
+    variants: list[dict] = field(default_factory=list)
+    # each variant, converted and checked like any other statement. Not serialised: it is derived, and a
+    # reader of the IR gets the same information from `variants` plus the diagnostics.
+    variant_statements: list["SqlOperation"] = field(default_factory=list, repr=False, compare=False)
     using: list[BindVariable] = field(default_factory=list)
     into_targets: list[str] = field(default_factory=list)
 
