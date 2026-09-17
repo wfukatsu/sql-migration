@@ -1127,6 +1127,15 @@
             "null"
           ]
         },
+        "query": {
+          "$ref": "#/$defs/node"
+        },
+        "variable": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "body": {
           "$ref": "#/$defs/statements"
         }

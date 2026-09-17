@@ -526,6 +526,7 @@
        },
        "loopKind": "cursor-for",
        "cursor": "r IN c",
+       "variable": "r",
        "body": [
         {
          "id": "pkg_stock_reserve.claim_batch#stmt-2",
