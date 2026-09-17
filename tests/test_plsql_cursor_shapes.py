@@ -103,6 +103,46 @@ def test_a_bounded_query_is_not_warned_about_too_many_rows(corpus):
 # --- what is not rewritten ----------------------------------------------------------------------------
 
 NOT_A_SHAPE = {
+    # MR !52: the shape matched, but the rewrite would not have asked the same question. Each of these is a
+    # case where the recognised sequence is genuinely B or C and the rewrite is still declined -- what the
+    # rewrite does not carry over decides it, not what the sequence looks like.
+    "a cursor parameter shares its name with a column": """\
+        CREATE OR REPLACE PROCEDURE p(p_want IN VARCHAR2, p_count OUT NUMBER) IS
+          CURSOR c(status IN VARCHAR2) IS SELECT order_id FROM orders WHERE status = status;
+          v NUMBER; 
+        BEGIN
+          p_count := 0;
+          OPEN c(p_want);
+          LOOP FETCH c INTO v; EXIT WHEN c%NOTFOUND; p_count := p_count + 1; END LOOP;
+          CLOSE c;
+        END;
+        /
+    """,
+    "the fetched value is read after the loop": """\
+        CREATE OR REPLACE PROCEDURE p(p_count OUT NUMBER, p_last OUT NUMBER) IS
+          CURSOR c IS SELECT order_id FROM orders;
+          v_id NUMBER;
+        BEGIN
+          p_count := 0;
+          OPEN c;
+          LOOP FETCH c INTO v_id; EXIT WHEN c%NOTFOUND; p_count := p_count + 1; END LOOP;
+          CLOSE c;
+          p_last := v_id;
+        END;
+        /
+    """,
+    "the counted cursor caps its own rows": """\
+        CREATE OR REPLACE PROCEDURE p(p_count OUT NUMBER) IS
+          CURSOR c IS SELECT order_id FROM orders FETCH FIRST 5 ROWS ONLY;
+          v_id NUMBER;
+        BEGIN
+          p_count := 0;
+          OPEN c;
+          LOOP FETCH c INTO v_id; EXIT WHEN c%NOTFOUND; p_count := p_count + 1; END LOOP;
+          CLOSE c;
+        END;
+        /
+    """,
     "the loop does more than count": """\
         CREATE OR REPLACE PROCEDURE p IS
           CURSOR c IS SELECT qty FROM order_lines;
@@ -138,6 +178,35 @@ def test_a_sequence_that_is_not_one_of_the_shapes_is_left_alone(tmp_path, why):
     body = _walk(modules[0].routines[0].body)
     assert [s.kind for s in body if s.kind in ("OpenCursor", "Fetch", "CloseCursor")][0] == "OpenCursor"
     assert "Fetch" in [s.kind for s in body]
+
+
+def test_a_cursor_parameter_is_substituted_on_the_tree_not_in_the_text(tmp_path):
+    """A qualified column keeps its name; only a bare name that is the parameter is replaced."""
+    source = tmp_path / "p.prc"
+    source.write_text(textwrap.dedent("""\
+        CREATE OR REPLACE PROCEDURE p(p_want IN VARCHAR2, p_count OUT NUMBER) IS
+          CURSOR c(p_status IN VARCHAR2) IS
+            SELECT o.order_id FROM orders o WHERE o.status = p_status ORDER BY o.order_id;
+          v NUMBER;
+        BEGIN
+          p_count := 0;
+          OPEN c(p_want);
+          LOOP FETCH c INTO v; EXIT WHEN c%NOTFOUND; p_count := p_count + 1; END LOOP;
+          CLOSE c;
+        END;
+        /
+    """), encoding="utf-8")
+    modules, _ = lower_source(source, OracleSchema.from_ddl(SRC / "schema.sql"))
+    query = next(s for s in _walk(modules[0].routines[0].body) if s.kind == "SqlOperation")
+    assert query.original_sql == "SELECT COUNT(*) FROM orders o WHERE o.status = p_want"
+
+
+def test_a_counting_cursor_whose_rows_are_capped_keeps_its_cursor(tmp_path):
+    """`COUNT(*)` returns one row, so `FETCH FIRST 5` would stop capping anything -- a different number."""
+    source = tmp_path / "p.prc"
+    source.write_text(textwrap.dedent(NOT_A_SHAPE["the counted cursor caps its own rows"]), encoding="utf-8")
+    modules, _ = lower_source(source, OracleSchema.from_ddl(SRC / "schema.sql"))
+    assert not [s for s in _walk(modules[0].routines[0].body) if s.kind == "SqlOperation"]
 
 
 # --- the Java -----------------------------------------------------------------------------------------

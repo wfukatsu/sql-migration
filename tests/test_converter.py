@@ -208,6 +208,24 @@ def test_an_outer_join_is_not_swapped():
     assert "JOIN_SCOPE" in codes(r)
 
 
+def test_an_unqualified_column_is_attributed_to_its_table_before_the_swap_is_decided():
+    """MR !52: the swap read only qualified references while JOIN_SCOPE resolved unqualified ones too, so a
+    query the swap could have settled was refused by the check that followed it."""
+    r = join_run("SELECT c.tier FROM customers c JOIN orders2 o ON o.customer_id = c.customer_id "
+                 "WHERE order_id = 1")
+    assert "JOIN_SCOPE" not in codes(r), r.issues
+    assert "JOIN_ORDER" in codes(r)
+    assert r.converted[0].startswith("SELECT c.tier FROM orders2 AS o JOIN customers AS c")
+
+
+def test_an_unqualified_column_of_the_from_table_still_stops_the_swap():
+    """The same resolution the check uses: `tier` is the base table's, so swapping would break the query."""
+    r = join_run("SELECT c.tier FROM customers c JOIN orders2 o ON o.customer_id = c.customer_id "
+                 "WHERE order_id = 1 AND tier = 'GOLD'")
+    assert "JOIN_ORDER" not in codes(r)
+    assert r.status == "ERROR" and "JOIN_SCOPE" in codes(r)
+
+
 def test_a_join_that_already_names_the_from_table_is_left_alone():
     r = join_run("SELECT c.tier FROM customers c JOIN orders2 o ON o.customer_id = c.customer_id "
                  "WHERE c.customer_id = 1")

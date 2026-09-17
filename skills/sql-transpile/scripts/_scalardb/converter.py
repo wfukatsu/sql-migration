@@ -775,15 +775,25 @@ class StatementConverter:
         if s.args.get("order"):
             refs += list(s.args["order"].find_all(exp.Column))
         for c in refs:
-            q = (c.table or "").lower()
-            if not q:
-                owners = [a for a, t in alias_of.items() if (m := self.registry.get(t.name))
-                          and c.name.lower() in {x.lower() for x in m.columns}]
-                q = owners[0] if len(owners) == 1 else ""
+            q = self._owner(c, alias_of)
             if q and q != allowed:
                 self.fail("JOIN_SCOPE", f"column {c.sql()} belongs to a joined table; with JOIN, WHERE/ORDER BY may only "
                                         f"reference columns of the {'RIGHT JOIN' if first_side == 'RIGHT' else 'FROM'} table ({allowed})")
         return where_expr
+
+    def _owner(self, c: exp.Column, alias_of: dict) -> str:
+        """Which relation a column reference belongs to, or "" when that cannot be settled.
+
+        A qualified reference answers itself. An unqualified one is resolved the way Oracle resolves it --
+        the one relation in the query that has a column of that name -- and stays unresolved when several
+        have it, or when no table definition is known. The swap and the JOIN_SCOPE check below both ask this
+        question, and asking it two different ways made the swap decline queries the check then refused.
+        """
+        if c.table:
+            return c.table.lower()
+        owners = [a for a, t in alias_of.items() if (m := self.registry.get(t.name))
+                  and c.name.lower() in {x.lower() for x in m.columns}]
+        return owners[0] if len(owners) == 1 else ""
 
     def _swap_inner_join(self, s: exp.Select, base: exp.Table, joins: list,
                          where_expr: exp.Expression | None) -> exp.Table:
@@ -795,8 +805,10 @@ class StatementConverter:
 
         An INNER JOIN is commutative: the two tables produce the same rows whichever is named first, and the
         SELECT list names its columns, so nothing about the answer moves. Only the shape does. The swap is
-        made only when it settles the matter -- every qualified reference points at the joined table and none
-        at the base -- because moving the problem from one side to the other helps nobody.
+        made only when it settles the matter -- every reference that can be attributed to a table points at
+        the joined one and none at the base -- because moving the problem from one side to the other helps
+        nobody. An unqualified reference is attributed through the schema, which is what the JOIN_SCOPE check
+        below does too.
 
         Not done for an outer join, where the sides are not interchangeable, and not for more than one join,
         where "the other one" is not a single table.
@@ -814,8 +826,9 @@ class StatementConverter:
         refs = list(where_expr.find_all(exp.Column)) if where_expr is not None else []
         if s.args.get("order"):
             refs += list(s.args["order"].find_all(exp.Column))
-        qualified = {(c.table or "").lower() for c in refs if c.table}
-        if qualified != {there} or here == there:
+        alias_of = {here: base, there: joined}
+        owners = {o for c in refs if (o := self._owner(c, alias_of))}
+        if owners != {there} or here == there:
             return base
         _from(s).set("this", joined)
         join.set("this", base)

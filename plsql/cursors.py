@@ -17,26 +17,34 @@ recognised stays as the OPEN / FETCH / CLOSE nodes it was, which the generator r
 
 from __future__ import annotations
 
+import dataclasses
 import re
 
 import sqlglot
 from sqlglot import exp
 
+from .columns import row_cap
 from .ir import model as M
-from .symbols import SymbolTable
+from .symbols import OracleSchema, SymbolTable
 
 NOTFOUND = re.compile(r"^\s*(?P<cursor>[\w$#]+)\s*%\s*NOTFOUND\s*$", re.IGNORECASE)
 ISOPEN = re.compile(r"^\s*(?P<cursor>[\w$#]+)\s*%\s*ISOPEN\s*$", re.IGNORECASE)
 
 
-def rewrite(routine: M.Routine, symbols: SymbolTable | None, module: str | None = None) -> None:
-    """Replace the B and C shapes in `routine` with the query each one is, in place."""
+def rewrite(routine: M.Routine, symbols: SymbolTable | None, module: str | None = None,
+            schema: OracleSchema | None = None) -> None:
+    """Replace the B and C shapes in `routine` with the query each one is, in place.
+
+    `schema` is what decides whether a cursor parameter may be substituted at all: Oracle resolves a name
+    inside the cursor's query to a column before it resolves it to the parameter, and only the DDL says
+    which names are columns.
+    """
     if symbols is None:
         return
     rewritten: set[str] = set()
-    routine.body = _sequence(routine.body, routine, symbols, module, rewritten)
+    routine.body = _sequence(routine.body, routine, symbols, module, schema, rewritten)
     for handler in routine.exception_handlers:
-        handler.body = _sequence(handler.body, routine, symbols, module, rewritten)
+        handler.body = _sequence(handler.body, routine, symbols, module, schema, rewritten)
     if rewritten:
         # `IF c%ISOPEN THEN CLOSE c; END IF;` guarded a cursor that no longer exists. Left in place it is a
         # reference to nothing, and the generator would refuse the handler it sits in.
@@ -46,21 +54,22 @@ def rewrite(routine: M.Routine, symbols: SymbolTable | None, module: str | None 
 
 
 def _sequence(statements: list[M.Statement], routine: M.Routine, symbols: SymbolTable,
-              module: str | None, rewritten: set[str]) -> list[M.Statement]:
+              module: str | None, schema: OracleSchema | None,
+              rewritten: set[str]) -> list[M.Statement]:
     """One pass over a statement list, replacing any run that matches B or C. Nested bodies go first."""
     for statement in statements:
         for attribute in ("body", "else_body"):
             nested = getattr(statement, attribute, None)
             if nested:
-                setattr(statement, attribute, _sequence(nested, routine, symbols, module, rewritten))
+                setattr(statement, attribute, _sequence(nested, routine, symbols, module, schema, rewritten))
         for branch in getattr(statement, "branches", []) or []:
-            branch.body = _sequence(branch.body, routine, symbols, module, rewritten)
+            branch.body = _sequence(branch.body, routine, symbols, module, schema, rewritten)
 
     out: list[M.Statement] = []
     index = 0
     while index < len(statements):
-        match = _first_row(statements, index, routine, symbols, module) or \
-            _count(statements, index, routine, symbols, module)
+        match = _first_row(statements, index, routine, symbols, module, schema) or \
+            _count(statements, index, routine, symbols, module, schema)
         if match is None:
             out.append(statements[index])
             index += 1
@@ -75,7 +84,8 @@ def _sequence(statements: list[M.Statement], routine: M.Routine, symbols: Symbol
 # --- B. the first row ---------------------------------------------------------------------------------
 
 def _first_row(statements: list[M.Statement], index: int, routine: M.Routine, symbols: SymbolTable,
-               module: str | None) -> tuple[list[M.Statement], int, str] | None:
+               module: str | None,
+               schema: OracleSchema | None) -> tuple[list[M.Statement], int, str] | None:
     """`OPEN c; FETCH c INTO v; [IF c%NOTFOUND THEN ... END IF;] CLOSE c;`
 
     The `%NOTFOUND` branch is kept as it is written. It is the part that says what the routine does when
@@ -97,7 +107,7 @@ def _first_row(statements: list[M.Statement], index: int, routine: M.Routine, sy
             _cursor_name(run[consumed].cursor) != cursor:
         return None
     consumed += 1
-    query = _query(cursor, run[0], routine, symbols, module)
+    query = _query(cursor, run[0], routine, symbols, module, schema)
     if query is None:
         return None
     operation = _operation(run[1], routine, _limit_one(query), run[1].into_targets)
@@ -119,7 +129,8 @@ def _limit_one(sql: str) -> str:
 # --- C. counting --------------------------------------------------------------------------------------
 
 def _count(statements: list[M.Statement], index: int, routine: M.Routine, symbols: SymbolTable,
-           module: str | None) -> tuple[list[M.Statement], int, str] | None:
+           module: str | None,
+           schema: OracleSchema | None) -> tuple[list[M.Statement], int, str] | None:
     """`OPEN c; LOOP FETCH c INTO ...; EXIT WHEN c%NOTFOUND; n := n + 1; END LOOP; CLOSE c;`
 
     The loop body has to be exactly those three things. A body that also read the fetched values is doing
@@ -134,8 +145,17 @@ def _count(statements: list[M.Statement], index: int, routine: M.Routine, symbol
     counter = _counted(run[1], cursor)
     if counter is None:
         return None
-    query = _query(cursor, run[0], routine, symbols, module)
+    # the loop counts, but the FETCH also assigns: after the loop the INTO targets hold the last row Oracle
+    # read. The rewrite drops those assignments, so it is only the same routine if nobody reads them again.
+    fetched = list(run[1].body[0].into_targets or [])
+    if fetched and _reads_outside(routine, run[:3], fetched):
+        return None
+    query = _query(cursor, run[0], routine, symbols, module, schema)
     if query is None:
+        return None
+    if row_cap(sqlglot.parse_one(query, dialect="oracle"))[0] is not None:
+        # the cursor counts at most n rows; COUNT(*) returns one row, so the cap would no longer apply to
+        # anything and the count would be of every matching row instead
         return None
     operation = _operation(run[1], routine, _count_sql(query), [counter])
     if operation is None:
@@ -175,8 +195,72 @@ def _count_sql(sql: str) -> str:
 
 # --- shared -------------------------------------------------------------------------------------------
 
+def _reads_outside(routine: M.Routine, run: list[M.Statement], names: list[str]) -> bool:
+    """Whether any of `names` is mentioned by a statement of `routine` that is not part of `run`.
+
+    Deliberately blunt: every string a statement carries is searched, so a name that is only written to, or
+    that a nested declaration happens to reuse, counts as a read. The answer decides whether a rewrite is
+    made at all, and the cost of the two answers is not the same -- declining leaves the cursor visible for
+    a person to look at, while rewriting on a wrong answer silently drops an assignment.
+    """
+    skip: set[int] = set()
+    _ids(run, skip)
+    return _mentions(routine.body, names, skip) or \
+        any(_mentions(handler.body, names, skip) for handler in routine.exception_handlers)
+
+
+def _ids(statements: list[M.Statement], out: set[int]) -> None:
+    for statement in statements:
+        out.add(id(statement))
+        for nested in _nested(statement):
+            _ids(nested, out)
+
+
+def _nested(statement: M.Statement):
+    for attribute in ("body", "else_body"):
+        yield getattr(statement, attribute, None) or []
+    for branch in getattr(statement, "branches", []) or []:
+        yield branch.body
+    for handler in getattr(statement, "exception_handlers", []) or []:
+        yield handler.body
+
+
+def _mentions(statements: list[M.Statement], names: list[str], skip: set[int]) -> bool:
+    for statement in statements:
+        if id(statement) in skip:
+            continue
+        if any(_word(name).search(text) for text in _texts(statement) for name in names):
+            return True
+        if any(_mentions(nested, names, skip) for nested in _nested(statement)):
+            return True
+    return False
+
+
+def _texts(statement: M.Statement):
+    """Every piece of PL/SQL text a statement carries, without naming the attributes one by one.
+
+    The IR grows nodes, and a list of attribute names would silently stop covering them.
+    """
+    for field in dataclasses.fields(statement):
+        if field.name in _NOT_TEXT:
+            continue
+        value = getattr(statement, field.name, None)
+        if isinstance(value, str):
+            yield value
+        elif isinstance(value, list):
+            yield from (item for item in value if isinstance(item, str))
+
+
+# ids and classifications, not PL/SQL the routine could read a variable from
+_NOT_TEXT = {"id", "kind", "sql_kind", "loop_kind", "cardinality", "label", "direction"}
+
+
+def _word(name: str) -> re.Pattern:
+    return re.compile(rf"(?<![\w$#.]){re.escape(name)}(?![\w$#])", re.IGNORECASE)
+
+
 def _query(cursor: str, opened: M.CursorStatement, routine: M.Routine, symbols: SymbolTable,
-           module: str | None) -> str | None:
+           module: str | None, schema: OracleSchema | None) -> str | None:
     """The cursor's query, with its own parameters substituted by what `OPEN` passed.
 
     A cursor declared in a package specification is not in the IR at all -- the lowering reads the body -- so
@@ -189,10 +273,48 @@ def _query(cursor: str, opened: M.CursorStatement, routine: M.Routine, symbols: 
     arguments = list(opened.arguments)
     if len(symbol.parameters) != len(arguments):
         return None   # positional only; a named actual (`c(p_status => v)`) is not read here
-    query = symbol.query
-    for name, actual in zip(symbol.parameters, arguments):
-        query = re.sub(rf"(?<![\w$#.]){re.escape(name)}(?![\w$#])", actual, query, flags=re.IGNORECASE)
-    return query
+    return _substituted(symbol.query, symbol.parameters, arguments, schema)
+
+
+def _substituted(query: str, parameters: list[str], arguments: list[str],
+                 schema: OracleSchema | None) -> str | None:
+    """`query` with each cursor parameter replaced by the actual `OPEN` passed, or None to give up.
+
+    Oracle resolves a name inside a cursor's query to a **column** of the queried tables first, and to the
+    cursor's parameter only when no column has that name. A textual replacement cannot tell the two apart:
+    `CURSOR c(status VARCHAR2) IS SELECT ... WHERE status = status` compares the column with itself in
+    Oracle, and replacing both halves turned it into `:b = :b` -- true for every row, with no diagnostic.
+    So the names are resolved on the tree, where a qualified `o.status` is not a name of its own, and a
+    parameter whose name the schema also knows as a column of one of the tables is not resolved at all.
+
+    Giving up is the safe answer: the OPEN / FETCH / CLOSE stay as they were and the generator refuses them
+    visibly, which is what the schema being unknown deserves too -- without the DDL, nothing here can tell
+    whether a collision exists.
+    """
+    if not parameters:
+        return query
+    try:
+        tree = sqlglot.parse_one(query, dialect="oracle")
+    except Exception:
+        return None
+    tables = [t.name for t in tree.find_all(exp.Table) if t.name]
+    wanted = {name.lower() for name in parameters}
+    for table in tables:
+        columns = schema.columns(table) if schema else None
+        if columns is None:
+            return None   # an unknown table cannot be cleared of the collision
+        if wanted & set(columns):
+            return None   # the column wins in Oracle; the substitution would ask a different question
+    actual_of: dict[str, exp.Expression] = {}
+    for name, actual in zip(parameters, arguments):
+        try:
+            actual_of[name.lower()] = sqlglot.parse_one(actual, dialect="oracle")
+        except Exception:
+            return None
+    for column in list(tree.find_all(exp.Column)):
+        if not column.table and column.name.lower() in actual_of:
+            column.replace(actual_of[column.name.lower()].copy())
+    return tree.sql(dialect="oracle")
 
 
 def _operation(source: M.Statement, routine: M.Routine, sql: str,
