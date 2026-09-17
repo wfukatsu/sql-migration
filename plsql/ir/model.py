@@ -163,6 +163,14 @@ class BindVariable:
     direction: str = "IN"
     oracle_type: str | None = None
     plsql_variable: str | None = None
+    # the ScalarDB column this value lands in, when exactly one can be named (P3-1). The generator needs it to
+    # convert at the bind boundary: ScalarDB's driver refuses a BigDecimal, and a scaled money column has to be
+    # scaled on the way in. None means "could not be attributed", and the value is bound unchanged.
+    column: str | None = None
+    scalardb_type: str | None = None
+    # what the Oracle DDL declares that column as. The variable's own type does not decide the storage scale:
+    # `v_total NUMBER` assigned into a `NUMBER(14,2)` column is still cents in a scaled BIGINT.
+    column_oracle_type: str | None = None
 
 
 @dataclass
@@ -173,6 +181,14 @@ class SqlOperation(Statement):
     original_sql: str = ""
     binds: list[BindVariable] = field(default_factory=list)
     into_targets: list[str] = field(default_factory=list)
+    # the ScalarDB column and type behind each select item, positionally (P3-1). None where there is not
+    # exactly one -- an expression, or a column the schema does not describe.
+    into_columns: list[str | None] = field(default_factory=list)
+    into_types: list[str | None] = field(default_factory=list)
+    into_oracle_types: list[str | None] = field(default_factory=list)
+    # whether the SELECT asks for every column. One INTO target and a star means a %ROWTYPE read, which the
+    # repository cannot build from a single result column (P3-1).
+    selects_star: bool = False
     cardinality: str = "UNKNOWN"
     locking_mode: str | None = None       # FOR UPDATE / NOWAIT / SKIP LOCKED / WAIT n
     target_status: str | None = None      # OK | WARN | PLANNED | ERROR, from scalardb_migrate
