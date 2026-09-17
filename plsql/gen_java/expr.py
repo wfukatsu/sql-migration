@@ -356,6 +356,11 @@ class _Parser:
                 return value
             self.result.imports.add(HELPER_IMPORT)
             return function
+        if value.lower() in self.scope:
+            # the whole dotted name first: a cursor FOR loop's `r.order_id` that was bound out of the SQL (#10)
+            # is one repository parameter, and splitting it would look for a record called `r` that the
+            # repository does not have
+            return self.scope[value.lower()]
         if "." in value:
             head, _, tail = value.partition(".")
             if tail.upper() == "NEXTVAL":
@@ -369,8 +374,6 @@ class _Parser:
                 self.result.unknown.append(value)
                 return value
             return f"{self.scope[head.lower()]}.{java_name(tail)}()"
-        if value.lower() in self.scope:
-            return self.scope[value.lower()]
         self.result.unknown.append(value)
         return java_name(value)
 

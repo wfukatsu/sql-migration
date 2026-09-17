@@ -387,8 +387,7 @@ def _cursor_for(file: JavaFile, statement: M.Loop, routine: M.Routine, result: S
     variable = java_name(statement.variable or "r")
     # the translator renders `head.tail` as `scope[head].tail()`, so the loop variable itself is what goes in
     columns = {statement.variable or "r": variable}
-    arguments = ", ".join(java_name(b.plsql_variable or b.name)
-                          for b in query.binds if not b.expression)
+    arguments = _arguments(file, query, routine, result)
     record = loop_record(routine, statement)
     file.add_import(f"{_DOMAIN.get()}.{record}")
     file.comment("the rows are read before the loop runs: ScalarDB has no cursor held across a transaction")
@@ -430,8 +429,7 @@ def _sql(file: JavaFile, statement: M.SqlOperation, routine: M.Routine) -> None:
     method = f"{java_name(routine.name)}{_sql_suffix(statement)}"
     # a bind lifted out of the SQL (P4-4) is computed inside the repository from the other binds, so it is not
     # passed in. The repository's parameter list is built from the same rule; the two have to agree.
-    arguments = ", ".join(java_name(b.plsql_variable or b.name)
-                          for b in statement.binds if not b.expression)
+    arguments = _arguments(file, statement, routine, None)
     if statement.plan_id or statement.target_status == "PLANNED":
         # the plan hands back rows, and turning them into the PL/SQL variables is a decision (which row? what
         # when there are none?), so it is left to the reviewer rather than guessed
@@ -461,6 +459,24 @@ def _sql(file: JavaFile, statement: M.SqlOperation, routine: M.Routine) -> None:
         file.line(f"rowCount = repository.{method}({arguments});")
     else:
         file.line(f"repository.{method}({arguments});")
+
+
+def _arguments(file: JavaFile, statement: M.SqlOperation, routine: M.Routine,
+               result: "ServiceFile | None") -> str:
+    """The values passed to the repository method, in the order its parameter list was built.
+
+    A bind lifted out of the SQL (P4-4) is computed inside the repository from the other binds, so it is not
+    passed; `repository._parameters` applies the same rule and the two have to agree.
+
+    A cursor FOR loop's `r.order_id` (#10) is not a name Java has -- it is a component of the row the loop is
+    holding -- so it goes through the expression translator, which renders it as the accessor the record
+    generated for that loop actually has.
+    """
+    out = []
+    for bind in (b for b in statement.binds if not b.expression):
+        name = bind.plsql_variable or bind.name
+        out.append(_expr(file, name, routine, result) if "." in name else java_name(name))
+    return ", ".join(out)
 
 
 def _into(file: JavaFile, value: str, target_type: str) -> str:
@@ -567,7 +583,7 @@ class Untranslatable(Exception):
         self.text = text
 
 
-def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: ServiceFile,
+def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "ServiceFile | None",
           module: M.Module | None = None) -> str:
     """Translate an expression, or refuse.
 
@@ -577,7 +593,7 @@ def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: ServiceF
     """
     rendered = translate(text, {**_scope(routine, module or _MODULE.get()), **_LOOP_ROWS.get()})
     for name in rendered.unknown:
-        if name not in result.unknown_names:
+        if result is not None and name not in result.unknown_names:
             result.unknown_names.append(name)
     if rendered.unknown:
         raise Untranslatable(rendered.unknown, text or "")
