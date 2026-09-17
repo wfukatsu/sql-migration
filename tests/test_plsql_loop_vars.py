@@ -43,7 +43,7 @@ def test_a_loop_row_in_a_nested_blocks_handler_is_a_bind_too(corpus):
     insert = at_line(corpus, "prc_nightly_close.prc", 26)
     assert "r.order_id" in [b.plsql_variable for b in insert.binds]
     assert "TO_CHAR(r.order_id)" in [b.expression for b in insert.binds if b.expression]
-    assert [d.code for d in insert.diagnostics if d.severity == "ERROR"] == ["EXPR"]   # USER, i.e. #1
+    assert [d.code for d in insert.diagnostics if d.severity == "ERROR"] == []
 
 
 def by_id(corpus, sql_id: str):
@@ -101,9 +101,9 @@ def test_an_expression_over_a_loop_row_is_lifted_into_the_application(corpus):
     insert = at_line(corpus, "prc_nightly_close.prc", 15)
     lifted = [b for b in insert.binds if b.expression]
     assert "TO_CHAR(r.order_id)" in [b.expression for b in lifted]
-    # what still stops this statement is USER (#1), not the loop row
-    assert [d.code for d in insert.diagnostics if d.severity == "ERROR"] == ["EXPR"]
-    assert "USER" in next(d.message for d in insert.diagnostics if d.code == "EXPR")
+    # `USER` used to stop this statement as well; it is now the caller's argument too (#1)
+    assert "USER" in [b.expression for b in lifted]
+    assert [d.code for d in insert.diagnostics if d.severity == "ERROR"] == []
 
 
 def test_the_corpus_has_no_column_to_column_comparison_left(corpus):

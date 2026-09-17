@@ -234,11 +234,66 @@ class ScalarDbCaptureIT {
       String name = camelCase(scenario.routine());
       List<Object> raw = scenario.arguments();
       for (Method candidate : service.getClass().getMethods()) {
-        if (!candidate.getName().equals(name) || candidate.getParameterCount() != raw.size()) continue;
-        return new Invoker(service, candidate, coerce(raw, candidate.getParameterTypes(), scenario));
+        if (!candidate.getName().equals(name)) continue;
+        Class<?>[] types = candidate.getParameterTypes();
+        if (types.length == raw.size()) {
+          return new Invoker(service, candidate, coerce(raw, types, scenario));
+        }
+        // 移行元の USER / SYSTIMESTAMP を呼び出し側から受け取る routine（#1・#8）。値はシナリオが
+        // 固定する: 実行のたびに変わる物を渡すと、比較のたびに人が判断することになる
+        if (types.length == raw.size() + 1 && types[types.length - 1] == AuditContext.class) {
+          Object[] arguments = java.util.Arrays.copyOf(
+              coerce(raw, java.util.Arrays.copyOf(types, raw.size()), scenario), types.length);
+          arguments[types.length - 1] = auditContext(scenario);
+          return new Invoker(service, candidate, arguments);
+        }
       }
       throw new Unrunnable("generated service has no method " + name + "/" + raw.size()
           + "; the routine was refused or is not public");
+    }
+
+    /**
+     * シナリオが固定した「誰が」「いつ」。
+     *
+     * <p>`user` は Oracle 側の `USER`——ハーネスが接続しているスキーマユーザ——と同じでなければ
+     * `changed_by` が食い違う。だからシナリオに書き、Oracle 側の実測値は capture の `pinned.user` に
+     * 記録して、食い違いが黙って通らないようにしてある。
+     *
+     * <p>`now` は `pinned.sysdate` から採る。<b>SYSTIMESTAMP 由来の列は依然マスクされている</b>——
+     * Oracle 側を固定できないのは変わらないので（#8）、ここで固定できるのは目的の半分である。
+     *
+     * <p><b>この比較が捕まえられないこと</b>: `user` は両側とも外から入るので、「記録した主体が
+     * 業務的に正しいか」は分からない。それは決定であって翻訳ではない（#1）。捕まえられるのは
+     * 「呼び出し側の値を changed_by に書く」という翻訳が正しいかで、別の列に書く・リテラルを書く・
+     * 書かない・時刻を書く、はすべて差分になる。
+     */
+    private static AuditContext auditContext(Scenario scenario) {
+      Object user = scenario.pinned().get("user");
+      if (user == null) {
+        user = oracleSessionUser(scenario);
+      }
+      Object sysdate = scenario.pinned().get("sysdate");
+      java.time.OffsetDateTime now = sysdate == null
+          ? java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC)
+          : LocalDateTime.parse(String.valueOf(sysdate).replace(' ', 'T'))
+              .atOffset(java.time.ZoneOffset.UTC);
+      return AuditContext.of(user == null ? "MIGRATION" : String.valueOf(user), now);
+    }
+
+    /**
+     * Oracle 側の実測 USER。golden capture に入っている（`plsql_run.py` が `SELECT USER FROM dual`
+     * を記録する）。接続スキーマは環境で変わるので、シナリオに書くのではなく実測値を読む。
+     */
+    private static Object oracleSessionUser(Scenario scenario) {
+      Path golden = Path.of("..", "fixtures", "plsql", "golden", scenario.name() + ".json");
+      try {
+        Map<?, ?> capture = new com.google.gson.Gson()
+            .fromJson(java.nio.file.Files.readString(golden), Map.class);
+        Object pinned = capture.get("pinned");
+        return pinned instanceof Map<?, ?> m ? m.get("user") : null;
+      } catch (Exception e) {
+        return null;   // 実行されたことのないシナリオ。既定値で走り、食い違えば差分として出る
+      }
     }
 
     private static Object[] coerce(List<Object> raw, Class<?>[] types, Scenario scenario) throws Unrunnable {
