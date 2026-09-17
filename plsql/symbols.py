@@ -142,16 +142,22 @@ class SymbolTable:
 # --- building -------------------------------------------------------------------------------------------
 
 def build(parsed: ParsedFile, schema: OracleSchema | None = None,
-          public_names: set[str] | None = None) -> SymbolTable:
+          public_names: set[str] | None = None, spec: ParsedFile | None = None) -> SymbolTable:
     """Walk the parse trees of one file and record what it declares.
 
     `public_names` carries the routine names a package specification exposed, so a body can mark visibility.
+
+    `spec` is that specification's parse tree. What a package declares in its specification -- a RECORD type, a
+    constant -- is visible throughout its body, so the specification is walked first and its module scopes are
+    left in place for the body to add to. Without it a body referring to its own package's type resolves
+    nothing, and the type silently becomes an opaque name.
     """
     table = SymbolTable(schema_snapshot=schema.snapshot if schema else None, oracle_schema=schema)
-    for unit in parsed.units:
-        if unit.tree is None:
-            continue
-        _Builder(table, schema, unit.unit, public_names or set()).walk(unit.tree)
+    for source in ([spec] if spec is not None else []) + [parsed]:
+        for unit in source.units:
+            if unit.tree is None:
+                continue
+            _Builder(table, schema, unit.unit, public_names or set()).walk(unit.tree)
     return table
 
 
@@ -189,7 +195,11 @@ class _Builder:
     def _package(self, context: ParserRuleContext) -> None:
         name = _text(_child(context, "Package_nameContext") or context).split(".")[-1].lower()
         scope = self._scope(name, "module", None)
-        for declaration in _descend(context, {"Declare_specContext"}, stop=ROUTINE_BODIES):
+        # a body declares under Declare_spec, a specification under Package_obj_spec. Walking only the first
+        # means a package's own RECORD type -- declared in the specification, used throughout the body -- is
+        # never recorded, and every reference to it resolves to an opaque name.
+        for declaration in _descend(context, {"Declare_specContext", "Package_obj_specContext"},
+                                    stop=ROUTINE_BODIES):
             self._declaration(scope, declaration)
         for body in _descend(context, ROUTINE_BODIES):
             self._routine(body, parent=scope, module=name)
@@ -264,16 +274,48 @@ class _Builder:
                 text = _text(declaration)
                 spec = _child(declaration, "Type_specContext")
                 actual = "constant" if re.search(r"\bCONSTANT\b", text, re.I) else kind
+                resolved = None
+                if kind == "type":
+                    resolved = self._record_type(scope, declaration)
+                elif spec is not None:
+                    resolved = self._type(scope, _text(spec))
                 scope.declare(Symbol(
-                    name=_text(identifier), kind=actual, scope=scope.id,
-                    type=self._type(scope, _text(spec)) if spec is not None else None,
+                    name=_text(identifier), kind=actual, scope=scope.id, type=resolved,
                     source_range=self._range(declaration)))
+
+    def _record_type(self, scope: Scope, declaration: ParserRuleContext) -> TypeRef | None:
+        """`TYPE t IS RECORD (a customers.name%TYPE, ...)` resolved to the same shape a %ROWTYPE resolves to.
+
+        Written in the `RECORD(name TYPE, ...)` form the %ROWTYPE path already produces, so that everything
+        downstream -- the DTO generator, the Java type mapper -- treats the two the same. They are the same
+        thing: a named list of typed fields. Each field's own type goes through the ordinary resolution, which
+        is what lets a `%TYPE` field reach the DDL.
+        """
+        definition = _child(declaration, "Record_type_defContext")
+        if definition is None:
+            return None
+        fields = []
+        for field in _descend(definition, {"Field_specContext"}):
+            written = _text(field).split(None, 1)
+            if len(written) != 2:
+                continue
+            resolved = self._type(scope, written[1])
+            fields.append(f"{written[0]} {resolved.resolved or written[1]}")
+        if not fields:
+            return None
+        return TypeRef(_text(declaration).split()[1], f"RECORD({', '.join(fields)})", "record",
+                       self.table.schema_snapshot)
 
     # -- types ---------------------------------------------------------------------------------------------
     def _type(self, scope: Scope, written: str) -> TypeRef:
         written = written.strip()
         attribute = TYPE_ATTRIBUTE.match(written)
         if attribute is None:
+            # a package-local RECORD type named here resolves to its shape, the same as a %ROWTYPE would
+            declared = scope.resolve(written.rpartition(".")[2])
+            if declared is not None and declared.kind == "type" and declared.type is not None \
+                    and declared.type.origin == "record":
+                return TypeRef(written, declared.type.resolved, "record", self.table.schema_snapshot)
             return TypeRef(oracle=written, resolved=written, origin="declared")
 
         base, kind = attribute.group("base"), attribute.group("attr").upper()

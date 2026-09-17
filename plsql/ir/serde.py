@@ -47,6 +47,10 @@ _CAMEL = {
     "resolved_to": "resolvedTo", "oracle_type": "oracleType", "plsql_variable": "plsqlVariable",
     "db_links": "dbLinks", "dynamic_sql": "dynamicSql", "start_line": "startLine", "end_line": "endLine",
     "start_column": "startColumn", "end_column": "endColumn", "has_package_state": "hasPackageState",
+    # P3-1: what each bind and each select item was attributed to
+    "selects_star": "selectsStar", "into_columns": "intoColumns", "into_types": "intoTypes",
+    "into_oracle_types": "intoOracleTypes", "scalardb_type": "scalardbType",
+    "column_oracle_type": "columnOracleType",
 }
 _SNAKE = {v: k for k, v in _CAMEL.items()}
 
