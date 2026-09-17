@@ -2,10 +2,14 @@
  "source": "Oracle AI Database 26ai Free Release 23.26.3.0.0 - Develop, Learn, and Run for Free",
  "session": {
   "nls_numeric_characters": ". ",
-  "time_zone": "UTC"
+  "time_zone": "UTC",
+  "dbTimezone": "+00:00",
+  "sessionTimezone": "+09:00",
+  "fixedDatePinsSystimestamp": false
  },
  "families": [
   "arithmetic",
+  "clock",
   "comparison",
   "date",
   "null",
@@ -34291,6 +34295,50 @@
    "sql": "CAST({a} AS NUMBER(14,2))",
    "oracle": {
     "error": 1438
+   }
+  },
+  {
+   "family": "clock",
+   "op": "db_timezone",
+   "args": [],
+   "kind": "value",
+   "sql": "DBTIMEZONE",
+   "oracle": {
+    "value": "+00:00"
+   }
+  },
+  {
+   "family": "clock",
+   "op": "session_timezone",
+   "args": [],
+   "kind": "value",
+   "sql": "SESSIONTIMEZONE",
+   "oracle": {
+    "value": "+09:00"
+   }
+  },
+  {
+   "family": "clock",
+   "op": "systimestamp_utc_equals_sysdate",
+   "args": [],
+   "kind": "bool",
+   "sql": "CASE WHEN CAST(SYS_EXTRACT_UTC(SYSTIMESTAMP) AS DATE) = SYSDATE THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "clock",
+   "op": "current_timestamp_equals_systimestamp",
+   "args": [],
+   "kind": "bool",
+   "sql": "CASE WHEN CAST(CURRENT_TIMESTAMP AS DATE) = CAST(SYSTIMESTAMP AS DATE) THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
    }
   }
  ]
