@@ -108,4 +108,31 @@ class PlsqlTest {
     Object stored = Plsql.bind(new BigDecimal("0.10"), "DOUBLE", 2);
     assertEquals(0.10d, stored);
   }
+
+  // --- the zone the migration fixed (plan §9, 2026-09-17) -----------------------------------------------
+
+  @Test
+  void systimestampIsUtcNotTheMachinesZone() {
+    // the JVM default would make the same code write different instants depending on where it runs
+    LocalDateTime pinned = LocalDateTime.of(2026, 1, 15, 9, 30, 0);
+    Plsql.setClock(() -> pinned);
+    try {
+      assertEquals(java.time.ZoneOffset.UTC, Plsql.systimestamp().getOffset());
+      assertEquals(pinned, Plsql.systimestamp().toLocalDateTime());
+    } finally {
+      Plsql.setClock(LocalDateTime::now);
+    }
+  }
+
+  @Test
+  void systimestampAgreesWithSysdateOnTheInstant() {
+    LocalDateTime pinned = LocalDateTime.of(2026, 7, 1, 0, 0, 0);
+    Plsql.setClock(() -> pinned);
+    try {
+      assertEquals(Plsql.sysdate(), Plsql.systimestamp().toLocalDateTime(),
+          "the two must not disagree about what time it is");
+    } finally {
+      Plsql.setClock(LocalDateTime::now);
+    }
+  }
 }
