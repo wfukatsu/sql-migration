@@ -235,6 +235,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT c.tier INTO v_tier\n      FROM customers c JOIN orders o ON o.customer_id = c.customer_id\n     WHERE o.order_id = p_order_id",
+       "selects_star": false,
        "cardinality": "UNKNOWN"
       },
       {
@@ -487,6 +488,7 @@
        },
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE orders SET total_amount = v_total WHERE order_id = p_order_id",
+       "selects_star": false,
        "cardinality": "UNKNOWN"
       }
      ],

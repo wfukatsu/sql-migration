@@ -164,6 +164,7 @@
          },
          "sqlKind": "DELETE",
          "originalSql": "DELETE FROM audit_log WHERE audit_id = v_id",
+         "selects_star": false,
          "cardinality": "UNKNOWN"
         },
         {

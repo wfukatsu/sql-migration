@@ -92,11 +92,23 @@ public final class ScalarDbRunner implements AutoCloseable {
     return new ArrayList<>(primaryKeys.keySet());
   }
 
-  /** Empty every corpus table, so a scenario starts from exactly the state its setup describes. */
+  /**
+   * Empty every corpus table, so a scenario starts from exactly the state its setup describes.
+   *
+   * <p>Reading and deleting are separated into two transactions on purpose. Consensus Commit refuses to scan
+   * data the same transaction has already written (DB-CORE-10106) -- the very rule the capability checker
+   * enforces on generated code (P2-4) -- so a harness that deleted from one table and then scanned the next
+   * inside one transaction would trip over it. Collect every key first, commit, then delete.
+   */
   public void reset() throws Exception {
+    Map<String, List<Map<String, Object>>> rows = new LinkedHashMap<>();
     for (String table : primaryKeys.keySet()) {
-      for (Map<String, Object> row : select("SELECT * FROM " + table)) {
-        deleteByKey(table, row);
+      rows.put(table, select("SELECT * FROM " + table));
+    }
+    commit();
+    for (Map.Entry<String, List<Map<String, Object>>> entry : rows.entrySet()) {
+      for (Map<String, Object> row : entry.getValue()) {
+        deleteByKey(entry.getKey(), row);
       }
     }
     commit();
@@ -165,6 +177,9 @@ public final class ScalarDbRunner implements AutoCloseable {
     Map<String, Object> result = new LinkedHashMap<>();
     Map<String, Object> raised = null;
     try {
+      // the generated repository holds the same Connection and uses it directly, so anything it runs is
+      // invisible to the flag above; an invocation always counts as having begun a transaction
+      inTransaction = true;
       Object returned = invocation.run();
       result.put("returned", returned != null && returned.getClass().isRecord() ? null : encode(returned));
       result.put("out", outOf(returned));

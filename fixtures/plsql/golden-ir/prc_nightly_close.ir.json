@@ -101,6 +101,7 @@
        },
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE batch_control SET status = 'RUNNING', last_run_at = SYSDATE WHERE batch_name = 'NIGHTLY_CLOSE'",
+       "selects_star": false,
        "cardinality": "UNKNOWN"
       },
       {
@@ -179,6 +180,7 @@
          },
          "sqlKind": "UPDATE",
          "originalSql": "UPDATE orders SET status = 'CLOSED' WHERE order_id = r.order_id",
+         "selects_star": false,
          "cardinality": "UNKNOWN"
         },
         {
@@ -193,6 +195,7 @@
          },
          "sqlKind": "INSERT",
          "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, new_value, changed_at, changed_by)\n      VALUES (seq_audit_id.NEXTVAL, 'ORDERS', TO_CHAR(r.order_id), 'CLOSE', 'CLOSED', SYSTIMESTAMP, USER)",
+         "selects_star": false,
          "cardinality": "UNKNOWN"
         },
         {
@@ -265,6 +268,7 @@
        },
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE batch_control SET status = 'DONE' WHERE batch_name = 'NIGHTLY_CLOSE'",
+       "selects_star": false,
        "cardinality": "UNKNOWN"
       },
       {
@@ -359,6 +363,7 @@
          },
          "sqlKind": "INSERT",
          "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, new_value, changed_at, changed_by)\n        VALUES (seq_audit_id.NEXTVAL, 'ORDERS', TO_CHAR(r.order_id), 'ERROR', v_error_text, SYSTIMESTAMP, USER)",
+         "selects_star": false,
          "cardinality": "UNKNOWN"
         }
        ]
@@ -414,6 +419,7 @@
          },
          "sqlKind": "UPDATE",
          "originalSql": "UPDATE batch_control SET status = 'FAILED' WHERE batch_name = 'NIGHTLY_CLOSE'",
+         "selects_star": false,
          "cardinality": "UNKNOWN"
         },
         {
