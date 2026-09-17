@@ -224,6 +224,38 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 
 **Phase 3 完了条件**: AUTO 対象の意味的同等性テストが 100%、REVIEW 対象は差分理由を説明できる。
 
+#### P3-3 実施結果（2026-09-17）
+
+生成コードが依存する式の意味論（三値比較、`''` は NULL、half-up 丸め、DATE の時刻成分）は全て「Oracle が
+こう振る舞う」という主張である。記憶から assert すれば記憶をテストすることになるので、
+`difftest/plsql_semantics.py` が実機 Oracle で 1 件ずつ評価し、`fixtures/plsql/semantics.json` に記録した。
+**1313 件 / 6 family**（Oracle AI Database 26ai Free 23.26.3.0.0）。値は端に寄せて生成する——NULL、空文字、
+空白 1 文字、0、負数、型マッピングが INT / BIGINT を分ける桁数、64bit を超える値、真夜中、閏日。
+端から離れたところでしか成り立たない性質は性質ではなく、その端はどれも移行が失敗してきた場所である。
+
+- `PlsqlPropertyTest`（Java）が 1313 件を再生し、`Plsql` が同じ答えを出すことを検査する。**DB は要らない。**
+  検査できない演算は理由つきで `UNCHECKED` に明記し、fixture に演算が増えて黙って未検査になることがない
+  ようにしている（未対応の演算があればテストが落ちる）。
+- `tests/test_plsql_property.py`（Python + hypothesis）が Python 側の変換に対する性質を検査し、あわせて
+  fixture が計画の挙げた端（NULL / 空文字 / 境界値 / overflow / DATE の時刻成分 / TZ）を今も覆っている
+  ことを検査する。fixture が黙って縮んでも気づける。
+
+**P3-3 が見つけた実バグ 2 件**（どちらも `Plsql` の文字列関数、corpus では踏んでいなかった）:
+
+1. `RTRIM('')` は Oracle では NULL。`''` が既に NULL だから。`value == null` の判定では半分しか捕まらない。
+2. `RTRIM(' ')` も NULL。結果が空文字になり、Oracle では**どう到達したかに関わらず**空文字は NULL である。
+   `concat` は最初からこの規則を持っていたが、`rtrim` / `ltrim` は持っていなかった。
+
+**意図的な差 1 件**: 除算の結果を Oracle クライアントは 40 桁返すことがあるが、NUMBER が保証するのは
+38 桁である。40 桁目までの差は「保存されることのない中間値」にしか存在しないので、比較は NUMBER の
+精度で行う。列に入る値は既に 38 桁へ丸められている。
+
+**型マッピングの不一致を 1 件記録した（意図的）**: Oracle の `DATE` を `scalardb_migrate` は ScalarDB の
+`DATE` に落とし「時刻成分が失われる」と WARN する。PL/SQL 経路（`plsql/gen_java/types.py`）は `TIMESTAMP`
+に落とす。汎用の変換器は任意の Oracle スキーマを相手にするので DATE 列が本当に日付であることも多いが、
+PL/SQL 移行では `ordered_at` を SYSDATE と比較する routine があるため時刻を捨てられない。P0-3 の corpus
+スキーマも TIMESTAMP を採っており、その一致をテストで固定した。
+
 #### P3-2 実施結果（2026-09-17）
 
 `difftest/plsql_compare.py` が Oracle の capture（P0-5）と ScalarDB の capture（P3-1）を突き合わせる。
