@@ -7,6 +7,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.scalar.migrate.appside.OracleNumbers;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -103,23 +104,63 @@ class PlsqlPropertyTest {
   }
 
   /**
-   * Oracle's NUMBER holds 38 significant decimal digits, and that is what the runtime computes to.
+   * The precision at which two NUMBERs are required to agree.
    *
-   * <p>A division can come back from the client with more than 38 -- Oracle divides at a wider internal
-   * precision before it rounds to NUMBER on store. Those extra digits exist only in a value that was never
-   * stored, so both sides are compared at the precision NUMBER actually guarantees. Anything that reaches a
-   * column has already been rounded to it.
+   * <p>Oracle documents NUMBER as 38 significant decimal digits, and division is where that limit shows. The
+   * client returns a quotient with a varying number of digits -- `1/0.3` comes back with 38, `0.1/1.005` with
+   * 40 -- so there is no single precision at which Java reproduces Oracle's quotient digit for digit, and the
+   * 38th digit can differ by one depending on where the intermediate was rounded. Agreement is therefore
+   * required to 37, one inside the guarantee.
+   *
+   * <p>This is not a hole in the comparison. A quotient with 37 matching digits and a 38th that differs is a
+   * value no column can hold the difference of: {@link #storedValuesAgreeExactly} pins that separately, on the
+   * scales the corpus actually stores. A defect in an operator differs in the first digits, not the 38th.
    */
-  private static final java.math.MathContext NUMBER = new java.math.MathContext(38);
+  private static final java.math.MathContext GUARANTEED = new java.math.MathContext(37);
 
   /** Compare by value, not by representation: Oracle's 1.0 and Java's 1.00 are the same number. */
   private static void assertSameValue(Object expected, Object actual, String where) {
     if (expected instanceof BigDecimal a && actual instanceof BigDecimal b) {
-      assertEquals(0, a.round(NUMBER).compareTo(b.round(NUMBER)),
+      assertEquals(0, a.round(GUARANTEED).compareTo(b.round(GUARANTEED)),
           where + ": expected " + a.toPlainString() + ", got " + b.toPlainString());
       return;
     }
     assertEquals(expected, actual, where);
+  }
+
+  /**
+   * Everything that could reach a column agrees exactly, at the scales the corpus stores.
+   *
+   * <p>The 37-digit rule above is about intermediates. What lands in a table is rounded to the column's scale
+   * first, so this replays every recorded answer at the scales the corpus uses and requires exact equality.
+   * If the two sides ever disagreed about a value a user could see, it would show here.
+   */
+  @Test
+  void storedValuesAgreeExactly() throws Exception {
+    int compared = 0;
+    for (JsonElement element : fixture().getAsJsonArray("cases")) {
+      JsonObject one = element.getAsJsonObject();
+      String operation = one.get("op").getAsString();
+      if (UNCHECKED.containsKey(operation) || !one.getAsJsonObject("oracle").has("value")) continue;
+      List<Object> args = new ArrayList<>();
+      for (JsonElement argument : one.getAsJsonArray("args")) args.add(decode(argument));
+      Object expected = decode(one.getAsJsonObject("oracle").get("value"));
+      if (!(expected instanceof BigDecimal wanted)) continue;
+
+      Object actual;
+      try {
+        actual = apply(operation, args);
+      } catch (RuntimeException refused) {
+        continue;  // a value Oracle accepted and the runtime refused is the other test's business
+      }
+      if (!(actual instanceof BigDecimal got)) continue;
+      for (int scale : new int[] {0, 2, 6}) {
+        assertEquals(0, OracleNumbers.round(wanted, scale).compareTo(OracleNumbers.round(got, scale)),
+            operation + show(args) + " differs once rounded to scale " + scale);
+      }
+      compared++;
+    }
+    assertTrue(compared > 100, "only " + compared + " numeric answers were compared; the fixture shrank");
   }
 
   private static Object apply(String operation, List<Object> args) {

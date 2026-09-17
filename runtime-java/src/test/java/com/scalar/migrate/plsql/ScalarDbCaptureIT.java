@@ -47,23 +47,11 @@ class ScalarDbCaptureIT {
   private static final Path SCENARIOS = Path.of("..", "fixtures", "plsql", "scenarios");
   private static final String PACKAGE = "com.example.migrated";
 
-  /**
-   * ScalarDB has no DECIMAL type, so Oracle money has to become something else, and the PoC measures both
-   * answers rather than asserting one (plan §5, Phase 3). Each variant is a namespace of its own with its own
-   * schema and its own converted setup, and the captures land in separate directories so that P3-2 can put the
-   * two side by side against the one Oracle capture.
-   *
-   * <p>Select with {@code -Dplsql.variant=scaled|double}; the default is the schema shipped in fixtures/.
-   */
-  private static final String VARIANT = System.getProperty("plsql.variant", "scaled");
-  private static final String NAMESPACE = VARIANT.equals("double") ? "plsqlpoc_dbl" : "plsqlpoc";
-  private static final Path SCHEMA = VARIANT.equals("double")
-      ? Path.of("..", "difftest", "work", "plsql-schema-double.json")
-      : Path.of("..", "fixtures", "plsql", "scalardb-schema.json");
-  private static final Path SETUP = VARIANT.equals("double")
-      ? Path.of("..", "difftest", "work", "plsql-setup-double.json")
-      : Path.of("..", "difftest", "work", "plsql-setup.json");
-  private static final Path OUT = Path.of("..", "difftest", "work", "plsql-scalardb-" + VARIANT);
+  private static final String VARIANT = Variant.NAME;
+  private static final String NAMESPACE = Variant.NAMESPACE;
+  private static final Path SCHEMA = Variant.SCHEMA;
+  private static final Path SETUP = Variant.SETUP;
+  private static final Path OUT = Variant.CAPTURES;
   private static final Gson GSON = new GsonBuilder().serializeNulls().setPrettyPrinting().create();
 
   private static ScalarDbRunner runner;
@@ -71,9 +59,7 @@ class ScalarDbCaptureIT {
 
   @BeforeAll
   static void open() throws Exception {
-    Path properties = Path.of(System.getenv()
-        .getOrDefault("SCALARDB_SQL_PROPERTIES", "../difftest/conf/scalardb-sql-jdbc.properties"));
-    runner = new ScalarDbRunner(properties, NAMESPACE, SCHEMA);
+    runner = new ScalarDbRunner(Variant.PROPERTIES, NAMESPACE, SCHEMA);
     setup = ConvertedSetup.read(SETUP);
     Files.createDirectories(OUT);
   }
