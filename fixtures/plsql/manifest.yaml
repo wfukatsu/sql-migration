@@ -146,7 +146,13 @@ units:
     holdout: false
     routines:
       - {name: rounded_total,    expected: REVIEW, reason: "ROUND は half-up。Java の BigDecimal 既定(HALF_EVEN)と異なる"}
-      - {name: days_since_order, expected: REVIEW, reason: "Oracle DATE の時刻成分と TRUNC。日付差の意味を保つ必要がある"}
+      # P4-3 で REVIEW -> AUTO へ変更（2026-09-17）。元の理由は「Oracle DATE の時刻成分と TRUNC。日付差の
+      # 意味を保つ必要がある」で、その懸念は全て測定で閉じた: TRUNC と日付減算は P3-3 が実機 Oracle から
+      # 記録し（fixtures/plsql/semantics.json の date 族）PlsqlPropertyTest が Plsql の再現を検査する、
+      # routine 全体は money_days_since_order が両金額規約で Oracle と一致する、時計の読みは 1 回、
+      # TZ 依存構文・NLS 依存書式・DATE への CAST のいずれも含まない。エンジンの出力に合わせたのではなく、
+      # 実機の記録に合わせた。holdout ではないユニットである（holdout の期待値は変更しない）。
+      - {name: days_since_order, expected: AUTO,   reason: "TRUNC と日付差のみ。P3-3 の記録済み Oracle 挙動が覆う範囲（P4-3）"}
       - {name: display_note,     expected: REVIEW, reason: "空文字 = NULL。Java では別物になるため条件式の意味が変わる"}
       - {name: apply_rate,       expected: REVIEW, reason: "NUMBER(14,2) の乗算と丸め。ScalarDB に DECIMAL が無くスケール済み整数を検討する"}
 
