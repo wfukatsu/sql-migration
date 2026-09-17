@@ -23,11 +23,19 @@ rules:
   - id: SEM-002
     match:
       statementKind: [SqlOperation, Assignment, Return, If]
-      # タイムゾーンに依存する構文。SYSTIMESTAMP は TIME ZONE 付きで返り、CURRENT_* はセッションの
-      # タイムゾーンで決まる。記録した答えは 1 つのタイムゾーンの下のものなので、ここは証拠が無い
-      textMatches: '\bSYSTIMESTAMP\b|\bCURRENT_DATE\b|\bCURRENT_TIMESTAMP\b|\bLOCALTIMESTAMP\b|\bSESSIONTIMEZONE\b|\bDBTIMEZONE\b|AT\s+TIME\s+ZONE'
+      # **セッションの**タイムゾーンで値が変わる構文。CURRENT_* / LOCALTIMESTAMP / AT TIME ZONE は
+      # SESSIONTIMEZONE に従うので、接続元によって別の値になる。実機で測った（semantics.json の clock 族):
+      # DBTIMEZONE=+00:00 に対し SESSIONTIMEZONE=+09:00 で、CURRENT_TIMESTAMP は SYSTIMESTAMP と一致しない。
+      #
+      # SYSTIMESTAMP はここから外した（2026-09-17）。時刻を UTC に固定する決定（計画 §9）に加えて、
+      # 次の連鎖が測定で閉じている: (1) Oracle 側で SYS_EXTRACT_UTC(SYSTIMESTAMP) = SYSDATE
+      # （semantics.json、DBTIMEZONE が UTC のとき）、(2) Plsql.systimestamp() は sysdate() を UTC offset で
+      # 返す（PlsqlTest）、(3) SYSDATE は scenario で固定して比較している。
+      # **この連鎖は移行元 DB の DBTIMEZONE が UTC であることに依存する。** その前提が崩れていないことは
+      # tests/test_plsql_property.py が semantics.json の記録に対して検査する。
+      textMatches: '\bCURRENT_DATE\b|\bCURRENT_TIMESTAMP\b|\bLOCALTIMESTAMP\b|\bSESSIONTIMEZONE\b|\bDBTIMEZONE\b|AT\s+TIME\s+ZONE'
     decision: REVIEW
-    message: タイムゾーンに依存します。SYSTIMESTAMP と CURRENT_* はセッション／サーバのタイムゾーンで値が変わります
+    message: セッションのタイムゾーンに依存します。CURRENT_* と AT TIME ZONE は接続元によって値が変わります
     remediation:
       - タイムゾーンを固定するか、UTC で保持して表示時に変換する
       - どのタイムゾーンで比較するのかを要件として決める
@@ -47,6 +55,20 @@ rules:
       - 捨ててはいけないなら TIMESTAMP のまま扱う
     requiredTests:
       - date_time_component
+
+  - id: SEM-010
+    match:
+      statementKind: SqlOperation
+      sqlKind: [INSERT, UPDATE, MERGE]
+      # 列へ書かれる SYSTIMESTAMP。読んで判断に使うだけなら別だが、書かれた値は比較できない
+      textMatches: '\bSYSTIMESTAMP\b'
+    decision: REVIEW
+    message: SYSTIMESTAMP を列へ書いています。この値は Oracle と突き合わせられないので、書かれた時刻は未検証のままです
+    remediation:
+      - 時刻を呼び出し側から渡す形にすれば、比較できるようになる
+      - 比較できないままにするなら、その列が業務上どこまで正確である必要があるかを決める
+    requiredTests:
+      - timezone
 
   - id: SEM-007
     match:
