@@ -48,7 +48,15 @@ class PlsqlPropertyTest {
   private static final Map<String, String> UNCHECKED = Map.of(
       "length", "no helper: generated code emits String.length(), which differs on NULL and is not reached "
           + "because a NULL length is only ever compared, never stored",
-      "trunc_number", "no helper: TRUNC(n, scale) does not appear in the corpus");
+      "trunc_number", "no helper: TRUNC(n, scale) does not appear in the corpus",
+      // The `clock` family records facts about the database this was captured from -- its time zone, and
+      // whether FIXED_DATE reaches SYSTIMESTAMP. They are not operators, so there is nothing here to replay.
+      // What they establish is checked where it belongs: tests/test_plsql_property.py reads them, and
+      // systimestampIsUtcNotTheMachinesZone in PlsqlTest pins the runtime half of the same chain.
+      "db_timezone", "a property of the source database, not an operator",
+      "session_timezone", "a property of the session, not an operator",
+      "systimestamp_utc_equals_sysdate", "a fact about the source database; the runtime half is in PlsqlTest",
+      "current_timestamp_equals_systimestamp", "a fact about the session's zone, not an operator");
 
   private static JsonObject fixture() throws Exception {
     return GSON.fromJson(Files.readString(FIXTURE), JsonObject.class);

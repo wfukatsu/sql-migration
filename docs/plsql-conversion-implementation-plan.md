@@ -729,6 +729,47 @@ ScalarDB が実行できない文）を含めると routine ごとに固有の�
 出力には**採用前に確かめること**を書いた: 未解決の同形 routine も同じ扱いでよいか、ルールを足した後も
 KPI-3 が（holdout 上でも）下がらないか、AUTO 禁止条件を緩めていないか。
 
+#### SEM-002 を証拠で閉じた結果（2026-09-17）
+
+UTC 固定の決定を受けて `SEM-002` を証拠で閉じにいった。**ルールは正しく狭まったが、判定は 1 件も動か
+なかった。** 動かない理由が分かったことの方が収穫である。
+
+**まず前提を測った。** `ALTER SYSTEM SET FIXED_DATE` が `SYSTIMESTAMP` に届くかどうかで、corpus が
+SYSTIMESTAMP 由来の列を全てマスクしている根拠が決まる:
+
+| 測定 | 結果 |
+|---|---|
+| `FIXED_DATE` が `SYSTIMESTAMP` を固定するか | **しない**（SYSDATE のみ）。マスクは正しい |
+| `DBTIMEZONE` / `SESSIONTIMEZONE` | `+00:00` / `+09:00`。**セッション TZ は DB TZ と違う** |
+| `SYS_EXTRACT_UTC(SYSTIMESTAMP) = SYSDATE` | **真**（DBTIMEZONE が UTC のとき） |
+| `CURRENT_TIMESTAMP = SYSTIMESTAMP` | **偽**。接続元で変わる |
+
+`semantics.json` に `clock` 族として記録した。**マスクの根拠が「そういうものだから」から「測ったから」に
+変わった。**
+
+**`SEM-002` から `SYSTIMESTAMP` を外した。** 次の連鎖が閉じているため: Oracle 側で
+`SYS_EXTRACT_UTC(SYSTIMESTAMP) = SYSDATE`、Java 側で `Plsql.systimestamp()` が `sysdate()` を UTC offset で
+返す（テスト済み）、そして SYSDATE は scenario で固定して比較している。**この連鎖は移行元 DB の
+DBTIMEZONE が UTC であることに依存する**ので、その前提が崩れていないことをテストが `semantics.json` の
+記録に対して検査する。崩れたらテストが落ち、ルールを戻すよう指示する。
+
+`SEM-002` はセッション TZ に依存する構文（`CURRENT_*` / `AT TIME ZONE` / `LOCALTIMESTAMP` 等）だけを
+見るようになった。corpus はこれらを使っていないので、当たる件数は 0 である。
+
+**代わりに `SEM-010` を足した。** 狭めた直後に KPI-3 が 100% → 98.2% に落ち、不一致が holdout の
+`pkg_payment.record_payment` だった。中を見ると本質が分かった——**この routine は `SYSTIMESTAMP` を列へ
+書き、その列は全シナリオでマスクされている**。つまり主要な副作用が一度も比較されていない。それは
+タイムゾーンの問題ではなく、**「この効果はハーネスで検証できない」という別の問題**である。
+`SEM-010` はそれを名指しする。KPI-3 は 100%（56/56）に戻った。
+
+**判定が動かなかったのは、corpus の `SYSTIMESTAMP` が全て書き込みだったから**である。
+`SEM-002` が塞いでいた 7 件は、そのまま `SEM-010` が塞ぐ。**本当の障害はタイムゾーン依存では
+なかった**——書いた値が検証できないことだった。
+
+ただし `SEM-010` には `SEM-002` に無かったものがある。**前へ進む道が書いてある**:
+「時刻を呼び出し側から渡す形にすれば、比較できるようになる」。そうすれば AUTO に届く。
+「タイムゾーンに依存します」には、その道が無かった。
+
 #### Phase 4 の現在地（2026-09-17）
 
 > **中間報告は `docs/plsql-phase4-interim.md`。**
