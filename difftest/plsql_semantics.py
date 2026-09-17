@@ -40,15 +40,26 @@ OUT = ROOT / "fixtures" / "plsql" / "semantics.json"
 # `''` is NULL in Oracle and ' ' is not; keeping all three apart is the point of having them here
 TEXTS = [None, "", " ", "a", "a ", "A", "ab"]
 
-NUMBERS = [
+# values small enough to combine with each other without the result saying more about overflow than about the
+# operator. `0.1` and `0.2` are here for one reason: Oracle's NUMBER is decimal, so `0.1 + 0.2` is exactly `0.3`,
+# and a binary double answers 0.30000000000000004. That single fact is what decides how money is stored
+# (plan §9), so it belongs in the recorded evidence rather than in a claim about it.
+SMALL = [
     None, 0, 1, -1,
+    decimal.Decimal("0.1"), decimal.Decimal("0.2"), decimal.Decimal("0.3"),
     decimal.Decimal("0.5"), decimal.Decimal("-0.5"),
     decimal.Decimal("1.005"), decimal.Decimal("2.675"),   # the classic half-up / half-even disagreements
     decimal.Decimal("1234.565"),                          # rounds into a NUMBER(14,2) the corpus uses
+]
+
+# the edges of what the target can hold, which is where a migration loses values rather than precision
+LARGE = [
     999999999, 1000000000,                                # the INT boundary the type mapper draws at 9 digits
     999999999999999999, 1000000000000000000,              # the BIGINT boundary, at 18
     decimal.Decimal("99999999999999999999999999999999999999"),   # past 64 bits entirely
 ]
+
+NUMBERS = SMALL + LARGE
 
 DATES = [None,
          datetime.datetime(2026, 1, 15, 0, 0, 0),
@@ -64,7 +75,7 @@ def cases() -> list[dict]:
     # -- three-valued comparison, over texts and over numbers
     for op, sql in (("eq", "{a} = {b}"), ("ne", "{a} <> {b}"), ("lt", "{a} < {b}"),
                     ("le", "{a} <= {b}"), ("gt", "{a} > {b}"), ("ge", "{a} >= {b}")):
-        for values in (TEXTS, NUMBERS[:9]):
+        for values in (TEXTS, SMALL):
             for a in values:
                 for b in values:
                     out.append(_bool("comparison", op, [a, b], sql))
@@ -79,11 +90,11 @@ def cases() -> list[dict]:
 
     # -- arithmetic, including NULL propagation and division
     for op, sql in (("add", "{a} + {b}"), ("sub", "{a} - {b}"), ("mul", "{a} * {b}")):
-        for a in NUMBERS[:9]:
-            for b in NUMBERS[:9]:
+        for a in SMALL:
+            for b in SMALL:
                 out.append(_value("arithmetic", op, [a, b], sql))
-    for a in NUMBERS[:9]:
-        for b in NUMBERS[1:9]:
+    for a in SMALL:
+        for b in SMALL[1:]:
             if b != 0:
                 out.append(_value("arithmetic", "div", [a, b], "{a} / {b}"))
                 out.append(_value("arithmetic", "mod", [a, b], "MOD({a}, {b})"))

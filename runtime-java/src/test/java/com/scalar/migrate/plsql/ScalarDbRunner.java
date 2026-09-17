@@ -50,7 +50,7 @@ public final class ScalarDbRunner implements AutoCloseable {
    * unlike a plain JDBC driver where an empty commit is a no-op. A scenario with no setup rows would otherwise
    * fail here for a reason that has nothing to do with the routine under test.
    */
-  private boolean inTransaction;
+  private static final String NO_TRANSACTION = "DB-SQL-10015";
 
   /**
    * @param propertiesPath ScalarDB SQL client properties (the cluster endpoint, the transaction manager)
@@ -115,26 +115,42 @@ public final class ScalarDbRunner implements AutoCloseable {
   }
 
   public void execute(String sql) throws Exception {
-    inTransaction = true;
     try (Statement statement = connection.createStatement()) {
       statement.execute(sql);
     }
   }
 
+  /**
+   * Commit, unless nothing has begun a transaction.
+   *
+   * <p>Asking the connection rather than tracking a flag, because the generated repository holds the same
+   * connection and uses it directly: a flag set only by this class's own statements says nothing about what
+   * the code under test did, and a commit skipped on that basis silently discards its writes.
+   */
   public void commit() throws Exception {
-    if (!inTransaction) return;
-    connection.commit();
-    inTransaction = false;
+    try {
+      connection.commit();
+    } catch (Exception e) {
+      if (!isNoTransaction(e)) throw e;
+    }
   }
 
   public void rollback() throws Exception {
-    if (!inTransaction) return;
-    connection.rollback();
-    inTransaction = false;
+    try {
+      connection.rollback();
+    } catch (Exception e) {
+      if (!isNoTransaction(e)) throw e;
+    }
+  }
+
+  private static boolean isNoTransaction(Throwable e) {
+    for (Throwable cause = e; cause != null && cause != cause.getCause(); cause = cause.getCause()) {
+      if (cause.getMessage() != null && cause.getMessage().contains(NO_TRANSACTION)) return true;
+    }
+    return false;
   }
 
   public List<Map<String, Object>> select(String sql) throws Exception {
-    inTransaction = true;
     try (Statement statement = connection.createStatement();
          ResultSet rows = statement.executeQuery(sql)) {
       ResultSetMetaData meta = rows.getMetaData();
@@ -177,9 +193,6 @@ public final class ScalarDbRunner implements AutoCloseable {
     Map<String, Object> result = new LinkedHashMap<>();
     Map<String, Object> raised = null;
     try {
-      // the generated repository holds the same Connection and uses it directly, so anything it runs is
-      // invisible to the flag above; an invocation always counts as having begun a transaction
-      inTransaction = true;
       Object returned = invocation.run();
       Map<String, String> projection = scenario.projection();
       boolean carrier = returned != null && returned.getClass().isRecord();
