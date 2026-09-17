@@ -1322,6 +1322,21 @@
             "null"
           ]
         },
+        "variants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "guard": {
+                "type": "string"
+              },
+              "sql": {
+                "type": "string"
+              }
+            }
+          }
+        },
         "using": {
           "type": "array",
           "items": {
