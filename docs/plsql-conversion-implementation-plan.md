@@ -459,12 +459,49 @@ P3-1 の過程で見つかり、この場で直したもの:
   `DATE '2025-04-01'` が TIMESTAMP 列へ日付だけの文字列として書かれ、ScalarDB がパースできなかった。
 - 予約列チェックがインライン `PRIMARY KEY` を主キーとして認識せず、`before_` 始まりの主キーを誤って弾いていた。
 
-### Phase 4 以降（概要のみ）
+## 5.5. Phase 4 — 残りを人手から外し、引き渡せる形にする（見積 41d + LLM 系は別途）
 
-- 動的 SQL の部分評価（定数畳み込み、条件分岐による有限 variant 列挙、上限つき）
-- Trigger / Scheduler / 外部副作用の設計テンプレート出力
-- LLM Remediator（REDESIGN 説明、未対応関数の mapping 候補。**生成コードは必ず REVIEW 扱い**、AUTO に昇格させない）
-- 承認された決定からのルール提案
+Phase 3 が「変換できたものは正しい」を示した。Phase 4 の主題は**変換できていないものを減らすこと**と、
+**引き渡しに耐える形にすること**である。
+
+優先順位は推測ではなく実測から決めた。`out/plsql/decisions.json` を集計すると、非 AUTO 56 件を塞いでいる
+のは次の順である（1 routine が複数ルールに当たるので合計は 56 を超える）:
+
+| 件数 | 原因 | 対応するタスク |
+|---|---|---|
+| 21 | `SQL-001` ScalarDB SQL で実行できない文 | P4-4 |
+| 16 | `CUR-001` 明示 cursor がトランザクション境界をまたぐ | P4-5 |
+| 15 | `SEM-002` Oracle DATE / SYSDATE の意味論 | P4-3 |
+| 8 | **ルールが 1 つも当たらず、検証されていないだけ** | **P4-1** |
+| 5 | `LOCK-001` 行ロック / `TX-001` routine 内 COMMIT | P4-6 |
+| 4 | `DYN-002` 動的 SQL / `TRG-001` trigger | P4-7 / P4-8 |
+
+> **共通の禁止事項**: AUTO を増やすためにルールを緩めない。ルールを変えてよいのは、**その routine が
+> 安全であることの独立した証拠**が出たときだけである（KPI 定義 §AUTO の下限しきい値）。「エンジンが
+> そう出したから期待値を合わせる」は Phase 0 から一貫して禁じている。
+
+### タスク
+
+| ID | タスク | 成果物 | 受け入れ基準 | 依存 | 見積 |
+|---|---|---|---|---|---|
+| P4-1 | 検証の空白を埋める | `fixtures/plsql/scenarios/*.yaml` 追加、golden 再採取 | **他の 4 因子が 1.0 で `testEvidence` だけ 0 の 8 routine**（`is_cancellable` / `line_amount` / `tier_discount` / `is_shippable` / `mark_shipped` / `set_credit_limit` / `reprice_order` / `prc_add_product`）に scenario を書き、Oracle と ScalarDB 両側で採取して一致させる。一致しなければ**それは発見**であり、シナリオではなく実装を直す | P3-2 | 3d |
+| P4-2 | KPI-6 のベースライン確定 | `fixtures/plsql/fix-times.yaml`、`decisions.json` への反映 | REVIEW を**実際に人手で消化**し、routine ごとの実作業時間を記録する。判定区分別の中央値が `measured` 件数つきで出る。**推定値を入れない**。最低 10 routine を実測してからベースラインと呼ぶ | P3-5 | 5d |
+| P4-3 | 日付・時刻の意味論を証拠で閉じる | `rules/semantics.yaml` の `SEM-002` 改訂、`fixtures/plsql/semantics.json` 拡張 | P3-3 が Oracle の DATE / SYSDATE 挙動を 2015 件記録し、`Plsql` が再現することを示した。**その証拠で覆われる範囲に限って** `SEM-002` を AUTO 可能にする。覆われない範囲（TZ 依存、NLS 依存、`SYSDATE` の呼び出し回数に依存する routine）は REVIEW のまま。改訂後に holdout 上で KPI-3 が下がらないことを確認する | P3-3 | 4d |
+| P4-4 | ScalarDB が実行できない SQL を減らす | `scalardb_migrate` 拡張、`decomposer` の適用範囲拡大 | 現在 21 routine を塞ぐ `SQL-001` の内訳を数え、**多い順に**対応する。`SET` の式（`x = x - :n`）は読み出し→計算→書き戻しへ、`NVL()` を含む `VALUES` は事前計算へ。対応できないものは件数と理由を残す。ScalarDB が実行できない文の数が半減する | P3-2 | 8d |
+| P4-5 | cursor の設計テンプレート | `docs/plsql-cursor-patterns.md`、生成器の対応 | `CUR-001` / `CUR-002` が塞ぐ 21 routine を、cursor の使われ方で分類する（全件走査 / ページング / 1 件取得）。分類ごとに ScalarDB での書き方を決め、**逐語変換できるものは生成し、できないものはテンプレートを出す**。N+1 とメモリ上限を各テンプレートに明記する | P3-2 | 6d |
+| P4-6 | 行ロックとトランザクション境界の再設計テンプレート | `docs/plsql-transaction-patterns.md` | P3-4 が測った事実（Consensus Commit は待たずに片方を弾く）を出発点に、`FOR UPDATE` / routine 内 COMMIT / 自律トランザクションそれぞれの置き換え方を書く。**再試行の責務がどこに来るか**を必ず明示する。テンプレートごとに P3-4 形式の並行性テストを添える | P3-4 | 5d |
+| P4-7 | 動的 SQL の部分評価 | `plsql/dynamic.py` | 定数畳み込みと、条件分岐による有限 variant 列挙（**上限つき**）。畳み込めた文は通常の SQL として変換し、bind の復元と権限確認が要ることを診断に残す。上限を超えたものは REVIEW のまま。畳み込み結果が元と等価であることを differential テストで示す | P3-2 | 6d |
+| P4-8 | trigger / scheduler / 外部副作用の設計テンプレート | `docs/plsql-trigger-patterns.md` | trigger を「全書込経路を Service 側で統制する」形に落とすテンプレート。**書込経路の網羅性をどう担保するか**を含む（これが欠けると trigger より悪くなる）。DB link・UTL_* も同様に扱う | P3-2 | 3d |
+| P4-9 | 引き渡し版の生成物 | 生成器の `--handover` | 再生成モデル終了の決定（§9）から出た項目。引き渡し版ではヘッダの「編集するな。変更はルール側へ」を**引き渡し後の正しい文言**に替える。`traceability.csv` と `file:line` コメントは残す（引き渡し後に辿れる必要があるため） | §9 の決定 | 1d |
+| P4-10 | LLM Remediator | `plsql/remediate.py` | REDESIGN の説明文、未対応関数の mapping 候補を出す。**生成されたコードは必ず REVIEW 扱いで、AUTO に昇格させない**。出力には生成元のモデルと日時を残す | P4-5, P4-6 | 別途見積 |
+| P4-11 | 承認された決定からのルール提案 | `plsql/propose.py` | 人が承認した REVIEW の処理からルール候補を出す。**提案はルールにならない**。人がルールファイルへ書いて初めて有効になる | P4-2 | 別途見積 |
+
+**Phase 4 完了条件**: 非 AUTO の件数が半減し（56 → 28 以下）、残るものは設計テンプレートか、
+「この routine は人が決めるべき」という説明のどちらかを持つ。KPI-6 のベースラインが実測で出ている。
+
+### Phase 5 以降（概要のみ）
+
+- 実案件 corpus の追加と、KPI の出自別再計測（合成 corpus 上の値は実案件耐性の証拠ではない）
 - Migration Workbench（Web UI）と API（設計書 §12）
 
 ---
