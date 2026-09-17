@@ -88,7 +88,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT SUM(amount) INTO v_sum FROM payments WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_payment.paid_total#stmt-2",
@@ -240,7 +241,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT status INTO v_status FROM orders WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_payment.record_payment#stmt-2",
@@ -286,7 +288,8 @@
        "sqlKind": "INSERT",
        "originalSql": "INSERT INTO payments (payment_id, order_id, amount, method, paid_at)\n    VALUES (p_payment_id, p_order_id, p_amount, p_method, SYSTIMESTAMP)",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       }
      ],
      "exceptionHandlers": [
@@ -405,7 +408,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT MAX(paid_at) INTO v_at FROM payments WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_payment.last_paid_at#stmt-2",

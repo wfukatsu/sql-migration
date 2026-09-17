@@ -180,6 +180,7 @@
          },
          "cursor": "c_open_orders",
          "intoTargets": [
+          "v_order_id",
           "v_customer_id",
           "v_total"
          ]
@@ -354,7 +355,8 @@
         "sqlKind": "SELECT",
         "originalSql": "SELECT order_id FROM orders WHERE status = p_status ORDER BY ordered_at",
         "selectsStar": false,
-        "cardinality": "MANY"
+        "cardinality": "MANY",
+        "atMostOneRow": false
        },
        "variable": "r",
        "body": [
@@ -371,7 +373,8 @@
          "sqlKind": "UPDATE",
          "originalSql": "UPDATE orders SET note = 'reviewed' WHERE order_id = r.order_id",
          "selectsStar": false,
-         "cardinality": "UNKNOWN"
+         "cardinality": "UNKNOWN",
+         "atMostOneRow": false
         }
        ]
       }
@@ -463,20 +466,8 @@
      ],
      "body": [
       {
-       "id": "pkg_order_report.largest_order#stmt-1",
-       "kind": "OpenCursor",
-       "sourceRange": {
-        "file": "pkg_order_report.pkb",
-        "startLine": 39,
-        "endLine": 39,
-        "startColumn": 5,
-        "endColumn": 10
-       },
-       "cursor": "c_amounts"
-      },
-      {
        "id": "pkg_order_report.largest_order#stmt-2",
-       "kind": "Fetch",
+       "kind": "SqlOperation",
        "sourceRange": {
         "file": "pkg_order_report.pkb",
         "startLine": 40,
@@ -484,7 +475,15 @@
         "startColumn": 5,
         "endColumn": 26
        },
-       "cursor": "c_amounts"
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT total_amount FROM orders WHERE customer_id = p_customer_id ORDER BY total_amount DESC FETCH FIRST 1 ROWS ONLY",
+       "intoTargets": [
+        "v_amount"
+       ],
+       "selectsStar": false,
+       "cardinality": "AT_MOST_ONE",
+       "notFoundFlag": "c_amounts",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_order_report.largest_order#stmt-3",
@@ -516,18 +515,6 @@
          ]
         }
        ]
-      },
-      {
-       "id": "pkg_order_report.largest_order#stmt-5",
-       "kind": "CloseCursor",
-       "sourceRange": {
-        "file": "pkg_order_report.pkb",
-        "startLine": 44,
-        "endLine": 44,
-        "startColumn": 5,
-        "endColumn": 11
-       },
-       "cursor": "c_amounts"
       },
       {
        "id": "pkg_order_report.largest_order#stmt-6",

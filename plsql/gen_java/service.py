@@ -131,6 +131,10 @@ def _method(file: JavaFile, module: M.Module, routine: M.Routine, result: Servic
             f.line(f"{mapped.name} {java_name(parameter.name)}{initial};")
         for declaration in routine.declarations:
             _declaration(f, declaration, routine, result)
+        for flag in _not_found_flags(routine):
+            # `c%NOTFOUND` after an explicit cursor's first FETCH (#11). It is declared with the locals, not at
+            # the read, because the branch that asks may sit in a different block from the read that answers.
+            f.line(f"boolean {_flag_name(flag)} = false;   // {flag}%NOTFOUND")
         if routine.declarations or outs:
             f.line()
         if routine.exception_handlers:
@@ -440,7 +444,9 @@ def _sql(file: JavaFile, statement: M.SqlOperation, routine: M.Routine) -> None:
         # is what the shape otherwise looks like, turns "no rows" and "many rows" into exceptions the original
         # never raised -- and quietly loses every row after the first when it does not.
         raise Untranslatable([f"BULK COLLECT INTO {', '.join(targets)}"], statement.original_sql)
-    if targets and len(targets) == 1:
+    if targets and statement.cardinality == "AT_MOST_ONE":
+        _first_row(file, statement, routine, method, arguments, targets)
+    elif targets and len(targets) == 1:
         file.line(f"{java_name(targets[0])} = "
                   f"{_into(file, f'repository.{method}({arguments})', _local_type(routine, targets[0]))};")
     elif targets:
@@ -477,6 +483,29 @@ def _arguments(file: JavaFile, statement: M.SqlOperation, routine: M.Routine,
         name = bind.plsql_variable or bind.name
         out.append(_expr(file, name, routine, result) if "." in name else java_name(name))
     return ", ".join(out)
+
+
+def _first_row(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, method: str,
+               arguments: str, targets: list[str]) -> None:
+    """An explicit cursor's `OPEN` / first `FETCH` (#11), as the query it was.
+
+    The repository hands back null when there was no row, and the routine's own `%NOTFOUND` branch -- kept
+    where it was written -- decides what that means. The flag is set from the row's absence rather than from
+    the value assigned: `FETCH` finding a row whose column is NULL is not `%NOTFOUND`.
+
+    A `FETCH` that finds nothing **leaves its targets as they were**. That is what Oracle does, and it is why
+    the assignment sits inside the guard rather than writing null: the routine may have put something there
+    already, and a sequence with no `%NOTFOUND` branch relies on exactly that.
+    """
+    row = f"{method}Row"
+    file.comment(f"FETCH {statement.not_found_flag} INTO {', '.join(targets)}")
+    file.line(f"Object[] {row} = repository.{method}({arguments});")
+    if statement.not_found_flag:
+        file.line(f"{_flag_name(statement.not_found_flag)} = {row} == null;")
+    with file.block(f"if ({row} != null)") as f:
+        for index, target in enumerate(targets):
+            value = _into(f, f"{row}[{index}]", _local_type(routine, target))
+            f.line(f"{java_name(target)} = {value};")
 
 
 def _into(file: JavaFile, value: str, target_type: str) -> str:
@@ -583,6 +612,20 @@ class Untranslatable(Exception):
         self.text = text
 
 
+def _not_found_flags(routine: M.Routine) -> list[str]:
+    """The cursors whose `%NOTFOUND` this routine's rewritten reads answer, in the order they are read."""
+    out: list[str] = []
+    for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
+        flag = getattr(statement, "not_found_flag", None)
+        if flag and flag.lower() not in [f.lower() for f in out]:
+            out.append(flag)
+    return out
+
+
+def _flag_name(cursor: str) -> str:
+    return java_name(f"{cursor}_not_found")
+
+
 def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "ServiceFile | None",
           module: M.Module | None = None) -> str:
     """Translate an expression, or refuse.
@@ -591,7 +634,9 @@ def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "Service
     different semantics. Refusing turns the statement into a `throw` with the original next to it, which the
     compiler accepts and a reviewer can act on. Emitting it anyway is the one outcome that helps nobody.
     """
-    rendered = translate(text, {**_scope(routine, module or _MODULE.get()), **_LOOP_ROWS.get()})
+    names = {**_scope(routine, module or _MODULE.get()), **_LOOP_ROWS.get()}
+    names.update({f"{flag}%notfound": _flag_name(flag) for flag in _not_found_flags(routine)})
+    rendered = translate(text, names)
     for name in rendered.unknown:
         if result is not None and name not in result.unknown_names:
             result.unknown_names.append(name)

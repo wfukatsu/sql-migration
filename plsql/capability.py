@@ -195,6 +195,8 @@ def annotate(program: M.Program, report: CapabilityReport) -> None:
             continue
         if is_key_access(report.access_paths.get(statement.id)):
             continue
+        if statement.at_most_one_row:
+            continue   # `LIMIT 1` or a bare aggregate: there is no second row to raise TOO_MANY_ROWS with
         if any(d.code == "MULTI_ROW_INTO" for d in statement.diagnostics):
             continue
         statement.add("WARN", "MULTI_ROW_INTO",

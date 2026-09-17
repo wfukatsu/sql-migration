@@ -138,7 +138,10 @@
           "startColumn": 5,
           "endColumn": 22
          },
-         "cursor": "c_old"
+         "cursor": "c_old",
+         "intoTargets": [
+          "v_id"
+         ]
         },
         {
          "id": "prc_purge_audit#stmt-4",
@@ -165,7 +168,8 @@
          "sqlKind": "DELETE",
          "originalSql": "DELETE FROM audit_log WHERE audit_id = v_id",
          "selectsStar": false,
-         "cardinality": "UNKNOWN"
+         "cardinality": "UNKNOWN",
+         "atMostOneRow": false
         },
         {
          "id": "prc_purge_audit#stmt-6",

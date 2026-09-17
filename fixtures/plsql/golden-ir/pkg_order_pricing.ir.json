@@ -236,7 +236,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT c.tier INTO v_tier\n      FROM customers c JOIN orders o ON o.customer_id = c.customer_id\n     WHERE o.order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_order_pricing.customer_tier#stmt-2",
@@ -367,7 +368,8 @@
         "sqlKind": "SELECT",
         "originalSql": "SELECT qty, unit_price FROM order_lines WHERE order_id = p_order_id",
         "selectsStar": false,
-        "cardinality": "MANY"
+        "cardinality": "MANY",
+        "atMostOneRow": false
        },
        "variable": "r",
        "body": [
@@ -505,7 +507,8 @@
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE orders SET total_amount = v_total WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       }
      ],
      "deterministic": false,

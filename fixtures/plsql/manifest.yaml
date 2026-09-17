@@ -75,9 +75,9 @@ units:
     origin: synthetic
     holdout: false
     routines:
-      - {name: count_by_status, expected: REVIEW, reason: "package レベルの明示 cursor。寿命が routine をまたぐため Tx 境界の確認が要る"}
+      - {name: count_by_status, expected: AUTO,   reason: "走査して数える cursor（#11 の C）。COUNT(*) 1 本に置き換わり、cursor の寿命そのものが無くなる"}
       - {name: mark_reviewed,   expected: REVIEW, reason: "非キー列の走査で回しながら同じ表を更新する。走査行数の上限が要る"}
-      - {name: largest_order,   expected: REVIEW, reason: "索引列の ORDER BY + 先頭 1 行。ScalarDB の順序付き走査に載るか要確認"}
+      - {name: largest_order,   expected: REVIEW, reason: "先頭 1 行を取る cursor（#11 の B）。LIMIT 1 で生成できるが、ORDER BY がパーティションキーに乗らないため走査がパーティションをまたぐ（SCAN-002）"}
 
   - name: pkg_bulk_load
     files: [pkg_bulk_load.pks, pkg_bulk_load.pkb]

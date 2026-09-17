@@ -121,7 +121,8 @@
        "sqlKind": "INSERT",
        "originalSql": "INSERT INTO products (product_id, name, unit_price, stock_qty, discontinued)\n  VALUES (p_product_id, p_name, p_unit_price, p_stock_qty, 'N')",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       }
      ],
      "deterministic": false,
