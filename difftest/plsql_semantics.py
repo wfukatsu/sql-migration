@@ -117,6 +117,18 @@ def cases() -> list[dict]:
     # -- NUMBER against the storage the migration picks, at and past the boundaries
     for value in NUMBERS:
         out.append(_value("storage", "cast_number_14_2", [value], "CAST({a} AS NUMBER(14,2))"))
+
+    # -- the clock, and which parts of it the harness can pin (P4-3 の続き)
+    #
+    # A scenario pins SYSDATE with ALTER SYSTEM SET FIXED_DATE. Whether that reaches SYSTIMESTAMP decides
+    # whether a column written from SYSTIMESTAMP can be compared at all, and the corpus masks those columns on
+    # the assumption that it does not. Measuring it turns the assumption into a recorded fact.
+    out.append(_value("clock", "db_timezone", [], "DBTIMEZONE"))
+    out.append(_value("clock", "session_timezone", [], "SESSIONTIMEZONE"))
+    out.append(_bool("clock", "systimestamp_utc_equals_sysdate", [],
+                     "CAST(SYS_EXTRACT_UTC(SYSTIMESTAMP) AS DATE) = SYSDATE"))
+    out.append(_bool("clock", "current_timestamp_equals_systimestamp", [],
+                     "CAST(CURRENT_TIMESTAMP AS DATE) = CAST(SYSTIMESTAMP AS DATE)"))
     return out
 
 
@@ -133,6 +145,29 @@ def _value(family: str, op: str, args: list, sql: str) -> dict:
 # --------------------------------------------------------------------------------------------------
 # running them
 # --------------------------------------------------------------------------------------------------
+
+def _probe_fixed_date(cur, sys_cfg) -> bool:
+    """Does `ALTER SYSTEM SET FIXED_DATE` reach SYSTIMESTAMP, or only SYSDATE?
+
+    The corpus masks every column written from SYSTIMESTAMP on the strength of this answer, so it is measured
+    rather than taken from the documentation. A probe that cannot run (no privilege) returns True, which is the
+    conservative answer: it keeps the mask.
+    """
+    from difftest.plsql_run import pin_sysdate
+
+    probe = "2020-01-02 03:04:05"
+    try:
+        pin_sysdate(sys_cfg, probe)
+        cur.execute("SELECT TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD') FROM dual")
+        return cur.fetchone()[0] == probe[:10]
+    except Exception:  # noqa: BLE001 -- no privilege, or the instance refuses; keep the mask
+        return True
+    finally:
+        try:
+            pin_sysdate(sys_cfg, None)
+        except Exception:  # noqa: BLE001
+            pass
+
 
 def evaluate(cur, case: dict) -> dict:
     """One case, evaluated on Oracle. A case Oracle itself rejects is recorded as the error it raised."""
@@ -152,9 +187,12 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--profile", action="append")
     ap.add_argument("--out", default=str(OUT))
+    ap.add_argument("--sys-user", default="system", help="ALTER SYSTEM SET FIXED_DATE を打つ特権ユーザ")
+    ap.add_argument("--sys-password", default="oracle")
     args = ap.parse_args(argv)
 
     cfg = source_config("oracle", parse_profile_args(args.profile), writes=False)
+    sys_cfg = cfg.__class__(**{**cfg.__dict__, "user": args.sys_user, "password": args.sys_password})
     con = connect(cfg)
     cur = con.cursor()
     cur.execute("SELECT banner FROM v$version WHERE ROWNUM = 1")
@@ -163,10 +201,19 @@ def main(argv=None) -> int:
     recorded = []
     for case in cases():
         recorded.append({**case, "args": [encode(a) for a in case["args"]], "oracle": evaluate(cur, case)})
+
+    # while the connection is still open: the deployment facts the mask rests on
+    cur.execute("SELECT DBTIMEZONE, SESSIONTIMEZONE FROM dual")
+    db_tz, session_tz = cur.fetchone()
+    pinned_probe = _probe_fixed_date(cur, sys_cfg)
     con.close()
 
     families = sorted({c["family"] for c in recorded})
-    document = {"source": banner, "session": {"nls_numeric_characters": ". ", "time_zone": "UTC"},
+    # `fixedDatePinsSystimestamp` is why every SYSTIMESTAMP column is masked. Measured, not assumed.
+    document = {"source": banner,
+                "session": {"nls_numeric_characters": ". ", "time_zone": "UTC",
+                            "dbTimezone": db_tz, "sessionTimezone": session_tz,
+                            "fixedDatePinsSystimestamp": pinned_probe},
                 "families": families, "cases": recorded}
     out = Path(args.out)
     out.write_text(json.dumps(document, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")

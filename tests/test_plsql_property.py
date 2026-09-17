@@ -285,6 +285,37 @@ def test_the_fixture_covers_every_edge_the_plan_named():
     assert fixture()["session"]["time_zone"], "the time zone the answers were recorded under"
 
 
+# ---------------------------------------------------------------- 時計と、その前提（P4-3 の続き）
+def test_oracle_confirms_fixed_date_does_not_reach_systimestamp():
+    """corpus は SYSTIMESTAMP を書く列を全てマスクしている。その理由を測定として記録してある。"""
+    assert fixture()["session"]["fixedDatePinsSystimestamp"] is False
+
+
+def test_the_source_database_is_utc():
+    """`SEM-002` が SYSTIMESTAMP を外している前提である。
+
+    連鎖はこう閉じている: Oracle 側で `SYS_EXTRACT_UTC(SYSTIMESTAMP) = SYSDATE`、Java 側で
+    `Plsql.systimestamp()` が `sysdate()` を UTC offset で返す、そして SYSDATE は scenario で固定して
+    比較している。**1 本目は DBTIMEZONE が UTC であることに依存する。** 移行元 DB が別の TZ なら、
+    `SEM-002` から SYSTIMESTAMP を外した判断ごと見直さなければならない。
+    """
+    session = fixture()["session"]
+    assert session["dbTimezone"] in ("+00:00", "UTC"), (
+        f"移行元 DB の TZ が {session['dbTimezone']} になっている。SEM-002 が SYSTIMESTAMP を"
+        "外している前提が崩れているので、ルールを戻すこと")
+
+
+def test_oracle_confirms_systimestamps_utc_projection_is_sysdate():
+    assert answer("clock", "systimestamp_utc_equals_sysdate", []) == {"value": {"$dec": "1"}}
+
+
+def test_oracle_confirms_current_timestamp_is_not_systimestamp():
+    """セッション TZ に従うので接続元によって変わる。`SEM-002` が残す範囲である。"""
+    assert answer("clock", "current_timestamp_equals_systimestamp", []) == {"value": {"$dec": "0"}}
+    assert fixture()["session"]["sessionTimezone"] != fixture()["session"]["dbTimezone"], \
+        "2 つの TZ が同じ環境では、この違いを測れていない"
+
+
 def test_the_fixture_names_the_oracle_that_answered():
     """The answers belong to a version; a fixture that does not say which is not evidence about anything."""
     assert "oracle" in fixture()["source"].lower()

@@ -203,6 +203,9 @@ def _extra(criteria: dict, statement: M.Statement, module: M.Module, routine: M.
     if "targetStatus" in criteria and getattr(statement, "target_status", None) not in \
             _as_set(criteria["targetStatus"]):
         return False
+    if "sqlKind" in criteria and (getattr(statement, "sql_kind", None) or "").upper() not in \
+            {k.upper() for k in _as_set(criteria["sqlKind"])}:
+        return False
     if "textMatches" in criteria:
         haystack = " ".join([str(getattr(statement, a, "") or "")
                              for a in ("original_sql", "expression", "cursor", "target", "condition")]
