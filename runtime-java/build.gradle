@@ -46,13 +46,22 @@ dependencies {
 // The decision (plan §9) was to keep Spring out, so this is the whole of it: one source set entry and no new
 // dependency. `generated/` is written by `python -m plsql.generate` and must never be edited by hand -- every
 // change belongs in the rules or the generator, or the next regeneration loses it.
+//
+// `plsql.generatedDir` points the source set at another tree, which is what `python -m plsql.generate
+// --verify-compile` passes when it writes somewhere other than `generated/` (#21). Without it the check
+// would compile whatever happened to be in `generated/` and call it a verdict on this run's output.
+ext {
+    generatedDir = providers.gradleProperty('plsql.generatedDir').getOrElse(
+            rootProject.file('../generated').absolutePath)
+}
+
 sourceSets {
     main {
         java {
-            srcDir rootProject.file('../generated/src/main/java')
+            srcDir file("${generatedDir}/src/main/java")
         }
         resources {
-            srcDir rootProject.file('../generated/src/main/resources')
+            srcDir file("${generatedDir}/src/main/resources")
         }
     }
 }

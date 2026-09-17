@@ -123,7 +123,7 @@ def _kpi4(analysis, decisions: dict, generated: str | None) -> dict:
             "detail": f"{len(auto) - len(dirty)}/{len(auto)} AUTO routines generated cleanly",
             "notCleanlyGenerated": dirty,
             "source": "plsql.generate",
-            "note": "javac そのものは `gradle compileJava` が担う。ここで測るのは生成が完結したかまで"}
+            "note": "javac そのものは `gradle compileJava` が担う（`plsql.generate --verify-compile` がそれを合否ゲートとして呼ぶ）。ここで測るのは生成が完結したかまで"}
 
 
 def _kpi5(evidence_path: str | None, variant: str | None) -> dict:
