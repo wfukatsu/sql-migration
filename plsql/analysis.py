@@ -117,6 +117,12 @@ def _link(cfg: ControlFlowGraph, statements: list[M.Statement], incoming: set[st
             ends |= _link(cfg, statement.else_body, {statement.id})
             current = ends or {statement.id}
         elif statement.kind == "Loop":
+            query = getattr(statement, "query", None)
+            if query is not None:
+                # a cursor FOR loop runs its query once, on entry. It is not a branch point, so it hangs off
+                # the loop rather than sitting in the chain -- enough to make it reachable, which is what the
+                # dead-code check asks.
+                cfg.edges.add((statement.id, query.id))
             body_ends = _link(cfg, statement.body, {statement.id})
             for node in body_ends:
                 cfg.edges.add((node, statement.id))  # back edge

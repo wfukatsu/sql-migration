@@ -70,6 +70,9 @@ def _property(field) -> dict:
         return {"type": "array", "items": {"$ref": "#/$defs/branch"}}
     if name in ("body", "else_body"):
         return {"$ref": "#/$defs/statements"}
+    if name == "query":
+        # a cursor FOR loop's query is one statement, not a list (P4-5)
+        return {"$ref": "#/$defs/node"}
     if name in _NODE_LISTS:
         return {"type": "array", "items": {"$ref": "#/$defs/node"}}
     if name == "transaction_effects":

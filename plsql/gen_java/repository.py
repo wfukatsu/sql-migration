@@ -36,6 +36,59 @@ class RepositoryFile:
     planned: list[str] = field(default_factory=list)
 
 
+LOOP_ROW_SUFFIX = "Row"
+
+
+def _loop_rows(file: JavaFile, name: str, loop: M.Loop, result: RepositoryFile, domain_package: str) -> None:
+    """A cursor FOR loop's query, as a method returning every row.
+
+    Every row, not a streaming cursor. An Oracle cursor holds its position across the transaction; ScalarDB has
+    no equivalent, and pretending otherwise is the thing `CUR-001` exists to warn about. Reading the rows into
+    memory says plainly what is happening, and the row limit is then a decision a reviewer can see rather than
+    an unbounded cursor nobody counted.
+    """
+    statement = loop.query
+    record = _record_for(name)
+    file.add_import(f"{domain_package}.{record}", "java.util.ArrayList", "java.util.HashMap",
+                    "java.util.List", "java.util.Map", "com.scalar.migrate.runtime.Residual")
+    parameters, _ = _parameters(file, statement)
+    sql = statement.target_sql[0] if statement.target_sql else statement.original_sql
+    with file.block(f"public List<{record}> {name}({', '.join(parameters)}) throws SQLException") as f:
+        f.line(f'String sql = "{_escape(sql)}";')
+        f.line("Map<String, Object> params = new HashMap<>();")
+        scope = {b.plsql_variable or b.name: java_name(b.name) for b in statement.binds if not b.expression}
+        for bind in statement.binds:
+            f.line(f'params.put("{bind.name}", {_bound(file, bind, scope)});')
+        f.line("List<Object> values = new ArrayList<>();")
+        f.line("String bound = Residual.bindNamed(sql, params, values);")
+        f.line(f"List<{record}> rows = new ArrayList<>();")
+        with f.block("try (PreparedStatement statement = connection.prepareStatement(bound))") as g:
+            with g.block("for (int i = 0; i < values.size(); i++)") as h:
+                h.line("statement.setObject(i + 1, values.get(i));")
+            with g.block("try (ResultSet rows_ = statement.executeQuery())") as g2:
+                with g2.block("while (rows_.next())") as g3:
+                    arguments = ", ".join(
+                        _into_java(file, statement, i) for i in range(1, len(statement.into_columns or []) + 1))
+                    g3.line(f"rows.add(new {record}({arguments}));")
+        f.line("return rows;")
+    result.methods.append(name)
+
+
+def _into_java(file: JavaFile, statement: M.SqlOperation, index: int) -> str:
+    """One column of a loop row, read and typed the way the rest of the generator reads columns."""
+    from .dto import loop_component_type
+
+    oracle = (statement.into_oracle_types or [])
+    declared = oracle[index - 1] if index - 1 < len(oracle) else None
+    mapped = loop_component_type(declared)
+    file.add_import(*mapped.imports)
+    raw = _read(file, statement, index).replace("rows.getObject", "rows_.getObject")
+    if mapped.name == "BigDecimal":
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        return f"Plsql.dec({raw})"
+    return f"({mapped.name}) {raw}"
+
+
 def generate_module(module: M.Module, package: str, domain_package: str) -> RepositoryFile:
     name = java_class_name(module.name) + "Repository"
     file = JavaFile(package=package, name=name,
@@ -54,12 +107,40 @@ def generate_module(module: M.Module, package: str, domain_package: str) -> Repo
         with f.block(f"public {name}(Connection connection)") as g:
             g.line("this.connection = connection;")
         for routine in module.routines:
-            for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
+            statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
+            loop_queries = {loop.query.id: loop for loop in statements
+                            if loop.kind == "Loop" and getattr(loop, "query", None) is not None}
+            for statement in statements:
                 if statement.kind != "SqlOperation" or not statement.original_sql:
                     continue
                 f.line()
+                loop = loop_queries.get(statement.id)
+                if loop is not None:
+                    if statement.target_status == "ERROR":
+                        _unsupported(f, loop_method(routine, loop), statement, result)
+                    else:
+                        _loop_rows(f, loop_method(routine, loop), loop, result, domain_package)
+                    continue
                 _method(f, routine, statement, result)
     return result
+
+
+def loop_method(routine: M.Routine, loop: M.Loop) -> str:
+    """The repository method a cursor FOR loop reads its rows from. The service calls the same name."""
+    return f"{java_name(routine.name)}Loop{loop.id.rsplit('-', 1)[-1]}"
+
+
+def _record_for(method: str) -> str:
+    """`orderTotalLoop1` -> `OrderTotalLoop1Row`.
+
+    Not `java_class_name`, which lowercases the rest of each part and would turn this into
+    `Ordertotalloop1Row`. One helper, so the repository, the DTO and the service cannot disagree.
+    """
+    return method[0].upper() + method[1:] + LOOP_ROW_SUFFIX
+
+
+def loop_record(routine: M.Routine, loop: M.Loop) -> str:
+    return _record_for(loop_method(routine, loop))
 
 
 def _method(file: JavaFile, routine: M.Routine, statement: M.SqlOperation,
