@@ -55,6 +55,24 @@ class GeneratedProject:
         }
 
 
+def handover_banner(date: str) -> None:
+    """Switch every file generated from here on to the handover banner (P4-9).
+
+    A module-level switch rather than a parameter threaded through every generator: the banner is a property of
+    the run, and a tree carrying both would be telling two different stories about who maintains it.
+    """
+    from . import emit
+
+    emit.set_banner(emit.HANDOVER_HEADER, date)
+
+
+def regeneration_banner() -> None:
+    """Back to the default: the tree is rewritten from the rules, so editing it by hand loses the edit."""
+    from . import emit
+
+    emit.set_banner(emit.HEADER)
+
+
 def generate(program: M.Program, root: str | Path, base_package: str = "com.example.migrated",
              decisions: dict[str, Decision] | None = None) -> GeneratedProject:
     project = GeneratedProject(root=Path(root), base_package=base_package)
