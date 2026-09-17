@@ -222,6 +222,20 @@ def _extra(criteria: dict, statement: M.Statement, module: M.Module, routine: M.
     return True
 
 
+CLOCK = re.compile(r"\b(SYSDATE|SYSTIMESTAMP|CURRENT_DATE|CURRENT_TIMESTAMP|LOCALTIMESTAMP)\b",
+                   re.IGNORECASE)
+
+
+def _clock_reads(routine: M.Routine) -> int:
+    """How many times the routine asks the database what time it is."""
+    total = 0
+    for statement in _statements(routine):
+        text = " ".join(str(getattr(statement, field, "") or "")
+                        for field in ("original_sql", "expression", "cursor", "target", "condition"))
+        total += len(CLOCK.findall(text))
+    return total
+
+
 def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysis: ProgramAnalysis) -> bool:
     effects = analysis.effective.get(routine.id)
     checks = {
@@ -234,6 +248,10 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
         "externalPackage": lambda v: bool(effects and effects.external.packages) is v,
         "writeThenScan": lambda v: (routine.id in {r for r, _ in analysis.write_then_scan()}) is v,
         "recursive": lambda v: any(routine.id in cycle for cycle in analysis.call_graph.cycles()) is v,
+        # P4-3: how many times the routine reads the database clock. Two reads can return two values, and
+        # nothing in the recorded Oracle evidence pins that -- a scenario pins the clock to one value, so a
+        # routine that reads it twice is compared against something the comparison cannot distinguish.
+        "clockReadsAtLeast": lambda v: _clock_reads(routine) >= v,
         # row locking hides in a cursor declaration as well as in a statement (found in P1-7)
         "cursorLocking": lambda v: any(
             d.declaration_kind == "cursor" and d.initial and "FOR UPDATE" in d.initial.upper()
