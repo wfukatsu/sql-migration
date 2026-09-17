@@ -42,9 +42,89 @@ flowchart LR
 | 構成要素 | 場所 | 役割 |
 |---|---|---|
 | 変換ツール | `scalardb_migrate/` | 文ごとの変換、スキーマ変換、アクセスパス分析、実行計画への分解、アプリ側に移す処理の分析 |
-| 実行基盤 | `runtime-java/` | 実行計画の実行（ScalarDB から取得 → H2 で元の SQL）、アプリ側処理の補助クラス、ベンチマーク |
+| **PL/SQL 変換** | **`plsql/`** | **PL/SQL の解析・判定・Java 生成（下記）** |
+| 実行基盤 | `runtime-java/` | 実行計画の実行（ScalarDB から取得 → H2 で元の SQL）、生成コードの実行時ヘルパ、ベンチマーク |
 | sql-transpile スキル | `skills/sql-transpile/` | 任意の SQLGlot 方言どうし、または ScalarDB SQL への変換を行う Claude Code スキル（単体で動く） |
 | 検証基盤 | `difftest/` | Docker Compose の DB 群と、差分テスト・ベンチマーク・スキルの実行検証のハーネス |
+
+---
+
+## PL/SQL → Java 変換（`plsql/`）
+
+SQL 文単位の変換に加えて、**PL/SQL の package / procedure / trigger を Java + ScalarDB へ移す**系統が
+あります。SQL 部分は上の変換ツールをそのまま使い、制御構造・例外・型を Java へ落とします。
+
+**この系統の中心は「変換できること」ではなく「変換してよいか」の判定です。** routine ごとに
+AUTO / REVIEW / REDESIGN を出し、**AUTO は「無人で生成してよい」という意味**なので、そう言えるだけの
+証拠が揃ったものにしか付きません。証拠とは、**実 Oracle と実 ScalarDB で同じシナリオを走らせて結果が
+一致したこと**です。
+
+```mermaid
+flowchart LR
+    PLS["PL/SQL"] --> FE["ANTLR で解析<br/>plsql/frontend.py"]
+    FE --> IR["IR（JSON Schema 固定）<br/>plsql/ir/"]
+    IR --> RULE["ルール判定<br/>plsql/rules/*.yaml"]
+    IR --> CAP["ScalarDB で実行できるか<br/>plsql/capability.py"]
+    RULE --> DEC{"AUTO / REVIEW<br/>/ REDESIGN"}
+    CAP --> DEC
+    IR --> GEN["Java 生成<br/>plsql/gen_java/"]
+    GEN --> CMP["差分比較"]
+    ORA[("Oracle<br/>capture")] --> CMP
+    SDB[("ScalarDB<br/>capture")] --> CMP
+    CMP -- "一致した証拠" --> DEC
+```
+
+### 使い方
+
+```bash
+# 判定・レポート・トレーサビリティ
+python -m plsql.cli fixtures/plsql/src --out-dir out/plsql     --evidence difftest/work/plsql-diff.json --generated generated
+
+# Java を生成する（--limits で走査行数の上限、--handover で引き渡し版の見出し）
+python -m plsql.generate fixtures/plsql/src --out-dir generated --limits fixtures/plsql/limits.yaml
+
+# 差分比較（Oracle と ScalarDB の両方が要る）
+python difftest/plsql_capture.py --variant scaled
+python difftest/plsql_diff.py --full --json difftest/work/plsql-diff.json
+
+# KPI
+python -m plsql.kpi --evidence difftest/work/plsql-diff.json --generated generated
+```
+
+### 出力
+
+| ファイル | 中身 |
+|---|---|
+| `decisions.json` | routine ごとの判定・確信度 5 因子・**どのルールがどのファイルで判定したか**・代替案・`whyNotAuto` |
+| `unresolved.md` | REVIEW / REDESIGN を REDESIGN 先頭で並べ、根拠と受け入れに必要なテストを付ける |
+| `traceability.csv` | 生成 Java の member → 元 PL/SQL の `file:line`（**生成ツリーと突き合わせ済み**） |
+| `generated/` | Java。`Do not edit`（引き渡し後は `--handover` で文言が変わる） |
+
+### 文書
+
+| 文書 | 内容 |
+|---|---|
+| [実装計画](docs/plsql-conversion-implementation-plan.md) | フェーズとタスク、**決定事項と未決事項（§9）** |
+| [KPI](docs/plsql-kpi.md) | 7 指標の定義、AUTO のしきい値、計測コマンド |
+| [Phase 3 完了報告](docs/plsql-phase3-completion.md) | AUTO 対象の意味的同等性 100% 達成 |
+| [Phase 4 中間報告](docs/plsql-phase4-interim.md) | 現在地。**完了条件は未達**で、残りは設計判断待ち |
+| [cursor の移行パターン](docs/plsql-cursor-patterns.md) | 6 つの形と、それぞれ人が決めること |
+| [トランザクションと行ロック](docs/plsql-transaction-patterns.md) | 7 つの形。**P3-4 の実測から始まる** |
+| [trigger と外部副作用](docs/plsql-trigger-patterns.md) | 5 つの形。**書込経路の網羅性が先** |
+
+### 現在地
+
+合成 corpus（24 unit / 56 routine）に対して:
+
+| | |
+|---|---|
+| parse 率・型解決率・判定一致・compile 率 | **100%** |
+| **意味的同等性（AUTO 対象）** | **100%**（金額の 2 規約とも AUTO 19/19 が実 Oracle と一致） |
+| 判定 | AUTO 13 / REVIEW 25 / REDESIGN 18 |
+
+**数値は合成 corpus 上のものであり、実案件耐性の証拠ではありません。** 非 AUTO の 43 件を塞いでいるのは
+変換できない構文ではなく、**人が決めるべきこと**です（走査行数の上限、採番方式、トランザクション境界など。
+[Phase 4 中間報告](docs/plsql-phase4-interim.md) §1）。
 
 ---
 
@@ -266,12 +346,31 @@ scalardb_migrate/          変換ツール
   schema.py                  表定義のレジストリ（DDL / Schema Loader JSON）
   decomposer.py              実行計画への分解（取得 + H2 で実行する SQL + 索引の列）
   appside.py                 アプリ側に移す処理の分析（構文の列挙・意味の注意・設計の提案・コスト）
+plsql/                     PL/SQL → Java 変換
+  frontend.py                ANTLR での解析（SLL → LL の 2 段構え）
+  symbols.py                 シンボル表、%TYPE / %ROWTYPE の解決
+  ir/                        IR の定義・JSON Schema・入出力
+  lower.py                   構文木 → IR
+  sqlbridge.py               IR の SQL を scalardb_migrate へ渡す（式の持ち上げ、bind の列への帰属）
+  dynamic.py                 動的 SQL が実行しうる文の列挙（上限つき）
+  capability.py              ScalarDB で実行できるかの検査
+  rules/                     判定ルール（YAML）と確信度エンジン
+  gen_java/                  Java 生成（型・DTO・例外・Service・Repository）
+  review.py / kpi.py         判定レポート・トレーサビリティ・KPI 計測
+  remediate.py / propose.py  モデルの助言とルール候補（どちらも自分では効力を持たない）
+  limits.py                  走査行数の上限
 runtime-java/              実行基盤（Java 17、Gradle）
   .../runtime/               Runner・Fetcher（Core / JDBC）・Residual（H2）・Bench
   .../appside/               アプリ側で Oracle の動きを再現する補助クラス（階層、ウィンドウ関数、数値、並び順、日付）
+  .../plsql/                 生成コードの実行時ヘルパ（Oracle の式の意味論）と差分ハーネス
   .../examples/              アプリ側実装の例（エリア別売上分析）
 skills/sql-transpile/      Claude Code スキル（SKILL.md、scripts/、references/、examples/）
 difftest/                  検証基盤（docker-compose.yml、conf/、cases/、ハーネス、experiments/）
+  plsql_run.py               Oracle 側の capture
+  plsql_capture.py           ScalarDB 側の capture（金額の 2 規約）
+  plsql_compare.py           2 つの capture の突き合わせ
+  plsql_semantics.py         実機 Oracle から式の意味論を記録する
+fixtures/plsql/            PL/SQL の corpus、シナリオ、golden、判定の期待値、記録した意味論
 samples/                   変換の入力例
 spikes/                    残りの処理を H2 / SQLite / DuckDB で実行する初期の検証
 tests/                     変換ツールとスキルのテスト
@@ -284,6 +383,7 @@ docs/                      設計・検証レポート・調査、slides/（説�
 
 | 分類 | 文書 |
 |---|---|
+| **PL/SQL 変換** | [実装計画](docs/plsql-conversion-implementation-plan.md)、[KPI](docs/plsql-kpi.md)、[Phase 3 完了報告](docs/plsql-phase3-completion.md)、[Phase 4 中間報告](docs/plsql-phase4-interim.md)、[cursor](docs/plsql-cursor-patterns.md) / [トランザクション](docs/plsql-transaction-patterns.md) / [trigger](docs/plsql-trigger-patterns.md) の移行パターン |
 | 仕組み | [architecture.md](docs/architecture.md)（本ツールのアーキテクチャと仕組み）、[app-side-processing-plan.md](docs/app-side-processing-plan.md)（アプリ側処理の実装計画）、[diagrams/architecture.drawio](docs/diagrams/architecture.drawio) |
 | 変換ルール | [skills/sql-transpile/SKILL.md](skills/sql-transpile/SKILL.md)、[references/scalardb-grammar.md](skills/sql-transpile/references/scalardb-grammar.md)、[references/dialect-notes.md](skills/sql-transpile/references/dialect-notes.md)、[references/app-side-notes.md](skills/sql-transpile/references/app-side-notes.md) |
 | テスト・互換性 | [test-report.md](docs/test-report.md)、[oracle-sql-report.md](docs/oracle-sql-report.md)、[transpile-fix-research.md](docs/transpile-fix-research.md) |
@@ -299,6 +399,7 @@ docs/                      設計・検証レポート・調査、slides/（説�
 - **ScalarDB のバックエンド DB には直接接続しません。** 取得も書き込みも、ScalarDB（SQL / JDBC または Core API）を通します
 - **パーティションをまたぐ走査は RDBMS のバックエンドでだけ使います。** Cassandra ではキーで取得し、残りはアプリ側で処理します
 - 調査用の PoC です。性能の数値は Apple M3 Pro 上の Docker（1 ノードの ScalarDB Cluster、単一クライアント）での計測です
+- **PL/SQL 変換の KPI は合成 corpus 上の値です。** 実案件のコードでの達成を示すものではありません（実装計画 §9 の決定）。また **移行工数は測っていません**（KPI-6 を計測しないと決めたため）——AUTO 率が上がったときに移行が速くなるかは、この数値からは分かりません
 
 ---
 
