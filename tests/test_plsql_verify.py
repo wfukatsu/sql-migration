@@ -54,8 +54,9 @@ def corpus_project(tmp_path_factory):
 # --- reading what javac said ---------------------------------------------------------------------------
 
 def test_an_error_is_read_off_the_build_output():
-    errors = _errors("/x/PkgAService.java:12: error: cannot find symbol\n  symbol: variable audit\n")
-    assert [(e.line, e.message) for e in errors] == [(12, "cannot find symbol")]
+    errors = _errors("/x/PkgAService.java:12: error: cannot find symbol\n")
+    assert [(e.file, e.line, e.message) for e in errors] == [("/x/PkgAService.java", 12,
+                                                              "cannot find symbol")]
 
 
 def test_the_same_error_is_not_counted_twice():
@@ -64,10 +65,46 @@ def test_the_same_error_is_not_counted_twice():
     assert len(_errors(line + line)) == 1
 
 
-def test_a_localised_compiler_is_read_too():
-    """The JVM speaks the platform's language, and a gate that only reads English silently passes."""
-    errors = _errors("/x/PkgAService.java:28: エラー: 変数 vTmpはすでに定義されています\n")
-    assert [e.line for e in errors] == [28]
+def test_the_name_javac_could_not_find_is_kept():
+    """`cannot find symbol` alone is not actionable. The name is on the next line, indented -- which is the
+    one marker that does not change with the compiler's language."""
+    errors = _errors("/x/PkgAService.java:12: error: cannot find symbol\n"
+                     "  symbol:   variable audit\n"
+                     "  location: class PkgAService\n")
+    assert errors[0].message == "cannot find symbol / symbol:   variable audit / location: class PkgAService"
+
+
+def test_the_echoed_source_line_and_its_caret_are_dropped():
+    """They say nothing the file and line do not already say, and they are the longest part of the message."""
+    errors = _errors("/x/PkgAService.java:12: error: cannot find symbol\n"
+                     "        throw new MigratedException(-1, audit.user());\n"
+                     "                                        ^\n"
+                     "  symbol:   variable audit\n")
+    assert errors[0].message == "cannot find symbol / symbol:   variable audit"
+
+
+def test_an_unindented_line_ends_the_run_of_qualifiers():
+    """Gradle prints its own notes between diagnostics; appending one to the error above it would misdescribe
+    the defect."""
+    errors = _errors("/x/PkgAService.java:12: error: cannot find symbol\n"
+                     "  symbol:   variable audit\n"
+                     "note: /runtime/Bench.java uses unchecked operations\n"
+                     "  note: /runtime/Bench.java uses unchecked operations\n")
+    assert errors[0].message == "cannot find symbol / symbol:   variable audit"
+
+
+def test_a_diagnostic_the_reader_could_not_parse_blames_the_locale_not_the_build(monkeypatch):
+    """The build pins the compiler's language; if that did not take, saying 'the build is broken' would send
+    the reader to the wrong place."""
+    class Finished:
+        returncode = 1
+        stdout = "/x/PkgAService.java:28: エラー: シンボルを見つけられません\n"
+        stderr = ""
+
+    monkeypatch.setattr("plsql.verify.shutil.which", lambda _: "/usr/bin/gradle")
+    monkeypatch.setattr("plsql.verify.subprocess.run", lambda *a, **k: Finished())
+    report = verify("out")
+    assert not report.ok and "locale" in (report.unavailable or "")
 
 
 def test_a_build_that_failed_without_a_javac_error_is_not_a_verdict_on_the_routines(monkeypatch):
@@ -87,6 +124,36 @@ def test_not_being_able_to_run_is_not_a_pass(monkeypatch):
     monkeypatch.setattr("plsql.verify.shutil.which", lambda _: None)
     report = verify("out")
     assert not report.ran and not report.ok and report.unavailable == "gradle is not on PATH"
+
+
+def test_the_check_tells_the_build_it_is_a_check(monkeypatch):
+    """`plsql.verify` is what turns the silent fallback below into an error, and what pins the locale."""
+    seen = {}
+
+    class Finished:
+        returncode = 0
+        stdout = stderr = ""
+
+    def record(command, **kwargs):
+        seen["command"] = command
+        return Finished()
+
+    monkeypatch.setattr("plsql.verify.shutil.which", lambda _: "/usr/bin/gradle")
+    monkeypatch.setattr("plsql.verify.subprocess.run", record)
+    verify("/tmp/out")
+    assert "-Pplsql.verify=1" in seen["command"]
+    assert any(a.startswith("-Pplsql.generatedDir=") for a in seen["command"])
+
+
+def test_python_and_gradle_still_agree_on_the_property_names():
+    """The fallback in build.gradle is silent on purpose -- an ordinary `gradle compileJava` has to keep
+    working -- so if the two sides stop agreeing on a name, the check compiles the PREVIOUS run's output and
+    reports it as this one's success. Nothing else notices: the end-to-end run is opt-in."""
+    gradle = (ROOT / "runtime-java" / "build.gradle").read_text(encoding="utf-8")
+    python = (ROOT / "plsql" / "verify.py").read_text(encoding="utf-8")
+    for name in ("plsql.generatedDir", "plsql.verify"):
+        assert name in gradle, name
+        assert name in python, name
 
 
 # --- naming the routine --------------------------------------------------------------------------------
