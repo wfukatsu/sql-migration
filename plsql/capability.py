@@ -32,6 +32,7 @@ from .analysis import ProgramAnalysis
 from .ir import model as M
 from .lower import _walk
 from .source import Issue
+from .dynamic import annotate as annotate_dynamic
 from .sqlbridge import analyse as analyse_sql
 from .symbols import SymbolTable
 
@@ -77,6 +78,23 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
             # rejected -- and that is a redesign, not a rewrite.
             locked = any(getattr(s, "locking_mode", None) for s in statements)
             for statement in statements:
+                if statement.kind == "DynamicSql":
+                    # P4-7: a dynamic statement whose text is knowable becomes ordinary SQL, one per variant,
+                    # and is then converted and checked like anything else. Enumerating without converting
+                    # would show a reader plain SQL that nothing had looked at.
+                    for index, variant in enumerate(annotate_dynamic(routine, statement) or [], start=1):
+                        operation = M.SqlOperation(
+                            id=f"{statement.id}#variant-{index}", kind="SqlOperation",
+                            source_range=statement.source_range, original_sql=variant.sql,
+                            binds=list(statement.using), into_targets=list(statement.into_targets))
+                        result = analyse_sql(operation, scope=routine.id, symbols=symbols,
+                                             registry=registry, storage=storage, lift=not locked)
+                        statement.variant_statements.append(operation)
+                        report.statuses[operation.id] = result.status
+                        report.issues.extend(
+                            Issue(i["severity"], i["code"], i["message"], statement.source_range)
+                            for i in result.issues)
+                    continue
                 if statement.kind != "SqlOperation" or not statement.original_sql:
                     continue
                 result = analyse_sql(statement, scope=routine.id, symbols=symbols,

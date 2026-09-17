@@ -56,6 +56,9 @@ _DEFS = {
 _NODE_LISTS = ("modules", "routines", "parameters", "declarations", "exception_handlers")
 
 
+SKIP = {"variant_statements"}  # derived, not serialised (P4-7)
+
+
 def _property(field) -> dict:
     name, annotation = field.name, str(field.type)
     if name == "source_range":
@@ -70,6 +73,11 @@ def _property(field) -> dict:
         return {"type": "array", "items": {"$ref": "#/$defs/branch"}}
     if name in ("body", "else_body"):
         return {"$ref": "#/$defs/statements"}
+    if name == "variants":
+        # P4-7: {"guard": ..., "sql": ...} per statement the dynamic SQL can run
+        return {"type": "array", "items": {
+            "type": "object", "additionalProperties": False,
+            "properties": {"guard": {"type": "string"}, "sql": {"type": "string"}}}}
     if name == "query":
         # a cursor FOR loop's query is one statement, not a list (P4-5)
         return {"$ref": "#/$defs/node"}
@@ -107,7 +115,7 @@ def build() -> dict:
     for cls in NODE_CLASSES:
         defs[_ref(cls)] = {
             "type": "object", "required": ["id", "kind"], "additionalProperties": False,
-            "properties": {_key(f.name): _property(f) for f in fields(cls)},
+            "properties": {_key(f.name): _property(f) for f in fields(cls) if f.name not in SKIP},
         }
     return {
         "$schema": "http://json-schema.org/draft-07/schema#",
