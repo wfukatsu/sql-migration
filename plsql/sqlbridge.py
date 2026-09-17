@@ -24,6 +24,7 @@ and puts the answer back on the IR node.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -67,8 +68,11 @@ class SqlAnalysisResult:
 
 def analyse(operation: SqlOperation, scope: str, symbols: SymbolTable | None = None,
             registry: SchemaRegistry | None = None, storage: str = "jdbc",
-            plan_dir: str | Path | None = None) -> SqlAnalysisResult:
-    """Run one SQL statement through the converter and write the answer onto the IR node."""
+            plan_dir: str | Path | None = None, lift: bool = True) -> SqlAnalysisResult:
+    """Run one SQL statement through the converter and write the answer onto the IR node.
+
+    `lift` may be turned off for a routine whose read carried a row lock: see `capability.check`.
+    """
     registry = registry if registry is not None else SchemaRegistry()
     result = SqlAnalysisResult(sql_id=operation.id, text=operation.original_sql,
                                source_range=_range(operation.source_range))
@@ -92,6 +96,8 @@ def analyse(operation: SqlOperation, scope: str, symbols: SymbolTable | None = N
         result.cardinality = operation.cardinality
 
     binds = bind_variables(tree, scope, symbols)
+    if lift:
+        lift_expressions(tree, binds, scope, symbols)
     attribute_columns(tree, binds, operation, registry, symbols)
     operation.binds = binds
     result.binds = [asdict(b) for b in binds]
@@ -144,6 +150,107 @@ def strip_into(tree: exp.Expression) -> list[str]:
         targets = [_target_name(into.this)]
     tree.set("into", None)
     return targets
+
+
+# P4-4: functions the Java runtime can evaluate, so an expression built only from these (plus variables and
+# literals) can be computed in the application and bound as a value. Anything else is left for the converter to
+# refuse -- a function nobody has implemented would otherwise be lifted out and then fail to compile.
+EVALUABLE = {"NVL", "ROUND", "TRUNC", "SYSDATE", "SYSTIMESTAMP", "MOD", "ABS", "GREATEST", "LEAST",
+             "UPPER", "LOWER", "RTRIM", "LTRIM", "TRIM", "LENGTH", "SUBSTR", "TO_CHAR", "COALESCE"}
+
+LIFTABLE_ARITHMETIC = (exp.Add, exp.Sub, exp.Mul, exp.Div, exp.Neg, exp.Paren, exp.Concat)
+
+
+def lift_expressions(tree: exp.Expression, binds: list[BindVariable], scope: str,
+                     symbols: SymbolTable | None) -> None:
+    """Replace a SET / VALUES expression ScalarDB cannot evaluate with a bind the application computes.
+
+    ScalarDB SQL takes literals and bind markers and nothing else, so `SET total_amount = ROUND(:v * :r, 2)` is
+    refused outright. The value does not need the database to compute it: every operand is already a PL/SQL
+    variable, and the generated Java has the same functions (`Plsql.round`, `Plsql.nvl`, ...). So the expression
+    is lifted out, bound as one value, and evaluated where it can be.
+
+    Two limits keep this from turning a refusal into a wrong answer:
+
+    * **an expression that mentions a column is not lifted.** `SET stock_qty = stock_qty + :n` needs the stored
+      value, and reading it first is a different transaction shape with a different race -- that is a redesign
+      (LOCK-001), not a rewrite.
+    * **only functions the runtime implements are lifted.** Lifting an unimplemented one would replace a clear
+      conversion error with Java that does not compile, which is worse.
+    """
+    for parent, expressions in _value_positions(tree):
+        for i, value in enumerate(list(expressions)):
+            if not _liftable(value):
+                continue
+            placeholder = _unique(f"expr{len(binds) + 1}", {b.name: b for b in binds})
+            binds.append(BindVariable(name=placeholder, direction="IN",
+                                      expression=_as_plsql(value, binds)))
+            expressions[i].replace(exp.Placeholder(this=placeholder))
+
+
+def _as_plsql(value: exp.Expression, binds: list[BindVariable]) -> str:
+    """The expression as PL/SQL again, with the placeholders put back to the variable names they came from.
+
+    `bind_variables` has already turned every variable reference into `:name`, so rendering the tree gives
+    `ROUND(:v_total * :p_rate, 2)`. What is wanted is the PL/SQL the routine wrote, because that is what the
+    expression translator reads and what a reviewer recognises.
+    """
+    rendered = value.sql(dialect="oracle")
+    for bind in binds:
+        if bind.plsql_variable:
+            rendered = re.sub(rf":{re.escape(bind.name)}\b", bind.plsql_variable, rendered)
+    return rendered
+
+
+def _value_positions(tree: exp.Expression) -> list[tuple[exp.Expression, list]]:
+    """Where a value may legally be lifted from: an INSERT's VALUES tuple and an UPDATE's SET right-hand sides."""
+    out: list[tuple[exp.Expression, list]] = []
+    if isinstance(tree, exp.Insert) and isinstance(tree.expression, exp.Values):
+        for tuple_ in tree.expression.expressions:
+            out.append((tuple_, tuple_.expressions))
+    if isinstance(tree, exp.Update):
+        for assignment in tree.args.get("expressions") or []:
+            if isinstance(assignment, exp.EQ):
+                out.append((assignment, [assignment.args["expression"]]))
+    return out
+
+
+def _unparen(value: exp.Expression) -> exp.Expression:
+    while isinstance(value, exp.Paren):
+        value = value.this
+    return value
+
+
+def _liftable(value: exp.Expression) -> bool:
+    inner = _unparen(value)
+    value = inner
+    if isinstance(value, (exp.Literal, exp.Placeholder, exp.Null, exp.Column)):
+        return False  # already a value, or a column this must not touch
+    if any(isinstance(node, exp.Column) and not _is_pseudo_column(node) for node in value.walk()):
+        return False  # mentions a column: the database holds the operand, not the application
+    if isinstance(value, exp.Select) or value.find(exp.Select) is not None:
+        return False  # a subquery is not an expression the application can evaluate
+    for node in value.walk():
+        if isinstance(node, (exp.Func, exp.Anonymous)) and _function_name(node) not in EVALUABLE:
+            return False
+    return isinstance(value, LIFTABLE_ARITHMETIC) or isinstance(value, (exp.Func, exp.Anonymous))
+
+
+def _is_pseudo_column(node: exp.Column) -> bool:
+    """`SYSDATE` and friends parse as bare columns; they are clock reads, not stored values."""
+    return node.name.upper() in {"SYSDATE", "SYSTIMESTAMP", "CURRENT_DATE", "CURRENT_TIMESTAMP"} \
+        and not node.table
+
+
+def _function_name(node: exp.Expression) -> str:
+    name = getattr(node, "name", "") or type(node).__name__
+    if isinstance(node, exp.Anonymous):
+        return str(node.this).upper()
+    return {"Nvl": "NVL", "Coalesce": "COALESCE", "Round": "ROUND", "Trunc": "TRUNC", "Mod": "MOD",
+            "Abs": "ABS", "Upper": "UPPER", "Lower": "LOWER", "Length": "LENGTH", "Substring": "SUBSTR",
+            "ToChar": "TO_CHAR", "Greatest": "GREATEST", "Least": "LEAST", "Trim": "TRIM",
+            "CurrentDate": "SYSDATE", "CurrentTimestamp": "SYSTIMESTAMP"}.get(
+        type(node).__name__, str(name).upper())
 
 
 def _target_name(node: exp.Expression) -> str:
