@@ -341,6 +341,22 @@
        },
        "loopKind": "cursor-for",
        "cursor": "r IN (SELECT order_id FROM orders WHERE status = p_status ORDER BY ordered_at)",
+       "query": {
+        "id": "pkg_order_report.mark_reviewed#stmt-1#query",
+        "kind": "SqlOperation",
+        "sourceRange": {
+         "file": "pkg_order_report.pkb",
+         "startLine": 29,
+         "endLine": 31,
+         "startColumn": 5,
+         "endColumn": 9
+        },
+        "sqlKind": "SELECT",
+        "originalSql": "SELECT order_id FROM orders WHERE status = p_status ORDER BY ordered_at",
+        "selectsStar": false,
+        "cardinality": "MANY"
+       },
+       "variable": "r",
        "body": [
         {
          "id": "pkg_order_report.mark_reviewed#stmt-2",

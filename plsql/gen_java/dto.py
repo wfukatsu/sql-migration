@@ -42,6 +42,51 @@ def row_record(name: str, resolved: str, package: str, source: str = "",
     return Dto(file=file, kind="row")
 
 
+def _loops(routine: M.Routine) -> list:
+    from ..lower import _walk
+
+    return [s for s in _walk(routine.body) + [x for h in routine.exception_handlers for x in _walk(h.body)]
+            if s.kind == "Loop" and getattr(s, "query", None) is not None]
+
+
+def loop_component_type(oracle: str | None):
+    """The Java type of one loop-row component.
+
+    Every number is a BigDecimal, unlike a `%ROWTYPE` record, which takes the column's own width. The record
+    here models the PL/SQL loop variable, not the ScalarDB column: in PL/SQL `r.qty` is a NUMBER like every
+    other number, and it is passed to routines whose parameters are NUMBER. Giving it the column's narrower
+    Java type puts a Long where a BigDecimal is wanted, at a call site the translator cannot coerce because it
+    does not know the callee's parameter types.
+    """
+    mapped = java_type(oracle)
+    if mapped.name in ("Long", "Integer"):
+        return java_type("NUMBER")
+    return mapped
+
+
+def loop_row_record(routine: M.Routine, loop, package: str, source: str = "") -> Dto | None:
+    """One record per cursor FOR loop, named after the columns its query selects.
+
+    The loop body reads `r.qty`, so the record's components have to be the query's columns -- which is the same
+    shape `row_record` builds for a `%ROWTYPE`, from a different source for the column list.
+    """
+    from .repository import loop_record
+
+    query = loop.query
+    columns = list(zip(query.into_columns or [], query.into_oracle_types or []))
+    if not columns or any(name is None for name, _ in columns):
+        return None
+    file = JavaFile(package=package, name=loop_record(routine, loop), source=source)
+    components = []
+    for column, oracle in columns:
+        mapped = loop_component_type(oracle)
+        file.add_import(*mapped.imports)
+        components.append(f"{mapped.name} {java_name(column)}")
+    file.comment(f"Rows of the cursor FOR loop at {source}. Components follow the query's select list.")
+    file.line(f"public record {file.name}({', '.join(components)}) {{}}")
+    return Dto(file=file, kind="row")
+
+
 def result_record(routine: M.Routine, package: str, source: str = "") -> Dto | None:
     """A record carrying what the routine produces: its return value and every OUT parameter."""
     outs = [p for p in routine.parameters if p.direction in ("OUT", "IN OUT")]
@@ -93,6 +138,10 @@ def dtos_for(module: M.Module, package: str) -> list[Dto]:
                                     note=f"PL/SQL record type {base}. Components follow the field names.")
                 if record is not None:
                     out.append(record)
+        for loop in _loops(routine):
+            record = loop_row_record(routine, loop, package, source)
+            if record is not None:
+                out.append(record)
         result = result_record(routine, package, source)
         if result is not None:
             out.append(result)

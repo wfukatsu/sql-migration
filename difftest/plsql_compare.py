@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from decimal import Decimal
 from pathlib import Path
@@ -297,9 +298,17 @@ def compare_variant(variant: str, scales: dict) -> dict:
     return report
 
 
+# `column: expected=... actual=... (kind)` -- the kind this comparison assigned to one difference
+KIND = re.compile(r"\((value|scale|whitespace|type|masked on one side only)\)$")
+
+
 def _scale_only(line: str) -> bool:
-    """A line whose every reported difference is `(scale)` says nothing about the data (see the module docs)."""
-    kinds = [part[part.rindex("(") + 1:-1] for part in line.split("; ") if part.endswith(")")]
+    """A line whose every reported difference is `(scale)` says nothing about the data (see the module docs).
+
+    Matching the kinds this module writes, rather than "ends with a bracket": an exception message can end with
+    one too, and reading that as a kind made the comparison crash on a capture that happened to contain one.
+    """
+    kinds = [m.group(1) for part in line.split("; ") if (m := KIND.search(part))]
     return bool(kinds) and all(kind == "scale" for kind in kinds)
 
 
