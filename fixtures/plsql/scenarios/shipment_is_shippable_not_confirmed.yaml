@@ -1,0 +1,19 @@
+name: shipment_is_shippable_not_confirmed
+unit: pkg_shipment
+routine: is_shippable
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'GOLD', NULL, DATE '2025-04-01')
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1001, 1, 'NEW', TIMESTAMP '2026-01-10 11:00:00', NULL, NULL)
+- INSERT INTO products (product_id, name, unit_price, stock_qty, discontinued) VALUES (10, 'Widget', 10.00, 100, 'N')
+- INSERT INTO order_lines (order_id, line_no, product_id, qty, unit_price) VALUES (1001, 1, 10, 2, 10.00)
+call:
+  kind: function
+  name: pkg_shipment.is_shippable
+  args:
+    p_order_id: 1001
+  returns: VARCHAR2
+capture_tables:
+- orders
+note: P4-1。status が CONFIRMED でないので明細を見る前に NO を返す分岐

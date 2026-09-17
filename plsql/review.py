@@ -34,7 +34,8 @@ from .rules.engine import Evidence
 VERDICT_ORDER = {"REDESIGN": 0, "REVIEW": 1, "AUTO": 2}
 
 
-def evidence_from_diff(path: str | Path | None, variant: str | None = None) -> Evidence:
+def evidence_from_diff(path: str | Path | None, variant: str | None = None,
+                       known_ids: set[str] | None = None) -> Evidence:
     """Turn P3-2's comparison report into the evidence the rule engine weighs.
 
     Nothing is AUTO until something has been verified: `testEvidence` is 0 for a routine with no capture, and
@@ -55,11 +56,81 @@ def evidence_from_diff(path: str | Path | None, variant: str | None = None) -> E
     tally: dict[str, list[int]] = {}
     for name in wanted:
         for scenario in (report.get(name) or {}).get("scenarios", {}).values():
-            counts = tally.setdefault(scenario["routine"], [0, 0])
+            counts = tally.setdefault(_resolve(scenario["routine"], known_ids), [0, 0])
             counts[1] += 1
             if not scenario["differences"]:
                 counts[0] += 1
     return Evidence(captures={routine: (passed, total) for routine, (passed, total) in tally.items()})
+
+
+def _resolve(routine: str, known_ids: set[str] | None) -> str:
+    """A scenario names its routine `unit.routine`; the IR does not always.
+
+    A standalone procedure is one routine in a unit of the same name, and the IR gives it the bare name. So a
+    scenario for `prc_add_product` says `prc_add_product.prc_add_product` and matches nothing, and the routine
+    is never credited for a comparison it passed. Found in P4-1, where a routine with a scenario that agreed on
+    both money conventions was still sitting in the "nobody verified it" list.
+
+    Resolution only ever narrows to an id the program actually has, so it cannot invent a match.
+    """
+    if known_ids is None or routine in known_ids:
+        return routine
+    unit, _, name = routine.rpartition(".")
+    if unit == name and name in known_ids:
+        return name
+    return routine
+
+
+def credit_private_callees(evidence: Evidence, program: M.Program, call_graph) -> Evidence:
+    """Give a private routine the evidence of the public routines that exercise it.
+
+    A routine a package does not expose cannot be called from a scenario, so it can never be compared against
+    Oracle directly and can never reach AUTO on its own. Since the engine also refuses to call a routine better
+    than its callees, one unverifiable private helper holds back every public routine that uses it --
+    `pkg_shipment.is_shippable` was fully verified and still REVIEW because `line_count` was not.
+
+    The comparison did run the whole call chain against Oracle, so the evidence is real; it is just indirect.
+    Two things keep that from becoming a way to inflate AUTO:
+
+    * a private routine is credited only when **every** caller is verified, and never above the weakest of them
+    * a rule that objects to the private routine still blocks it -- evidence is one factor of five, not a verdict
+
+    Public routines are untouched: their evidence is their own.
+    """
+    public = {r.id for m in program.modules for r in m.routines if r.visibility == "public"}
+    private = [r.id for m in program.modules for r in m.routines if r.id not in public]
+    callers: dict[str, set[str]] = {}
+    for routine in {r.id for m in program.modules for r in m.routines}:
+        for callee in call_graph.callees(routine):
+            callers.setdefault(callee, set()).add(routine)
+
+    captures = dict(evidence.captures)
+    for routine in private:
+        if routine in captures:
+            continue
+        mine = callers.get(routine, set())
+        if not mine or any(c not in captures for c in mine):
+            continue  # a caller nobody verified is not evidence about the callee
+        rates = [captures[c][0] / captures[c][1] for c in mine if captures[c][1]]
+        if not rates or min(rates) < 1.0:
+            continue  # never above the weakest caller, and a caller that disagreed credits nothing
+        captures[routine] = (sum(captures[c][0] for c in mine), sum(captures[c][1] for c in mine))
+    return Evidence(captures=captures)
+
+
+def unmatched_scenarios(path: str | Path | None, known_ids: set[str], variant: str | None = None) -> list[str]:
+    """Scenario routine names that match no routine in the program.
+
+    Reported rather than dropped: a scenario that credits nothing looks exactly like a routine nobody wrote a
+    scenario for, and the two want opposite fixes.
+    """
+    if path is None or not Path(path).exists():
+        return []
+    report = json.loads(Path(path).read_text(encoding="utf-8"))
+    names = {scenario["routine"]
+             for name in ([variant] if variant else sorted(report))
+             for scenario in (report.get(name) or {}).get("scenarios", {}).values()}
+    return sorted(n for n in names if _resolve(n, known_ids) not in known_ids)
 
 
 @dataclass
@@ -87,7 +158,12 @@ class FixTimes:
 # decisions.json
 # --------------------------------------------------------------------------------------------------
 
-def decisions_document(program: M.Program, decisions: dict, fix_times: FixTimes | None = None) -> dict:
+def routine_ids(program: M.Program) -> set[str]:
+    return {r.id for m in program.modules for r in m.routines}
+
+
+def decisions_document(program: M.Program, decisions: dict, fix_times: FixTimes | None = None,
+                       unmatched: list[str] | None = None) -> dict:
     fix_times = fix_times or FixTimes(minutes={})
     routines = {r.id: (m, r) for m in program.modules for r in m.routines}
 
@@ -124,6 +200,8 @@ def decisions_document(program: M.Program, decisions: dict, fix_times: FixTimes 
     return {
         "schemaVersion": M.SCHEMA_VERSION,
         "counts": _counts(records),
+        # a scenario that credits nothing looks exactly like a routine nobody wrote a scenario for
+        "scenariosMatchingNoRoutine": unmatched or [],
         # KPI-6. `measured` says how many routines the median rests on, because a median of one is not one.
         "humanFixMinutes": {
             "source": fix_times.source,
@@ -153,8 +231,12 @@ def _why_not_auto(decision) -> list[str]:
                        + ("（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて "
                           "いないから。P3-2 の比較結果を --evidence で渡す）"
                           if "testEvidence" in zeros else ""))
-    elif not reasons:
-        reasons.append(f"確信度 {decision.confidence.value:.4f} が AUTO のしきい値に届いていない")
+    if not reasons:
+        # the engine knows causes neither rules nor confidence express -- chiefly "calls X, which is REVIEW",
+        # since a routine is never better than what it calls. Saying "confidence 1.0 is below the threshold"
+        # instead, which is what re-deriving produced, is worse than saying nothing.
+        reasons = [r for r in decision.reasons if not r.startswith("confidence ")] or \
+            [f"確信度 {decision.confidence.value:.4f} が AUTO のしきい値に届いていない"]
     return reasons
 
 
@@ -320,13 +402,14 @@ def traceability_csv(program: M.Program, decisions: dict, generated_root: str | 
 
 def write(program: M.Program, decisions: dict, out_dir: str | Path, *,
           generated_root: str | Path | None = None, package: str = "com.example.migrated",
-          fix_times: FixTimes | None = None) -> dict[str, Path]:
+          fix_times: FixTimes | None = None, unmatched: list[str] | None = None) -> dict[str, Path]:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     written = {"decisions": out / "decisions.json", "unresolved": out / "unresolved.md",
                "traceability": out / "traceability.csv"}
     written["decisions"].write_text(
-        json.dumps(decisions_document(program, decisions, fix_times), ensure_ascii=False, indent=1) + "\n",
+        json.dumps(decisions_document(program, decisions, fix_times, unmatched),
+                   ensure_ascii=False, indent=1) + "\n",
         encoding="utf-8")
     written["unresolved"].write_text(unresolved_markdown(program, decisions), encoding="utf-8")
     written["traceability"].write_text(

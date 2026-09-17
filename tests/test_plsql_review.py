@@ -215,3 +215,92 @@ def test_write_produces_all_three_files(analysis, rules, tmp_path):
     for path in written.values():
         assert path.exists() and path.stat().st_size > 0
     json.loads(written["decisions"].read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------------- P4-1: matching and indirect evidence
+def test_a_standalone_procedure_is_credited_for_its_own_scenario(analysis, tmp_path):
+    """A scenario says `unit.routine`; the IR gives a standalone procedure the bare name.
+
+    Without resolution the two never meet, and a routine whose scenario agreed on both money conventions sits
+    in the "nobody verified it" list forever.
+    """
+    report = {"scaled": {"scenarios": {
+        "a": {"routine": "prc_add_product.prc_add_product", "verdict": "AUTO", "differences": []}}}}
+    path = tmp_path / "diff.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    known = review.routine_ids(analysis.program)
+
+    assert "prc_add_product" in known and "prc_add_product.prc_add_product" not in known
+    assert review.evidence_from_diff(path, None, known).captures == {"prc_add_product": (1, 1)}
+    assert review.unmatched_scenarios(path, known) == []
+
+
+def test_resolution_never_invents_a_match(analysis, tmp_path):
+    report = {"scaled": {"scenarios": {
+        "a": {"routine": "pkg_nothing.no_such_routine", "verdict": "AUTO", "differences": []}}}}
+    path = tmp_path / "diff.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    known = review.routine_ids(analysis.program)
+    assert review.unmatched_scenarios(path, known) == ["pkg_nothing.no_such_routine"]
+
+
+def _graph(edges):
+    class Graph:
+        def callees(self, routine):
+            return set(edges.get(routine, ()))
+    return Graph()
+
+
+def test_a_private_routine_is_credited_through_its_verified_callers(analysis):
+    """It cannot be called from a scenario, but the comparison ran the whole chain against Oracle."""
+    program = analysis.program
+    evidence = Evidence(captures={"pkg_shipment.is_shippable": (2, 2)})
+    credited = review.credit_private_callees(
+        evidence, program, _graph({"pkg_shipment.is_shippable": ["pkg_shipment.line_count"]}))
+    assert credited.captures["pkg_shipment.line_count"] == (2, 2)
+
+
+def test_a_caller_that_disagreed_credits_its_callee_with_nothing(analysis):
+    evidence = Evidence(captures={"pkg_shipment.is_shippable": (1, 2)})
+    credited = review.credit_private_callees(
+        evidence, analysis.program, _graph({"pkg_shipment.is_shippable": ["pkg_shipment.line_count"]}))
+    assert "pkg_shipment.line_count" not in credited.captures
+
+
+def test_an_unverified_caller_blocks_the_credit(analysis):
+    """Every caller must be verified: one unverified path is a path nobody compared."""
+    evidence = Evidence(captures={"pkg_shipment.is_shippable": (2, 2)})
+    credited = review.credit_private_callees(
+        evidence, analysis.program,
+        _graph({"pkg_shipment.is_shippable": ["pkg_shipment.line_count"],
+                "pkg_shipment.days_in_transit": ["pkg_shipment.line_count"]}))
+    assert "pkg_shipment.line_count" not in credited.captures
+
+
+def test_a_public_routine_is_never_given_someone_elses_evidence(analysis):
+    evidence = Evidence(captures={"pkg_shipment.mark_shipped": (1, 1)})
+    credited = review.credit_private_callees(
+        evidence, analysis.program, _graph({"pkg_shipment.mark_shipped": ["pkg_shipment.is_shippable"]}))
+    assert "pkg_shipment.is_shippable" not in credited.captures
+
+
+def test_indirect_evidence_does_not_override_a_rule(analysis, rules):
+    """Evidence is one factor of five. A rule that objects still blocks the routine."""
+    program = analysis.program
+    evidence = review.credit_private_callees(
+        Evidence(captures={"pkg_shipment.is_shippable": (2, 2)}), program,
+        _graph({"pkg_shipment.is_shippable": ["pkg_shipment.line_count"]}))
+    decisions = decide(program, analyse_program(program), rules, evidence)
+    assert decisions["pkg_shipment.line_count"].confidence.test_evidence == 1.0
+    assert decisions["pkg_shipment.line_count"].verdict != "AUTO", "SEM-004 objects to the aggregate"
+
+
+def test_why_not_auto_never_contradicts_the_confidence_it_reports(analysis, rules):
+    """Re-deriving the cause produced "confidence 1.0 is below the threshold"; the engine knew the real one."""
+    document = review.decisions_document(analysis.program, decisions_for(analysis, rules))
+    for record in document["routines"]:
+        if record["verdict"] == "AUTO":
+            continue
+        for reason in record["whyNotAuto"]:
+            if "しきい値に届いていない" in reason:
+                assert record["confidence"]["value"] < 0.95, record["routine"]

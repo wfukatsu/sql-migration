@@ -1,0 +1,16 @@
+name: tier_set_credit_limit_missing
+unit: pkg_tier_admin
+routine: set_credit_limit
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'GOLD', 100000.00, DATE '2025-04-01')
+call:
+  kind: procedure
+  name: pkg_tier_admin.set_credit_limit
+  args:
+    p_customer_id: 9999
+    p_limit: 1.00
+capture_tables:
+- customers
+note: P4-1。更新件数 0 でも例外を上げない。存在しない行への UPDATE が無害であることを固定する
