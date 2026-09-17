@@ -160,6 +160,18 @@ EVALUABLE = {"NVL", "ROUND", "TRUNC", "SYSDATE", "SYSTIMESTAMP", "MOD", "ABS", "
 
 LIFTABLE_ARITHMETIC = (exp.Add, exp.Sub, exp.Mul, exp.Div, exp.Neg, exp.Paren, exp.Concat)
 
+# `seq_audit_id.NEXTVAL` は sqlglot には修飾された列に見える。採番は移行先で決めた方式に置き換わるので
+# （計画 §9）、式として持ち上げて Java 側で採る。CURRVAL は持ち上げない——直前の NEXTVAL が同じ
+# セッションで何を返したかに依存しており、その依存は移行後には存在しない
+NEXTVAL = re.compile(r"^(?P<sequence>[\w$#]+)\.NEXTVAL$", re.IGNORECASE)
+
+
+def _sequence_of(node: exp.Expression) -> str | None:
+    if not isinstance(node, exp.Column) or not node.table:
+        return None
+    match = NEXTVAL.match(f"{node.table}.{node.name}")
+    return match.group("sequence") if match else None
+
 
 def lift_expressions(tree: exp.Expression, binds: list[BindVariable], scope: str,
                      symbols: SymbolTable | None) -> None:
@@ -224,6 +236,8 @@ def _unparen(value: exp.Expression) -> exp.Expression:
 def _liftable(value: exp.Expression) -> bool:
     inner = _unparen(value)
     value = inner
+    if _sequence_of(value):
+        return True   # 採番。移行先の方式へ置き換わる
     if isinstance(value, (exp.Literal, exp.Placeholder, exp.Null, exp.Column)):
         return False  # already a value, or a column this must not touch
     if any(isinstance(node, exp.Column) and not _is_pseudo_column(node) for node in value.walk()):

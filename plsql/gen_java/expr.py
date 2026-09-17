@@ -19,6 +19,7 @@ from .types import java_name
 
 HELPER = "Plsql"
 HELPER_IMPORT = "com.scalar.migrate.plsql.Plsql"
+SEQUENCES_IMPORT = "com.scalar.migrate.plsql.Sequences"
 
 TOKEN = re.compile(r"""
     (?P<string>'(?:[^']|'')*')
@@ -48,6 +49,8 @@ class Expression:
     java: str
     imports: set[str] = field(default_factory=set)
     unknown: list[str] = field(default_factory=list)   # names the translator could not place
+    # 式が採る sequence。Repository が Sequences を受け取る必要があるかを、生成側が知るため
+    sequences: set[str] = field(default_factory=set)
 
     @property
     def translatable(self) -> bool:
@@ -355,6 +358,11 @@ class _Parser:
             return function
         if "." in value:
             head, _, tail = value.partition(".")
+            if tail.upper() == "NEXTVAL":
+                # 採番。移行先の方式は DDL から導いてあり、呼ぶ口は Sequences（計画 §9）
+                self.result.imports.add(SEQUENCES_IMPORT)
+                self.result.sequences.add(head.lower())
+                return f'sequences.next("{head.lower()}")'
             if head.lower() not in self.scope:
                 # `v_ids.COUNT` on a collection, or a package-qualified name: neither is a record field, and
                 # rendering it as one produces a call to a method that does not exist

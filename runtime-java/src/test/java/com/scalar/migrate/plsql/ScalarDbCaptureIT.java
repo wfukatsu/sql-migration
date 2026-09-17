@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -191,14 +192,37 @@ class ScalarDbCaptureIT {
       this.arguments = arguments;
     }
 
+    /**
+     * 採番する Repository は `Sequences` も受け取る（計画 §9）。ここでは採番方式ごとの挙動ではなく
+     * routine の振る舞いを比べているので、Oracle 側の scenario が `pinned.sequences` で固定するのと
+     * 同じ値から順に配る実装を渡す。採番そのものは `SequencesTest` が見る。
+     */
+    private static Object newRepository(Class<?> repositoryClass, java.sql.Connection connection)
+        throws ReflectiveOperationException {
+      for (Constructor<?> constructor : repositoryClass.getConstructors()) {
+        Class<?>[] parameters = constructor.getParameterTypes();
+        if (parameters.length == 1) {
+          return constructor.newInstance(connection);
+        }
+        if (parameters.length == 2 && parameters[1] == Sequences.class) {
+          Map<String, java.util.concurrent.atomic.AtomicLong> counters = new LinkedHashMap<>();
+          Sequences pinned = name -> counters
+              .computeIfAbsent(name, n -> new java.util.concurrent.atomic.AtomicLong(1))
+              .getAndIncrement();
+          return constructor.newInstance(connection, pinned);
+        }
+      }
+      throw new NoSuchMethodException(repositoryClass.getName() + ": 組み立てられるコンストラクタが無い");
+    }
+
     static Invoker forScenario(Scenario scenario, java.sql.Connection connection) throws Unrunnable {
       String base = pascalCase(scenario.unit());
       Object service;
       try {
         Class<?> repositoryClass = Class.forName(PACKAGE + ".infrastructure." + base + "Repository");
         Class<?> serviceClass = Class.forName(PACKAGE + ".application." + base + "Service");
-        Constructor<?> repository = repositoryClass.getConstructor(java.sql.Connection.class);
-        service = serviceClass.getConstructor(repositoryClass).newInstance(repository.newInstance(connection));
+        service = serviceClass.getConstructor(repositoryClass)
+            .newInstance(newRepository(repositoryClass, connection));
       } catch (ReflectiveOperationException e) {
         throw new Unrunnable("no generated service for unit " + scenario.unit() + " (" + e + ")");
       }
