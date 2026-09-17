@@ -70,11 +70,17 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
     for module in program.modules:
         for routine in module.routines:
             statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
+            # A routine whose read was locked (`SELECT ... FOR UPDATE`) must not have its write quietly
+            # rewritten: the lock was what made the read-modify-write safe, and conversion drops it
+            # (WARN ROW_LOCK). Leaving the write as something ScalarDB refuses keeps the loss visible at the
+            # call site. P3-4 measured what happens without it -- one of two concurrent transactions is
+            # rejected -- and that is a redesign, not a rewrite.
+            locked = any(getattr(s, "locking_mode", None) for s in statements)
             for statement in statements:
                 if statement.kind != "SqlOperation" or not statement.original_sql:
                     continue
                 result = analyse_sql(statement, scope=routine.id, symbols=symbols,
-                                    registry=registry, storage=storage)
+                                    registry=registry, storage=storage, lift=not locked)
                 report.statuses[statement.id] = result.status
                 if result.access_path:
                     report.access_paths[statement.id] = result.access_path
