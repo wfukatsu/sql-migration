@@ -30,6 +30,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out-dir", default="generated")
     parser.add_argument("--package", default="com.example.migrated")
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--limits", help="走査行数の上限を書いた YAML（既定と routine ごとの上書き）。"
+                                        "渡さなければ組み込みの既定を使う")
     parser.add_argument("--handover", action="store_true",
                         help="write the handover banner instead of 'do not edit'. After handover the "
                              "regeneration model ends (plan §9) and the code is maintained by hand, so the "
@@ -48,6 +50,12 @@ def main(argv: list[str] | None = None) -> int:
 
         from .gen_java.project import handover_banner
         handover_banner(date.today().isoformat())
+
+    from .gen_java.repository import set_limits
+    from .limits import Limits
+
+    limits = Limits.load(args.limits) if args.limits else Limits()
+    set_limits(limits)
 
     analysis = build_analysis(root, schema, scalardb_schema=scalardb)
     decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), Evidence())
