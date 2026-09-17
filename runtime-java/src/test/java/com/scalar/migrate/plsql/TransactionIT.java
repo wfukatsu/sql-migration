@@ -47,6 +47,7 @@ class TransactionIT {
 
   @BeforeEach
   void setUp() throws Exception {
+    Variant.assertGeneratedForThisVariant();
     runner = open();
     runner.reset();
   }

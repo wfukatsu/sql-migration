@@ -207,10 +207,11 @@ def test_routines_without_a_capture_are_only_the_documented_ones():
         "pkg_shipment.line_count",
         # cannot be compiled here: the DB link does not exist
         "prc_remote_sync.prc_remote_sync",
-        # holdout2 was added after P0-5 ran; its captures are collected when P0-5 is next run
-        # (fixtures/plsql/golden/README.md). Listing them keeps the gap visible rather than growing silently.
-        "pkg_shipment.is_shippable", "pkg_shipment.mark_shipped", "pkg_shipment.days_in_transit",
+        # holdout2 was added after P0-5 ran. P4-1 covered the three that were holding back an otherwise
+        # verified routine; the rest are still uncovered and listed here so the gap stays visible rather than
+        # growing silently (fixtures/plsql/golden/README.md).
+        "pkg_shipment.days_in_transit",
         "prc_purge_audit.prc_purge_audit", "trg_payments_guard.trg_payments_guard",
-        "pkg_tier_admin.promote", "pkg_tier_admin.set_credit_limit",
+        "pkg_tier_admin.promote",
     }
     assert uncovered == documented, f"undocumented gap: {sorted(uncovered - documented)}"

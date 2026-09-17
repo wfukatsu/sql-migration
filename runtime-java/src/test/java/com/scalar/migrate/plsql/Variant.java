@@ -32,6 +32,35 @@ final class Variant {
 
   static final Path CAPTURES = Path.of("..", "difftest", "work", "plsql-scalardb-" + NAME);
 
+  /** A generated file that binds a money column, used to tell which variant the tree was built for. */
+  private static final Path WITNESS = Path.of("..", "generated", "src", "main", "java", "com", "example",
+      "migrated", "infrastructure", "PkgTierAdminRepository.java");
+
+  /**
+   * Fail now, with the reason, if the generated tree was built for the other money convention.
+   *
+   * <p>Running code generated for one convention against the other's namespace produces
+   * {@code DB-SQL-10060: Unmatched column type}, several layers below anything that names the cause. The tree
+   * is rewritten by {@code difftest/plsql_capture.py --variant ...}, so generating for one variant and then
+   * testing the other is an easy mistake to make and a slow one to diagnose.
+   */
+  static void assertGeneratedForThisVariant() {
+    String source;
+    try {
+      source = java.nio.file.Files.readString(WITNESS);
+    } catch (java.io.IOException notGenerated) {
+      throw new IllegalStateException("the generated tree is missing; run `python -m plsql.generate`",
+          notGenerated);
+    }
+    boolean builtForDouble = source.contains("\"DOUBLE\"");
+    if (builtForDouble != DOUBLE) {
+      throw new IllegalStateException(String.format(
+          "generated/ was built for the %s money convention but the tests run against %s (%s). "
+              + "Run: python difftest/plsql_capture.py --variant %s",
+          builtForDouble ? "double" : "scaled", NAME, NAMESPACE, NAME));
+    }
+  }
+
   /** A money amount, written the way this variant's columns hold it. */
   static Object money(String amount) {
     java.math.BigDecimal value = new java.math.BigDecimal(amount);

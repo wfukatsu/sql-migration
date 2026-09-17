@@ -59,6 +59,7 @@ class ScalarDbCaptureIT {
 
   @BeforeAll
   static void open() throws Exception {
+    Variant.assertGeneratedForThisVariant();
     runner = new ScalarDbRunner(Variant.PROPERTIES, NAMESPACE, SCHEMA);
     setup = ConvertedSetup.read(SETUP);
     Files.createDirectories(OUT);

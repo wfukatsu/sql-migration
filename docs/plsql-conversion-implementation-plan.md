@@ -496,6 +496,47 @@ Phase 3 が「変換できたものは正しい」を示した。Phase 4 の主�
 | P4-10 | LLM Remediator | `plsql/remediate.py` | REDESIGN の説明文、未対応関数の mapping 候補を出す。**生成されたコードは必ず REVIEW 扱いで、AUTO に昇格させない**。出力には生成元のモデルと日時を残す | P4-5, P4-6 | 別途見積 |
 | P4-11 | 承認された決定からのルール提案 | `plsql/propose.py` | 人が承認した REVIEW の処理からルール候補を出す。**提案はルールにならない**。人がルールファイルへ書いて初めて有効になる | P4-2 | 別途見積 |
 
+#### P4-1 実施結果（2026-09-17）
+
+**8 件のうち「検証の空白」だったのは 4 件だけだった。計画の前提が外れていたので、まずそれを訂正する。**
+
+| routine | 実際の状態 | 対応 |
+|---|---|---|
+| `prc_add_product` | **シナリオは既にあり一致もしていた。** P3-5 の欠陥で credit されていなかった | 欠陥を修正 → AUTO |
+| `pkg_shipment.mark_shipped` | public。シナリオが無かった | 2 本追加 → AUTO |
+| `pkg_tier_admin.set_credit_limit` | public。シナリオが無かった | 2 本追加 → AUTO |
+| `pkg_shipment.is_shippable` | public。シナリオが無かった | 4 本追加。ただし callee の `line_count` に SEM-004 が当たるため REVIEW のまま |
+| `pkg_order_pricing.tier_discount` / `line_amount`、`pkg_order_lock.is_cancellable` | **private。外部から呼べないので直接のシナリオを書けない** | 間接評価を実装。ただし呼び出し元が cursor FOR loop で落ちるため未回収 → P4-5 |
+| `pkg_order_pricing.reprice_order` | **網羅の穴ではない。** 呼ぶ `order_total` が cursor FOR loop で拒否される | P4-5 |
+
+結果: AUTO **9 → 12**、非 AUTO 47 → 44。KPI-5 は 100% を維持。
+
+**P4-1 が見つけた欠陥 3 件**
+
+1. **標準 procedure は評価が routine に結び付かず、永久に credit されなかった。** シナリオは routine を
+   `unit.routine` と呼ぶが、IR は標準 procedure に素の名前を与える。`prc_add_product` は両金額規約で一致
+   していたのに「誰も検証していない」一覧に座っていた。照合を IR の routine 一覧に対して行い、**どの
+   routine にも一致しなかったシナリオを `decisions.json` に残す**ようにした（credit しないシナリオと、
+   シナリオが無い routine は見た目が同じで、直し方が正反対なので）。
+2. **`SELECT COUNT(*) INTO v_count` が実行時に落ちていた。** ScalarDB は `COUNT(*)` を `Long` で返すが、
+   `v_count NUMBER` の局所変数は `BigDecimal` である。列の型が決めるのは JDBC が返す物で、局所変数の型を
+   決めるのは PL/SQL の宣言であり、両者は一致しない。キャストをやめ、Oracle が同じ代入で行うのと同じ
+   ように変換するようにした。
+3. **`whyNotAuto` が自己矛盾していた。** 「確信度 1.0000 が AUTO のしきい値に届いていない」と出ていた。
+   本当の理由はエンジンが持っていて（「`line_count` を呼んでいるが、それが REVIEW」——routine は呼ぶ物
+   より良くはなれない）、ルールと確信度から再導出しようとしたのが誤りだった。エンジンの理由を使う。
+
+**private routine の間接評価**を入れた。package が公開しない routine はシナリオから呼べず、単独では絶対に
+AUTO にならない。エンジンは callee より良い判定を出さないので、検証できない private helper 1 つが、それを
+使う public routine 全部を止める。比較は呼び出し連鎖全体を Oracle に対して走らせているので証拠は実在し、
+間接なだけである。AUTO を膨らませる道にしないための条件を 2 つ置いた——**全ての呼び出し元が検証済みの
+ときだけ**credit し、**最も弱い呼び出し元を超えない**。そして**ルールが反対していれば依然として止まる**
+（証拠は 5 因子のうちの 1 つであって判定ではない）。`line_count` が実際にその例で、証拠は 1.0 になったが
+SEM-004 が反対しているので REVIEW のままである。
+
+あわせて、生成ツリーが別の金額規約で作られている場合に **Java テストが理由を名指しで落ちる**ようにした。
+以前は 7 層下の `DB-SQL-10060` として現れ、原因に辿り着くのに時間がかかった。
+
 **Phase 4 完了条件**: 非 AUTO の件数が半減し（56 → 28 以下）、残るものは設計テンプレートか、
 「この routine は人が決めるべき」という説明のどちらかを持つ。KPI-6 のベースラインが実測で出ている。
 
