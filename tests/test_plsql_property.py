@@ -233,6 +233,26 @@ def test_oracle_confirms_a_comparison_with_null_does_not_run_its_branch():
         assert answer("comparison", op, [None, "a"]) == {"value": {"$dec": "0"}}, op
 
 
+def test_oracle_confirms_number_is_decimal_and_not_binary_floating_point():
+    """The one fact the money decision rests on (plan §9).
+
+    `0.1 + 0.2` is exactly `0.3` in Oracle and `0.30000000000000004` in a binary double. Storing a decimal in a
+    DOUBLE therefore cannot reproduce Oracle for values the corpus has not happened to contain either.
+    """
+    assert answer("arithmetic", "add", [{"$dec": "0.1"}, {"$dec": "0.2"}]) == {"value": {"$dec": "0.3"}}
+    assert 0.1 + 0.2 != 0.3, "the premise: a binary double does not hold these values"
+    assert Decimal("0.1") + Decimal("0.2") == Decimal("0.3")
+
+
+def test_the_scaled_storage_holds_a_decimal_that_a_double_cannot():
+    """Both directions of the decision, on the value that shows the difference."""
+    stored = int(Decimal("0.3").scaleb(2))
+    capture = {"tables": {"t": {"columns": ["amount"], "rows": [[stored]]}}}
+    unscale(capture, {"t": {"amount": 2}})
+    assert decode(capture["tables"]["t"]["rows"][0][0]) == Decimal("0.30")
+    assert Decimal(str(0.1 + 0.2)) != Decimal("0.3")
+
+
 def test_oracle_confirms_rounding_is_half_up_not_half_even():
     """Java's default is half-even, which would answer 1.00 and 2.67 here."""
     assert answer("rounding", "round", [{"$dec": "1.005"}, 2]) == {"value": {"$dec": "1.01"}}

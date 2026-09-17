@@ -814,6 +814,57 @@
    "args": [
     null,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    null,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    null,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    null,
+    {
      "$dec": "0.5"
     }
    ],
@@ -959,6 +1010,57 @@
    "args": [
     0,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    0,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    0,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    0,
+    {
      "$dec": "0.5"
     }
    ],
@@ -1104,6 +1206,57 @@
    "args": [
     1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -1249,6 +1402,57 @@
    "args": [
     -1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    -1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    -1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    -1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -1333,6 +1537,666 @@
    "op": "eq",
    "args": [
     {
+     "$dec": "0.1"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
      "$dec": "0.5"
     },
     null
@@ -1387,6 +2251,63 @@
      "$dec": "0.5"
     },
     -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
    ],
    "kind": "bool",
    "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
@@ -1567,6 +2488,63 @@
      "$dec": "-0.5"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -1730,6 +2708,63 @@
      "$dec": "1.005"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -1893,6 +2928,63 @@
      "$dec": "2.675"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -2039,6 +3131,63 @@
      "$dec": "1234.565"
     },
     -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "eq",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.3"
+    }
    ],
    "kind": "bool",
    "sql": "CASE WHEN {a} = {b} THEN 1 ELSE 0 END",
@@ -2944,6 +4093,57 @@
    "args": [
     null,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    null,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    null,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    null,
+    {
      "$dec": "0.5"
     }
    ],
@@ -3089,6 +4289,57 @@
    "args": [
     0,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    0,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    0,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    0,
+    {
      "$dec": "0.5"
     }
    ],
@@ -3234,6 +4485,57 @@
    "args": [
     1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -3379,6 +4681,57 @@
    "args": [
     -1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    -1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    -1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    -1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -3463,6 +4816,666 @@
    "op": "ne",
    "args": [
     {
+     "$dec": "0.1"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
      "$dec": "0.5"
     },
     null
@@ -3534,6 +5547,63 @@
      "$dec": "0.5"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -3697,6 +5767,63 @@
      "$dec": "-0.5"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -3860,6 +5987,63 @@
      "$dec": "1.005"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -4023,6 +6207,63 @@
      "$dec": "2.675"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -4169,6 +6410,63 @@
      "$dec": "1234.565"
     },
     -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ne",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.3"
+    }
    ],
    "kind": "bool",
    "sql": "CASE WHEN {a} <> {b} THEN 1 ELSE 0 END",
@@ -5074,6 +7372,57 @@
    "args": [
     null,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    null,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    null,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    null,
+    {
      "$dec": "0.5"
     }
    ],
@@ -5219,6 +7568,57 @@
    "args": [
     0,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    0,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    0,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    0,
+    {
      "$dec": "0.5"
     }
    ],
@@ -5364,6 +7764,57 @@
    "args": [
     1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -5509,6 +7960,57 @@
    "args": [
     -1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    -1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    -1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    -1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -5593,6 +8095,666 @@
    "op": "lt",
    "args": [
     {
+     "$dec": "0.1"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
      "$dec": "0.5"
     },
     null
@@ -5664,6 +8826,63 @@
      "$dec": "0.5"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -5827,6 +9046,63 @@
      "$dec": "-0.5"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -5990,6 +9266,63 @@
      "$dec": "1.005"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -6153,6 +9486,63 @@
      "$dec": "2.675"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -6299,6 +9689,63 @@
      "$dec": "1234.565"
     },
     -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "lt",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.3"
+    }
    ],
    "kind": "bool",
    "sql": "CASE WHEN {a} < {b} THEN 1 ELSE 0 END",
@@ -7204,6 +10651,57 @@
    "args": [
     null,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    null,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    null,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    null,
+    {
      "$dec": "0.5"
     }
    ],
@@ -7349,6 +10847,57 @@
    "args": [
     0,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    0,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    0,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    0,
+    {
      "$dec": "0.5"
     }
    ],
@@ -7494,6 +11043,57 @@
    "args": [
     1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -7639,6 +11239,57 @@
    "args": [
     -1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    -1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    -1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    -1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -7723,6 +11374,666 @@
    "op": "le",
    "args": [
     {
+     "$dec": "0.1"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
      "$dec": "0.5"
     },
     null
@@ -7794,6 +12105,63 @@
      "$dec": "0.5"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -7957,6 +12325,63 @@
      "$dec": "-0.5"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -8120,6 +12545,63 @@
      "$dec": "1.005"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -8283,6 +12765,63 @@
      "$dec": "2.675"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -8429,6 +12968,63 @@
      "$dec": "1234.565"
     },
     -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "le",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.3"
+    }
    ],
    "kind": "bool",
    "sql": "CASE WHEN {a} <= {b} THEN 1 ELSE 0 END",
@@ -9334,6 +13930,57 @@
    "args": [
     null,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    null,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    null,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    null,
+    {
      "$dec": "0.5"
     }
    ],
@@ -9479,6 +14126,57 @@
    "args": [
     0,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    0,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    0,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    0,
+    {
      "$dec": "0.5"
     }
    ],
@@ -9624,6 +14322,57 @@
    "args": [
     1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -9769,6 +14518,57 @@
    "args": [
     -1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    -1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    -1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    -1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -9853,6 +14653,666 @@
    "op": "gt",
    "args": [
     {
+     "$dec": "0.1"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
      "$dec": "0.5"
     },
     null
@@ -9924,6 +15384,63 @@
      "$dec": "0.5"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -10087,6 +15604,63 @@
      "$dec": "-0.5"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -10250,6 +15824,63 @@
      "$dec": "1.005"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -10413,6 +16044,63 @@
      "$dec": "2.675"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -10559,6 +16247,63 @@
      "$dec": "1234.565"
     },
     -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "gt",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.3"
+    }
    ],
    "kind": "bool",
    "sql": "CASE WHEN {a} > {b} THEN 1 ELSE 0 END",
@@ -11464,6 +17209,57 @@
    "args": [
     null,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    null,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    null,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    null,
+    {
      "$dec": "0.5"
     }
    ],
@@ -11609,6 +17405,57 @@
    "args": [
     0,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    0,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    0,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    0,
+    {
      "$dec": "0.5"
     }
    ],
@@ -11754,6 +17601,57 @@
    "args": [
     1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -11899,6 +17797,57 @@
    "args": [
     -1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    -1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    -1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    -1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -11983,6 +17932,666 @@
    "op": "ge",
    "args": [
     {
+     "$dec": "0.1"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    null
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    0
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
      "$dec": "0.5"
     },
     null
@@ -12054,6 +18663,63 @@
      "$dec": "0.5"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -12217,6 +18883,63 @@
      "$dec": "-0.5"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -12380,6 +19103,63 @@
      "$dec": "1.005"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -12543,6 +19323,63 @@
      "$dec": "2.675"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -12689,6 +19526,63 @@
      "$dec": "1234.565"
     },
     -1
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "bool",
+   "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "comparison",
+   "op": "ge",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.3"
+    }
    ],
    "kind": "bool",
    "sql": "CASE WHEN {a} >= {b} THEN 1 ELSE 0 END",
@@ -13309,6 +20203,51 @@
    "args": [
     null,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    null,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    null,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    null,
+    {
      "$dec": "0.5"
     }
    ],
@@ -13433,6 +20372,57 @@
    "oracle": {
     "value": {
      "$dec": "-1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    0,
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    0,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    0,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
     }
    }
   },
@@ -13585,6 +20575,57 @@
    "args": [
     1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -13728,6 +20769,57 @@
    "args": [
     -1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.9"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    -1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.8"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    -1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.7"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    -1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -13812,6 +20904,660 @@
    "op": "add",
    "args": [
     {
+     "$dec": "0.1"
+    },
+    null
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    0
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    -1
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.9"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.4"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.6"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.4"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1.105"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "2.775"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1234.665"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    null
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    0
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    -1
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.8"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.4"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.5"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.7"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1.205"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "2.875"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1234.765"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    null
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    0
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    -1
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.7"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.4"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.5"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.6"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.8"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1.305"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "2.975"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1234.865"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
      "$dec": "0.5"
     },
     null
@@ -13870,6 +21616,63 @@
    "oracle": {
     "value": {
      "$dec": "-0.5"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.6"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.7"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.8"
     }
    }
   },
@@ -14042,6 +21845,63 @@
      "$dec": "-0.5"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.4"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -14192,6 +22052,63 @@
    "oracle": {
     "value": {
      "$dec": "0.005"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1.105"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1.205"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1.305"
     }
    }
   },
@@ -14364,6 +22281,63 @@
      "$dec": "2.675"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "2.775"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "2.875"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "2.975"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -14525,6 +22499,63 @@
      "$dec": "1234.565"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1234.665"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1234.765"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} + {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1234.865"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "add",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -14670,6 +22701,51 @@
    "args": [
     null,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    null,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    null,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    null,
+    {
      "$dec": "0.5"
     }
    ],
@@ -14794,6 +22870,57 @@
    "oracle": {
     "value": {
      "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    0,
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    0,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    0,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.3"
     }
    }
   },
@@ -14946,6 +23073,57 @@
    "args": [
     1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.9"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.8"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.7"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -15089,6 +23267,57 @@
    "args": [
     -1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-1.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    -1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-1.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    -1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-1.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    -1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -15173,6 +23402,660 @@
    "op": "sub",
    "args": [
     {
+     "$dec": "0.1"
+    },
+    null
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    0
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.9"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    -1
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.4"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.6"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.905"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-2.575"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-1234.465"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    null
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    0
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.8"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    -1
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.7"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.805"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-2.475"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-1234.365"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    null
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    0
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.7"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    -1
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.8"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.705"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-2.375"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-1234.265"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
      "$dec": "0.5"
     },
     null
@@ -15231,6 +24114,63 @@
    "oracle": {
     "value": {
      "$dec": "1.5"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.4"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
     }
    }
   },
@@ -15403,6 +24343,63 @@
      "$dec": "-0.5"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.6"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.7"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.8"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -15553,6 +24550,63 @@
    "oracle": {
     "value": {
      "$dec": "2.005"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.905"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.805"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.705"
     }
    }
   },
@@ -15725,6 +24779,63 @@
      "$dec": "2.675"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "2.575"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "2.475"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "2.375"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -15886,6 +24997,63 @@
      "$dec": "1234.565"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1234.465"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1234.365"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} - {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1234.265"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "sub",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -16031,6 +25199,51 @@
    "args": [
     null,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    null,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    null,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    null,
+    {
      "$dec": "0.5"
     }
    ],
@@ -16149,6 +25362,57 @@
    "args": [
     0,
     -1
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    0,
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    0,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    0,
+    {
+     "$dec": "0.3"
+    }
    ],
    "kind": "value",
    "sql": "{a} * {b}",
@@ -16307,6 +25571,57 @@
    "args": [
     1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -16441,6 +25756,57 @@
    "oracle": {
     "value": {
      "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    -1,
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    -1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    -1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.3"
     }
    }
   },
@@ -16534,6 +25900,660 @@
    "op": "mul",
    "args": [
     {
+     "$dec": "0.1"
+    },
+    null
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    0
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    -1
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.01"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.02"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.03"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.05"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.05"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.1005"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.2675"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "123.4565"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    null
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    0
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    -1
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.02"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.04"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.06"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.201"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.535"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "246.913"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    null
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    0
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    -1
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.03"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.06"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.09"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.15"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.15"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.3015"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.8025"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "370.3695"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
      "$dec": "0.5"
     },
     null
@@ -16592,6 +26612,63 @@
    "oracle": {
     "value": {
      "$dec": "-0.5"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.05"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.15"
     }
    }
   },
@@ -16764,6 +26841,63 @@
      "$dec": "-0.5"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.05"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.15"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -16914,6 +27048,63 @@
    "oracle": {
     "value": {
      "$dec": "-1.005"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.1005"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.201"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.3015"
     }
    }
   },
@@ -17086,6 +27277,63 @@
      "$dec": "2.675"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.2675"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.535"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.8025"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -17247,6 +27495,63 @@
      "$dec": "1234.565"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "123.4565"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "246.913"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} * {b}",
+   "oracle": {
+    "value": {
+     "$dec": "370.3695"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mul",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -17392,6 +27697,96 @@
    "args": [
     null,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    null,
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    null,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    null,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    null,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    null,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": null
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    null,
+    {
      "$dec": "0.5"
     }
    ],
@@ -17587,6 +27982,108 @@
    "args": [
     0,
     -1
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    0,
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    0,
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    0,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    0,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    0,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    0,
+    {
+     "$dec": "0.3"
+    }
    ],
    "kind": "value",
    "sql": "MOD({a}, {b})",
@@ -17823,6 +28320,108 @@
    "oracle": {
     "value": {
      "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    1,
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "10"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    1,
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "5"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "3.33333333333333333333333333333333333333"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
     }
    }
   },
@@ -18062,6 +28661,108 @@
    "args": [
     -1,
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-10"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    -1,
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    -1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-5"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    -1,
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    -1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-3.33333333333333333333333333333333333333"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    -1,
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "-0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    -1,
+    {
      "$dec": "0.5"
     }
    ],
@@ -18231,6 +28932,1122 @@
    "op": "div",
    "args": [
     {
+     "$dec": "0.1"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    -1
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    -1
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.5"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.3333333333333333333333333333333333333333"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.0995024875621890547263681592039800995025"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.0373831775700934579439252336448598130841"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.00008100019035044732355121034534431155913216"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    -1
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    -1
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.6666666666666666666666666666666666666667"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.4"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.4"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.199004975124378109452736318407960199005"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.0747663551401869158878504672897196261682"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.000162000380700894647102420690688623118264"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    -1
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    -1
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1.5"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.6"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-0.6"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "-0.5"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.2985074626865671641791044776119402985075"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1.005"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.1121495327102803738317757009345794392523"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "2.675"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "0.000243000571051341970653631036032934677396"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    {
+     "$dec": "1234.565"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
      "$dec": "0.5"
     },
     1
@@ -18291,6 +30108,120 @@
    "oracle": {
     "value": {
      "$dec": "0.5"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "5"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "2.5"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "1.66666666666666666666666666666666666667"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
     }
    }
   },
@@ -18560,6 +30491,120 @@
      "$dec": "-0.5"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-5"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-2.5"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "-0.1"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "-1.66666666666666666666666666666666666667"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "-0.2"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "-0.5"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -18807,6 +30852,120 @@
    "oracle": {
     "value": {
      "$dec": "0.005"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "10.05"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.005"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "5.025"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.005"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "3.35"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "1.005"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.105"
     }
    }
   },
@@ -19076,6 +31235,120 @@
      "$dec": "2.675"
     },
     {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "26.75"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.075"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "13.375"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.075"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "8.91666666666666666666666666666666666667"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.275"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "2.675"
+    },
+    {
      "$dec": "0.5"
     }
    ],
@@ -19323,6 +31596,120 @@
    "oracle": {
     "value": {
      "$dec": "0.565"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "12345.65"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.065"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "6172.825"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.165"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "div",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "{a} / {b}",
+   "oracle": {
+    "value": {
+     "$dec": "4115.216666666666666666666666666666666667"
+    }
+   }
+  },
+  {
+   "family": "arithmetic",
+   "op": "mod",
+   "args": [
+    {
+     "$dec": "1234.565"
+    },
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "MOD({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.065"
     }
    }
   },
@@ -19861,6 +32248,312 @@
    "oracle": {
     "value": {
      "$dec": "-1"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "round",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    0
+   ],
+   "kind": "value",
+   "sql": "ROUND({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "trunc_number",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    0
+   ],
+   "kind": "value",
+   "sql": "TRUNC({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "round",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "ROUND({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "trunc_number",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "TRUNC({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "round",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    2
+   ],
+   "kind": "value",
+   "sql": "ROUND({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "trunc_number",
+   "args": [
+    {
+     "$dec": "0.1"
+    },
+    2
+   ],
+   "kind": "value",
+   "sql": "TRUNC({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "round",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    0
+   ],
+   "kind": "value",
+   "sql": "ROUND({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "trunc_number",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    0
+   ],
+   "kind": "value",
+   "sql": "TRUNC({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "round",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "ROUND({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "trunc_number",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "TRUNC({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "round",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    2
+   ],
+   "kind": "value",
+   "sql": "ROUND({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "trunc_number",
+   "args": [
+    {
+     "$dec": "0.2"
+    },
+    2
+   ],
+   "kind": "value",
+   "sql": "TRUNC({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "round",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    0
+   ],
+   "kind": "value",
+   "sql": "ROUND({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "trunc_number",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    0
+   ],
+   "kind": "value",
+   "sql": "TRUNC({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "round",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "ROUND({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "trunc_number",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    1
+   ],
+   "kind": "value",
+   "sql": "TRUNC({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "round",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    2
+   ],
+   "kind": "value",
+   "sql": "ROUND({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
+    }
+   }
+  },
+  {
+   "family": "rounding",
+   "op": "trunc_number",
+   "args": [
+    {
+     "$dec": "0.3"
+    },
+    2
+   ],
+   "kind": "value",
+   "sql": "TRUNC({a}, {b})",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
     }
    }
   },
@@ -21403,6 +34096,54 @@
    "oracle": {
     "value": {
      "$dec": "-1"
+    }
+   }
+  },
+  {
+   "family": "storage",
+   "op": "cast_number_14_2",
+   "args": [
+    {
+     "$dec": "0.1"
+    }
+   ],
+   "kind": "value",
+   "sql": "CAST({a} AS NUMBER(14,2))",
+   "oracle": {
+    "value": {
+     "$dec": "0.1"
+    }
+   }
+  },
+  {
+   "family": "storage",
+   "op": "cast_number_14_2",
+   "args": [
+    {
+     "$dec": "0.2"
+    }
+   ],
+   "kind": "value",
+   "sql": "CAST({a} AS NUMBER(14,2))",
+   "oracle": {
+    "value": {
+     "$dec": "0.2"
+    }
+   }
+  },
+  {
+   "family": "storage",
+   "op": "cast_number_14_2",
+   "args": [
+    {
+     "$dec": "0.3"
+    }
+   ],
+   "kind": "value",
+   "sql": "CAST({a} AS NUMBER(14,2))",
+   "oracle": {
+    "value": {
+     "$dec": "0.3"
     }
    }
   },
