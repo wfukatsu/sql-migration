@@ -33,6 +33,7 @@ from sqlglot import exp
 from scalardb_migrate.converter import StatementConverter
 from scalardb_migrate.schema import SchemaRegistry
 
+from .columns import bind_columns, select_columns, selects_star
 from .ir.model import BindVariable, SqlOperation
 from .source import Issue, SourceRange
 from .symbols import SymbolTable
@@ -81,6 +82,9 @@ def analyse(operation: SqlOperation, scope: str, symbols: SymbolTable | None = N
         return result
 
     targets = strip_into(tree)
+    # after strip_into, not before: `INTO v_row` parses as a table, and a star is only expandable when the
+    # statement reads exactly one table
+    expand_star(tree, symbols)
     operation.into_targets = [t for t in targets]
     result.into_targets = [{"name": t} for t in targets]
     if targets:
@@ -88,6 +92,7 @@ def analyse(operation: SqlOperation, scope: str, symbols: SymbolTable | None = N
         result.cardinality = operation.cardinality
 
     binds = bind_variables(tree, scope, symbols)
+    attribute_columns(tree, binds, operation, registry, symbols)
     operation.binds = binds
     result.binds = [asdict(b) for b in binds]
 
@@ -137,6 +142,31 @@ def strip_into(tree: exp.Expression) -> list[str]:
     return targets
 
 
+def expand_star(tree: exp.Expression, symbols: SymbolTable | None) -> None:
+    """Replace `SELECT *` with the table's columns, in DDL order, when the DDL is known.
+
+    A star does not name what it returns, so nothing downstream can line the result up with anything: a
+    `%ROWTYPE` target cannot be built, and the capture's column order would be whatever the target database
+    chose. Naming the columns here fixes both, and it is the same list Oracle would have expanded.
+
+    Left alone when there is not exactly one known table -- expanding a join's star would require deciding an
+    order across tables, which the DDL does not settle.
+    """
+    schema = symbols.oracle_schema if symbols else None
+    if schema is None:
+        return
+    select = tree if isinstance(tree, exp.Select) else tree.find(exp.Select)
+    if select is None or not any(isinstance(e, exp.Star) for e in select.expressions):
+        return
+    tables = [t.name.lower() for t in tree.find_all(exp.Table) if t.name]
+    if len(tables) != 1:
+        return
+    columns = schema.columns(tables[0])
+    if not columns:
+        return
+    select.set("expressions", [exp.column(name) for name in columns])
+
+
 def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None) -> list[BindVariable]:
     """Replace PL/SQL variable references with named placeholders, in place, and describe them.
 
@@ -159,6 +189,52 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
             oracle_type=symbol.type.oracle if symbol.type else None, plsql_variable=name)
         column.replace(exp.Placeholder(this=placeholder))
     return list(found.values())
+
+
+def attribute_columns(tree: exp.Expression, binds: list[BindVariable], operation: SqlOperation,
+                      registry: SchemaRegistry | None, symbols: SymbolTable | None = None) -> None:
+    """Record the ScalarDB column behind each bind and each select item, where there is exactly one.
+
+    Without a registry there is nothing to look a type up in, so nothing is recorded -- the same rule as
+    bind_variables: say nothing rather than guess, because a wrong type here is a wrong value at run time.
+    """
+    if registry is None:
+        return
+    tables = [t.name.lower() for t in tree.find_all(exp.Table) if t.name]
+    oracle = symbols.oracle_schema if symbols else None
+    by_bind = bind_columns(tree)
+    for bind in binds:
+        column = by_bind.get(bind.name)
+        if column:
+            bind.column = column
+            bind.scalardb_type = _column_type(registry, tables, column)
+            bind.column_oracle_type = _oracle_type(oracle, tables, column)
+    operation.selects_star = selects_star(tree)
+    operation.into_columns = select_columns(tree)
+    operation.into_types = [_column_type(registry, tables, c) if c else None for c in operation.into_columns]
+    operation.into_oracle_types = [_oracle_type(oracle, tables, c) if c else None
+                                   for c in operation.into_columns]
+
+
+def _oracle_type(schema, tables: list[str], column: str) -> str | None:
+    """What the Oracle DDL declares the column as, when the statement's tables agree about it."""
+    if schema is None:
+        return None
+    found = {t for table in tables if (t := schema.column(table, column))}
+    return found.pop() if len(found) == 1 else None
+
+
+def _column_type(registry: SchemaRegistry, tables: list[str], column: str) -> str | None:
+    """The column's ScalarDB type, or None when the statement's tables disagree about it."""
+    found = set()
+    for table in tables:
+        meta = registry.get(table)
+        if meta is None:
+            continue
+        for name, kind in meta.columns.items():
+            if name.lower() == column:
+                found.add(kind)
+    return found.pop() if len(found) == 1 else None
 
 
 def read_write_sets(tree: exp.Expression) -> tuple[list[str], list[str]]:
