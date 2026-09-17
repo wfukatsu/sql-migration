@@ -30,6 +30,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out-dir", default="generated")
     parser.add_argument("--package", default="com.example.migrated")
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--handover", action="store_true",
+                        help="write the handover banner instead of 'do not edit'. After handover the "
+                             "regeneration model ends (plan §9) and the code is maintained by hand, so the "
+                             "default banner would tell maintainers not to do the thing they now have to do.")
     args = parser.parse_args(argv)
 
     root = Path(args.root)
@@ -38,6 +42,12 @@ def main(argv: list[str] | None = None) -> int:
     if scalardb is None:
         candidate = root.parent / "scalardb-schema.json"
         scalardb = str(candidate) if candidate.exists() else None
+
+    if args.handover:
+        from datetime import date
+
+        from .gen_java.project import handover_banner
+        handover_banner(date.today().isoformat())
 
     analysis = build_analysis(root, schema, scalardb_schema=scalardb)
     decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), Evidence())
