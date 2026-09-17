@@ -12,6 +12,7 @@ of those out of the SQL would replace a clear conversion error with Java that do
 from __future__ import annotations
 
 import pathlib
+import textwrap
 
 import pytest
 
@@ -110,3 +111,45 @@ def test_a_routine_that_needs_nothing_from_the_caller_keeps_its_signature(corpus
     java = generate_service(module, "g.app", "g.infra", "g.domain").file.render()
     assert "AuditContext" not in java
     assert not any(routine_audit(r) for r in module.routines)
+
+
+# --- what the signature has to match ---------------------------------------------------------------------
+
+AD_HOC = {
+    "USER in a RAISE message": ("""\
+        CREATE OR REPLACE PROCEDURE prc_raise(p_id IN NUMBER) IS
+        BEGIN
+          IF p_id IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'rejected by ' || USER);
+          END IF;
+        END prc_raise;
+        /
+    """, True),
+    "the string literal 'USER'": ("""\
+        CREATE OR REPLACE PROCEDURE prc_literal(p_id IN NUMBER) IS
+          v_kind VARCHAR2(20);
+        BEGIN
+          v_kind := 'USER';
+          UPDATE orders SET note = v_kind WHERE order_id = p_id;
+        END prc_literal;
+        /
+    """, False),
+}
+
+
+@pytest.mark.parametrize("what", sorted(AD_HOC))
+def test_the_signature_provides_exactly_what_the_body_reads(tmp_path_factory, what):
+    """MR !53: both halves of the same defect. The message was a place `needs_audit` did not look, so the body
+    read an `audit` the signature did not declare; the literal was a place it looked too hard, so the
+    signature declared an `audit` the body never read."""
+    source, wants_audit = AD_HOC[what]
+    root = tmp_path_factory.mktemp("audit")
+    (root / "schema.sql").write_text((SRC / "schema.sql").read_text(encoding="utf-8"), encoding="utf-8")
+    name = source.split("PROCEDURE ")[1].split("(")[0].split()[0]
+    (root / f"{name}.prc").write_text(textwrap.dedent(source), encoding="utf-8")
+    analysis = build_analysis(root, root / "schema.sql", scalardb_schema=SCALARDB)
+    module = next(m for m in analysis.program.modules if m.name == name)
+    java = generate_service(module, "g.app", "g.infra", "g.domain").file.render()
+    assert routine_audit(module.routines[0]) is wants_audit
+    assert ("AuditContext audit" in java) is wants_audit, java
+    assert ("audit." in java) is wants_audit, java

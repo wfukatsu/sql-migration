@@ -399,16 +399,16 @@ def _column_scale(statement: M.SqlOperation, index: int) -> int:
     return _scale(oracle[index - 1]) if index - 1 < len(oracle) else 0
 
 
-AUDIT_VALUES = re.compile(r"\b(USER|SYSTIMESTAMP)\b", re.IGNORECASE)
-
-
 def needs_audit(statement: M.SqlOperation) -> bool:
     """Whether this statement's values include one the caller supplies (#1, #8).
 
     Read off the lifted expression, the same way `_uses_sequences` reads `.NEXTVAL`: the value was taken out
     of the SQL by P4-4 and is computed here, so the context it needs is a parameter of this method.
+
+    Asked of the translation, not of the text: `'USER'` is a string, and searching for the word in it grew a
+    parameter into the method signature that nothing in the body read.
     """
-    return any(bind.expression and AUDIT_VALUES.search(bind.expression)
+    return any(bind.expression and translate(bind.expression).audit
                for bind in statement.binds or [])
 
 

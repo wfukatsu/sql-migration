@@ -179,6 +179,47 @@ def test_a_block_without_handlers_is_still_a_block(generated):
     assert "vCopy = vNote;" in java
 
 
+DUPLICATE_SOURCE = """\
+CREATE OR REPLACE PROCEDURE prc_twice IS
+BEGIN
+  DECLARE
+    v_tmp VARCHAR2(10);
+  BEGIN
+    v_tmp := 'a';
+  END;
+  DECLARE
+    v_tmp VARCHAR2(10);
+  BEGIN
+    v_tmp := 'b';
+  END;
+END prc_twice;
+/
+"""
+
+
+def test_two_blocks_may_declare_the_same_name(tmp_path_factory):
+    """MR !53: the declarations were written outside the braces, so both landed in the method's own scope and
+    javac refused the duplicate -- while the tool reported AUTO. A `DECLARE` belongs to its block."""
+    root = tmp_path_factory.mktemp("twice")
+    (root / "schema.sql").write_text((SRC / "schema.sql").read_text(encoding="utf-8"), encoding="utf-8")
+    (root / "prc_twice.prc").write_text(DUPLICATE_SOURCE, encoding="utf-8")
+    analysis = build_analysis(root, root / "schema.sql", scalardb_schema=SCALARDB)
+    module = next(m for m in analysis.program.modules if m.name == "prc_twice")
+    java = generate_module(module, "g.app", "g.infra", "g.domain").file.render()
+    body = java[java.index("public void prcTwice("):]
+    assert body.count("String vTmp = null;") == 2, java
+    # each one inside its own braces: the declaration follows the block's `{`, it does not precede it
+    for part in body.split("String vTmp = null;")[:-1]:
+        assert part.rstrip().endswith("{"), java
+
+
+def test_a_block_declaration_stays_visible_to_its_own_handler(generated):
+    """The braces are the block's, not the `try`'s: a name declared inside `try` is not visible from `catch`."""
+    java = generated.file.render()
+    declared = java.index("String vNote = null;")
+    assert declared < java.index("try {") < java.index("vNote = 'none'".replace("'", '"'))
+
+
 def test_the_ir_round_trips_through_the_serialiser(nightly):
     program = M.Program(id="p", kind="Program", modules=[
         M.Module(id="m", kind="Module", name="m", routines=[nightly])])
