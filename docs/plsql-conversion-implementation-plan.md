@@ -224,6 +224,11 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 
 **Phase 3 完了条件**: AUTO 対象の意味的同等性テストが 100%、REVIEW 対象は差分理由を説明できる。
 
+> **達成（2026-09-17）。完了報告は `docs/plsql-phase3-completion.md`。**
+> AUTO 14 本が両金額規約で Oracle と完全一致。KPI-1〜5 は目標を満たし、**KPI-6（人手修正時間）は未計測で
+> 未達**——枠組みは用意したが、値は人が REVIEW を実際に消化しないと出ない。数字を作って埋めてはいない。
+> 全ての数値は合成 corpus 上のものであり、実案件耐性の証拠ではない。
+
 #### P3-4 実施結果（2026-09-17）
 
 `runtime-java` の `TransactionIT` が 7 本。capture は transaction が終わった後に採るので、途中で commit した
