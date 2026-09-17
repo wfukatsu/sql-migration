@@ -1,0 +1,33 @@
+{
+ "scenario": "shipment_is_shippable_missing",
+ "unit": "pkg_shipment",
+ "routine": "is_shippable",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": {
+  "code": -20070,
+  "message": "ORA-20070: order not found: 9999"
+ },
+ "tables": {
+  "orders": {
+   "columns": [
+    "order_id",
+    "customer_id",
+    "status",
+    "ordered_at",
+    "shipped_at",
+    "total_amount",
+    "note"
+   ],
+   "rows": []
+  }
+ },
+ "masked": {}
+}

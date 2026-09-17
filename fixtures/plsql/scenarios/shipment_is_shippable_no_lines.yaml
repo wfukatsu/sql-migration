@@ -1,0 +1,17 @@
+name: shipment_is_shippable_no_lines
+unit: pkg_shipment
+routine: is_shippable
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'GOLD', NULL, DATE '2025-04-01')
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1001, 1, 'CONFIRMED', TIMESTAMP '2026-01-10 11:00:00', NULL, NULL)
+call:
+  kind: function
+  name: pkg_shipment.is_shippable
+  args:
+    p_order_id: 1001
+  returns: VARCHAR2
+capture_tables:
+- orders
+note: P4-1。COUNT(*) が 0 の分岐。private の line_count を通る唯一の経路

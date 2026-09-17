@@ -1,0 +1,17 @@
+name: tier_set_credit_limit
+unit: pkg_tier_admin
+routine: set_credit_limit
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'GOLD', 100000.00, DATE '2025-04-01')
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (2, 'Beta', NULL, 'BRONZE', NULL, DATE '2025-04-01')
+call:
+  kind: procedure
+  name: pkg_tier_admin.set_credit_limit
+  args:
+    p_customer_id: 1
+    p_limit: 250000.50
+capture_tables:
+- customers
+note: P4-1。NULL の行が触られないこと、小数 2 桁が保たれることを見る
