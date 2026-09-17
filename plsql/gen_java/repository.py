@@ -18,7 +18,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import contextvars
+
 from ..ir import model as M
+from ..limits import Limits
 from ..lower import _walk
 from .emit import JavaFile
 from .expr import translate
@@ -38,8 +41,16 @@ class RepositoryFile:
 
 LOOP_ROW_SUFFIX = "Row"
 
+# 走査行数の上限。生成の 1 回につき 1 つで、routine ごとの上書きは Limits が持つ（P4-5 の続き、2026-09-17）
+_LIMITS: "contextvars.ContextVar[Limits]" = contextvars.ContextVar("limits", default=Limits())
 
-def _loop_rows(file: JavaFile, name: str, loop: M.Loop, result: RepositoryFile, domain_package: str) -> None:
+
+def set_limits(limits: Limits) -> None:
+    _LIMITS.set(limits)
+
+
+def _loop_rows(file: JavaFile, name: str, loop: M.Loop, result: RepositoryFile, domain_package: str,
+               routine_id: str | None = None) -> None:
     """A cursor FOR loop's query, as a method returning every row.
 
     Every row, not a streaming cursor. An Oracle cursor holds its position across the transaction; ScalarDB has
@@ -52,6 +63,7 @@ def _loop_rows(file: JavaFile, name: str, loop: M.Loop, result: RepositoryFile, 
     file.add_import(f"{domain_package}.{record}", "java.util.ArrayList", "java.util.HashMap",
                     "java.util.List", "java.util.Map", "com.scalar.migrate.runtime.Residual")
     parameters, _ = _parameters(file, statement)
+    limit = _LIMITS.get().for_routine(routine_id) if routine_id else None
     sql = statement.target_sql[0] if statement.target_sql else statement.original_sql
     with file.block(f"public List<{record}> {name}({', '.join(parameters)}) throws SQLException") as f:
         f.line(f'String sql = "{_escape(sql)}";')
@@ -67,6 +79,13 @@ def _loop_rows(file: JavaFile, name: str, loop: M.Loop, result: RepositoryFile, 
                 h.line("statement.setObject(i + 1, values.get(i));")
             with g.block("try (ResultSet rows_ = statement.executeQuery())") as g2:
                 with g2.block("while (rows_.next())") as g3:
+                    if limit is not None:
+                        # 読みながら数える。全部読んでから数えると、止める前にメモリを使い切っている
+                        g3.comment(f"走査行数の上限: {_LIMITS.get().explain(routine_id)}")
+                        with g3.block(f"if (rows.size() >= {limit})") as g4:
+                            g4.line(f'throw new IllegalStateException("{name}: 走査行数が上限 {limit} 行を'
+                                    f'超えた。上限は limits.yaml で決める。生成コードは cursor の行を先に'
+                                    f'全部読むので、ここで止めないとメモリを使い切る");')
                     arguments = ", ".join(
                         _into_java(file, statement, i) for i in range(1, len(statement.into_columns or []) + 1))
                     g3.line(f"rows.add(new {record}({arguments}));")
@@ -119,7 +138,7 @@ def generate_module(module: M.Module, package: str, domain_package: str) -> Repo
                     if statement.target_status == "ERROR":
                         _unsupported(f, loop_method(routine, loop), statement, result)
                     else:
-                        _loop_rows(f, loop_method(routine, loop), loop, result, domain_package)
+                        _loop_rows(f, loop_method(routine, loop), loop, result, domain_package, routine.id)
                     continue
                 _method(f, routine, statement, result)
     return result
