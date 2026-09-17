@@ -119,6 +119,7 @@
        },
        "sqlKind": "INSERT",
        "originalSql": "INSERT INTO customers (customer_id, name, email, tier, registered_on)\n    VALUES (p_customer_id, p_name, p_email, NVL(p_tier, 'BRONZE'), SYSDATE)",
+       "selects_star": false,
        "cardinality": "UNKNOWN"
       }
      ],
@@ -199,6 +200,7 @@
        },
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE customers SET email = p_email WHERE customer_id = p_customer_id",
+       "selects_star": false,
        "cardinality": "UNKNOWN"
       },
       {
@@ -291,6 +293,7 @@
        },
        "sqlKind": "DELETE",
        "originalSql": "DELETE FROM customers WHERE customer_id = p_customer_id",
+       "selects_star": false,
        "cardinality": "UNKNOWN"
       }
      ],
@@ -378,6 +381,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT name INTO v_name FROM customers WHERE customer_id = p_customer_id",
+       "selects_star": false,
        "cardinality": "UNKNOWN"
       },
       {

@@ -248,24 +248,58 @@ fixture の転記が 2 本になり、差分が「DB の違い」ではなく「
 スケールの明示が要る）か (b) DOUBLE（変換器の既定。金額に丸め差が出るので、それ自体が PoC の所見になる）。
 金額の正確性は本 PoC の主題に直結するため、勝手に倒さず決定を仰ぐ。
 
-#### P3-1 で判明した最大の所見: 生成コードは H2 では動くが ScalarDB へ自分の数値型を渡せない
+#### P3-1 の最大の所見と、その修正: 生成コードは H2 では動くが ScalarDB へ自分の数値型を渡せなかった
 
-DOUBLE 系統で 52/59 を採取したところ、**うち 33 本が `DB-SQL-10016: The type java.math.BigDecimal is not
+DOUBLE 系統で最初に 52 本採取したとき、**うち 33 本が `DB-SQL-10016: The type java.math.BigDecimal is not
 supported` で失敗した**。生成 Repository は PL/SQL の `NUMBER` を `BigDecimal` に写し、`setObject` でそのまま
-束縛する。H2 はこれを受け取るので P2-11 は通っていたが、ScalarDB SQL の JDBC ドライバは受け取らない。
+束縛していた。H2 はこれを受け取るので P2-11 は通っていたが、ScalarDB SQL の JDBC ドライバは受け取らない。
 
-これは金額の型の話ではなく、**生成器が束縛境界で ScalarDB の列型へ変換していない**という欠落である。
-P2-11 が H2 を driver にしていたために見えなかった種類の差で、「compile が通ることは意味が保存されている
-証拠にならない」の次の段として「H2 で通ることは ScalarDB で動く証拠にならない」が要ることを示している。
+金額の型の話ではなく、**生成器が束縛境界で ScalarDB の列型へ変換していない**という欠落だった。P2-11 が H2 を
+driver にしていたために見えなかった種類の差で、「compile が通ることは意味が保存されている証拠にならない」の
+次の段として「**H2 で通ることは ScalarDB で動く証拠にならない**」が要ることを示している。
 
-残り 19 本の内訳は 18 本が生成器の意図的な拒否（cursor FOR loop / 動的 SQL / FORALL / sequence）、
-1 本が `ClassCastException`。拒否分は REVIEW / REDESIGN 判定どおりで、P3-2 の一致対象ではない。
+修正は束縛境界に codec を入れることで、これが scaled 系統（`BIGINT ×10^2`）の実装と同じ場所になった:
 
-**この修正は scaled 系統（BIGINT x10^2）と同じ境界に入る。** 読み出し時に列のスケールを戻し、束縛時に
-列型へ変換する codec を Repository 生成器に入れれば、double 系統は `doubleValue()`、scaled 系統は
-`movePointRight(scale).longValueExact()` として同じ仕組みで両方を測れる。corpus の生成 SQL は金額列を
-素の select 項目・素の SET 対象・VALUES の位置・`SUM(amount)` としてしか使っておらず、DB 内での金額演算が
-無いため、束縛と列の対応は生成時に静的に決められる。
+- `plsql/columns.py` が、各 bind と各 select 項目を**ちょうど 1 つの列に帰属できるとき**だけ帰属させる。
+  `WHERE unit_price * :rate > 10` のように式の中の bind は帰属させない。値がもはや 1 列に属しておらず、
+  属するふりをするのが「黙って間違った変換」の起き方だから。57/68 の bind が帰属した。
+- スケールは**列の宣言型**から取る。変数の型ではない（`v_total NUMBER` を `NUMBER(14,2)` 列へ入れれば cents）。
+  そのために `SymbolTable` が Oracle DDL を持ち歩くようにした。
+- `Plsql.bind` / `Plsql.read` が列型に応じて変換する。scaled なら `×10^2` の整数、double なら `doubleValue()`。
+  **丸めは half-up**: Oracle が `NUMBER(p,s)` へ格納するときの挙動であり、corpus は実際にそれに依存して
+  `1234.565` を `NUMBER(14,2)` へ入れている。ここで拒否するのは再現対象の DB より厳しく、別種の誤りになる。
+
+系統ごとに生成し直す必要がある（同じ `NUMBER(12,2)` が一方では scaled BIGINT、他方では DOUBLE になるため）。
+1 度生成して 2 度走らせると、一方の規約のコードを他方の規約の表に対して測ることになり、何も測らないより悪い
+——結果に見えてしまう。`difftest/plsql_capture.py --variant scaled|double` が生成・setup 変換・実行を通す。
+
+#### P3-1 で併せて直した 2 件の silent-wrong-answer
+
+- **`SELECT * INTO v_row`（`%ROWTYPE`）が列 1 だけを読んでいた。** Repository は単一 INTO ターゲットの経路で
+  `rows.getObject(1)` を返し、呼び出し側が row DTO へキャストしていた。DTO 型が違ったので
+  `ClassCastException` として露見したが、型がたまたま合えば黙って違う行を返す種類の誤りだった。
+  `SELECT *` を DDL の列順に展開し、全列から record を構築するようにした。展開順・record の component 順・
+  読み出し順が同じ DDL 由来で一致する（どこも順序を再導出しない）。
+- **整数列の読み過ぎ。** codec の初版が `NUMBER(9)` 列まで `BigDecimal` に包み、`Long` 宣言の変数へ渡して
+  いた。`BigDecimal` に写る列だけを包むようにした。
+
+#### P3-1 最終結果（両系統）
+
+| | scaled (`BIGINT ×10^2`) | double |
+|---|---|---|
+| capture 採取 | 52/59 | 52/59 |
+| うち完走 | 20 | 20 |
+| うち業務例外（`MigratedException`） | 8 | 8 |
+| うち生成器の意図的な拒否 | 24 | 24 |
+| 想定外の失敗 | **0** | **0** |
+
+採取できなかった 7 本は両系統共通で、trigger 4 本と `pkg_customer_import.import`（生成器が意図的に拒否）、
+setup の `SYSTIMESTAMP` 2 本（ScalarDB SQL で書けず、変換器が正しく拒否）。
+
+**金額の規約は、どのシナリオが走るかを変えなかった。** 差が出るとすれば値であり、それは P3-2 が Oracle の
+capture と突き合わせて初めて言えることなので、ここでは主張しない。
+
+P3-1 の過程で見つかり、この場で直したもの:
 
 P3-1 の過程で見つかり、この場で直したもの:
 

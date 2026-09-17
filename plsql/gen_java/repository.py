@@ -42,6 +42,7 @@ def generate_module(module: M.Module, package: str, domain_package: str) -> Repo
     result = RepositoryFile(file=file)
     file.add_import(CONNECTION_IMPORT, "java.sql.PreparedStatement", "java.sql.ResultSet", "java.sql.SQLException")
     file.add_import(f"{domain_package}.NoDataFoundException", f"{domain_package}.TooManyRowsException")
+    file.domain_package = domain_package  # _row needs it to import the %ROWTYPE record
 
     file.comment(
         f"SQL of {module.name}.\n"
@@ -89,7 +90,7 @@ def _direct(file: JavaFile, name: str, statement: M.SqlOperation, result: Reposi
         f.line(f'String sql = "{_escape(sql)}";')
         f.line("Map<String, Object> params = new HashMap<>();")
         for bind in statement.binds:
-            f.line(f'params.put("{bind.name}", {java_name(bind.name)});')
+            f.line(f'params.put("{bind.name}", {_bound(file, bind)});')
         f.line("List<Object> values = new ArrayList<>();")
         f.line("String bound = Residual.bindNamed(sql, params, values);")
         with f.block("try (PreparedStatement statement = connection.prepareStatement(bound))") as g:
@@ -104,6 +105,16 @@ def _direct(file: JavaFile, name: str, statement: M.SqlOperation, result: Reposi
                 if returns != "void":
                     g.line("return null;")
     result.methods.append(name)
+
+
+def _rowtype_read(statement: M.SqlOperation) -> bool:
+    """One INTO target fed by more than one column: a %ROWTYPE read.
+
+    The single-target path would return column 1 and let the caller cast it, which is a wrong answer that only
+    shows up when the DTO type happens to differ. The row has to be built from every column instead, in the
+    order the DDL declares -- which is the order `dto.row_record` gives the record's components.
+    """
+    return len(statement.into_targets) == 1 and len(statement.into_columns or []) > 1
 
 
 def _select_into(file: JavaFile, reader: str, statement: M.SqlOperation) -> None:
@@ -132,6 +143,19 @@ def _planned(file: JavaFile, name: str, statement: M.SqlOperation, result: Repos
     result.planned.append(statement.id)
 
 
+def _refuse(file: JavaFile, name: str, statement: M.SqlOperation, result: RepositoryFile, reason: str) -> None:
+    """Keep the signature the call site expects, and throw instead of answering."""
+    parameters, _ = _parameters(file, statement)
+    returns, _ = _return(file, statement)
+    returns = "Object" if returns == "void" else returns
+    with file.block(f"public {returns} {name}({', '.join(parameters)}) throws SQLException") as f:
+        f.comment("the generator refuses this statement:")
+        f.comment(f"    {reason}")
+        f.line(f'throw new UnsupportedOperationException("{_escape(reason)}");')
+    result.methods.append(name)
+    result.unsupported.append(statement.id)
+
+
 def _unsupported(file: JavaFile, name: str, statement: M.SqlOperation, result: RepositoryFile) -> None:
     """The method exists with the signature it would have had, and throws.
 
@@ -151,6 +175,74 @@ def _unsupported(file: JavaFile, name: str, statement: M.SqlOperation, result: R
     result.unsupported.append(statement.id)
 
 
+NUMERIC_STORAGE = ("BIGINT", "INT", "DOUBLE", "FLOAT")
+
+
+def _scale(oracle_type: str | None) -> int:
+    """How many decimals the column keeps when it is stored as an integer, per the Oracle type."""
+    return java_type(oracle_type).scale or 0
+
+
+def _bound(file: JavaFile, bind: M.BindVariable) -> str:
+    """The expression that binds this value.
+
+    The column's ScalarDB type comes from the schema that was actually loaded, not from the Oracle type, because
+    the same NUMBER(12,2) is a scaled BIGINT under one money convention and a DOUBLE under the other. A bind the
+    analysis could not attribute to exactly one column is passed through unchanged -- the old behaviour, which is
+    right when there is nothing better to say.
+    """
+    name = java_name(bind.name)
+    if not bind.scalardb_type:
+        return name
+    file.add_import("com.scalar.migrate.plsql.Plsql")
+    return f'Plsql.bind({name}, "{bind.scalardb_type}", {_scale(bind.column_oracle_type)})'
+
+
+def _read(file: JavaFile, statement: M.SqlOperation, index: int) -> str:
+    """The expression that reads select item `index` (1-based) back as a PL/SQL value.
+
+    Only a column whose PL/SQL type is BigDecimal is converted. A `NUMBER(9)` column comes back from JDBC as the
+    Integer or Long the generated code already expects, and wrapping it would hand a BigDecimal to a variable
+    declared Long -- which is a cast failure at run time, not a fix.
+    """
+    raw = f"rows.getObject({index})"
+    types = statement.into_types or []
+    kind = types[index - 1] if index - 1 < len(types) else None
+    oracle = (statement.into_oracle_types or [])
+    declared = oracle[index - 1] if index - 1 < len(oracle) else None
+    if kind not in NUMERIC_STORAGE or java_type(declared).name != "BigDecimal":
+        return raw
+    file.add_import("com.scalar.migrate.plsql.Plsql")
+    return f'Plsql.read({raw}, "{kind}", {_column_scale(statement, index)})'
+
+
+def _row(file: JavaFile, statement: M.SqlOperation) -> str:
+    """Construct the %ROWTYPE record from every column, positionally.
+
+    The record's components are generated from the same DDL, in the same order (`dto.row_record`), and the star
+    was expanded into that order too, so position i of the result is component i. Nothing here re-derives the
+    order; it is the one place all three agree by construction.
+    """
+    table = (statement.read_set or [None])[0]
+    record = java_class_name(table) + "Row"
+    file.add_import(f"{getattr(file, 'domain_package', '')}.{record}")
+    arguments = []
+    for i, oracle in enumerate(statement.into_oracle_types or [], start=1):
+        mapped = java_type(oracle)
+        file.add_import(*mapped.imports)
+        arguments.append(f"({mapped.name}) {_read(file, statement, i)}")
+    return f"new {record}({', '.join(arguments)})"
+
+
+def _column_scale(statement: M.SqlOperation, index: int) -> int:
+    """A BIGINT holding a value the DDL declared with decimals is holding it scaled; anything else is as it is."""
+    kind = (statement.into_types or [])[index - 1] if index - 1 < len(statement.into_types or []) else None
+    if kind not in ("BIGINT", "INT"):
+        return 0
+    oracle = statement.into_oracle_types or []
+    return _scale(oracle[index - 1]) if index - 1 < len(oracle) else 0
+
+
 def _parameters(file: JavaFile, statement: M.SqlOperation) -> tuple[list[str], list[str]]:
     parameters, arguments = [], []
     for bind in statement.binds:
@@ -165,10 +257,12 @@ def _return(file: JavaFile, statement: M.SqlOperation) -> tuple[str, str]:
     if (statement.sql_kind or "").upper() in ("INSERT", "UPDATE", "DELETE", "MERGE"):
         return "int", ""   # SQL%ROWCOUNT is part of the behaviour
     if statement.into_targets:
+        if _rowtype_read(statement):
+            return "Object", _row(file, statement)
         if len(statement.into_targets) == 1:
-            return "Object", "rows.getObject(1)"
+            return "Object", _read(file, statement, 1)
         return "Object[]", "new Object[] {" + ", ".join(
-            f"rows.getObject({i})" for i in range(1, len(statement.into_targets) + 1)) + "}"
+            _read(file, statement, i) for i in range(1, len(statement.into_targets) + 1)) + "}"
     return "void", ""
 
 

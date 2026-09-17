@@ -119,6 +119,10 @@ class SymbolTable:
     overloads: dict[str, list[Symbol]] = field(default_factory=dict)
     unresolved: list[Issue] = field(default_factory=list)
     schema_snapshot: str | None = None
+    # the Oracle DDL this table was built against. The SQL bridge needs it to say what a column's declared type
+    # is -- which decides a money column's scale, and the ScalarDB schema cannot answer because it only holds
+    # the target type the column was mapped to.
+    oracle_schema: "OracleSchema | None" = None
 
     def resolve(self, scope_id: str, name: str) -> Symbol | None:
         scope = self.scopes.get(scope_id)
@@ -143,7 +147,7 @@ def build(parsed: ParsedFile, schema: OracleSchema | None = None,
 
     `public_names` carries the routine names a package specification exposed, so a body can mark visibility.
     """
-    table = SymbolTable(schema_snapshot=schema.snapshot if schema else None)
+    table = SymbolTable(schema_snapshot=schema.snapshot if schema else None, oracle_schema=schema)
     for unit in parsed.units:
         if unit.tree is None:
             continue
