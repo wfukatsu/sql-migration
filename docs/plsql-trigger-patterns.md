@@ -105,8 +105,9 @@ BEFORE INSERT ON orders FOR EACH ROW WHEN (NEW.order_id IS NULL)
 BEGIN :NEW.order_id := seq_order_id.NEXTVAL; END;
 ```
 
-ScalarDB に順序オブジェクトは無い。採番方式は
-`docs/plsql-transaction-patterns.md` の D で決める（番号に意味があるか／欠番を許すか／順序を保つか）。
+ScalarDB に順序オブジェクトは無い。**採番方式は決まっている**（2026-09-17、計画 §9）——代理キーは
+hi/lo、業務上意味のある番号は counters 表 + 再試行。`docs/plsql-transaction-patterns.md` の D を見ること。
+`orders.order_id` は注文番号なので**後者**である。
 
 trigger 固有の論点は **`WHEN (NEW.order_id IS NULL)`** で、「呼び出し側が指定したならそれを使う」
 という意味である。Service でも同じにすること——**常に採番すると、指定した ID が黙って無視される**。
