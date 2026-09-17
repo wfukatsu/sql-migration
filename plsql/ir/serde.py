@@ -52,6 +52,7 @@ _CAMEL = {
     "into_oracle_types": "intoOracleTypes", "scalardb_type": "scalardbType",
     "column_oracle_type": "columnOracleType",
     "expression": "expression",
+    "variants": "variants",
 }
 _SNAKE = {v: k for k, v in _CAMEL.items()}
 
@@ -64,6 +65,8 @@ def to_dict(value: Any) -> Any:
     if isinstance(value, (SourceRange, Issue)) or is_dataclass(value):
         out: dict[str, Any] = {}
         for f in fields(value):
+            if f.name == "variant_statements":
+                continue  # derived, and `variants` already says what it is derived from
             item = getattr(value, f.name)
             if item is None or (isinstance(item, (list, dict)) and not item):
                 continue  # keep documents small; absence and emptiness mean the same thing here
