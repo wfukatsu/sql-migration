@@ -57,6 +57,12 @@ def judge(path: pathlib.Path, schema: OracleSchema, ruleset: RuleSet):
     ("goto.sql", "LOWER-002", "REDESIGN"),
     ("write_then_scan.sql", "TX-004", "REDESIGN"),
     ("recursive.sql", "RECUR-001", "REVIEW"),
+    # P4-3: the boundary of what the recorded Oracle evidence covers. Each of these is a date construct the
+    # fixture does not answer for, so each must still reach a person.
+    ("timezone_dependent.sql", "SEM-002", "REVIEW"),
+    ("clock_read_twice.sql", "SEM-007", "REVIEW"),
+    ("nls_date_format.sql", "SEM-008", "REVIEW"),
+    ("timestamp_cast_to_date.sql", "SEM-009", "REVIEW"),
 ])
 def test_the_prohibition_fires_on_its_case(schema, ruleset, case: str, rule_id: str, verdict: str):
     decisions, fired = judge(CASES / case, schema, ruleset)
