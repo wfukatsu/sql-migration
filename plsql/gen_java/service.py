@@ -18,10 +18,11 @@ let anyone forget. Three rules shape the output:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
 import contextvars
+import dataclasses
 import re
+
+from dataclasses import dataclass, field
 
 from ..ir import model as M
 from ..lower import _walk
@@ -76,7 +77,11 @@ def generate_module(module: M.Module, package: str, repository_package: str,
     return result
 
 
-AUDIT_VALUES = re.compile(r"\b(USER|SYSTIMESTAMP)\b", re.IGNORECASE)
+# text a statement carries that is not an expression: ids and classifications, and the SQL, whose own values
+# are the repository's business (`repository.needs_audit` reads the binds lifted out of it)
+NOT_AN_EXPRESSION = {"id", "kind", "sql_kind", "loop_kind", "cardinality", "label", "direction", "name",
+                     "callee", "resolved_to", "original_sql", "target_sql", "cursor", "not_found_flag",
+                     "exception_name", "variable", "source_range"}
 
 
 def needs_audit(routine: M.Routine) -> bool:
@@ -84,17 +89,36 @@ def needs_audit(routine: M.Routine) -> bool:
 
     Both places count: an expression the routine evaluates itself (`v := SYSTIMESTAMP`), and one lifted out
     of a statement's SQL (P4-4), which the repository computes but the service has to hand it the context for.
+
+    The answer comes from **translating** the text, not from searching it. A regular expression cannot tell
+    `USER` from `'USER'`, and it grew a signature parameter no one read out of a string literal. It also has
+    to be asked of the right attributes, and the list of them was short by one -- `RAISE`'s message -- which
+    made a body reference `audit` that the signature did not provide: Java that does not compile. Every text
+    a statement carries is translated instead, less the ones that are not expressions, so a node added to the
+    IR is covered the day it arrives rather than the day someone remembers to add it here.
     """
     for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
-        for text in [getattr(statement, "expression", None), getattr(statement, "condition", None)] + \
-                [b.expression for b in getattr(statement, "binds", None) or []] + \
-                [a for a in getattr(statement, "arguments", None) or []]:
-            if isinstance(text, str) and AUDIT_VALUES.search(text):
-                return True
-        for branch in getattr(statement, "branches", []) or []:
-            if branch.condition and AUDIT_VALUES.search(branch.condition):
+        for text in _expression_texts(statement):
+            if translate(text).audit:
                 return True
     return False
+
+
+def _expression_texts(statement: M.Statement):
+    for field in dataclasses.fields(statement):
+        if field.name in NOT_AN_EXPRESSION:
+            continue
+        value = getattr(statement, field.name, None)
+        if isinstance(value, str):
+            yield value
+        elif isinstance(value, list):
+            yield from (item for item in value if isinstance(item, str))
+    for bind in getattr(statement, "binds", None) or []:
+        if bind.expression:
+            yield bind.expression
+    for branch in getattr(statement, "branches", []) or []:
+        if branch.condition:
+            yield branch.condition
 
 
 def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]:
@@ -368,19 +392,25 @@ def _block(file: JavaFile, statement: M.Block, routine: M.Routine, result: Servi
     Its handlers catch only what its own body raises, which is what the PL/SQL said and what the hoisting
     this replaces could not express. Without handlers it is a bare block, which still matters: a `DECLARE`
     inside it scopes its names the way PL/SQL does.
+
+    The declarations go **inside** the braces. A `DECLARE` name belongs to its block and nowhere else, so
+    writing it outside gave it the whole method instead, and two blocks declaring the same name produced a
+    Java duplicate declaration -- code that does not compile, reported as `AUTO`. The braces are the block's
+    own, not the `try`'s: a handler reads the block's variables, and a name declared inside `try` is not
+    visible from `catch`.
     """
     outer = _BLOCK_LOCALS.get()
     _BLOCK_LOCALS.set({**outer, **{d.name: java_name(d.name) for d in statement.declarations}})
     try:
-        for declaration in statement.declarations:
-            _declaration(file, declaration, routine, result)
-        if not statement.exception_handlers:
-            with file.block("") as f:
+        with file.block("") as scope:
+            for declaration in statement.declarations:
+                _declaration(scope, declaration, routine, result)
+            if not statement.exception_handlers:
+                _statements(scope, statement.body, routine, result)
+                return
+            with scope.block("try") as f:
                 _statements(f, statement.body, routine, result)
-            return
-        with file.block("try") as f:
-            _statements(f, statement.body, routine, result)
-        _handlers(file, statement.exception_handlers, routine, result, _DOMAIN.get() or "")
+            _handlers(scope, statement.exception_handlers, routine, result, _DOMAIN.get() or "")
     finally:
         _BLOCK_LOCALS.set(outer)
 
