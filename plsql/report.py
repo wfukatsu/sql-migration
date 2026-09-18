@@ -20,6 +20,7 @@ from pathlib import Path
 
 from .frontend import ParsedFile, coverage, parse_file
 from .ir import model as M, serde
+from . import rmw
 from .limits import RowLocks
 from .lower import _walk, lower_file
 from .source import Issue
@@ -118,6 +119,9 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
         from scalardb_migrate.schema import SchemaRegistry
 
         registry = SchemaRegistry.from_schema_loader_json(str(scalardb_schema))
+        # #9: 記録された routine の RMW（`SET c = c + x`）を、読み + 書きの 2 文へ割る。capability の
+        # 前に行う——割った結果を、他の文と同じように変換して判定させるためである
+        rmw.rewrite(program, row_locks, schema, analysis.symbol_table())
         analysis.capability = check(program, registry, analysis.symbol_table(), schema=schema,
                                     row_locks=row_locks)
         annotate(program, analysis.capability)
