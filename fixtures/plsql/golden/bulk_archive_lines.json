@@ -9,6 +9,7 @@
    "seq_tx_id": 1
   }
  },
+ "sessionUser": "SOURCE",
  "result": {
   "returned": null,
   "out": {}

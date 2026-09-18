@@ -9,6 +9,7 @@
    "seq_order_id": 1000
   }
  },
+ "sessionUser": "SOURCE",
  "result": {
   "returned": null,
   "out": {}
