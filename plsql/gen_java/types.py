@@ -25,6 +25,7 @@ RECORD = re.compile(r"^RECORD\((.*)\)$", re.IGNORECASE | re.DOTALL)
 
 # Java types that need an import
 IMPORTS = {
+    "List": "java.util.List",
     "BigDecimal": "java.math.BigDecimal",
     "LocalDateTime": "java.time.LocalDateTime",
     "LocalDate": "java.time.LocalDate",
@@ -45,7 +46,8 @@ class JavaType:
 
     @property
     def imports(self) -> set[str]:
-        return {IMPORTS[self.name]} if self.name in IMPORTS else set()
+        """`List<BigDecimal>` は 2 つ要る。名前をそのまま引くだけだと、総称型のときに 0 個になる。"""
+        return {IMPORTS[part] for part in re.findall(r"\w+", self.name) if part in IMPORTS}
 
     @property
     def is_scaled(self) -> bool:
@@ -53,6 +55,9 @@ class JavaType:
 
 
 UNKNOWN = JavaType("Object", "TEXT", note="type not resolved; the generator must not guess")
+
+# `TABLE OF <type>`: symbol table がコレクション型をこの形に解決する（`RECORD(...)` と同じ考え方）
+COLLECTION = re.compile(r"^TABLE\s+OF\s+(?P<element>.+)$", re.IGNORECASE | re.DOTALL)
 
 
 def java_type(oracle: str | None, *, money: bool = False) -> JavaType:
@@ -111,6 +116,16 @@ def java_type(oracle: str | None, *, money: bool = False) -> JavaType:
         return JavaType("Integer", "INT")
     if upper.startswith(("FLOAT", "REAL")):
         return JavaType("Double", "DOUBLE")
+    collection = COLLECTION.match(written)
+    if collection:
+        # `TYPE t IS TABLE OF NUMBER(19)` は Java では要素の List である。要素の型が分からなければ
+        # `List<Object>` にはせず Object のままにする——`List` と書けることと、中身が何か分かって
+        # いることは別である
+        element = java_type(collection.group("element"), money=money)
+        if element is UNKNOWN or element.name == "Object":
+            return JavaType("Object", "TEXT", note=f"collection of an unmapped type: {written!r}")
+        return JavaType(f"List<{element.name}>", element.storage, scale=element.scale,
+                        note="PL/SQL のコレクション。呼び出し側が渡す")
     if RECORD.match(written):
         return JavaType("Object", "TEXT", note="%ROWTYPE: generated as a record, see dto.py")
     return JavaType("Object", "TEXT", note=f"no mapping for {written!r}")

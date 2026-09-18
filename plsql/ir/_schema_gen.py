@@ -36,7 +36,8 @@ _DEFS = {
     "typeRef": {
         "type": "object", "required": ["oracle"],
         "properties": {"oracle": {"type": "string"}, "resolved": {"type": ["string", "null"]},
-                       "origin": {"enum": ["declared", "rowtype", "record", "column-type", "inferred", "unresolved"]},
+                       "origin": {"enum": ["declared", "rowtype", "record", "collection", "column-type",
+                                           "inferred", "unresolved"]},
                        "schemaSnapshot": {"type": ["string", "null"]},
                        "nullable": {"type": ["boolean", "null"]}},
         "additionalProperties": False},
