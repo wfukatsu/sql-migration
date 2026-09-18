@@ -41,6 +41,8 @@ _ROWCOUNT_SEEN: "contextvars.ContextVar[bool]" = contextvars.ContextVar("rowcoun
 # P4-5: `FOR r IN (SELECT qty, ...)` puts `r` in scope for the body, and the translator turns `r.qty` into the
 # record accessor `r.qty()`. Kept apart from the routine's own names so a nested loop restores the outer one.
 _LOOP_ROWS: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("loop_rows", default={})
+# handler の中だけで意味を持つ名前（`SQLCODE`）。catch が束ねている例外から読む
+_HANDLER_ERROR: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("handler", default={})
 
 
 @dataclass
@@ -293,7 +295,15 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
         caught_already.add(caught)
         file.comment(comment)
         with file.block(f"catch ({caught} e)") as f:
-            _statements(f, handler.body, routine, result)
+            # handler の中の `SQLCODE` は「いま処理している例外の番号」である。catch が束ねている
+            # 例外がそれを持っているので、そこから読む。handler の外では 0 なので、外では置かない
+            # ——「いつでも 0」を名前として与えると、handler の外の `SQLCODE` が黙って通る
+            outer = _HANDLER_ERROR.get()
+            _HANDLER_ERROR.set({"SQLCODE": "e.code()", "sqlcode": "e.code()"})
+            try:
+                _statements(f, handler.body, routine, result)
+            finally:
+                _HANDLER_ERROR.set(outer)
 
 
 def _always_throws(statement: M.Statement, result: ServiceFile) -> bool:
@@ -819,7 +829,8 @@ def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "Service
     different semantics. Refusing turns the statement into a `throw` with the original next to it, which the
     compiler accepts and a reviewer can act on. Emitting it anyway is the one outcome that helps nobody.
     """
-    names = {**_scope(routine, module or _MODULE.get()), **_BLOCK_LOCALS.get(), **_LOOP_ROWS.get()}
+    names = {**_scope(routine, module or _MODULE.get()), **_BLOCK_LOCALS.get(), **_LOOP_ROWS.get(),
+             **_HANDLER_ERROR.get()}
     names.update({f"{flag}%notfound": _flag_name(flag) for flag in _not_found_flags(routine)})
     rendered = translate(text, names)
     for name in rendered.unknown:
