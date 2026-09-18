@@ -137,9 +137,12 @@ rules:
       - row_limit
       - performance
 
+  # 書き換えたあとの形に合わせてある（#14 / 2026-09-18）。`FETCH ... BULK COLLECT INTO v LIMIT n`
+  # は「n 件ずつ**配る**ループ」になり、行は先にまとめて読む。**LIMIT はもうメモリを守っていない**
+  # ——守るのは走査行数の上限なので、この規則が要求するのは今も row_limit である
   - id: BULK-003
-    match: {statementKind: Fetch, hasDiagnostic: BULK_COLLECT}
+    match: {statementKind: Loop, hasDiagnostic: BULK_CHUNKED}
     decision: REVIEW
-    message: BULK COLLECT は LIMIT とメモリ上限が要ります
+    message: 分割読みは行をまとめて読む形になりました。メモリを守るのは LIMIT ではなく走査行数の上限です
     requiredTests:
       - row_limit

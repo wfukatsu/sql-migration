@@ -1146,6 +1146,12 @@
             "null"
           ]
         },
+        "chunk": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "body": {
           "$ref": "#/$defs/statements"
         }
@@ -1496,6 +1502,12 @@
           "items": {
             "type": "string"
           }
+        },
+        "bulk_limit": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },

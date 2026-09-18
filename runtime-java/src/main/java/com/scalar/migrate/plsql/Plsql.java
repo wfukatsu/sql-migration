@@ -350,4 +350,27 @@ public final class Plsql {
     }
     return text(value).matches(regex.toString());
   }
+  /**
+   * `FETCH c BULK COLLECT INTO v LIMIT n` が回していた分割読みの、移行先での形（#14）。
+   *
+   * <p><b>意味が 1 つ変わっている。</b> Oracle の `n` は「1 回に<b>読み込む</b>件数」で、それが
+   * メモリを守っていた。ScalarDB には跨トランザクションの cursor が無く、生成コードは行を先に
+   * まとめて読むので、`n` は「1 回に<b>配る</b>件数」でしかない。メモリを守るのは走査行数の上限
+   * （`--limits`）のほうである。
+   *
+   * <p>空の塊は返さない。Oracle のループは「取れなかったら抜ける」形で、その `EXIT` は残して
+   * あるが、ここが空を配らないので発火しない——どちらでも結果は同じである。
+   *
+   * <p>`n` が 0 以下なら塊を 1 つも返さない。Oracle で `LIMIT 0` を指定した FETCH が 0 件を返し、
+   * ループがすぐ抜けるのと同じ結果になる。
+   */
+  public static <T> java.util.List<java.util.List<T>> chunks(java.util.List<T> rows, Object size) {
+    int n = size instanceof Number number ? number.intValue() : 0;
+    java.util.List<java.util.List<T>> out = new java.util.ArrayList<>();
+    if (rows == null || n <= 0) return out;
+    for (int at = 0; at < rows.size(); at += n) {
+      out.add(java.util.List.copyOf(rows.subList(at, Math.min(at + n, rows.size()))));
+    }
+    return out;
+  }
 }
