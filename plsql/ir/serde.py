@@ -45,6 +45,7 @@ _CAMEL = {
     "external_effects": "externalEffects", "trigger_event": "triggerEvent", "trigger_table": "triggerTable",
     "trigger_timing": "triggerTiming", "schema_snapshot": "schemaSnapshot", "else_body": "elseBody",
     "resolved_to": "resolvedTo", "oracle_type": "oracleType", "plsql_variable": "plsqlVariable",
+    "not_found_flag": "notFoundFlag", "at_most_one_row": "atMostOneRow",
     "db_links": "dbLinks", "dynamic_sql": "dynamicSql", "start_line": "startLine", "end_line": "endLine",
     "start_column": "startColumn", "end_column": "endColumn", "has_package_state": "hasPackageState",
     # P3-1: what each bind and each select item was attributed to

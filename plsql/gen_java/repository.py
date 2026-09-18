@@ -221,6 +221,8 @@ def _direct(file: JavaFile, name: str, statement: M.SqlOperation, result: Reposi
                 h.line("statement.setObject(i + 1, values.get(i));")
             if returns == "int":
                 g.line("return statement.executeUpdate();")
+            elif statement.cardinality == "AT_MOST_ONE":
+                _first_row(g, reader)
             elif statement.into_targets:
                 _select_into(g, reader, statement)
             else:
@@ -238,6 +240,20 @@ def _rowtype_read(statement: M.SqlOperation) -> bool:
     order the DDL declares -- which is the order `dto.row_record` gives the record's components.
     """
     return len(statement.into_targets) == 1 and len(statement.into_columns or []) > 1
+
+
+def _first_row(file: JavaFile, reader: str) -> None:
+    """An explicit cursor's first `FETCH` (#11): the row, or null when there was none.
+
+    Not `_select_into`. No row is not an error here -- the routine wrote what to do about it in its
+    `%NOTFOUND` branch -- and the query is bounded to one row, so there is no second one to complain about.
+    `null` is the row's absence, which is why the values come back wrapped: a row whose column is NULL is a
+    row, and the caller has to be able to tell the two apart.
+    """
+    with file.block("try (ResultSet rows = statement.executeQuery())") as f:
+        with f.block("if (!rows.next())") as g:
+            g.line("return null;   // %NOTFOUND")
+        f.line(f"return {reader};")
 
 
 def _select_into(file: JavaFile, reader: str, statement: M.SqlOperation) -> None:
@@ -382,10 +398,17 @@ def _column_scale(statement: M.SqlOperation, index: int) -> int:
 
 
 def _parameters(file: JavaFile, statement: M.SqlOperation) -> tuple[list[str], list[str]]:
+    from .dto import loop_component_type
+
     parameters, arguments = [], []
     # a lifted expression is computed here from the other binds, so it is not a parameter of its own
     for bind in (b for b in statement.binds if not b.expression):
-        mapped = java_type(bind.oracle_type)
+        # a dotted PL/SQL name is a field of a row the caller is holding -- a cursor FOR loop's `r.qty` (#10).
+        # The record that row comes out of models the PL/SQL loop variable, where every number is a NUMBER
+        # (`loop_component_type`), so a parameter typed from the column's own width would be a Long the caller
+        # cannot pass a BigDecimal to.
+        mapped = (loop_component_type(bind.oracle_type) if "." in (bind.plsql_variable or "")
+                  else java_type(bind.oracle_type))
         file.add_import(*mapped.imports)
         parameters.append(f"{mapped.name} {java_name(bind.name)}")
         arguments.append(java_name(bind.name))
@@ -396,6 +419,12 @@ def _return(file: JavaFile, statement: M.SqlOperation) -> tuple[str, str]:
     if (statement.sql_kind or "").upper() in ("INSERT", "UPDATE", "DELETE", "MERGE"):
         return "int", ""   # SQL%ROWCOUNT is part of the behaviour
     if statement.into_targets:
+        if statement.cardinality == "AT_MOST_ONE":
+            # always an array, even for one target: `null` has to mean "no row", and a one-value return could
+            # not tell that apart from a row whose only column is NULL
+            return "Object[]", "new Object[] {" + ", ".join(
+                _read(file, statement, i)
+                for i in range(1, max(len(statement.into_targets), len(statement.into_columns or [])) + 1)) + "}"
         if _rowtype_read(statement):
             return "Object", _row(file, statement)
         if len(statement.into_targets) == 1:

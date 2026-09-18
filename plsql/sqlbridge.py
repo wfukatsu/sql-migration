@@ -34,7 +34,7 @@ from sqlglot import exp
 from scalardb_migrate.converter import StatementConverter
 from scalardb_migrate.schema import SchemaRegistry
 
-from .columns import bind_columns, select_columns, selects_star
+from .columns import at_most_one_row, bind_columns, select_columns, selects_star
 from .ir.model import BindVariable, SqlOperation
 from .source import Issue, SourceRange
 from .symbols import SymbolTable
@@ -68,10 +68,14 @@ class SqlAnalysisResult:
 
 def analyse(operation: SqlOperation, scope: str, symbols: SymbolTable | None = None,
             registry: SchemaRegistry | None = None, storage: str = "jdbc",
-            plan_dir: str | Path | None = None, lift: bool = True) -> SqlAnalysisResult:
+            plan_dir: str | Path | None = None, lift: bool = True,
+            loop_variables: dict[str, dict[str, str | None]] | None = None) -> SqlAnalysisResult:
     """Run one SQL statement through the converter and write the answer onto the IR node.
 
     `lift` may be turned off for a routine whose read carried a row lock: see `capability.check`.
+
+    `loop_variables` names the cursor FOR loop variables in scope at this statement, each with the Oracle type
+    of its fields: see `bind_variables`.
     """
     registry = registry if registry is not None else SchemaRegistry()
     result = SqlAnalysisResult(sql_id=operation.id, text=operation.original_sql,
@@ -89,13 +93,16 @@ def analyse(operation: SqlOperation, scope: str, symbols: SymbolTable | None = N
     # after strip_into, not before: `INTO v_row` parses as a table, and a star is only expandable when the
     # statement reads exactly one table
     expand_star(tree, symbols)
-    operation.into_targets = [t for t in targets]
-    result.into_targets = [{"name": t} for t in targets]
     if targets:
+        operation.into_targets = list(targets)
         operation.cardinality = "EXACTLY_ONE" if len(targets) >= 1 and not _is_bulk(tree) else "MANY"
-        result.cardinality = operation.cardinality
+    # no INTO in the SQL does not mean no assignment targets: a cursor rewritten to the query it was (#11)
+    # carries them on the node, because the INTO was never part of its text
+    result.into_targets = [{"name": t} for t in operation.into_targets]
+    result.cardinality = operation.cardinality
+    operation.at_most_one_row = at_most_one_row(tree)
 
-    binds = bind_variables(tree, scope, symbols)
+    binds = bind_variables(tree, scope, symbols, loop_variables)
     if lift:
         lift_expressions(tree, binds, scope, symbols)
     attribute_columns(tree, binds, operation, registry, symbols)
@@ -301,18 +308,38 @@ def expand_star(tree: exp.Expression, symbols: SymbolTable | None) -> None:
     select.set("expressions", [exp.column(name) for name in columns])
 
 
-def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None) -> list[BindVariable]:
+def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None,
+                   loop_variables: dict[str, dict[str, str | None]] | None = None) -> list[BindVariable]:
     """Replace PL/SQL variable references with named placeholders, in place, and describe them.
 
     Without a symbol table nothing is replaced: guessing which bare identifier is a variable would rewrite real
     column references into binds, which fails at run time rather than at analysis time.
+
+    A qualified name is a column of that table -- with one exception. Inside `FOR r IN (SELECT ...) LOOP`,
+    `r.order_id` is the loop's row, and the generated Java already holds it as a value before the statement
+    runs. Treating it as a column is what makes `WHERE order_id = r.order_id` a column-to-column comparison
+    ScalarDB refuses, and what keeps `TO_CHAR(r.order_id)` from being lifted (#10). `loop_variables` says which
+    qualifiers are loop variables, and what the query declared each field as; anything not named there is left
+    alone, so a real qualified column is untouched.
     """
-    if symbols is None:
+    loop_fields = {name.lower(): fields for name, fields in (loop_variables or {}).items()}
+    if symbols is None and not loop_fields:
         return []
     found: dict[str, BindVariable] = {}
     for column in list(tree.find_all(exp.Column)):
         if column.table:
-            continue  # qualified: it is a column of that table, not a variable
+            fields = loop_fields.get(column.table.lower())
+            if fields is None:
+                continue  # qualified: it is a column of that table, not a variable
+            variable = f"{column.table}.{column.name}"
+            placeholder = _unique(f"{column.table}_{column.name}", found, variable)
+            found[placeholder] = BindVariable(
+                name=placeholder, direction="IN", oracle_type=fields.get(column.name.lower()),
+                plsql_variable=variable)
+            column.replace(exp.Placeholder(this=placeholder))
+            continue
+        if symbols is None:
+            continue
         name = column.name
         symbol = symbols.resolve(scope, name)
         if symbol is None or symbol.kind not in BIND_KINDS:
@@ -388,11 +415,16 @@ def _is_bulk(tree: exp.Expression) -> bool:
     return bool(into is not None and into.args.get("bulk_collect"))
 
 
-def _unique(name: str, taken: dict) -> str:
-    """One placeholder per variable, unique inside the statement (P2-9: two anonymous binds collide)."""
+def _unique(name: str, taken: dict, variable: str | None = None) -> str:
+    """One placeholder per variable, unique inside the statement (P2-9: two anonymous binds collide).
+
+    `variable` is the PL/SQL name the placeholder stands for, when it differs from the placeholder itself --
+    `r.order_id` cannot be a placeholder name, but two references to it must still share one bind.
+    """
+    variable = name if variable is None else variable
     candidate = name
     suffix = 2
-    while candidate in taken and taken[candidate].plsql_variable != name:
+    while candidate in taken and taken[candidate].plsql_variable != variable:
         candidate = f"{name}_{suffix}"
         suffix += 1
     return candidate
