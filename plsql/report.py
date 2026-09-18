@@ -20,6 +20,7 @@ from pathlib import Path
 
 from .frontend import ParsedFile, coverage, parse_file
 from .ir import model as M, serde
+from .limits import RowLocks
 from .lower import _walk, lower_file
 from .source import Issue
 from .symbols import OracleSchema, SymbolTable, build, public_routines
@@ -75,7 +76,8 @@ class Analysis:
 
 
 def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: str = "corpus",
-            scalardb_schema: str | Path | None = None) -> Analysis:
+            scalardb_schema: str | Path | None = None,
+            row_locks: "RowLocks | None" = None) -> Analysis:
     """Parse, resolve and lower every source file under `root`. Nothing raises; failures become diagnostics.
 
     With `scalardb_schema`, every SQL statement is also checked against the target (P2-4) and the answer lands on
@@ -116,7 +118,8 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
         from scalardb_migrate.schema import SchemaRegistry
 
         registry = SchemaRegistry.from_schema_loader_json(str(scalardb_schema))
-        analysis.capability = check(program, registry, analysis.symbol_table(), schema=schema)
+        analysis.capability = check(program, registry, analysis.symbol_table(), schema=schema,
+                                    row_locks=row_locks)
         annotate(program, analysis.capability)
     return analysis
 
