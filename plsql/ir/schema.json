@@ -351,6 +351,12 @@
             "null"
           ]
         },
+        "trigger_columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "triggerTiming": {
           "type": [
             "string",
