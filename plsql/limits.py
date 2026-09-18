@@ -1,9 +1,10 @@
 """移行の決定のうち、**生成器が推測してはならないもの**を routine ごとに記録する config。
 
-いまのところ 2 つある:
+いまのところ 3 つある:
 
 * **走査行数の上限**（P4-5 の続き、2026-09-17 の決定）
 * **行ロックを落として楽観制御へ移すと決めた routine**（#9 / 2026-09-18 の決定）
+* **トランザクション境界を 1 反復 = 1 トランザクションに割ると決めた routine**（#3 / #24 / #14）
 
 どちらも「決めた人がいるときだけ、決めたと書ける」という同じ形である。書いていない routine に
 既定の答えを当てると、**誰も決めていないことが決まったように見える**。
@@ -73,6 +74,45 @@ class RowLocks:
 
     def why(self, routine: str) -> str | None:
         return self.optimistic.get(routine)
+
+
+@dataclass
+class Boundaries:
+    """トランザクション境界を **1 反復 = 1 トランザクション**に割ると決めた routine と、その理由。
+
+    決定は #3（`docs/plsql-transaction-patterns.md` §E / §F / §G）、実装は #24 / #14 である。
+    記録された routine は、1 つの method ではなく**トランザクション単位に割った部品**として出る:
+
+        <routine>Start / Targets / One / Failed / Done / FailedBatch
+
+    **生成コードはループを持たない。** 回すのは呼び出し側で、生成コードには推奨の回し方が
+    コメントとして付く（#24 の決定、2026-09-18）。ループを持たせると、1 反復ごとに境界へ
+    踏み込むことになり、計画 §9 の既定（生成コードは begin も commit もしない）と食い違う。
+
+    既定は「決めていない」である。書いていない routine は、いままでどおり 1 つの method として
+    出て、`COMMIT` や `SAVEPOINT` のところで止まる——**止まっているのが正しい**。境界をどこに
+    引くかは業務の設計であって、生成器が推測してよいものではない。
+    """
+
+    per_iteration: dict[str, str] = field(default_factory=dict)
+    source: str | None = None
+
+    @classmethod
+    def load(cls, path: str | Path | None) -> "Boundaries":
+        if path is None:
+            return cls()
+        file = Path(path)
+        if not file.exists():
+            raise FileNotFoundError(f"{file} が無い")
+        data = yaml.safe_load(file.read_text(encoding="utf-8")) or {}
+        section = (data.get("transactions") or {}).get("perIteration") or {}
+        return cls(per_iteration={str(k): str(v).strip() for k, v in section.items()}, source=str(file))
+
+    def decided(self, routine: str) -> bool:
+        return routine in self.per_iteration
+
+    def why(self, routine: str) -> str | None:
+        return self.per_iteration.get(routine)
 
 
 @dataclass

@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 
 from ..ir import model as M
 from ..lower import _walk
+from . import split
 from .emit import JavaFile
 from .expr import translate
 from .types import java_class_name, java_name, java_type, record_columns
@@ -77,7 +78,11 @@ def generate_module(module: M.Module, package: str, repository_package: str,
             g.line("this.repository = repository;")
         for routine in module.routines:
             f.line()
-            _method(f, module, routine, result, domain_package)
+            # 1 反復 = 1 トランザクションに割ると**決めてある** routine は、1 つの method ではなく
+            # トランザクション単位の部品として出る（#24 / #14）。決めていなければ False が返り、
+            # いままでどおり 1 つの method になる
+            if not split.emit(f, module, routine, result, domain_package):
+                _method(f, module, routine, result, domain_package)
     return result
 
 
@@ -176,7 +181,24 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
 
 
 def _method(file: JavaFile, module: M.Module, routine: M.Routine, result: ServiceFile,
-            domain_package: str) -> None:
+            domain_package: str, *, method_name: str | None = None,
+            extra_parameters: "list[tuple[str, str]]" = (), extra_scope: "dict[str, str] | None" = None,
+            notes: "list[str]" = ()) -> None:
+    """One routine, one method -- unless it was split into transaction-sized parts (#24), in which case
+    this emits one of the parts: `method_name` names it, `extra_parameters` carry what the caller's loop
+    holds (the row, the element, the exception) and `extra_scope` binds the PL/SQL references to them."""
+    outer_scope = _LOOP_ROWS.get()
+    _LOOP_ROWS.set({**outer_scope, **(extra_scope or {})})
+    try:
+        _emit_method(file, module, routine, result, domain_package, method_name=method_name,
+                     extra_parameters=extra_parameters, notes=notes)
+    finally:
+        _LOOP_ROWS.set(outer_scope)
+
+
+def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: ServiceFile,
+                 domain_package: str, *, method_name: str | None = None,
+                 extra_parameters: "list[tuple[str, str]]" = (), notes: "list[str]" = ()) -> None:
     returns = "void"
     if routine.return_type is not None:
         mapped = java_type(routine.return_type.resolved or routine.return_type.oracle)
@@ -203,6 +225,10 @@ def _method(file: JavaFile, module: M.Module, routine: M.Routine, result: Servic
         file.add_import(*mapped.imports)
         parameters.append(f"{mapped.name} {java_name(bind.name)}")
 
+    # 割った部品が呼び出し側のループから受け取るもの（行・要素・例外）。audit より前に置くのは、
+    # audit が「最後に足しても位置引数がずれない」ためにそこにいるからである（#24）
+    parameters.extend(f"{kind} {name}" for kind, name in extra_parameters)
+
     if needs_audit(routine):
         # #1 / #8: who and when come from the caller. Last, so adding it does not renumber the parameters a
         # caller already passes positionally.
@@ -213,8 +239,10 @@ def _method(file: JavaFile, module: M.Module, routine: M.Routine, result: Servic
     _ROWCOUNT_SEEN.set(False)
     _REFUSES_LATER.set(_refuses_somewhere(routine, result))
     _source_comment(file, routine)
-    with file.block(f"{visibility} {returns} {java_name(routine.name)}({', '.join(parameters)}) "
-                    "throws Exception") as f:
+    for note in notes:
+        file.comment(note)
+    with file.block(f"{visibility} {returns} {java_name(method_name or routine.name)}"
+                    f"({', '.join(parameters)}) throws Exception") as f:
         if routine.routine_kind == "trigger-body":
             for declaration in (_MODULE.get().declarations if _MODULE.get() else []):
                 _declaration(f, declaration, routine, result)
@@ -259,7 +287,9 @@ def _method(file: JavaFile, module: M.Module, routine: M.Routine, result: Servic
         elif returns != "void" and not outs and not _always_exits(routine, result):
             f.line("// the PL/SQL falls through here; Oracle raises ORA-06503 when a function does")
             f.line('throw new IllegalStateException("function reached its end without RETURN");')
-    result.routines.append(routine.id)
+    if routine.id not in result.routines:
+        # 割った部品は同じ routine から出た複数の method である（#24）。数えるのは routine のほう
+        result.routines.append(routine.id)
 
 
 def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Routine,

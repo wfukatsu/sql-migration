@@ -205,6 +205,46 @@ for (int i = 0; i < pProductIds.size(); i++) {
 `SQL%BULK_EXCEPTIONS` は移行先に無い。**どの要素が失敗したか**は、上の形では catch した側が
 知っている（`i` を持っているのはループである）。
 
+### 実装（2026-09-18 / #14 / #24）
+
+`transactions.perIteration` に `pkg_bulk_load.restock` を記録して、§E と同じ仕組みで割っている。
+
+```java
+void restockOne(BigDecimal pProductIdsItem, Long pDeltasItem)
+void restockFailed(int i, Exception failed, AuditContext audit)
+```
+
+* **要素の並びは元の routine の引数順**にしてある。本体が読んだ順にすると、SQL の書き方が
+  変わっただけで引数が入れ替わる——呼び出し側は PL/SQL の signature しか見ていない
+* `SQL%BULK_EXCEPTIONS(i).ERROR_INDEX` は**失敗した要素の位置**そのものになった。ただし
+  **Oracle は 1 から、生成したループは 0 から数える**ので、記録に残る値が 1 ずれる。1 から
+  数えた値を残すなら呼び出し側が `i + 1` を渡す——生成コードにそう書いてある
+* `IF SQLCODE = -24381` の分岐は消えた。あの番号は**まとめて投げていたから**付いていたもので、
+  要素ごとに失敗が来るなら、それ以外の誤りはそのまま呼び出し側へ出る
+
+**実測（2026-09-18、実 ScalarDB Cluster / `bulk_restock` シナリオ）**: 割った形は動いた——
+2 要素とも 1 要素 = 1 トランザクションで実行され、失敗が要素ごとに `BULKERR` 行として
+**別トランザクションで**記録された。ただし**その 2 要素は両方とも失敗した**:
+
+```
+SET stock_qty = stock_qty + :p_deltas_i: expressions referencing columns are not allowed
+```
+
+`UPDATE products SET stock_qty = stock_qty + <delta>` は**読んで計算して書く**形であり、
+ScalarDB SQL は列を読む式を受け付けない。#9 の RMW 書き換え（同じトランザクションの中で
+読んでから書く）が要るが、それは `rowLocks.optimistic` に**記録された routine だけ**に掛かる。
+
+#### 決定（2026-09-18 / #9）: `restock` も読んでから書く 2 文に割る
+
+記録した理由はこうである——**1 要素 = 1 トランザクションの中で読んで書く**ので、衝突は commit で
+弾かれる（P3-4 で実測）。**弾かれた要素は何も書いていない**ので、呼び出し側はその要素だけを
+安全に再試行できる: 差分の再適用にならず、二重加算にならない。失敗した要素を記録して続けるのは
+`SAVE EXCEPTIONS` の要件そのもので、それは上で決めた形が持っている。
+
+**記録したあとの実測（同日、同じ実クラスタ）**: `bulk_restock` は Oracle と**一致**した
+（`stock_qty` 105 / 47、`audit_log` は 0 行）。比較で一致するシナリオは 44 -> **45** になり、
+ScalarDB が拒む SQL は 2 -> **1** になった。
+
 ---
 
 ## 共通して決めておくこと

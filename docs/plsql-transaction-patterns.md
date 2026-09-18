@@ -68,6 +68,11 @@ rowLocks:
 
 * 記録された routine では、式の先行計算を行う。**安全なのは同じトランザクションの中で読んで書く
   から**で、衝突は Consensus Commit が弾く（P3-4 で実測。`DB-CORE-20013`）
+* **行ロックが元から無い routine も、記録が要るのは同じである。** `pkg_bulk_load.restock` の
+  `SET stock_qty = stock_qty + <delta>` には `FOR UPDATE` が無いが、読んで計算して書くことに
+  変わりはない。2026-09-18 に記録した（#14 / cursor-patterns §G）——1 要素 = 1 トランザクション
+  の中で読んで書き、弾かれた要素は何も書いていないので、呼び出し側はその要素だけを安全に
+  再試行できる（差分の再適用にならない）
 * 記録の無い routine は**今までどおり拒否する**。`reserve_nowait`（B 型）はまだ決まっていないので
   拒否のままで、それを `TransactionIT` が固定している
 * 通した文には `WARN OPTIMISTIC` が残り、**弾かれた衝突を再試行するのは呼び出し側の責務**だと言う
@@ -236,6 +241,40 @@ for (var id : repository.nightlyCloseTargets(batchDate)) {
   1 つになる**
 
 この粒度は #9（行ロック）の再試行単位でもある——弾かれた 1 件だけをやり直せる。
+
+### 実装（2026-09-18 / #24）: 部品を生成し、回し方はコメントで出す
+
+`limits.yaml` の `transactions.perIteration` に書いた routine だけを、**トランザクション単位に
+割った部品**として生成する。決めていない routine は 1 つの method のまま出て、`COMMIT` のところで
+止まる——**止まっているのが正しい**。
+
+```java
+// 生成されるもの（prc_nightly_close）
+void prcNightlyCloseStart()                                   // batch_control。別トランザクション
+List<PrcNightlyCloseLoop3Row> prcNightlyCloseTargets(LocalDateTime pBatchDate)
+void prcNightlyCloseOne(PrcNightlyCloseLoop3Row r, AuditContext audit)      // 1 反復 = 1 tx
+void prcNightlyCloseFailed(PrcNightlyCloseLoop3Row r, Exception failed, AuditContext audit)
+void prcNightlyCloseDone() / void prcNightlyCloseFailedBatch()
+```
+
+**生成コードはループを持たない**（計画 §9 の既定と揃える）。推奨の回し方は生成コードの
+コメントとして出る。コメントの呼び出しと signature が食い違うと、読んだ人はコンパイルできない
+コードを書くことになるので、**そこは 1 本のテストで固定してある**（`test_plsql_split.py`）。
+
+割ったことで変わったことが 3 つある:
+
+1. **対象を読むのが別トランザクションになった。** 割る前は「自分が書く表を読んでいる」として
+   生成を拒んでいた（P2-4）。その制限には当たらなくなり、代わりに**読んだ時点と処理する時点が
+   ずれる**——1 反復の側が自分で確かめる必要がある（`SHIPPED` -> `CLOSED` の遷移がそれである）
+2. **中間コミットが消えた。** `IF MOD(v_processed, 100) = 0 THEN COMMIT` は境界そのものに
+   吸収された。`v_processed` は 1 回ごとに 0 から始まるので、**数えるのは呼び出し側**になる
+   ——生成コードにそう書いてある
+3. **判定は REDESIGN のまま。** 生成できることと移してよいことは別である
+
+**実測（2026-09-18、実 ScalarDB Cluster / `nightly_close` シナリオ）**: 例外なしで完走し、
+`SHIPPED` の 2 件が `CLOSED`、`batch_control` が `DONE` になった。Oracle との差は
+`audit_log` の 2 行だけで、それは `trg_orders_audit` が書いていた行である（#12 の trigger の話で、
+境界の話ではない）。割る前は最初の `COMMIT` で `UnsupportedOperationException` だった。
 
 ## F. `SAVEPOINT` / `ROLLBACK TO`
 
