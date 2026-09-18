@@ -44,7 +44,7 @@
       }
      ],
      "deterministic": false,
-     "visibility": "private",
+     "visibility": "public",
      "transactionEffects": {
       "commits": 0,
       "rollbacks": 0,

@@ -107,7 +107,8 @@ def test_the_context_is_passed_down_from_the_service(corpus):
     止める」と決めたので、その文へ到達しない。値が repository まで渡ることは、完走する routine
     （`pkg_payment.record_payment`）で確かめる。"""
     module = next(m for m in corpus.program.modules if m.name == "pkg_payment")
-    service = generate_service(module, "g.app", "g.infra", "g.domain").file.render()
+    # trigger を呼ぶ module なので program も渡す（#12）——呼ばれる側の signature が引数の並びを決める
+    service = generate_service(module, "g.app", "g.infra", "g.domain", corpus.program).file.render()
     assert "repository.recordPaymentStmt4(audit," in service
 
 

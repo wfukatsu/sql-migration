@@ -50,10 +50,15 @@ def by_id(corpus, sql_id: str):
     return next(s for s in statements(corpus) if s.id == sql_id)
 
 
-def at_line(corpus, file: str, line: int):
-    """A statement by where it is written, not by its id: an id moves when the lowering changes (#18)."""
+def at_line(corpus, file: str, line: int, kind: str | None = None):
+    """A statement by where it is written, not by its id: an id moves when the lowering changes (#18).
+
+    1 行に 2 文あることがある——#12 で trigger を掛けるようになってから、書き込みの前に `:OLD` を
+    読む文が**同じ行として**挟まる。どちらが欲しいかは `kind` で言う。
+    """
     return next(s for s in statements(corpus)
-                if s.source_range and s.source_range.file == file and s.source_range.start_line == line)
+                if s.source_range and s.source_range.file == file and s.source_range.start_line == line
+                and (kind is None or (s.sql_kind or "").upper() == kind))
 
 
 # --- the walk that carries the scope ------------------------------------------------------------------
@@ -81,7 +86,7 @@ def test_walk_scoped_visits_the_same_statements_as_walk(corpus):
 
 def test_a_loop_row_reference_in_a_where_clause_becomes_a_bind(corpus):
     """`WHERE order_id = r.order_id` was COL_COL: two columns compared, which ScalarDB refuses."""
-    update = at_line(corpus, "prc_nightly_close.prc", 14)
+    update = at_line(corpus, "prc_nightly_close.prc", 14, kind="UPDATE")
     assert update.target_status == "OK"
     assert [b.plsql_variable for b in update.binds] == ["r.order_id"]
     assert update.target_sql == ["UPDATE orders SET status = 'CLOSED' WHERE order_id = :r_order_id"]
@@ -90,7 +95,7 @@ def test_a_loop_row_reference_in_a_where_clause_becomes_a_bind(corpus):
 
 def test_the_bind_is_typed_from_the_query_the_loop_iterates(corpus):
     """Not from the DDL: the row record is generated from the query's select list, and the two must agree."""
-    update = at_line(corpus, "prc_nightly_close.prc", 14)
+    update = at_line(corpus, "prc_nightly_close.prc", 14, kind="UPDATE")
     bind = update.binds[0]
     assert bind.oracle_type == "NUMBER(19)"     # what `SELECT order_id FROM orders` declared
     assert bind.column == "order_id" and bind.scalardb_type == "BIGINT"

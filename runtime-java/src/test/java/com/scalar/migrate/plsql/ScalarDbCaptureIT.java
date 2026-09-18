@@ -197,22 +197,52 @@ class ScalarDbCaptureIT {
      * routine の振る舞いを比べているので、Oracle 側の scenario が `pinned.sequences` で固定するのと
      * 同じ値から順に配る実装を渡す。採番そのものは `SequencesTest` が見る。
      */
-    private static Object newRepository(Class<?> repositoryClass, java.sql.Connection connection)
-        throws ReflectiveOperationException {
+    /**
+     * 採番はシナリオごとに 1 つである。**Repository ごとに配ると、同じ番号が 2 回出る**——
+     * trigger を呼ぶようになって（#12）1 つのシナリオが 2 つの Repository を持つようになり、
+     * それぞれが 1 から数え始めて `audit_id` が衝突した（DB-CORE-10146）。Oracle の sequence は
+     * データベースに 1 つなので、こちらも 1 つにする。
+     */
+    private static Sequences pinnedSequences(Scenario scenario) {
+      Map<String, java.util.concurrent.atomic.AtomicLong> counters = new LinkedHashMap<>();
+      return name -> counters
+          .computeIfAbsent(name, n -> new java.util.concurrent.atomic.AtomicLong(1))
+          .getAndIncrement();
+    }
+
+    private static Object newRepository(Class<?> repositoryClass, java.sql.Connection connection,
+        Sequences sequences) throws ReflectiveOperationException {
       for (Constructor<?> constructor : repositoryClass.getConstructors()) {
         Class<?>[] parameters = constructor.getParameterTypes();
         if (parameters.length == 1) {
           return constructor.newInstance(connection);
         }
         if (parameters.length == 2 && parameters[1] == Sequences.class) {
-          Map<String, java.util.concurrent.atomic.AtomicLong> counters = new LinkedHashMap<>();
-          Sequences pinned = name -> counters
-              .computeIfAbsent(name, n -> new java.util.concurrent.atomic.AtomicLong(1))
-              .getAndIncrement();
-          return constructor.newInstance(connection, pinned);
+          return constructor.newInstance(connection, sequences);
         }
       }
       throw new NoSuchMethodException(repositoryClass.getName() + ": 組み立てられるコンストラクタが無い");
+    }
+
+    /**
+     * 生成された Service を組み立てる。Repository のほかに、**書き込む表に掛かる trigger の
+     * Service** を受け取ることがある（#12）——移行先に trigger は無いので、掛けるには書き込む側が
+     * 呼ぶしかなく、誰が呼ぶかが constructor に出る。ここはその呼び出し側なので、同じように配線する。
+     */
+    private static Object newService(Class<?> serviceClass, java.sql.Connection connection,
+        Sequences sequences, int depth) throws ReflectiveOperationException {
+      if (depth > 4) throw new NoSuchMethodException(serviceClass.getName() + ": 注入が深すぎる");
+      Constructor<?> constructor = serviceClass.getConstructors()[0];
+      Object[] arguments = new Object[constructor.getParameterCount()];
+      Class<?>[] types = constructor.getParameterTypes();
+      for (int i = 0; i < types.length; i++) {
+        if (types[i].getName().endsWith("Service")) {
+          arguments[i] = newService(types[i], connection, sequences, depth + 1);
+        } else {
+          arguments[i] = newRepository(types[i], connection, sequences);
+        }
+      }
+      return constructor.newInstance(arguments);
     }
 
     static ScalarDbRunner.Invocation forScenario(Scenario scenario, java.sql.Connection connection)
@@ -220,10 +250,8 @@ class ScalarDbCaptureIT {
       String base = pascalCase(scenario.unit());
       Object service;
       try {
-        Class<?> repositoryClass = Class.forName(PACKAGE + ".infrastructure." + base + "Repository");
-        Class<?> serviceClass = Class.forName(PACKAGE + ".application." + base + "Service");
-        service = serviceClass.getConstructor(repositoryClass)
-            .newInstance(newRepository(repositoryClass, connection));
+        service = newService(Class.forName(PACKAGE + ".application." + base + "Service"), connection,
+            pinnedSequences(scenario), 0);
       } catch (ReflectiveOperationException e) {
         throw new Unrunnable("no generated service for unit " + scenario.unit() + " (" + e + ")");
       }

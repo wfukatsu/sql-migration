@@ -35,6 +35,8 @@ from .types import java_class_name, java_name, java_type, record_columns
 # every statement helper
 _MODULE: "contextvars.ContextVar[M.Module | None]" = contextvars.ContextVar("module", default=None)
 _DOMAIN: "contextvars.ContextVar[str | None]" = contextvars.ContextVar("domain", default=None)
+# #12: trigger の本体は別の module にある。呼ぶ側はその routine を見て、引数と audit の有無を決める
+_PROGRAM: "contextvars.ContextVar[M.Program | None]" = contextvars.ContextVar("program", default=None)
 # names a nested block declares (#18). They are in scope for its body and nowhere else, which is what the
 # PL/SQL says -- reading them off the routine would make a block-local visible to the whole method.
 _BLOCK_LOCALS: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("block_locals", default={})
@@ -57,8 +59,14 @@ class ServiceFile:
 
 
 def generate_module(module: M.Module, package: str, repository_package: str,
-                    domain_package: str) -> ServiceFile:
-    """One Java class per PL/SQL module. Public routines become public methods, private ones private."""
+                    domain_package: str, program: "M.Program | None" = None) -> ServiceFile:
+    """One Java class per PL/SQL module. Public routines become public methods, private ones private.
+
+    `program` is needed when this module calls a trigger (#12): the trigger's body lives in another
+    module, and its signature is what decides the argument order.
+    """
+    if program is not None:
+        _PROGRAM.set(program)
     name = java_class_name(module.name) + "Service"
     file = JavaFile(package=package, name=name,
                     source=module.source_range.file if module.source_range else module.name)
@@ -68,14 +76,24 @@ def generate_module(module: M.Module, package: str, repository_package: str,
 
     _MODULE.set(module)
     _DOMAIN.set(domain_package)
+    # #12: この module が呼ぶ trigger。**呼ぶ側に注入する**——移行先に trigger は無いので、
+    # 掛けるには書き込む側が呼ぶしかない。誰が呼んでいるかが constructor に出るのは、
+    # 「掛かるのはこの経路だけ」という事実がそこに見えるということでもある
+    injected = trigger_services(module)
     file.comment(
         f"{module.name} ({module.module_kind}).\n"
         "The transaction boundary belongs to the caller: no method here begins, commits or rolls back.")
     with file.block(f"public class {name}") as f:
         f.line(f"private final {java_class_name(module.name)}Repository repository;")
+        for trigger in injected:
+            f.line(f"private final {java_class_name(trigger)}Service {java_name(trigger)};")
         f.line()
-        with f.block(f"public {name}({java_class_name(module.name)}Repository repository)") as g:
+        parameters = [f"{java_class_name(module.name)}Repository repository"] + \
+            [f"{java_class_name(t)}Service {java_name(t)}" for t in injected]
+        with f.block(f"public {name}({', '.join(parameters)})") as g:
             g.line("this.repository = repository;")
+            for trigger in injected:
+                g.line(f"this.{java_name(trigger)} = {java_name(trigger)};")
         for routine in module.routines:
             f.line()
             # 1 反復 = 1 トランザクションに割ると**決めてある** routine は、1 つの method ではなく
@@ -84,6 +102,42 @@ def generate_module(module: M.Module, package: str, repository_package: str,
             if not split.emit(f, module, routine, result, domain_package):
                 _method(f, module, routine, result, domain_package)
     return result
+
+
+def trigger_services(module: M.Module) -> list[str]:
+    """この module が呼ぶ trigger の module 名。constructor に出る順（名前順）で返す。"""
+    out: set[str] = set()
+    for routine in module.routines:
+        for statement in _walk(routine.body) + [s for h in routine.exception_handlers
+                                                for s in _walk(h.body)]:
+            owner = _trigger_owner(statement, module)
+            if owner:
+                out.add(owner)
+    return sorted(out)
+
+
+def _trigger_owner(statement: M.Statement, module: M.Module) -> str | None:
+    """その文が trigger 本体を呼んでいるなら、その module 名。
+
+    判断は**その文が自分で言っていること**（`TRIGGER_CALL`）で行う。呼ばれる側の routine を
+    引いて確かめる形にすると、program が渡っていない呼び出し（module 1 つだけを生成する経路）で
+    **黙って普通の呼び出しとして扱われ、名前付き引数が式として翻訳される**——実際そうなった。
+    """
+    if statement.kind != "Call" or not getattr(statement, "resolved_to", None):
+        return None
+    if not any(d.code == "TRIGGER_CALL" for d in statement.diagnostics):
+        return None
+    owner, _, _ = statement.resolved_to.rpartition(".")
+    return owner or None
+
+
+def _routine(routine_id: str) -> "M.Routine | None":
+    program = _PROGRAM.get()
+    for module in (program.modules if program else []):
+        for routine in module.routines:
+            if routine.id == routine_id:
+                return routine
+    return None
 
 
 # text a statement carries that is not an expression: ids and classifications, and the SQL, whose own values
@@ -110,6 +164,13 @@ def needs_audit(routine: M.Routine) -> bool:
         for text in _expression_texts(statement):
             if translate(text).audit:
                 return True
+        # #12: trigger を呼ぶなら、その trigger が要る値も呼び出し側から来る。ここを見ないと、
+        # 本体が `audit` を使うのに signature がそれを受け取らない Java になる
+        if statement.kind == "Call" and getattr(statement, "resolved_to", None):
+            callee = _routine(statement.resolved_to)
+            if callee is not None and callee is not routine and callee.routine_kind == "trigger-body" \
+                    and needs_audit(callee):
+                return True
     return False
 
 
@@ -130,30 +191,23 @@ def _expression_texts(statement: M.Statement):
             yield branch.condition
 
 
-CORRELATION_REFERENCE = re.compile(r"\b(?P<qualifier>NEW|OLD)\s*\.\s*(?P<column>[A-Za-z][\w$#]*)",
-                                   re.IGNORECASE)
-
-
 def correlation_row(routine: M.Routine) -> dict[str, "M.BindVariable"]:
     """`NEW.status` / `OLD.status` -> それを渡す bind。trigger の行は呼び出し側から来る（#12）。
 
-    使われている参照だけを、名前順で返す。表の全列を引数にすると、読んでいない列まで呼び出し側に
-    用意させることになる——`AuditContext` を「使う routine にだけ付ける」としたのと同じ理由である。
+    **並びを決めているのは `plsql/triggers.py` である。** 呼ぶ側（書き込む文のところ）と呼ばれる側
+    （この method の signature）が別々に数えると、引数が静かにずれる。使われている参照だけを返すのは
+    `AuditContext` と同じ理由で、読んでいない列まで呼び出し側に用意させないためである。
     """
-    seen: dict[str, M.BindVariable] = {}
-    for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
-        for bind in getattr(statement, "binds", None) or []:
-            variable = bind.plsql_variable or ""
-            if variable.upper().startswith(("NEW.", "OLD.")):
-                seen.setdefault(variable, bind)
+    from ..triggers import correlation_row as correlations
+
     module = _MODULE.get()
-    for match in CORRELATION_REFERENCE.finditer(getattr(module, "trigger_when", None) or ""):
-        # 発火条件だけが読む列。SQL を通っていないので型が付いていない——付いていないことを
-        # `Object` として出すほうが、条件ごと拒んで「なぜ読めないのか」を隠すよりよい
-        variable = f"{match.group('qualifier').upper()}.{match.group('column')}"
-        seen.setdefault(variable, M.BindVariable(name=variable.replace(".", "_"), direction="IN",
-                                                 plsql_variable=variable))
-    return dict(sorted(seen.items()))
+    out: dict[str, M.BindVariable] = {}
+    for variable, bind in correlations(routine, getattr(module, "trigger_when", None)).items():
+        # 条件や式だけが読む列には型が付いていない。付いていないことを `Object` として出すほうが、
+        # 条件ごと拒んで「なぜ読めないのか」を隠すよりよい
+        out[variable] = bind or M.BindVariable(name=variable.replace(".", "_"), direction="IN",
+                                               plsql_variable=variable)
+    return out
 
 
 def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]:
@@ -791,6 +845,8 @@ def _raise(file: JavaFile, statement: M.Raise, routine: M.Routine, result: Servi
 
 
 def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: ServiceFile) -> None:
+    if _trigger_call(file, statement, routine, result):
+        return
     target = statement.resolved_to or statement.callee
     arguments = ", ".join(_expr(file, a, routine, result) for a in statement.arguments)
     if statement.resolved_to:
@@ -807,6 +863,41 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
     else:
         file.comment(f"external call: {statement.callee}")
         file.line(f'throw new UnsupportedOperationException("external call: {statement.callee}");')
+
+
+def _trigger_call(file: JavaFile, statement: M.Call, routine: M.Routine,
+                  result: ServiceFile) -> bool:
+    """`trg_orders_audit.body(...)` を、注入された trigger service への呼び出しとして出す（#12）。
+
+    引数は**名前で来る**（`NEW.status => 'CLOSED'`）。並べ替えるのは呼ばれる側の signature に
+    合わせるためで、その並びを決めているのは `plsql/triggers.py` である——呼ぶ側と呼ばれる側が
+    別々に数えると、引数が静かにずれる。
+    """
+    from ..triggers import correlation_row as correlations
+
+    owner = _trigger_owner(statement, _MODULE.get())
+    if owner is None:
+        return False
+    callee = _routine(statement.resolved_to)
+    module = next((m for m in (_PROGRAM.get().modules if _PROGRAM.get() else []) if m.name == owner),
+                  None)
+    if callee is None:
+        # 呼ばれる側が見つからない。引数の並びはその signature が決めるので、推測で出さない
+        raise Untranslatable([f"{statement.resolved_to} の本体が見つからない"], statement.callee)
+    given = {}
+    for argument in statement.arguments:
+        name, _, value = argument.partition("=>")
+        given[name.strip()] = value.strip()
+    wanted = list(correlations(callee, getattr(module, "trigger_when", None)))
+    missing = [name for name in wanted if name not in given]
+    if missing:
+        # 呼ばれる側が読む列を、呼ぶ側が渡していない。黙って null を渡すと**条件の意味が変わる**
+        raise Untranslatable([f"{owner} needs {', '.join(missing)}"], statement.callee)
+    arguments = [_expr(file, given[name], routine, result) for name in wanted]
+    if needs_audit(callee):
+        arguments.append("audit")
+    file.line(f"{java_name(owner)}.{java_name(callee.name)}({', '.join(arguments)});")
+    return True
 
 
 def _sql(file: JavaFile, statement: M.SqlOperation, routine: M.Routine) -> None:
