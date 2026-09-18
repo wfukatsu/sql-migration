@@ -34,7 +34,9 @@ from .lower import _walk, walk_scoped
 from .source import Issue
 from .dynamic import annotate as annotate_dynamic
 from .sqlbridge import analyse as analyse_sql
+from .limits import RowLocks
 from .symbols import OracleSchema
+from .limits import RowLocks
 from .symbols import OracleSchema, SymbolTable
 
 # the converter's own words for an access that does not need a scan
@@ -66,7 +68,8 @@ class CapabilityReport:
 
 
 def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | None = None,
-          storage: str = "jdbc", schema: "OracleSchema | None" = None) -> CapabilityReport:
+          storage: str = "jdbc", schema: "OracleSchema | None" = None,
+          row_locks: "RowLocks | None" = None) -> CapabilityReport:
     """Run every SQL statement through the converter and write the answer onto the IR."""
     report = CapabilityReport()
     for module in program.modules:
@@ -83,6 +86,19 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
             # call site. P3-4 measured what happens without it -- one of two concurrent transactions is
             # rejected -- and that is a redesign, not a rewrite.
             locked = any(getattr(s, "locking_mode", None) for s in statements)
+            if locked and (row_locks or RowLocks()).decided(routine.id):
+                # #9 / 2026-09-18: この routine は**楽観制御 + 呼び出し側の再試行**へ移すと決めてある。
+                # 安全なのは同じトランザクションの中で読んで書くからで、衝突は Consensus Commit が
+                # 弾く（P3-4 で実測）。決めた人がいるので、拒否を続ける理由が無くなった。
+                # 決めていない routine は今までどおり拒否する。
+                locked = False
+                for statement in statements:
+                    if statement.kind == "SqlOperation" and getattr(statement, "locking_mode", None):
+                        statement.add("WARN", "OPTIMISTIC",
+                                      f"行ロックを落として楽観制御へ移すと決めてある"
+                                      f"（{(row_locks or RowLocks()).why(routine.id)}）。"
+                                      f"**弾かれた衝突を再試行するのは呼び出し側の責務**である"
+                                      f"（計画 §9 / #9）")
             for statement, loops in scoped:
                 loop_variables = _loop_fields(loops)
                 if routine.routine_kind == "trigger-body":

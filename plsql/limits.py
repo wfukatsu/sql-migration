@@ -1,4 +1,14 @@
-"""P4-5 の続き: 走査行数の上限。既定を config で、routine ごとに個別指定できるようにする（2026-09-17 の決定）。
+"""移行の決定のうち、**生成器が推測してはならないもの**を routine ごとに記録する config。
+
+いまのところ 2 つある:
+
+* **走査行数の上限**（P4-5 の続き、2026-09-17 の決定）
+* **行ロックを落として楽観制御へ移すと決めた routine**（#9 / 2026-09-18 の決定）
+
+どちらも「決めた人がいるときだけ、決めたと書ける」という同じ形である。書いていない routine に
+既定の答えを当てると、**誰も決めていないことが決まったように見える**。
+
+
 
 Oracle の cursor は 1 行ずつ取るので 1000 万行でも動いた。ScalarDB には跨トランザクションの cursor が無く、
 生成コードは行を先に読むので、**動く行数はメモリで決まる**。上限を決めずに移行すると本番で初めて分かる。
@@ -26,6 +36,43 @@ import yaml
 # 決めずに移行するよりは、控えめな既定を置いて超えたら止める方が良い。この値そのものに根拠は無く、
 # 「業務ごとに決めるべきもの」であることを忘れないための出発点である。
 DEFAULT_SCAN_ROWS = 10_000
+
+
+@dataclass
+class RowLocks:
+    """行ロックを落として**楽観制御 + 呼び出し側の再試行**へ移すと決めた routine と、その理由（#9）。
+
+    既定は「決めていない」であり、決めていない routine の書き込みは**拒否したままにする**
+    （`docs/plsql-transaction-patterns.md` §A）。ロックこそがその読み書きを安全にしていたので、
+    落ちた以上、黙って書き換えを進めてはならない。
+
+    記録された routine では、読んだ値を使う式の先行計算（P4-4）を行う。安全なのは**同じ
+    トランザクションの中で読んで書く**からで、衝突は Consensus Commit が弾く（P3-4 で実測）。
+    弾かれたものを再試行するのは呼び出し側の責務である（計画 §9）。
+
+    **routine ごとに書く**のは、決めることが routine ごとに違うためである——その呼び出し側が
+    再試行するのか、その操作が冪等か、業務例外と衝突を区別できるか。
+    """
+
+    optimistic: dict[str, str] = field(default_factory=dict)
+    source: str | None = None
+
+    @classmethod
+    def load(cls, path: str | Path | None) -> "RowLocks":
+        if path is None:
+            return cls()
+        file = Path(path)
+        if not file.exists():
+            raise FileNotFoundError(f"{file} が無い")
+        data = yaml.safe_load(file.read_text(encoding="utf-8")) or {}
+        section = (data.get("rowLocks") or {}).get("optimistic") or {}
+        return cls(optimistic={str(k): str(v).strip() for k, v in section.items()}, source=str(file))
+
+    def decided(self, routine: str) -> bool:
+        return routine in self.optimistic
+
+    def why(self, routine: str) -> str | None:
+        return self.optimistic.get(routine)
 
 
 @dataclass
