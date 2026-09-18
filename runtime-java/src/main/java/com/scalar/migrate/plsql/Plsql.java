@@ -129,6 +129,20 @@ public final class Plsql {
    * <p>`sub(0, x)` で代用しない: `sub` は DATE 同士の引き算を「日数」に解釈するので、意味の違う
    * ものを 1 つの入口に押し込むことになる。
    */
+  /**
+   * `CAST(x AS DATE)`。Oracle の DATE は秒までしか持たないので、**秒未満は切り捨てる**
+   * （四捨五入ではない——Oracle 23ai に `.999999` を渡して確かめた。#13）。
+   *
+   * <p>タイムゾーンつきの値からは zone も落ちる。Oracle の DATE が持てないからである。
+   */
+  public static LocalDateTime castDate(Object value) {
+    if (isNull(value)) return null;
+    if (value instanceof LocalDateTime moment) return moment.withNano(0);
+    if (value instanceof java.time.OffsetDateTime moment) return moment.toLocalDateTime().withNano(0);
+    if (value instanceof java.time.LocalDate day) return day.atStartOfDay();
+    throw new IllegalArgumentException("CAST(... AS DATE) を日付でない値に適用した: " + value.getClass());
+  }
+
   public static BigDecimal neg(Object value) {
     if (isNull(value)) return null;
     BigDecimal decimal = value instanceof BigDecimal d ? d
