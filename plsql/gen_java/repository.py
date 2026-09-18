@@ -39,6 +39,9 @@ class RepositoryFile:
     methods: list[str] = field(default_factory=list)
     unsupported: list[str] = field(default_factory=list)
     planned: list[str] = field(default_factory=list)
+    # 走査を生成したが、その routine の行数上限が決められていなかったもの（#19）。生成は続く——
+    # 既定値でも動くコードは出る——が、`--limits-strict` はこれを合否に使う
+    undecided_limits: list[str] = field(default_factory=list)
 
 
 LOOP_ROW_SUFFIX = "Row"
@@ -66,6 +69,8 @@ def _loop_rows(file: JavaFile, name: str, loop: M.Loop, result: RepositoryFile, 
                     "java.util.List", "java.util.Map", "com.scalar.migrate.runtime.Residual")
     parameters, _ = _parameters(file, statement)
     limit = _LIMITS.get().for_routine(routine_id) if routine_id else None
+    if routine_id and not _LIMITS.get().decided(routine_id) and routine_id not in result.undecided_limits:
+        result.undecided_limits.append(routine_id)
     sql = statement.target_sql[0] if statement.target_sql else statement.original_sql
     with file.block(f"public List<{record}> {name}({', '.join(parameters)}) throws SQLException") as f:
         f.line(f'String sql = "{_escape(sql)}";')

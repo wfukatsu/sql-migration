@@ -9,6 +9,9 @@ Exit status is 1 when a routine the rules called AUTO could not be generated cle
 REDESIGN, statements ScalarDB refuses -- is written with its refusal in place and reported, because those are
 findings, not failures of the run.
 
+"Cleanly" also means "nobody is guessing": `--limits-strict` fails the run when an AUTO routine scans with
+the built-in row limit, which is the value that means nobody decided (#19).
+
 "Cleanly" means two things, and `--verify-compile` is the second (#21). Without it the gate reads the IR only,
 which cannot see a body that reads a name its own signature does not provide -- `javac` can, and until it is
 asked, "AUTO" is a claim about code nobody has compiled. It is opt-in because it needs a JVM, Gradle and the
@@ -39,6 +42,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--limits", help="走査行数の上限を書いた YAML（既定と routine ごとの上書き）。"
                                         "渡さなければ組み込みの既定を使う")
+    parser.add_argument("--limits-strict", action="store_true",
+                        default=bool(os.environ.get("PLSQL_LIMITS_STRICT")),
+                        help="fail the run when a routine the rules called AUTO scans without a row limit of "
+                             "its own. The built-in default means 'nobody has decided', and AUTO means "
+                             "'generate this unattended'; the two do not go together (#19)")
     parser.add_argument("--verify-compile", action="store_true",
                         default=bool(os.environ.get("PLSQL_VERIFY_COMPILE")),
                         help="compile the generated tree (gradle compileJava) and fail the run on any javac "
@@ -80,6 +88,7 @@ def main(argv: list[str] | None = None) -> int:
     auto = [r for r, d in decisions.items() if d.rule_verdict == "AUTO"]
     dirty = _dirty_auto(project, decisions)
     report = _verify_compile(project, args) if args.verify_compile else None
+    undecided = _undecided_auto(project, decisions) if args.limits_strict else []
 
     if not args.quiet:
         print(f"wrote {len(written)} files to {args.out_dir}/")
@@ -94,12 +103,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  AUTO but not cleanly generated: {routine}")
         if report is not None:
             _print_compile(report, decisions)
-    failed = bool(dirty) or (report is not None and not report.ok)
+        for routine in undecided:
+            print(f"  AUTO but nobody decided how many rows it may scan: {routine}")
+    failed = bool(dirty) or bool(undecided) or (report is not None and not report.ok)
     if args.quiet and failed:
         # `--quiet` means "say nothing when it goes well". A run that returns 1 and says nothing about why is
         # a failure nobody can act on, so the reason goes to stderr, where quiet output belongs anyway.
         for routine in dirty:
             print(f"  AUTO but not cleanly generated: {routine}", file=sys.stderr)
+        for routine in undecided:
+            print(f"  AUTO but nobody decided how many rows it may scan: {routine}", file=sys.stderr)
         if report is not None and not report.ok:
             _print_compile(report, decisions, stream=sys.stderr)
     return 1 if failed else 0
@@ -134,6 +147,21 @@ def _print_compile(report, decisions: dict, stream=None) -> None:
                   f"({Path(error.file).name}:{error.line})", file=out)
         else:
             print(f"    {Path(error.file).name}:{error.line}: {error.message}", file=out)
+
+
+def _undecided_auto(project, decisions) -> list[str]:
+    """AUTO routines that scan without a row limit of their own (#19).
+
+    The generated code already says so in a comment, but a comment is not a verdict: the built-in default
+    means "nobody has decided how many rows this may read", and `AUTO` means "generate this unattended".
+    Saying both about the same routine is the kind of claim this pipeline is not allowed to make.
+
+    Only AUTO. A REVIEW or REDESIGN routine is going to be read by a person anyway, and `prc_nightly_close`
+    is the case that showed why the row limit is the wrong tool there: the count is not a number the business
+    picks, so the answer belongs in its redesign, not in `limits.yaml` (2026-09-18).
+    """
+    return sorted(r for r in set(project.undecided_limits)
+                  if r in decisions and decisions[r].rule_verdict == "AUTO")
 
 
 def _dirty_auto(project, decisions) -> list[str]:

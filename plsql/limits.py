@@ -52,6 +52,15 @@ class Limits:
     def for_routine(self, routine: str) -> int:
         return self.by_routine.get(routine, self.scan_rows)
 
+    def decided(self, routine: str) -> bool:
+        """その routine の上限が**決められている**か。既定に落ちたものは決まっていない。
+
+        既定値は「決めていない」という意味で置いてある（上の DEFAULT_SCAN_ROWS 参照）。その事実は
+        生成コードのコメントには出るが、合否には出ていなかった——読んだ人だけが気づける状態は、
+        判定に入っていないのと同じである（#19 / 2026-09-18 の決定）。
+        """
+        return routine in self.by_routine
+
     def explain(self, routine: str) -> str:
         """その上限がどこから来たか。生成コードのコメントに入れる。"""
         if routine in self.by_routine:
