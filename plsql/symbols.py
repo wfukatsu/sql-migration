@@ -285,7 +285,8 @@ class _Builder:
                 actual = "constant" if re.search(r"\bCONSTANT\b", text, re.I) else kind
                 resolved = None
                 if kind == "type":
-                    resolved = self._record_type(scope, declaration)
+                    resolved = self._record_type(scope, declaration) \
+                        or self._collection_type(scope, declaration)
                 elif spec is not None:
                     resolved = self._type(scope, _text(spec))
                 query = parameters = None
@@ -322,6 +323,20 @@ class _Builder:
         return TypeRef(_text(declaration).split()[1], f"RECORD({', '.join(fields)})", "record",
                        self.table.schema_snapshot)
 
+    def _collection_type(self, scope: Scope, declaration: ParserRuleContext) -> TypeRef | None:
+        """`TYPE t IS TABLE OF NUMBER(19) INDEX BY PLS_INTEGER` を、要素の型まで解決して残す。
+
+        要素の型が無いと、その型の引数は Java で `Object` にしかならない——`List<BigDecimal>` と
+        書けない。`RECORD` を解決しているのと同じ理由で、**名前だけでは移行先の型を決められない**。
+        """
+        match = re.search(r"\bIS\s+TABLE\s+OF\s+(?P<element>.+?)(?:\s+INDEX\s+BY\b.*)?;?\s*$",
+                          _text(declaration), re.IGNORECASE | re.DOTALL)
+        if match is None:
+            return None
+        element = self._type(scope, match.group("element").strip())
+        return TypeRef(_text(declaration).split()[1], f"TABLE OF {element.resolved or element.oracle}",
+                       "collection", self.table.schema_snapshot)
+
     # -- types ---------------------------------------------------------------------------------------------
     def _type(self, scope: Scope, written: str) -> TypeRef:
         written = written.strip()
@@ -330,8 +345,9 @@ class _Builder:
             # a package-local RECORD type named here resolves to its shape, the same as a %ROWTYPE would
             declared = scope.resolve(written.rpartition(".")[2])
             if declared is not None and declared.kind == "type" and declared.type is not None \
-                    and declared.type.origin == "record":
-                return TypeRef(written, declared.type.resolved, "record", self.table.schema_snapshot)
+                    and declared.type.origin in ("record", "collection"):
+                return TypeRef(written, declared.type.resolved, declared.type.origin,
+                               self.table.schema_snapshot)
             return TypeRef(oracle=written, resolved=written, origin="declared")
 
         base, kind = attribute.group("base"), attribute.group("attr").upper()

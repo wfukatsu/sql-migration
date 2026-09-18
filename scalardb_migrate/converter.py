@@ -974,6 +974,7 @@ class StatementConverter:
         src_alias = (src.alias or "").lower()
         whens = m.args.get("whens")
         ins_cols, ins_vals = None, None
+        updated: set[str] = set()
         for w in (whens.expressions if whens else []):
             then = w.args.get("then")
             if isinstance(then, exp.Insert):
@@ -985,6 +986,7 @@ class StatementConverter:
                     v = eq.expression
                     if not (isinstance(v, exp.Column) and (v.table or "").lower() == src_alias and v.name.lower() == eq.this.name.lower()):
                         self.fail("MERGE", f"MERGE UPDATE '{eq.sql()}' is not 'col = src.col'; cannot express as UPSERT")
+                    updated.add(eq.this.name.lower())
             elif isinstance(then, exp.Var) and then.name.upper() == "DELETE":
                 self.fail("MERGE", "MERGE ... WHEN MATCHED THEN DELETE cannot be expressed as UPSERT")
         if not ins_cols:
@@ -995,7 +997,23 @@ class StatementConverter:
                 values.append(row[v.name.lower()])
             else:
                 values.append(self._value(v, "MERGE INSERT"))
-        self.warn("MERGE", "MERGE rewritten as UPSERT (all listed columns are overwritten when the row exists)")
+        # UPSERT は列挙した列をすべて書く。既存行に当たったとき、MATCHED 枝が触っていない列まで
+        # 上書きされる——corpus の `import` はそれで `tier` と `registered_on` を潰していた
+        # （比較ハーネスが実測した）。枝が食い違うなら、警告ではなく**拒否する**
+        # ON が突き合わせている列は、どちらの枝でも同じ値になる（それで当てているのだから）ので、
+        # 上書きとは数えない。スキーマが無くても ON は読める——主キーを registry に聞く形にすると、
+        # スキーマ無しの変換で正しい MERGE まで拒んでしまう
+        matched_on = {c.name.lower() for c in (m.args.get("on") or m).find_all(exp.Column)}
+        clobbered = [c for c in ins_cols if c.lower() not in updated and c.lower() not in matched_on]
+        if clobbered:
+            # どの列が上書きされるかを名指しする。「全列を上書きする」とだけ言われても、読む側は
+            # 既存行に当たったとき何が変わるのかを自分で数えることになる。PL/SQL corpus の比較では
+            # これが `tier` と `registered_on` を潰していた（実測）
+            self.warn("MERGE", f"MERGE rewritten as UPSERT: on an existing row this also overwrites "
+                               f"{clobbered}, which WHEN MATCHED does not set "
+                               f"(it sets {sorted(updated) or '(nothing)'})")
+        else:
+            self.warn("MERGE", "MERGE rewritten as UPSERT (both branches set the same columns)")
         target = m.this.copy()
         target.set("alias", None)
         return Upsert(this=exp.Schema(this=target, expressions=[exp.to_identifier(c) for c in ins_cols]),
