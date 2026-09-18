@@ -304,7 +304,10 @@ class _Parser:
                 break
             if value == "||" or (kind == "op" and (value in COMPARISONS or value in self.ARITHMETIC)) \
                     or (kind == "name" and value.upper() in ("AND", "OR", "IS", "NOT", "IN", "BETWEEN",
-                                                             "LIKE", "WHEN", "THEN", "ELSE", "END")):
+                                                             "LIKE", "WHEN", "THEN", "ELSE", "END",
+                                                             # `CAST(x AS DATE)` の区切り。PL/SQL の式に
+                                                             # `AS` が現れるのはここだけである
+                                                             "AS")):
                 break
             if kind == "op" and value == ")":
                 break
@@ -320,11 +323,41 @@ class _Parser:
                 continue
             if kind == "name" and self.position + 1 < len(self.tokens) \
                     and self.tokens[self.position + 1][1] == "(":
-                out.append(self._call())
+                out.append(self._cast() if value.upper() == "CAST" else self._call())
                 continue
             self.take()
             out.append(self._atom(kind, value))
         return "".join(out).strip()
+
+    # `CAST(x AS <type>)`。呼べる型は Oracle の挙動を実測で確かめたものだけにする（#13）
+    CASTS = {"DATE": "castDate"}
+
+    def _cast(self) -> str:
+        """`CAST(v_shipped AS DATE)`。引数リストではないので、関数呼び出しの道には乗らない。
+
+        `AS` も型名も、式の中では名前として読まれてしまい「置けない名前」になっていた。ここで
+        読み切る。**実測で挙動を確かめた型だけ**を通す——`AS DATE` は秒未満を切り捨てる
+        （Oracle 23ai で `.999999` を渡して確認した。四捨五入ではない）。それ以外の型は、
+        何をするのか確かめていないので今までどおり拒む。
+        """
+        start = self.position
+        self.take()   # CAST
+        self.take()   # (
+        value = self.parse_or()
+        if not self.at_word("AS"):
+            self.position = start
+            return self._call()
+        self.take()   # AS
+        target = self.peek()
+        mapped = self.CASTS.get(str(target[1]).upper()) if target is not None else None
+        if mapped is None:
+            self.position = start
+            return self._call()   # 確かめていない型。名前として拒まれる
+        self.take()
+        if self.peek() is not None and self.peek()[1] == ")":
+            self.take()
+        self.result.imports.add(HELPER_IMPORT)
+        return f"{HELPER}.{mapped}({value})"
 
     def _call(self) -> str:
         """A function call: the name, then each argument parsed as a full expression."""
