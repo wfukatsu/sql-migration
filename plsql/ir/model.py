@@ -42,7 +42,8 @@ class TypeRef:
 
     oracle: str                      # as written: "NUMBER(19)", "orders.status%TYPE", "customers%ROWTYPE"
     resolved: str | None = None      # after %TYPE / %ROWTYPE resolution: "VARCHAR2(20)"
-    origin: str = "declared"         # declared | rowtype | record | column-type | inferred | unresolved
+    origin: str = "declared"         # declared | rowtype | record | collection | column-type |
+                                     # inferred | unresolved
     schema_snapshot: str | None = None  # which DDL snapshot resolved it (design doc §5.3)
     nullable: bool | None = None
 

@@ -583,6 +583,9 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
     elif statement.loop_kind == "cursor-for" and statement.query is not None:
         _cursor_for(file, statement, routine, result)
         return
+    elif statement.loop_kind == "forall" and _forall_collection(statement, routine) is not None:
+        _forall(file, statement, routine, result)
+        return
     elif statement.loop_kind in ("cursor-for", "forall", "for"):
         # A numeric FOR loop's bounds, and a named cursor's query, are still not modelled as statements, so
         # there is nothing to iterate. Emitting a call to a repository method that does not exist would give
@@ -592,6 +595,63 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
         opening = f"{label}while (true)"
     with file.block(opening) as f:
         _statements(f, statement.body, routine, result)
+
+
+FORALL_BOUND = re.compile(r"^\s*1\s*\.\.\s*(?P<collection>[\w$#]+)\s*\.\s*COUNT\s*$", re.IGNORECASE)
+
+
+def _forall_collection(statement: M.Loop, routine: M.Routine) -> tuple[str, str] | None:
+    """`FORALL i IN 1 .. p_ids.COUNT` の (コレクション, 添字)。回せない形なら None。
+
+    添字の名前は本体の参照から採る——`FORALL` の索引は IR に残っていないが、`p_ids(i)` の `i` が
+    それである。本体がコレクションの要素を読んでいなければ、ループにしても意味が無い。
+    """
+    bound = FORALL_BOUND.match(statement.cursor or "")
+    if bound is None:
+        return None
+    collection = bound.group("collection").lower()
+    for inner in _walk(statement.body):
+        for bind in getattr(inner, "binds", None) or []:
+            reference = COLLECTION_ELEMENT.match(bind.plsql_variable or "")
+            if reference and reference.group("collection").lower() == collection:
+                return collection, reference.group("index")
+    return None
+
+
+COLLECTION_ELEMENT = re.compile(r"^(?P<collection>[\w$#]+)\s*\(\s*(?P<index>[\w$#]+)\s*\)$")
+
+
+def _forall(file: JavaFile, statement: M.Loop, routine: M.Routine, result: ServiceFile) -> None:
+    """`FORALL i IN 1 .. p_ids.COUNT <DML>` を、その要素を回す Java のループにする。
+
+    **FORALL は 1 往復、ループは要素ごとに 1 回**である。答えは変わらないが性能は変わる——#14 で
+    `BULK COLLECT` + `FORALL` を走査ループにしたときと同じ代償で、そこと同じく隠さずに書く。
+
+    `SAVE EXCEPTIONS`（部分失敗を許す原子性）はここでは扱わない。`BULK-002` が REDESIGN として
+    捕まえ続ける。
+    """
+    collection, index = _forall_collection(statement, routine)
+    java = _expr(file, collection, routine, result)
+    # 本体が読むコレクションは 1 つとは限らない（`p_ids(i)` と `p_names(i)` が並ぶ）。回す長さは
+    # 境界が名指したものから採り、要素の読み方は**本体が読んでいるすべて**について用意する
+    scope = {}
+    for inner in _walk(statement.body):
+        for bind in getattr(inner, "binds", None) or []:
+            reference = COLLECTION_ELEMENT.match(bind.plsql_variable or "")
+            if reference is None or reference.group("index").lower() != index.lower():
+                continue
+            name = reference.group("collection")
+            scope[f"{name}({index})".lower()] = \
+                f"{_expr(file, name, routine, result)}.get({java_name(index)})"
+    outer = _LOOP_ROWS.get()
+    _LOOP_ROWS.set({**outer, **scope})
+    try:
+        file.comment("FORALL は 1 往復、ここでは要素ごとに 1 回。答えは同じで、性能が変わる")
+        with file.block(f"for (int {java_name(index)} = 0; {java_name(index)} < {java}.size(); "
+                        f"{java_name(index)}++)") as f:
+            _statements(f, statement.body, routine, result)
+    finally:
+        _LOOP_ROWS.set(outer)
 
 
 def _cursor_for(file: JavaFile, statement: M.Loop, routine: M.Routine, result: ServiceFile) -> None:
@@ -714,7 +774,11 @@ def _arguments(file: JavaFile, statement: M.SqlOperation, routine: M.Routine,
     out = ["audit"] if statement_needs_audit(statement) else []
     for bind in (b for b in statement.binds if not b.expression):
         name = bind.plsql_variable or bind.name
-        out.append(_expr(file, name, routine, result) if "." in name else java_name(name))
+        # 素の識別子でないものは翻訳に通す: `r.order_id`（ループの行）も `p_ids(i)`（コレクションの
+        # 要素）も、名前として Java の変数に落ちるものである。`java_name` に渡すと `pIds(i)` という
+        # 存在しない method 呼び出しになる
+        plain = name.replace("_", "").replace("$", "").replace("#", "").isalnum()
+        out.append(java_name(name) if plain else _expr(file, name, routine, result))
     return ", ".join(out)
 
 

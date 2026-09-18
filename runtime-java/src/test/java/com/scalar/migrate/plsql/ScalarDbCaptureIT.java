@@ -234,10 +234,13 @@ class ScalarDbCaptureIT {
       String name = camelCase(scenario.routine());
       List<Object> raw = scenario.arguments();
       for (Method candidate : service.getClass().getMethods()) {
-        if (!candidate.getName().equals(name)) continue;
+        // Java の予約語と衝突する routine 名は `_` を足して逃がしてある（`import` -> `import_`）。
+        // 逃がした名前で引けないと、生成されているのに「method が無い」と報告される
+        if (!candidate.getName().equals(name) && !candidate.getName().equals(name + "_")) continue;
         Class<?>[] types = candidate.getParameterTypes();
         if (types.length == raw.size()) {
-          return new Invoker(service, candidate, coerce(raw, types, scenario));
+          return new Invoker(service, candidate,
+              coerce(raw, types, candidate.getGenericParameterTypes(), scenario));
         }
         // 移行元の USER / SYSTIMESTAMP を呼び出し側から受け取る routine（#1・#8）。値はシナリオが
         // 固定する: 実行のたびに変わる物を渡すと、比較のたびに人が判断することになる
@@ -306,13 +309,42 @@ class ScalarDbCaptureIT {
       }
     }
 
-    private static Object[] coerce(List<Object> raw, Class<?>[] types, Scenario scenario) throws Unrunnable {
+    /** 要素の型は `List<BigDecimal>` の総称引数から採る。型消去のあとに残る唯一の手がかりである。 */
+    private static Object coerceElements(List<?> elements, java.lang.reflect.Type generic,
+        Scenario scenario) throws Unrunnable {
+      Class<?> element = Object.class;
+      if (generic instanceof java.lang.reflect.ParameterizedType parameterized) {
+        java.lang.reflect.Type[] arguments = parameterized.getActualTypeArguments();
+        if (arguments.length == 1 && arguments[0] instanceof Class<?> c) {
+          element = c;
+        }
+      }
+      List<Object> out = new java.util.ArrayList<>(elements.size());
+      for (Object value : elements) {
+        out.add(coerce(java.util.Collections.singletonList(value),
+            new Class<?>[] {element}, null, scenario)[0]);
+      }
+      return out;
+    }
+
+    private static Object[] coerce(List<Object> raw, Class<?>[] types, Scenario scenario)
+        throws Unrunnable {
+      return coerce(raw, types, null, scenario);
+    }
+
+    private static Object[] coerce(List<Object> raw, Class<?>[] types,
+        java.lang.reflect.Type[] generics, Scenario scenario) throws Unrunnable {
       Object[] out = new Object[raw.size()];
       for (int i = 0; i < raw.size(); i++) {
         Object value = raw.get(i);
         Class<?> type = types[i];
         if (value == null) {
           out[i] = null;
+        } else if (List.class.isAssignableFrom(type) && value instanceof List<?> elements) {
+          // PL/SQL のコレクション引数（`TABLE OF NUMBER(19)` -> `List<BigDecimal>`）。総称型は実行時に
+          // 消えるので、要素をそのまま渡すと **使うときに ClassCastException** になる。シナリオが
+          // 書いた数値は Integer なので、ここで要素ごとに合わせる
+          out[i] = coerceElements(elements, generics != null ? generics[i] : null, scenario);
         } else if (type.isInstance(value)) {
           out[i] = value;
         } else if (type == BigDecimal.class && value instanceof Number n) {
