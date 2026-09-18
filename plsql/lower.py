@@ -468,10 +468,16 @@ class _Lowerer:
         into = [_text(v) for v in _descend(context, {"Variable_nameContext"})]
         if into and cursor and into[0].lower() == cursor.lower():
             into = into[1:]
+        # `FETCH c BULK COLLECT INTO v_ids LIMIT p_limit` の `p_limit` も `Variable_name` として
+        # 出てくる。INTO の対象として数えると**代入先が 1 つ増える**ので、分けて持つ
+        limit = re.search(r"\bLIMIT\s+(?P<limit>[\w$#.]+)\s*;?\s*$", text, re.IGNORECASE)
+        if limit and into and into[-1].lower() == limit.group("limit").lower():
+            into = into[:-1]
         node = M.CursorStatement(id=ids.next("stmt"), kind=kind, source_range=source,
                                  cursor=cursor,
                                  into_targets=into if kind == "Fetch" else [],
-                                 arguments=[_text(a) for a in _descend(context, {"ArgumentContext"})])
+                                 arguments=[_text(a) for a in _descend(context, {"ArgumentContext"})],
+                                 bulk_limit=limit.group("limit") if limit else None)
         if re.search(r"\bBULK\s+COLLECT\b", text, re.IGNORECASE):
             # the node keeps the cursor and the targets, not the text, so the fact has to be recorded here
             # or no rule can see it

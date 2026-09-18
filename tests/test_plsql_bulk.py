@@ -184,3 +184,111 @@ def test_the_merge_becomes_an_upsert(schema):
     warning = next(d for d in merge.diagnostics if d.code == "MERGE")
     assert "tier" in warning.message and "registered_on" in warning.message
     assert warning.severity == "WARN", "severity を上げるかは #26 の判断（I10 と計測報告に及ぶ）"
+
+
+# --- #14: `FETCH ... BULK COLLECT INTO v LIMIT n`（分割読み、2026-09-18）------------------------
+
+CHUNKED = """\
+CREATE OR REPLACE PROCEDURE prc_count_open(p_limit IN PLS_INTEGER, p_count OUT NUMBER) IS
+  CURSOR c IS SELECT order_id FROM orders WHERE status = 'NEW';
+  v_ids t_id_list;
+BEGIN
+  p_count := 0;
+  OPEN c;
+  LOOP
+    FETCH c BULK COLLECT INTO v_ids LIMIT p_limit;
+    EXIT WHEN v_ids.COUNT = 0;
+    p_count := p_count + v_ids.COUNT;
+  END LOOP;
+  CLOSE c;
+END prc_count_open;
+/
+"""
+
+
+def _lowered(tmp_path, source: str):
+    """1 本だけ入った小さな入力を、書き換えまで通した IR で返す。"""
+    import pathlib
+
+    from plsql.report import analyse as build_analysis
+
+    fixtures = pathlib.Path(__file__).resolve().parent.parent / "fixtures" / "plsql"
+    root = tmp_path / "src"
+    root.mkdir(exist_ok=True)
+    (root / "schema.sql").write_text((fixtures / "src" / "schema.sql").read_text(encoding="utf-8"),
+                                     encoding="utf-8")
+    (root / "prc_count_open.prc").write_text(source, encoding="utf-8")
+    analysis = build_analysis(root, root / "schema.sql",
+                              scalardb_schema=fixtures / "scalardb-schema.json")
+    return next(r for _, r in analysis.routines() if r.id == "prc_count_open")
+
+
+def test_the_limit_is_not_an_into_target(tmp_path):
+    """`LIMIT p_limit` の `p_limit` も文法上は `Variable_name` である。INTO の対象として数えると
+    **代入先が 1 つ増えたように見える**——数えていた（2026-09-18 に直した）。"""
+    # 書き換えを見送る形（ループの後で配列を読む）を使う。書き換わったあとでは FETCH が残らない
+    source = tmp_path / "prc_count_open.prc"
+    source.write_text(CHUNKED.replace("  CLOSE c;", "  CLOSE c;\n  p_count := p_count + v_ids.COUNT;"),
+                      encoding="utf-8")
+    modules, _ = lower_source(source)
+    routine = modules[0].routines[0]
+    fetch = next(s for s in _walk(routine.body) if s.kind == "Fetch")
+    assert fetch.into_targets == ["v_ids"]
+    assert fetch.bulk_limit == "p_limit"
+
+
+def test_the_chunked_read_becomes_a_loop_that_hands_out_chunks(tmp_path):
+    """行は先にまとめて読む（跨トランザクションの cursor が無い）。残るのは n 件ずつ配るループで、
+    **n の意味は変わる**——読み込む量ではなく、配る量になる。"""
+    routine = _lowered(tmp_path, CHUNKED)
+    loop = next(s for s in _walk(routine.body) if s.kind == "Loop")
+    assert loop.loop_kind == "cursor-for" and loop.chunk == "p_limit"
+    assert loop.variable == "v_ids"
+    assert loop.query is not None and loop.query.cardinality == "MANY"
+    assert not [s for s in _walk(routine.body) if s.kind in ("OpenCursor", "Fetch", "CloseCursor")]
+
+
+def test_the_change_of_meaning_is_recorded(tmp_path):
+    """黙って「ただの走査」に潰さない。LIMIT がメモリを守らなくなったことは残す。"""
+    routine = _lowered(tmp_path, CHUNKED)
+    loop = next(s for s in _walk(routine.body) if s.kind == "Loop")
+    message = next(d.message for d in loop.diagnostics if d.code == "BULK_CHUNKED")
+    assert "配る" in message and "走査行数の上限" in message
+
+
+def test_the_body_is_kept_as_it_was_written(tmp_path):
+    """`EXIT WHEN v_ids.COUNT = 0` は残す。配る側は空の塊を渡さないので発火しないが、元に書いて
+    あるものを落とす理由が無い。"""
+    routine = _lowered(tmp_path, CHUNKED)
+    loop = next(s for s in _walk(routine.body) if s.kind == "Loop")
+    assert [s.kind for s in loop.body] == ["Exit", "Assignment"]
+
+
+def test_a_collection_read_after_the_loop_is_not_rewritten(tmp_path):
+    """Oracle は最後に取った（空の）塊を残す。そこまで同じにはできないので、ループの後で読んで
+    いたら書き換えない。"""
+    source = CHUNKED.replace("  CLOSE c;", "  CLOSE c;\n  p_count := p_count + v_ids.COUNT;")
+    routine = _lowered(tmp_path, source)
+    assert [s.kind for s in _walk(routine.body) if s.kind == "Fetch"], "書き換えてしまっている"
+
+
+def test_the_generated_loop_hands_out_chunks(tmp_path):
+    """生成コードまで届いていること。`v_ids.COUNT` は塊の件数である。"""
+    from plsql.generate import main as generate
+
+    root = tmp_path / "src"
+    root.mkdir()
+    import pathlib
+    fixtures = pathlib.Path(__file__).resolve().parent.parent / "fixtures" / "plsql"
+    (root / "schema.sql").write_text((fixtures / "src" / "schema.sql").read_text(encoding="utf-8"),
+                                     encoding="utf-8")
+    (root / "prc_count_open.prc").write_text(CHUNKED, encoding="utf-8")
+    generate([str(root), "--scalardb-schema", str(fixtures / "scalardb-schema.json"),
+              "--out-dir", str(tmp_path / "out"), "--quiet"])
+    java = (tmp_path / "out" / "src/main/java/com/example/migrated/application"
+            / "PrcCountOpenService.java").read_text(encoding="utf-8")
+    assert "Plsql.chunks(repository.prcCountOpenLoop" in java
+    assert "for (List<PrcCountOpenLoop3Row> vIds :" in java
+    assert "vIds.size()" in java
+    assert java.count("vIds") and "List<BigDecimal> vIds" not in java, \
+        "塊のループ変数を、ローカルとしても宣言している（同じ名前が 2 つ）"
