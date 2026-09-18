@@ -78,7 +78,7 @@ class ScalarDbCaptureIT {
 
     for (Scenario scenario : Scenario.readAll(SCENARIOS)) {
       try {
-        Invoker invoker = Invoker.forScenario(scenario, runner.connection());
+        ScalarDbRunner.Invocation invoker = Invoker.forScenario(scenario, runner.connection());
         runner.reset();
         for (String statement : setup.forScenario(scenario)) {
           try {
@@ -215,7 +215,8 @@ class ScalarDbCaptureIT {
       throw new NoSuchMethodException(repositoryClass.getName() + ": 組み立てられるコンストラクタが無い");
     }
 
-    static Invoker forScenario(Scenario scenario, java.sql.Connection connection) throws Unrunnable {
+    static ScalarDbRunner.Invocation forScenario(Scenario scenario, java.sql.Connection connection)
+        throws Unrunnable {
       String base = pascalCase(scenario.unit());
       Object service;
       try {
@@ -251,6 +252,10 @@ class ScalarDbCaptureIT {
           return new Invoker(service, candidate, arguments);
         }
       }
+      // 1 反復 = 1 トランザクションに割った routine（#24 / #14）には、その名前の method が無い。
+      // **無いのではなく、部品になっている**——呼び出し側として回すのがこのハーネスの仕事である
+      ScalarDbRunner.Invocation parts = Parts.forScenario(service, scenario, name, raw);
+      if (parts != null) return parts;
       throw new Unrunnable("generated service has no method " + name + "/" + raw.size()
           + "; the routine was refused or is not public");
     }
@@ -351,6 +356,9 @@ class ScalarDbCaptureIT {
           out[i] = new BigDecimal(n.toString());
         } else if (type == Integer.class && value instanceof Number n) {
           out[i] = n.intValue();
+        } else if (type == Long.class && value instanceof Number n) {
+          // `NUMBER(19)` は Long になる。シナリオの数値は Integer で読まれるので、ここで合わせる
+          out[i] = n.longValue();
         } else if (type == java.time.LocalDateTime.class && value instanceof java.util.Date d) {
           // SnakeYAML reads an unquoted `2026-01-15` as a Date; the generated signature for an Oracle DATE is
           // LocalDateTime, and the scenario means midnight on that day, which is what Oracle bound too.
@@ -368,6 +376,10 @@ class ScalarDbCaptureIT {
 
     @Override
     public Object run() throws Exception {
+      return invoke(service, method, arguments);
+    }
+
+    static Object invoke(Object service, Method method, Object[] arguments) throws Exception {
       try {
         return method.invoke(service, arguments);
       } catch (java.lang.reflect.InvocationTargetException e) {
@@ -389,5 +401,131 @@ class ScalarDbCaptureIT {
   static String pascalCase(String snake) {
     String camel = camelCase(snake);
     return Character.toUpperCase(camel.charAt(0)) + camel.substring(1);
+  }
+
+  /**
+   * 1 反復 = 1 トランザクションに割られた routine（#24 / #14）を、**推奨の回し方どおりに回す**。
+   *
+   * <p>生成コードはループを持たない。境界は呼び出し側の設計であり、ここはその呼び出し側である——
+   * だから、生成コードのコメントが書いている形をそのまま実行する:
+   *
+   * <pre>
+   *   Start();
+   *   for (row : Targets(...)) { try { One(row) } catch (e) { Failed(row, e) } }   // 1 反復 = 1 commit
+   *   Done();
+   * </pre>
+   *
+   * <p><b>これは比較のための 1 つの回し方であって、決定ではない。</b> 再試行も並列度も入れていない。
+   * ここで測れるのは「割った部品を順に回すと、Oracle と同じ行が残るか」であって、移行先で選ぶべき
+   * 回し方が何かではない。
+   *
+   * <p>引数の対応は生成器の並びに乗っている: [routine の引数][行 / 要素][失敗した位置][例外]
+   * [AuditContext]。導けない並びを作らないために、要素の順は元の routine の引数順にしてある。
+   */
+  static final class Parts implements ScalarDbRunner.Invocation {
+    private final Object service;
+    private final Scenario scenario;
+    private final Map<String, Method> parts;
+    private final List<Object> raw;
+
+    private Parts(Object service, Scenario scenario, Map<String, Method> parts, List<Object> raw) {
+      this.service = service;
+      this.scenario = scenario;
+      this.parts = parts;
+      this.raw = raw;
+    }
+
+    static Parts forScenario(Object service, Scenario scenario, String name, List<Object> raw) {
+      Map<String, Method> parts = new LinkedHashMap<>();
+      for (String suffix : List.of("Start", "Targets", "One", "Failed", "Done", "FailedBatch")) {
+        for (Method candidate : service.getClass().getMethods()) {
+          if (candidate.getName().equals(name + suffix)) parts.put(suffix, candidate);
+        }
+      }
+      return parts.containsKey("One") ? new Parts(service, scenario, parts, raw) : null;
+    }
+
+    @Override
+    public Object run() throws Exception {
+      if (parts.containsKey("Start")) {
+        call(parts.get("Start"), List.of(), -1, null);
+        runner.commit();
+      }
+      if (parts.containsKey("Targets")) {
+        Object targets = call(parts.get("Targets"), List.of(), -1, null);
+        runner.commit();
+        List<?> rows = (List<?>) targets;
+        for (int i = 0; i < rows.size(); i++) iteration(List.of(rows.get(i)), i);
+      } else {
+        List<List<?>> collections = new ArrayList<>();
+        for (Object argument : raw) {
+          if (argument instanceof List<?> elements) collections.add(elements);
+        }
+        if (collections.isEmpty()) {
+          throw new Unrunnable("割った routine だが、回す対象が無い: Targets も配列引数も無い");
+        }
+        for (int i = 0; i < collections.get(0).size(); i++) {
+          List<Object> element = new ArrayList<>();
+          for (List<?> collection : collections) element.add(collection.get(i));
+          iteration(element, i);
+        }
+      }
+      if (parts.containsKey("Done")) {
+        call(parts.get("Done"), List.of(), -1, null);
+        runner.commit();
+      }
+      return null;
+    }
+
+    /** 1 反復 = 1 トランザクション。失敗したら**別のトランザクション**で記録する（#3 §F / §G）。 */
+    private void iteration(List<Object> element, int index) throws Exception {
+      try {
+        call(parts.get("One"), element, index, null);
+        runner.commit();
+      } catch (Exception failed) {
+        runner.rollback();
+        if (!parts.containsKey("Failed")) throw failed;
+        call(parts.get("Failed"), element, index, unwrap(failed));
+        runner.commit();
+      }
+    }
+
+    private static Exception unwrap(Exception e) {
+      Throwable cause = e instanceof java.lang.reflect.InvocationTargetException ? e.getCause() : e;
+      return cause instanceof Exception inner ? inner : e;
+    }
+
+    private Object call(Method method, List<Object> element, int index, Exception failed)
+        throws Exception {
+      Class<?>[] types = method.getParameterTypes();
+      Object[] arguments = new Object[types.length];
+      int at = types.length;
+      if (at > 0 && types[at - 1] == AuditContext.class) arguments[--at] = Invoker.auditContext(scenario);
+      if (at > 0 && Throwable.class.isAssignableFrom(types[at - 1])) arguments[--at] = failed;
+      // 生成器は [routine の引数][要素...][失敗した位置] の順に並べる。後ろから詰めるので、位置が
+      // 先に来る。位置だけが **primitive の `int`**（要素は必ず箱入りの型）なので、そこで見分ける
+      List<Object> carried = new ArrayList<>(element);
+      if (index >= 0 && at > 0 && types[at - 1] == int.class) arguments[--at] = index;
+      while (at > 0 && !carried.isEmpty()) {
+        Object value = carried.remove(carried.size() - 1);
+        try {
+          arguments[at - 1] = Invoker.coerce(List.of(value), new Class<?>[] {types[at - 1]}, scenario)[0];
+        } catch (Unrunnable skipped) {
+          continue;   // この部品が取らなかった要素。生成器は読む要素だけを引数にする（#24）
+        }
+        at--;
+      }
+      // 先頭に残ったものは routine 自身の引数。生成器は元の並びを保つので、前から詰める
+      if (at > 0) {
+        if (at > raw.size()) {
+          throw new Unrunnable(method.getName() + ": 引数の対応が付かない（" + at + " 個残った）");
+        }
+        Object[] head = Invoker.coerce(raw.subList(0, at), java.util.Arrays.copyOf(types, at),
+            method.getGenericParameterTypes(), scenario);
+        System.arraycopy(head, 0, arguments, 0, head.length);
+      }
+      return Invoker.invoke(service, method, arguments);
+    }
+
   }
 }

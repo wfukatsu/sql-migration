@@ -74,13 +74,17 @@ def main(argv: list[str] | None = None) -> int:
         handover_banner(date.today().isoformat())
 
     from .gen_java.repository import set_limits
-    from .limits import Limits, RowLocks
+    from .gen_java.split import set_boundaries
+    from .limits import Boundaries, Limits, RowLocks
 
     limits = Limits.load(args.limits) if args.limits else Limits()
     set_limits(limits)
     # #9: 行ロックを落として楽観制御へ移すと決めた routine。同じ config に書く——どちらも
     # 「生成器が推測してはならない、routine ごとの決定」である
     row_locks = RowLocks.load(args.limits) if args.limits else RowLocks()
+    # #24 / #14: トランザクション境界を 1 反復 = 1 トランザクションに割ると決めた routine。
+    # 決めていない routine は 1 つの method のまま出て、`COMMIT` のところで止まる
+    set_boundaries(Boundaries.load(args.limits) if args.limits else Boundaries())
 
     analysis = build_analysis(root, schema, scalardb_schema=scalardb, row_locks=row_locks)
     decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), Evidence())
