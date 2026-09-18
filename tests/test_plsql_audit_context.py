@@ -102,9 +102,13 @@ def test_the_repository_reads_the_values_off_that_argument(generated):
     assert "Plsql.systimestamp()" not in repository
 
 
-def test_the_context_is_passed_down_from_the_service(generated):
-    service, _ = generated
-    assert "repository.prcAuditAutonomousStmt1(audit," in service
+def test_the_context_is_passed_down_from_the_service(corpus):
+    """`prc_audit_autonomous` では見られなくなった——#25 で「完走できない routine は採番の前で
+    止める」と決めたので、その文へ到達しない。値が repository まで渡ることは、完走する routine
+    （`pkg_payment.record_payment`）で確かめる。"""
+    module = next(m for m in corpus.program.modules if m.name == "pkg_payment")
+    service = generate_service(module, "g.app", "g.infra", "g.domain").file.render()
+    assert "repository.recordPaymentStmt4(audit," in service
 
 
 def test_a_routine_that_needs_nothing_from_the_caller_keeps_its_signature(corpus):

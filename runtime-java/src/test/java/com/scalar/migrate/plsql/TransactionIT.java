@@ -238,14 +238,18 @@ class TransactionIT {
         new Object[] {java.time.LocalDateTime.now(),
             AuditContext.of("SOURCE", java.time.OffsetDateTime.now())});
 
-    // `prc_audit_autonomous` はここから外した。**拒否はするが、拒否する前に採番している**——
-    // #23 で `AuditContext.now()` がドライバに通るようになり、INSERT が成立して先へ進むように
-    // なったためで、拒否は次の `COMMIT` で起きる。Oracle も INSERT のあとに COMMIT するので
-    // 並べ替えでは直らない。「翻訳できない文を含む routine が、翻訳できる部分を実行してよいか」は
-    // 設計の判断なので #25 に切り出した。
-    //
     // `AuditContext` は #1 / #8 で足した引数である。この IT は `SCALARDB_IT=1` のときしか走らないので、
     // 署名が変わったことにここまで気づいていなかった（`getMethod` が NoSuchMethodException で落ちる）。
+    //
+    // `prc_audit_autonomous` は #23 のあと、INSERT が成立して**採番してから**拒否するようになって
+    // いた。#25 で「完走できない routine は採番の前で止める」と決めたので、この assertion が戻った
+    // ——採番が呼ばれたら、それ自体が失敗である。
+    assertRefuses("com.example.migrated.application.PrcAuditAutonomousService",
+        "com.example.migrated.infrastructure.PrcAuditAutonomousRepository",
+        "prcAuditAutonomous",
+        new Class<?>[] {String.class, String.class, String.class, String.class, AuditContext.class},
+        new Object[] {"ORDERS", "1001", "NOTE", "x",
+            AuditContext.of("SOURCE", java.time.OffsetDateTime.now())});
   }
 
   /**
