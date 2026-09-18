@@ -146,13 +146,19 @@ def _errors(output: str) -> list[CompileError]:
 
 
 def _qualifiers(lines: list[str]) -> list[str]:
-    """The continuation lines worth keeping: everything but the echoed source and the caret under it."""
-    keep = list(lines)
-    for index in reversed(range(len(keep))):
-        if CARET.match(keep[index]):
-            del keep[index]
-            if index - 1 >= 0:
-                del keep[index - 1]   # the source line the caret pointed at
+    """The continuation lines worth keeping: everything but the echoed source and the caret under it.
+
+    Read forwards and drop as we go. The first version walked the list backwards while deleting two entries
+    at a time, which walks off the end as soon as a caret is not the last line -- the check crashed instead
+    of reporting the error it had just read.
+    """
+    keep: list[str] = []
+    for line in lines:
+        if CARET.match(line):
+            if keep:
+                keep.pop()   # the echoed source line the caret pointed at
+            continue
+        keep.append(line)
     return keep
 
 
