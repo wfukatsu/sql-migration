@@ -232,9 +232,18 @@ SET stock_qty = stock_qty + :p_deltas_i: expressions referencing columns are not
 
 `UPDATE products SET stock_qty = stock_qty + <delta>` は**読んで計算して書く**形であり、
 ScalarDB SQL は列を読む式を受け付けない。#9 の RMW 書き換え（同じトランザクションの中で
-読んでから書く）が要るが、それは `rowLocks.optimistic` に**記録された routine だけ**に掛かる
-仕組みで、`pkg_bulk_load.restock` はまだ記録されていない。**境界の話は片付き、残っているのは
-行の読み書きの決定である。**
+読んでから書く）が要るが、それは `rowLocks.optimistic` に**記録された routine だけ**に掛かる。
+
+#### 決定（2026-09-18 / #9）: `restock` も読んでから書く 2 文に割る
+
+記録した理由はこうである——**1 要素 = 1 トランザクションの中で読んで書く**ので、衝突は commit で
+弾かれる（P3-4 で実測）。**弾かれた要素は何も書いていない**ので、呼び出し側はその要素だけを
+安全に再試行できる: 差分の再適用にならず、二重加算にならない。失敗した要素を記録して続けるのは
+`SAVE EXCEPTIONS` の要件そのもので、それは上で決めた形が持っている。
+
+**記録したあとの実測（同日、同じ実クラスタ）**: `bulk_restock` は Oracle と**一致**した
+（`stock_qty` 105 / 47、`audit_log` は 0 行）。比較で一致するシナリオは 44 -> **45** になり、
+ScalarDB が拒む SQL は 2 -> **1** になった。
 
 ---
 

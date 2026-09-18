@@ -77,10 +77,25 @@ def test_nothing_is_split_without_a_record(undecided):
     assert write.target_status == "ERROR", "決めていないのに通っている"
 
 
-def test_a_routine_that_was_never_locked_is_untouched(corpus):
-    """`restock` の FORALL も `SET stock_qty = stock_qty + ...` だが、記録が無いので触らない。"""
-    routine, _ = statements(corpus, "pkg_bulk_load.restock")
+def test_a_routine_that_was_never_locked_is_untouched(undecided):
+    """`restock` の FORALL も `SET stock_qty = stock_qty + ...` である。**行ロックは元から無い**が、
+    読んで計算して書くことに変わりはないので、記録が要るのは同じである。
+
+    記録を渡さない世界では触らない。記録した世界で何が起きるかは下のテストが見る
+    （2026-09-18 / #14: 1 要素 = 1 トランザクションの中で読んで書く、と決めた）。
+    """
+    routine, _ = statements(undecided, "pkg_bulk_load.restock")
     assert not [d for d in routine.declarations if d.name.startswith("v_rmw_")]
+
+
+def test_the_bulk_element_update_is_split_once_it_is_recorded(corpus):
+    """1 要素 = 1 トランザクションの中で読んでから書く 2 文になる。衝突は commit で弾かれ、
+    弾かれた要素は何も書いていないので、呼び出し側はその要素だけを安全に再試行できる。"""
+    routine, sql = statements(corpus, "pkg_bulk_load.restock")
+    assert [d.name for d in routine.declarations if d.name.startswith("v_rmw_")] == ["v_rmw_1"]
+    write = next(s for s in sql if s.original_sql.startswith("UPDATE products"))
+    assert write.target_status != "ERROR", "決めたのに通っていない"
+    assert any(d.code == "RMW_SPLIT" for d in write.diagnostics)
 
 
 def test_the_counter_routine_is_recorded_and_converts(corpus):
