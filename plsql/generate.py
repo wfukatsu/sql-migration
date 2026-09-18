@@ -9,8 +9,8 @@ Exit status is 1 when a routine the rules called AUTO could not be generated cle
 REDESIGN, statements ScalarDB refuses -- is written with its refusal in place and reported, because those are
 findings, not failures of the run.
 
-"Cleanly" also means "nobody is guessing": `--limits-strict` fails the run when an AUTO routine scans with
-the built-in row limit, which is the value that means nobody decided (#19).
+"Cleanly" also means "nobody is guessing": `--limits-strict` fails the run when a rule asked for the row
+limit to be checked and nobody decided one -- the built-in default is the value that means nobody did (#19).
 
 "Cleanly" means two things, and `--verify-compile` is the second (#21). Without it the gate reads the IR only,
 which cannot see a body that reads a name its own signature does not provide -- `javac` can, and until it is
@@ -44,9 +44,9 @@ def main(argv: list[str] | None = None) -> int:
                                         "渡さなければ組み込みの既定を使う")
     parser.add_argument("--limits-strict", action="store_true",
                         default=bool(os.environ.get("PLSQL_LIMITS_STRICT")),
-                        help="fail the run when a routine the rules called AUTO scans without a row limit of "
-                             "its own. The built-in default means 'nobody has decided', and AUTO means "
-                             "'generate this unattended'; the two do not go together (#19)")
+                        help="fail the run when a rule asked for the row limit to be checked (requiredTests: "
+                             "row_limit) and nobody decided one. Deciding includes deciding not to use a "
+                             "limit -- `notLimited` in the config records that, with its reason (#19)")
     parser.add_argument("--verify-compile", action="store_true",
                         default=bool(os.environ.get("PLSQL_VERIFY_COMPILE")),
                         help="compile the generated tree (gradle compileJava) and fail the run on any javac "
@@ -88,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
     auto = [r for r, d in decisions.items() if d.rule_verdict == "AUTO"]
     dirty = _dirty_auto(project, decisions)
     report = _verify_compile(project, args) if args.verify_compile else None
-    undecided = _undecided_auto(project, decisions) if args.limits_strict else []
+    undecided = _undecided_limits(decisions, limits) if args.limits_strict else []
 
     if not args.quiet:
         print(f"wrote {len(written)} files to {args.out_dir}/")
@@ -104,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
         if report is not None:
             _print_compile(report, decisions)
         for routine in undecided:
-            print(f"  AUTO but nobody decided how many rows it may scan: {routine}")
+            print(f"  the rules ask for a row limit and nobody decided one: {routine}")
     failed = bool(dirty) or bool(undecided) or (report is not None and not report.ok)
     if args.quiet and failed:
         # `--quiet` means "say nothing when it goes well". A run that returns 1 and says nothing about why is
@@ -112,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         for routine in dirty:
             print(f"  AUTO but not cleanly generated: {routine}", file=sys.stderr)
         for routine in undecided:
-            print(f"  AUTO but nobody decided how many rows it may scan: {routine}", file=sys.stderr)
+            print(f"  the rules ask for a row limit and nobody decided one: {routine}", file=sys.stderr)
         if report is not None and not report.ok:
             _print_compile(report, decisions, stream=sys.stderr)
     return 1 if failed else 0
@@ -149,19 +149,23 @@ def _print_compile(report, decisions: dict, stream=None) -> None:
             print(f"    {Path(error.file).name}:{error.line}: {error.message}", file=out)
 
 
-def _undecided_auto(project, decisions) -> list[str]:
-    """AUTO routines that scan without a row limit of their own (#19).
+def _undecided_limits(decisions: dict, limits) -> list[str]:
+    """Routines whose rules ask for a row limit that nobody has decided (#19).
 
-    The generated code already says so in a comment, but a comment is not a verdict: the built-in default
-    means "nobody has decided how many rows this may read", and `AUTO` means "generate this unattended".
-    Saying both about the same routine is the kind of claim this pipeline is not allowed to make.
+    The hook is the rules' own `requiredTests: row_limit` -- `CUR-002` (cursor FOR loop), `BULK-001`
+    (BULK COLLECT), `SQL-002` (a statement that becomes a fetch plus H2). Each of those says, in the rule
+    file, that the row limit has to be checked; none of them could tell whether it ever was.
 
-    Only AUTO. A REVIEW or REDESIGN routine is going to be read by a person anyway, and `prc_nightly_close`
-    is the case that showed why the row limit is the wrong tool there: the count is not a number the business
-    picks, so the answer belongs in its redesign, not in `limits.yaml` (2026-09-18).
+    Not "AUTO routines", which was the first shape of this check and could never fire: `CUR-002` floors
+    every cursor FOR loop at REVIEW, so the set of AUTO routines that scan is empty by construction. Asking
+    the rules what they require, rather than asking the verdict, also means the check follows `BULK COLLECT`
+    and the plan path without knowing they exist.
+
+    Deciding includes deciding *not* to use a row limit: `notLimited` in the config records that with its
+    reason, which is why `prc_nightly_close` does not appear here.
     """
-    return sorted(r for r in set(project.undecided_limits)
-                  if r in decisions and decisions[r].rule_verdict == "AUTO")
+    return sorted(routine for routine, decision in decisions.items()
+                  if "row_limit" in decision.required_tests() and not limits.decided(routine))
 
 
 def _dirty_auto(project, decisions) -> list[str]:

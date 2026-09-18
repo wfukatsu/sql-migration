@@ -34,6 +34,9 @@ class Limits:
 
     scan_rows: int = DEFAULT_SCAN_ROWS
     by_routine: dict[str, int] = field(default_factory=dict)
+    # 「上限では守らないと決めた」routine と、その理由。値の代わりに理由を書く場所であって、
+    # 書き忘れとは別物である——`--limits-strict` はこの 2 つを区別する（#19 / 2026-09-18）
+    not_limited: dict[str, str] = field(default_factory=dict)
     source: str | None = None
 
     @classmethod
@@ -46,25 +49,39 @@ class Limits:
         data = yaml.safe_load(file.read_text(encoding="utf-8")) or {}
         scan = data.get("scanRows") or {}
         by_routine = {str(k): _positive(v, k) for k, v in (scan.get("routines") or {}).items()}
+        not_limited = {str(k): str(v) for k, v in (scan.get("notLimited") or {}).items()}
+        overlap = sorted(set(by_routine) & set(not_limited))
+        if overlap:
+            raise ValueError(f"{overlap} が routines と notLimited の両方にある。"
+                             f"上限を置くか置かないかは、どちらか一方である")
         return cls(scan_rows=_positive(scan.get("default", DEFAULT_SCAN_ROWS), "default"),
-                   by_routine=by_routine, source=str(file))
+                   by_routine=by_routine, not_limited=not_limited, source=str(file))
 
     def for_routine(self, routine: str) -> int:
         return self.by_routine.get(routine, self.scan_rows)
 
     def decided(self, routine: str) -> bool:
-        """その routine の上限が**決められている**か。既定に落ちたものは決まっていない。
+        """その routine の上限について**誰かが決めたか**。既定に落ちたものは決まっていない。
 
-        既定値は「決めていない」という意味で置いてある（上の DEFAULT_SCAN_ROWS 参照）。その事実は
-        生成コードのコメントには出るが、合否には出ていなかった——読んだ人だけが気づける状態は、
-        判定に入っていないのと同じである（#19 / 2026-09-18 の決定）。
+        決めた形は 2 つある: 値を書く（`routines`）か、上限では守らないと決めて理由を書く
+        （`notLimited`）。既定値は「決めていない」という意味で置いてある（DEFAULT_SCAN_ROWS）。
+        その事実は生成コードのコメントには出るが、合否には出ていなかった——読んだ人だけが
+        気づける状態は、判定に入っていないのと同じである（#19 / 2026-09-18 の決定）。
+
+        理由をコメントではなく **データ**に書かせているのも同じ理由による。コメントは読み手への
+        説明であって、決定の記録ではない。
         """
-        return routine in self.by_routine
+        return routine in self.by_routine or routine in self.not_limited
 
     def explain(self, routine: str) -> str:
         """その上限がどこから来たか。生成コードのコメントに入れる。"""
         if routine in self.by_routine:
             return f"{self.source or 'limits'} で {routine} に指定された値"
+        if routine in self.not_limited:
+            # 上限を置かないと決めた routine でも、既定値の網は外さない。決めたのは「この値で守る」
+            # ことをやめたという話で、メモリを使い切ってよいという話ではない
+            return (f"既定値。{routine} は上限では守らないと決めてある"
+                    f"（{self.not_limited[routine]}）ので、これは暫定の網である")
         return f"既定値（{self.source or '組み込み'}）。この routine 固有の上限は決められていない"
 
 
