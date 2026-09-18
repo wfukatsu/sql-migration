@@ -30,6 +30,7 @@ from pathlib import Path
 from antlr4 import ParserRuleContext
 
 from .frontend import ParsedFile
+from . import cursors
 from .ir import model as M
 from .preprocess import Unit
 from .source import SourceRange
@@ -207,6 +208,10 @@ class _Lowerer:
             routine.body = self._statements(_child(body, "Seq_of_statementsContext") or body, ids)
             for handler in _descend(body, {"Exception_handlerContext"}):
                 routine.exception_handlers.append(self._handler(handler, ids))
+        # #11: an explicit cursor that takes the first row, or counts, is not a scan. Rewriting it here rather
+        # than in the generator means the query it becomes goes through the converter and the capability check
+        # like any other statement -- which is the whole point of doing it at all.
+        cursors.rewrite(routine, self.symbols, module, self.schema)
         self._effects(routine, text)
         return routine
 
@@ -403,10 +408,17 @@ class _Lowerer:
         name = type(context).__name__
         kind = {"Open_statementContext": "OpenCursor", "Fetch_statementContext": "Fetch",
                 "Close_statementContext": "CloseCursor"}[name]
+        cursor = _text(_child(context, "Cursor_nameContext"))
+        # the cursor is a `Cursor_name`, not a `Variable_name`, so every name found here is an INTO target.
+        # Dropping the first one (which is what this did) silently lost `v_order_id` out of
+        # `FETCH c INTO v_order_id, v_customer_id, v_total`. A cursor variable can appear as a `Variable_name`
+        # as well, so a leading name equal to the cursor is still skipped.
         into = [_text(v) for v in _descend(context, {"Variable_nameContext"})]
+        if into and cursor and into[0].lower() == cursor.lower():
+            into = into[1:]
         node = M.CursorStatement(id=ids.next("stmt"), kind=kind, source_range=source,
-                                 cursor=_text(_child(context, "Cursor_nameContext")),
-                                 into_targets=into[1:] if kind == "Fetch" else [],
+                                 cursor=cursor,
+                                 into_targets=into if kind == "Fetch" else [],
                                  arguments=[_text(a) for a in _descend(context, {"ArgumentContext"})])
         if re.search(r"\bBULK\s+COLLECT\b", text, re.IGNORECASE):
             # the node keeps the cursor and the targets, not the text, so the fact has to be recorded here
@@ -538,6 +550,34 @@ def _walk(statements: list[M.Statement]) -> list[M.Statement]:
             out.extend(_walk(branch.body))
         out.extend(_walk(getattr(statement, "else_body", []) or []))
         out.extend(_walk(getattr(statement, "body", []) or []))
+    return out
+
+
+def walk_scoped(statements: list[M.Statement],
+                loops: dict[str, M.Loop] | None = None) -> list[tuple[M.Statement, dict[str, M.Loop]]]:
+    """`_walk`, but each statement is paired with the cursor FOR loops whose variable is in scope where it sits.
+
+    `FOR r IN (...)` binds `r`, and a statement in the body may write `r.order_id`. That is not a column of any
+    table the statement names -- it is the loop's row, which the generated Java already holds (#10). Nothing
+    downstream can tell the two apart without knowing which loops enclose the statement, so the walk carries it.
+
+    A loop's own query is paired with the *outer* scope: the query is what binds the variable, so the variable
+    is not in scope inside it.
+    """
+    loops = loops or {}
+    out: list[tuple[M.Statement, dict[str, M.Loop]]] = []
+    for statement in statements:
+        out.append((statement, loops))
+        query = getattr(statement, "query", None)
+        if query is not None:
+            out.append((query, loops))
+        inner = loops
+        if getattr(statement, "loop_kind", None) == "cursor-for" and getattr(statement, "variable", None):
+            inner = {**loops, statement.variable.lower(): statement}
+        for branch in getattr(statement, "branches", []) or []:
+            out.extend(walk_scoped(branch.body, inner))
+        out.extend(walk_scoped(getattr(statement, "else_body", []) or [], inner))
+        out.extend(walk_scoped(getattr(statement, "body", []) or [], inner))
     return out
 
 

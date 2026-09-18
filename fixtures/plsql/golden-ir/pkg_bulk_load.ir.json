@@ -147,7 +147,8 @@
          "sqlKind": "UPDATE",
          "originalSql": "UPDATE products SET stock_qty = stock_qty + p_deltas(i) WHERE product_id = p_product_ids(i)",
          "selectsStar": false,
-         "cardinality": "UNKNOWN"
+         "cardinality": "UNKNOWN",
+         "atMostOneRow": false
         }
        ]
       }
@@ -233,7 +234,8 @@
                "sqlKind": "INSERT",
                "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, new_value, changed_at, changed_by)\n          VALUES (seq_audit_id.NEXTVAL, 'PRODUCTS', TO_CHAR(v_error_index),\n                  'BULKERR', v_error_text, SYSTIMESTAMP, USER)",
                "selectsStar": false,
-               "cardinality": "UNKNOWN"
+               "cardinality": "UNKNOWN",
+               "atMostOneRow": false
               }
              ]
             }
@@ -419,6 +421,7 @@
          ],
          "cursor": "c",
          "intoTargets": [
+          "v_ids",
           "p_limit"
          ]
         },
@@ -573,7 +576,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT product_id, qty BULK COLLECT INTO v_products, v_qtys\n      FROM order_lines WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "MANY"
+       "cardinality": "MANY",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_bulk_load.archive_lines#stmt-2",
@@ -601,7 +605,8 @@
          "sqlKind": "INSERT",
          "originalSql": "INSERT INTO inventory_tx (entry_id, product_id, delta_qty, reason, created_at)\n      VALUES (seq_tx_id.NEXTVAL, v_products(i), -v_qtys(i), 'ARCHIVE', SYSDATE)",
          "selectsStar": false,
-         "cardinality": "UNKNOWN"
+         "cardinality": "UNKNOWN",
+         "atMostOneRow": false
         }
        ]
       }

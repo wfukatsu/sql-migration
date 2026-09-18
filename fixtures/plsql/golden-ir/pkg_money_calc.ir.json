@@ -89,7 +89,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT total_amount INTO v_total FROM orders WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_money_calc.rounded_total#stmt-2",
@@ -189,7 +190,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT ordered_at INTO v_ordered_at FROM orders WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_money_calc.days_since_order#stmt-2",
@@ -289,7 +291,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT note INTO v_note FROM orders WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_money_calc.display_note#stmt-2",
@@ -433,7 +436,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT total_amount INTO v_total FROM orders WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_money_calc.apply_rate#stmt-2",
@@ -448,7 +452,8 @@
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE orders SET total_amount = ROUND(v_total * p_rate, 2) WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       }
      ],
      "deterministic": false,

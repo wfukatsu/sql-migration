@@ -201,7 +201,14 @@ class SqlOperation(Statement):
     # whether the SELECT asks for every column. One INTO target and a star means a %ROWTYPE read, which the
     # repository cannot build from a single result column (P3-1).
     selects_star: bool = False  # serialised as selectsStar
-    cardinality: str = "UNKNOWN"
+    cardinality: str = "UNKNOWN"          # UNKNOWN | NONE | EXACTLY_ONE | AT_MOST_ONE | MANY
+    # the cursor whose `%NOTFOUND` this read answers (#11). A `FETCH` that found nothing is not the same as a
+    # row whose column is NULL, so the branch the original wrote is answered from a flag the read sets, not
+    # from the value it assigned.
+    not_found_flag: str | None = None
+    # whether the query cannot return a second row by its own shape -- `LIMIT 1`, or a bare aggregate. The
+    # access path cannot say this, and it is what decides whether TOO_MANY_ROWS is reachable.
+    at_most_one_row: bool = False
     locking_mode: str | None = None       # FOR UPDATE / NOWAIT / SKIP LOCKED / WAIT n
     target_status: str | None = None      # OK | WARN | PLANNED | ERROR, from scalardb_migrate
     target_sql: list[str] = field(default_factory=list)

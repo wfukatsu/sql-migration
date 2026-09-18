@@ -90,7 +90,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT * INTO v_row FROM customers WHERE customer_id = p_customer_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_customer_view.load#stmt-2",
@@ -189,7 +190,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT customer_id, name, tier INTO v_rec.customer_id, v_rec.name, v_rec.tier\n      FROM customers WHERE customer_id = p_customer_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_customer_view.summary#stmt-2",
@@ -303,7 +305,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT credit_limit INTO v_limit FROM customers WHERE customer_id = p_from",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_customer_view.copy_limit#stmt-2",
@@ -318,7 +321,8 @@
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE customers SET credit_limit = v_limit WHERE customer_id = p_to",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       }
      ],
      "deterministic": false,

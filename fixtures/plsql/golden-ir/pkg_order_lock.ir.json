@@ -154,7 +154,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT * INTO v_row FROM orders WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_order_lock.snapshot#stmt-2",
@@ -283,6 +284,7 @@
        "originalSql": "SELECT * INTO v_row FROM orders WHERE order_id = p_order_id FOR UPDATE WAIT 5",
        "selectsStar": false,
        "cardinality": "UNKNOWN",
+       "atMostOneRow": false,
        "lockingMode": "FOR UPDATE WAIT 5"
       },
       {
@@ -329,7 +331,8 @@
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE orders SET status = 'CANCELLED', note = p_reason WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_order_lock.cancel#stmt-5",
@@ -356,7 +359,8 @@
         "sqlKind": "SELECT",
         "originalSql": "SELECT line_no, product_id, qty FROM order_lines WHERE order_id = p_order_id",
         "selectsStar": false,
-        "cardinality": "MANY"
+        "cardinality": "MANY",
+        "atMostOneRow": false
        },
        "variable": "r",
        "body": [
@@ -373,7 +377,8 @@
          "sqlKind": "UPDATE",
          "originalSql": "UPDATE products SET stock_qty = stock_qty + r.qty WHERE product_id = r.product_id",
          "selectsStar": false,
-         "cardinality": "UNKNOWN"
+         "cardinality": "UNKNOWN",
+         "atMostOneRow": false
         }
        ]
       }

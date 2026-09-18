@@ -35,6 +35,10 @@ PACKAGE_BODY = "Create_package_bodyContext"
 PACKAGE_SPEC = "Create_packageContext"
 TRIGGER = "Create_triggerContext"
 
+def _first_group(match) -> str | None:
+    return match.group(1) if match else None
+
+
 TYPE_ATTRIBUTE = re.compile(r"^\s*(?P<base>[\w$#.]+)\s*%\s*(?P<attr>TYPE|ROWTYPE)\s*$", re.IGNORECASE)
 
 
@@ -91,6 +95,11 @@ class Symbol:
     visibility: str = "private"
     direction: str | None = None      # parameters only
     signature: str | None = None      # routines only, for overload sets
+    # cursors only: the query the cursor is defined as, and the names of its own parameters, in order. A
+    # cursor declared in a package specification exists nowhere else -- the IR lowers the body, not the
+    # specification -- so without this a routine that opens it cannot be told what it reads (#11).
+    query: str | None = None
+    parameters: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -279,9 +288,16 @@ class _Builder:
                     resolved = self._record_type(scope, declaration)
                 elif spec is not None:
                     resolved = self._type(scope, _text(spec))
+                query = parameters = None
+                if kind == "cursor":
+                    query = _first_group(re.search(r"\bIS\b\s*(.+?);?\s*$", text, re.DOTALL | re.IGNORECASE))
+                    # a cursor's own parameters are `Parameter_spec`, not the `Parameter` a routine uses
+                    parameters = [_text(_child(p, "Parameter_nameContext") or p)
+                                  for p in _descend(declaration, {"Parameter_specContext"})]
                 scope.declare(Symbol(
                     name=_text(identifier), kind=actual, scope=scope.id, type=resolved,
-                    source_range=self._range(declaration)))
+                    source_range=self._range(declaration),
+                    query=query.strip() if query else None, parameters=parameters or []))
 
     def _record_type(self, scope: Scope, declaration: ParserRuleContext) -> TypeRef | None:
         """`TYPE t IS RECORD (a customers.name%TYPE, ...)` resolved to the same shape a %ROWTYPE resolves to.

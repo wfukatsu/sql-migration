@@ -120,7 +120,8 @@
        "sqlKind": "INSERT",
        "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, new_value, changed_at, changed_by)\n  VALUES (seq_audit_id.NEXTVAL, p_table_name, p_key_value, p_action, p_new_value, SYSTIMESTAMP, USER)",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "prc_audit_autonomous#stmt-2",

@@ -14,8 +14,8 @@ Oracle の cursor は**トランザクションをまたいで保持される位
 | 形 | ScalarDB での書き方 | 生成器 | 人が決めること |
 |---|---|---|---|
 | A. 読むだけの走査 | 全行を読んでから Java で回す | **生成する**（上限つき） | **routine ごとの上限値** |
-| B. 先頭 1 件だけ取る | 順序付き問い合わせの先頭行 | 未対応（P4 残） | 0 件のときの値 |
-| C. 走査して件数を数える | 集約に置き換える | 未対応（P4 残） | — |
+| B. 先頭 1 件だけ取る | 順序付き問い合わせの先頭行 | **生成する**（`LIMIT 1`） | 0 件のときの値、順序の載り先 |
+| C. 走査して件数を数える | 集約に置き換える | **生成する**（`COUNT(*)`） | — |
 | D. 走査しながら**同じ表**を更新 | **拒否する** | 拒否 | 再設計（下記） |
 | E. 走査しながら**別の表**を更新 | 全行を読んでから Java で回す | 生成する（上限つき） | routine ごとの上限値、部分失敗 |
 | F. `BULK COLLECT LIMIT` | 明示的な分割読み | 拒否 | 1 回の件数とメモリ上限 |
@@ -71,9 +71,33 @@ IF c_amounts%NOTFOUND THEN v_amount := 0; END IF;
 CLOSE c_amounts;
 ```
 
-これは走査ではなく「順序付き問い合わせの先頭行、無ければ既定値」である。ScalarDB では
-clustering key の順序か、アプリ側で最大を取る。**0 件のときの値は元のコードに書いてある**ので、
-そこだけは失わないこと（`%NOTFOUND` の分岐）。
+これは走査ではなく「順序付き問い合わせの先頭行、無ければ既定値」である。生成器はこの並び
+（`OPEN` → `FETCH` → 任意の `%NOTFOUND` 分岐 → `CLOSE`）を認識し、cursor の query に `LIMIT 1` を
+付けた 1 文に置き換える（#11）。
+
+```java
+Object[] largestOrderStmt2Row = repository.largestOrderStmt2(pCustomerId);
+cAmountsNotFound = largestOrderStmt2Row == null;
+if (largestOrderStmt2Row != null) {
+    vAmount = Plsql.dec(largestOrderStmt2Row[0]);
+}
+if (cAmountsNotFound) {          // 元のコードの %NOTFOUND 分岐、そのまま
+    vAmount = Plsql.dec(0);
+}
+```
+
+**保っているものが 3 つある。**
+
+1. **0 件のときの値。** 元のコードの `%NOTFOUND` 分岐をそのまま残す。生成器はこれを翻訳せず、
+   位置も変えない。
+2. **`%NOTFOUND` は「行が無かった」であって「値が NULL だった」ではない。** repository は行の不在を
+   `null` で返し（値ではなく配列で返すのはこのため）、分岐はそこから答える。
+3. **見つからなかった `FETCH` は INTO 先を書き換えない。** Oracle がそうするからであり、
+   `%NOTFOUND` 分岐を持たない並びはまさにそれに依存している。
+
+残るのは**順序の載り先**である。`ORDER BY` が partition key に乗らなければ走査はパーティションを
+またぎ、**フィルタも順序も JDBC バックエンドでしか通らない**（`SCAN-002`）。corpus の
+`pkg_order_report.largest_order` はこれに当たるので REVIEW のままである。
 
 ## C. 走査して件数を数える
 
@@ -83,8 +107,20 @@ LOOP FETCH ... EXIT WHEN %NOTFOUND; p_count := p_count + 1; END LOOP;
 CLOSE c_open_orders;
 ```
 
-集約 1 本に置き換わる。ただし **`COUNT` は 0 件でも 1 行返る**（`SEM-004`）ので、
-`NO_DATA_FOUND` にならず NULL になる差を持ち込まないこと。
+集約 1 本に置き換わる（#11）。
+
+```java
+pCount = Plsql.dec(0);                                        // ループ前の初期化、そのまま
+pCount = Plsql.dec(repository.countByStatusStmt3(pStatus));   // SELECT COUNT(*) ... WHERE status = :p_status
+```
+
+**`COUNT` は 0 件でも 1 行返る**（`SEM-004`）。それは元のループの答えと同じである——1 回も回らず、
+ループ前に置いた初期値が残る——ので、`NO_DATA_FOUND` は持ち込まれない。同じ理由で
+`TOO_MANY_ROWS` も届かないため、キーで届かない `SELECT INTO` の警告（`MULTI_ROW_INTO`）も付かない。
+
+置き換えるのは**ループが数える以外のことをしていないとき**だけである。fetch した値を body が
+読んでいれば、それは COUNT がしないことをしている。cursor の `%ISOPEN` を見ていた handler は、
+cursor ごと消える。
 
 ## D. 走査しながら同じ表を更新 — 拒否する
 

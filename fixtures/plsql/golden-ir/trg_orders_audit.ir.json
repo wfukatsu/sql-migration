@@ -42,7 +42,8 @@
        "sqlKind": "INSERT",
        "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, old_value, new_value, changed_at, changed_by)\n  VALUES (seq_audit_id.NEXTVAL, 'ORDERS', TO_CHAR(:NEW.order_id), 'UPDATE',\n          :OLD.status, :NEW.status, SYSTIMESTAMP, USER)",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       }
      ],
      "deterministic": false,

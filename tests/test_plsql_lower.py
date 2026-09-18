@@ -83,11 +83,29 @@ def test_transaction_statements_are_nodes_not_omissions():
 
 
 def test_cursor_statements_keep_the_cursor_they_touch():
+    """A sequence that is none of the recognised shapes (#11) stays the OPEN / FETCH / CLOSE it was.
+
+    The loop body does more than count, so it is not shape C, and the fetch is not a first row followed by a
+    close, so it is not shape B. What the lowering must keep is which cursor each statement touches.
+    """
     routine = lower_text(
-        "CREATE OR REPLACE PROCEDURE p IS\n  CURSOR c IS SELECT 1 FROM dual;\n  v NUMBER;\n"
-        "BEGIN\n  OPEN c;\n  FETCH c INTO v;\n  CLOSE c;\nEND;\n/\n")
-    assert kinds(routine) == ["OpenCursor", "Fetch", "CloseCursor"]
-    assert {s.cursor for s in routine.body} == {"c"}
+        "CREATE OR REPLACE PROCEDURE p IS\n  CURSOR c IS SELECT 1 FROM dual;\n  v NUMBER;\n  n NUMBER;\n"
+        "BEGIN\n  OPEN c;\n  LOOP\n    FETCH c INTO v;\n    EXIT WHEN c%NOTFOUND;\n"
+        "    n := n + v;\n  END LOOP;\n  CLOSE c;\nEND;\n/\n")
+    cursor_statements = [s for s in _walk(routine.body) if s.kind in ("OpenCursor", "Fetch", "CloseCursor")]
+    assert [s.kind for s in cursor_statements] == ["OpenCursor", "Fetch", "CloseCursor"]
+    assert {s.cursor for s in cursor_statements} == {"c"}
+
+
+def test_a_fetch_keeps_every_variable_it_assigns():
+    """`FETCH c INTO a, b, c` assigns three variables. Dropping the first is what this used to do."""
+    routine = lower_text(
+        "CREATE OR REPLACE PROCEDURE p IS\n  CURSOR c IS SELECT 1, 2, 3 FROM dual;\n"
+        "  a NUMBER; b NUMBER; d NUMBER;\n"
+        "BEGIN\n  OPEN c;\n  LOOP\n    FETCH c INTO a, b, d;\n    EXIT WHEN c%NOTFOUND;\n"
+        "    a := a + b;\n  END LOOP;\n  CLOSE c;\nEND;\n/\n")
+    fetch = next(s for s in _walk(routine.body) if s.kind == "Fetch")
+    assert fetch.into_targets == ["a", "b", "d"]
 
 
 def test_a_for_update_is_recorded_with_its_mode():

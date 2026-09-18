@@ -118,6 +118,7 @@
        "originalSql": "SELECT stock_qty INTO v_stock FROM products WHERE product_id = p_product_id FOR UPDATE",
        "selectsStar": false,
        "cardinality": "UNKNOWN",
+       "atMostOneRow": false,
        "lockingMode": "FOR UPDATE"
       },
       {
@@ -164,7 +165,8 @@
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE products SET stock_qty = v_stock - p_qty WHERE product_id = p_product_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       }
      ],
      "deterministic": false,
@@ -294,6 +296,7 @@
        "originalSql": "SELECT stock_qty INTO v_stock FROM products WHERE product_id = p_product_id FOR UPDATE NOWAIT",
        "selectsStar": false,
        "cardinality": "UNKNOWN",
+       "atMostOneRow": false,
        "lockingMode": "FOR UPDATE NOWAIT"
       },
       {
@@ -309,7 +312,8 @@
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE products SET stock_qty = v_stock - p_qty WHERE product_id = p_product_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       }
      ],
      "exceptionHandlers": [
@@ -422,6 +426,7 @@
        "originalSql": "SELECT next_value INTO v_next FROM counters WHERE counter_name = 'PAYMENT_ID' FOR UPDATE",
        "selectsStar": false,
        "cardinality": "UNKNOWN",
+       "atMostOneRow": false,
        "lockingMode": "FOR UPDATE"
       },
       {
@@ -437,7 +442,8 @@
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE counters SET next_value = v_next + 1 WHERE counter_name = 'PAYMENT_ID'",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_stock_reserve.next_payment_id#stmt-3",
@@ -541,7 +547,8 @@
          "sqlKind": "UPDATE",
          "originalSql": "UPDATE orders SET status = 'CLAIMED' WHERE CURRENT OF c",
          "selectsStar": false,
-         "cardinality": "UNKNOWN"
+         "cardinality": "UNKNOWN",
+         "atMostOneRow": false
         }
        ]
       }

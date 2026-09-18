@@ -30,7 +30,7 @@ from scalardb_migrate.schema import SchemaRegistry
 
 from .analysis import ProgramAnalysis
 from .ir import model as M
-from .lower import _walk
+from .lower import _walk, walk_scoped
 from .source import Issue
 from .dynamic import annotate as annotate_dynamic
 from .sqlbridge import analyse as analyse_sql
@@ -70,14 +70,19 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
     report = CapabilityReport()
     for module in program.modules:
         for routine in module.routines:
-            statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
+            # each statement with the cursor FOR loops enclosing it: `r.order_id` in the body is the loop's
+            # row, not a column (#10). A routine-level handler is outside every loop, so its scope is empty.
+            scoped = walk_scoped(routine.body) + [(s, {}) for h in routine.exception_handlers
+                                                  for s in _walk(h.body)]
+            statements = [s for s, _ in scoped]
             # A routine whose read was locked (`SELECT ... FOR UPDATE`) must not have its write quietly
             # rewritten: the lock was what made the read-modify-write safe, and conversion drops it
             # (WARN ROW_LOCK). Leaving the write as something ScalarDB refuses keeps the loss visible at the
             # call site. P3-4 measured what happens without it -- one of two concurrent transactions is
             # rejected -- and that is a redesign, not a rewrite.
             locked = any(getattr(s, "locking_mode", None) for s in statements)
-            for statement in statements:
+            for statement, loops in scoped:
+                loop_variables = _loop_fields(loops)
                 if statement.kind == "DynamicSql":
                     # P4-7: a dynamic statement whose text is knowable becomes ordinary SQL, one per variant,
                     # and is then converted and checked like anything else. Enumerating without converting
@@ -88,7 +93,8 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
                             source_range=statement.source_range, original_sql=variant.sql,
                             binds=list(statement.using), into_targets=list(statement.into_targets))
                         result = analyse_sql(operation, scope=routine.id, symbols=symbols,
-                                             registry=registry, storage=storage, lift=not locked)
+                                             registry=registry, storage=storage, lift=not locked,
+                                             loop_variables=loop_variables)
                         statement.variant_statements.append(operation)
                         report.statuses[operation.id] = result.status
                         report.issues.extend(
@@ -98,7 +104,8 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
                 if statement.kind != "SqlOperation" or not statement.original_sql:
                     continue
                 result = analyse_sql(statement, scope=routine.id, symbols=symbols,
-                                    registry=registry, storage=storage, lift=not locked)
+                                    registry=registry, storage=storage, lift=not locked,
+                                    loop_variables=loop_variables)
                 report.statuses[statement.id] = result.status
                 if result.access_path:
                     report.access_paths[statement.id] = result.access_path
@@ -108,6 +115,26 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
                     Issue(i["severity"], i["code"], i["message"], statement.source_range)
                     for i in result.issues if i["severity"] == "ERROR")
     return report
+
+
+def _loop_fields(loops: dict[str, M.Loop]) -> dict[str, dict[str, str | None]]:
+    """What each loop variable's fields are declared as, taken from the query the loop iterates.
+
+    The query has already been analysed when a statement in the body is reached -- `walk_scoped` yields it
+    first, the same order `_walk` used -- so `into_columns` / `into_oracle_types` are filled in. The types come
+    from there rather than from the DDL because that is the same pair the loop's record is generated from
+    (`gen_java.repository.loop_record`), and a bind typed differently from the record it is read out of would
+    not compile.
+    """
+    out: dict[str, dict[str, str | None]] = {}
+    for name, loop in loops.items():
+        query = loop.query
+        if query is None:
+            continue
+        types = list(query.into_oracle_types or [])
+        out[name] = {column: (types[i] if i < len(types) else None)
+                     for i, column in enumerate(query.into_columns or []) if column}
+    return out
 
 
 def is_key_access(access_path: str | None) -> bool:
@@ -168,6 +195,8 @@ def annotate(program: M.Program, report: CapabilityReport) -> None:
             continue
         if is_key_access(report.access_paths.get(statement.id)):
             continue
+        if statement.at_most_one_row:
+            continue   # `LIMIT 1` or a bare aggregate: there is no second row to raise TOO_MANY_ROWS with
         if any(d.code == "MULTI_ROW_INTO" for d in statement.diagnostics):
             continue
         statement.add("WARN", "MULTI_ROW_INTO",

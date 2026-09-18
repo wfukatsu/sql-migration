@@ -1238,6 +1238,15 @@
             "null"
           ]
         },
+        "notFoundFlag": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "atMostOneRow": {
+          "type": "boolean"
+        },
         "lockingMode": {
           "type": [
             "string",

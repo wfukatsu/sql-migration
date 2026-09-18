@@ -138,7 +138,10 @@
           "startColumn": 5,
           "endColumn": 25
          },
-         "cursor": "c_orders"
+         "cursor": "c_orders",
+         "intoTargets": [
+          "v_order_id"
+         ]
         },
         {
          "id": "prc_reprice_all#stmt-4",

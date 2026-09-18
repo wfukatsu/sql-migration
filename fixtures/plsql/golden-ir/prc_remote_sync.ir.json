@@ -84,7 +84,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT status INTO v_status FROM orders WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "prc_remote_sync#stmt-2",
@@ -99,7 +100,8 @@
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE orders@warehouse_link SET status = v_status WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "prc_remote_sync#stmt-3",
@@ -114,7 +116,8 @@
        "sqlKind": "INSERT",
        "originalSql": "INSERT INTO shipment_queue@warehouse_link (order_id, requested_at)\n  VALUES (p_order_id, SYSDATE)",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "prc_remote_sync#stmt-4",

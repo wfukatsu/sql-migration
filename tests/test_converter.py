@@ -171,6 +171,68 @@ def test_join_using_rewritten_and_key_coverage_checked():
     assert "JOIN_KEY" in codes(r)  # orders PK is (customer_id, order_no): not covered
 
 
+# --- #13: an inner join written the other way round ----------------------------------------------------
+
+JOIN_SCHEMA = ("CREATE TABLE customers (customer_id BIGINT, tier VARCHAR(10), PRIMARY KEY (customer_id)); "
+               "CREATE TABLE orders2 (order_id BIGINT, customer_id BIGINT, PRIMARY KEY (order_id)); ")
+
+
+def join_run(sql):
+    results, _ = convert_script(JOIN_SCHEMA + sql, "mysql", decompose=False)
+    return results[-1]
+
+
+def test_an_inner_join_is_swapped_so_that_where_names_the_from_table():
+    """ScalarDB lets WHERE name only the FROM table. An INNER JOIN returns the same rows either way."""
+    r = join_run("SELECT c.tier FROM customers c JOIN orders2 o ON o.customer_id = c.customer_id "
+                 "WHERE o.order_id = 1")
+    assert "JOIN_SCOPE" not in codes(r), r.issues
+    assert r.converted[0] == ("SELECT c.tier FROM orders2 AS o JOIN customers AS c "
+                              "ON o.customer_id = c.customer_id WHERE o.order_id = 1")
+    assert "JOIN_ORDER" in codes(r), "the swap is stated, not silent"
+
+
+def test_the_swap_is_not_made_when_it_would_not_settle_the_matter():
+    """Both sides referenced: moving the problem from one side to the other helps nobody."""
+    r = join_run("SELECT c.tier FROM customers c JOIN orders2 o ON o.customer_id = c.customer_id "
+                 "WHERE o.order_id = 1 AND c.tier = 'GOLD'")
+    assert r.status == "ERROR" and "JOIN_SCOPE" in codes(r)
+    assert "JOIN_ORDER" not in codes(r)
+
+
+def test_an_outer_join_is_not_swapped():
+    """LEFT JOIN is not commutative: swapping the sides is a different query."""
+    r = join_run("SELECT c.tier FROM customers c LEFT JOIN orders2 o ON o.customer_id = c.customer_id "
+                 "WHERE o.order_id = 1")
+    assert "JOIN_ORDER" not in codes(r)
+    assert "JOIN_SCOPE" in codes(r)
+
+
+def test_an_unqualified_column_is_attributed_to_its_table_before_the_swap_is_decided():
+    """MR !52: the swap read only qualified references while JOIN_SCOPE resolved unqualified ones too, so a
+    query the swap could have settled was refused by the check that followed it."""
+    r = join_run("SELECT c.tier FROM customers c JOIN orders2 o ON o.customer_id = c.customer_id "
+                 "WHERE order_id = 1")
+    assert "JOIN_SCOPE" not in codes(r), r.issues
+    assert "JOIN_ORDER" in codes(r)
+    assert r.converted[0].startswith("SELECT c.tier FROM orders2 AS o JOIN customers AS c")
+
+
+def test_an_unqualified_column_of_the_from_table_still_stops_the_swap():
+    """The same resolution the check uses: `tier` is the base table's, so swapping would break the query."""
+    r = join_run("SELECT c.tier FROM customers c JOIN orders2 o ON o.customer_id = c.customer_id "
+                 "WHERE order_id = 1 AND tier = 'GOLD'")
+    assert "JOIN_ORDER" not in codes(r)
+    assert r.status == "ERROR" and "JOIN_SCOPE" in codes(r)
+
+
+def test_a_join_that_already_names_the_from_table_is_left_alone():
+    r = join_run("SELECT c.tier FROM customers c JOIN orders2 o ON o.customer_id = c.customer_id "
+                 "WHERE c.customer_id = 1")
+    assert "JOIN_ORDER" not in codes(r)
+    assert r.converted[0].startswith("SELECT c.tier FROM customers AS c")
+
+
 def test_to_date_literal():
     r = run("SELECT ename FROM emp WHERE hiredate > TO_DATE('2020-01-01', 'YYYY-MM-DD')", "oracle", with_schema=False)
     assert r.converted[0].endswith("WHERE hiredate > '2020-01-01'")

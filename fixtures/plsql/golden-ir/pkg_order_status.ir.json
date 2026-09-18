@@ -89,7 +89,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT status INTO v_status FROM orders WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_order_status.status_of#stmt-2",
@@ -213,7 +214,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT status INTO p_status FROM orders WHERE customer_id = p_customer_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       }
      ],
      "exceptionHandlers": [

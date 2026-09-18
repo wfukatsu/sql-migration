@@ -88,7 +88,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT COUNT(*) INTO v_count FROM order_lines WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_shipment.line_count#stmt-2",
@@ -188,7 +189,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT status INTO v_status FROM orders WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_shipment.is_shippable#stmt-2",
@@ -372,7 +374,8 @@
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE orders SET shipped_at = p_when, status = 'SHIPPED' WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_shipment.mark_shipped#stmt-2",
@@ -491,7 +494,8 @@
        "sqlKind": "SELECT",
        "originalSql": "SELECT shipped_at INTO v_shipped FROM orders WHERE order_id = p_order_id",
        "selectsStar": false,
-       "cardinality": "UNKNOWN"
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
       },
       {
        "id": "pkg_shipment.days_in_transit#stmt-2",
