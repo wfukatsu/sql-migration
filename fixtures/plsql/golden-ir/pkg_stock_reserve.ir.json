@@ -264,7 +264,8 @@
         "endColumn": 23
        },
        "name": "e_locked",
-       "declarationKind": "exception"
+       "declarationKind": "exception",
+       "initial": "-54"
       }
      ],
      "body": [

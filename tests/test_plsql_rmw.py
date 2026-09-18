@@ -93,3 +93,29 @@ def test_the_counter_routine_is_recorded_and_converts(corpus):
     assert update.target_sql == \
         ["UPDATE counters SET next_value = :expr2 WHERE counter_name = 'PAYMENT_ID'"]
     assert [b.expression for b in update.binds if b.expression] == ["v_next + 1"]
+
+
+def test_a_handler_for_an_error_that_cannot_happen_is_not_emitted(corpus):
+    """`PRAGMA EXCEPTION_INIT(e_locked, -54)` は「行ロックが取れない」で、**移行先では起こらない**
+    （ScalarDB は待たないのが既定で、衝突は commit で分かる）。
+
+    `catch` を出すと `MigratedException` を広く捕まえ、**関係のない業務例外まで「ロックされている」に
+    付け替える**。Oracle では他の例外は素通りしていたので、出さないほうが元に近い（#9 §B）。
+    """
+    from plsql.gen_java.service import generate_module
+
+    module = next(m for m in corpus.program.modules if m.name == "pkg_stock_reserve")
+    java = generate_module(module, "g.app", "g.infra", "g.domain").file.render()
+    body = java[java.index("public void reserveNowait"):]
+    body = body[:body.index("\n    public", 1)] if "\n    public" in body[1:] else body
+    assert "catch (MigratedException e)" not in body
+    assert "try {" not in body, "catch が無い try は Java にならない"
+    assert "-20031" not in body, "起こらない誤りの付け替えが残っている"
+    assert "この handler は出さない" in body
+
+
+def test_the_exception_is_bound_to_the_oracle_error_it_caught(corpus):
+    """番号で判断する。名前で判断すると、同じ名前の別の例外に当たる。"""
+    routine = next(r for _, r in corpus.routines() if r.id == "pkg_stock_reserve.reserve_nowait")
+    declared = next(d for d in routine.declarations if d.declaration_kind == "exception")
+    assert (declared.name, declared.initial) == ("e_locked", "-54")

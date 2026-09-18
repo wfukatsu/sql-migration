@@ -112,6 +112,30 @@ ScalarDB は commit で分かる。
 **決めること**: `-20031` を呼び出し側に見せ続けるのか、再試行に変えるのか。**呼び出し側が
 「ロックされている」を業務判断に使っている**なら、それは commit 時点では遅い。設計を変える。
 
+### 決定（2026-09-18 / #9）: 衝突として扱う
+
+`NOWAIT` という指定そのものが意味を失う（待たないのが既定）ので、**ORA-54 に相当する出来事は
+起こらない**。衝突は commit で分かり、再試行は呼び出し側の責務である。
+
+`rowLocks.optimistic` に `pkg_stock_reserve.reserve_nowait` を記録した。あわせて、**起こりえない
+誤りを捕まえる handler は出さない**:
+
+```java
+public void reserveNowait(BigDecimal pProductId, BigDecimal pQty) throws Exception {
+    // WHEN E_LOCKED: 捕まえていた Oracle の誤りは移行先では起こらないので、この handler は出さない
+    vStock = (Long) repository.reserveNowaitStmt1(pProductId);
+    rowCount = repository.reserveNowaitStmt2(vStock, pQty, pProductId);
+}
+```
+
+`catch` を出すと `MigratedException` を広く捕まえ、**関係のない業務例外まで `-20031`
+「ロックされている」に付け替える**。Oracle では他の例外は素通りしていたので、出さないほうが
+元に近い。判断は `PRAGMA EXCEPTION_INIT` が結びつけた**番号**（`-54`）で行う——名前で判断すると、
+同じ名前の別の例外に当たる。
+
+**タイミングは変わる。** Oracle は読んだ瞬間に分かり、移行後は commit で分かる。`-20031` を
+業務判断に使っている呼び出し側があれば、そこは設計を変える必要がある。
+
 ## C. 取り合う（`SKIP LOCKED`）
 
 ```sql
@@ -129,6 +153,22 @@ CURSOR c IS SELECT order_id FROM orders WHERE status = 'NEW' AND ROWNUM <= p_lim
 
 **決めること**: 取りこぼしと二重取りのどちらを許すか。担当者列には**期限**が要る（取った側が落ちた
 場合に誰も取れなくなる）。
+
+### 決定（2026-09-18 / #9）: 担当者列 + 期限で表す
+
+ロックではなく**データ**で作業分配を表す。`claimed_by` / `claimed_at` を条件付き更新で立て、
+取れた行だけ処理する。期限を置き、取った側が落ちた行は再び取れるようにする。
+
+**これは翻訳ではなく再設計である。** `claim_batch` は `WHERE CURRENT OF c` を含み、そもそも
+ScalarDB SQL に相当物が無い。`rowLocks.optimistic` には**記録しない**——記録は「ロックを落として
+楽観制御へ移す」という意味で、この型は移し方そのものが違う。スキーマ変更（列の追加と索引）が
+決まるまで、生成器は拒否したままにする。
+
+決めるときに答えること:
+
+* 取りこぼしと二重取りのどちらを許すか
+* 期限の長さ（取った側が落ちてから、他が取れるようになるまで）
+* 担当者列を `orders` に置くか、別表にするか
 
 ## D. 行ロックで直列化する採番
 

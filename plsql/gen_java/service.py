@@ -243,11 +243,14 @@ def _method(file: JavaFile, module: M.Module, routine: M.Routine, result: Servic
             f.line(f"boolean {_flag_name(flag)} = false;   // {flag}%NOTFOUND")
         if routine.declarations or outs:
             f.line()
-        if routine.exception_handlers:
+        if _emits_a_catch(routine.exception_handlers, routine):
             with f.block("try") as body:
                 _statements(body, routine.body, routine, result)
             _handlers(f, routine.exception_handlers, routine, result, domain_package)
         else:
+            # handler が 1 つも出ないなら `try` も出さない。`catch` の無い `try` は Java にならない
+            # （`--verify-compile` が捕まえた）
+            _handlers(f, routine.exception_handlers, routine, result, domain_package)
             _statements(f, routine.body, routine, result)
         if outs and not _always_exits(routine, result):
             components = (["null"] if routine.return_type is not None else []) + \
@@ -280,6 +283,20 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
         if "OTHERS" in names:
             caught = "MigratedException"
             comment = "WHEN OTHERS: only migrated exceptions, so a bug does not look like a business error"
+        elif _cannot_happen_on_the_target(names, routine):
+            # `PRAGMA EXCEPTION_INIT(e_locked, -54)` のように、**移行先では起こりえない** Oracle の
+            # 誤りだけを捕まえる handler である。ScalarDB では「待たない」が既定で ORA-54 に相当する
+            # 出来事が無く、衝突は commit で分かる（#9 §B の決定）。
+            #
+            # catch を出すと `MigratedException` を広く捕まえてしまい、**関係のない業務例外まで
+            # 「ロックされている」に付け替える**。Oracle では他の例外は素通りしていたので、
+            # 出さないほうが元に近い。
+            file.comment(f"WHEN {', '.join(names)}: 捕まえていた Oracle の誤りは移行先では"
+                         f"起こらないので、この handler は出さない。衝突は commit で分かり、"
+                         f"再試行は呼び出し側の責務である（#9 §B）")
+            # 未変換には数えない。**決めて出していない**ものであって、翻訳できなかったものではない
+            # ——数えると、決定の結果が KPI では失敗のように見える
+            continue
         else:
             classes = [PREDEFINED[n][0] for n in names if n in PREDEFINED]
             caught = " | ".join(classes) if classes else "MigratedException"
@@ -307,6 +324,29 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
                 _statements(f, handler.body, routine, result)
             finally:
                 _HANDLER_ERROR.set(outer)
+
+
+# 移行先では起こりえない Oracle の誤り。いまのところ行ロックが取れないこと（ORA-54）だけである
+UNREACHABLE_ORACLE_ERRORS = {"-54"}
+
+
+def _emits_a_catch(handlers: list[M.ExceptionHandler], routine: M.Routine) -> bool:
+    """`catch` が 1 つでも出るか。移行先で起こりえない誤りだけの handler は出ないので、
+    `try` を書くかどうかはこれで決まる。"""
+    return any(not _cannot_happen_on_the_target([e.upper() for e in h.exceptions], routine)
+               for h in handlers)
+
+
+def _cannot_happen_on_the_target(names: list[str], routine: M.Routine) -> bool:
+    """handler が捕まえているのが、移行先では起こりえない誤りだけか。
+
+    判断は `PRAGMA EXCEPTION_INIT` が結びつけた**番号**で行う。名前で判断すると、同じ名前の
+    別の例外に当たる。
+    """
+    bound = {d.name.upper(): (d.initial or "") for d in routine.declarations
+             if d.declaration_kind == "exception"}
+    codes = [bound.get(name) for name in names]
+    return bool(codes) and all(code in UNREACHABLE_ORACLE_ERRORS for code in codes)
 
 
 def _always_throws(statement: M.Statement, result: ServiceFile) -> bool:
@@ -538,7 +578,8 @@ def _block(file: JavaFile, statement: M.Block, routine: M.Routine, result: Servi
         with file.block("") as scope:
             for declaration in statement.declarations:
                 _declaration(scope, declaration, routine, result)
-            if not statement.exception_handlers:
+            if not _emits_a_catch(statement.exception_handlers, routine):
+                _handlers(scope, statement.exception_handlers, routine, result, _DOMAIN.get() or "")
                 _statements(scope, statement.body, routine, result)
                 return
             with scope.block("try") as f:

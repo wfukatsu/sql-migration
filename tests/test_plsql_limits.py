@@ -204,7 +204,8 @@ def test_a_row_lock_decision_is_recorded_per_routine():
 
     locks = RowLocks.load(CONFIG)
     assert locks.decided("pkg_stock_reserve.reserve")
-    assert not locks.decided("pkg_stock_reserve.reserve_nowait"), "B 型（NOWAIT）はまだ決まっていない"
+    assert not locks.decided("pkg_stock_reserve.claim_batch"), \
+        "C 型（SKIP LOCKED）は担当者列と期限の設計が要る。記録するのは設計が決まってからである"
     assert "呼び出し側" in locks.why("pkg_stock_reserve.reserve") \
         or "commit で弾かれる" in locks.why("pkg_stock_reserve.reserve")
 
@@ -235,7 +236,8 @@ def test_the_decided_routine_converts_and_says_what_the_caller_must_do():
     assert any(d.code == "OPTIMISTIC" for s in decided for d in s.diagnostics), \
         "再試行が呼び出し側の責務であることが残っていない"
 
-    undecided = [s for s in _walk(by_id["pkg_stock_reserve.reserve_nowait"].body)
+    # 決めていない routine（C 型）は、ロックが落ちても楽観制御へ移す記録が無い
+    undecided = [s for s in _walk(by_id["pkg_stock_reserve.claim_batch"].body)
                  if s.kind == "SqlOperation"]
-    assert "ERROR" in [s.target_status for s in undecided], \
-        "決めていない routine が通ってしまっている——ロックが落ちたまま書き換えが進んでいる"
+    assert not [d for s in undecided for d in s.diagnostics if d.code == "OPTIMISTIC"], \
+        "決めていない routine が楽観制御へ移されている"

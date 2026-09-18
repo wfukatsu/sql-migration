@@ -61,6 +61,11 @@ rowLocks:
       業務例外（-20030 在庫不足）は再試行しても結果が変わらないので、呼び出し側は衝突だけを再試行する
     pkg_tier_admin.promote: >-
       書き込む値は引数で、読んだ値に依存しない。読みは「既に同じ tier なら何もしない」の判定にだけ使う
+    pkg_stock_reserve.reserve_nowait: >-
+      `NOWAIT` は「待たない」という指定だが、ScalarDB では**待たないのが既定**なので指定自体が
+      意味を失う（transaction-patterns §B）。ORA-54 に相当するのは「衝突で失敗したトランザクション」
+      で、呼び出し側が再試行する。**分かるタイミングが変わる**——Oracle は読んだ瞬間、ScalarDB は
+      commit である。`-20031` を業務判断に使っている呼び出し側があれば、それは commit 時点では遅い
     pkg_stock_reserve.next_payment_id: >-
       採番方式は決まっている（計画 §9 / 2026-09-17）——`seq_payment_id` は NOCACHE なので
       「counters 表 + 再試行」であり、この routine はまさにその形（読む・+1 する・書く）である。
