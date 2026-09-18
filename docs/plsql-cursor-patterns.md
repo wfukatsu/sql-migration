@@ -168,6 +168,43 @@ FETCH c BULK COLLECT INTO v_ids LIMIT p_limit;
 なり、複数行のときは 2 行目以降を黙って捨てる**。分割読みとして書き直すこと自体は素直だが、
 1 回の件数とメモリ上限は元のコードが `p_limit` で外に出しているので、移行先でも外に出す。
 
+## G. `FORALL ... SAVE EXCEPTIONS`
+
+```sql
+FORALL i IN 1 .. p_product_ids.COUNT SAVE EXCEPTIONS
+  UPDATE products SET stock_qty = stock_qty + p_deltas(i) WHERE product_id = p_product_ids(i);
+EXCEPTION WHEN OTHERS THEN
+  IF SQLCODE = -24381 THEN                      -- 一部が失敗した
+    FOR i IN 1 .. SQL%BULK_EXCEPTIONS.COUNT LOOP
+      INSERT INTO audit_log (... 'BULKERR' ...);   -- 失敗を記録して続行
+```
+
+**「失敗しても続け、記録する」**という要件である。一括の原子性ではない——`SAVE EXCEPTIONS` は
+まさに原子性を捨てる指定である。
+
+### 決定（2026-09-18 / #14）: #3 と同じ形に揃える
+
+* **1 要素 = 1 トランザクション**（transaction-patterns §E の決定と同じ）
+* **失敗した要素のエラー行は別トランザクション**（同 §F / §G の決定と同じ）——1 要素分を
+  rollback すると、その中に書いたエラー行も消えるため
+
+```java
+for (int i = 0; i < pProductIds.size(); i++) {
+    try {
+        tx.run(() -> service.restockOne(pProductIds.get(i), pDeltas.get(i)));
+    } catch (Exception failed) {
+        tx.run(() -> service.restockFailed(pProductIds.get(i), failed));   // 別トランザクション
+    }
+}
+```
+
+**新しい判断ではない。** `SAVE EXCEPTIONS` が表している要件（続行して記録する）は、#3 で
+`prc_nightly_close` について決めたものと同じである。決定を 2 つに分けると、片方だけ実装されて
+食い違う。
+
+`SQL%BULK_EXCEPTIONS` は移行先に無い。**どの要素が失敗したか**は、上の形では catch した側が
+知っている（`i` を持っているのはループである）。
+
 ---
 
 ## 共通して決めておくこと
