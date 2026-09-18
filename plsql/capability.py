@@ -34,7 +34,8 @@ from .lower import _walk, walk_scoped
 from .source import Issue
 from .dynamic import annotate as annotate_dynamic
 from .sqlbridge import analyse as analyse_sql
-from .symbols import SymbolTable
+from .symbols import OracleSchema
+from .symbols import OracleSchema, SymbolTable
 
 # the converter's own words for an access that does not need a scan
 KEY_ACCESS = re.compile(r"->\s*(GET|partition SCAN)", re.IGNORECASE)
@@ -65,10 +66,11 @@ class CapabilityReport:
 
 
 def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | None = None,
-          storage: str = "jdbc") -> CapabilityReport:
+          storage: str = "jdbc", schema: "OracleSchema | None" = None) -> CapabilityReport:
     """Run every SQL statement through the converter and write the answer onto the IR."""
     report = CapabilityReport()
     for module in program.modules:
+        correlation = _correlation_fields(module, schema)
         for routine in module.routines:
             # each statement with the cursor FOR loops enclosing it: `r.order_id` in the body is the loop's
             # row, not a column (#10). A routine-level handler is outside every loop, so its scope is empty.
@@ -83,6 +85,13 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
             locked = any(getattr(s, "locking_mode", None) for s in statements)
             for statement, loops in scoped:
                 loop_variables = _loop_fields(loops)
+                if routine.routine_kind == "trigger-body":
+                    # `:NEW.status` / `:OLD.status` are the row the trigger fired on. The target has no
+                    # trigger, so the row comes from whoever calls the generated method -- the same answer
+                    # #1 gave for `USER`: the caller supplies it, and the generator does not reach for an
+                    # ambient value. Named here like a cursor FOR loop's row (#10), which is the machinery
+                    # that already turns a qualified reference into a value the caller passes.
+                    loop_variables = {**loop_variables, **correlation}
                 if statement.kind == "DynamicSql":
                     # P4-7: a dynamic statement whose text is knowable becomes ordinary SQL, one per variant,
                     # and is then converted and checked like anything else. Enumerating without converting
@@ -115,6 +124,17 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
                     Issue(i["severity"], i["code"], i["message"], statement.source_range)
                     for i in result.issues if i["severity"] == "ERROR")
     return report
+
+
+def _correlation_fields(module: M.Module, schema: "OracleSchema | None") -> dict[str, dict[str, str | None]]:
+    """`NEW` / `OLD` と、trigger が掛かっている表の列。DDL が無ければ空（型を作れない）。"""
+    if module.module_kind != "trigger" or not module.trigger_table or schema is None:
+        return {}
+    columns = schema.columns(module.trigger_table)
+    if not columns:
+        return {}
+    fields = {name.lower(): oracle for name, oracle in columns.items()}
+    return {"new": dict(fields), "old": dict(fields)}
 
 
 def _loop_fields(loops: dict[str, M.Loop]) -> dict[str, dict[str, str | None]]:

@@ -90,6 +90,27 @@
      }
     }
    ],
+   "declarations": [
+    {
+     "id": "trg_payments_guard.body#decl-1",
+     "kind": "Declaration",
+     "sourceRange": {
+      "file": "trg_payments_guard.trg",
+      "startLine": 6,
+      "endLine": 6,
+      "startColumn": 3,
+      "endColumn": 30
+     },
+     "type": {
+      "oracle": "orders.status%TYPE",
+      "resolved": "VARCHAR2(20)",
+      "origin": "column-type",
+      "schemaSnapshot": "schema.sql@23623f44"
+     },
+     "name": "v_status",
+     "declarationKind": "variable"
+    }
+   ],
    "triggerEvent": "INSERT",
    "triggerTable": "payments",
    "triggerTiming": "BEFORE"

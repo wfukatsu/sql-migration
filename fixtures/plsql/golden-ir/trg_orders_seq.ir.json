@@ -58,7 +58,8 @@
    ],
    "triggerEvent": "INSERT",
    "triggerTable": "orders",
-   "triggerTiming": "BEFORE"
+   "triggerTiming": "BEFORE",
+   "triggerWhen": "NEW.order_id IS NULL"
   }
  ],
  "schemaSnapshot": "schema.sql@23623f44"
