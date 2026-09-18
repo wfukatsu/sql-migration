@@ -163,6 +163,11 @@ class Loop(Statement):
     query: "SqlOperation | None" = None
     # the loop variable: `FOR r IN (...)` binds `r`, and the body reads `r.column`
     variable: str | None = None
+    # #14: `FETCH c BULK COLLECT INTO v LIMIT n` が回していた**1 回分の件数**。これが入っている
+    # ループは、行をまとめて読んでから n 件ずつ配る——移行先に跨トランザクションの cursor が無い
+    # ので、`n` はもう読み込む量ではなく、**1 回に配る量**である。その違いを残すために、
+    # 「ただの走査」に潰さずに持つ
+    chunk: str | None = None
     body: list[Statement] = field(default_factory=list)
 
 
@@ -240,6 +245,9 @@ class CursorStatement(Statement):
     cursor: str = ""
     into_targets: list[str] = field(default_factory=list)
     arguments: list[str] = field(default_factory=list)
+    # `FETCH ... BULK COLLECT INTO v LIMIT n` の `n`。INTO の対象ではないので分けて持つ——
+    # 一緒くたにすると、**代入先が 1 つ増えたように見える**
+    bulk_limit: str | None = None
 
 
 @dataclass

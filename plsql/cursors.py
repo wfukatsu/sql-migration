@@ -131,7 +131,8 @@ def _sequence(statements: list[M.Statement], routine: M.Routine, symbols: Symbol
     index = 0
     while index < len(statements):
         match = _first_row(statements, index, routine, symbols, module, schema) or \
-            _count(statements, index, routine, symbols, module, schema)
+            _count(statements, index, routine, symbols, module, schema) or \
+            _chunks(statements, index, routine, symbols, module, schema)
         if match is None:
             out.append(statements[index])
             index += 1
@@ -253,6 +254,58 @@ def _count_sql(sql: str) -> str:
     select.set("expressions", [exp.Count(this=exp.Star())])
     select.set("order", None)
     return select.sql(dialect="oracle")
+
+
+# --- E. 分割読み（`FETCH ... BULK COLLECT INTO v LIMIT n`）-----------------------------------------
+
+def _chunks(statements: list[M.Statement], index: int, routine: M.Routine, symbols: SymbolTable,
+            module: str | None,
+            schema: OracleSchema | None) -> tuple[list[M.Statement], int, str] | None:
+    """`OPEN c; LOOP FETCH c BULK COLLECT INTO v LIMIT n; ... END LOOP; CLOSE c;`
+
+    Oracle のこの形は**メモリを守るための分割読み**である——n 件ずつ取り、取れなくなったら抜ける。
+    移行先に跨トランザクションの cursor は無いので、行は**先にまとめて読む**しかない（走査行数の
+    上限が守るのはそこで、`--limits` が決める）。残るのは「n 件ずつ配る」というループの形である。
+
+    **だから `n` の意味は変わる。** 元は「1 回に読み込む件数」、移した後は「1 回に配る件数」である。
+    読む量を決めていたものが、配る量しか決めなくなる——**隠さずに `BULK_CHUNKED` として残す**。
+
+    本体はそのまま残す。`EXIT WHEN v.COUNT = 0` も残る: 配る側は空の塊を渡さないので発火しないが、
+    元に書いてあるものを落とす理由が無い。ループの後で `v` を読んでいたら書き換えない——Oracle は
+    最後に取った（空の）塊を残すので、そこまで同じにはできない。
+    """
+    run = statements[index:]
+    if len(run) < 3 or run[0].kind != "OpenCursor" or run[1].kind != "Loop" or run[2].kind != "CloseCursor":
+        return None
+    cursor = _cursor_name(run[0].cursor)
+    if _cursor_name(run[2].cursor) != cursor or (run[1].loop_kind or "basic") != "basic":
+        return None
+    body = list(run[1].body)
+    if not body or body[0].kind != "Fetch" or _cursor_name(body[0].cursor) != cursor:
+        return None
+    fetch = body[0]
+    if not fetch.bulk_limit or len(fetch.into_targets or []) != 1:
+        return None   # 分割読みでない、または 2 つ以上の配列へ取る形。位置で対応させられない
+    collection = fetch.into_targets[0]
+    if _reads_outside(routine, run[:3], [collection]):
+        return None
+    query = _query(cursor, list(run[0].arguments), routine, symbols, module, schema)
+    if query is None:
+        return None
+    operation = _operation(run[1], routine, query, [])
+    if operation is None:
+        return None
+    operation.cardinality = "MANY"
+    loop = M.Loop(id=run[1].id, kind="Loop", source_range=run[1].source_range,
+                  loop_kind="cursor-for", variable=collection, chunk=fetch.bulk_limit,
+                  query=operation, body=body[1:],
+                  cursor=f"{collection} IN chunks({query}, {fetch.bulk_limit})")
+    loop.add("INFO", "BULK_CHUNKED",
+             f"cursor {cursor} は {fetch.bulk_limit} 件ずつ読んでいた。移行先に跨トランザクションの "
+             f"cursor は無いので行は先にまとめて読み、{fetch.bulk_limit} 件ずつ**配る**ループにした。"
+             f"読み込む量を決めていた値が、配る量しか決めなくなる——メモリを守るのは走査行数の上限"
+             f"（--limits）である")
+    return ([loop], 3, cursor)
 
 
 # --- shared -------------------------------------------------------------------------------------------

@@ -18,7 +18,7 @@ Oracle の cursor は**トランザクションをまたいで保持される位
 | C. 走査して件数を数える | 集約に置き換える | **生成する**（`COUNT(*)`） | — |
 | D. 走査しながら**同じ表**を更新 | **拒否する** | 拒否 | 再設計（下記） |
 | E. 走査しながら**別の表**を更新 | 全行を読んでから Java で回す | 生成する（上限つき） | routine ごとの上限値、部分失敗 |
-| F. `BULK COLLECT LIMIT` | 明示的な分割読み | 拒否 | 1 回の件数とメモリ上限 |
+| F. `BULK COLLECT LIMIT` | 明示的な分割読み | n 件ずつ配るループ | 走査行数の上限（LIMIT はもうメモリを守らない） |
 
 ---
 
@@ -164,9 +164,37 @@ Oracle でこの形が何を見るかは cursor の一貫性モデルの話で�
 FETCH c BULK COLLECT INTO v_ids LIMIT p_limit;
 ```
 
-拒否する。P3-2 で直したとおり、これを 1 行の `SELECT INTO` として扱うと **0 件と複数件が元に無い例外に
-なり、複数行のときは 2 行目以降を黙って捨てる**。分割読みとして書き直すこと自体は素直だが、
-1 回の件数とメモリ上限は元のコードが `p_limit` で外に出しているので、移行先でも外に出す。
+これを 1 行の `SELECT INTO` として扱うと **0 件と複数件が元に無い例外になり、複数行のときは
+2 行目以降を黙って捨てる**（P3-2 で直した）。
+
+### 実装（2026-09-18 / #14）: n 件ずつ**配る**ループにする
+
+```java
+// 行は先にまとめて読む。p_limit は 1 回に配る件数である
+for (List<CollectOpenOrdersLoop3Row> vIds : Plsql.chunks(repository.collectOpenOrdersLoop3(), pLimit)) {
+    if (Plsql.eq(vIds.size(), 0)) break;              // EXIT WHEN v_ids.COUNT = 0
+    pCount = Plsql.dec(Plsql.add(pCount, vIds.size()));
+}
+```
+
+**`p_limit` の意味が変わる。これがこの書き換えの代償である。**
+
+| | Oracle | 移行先 |
+|---|---|---|
+| `p_limit` が決めるもの | 1 回に**読み込む**件数 | 1 回に**配る**件数 |
+| メモリを守るもの | `p_limit` | **走査行数の上限**（`--limits` / #19） |
+
+跨トランザクションの cursor が無い以上、行は先に読むしかない。だから `p_limit` はメモリを守らなく
+なる——**それを黙って「ただの走査」に潰さない**ために、ループは `BULK_CHUNKED` を持ち、規則
+`BULK-003` はその形に対して `row_limit` を要求し続ける。`collect_open_orders` の上限はまだ誰も
+決めていないので、`--limits-strict` は今もその名前を挙げる。
+
+書き換えない条件が 1 つある: **ループの後で配列を読んでいるとき**。Oracle は最後に取った（空の）
+塊を残すので、そこまで同じにはできない。`EXIT WHEN v_ids.COUNT = 0` は残してある——配る側は
+空の塊を渡さないので発火しないが、元に書いてあるものを落とす理由が無い。
+
+**実測（2026-09-18、実 ScalarDB Cluster / `bulk_collect_open_orders`）**: Oracle と一致した
+（`p_count` = 2）。書き換える前は `OpenCursor is not translated` で止まっていた。
 
 ## G. `FORALL ... SAVE EXCEPTIONS`
 

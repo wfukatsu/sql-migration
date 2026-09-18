@@ -263,7 +263,13 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
             file.add_import(*mapped.imports)
             initial = f" = {java_name(parameter.name)}" if parameter.direction == "IN OUT" else " = null"
             f.line(f"{mapped.name} {java_name(parameter.name)}{initial};")
+        chunked = {(loop.variable or "").lower() for loop in _walk(routine.body)
+                   if loop.kind == "Loop" and getattr(loop, "chunk", None)}
         for declaration in routine.declarations:
+            if declaration.name.lower() in chunked:
+                # 分割読みのループ変数（#14）。PL/SQL では宣言された配列だが、Java では塊そのもの
+                # が for の変数になる。ここでも宣言すると同じ名前が 2 つになる
+                continue
             _declaration(f, declaration, routine, result)
         for flag in _not_found_flags(routine):
             # `c%NOTFOUND` after an explicit cursor's first FETCH (#11). It is declared with the locals, not at
@@ -754,7 +760,19 @@ def _cursor_for(file: JavaFile, statement: M.Loop, routine: M.Routine, result: S
     record = loop_record(routine, statement)
     file.add_import(f"{_DOMAIN.get()}.{record}")
     file.comment("the rows are read before the loop runs: ScalarDB has no cursor held across a transaction")
-    opening = (f"for ({record} {variable} : repository.{loop_method(routine, statement)}({arguments}))")
+    rows = f"repository.{loop_method(routine, statement)}({arguments})"
+    if statement.chunk:
+        # #14: `FETCH ... BULK COLLECT INTO v LIMIT n` が回していた分割読み。行は先にまとめて読む
+        # ので、`n` はもう**読み込む量ではなく配る量**である。メモリを守るのは走査行数の上限である
+        size = _expr(file, statement.chunk, routine, result)
+        file.add_import("java.util.List", "com.scalar.migrate.plsql.Plsql")
+        file.comment(f"{statement.chunk} は 1 回に**配る**件数である。読み込む量を決めていた値が、"
+                     f"配る量しか決めなくなる（走査行数の上限が守るのはメモリのほう）")
+        # `v_ids.COUNT` は塊の件数。`v_ids` は Java の List なので、その読み方を名前として置く
+        columns[f"{statement.variable}.count"] = f"{variable}.size()"
+        opening = f"for (List<{record}> {variable} : Plsql.chunks({rows}, {size}))"
+    else:
+        opening = f"for ({record} {variable} : {rows})"
     outer = _LOOP_ROWS.get()
     _LOOP_ROWS.set({**outer, **columns})
     try:

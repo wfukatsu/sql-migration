@@ -372,18 +372,6 @@
        "expression": "0"
       },
       {
-       "id": "pkg_bulk_load.collect_open_orders#stmt-2",
-       "kind": "OpenCursor",
-       "sourceRange": {
-        "file": "pkg_bulk_load.pkb",
-        "startLine": 33,
-        "endLine": 33,
-        "startColumn": 5,
-        "endColumn": 10
-       },
-       "cursor": "c"
-      },
-      {
        "id": "pkg_bulk_load.collect_open_orders#stmt-3",
        "kind": "Loop",
        "sourceRange": {
@@ -393,38 +381,41 @@
         "startColumn": 5,
         "endColumn": 9
        },
-       "loopKind": "basic",
-       "body": [
+       "diagnostics": [
         {
-         "id": "pkg_bulk_load.collect_open_orders#stmt-4",
-         "kind": "Fetch",
-         "sourceRange": {
+         "severity": "INFO",
+         "code": "BULK_CHUNKED",
+         "message": "cursor c は p_limit 件ずつ読んでいた。移行先に跨トランザクションの cursor は無いので行は先にまとめて読み、p_limit 件ずつ**配る**ループにした。読み込む量を決めていた値が、配る量しか決めなくなる——メモリを守るのは走査行数の上限（--limits）である",
+         "range": {
           "file": "pkg_bulk_load.pkb",
-          "startLine": 35,
-          "endLine": 35,
-          "startColumn": 7,
-          "endColumn": 45
-         },
-         "diagnostics": [
-          {
-           "severity": "WARN",
-           "code": "BULK_COLLECT",
-           "message": "BULK COLLECT needs a row limit and a memory bound",
-           "range": {
-            "file": "pkg_bulk_load.pkb",
-            "startLine": 35,
-            "endLine": 35,
-            "startColumn": 7,
-            "endColumn": 45
-           }
-          }
-         ],
-         "cursor": "c",
-         "intoTargets": [
-          "v_ids",
-          "p_limit"
-         ]
+          "startLine": 34,
+          "endLine": 38,
+          "startColumn": 5,
+          "endColumn": 9
+         }
+        }
+       ],
+       "loopKind": "cursor-for",
+       "cursor": "v_ids IN chunks(SELECT order_id FROM orders WHERE status = 'NEW', p_limit)",
+       "query": {
+        "id": "pkg_bulk_load.collect_open_orders#stmt-3",
+        "kind": "SqlOperation",
+        "sourceRange": {
+         "file": "pkg_bulk_load.pkb",
+         "startLine": 34,
+         "endLine": 38,
+         "startColumn": 5,
+         "endColumn": 9
         },
+        "sqlKind": "SELECT",
+        "originalSql": "SELECT order_id FROM orders WHERE status = 'NEW'",
+        "selectsStar": false,
+        "cardinality": "MANY",
+        "atMostOneRow": false
+       },
+       "variable": "v_ids",
+       "chunk": "p_limit",
+       "body": [
         {
          "id": "pkg_bulk_load.collect_open_orders#stmt-5",
          "kind": "Exit",
@@ -451,18 +442,6 @@
          "expression": "p_count + v_ids.COUNT"
         }
        ]
-      },
-      {
-       "id": "pkg_bulk_load.collect_open_orders#stmt-7",
-       "kind": "CloseCursor",
-       "sourceRange": {
-        "file": "pkg_bulk_load.pkb",
-        "startLine": 39,
-        "endLine": 39,
-        "startColumn": 5,
-        "endColumn": 11
-       },
-       "cursor": "c"
       }
      ],
      "deterministic": false,
