@@ -121,6 +121,32 @@ def _expression_texts(statement: M.Statement):
             yield branch.condition
 
 
+CORRELATION_REFERENCE = re.compile(r"\b(?P<qualifier>NEW|OLD)\s*\.\s*(?P<column>[A-Za-z][\w$#]*)",
+                                   re.IGNORECASE)
+
+
+def correlation_row(routine: M.Routine) -> dict[str, "M.BindVariable"]:
+    """`NEW.status` / `OLD.status` -> それを渡す bind。trigger の行は呼び出し側から来る（#12）。
+
+    使われている参照だけを、名前順で返す。表の全列を引数にすると、読んでいない列まで呼び出し側に
+    用意させることになる——`AuditContext` を「使う routine にだけ付ける」としたのと同じ理由である。
+    """
+    seen: dict[str, M.BindVariable] = {}
+    for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
+        for bind in getattr(statement, "binds", None) or []:
+            variable = bind.plsql_variable or ""
+            if variable.upper().startswith(("NEW.", "OLD.")):
+                seen.setdefault(variable, bind)
+    module = _MODULE.get()
+    for match in CORRELATION_REFERENCE.finditer(getattr(module, "trigger_when", None) or ""):
+        # 発火条件だけが読む列。SQL を通っていないので型が付いていない——付いていないことを
+        # `Object` として出すほうが、条件ごと拒んで「なぜ読めないのか」を隠すよりよい
+        variable = f"{match.group('qualifier').upper()}.{match.group('column')}"
+        seen.setdefault(variable, M.BindVariable(name=variable.replace(".", "_"), direction="IN",
+                                                 plsql_variable=variable))
+    return dict(sorted(seen.items()))
+
+
 def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]:
     """PL/SQL name -> Java name for everything visible inside the method, siblings included.
 
@@ -128,6 +154,13 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
     names belong in the scope; without them every such call is reported as unknown.
     """
     names = {"SQL%ROWCOUNT": "rowCount", "sql%rowcount": "rowCount"}
+    # trigger の相関名。`:NEW.status` は文が走る前から Java が値として持っているもので、
+    # cursor FOR ループの行と同じ扱いになる（#10 / #12）
+    for variable, bind in correlation_row(routine).items():
+        # PL/SQL の本文は `:NEW.status`、SQL から起こした bind は `NEW.status`。同じものなので
+        # 両方の綴りを置く
+        names[variable] = java_name(bind.name)
+        names[f":{variable}"] = java_name(bind.name)
     names.update({p.name: java_name(p.name) for p in routine.parameters})
     names.update({d.name: java_name(d.name) for d in routine.declarations})
     if module is not None:
@@ -158,6 +191,14 @@ def _method(file: JavaFile, module: M.Module, routine: M.Routine, result: Servic
         file.add_import(*mapped.imports)
         parameters.append(f"{mapped.name} {java_name(parameter.name)}")
 
+    for variable, bind in correlation_row(routine).items():
+        # #12: trigger の行は呼び出し側が渡す。移行先に trigger は無いので、「この表へのすべての
+        # 書き込み」に掛かっていたものが、この method を呼ぶ経路にだけ掛かる——網羅性は呼び出し側の
+        # 設計（trigger-patterns §0）であって、生成器が保証できることではない
+        mapped = java_type(bind.oracle_type)
+        file.add_import(*mapped.imports)
+        parameters.append(f"{mapped.name} {java_name(bind.name)}")
+
     if needs_audit(routine):
         # #1 / #8: who and when come from the caller. Last, so adding it does not renumber the parameters a
         # caller already passes positionally.
@@ -172,6 +213,11 @@ def _method(file: JavaFile, module: M.Module, routine: M.Routine, result: Servic
         if routine.routine_kind == "trigger-body":
             for declaration in (_MODULE.get().declarations if _MODULE.get() else []):
                 _declaration(f, declaration, routine, result)
+            if _trigger_when(f, routine, result):
+                # 条件が読めないので本体は出さない。Java は throw のあとの文を受け付けないし、
+                # 出したところで動かない
+                f.comment("the body is not emitted while the firing condition is unresolved")
+                return
         if any((s.sql_kind or "").upper() in ("INSERT", "UPDATE", "DELETE", "MERGE")
                for s in _walk(routine.body) + [x for h in routine.exception_handlers for x in _walk(h.body)]
                if s.kind == "SqlOperation"):
@@ -350,6 +396,12 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
     kind = statement.kind
 
     if kind == "Assignment":
+        if (statement.target or "").lstrip(":").upper().startswith(("NEW.", "OLD.")):
+            # `:NEW.order_id := seq_order_id.NEXTVAL` は、**これから書き込まれる行を書き換える**もので、
+            # Java の引数への代入では呼び出し側に返らない。値として受け取ったものを、値として返す形
+            # （採番 Service）へ移すのは再設計であって翻訳ではない（#12 / trigger-patterns C）。
+            # 解決できる名前なので黙って通ってしまう——ここで明示的に拒む。
+            raise Untranslatable([f"assignment to {statement.target}"], statement.target or "")
         # the target goes through the translator too: `:NEW.col` is not a Java name, and rendering it anyway
         # produced code that did not compile
         target = _expr(file, statement.target, routine, result)
@@ -384,6 +436,32 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
         _sql(file, statement, routine)
     else:
         _untranslated(file, statement, result)
+
+
+def _trigger_when(file: JavaFile, routine: M.Routine, result: ServiceFile) -> bool:
+    """`WHEN (OLD.status <> NEW.status)` を、本体の前の番人として出す。
+
+    発火条件は「変わったときだけ」であって、落とすと**記録される量が変わる**——監査 trigger なら
+    更新のたびに 1 行増える。条件の中の名前が 1 つでも解決しなければ、本体ごと拒む: 条件を落として
+    本体だけ動かすのは、**元より多く実行する**ということである。
+    """
+    module = _MODULE.get()
+    condition = getattr(module, "trigger_when", None) if module else None
+    if not condition:
+        return False
+    file.comment(f"WHEN ({condition})")
+    try:
+        file.line(f"if (!({_expr(file, condition, routine, result)})) return;")
+    except Untranslatable as e:
+        # 条件が読めないまま本体を動かすと、**元より多く実行する**。拒むほうを選ぶ。
+        file.comment(f"    unresolved: {', '.join(e.names)}")
+        file.line(f'throw new UnsupportedOperationException("unresolved in trigger WHEN: '
+                  f'{", ".join(e.names)}");')
+        if routine.id not in result.untranslated:
+            result.untranslated.append(routine.id)
+        return True
+    file.line()
+    return False
 
 
 def _block(file: JavaFile, statement: M.Block, routine: M.Routine, result: ServiceFile) -> None:
@@ -673,8 +751,15 @@ def _coerce(file: JavaFile, value: str, target_type: str) -> str:
 
 
 def _local_type(routine: M.Routine, target: str) -> str:
-    """The repository hands back Object; the local it lands in has a declared type."""
-    for holder in list(routine.declarations) + list(routine.parameters):
+    """The repository hands back Object; the local it lands in has a declared type.
+
+    A trigger declares its locals on the module, not on the routine (`symbols._trigger` registers them
+    there and the generator emits them from there), so those count as locals here too. Without this the
+    value was cast to `Object` and assigned to a `String` -- Java that does not compile (#12).
+    """
+    module = _MODULE.get()
+    module_locals = list(module.declarations) if module is not None         and routine.routine_kind == "trigger-body" else []
+    for holder in list(routine.declarations) + module_locals + list(routine.parameters):
         if holder.name.lower() != target.lower() or holder.type is None:
             continue
         if isinstance(holder, M.Declaration):

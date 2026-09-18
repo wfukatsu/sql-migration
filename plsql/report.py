@@ -116,7 +116,7 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
         from scalardb_migrate.schema import SchemaRegistry
 
         registry = SchemaRegistry.from_schema_loader_json(str(scalardb_schema))
-        analysis.capability = check(program, registry, analysis.symbol_table())
+        analysis.capability = check(program, registry, analysis.symbol_table(), schema=schema)
         annotate(program, analysis.capability)
     return analysis
 

@@ -331,6 +331,9 @@ class Module(Node):
     trigger_event: str | None = None
     trigger_table: str | None = None
     trigger_timing: str | None = None
+    # `WHEN (OLD.status <> NEW.status)`: trigger が発火する条件。落とすと**記録される量が変わる**
+    # ので、生成側は本体の前の番人として出す（#12 / trigger-patterns A-2）
+    trigger_when: str | None = None
 
     @property
     def has_package_state(self) -> bool:
