@@ -274,3 +274,41 @@ def test_sqlcode_reads_the_exception_the_handler_caught():
 def test_sqlcode_outside_a_handler_is_still_refused():
     """handler の外では常に 0 である。名前として与えると、外の `SQLCODE` が黙って通る。"""
     assert not translate("SQLCODE = -24381", {}).translatable
+
+
+# --- #25: 完走できない routine は採番の前で止める ------------------------------------------------
+
+def test_a_routine_that_cannot_finish_does_not_draw_a_sequence_first():
+    """採番だけが**トランザクションの外へ出る**。`CACHE n` の sequence は hi/lo に移す（計画 §9）ので、
+    引いた番号は呼び出し側が rollback しても戻らない——拒否された routine が欠番を作る。
+
+    DML は戻るので止めない。どこまで移行できているかが見え、コンパイル検査も受ける。
+    """
+    import pathlib
+
+    from plsql.gen_java.service import generate_module
+    from plsql.report import analyse as build_analysis
+
+    fixtures = pathlib.Path(__file__).resolve().parent.parent / "fixtures" / "plsql"
+    corpus = build_analysis(fixtures / "src", fixtures / "src" / "schema.sql",
+                            scalardb_schema=fixtures / "scalardb-schema.json")
+    module = next(m for m in corpus.program.modules if m.name == "prc_audit_autonomous")
+    java = generate_module(module, "g.app", "g.infra", "g.domain").file.render()
+    assert "この文の採番は行わない" in java
+    assert "repository.prcAuditAutonomousStmt1" not in java, "採番する文へ到達している"
+
+
+def test_a_routine_that_finishes_still_draws_its_sequence():
+    """止めるのは完走できない routine だけである。"""
+    import pathlib
+
+    from plsql.gen_java.service import generate_module
+    from plsql.report import analyse as build_analysis
+
+    fixtures = pathlib.Path(__file__).resolve().parent.parent / "fixtures" / "plsql"
+    corpus = build_analysis(fixtures / "src", fixtures / "src" / "schema.sql",
+                            scalardb_schema=fixtures / "scalardb-schema.json")
+    module = next(m for m in corpus.program.modules if m.name == "prc_add_product")
+    java = generate_module(module, "g.app", "g.infra", "g.domain").file.render()
+    assert "この文の採番は行わない" not in java
+    assert "repository.prcAddProductStmt" in java

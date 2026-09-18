@@ -38,6 +38,8 @@ _DOMAIN: "contextvars.ContextVar[str | None]" = contextvars.ContextVar("domain",
 # PL/SQL says -- reading them off the routine would make a block-local visible to the whole method.
 _BLOCK_LOCALS: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("block_locals", default={})
 _ROWCOUNT_SEEN: "contextvars.ContextVar[bool]" = contextvars.ContextVar("rowcount", default=False)
+# この routine が途中で拒否することが分かっているか（#25）。採番の前で止めるために要る
+_REFUSES_LATER: "contextvars.ContextVar[bool]" = contextvars.ContextVar("refuses", default=False)
 # P4-5: `FOR r IN (SELECT qty, ...)` puts `r` in scope for the body, and the translator turns `r.qty` into the
 # record accessor `r.qty()`. Kept apart from the routine's own names so a nested loop restores the outer one.
 _LOOP_ROWS: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("loop_rows", default={})
@@ -209,6 +211,7 @@ def _method(file: JavaFile, module: M.Module, routine: M.Routine, result: Servic
 
     visibility = "public" if routine.visibility == "public" else "private"
     _ROWCOUNT_SEEN.set(False)
+    _REFUSES_LATER.set(_refuses_somewhere(routine, result))
     _source_comment(file, routine)
     with file.block(f"{visibility} {returns} {java_name(routine.name)}({', '.join(parameters)}) "
                     "throws Exception") as f:
@@ -388,8 +391,50 @@ def _statements(file: JavaFile, statements: list[M.Statement], routine: M.Routin
             break
 
 
+def _refuses_somewhere(routine: M.Routine, result: ServiceFile) -> bool:
+    """この routine のどこかで翻訳を拒むか。**本番の生成に入る前に、捨てる紙で 1 回書いてみる。**
+
+    予測ではなく実行で答えるのは、「翻訳できない」の定義が生成器のあちこちに分かれているからである
+    （未知の名前・扱えない文の種類・ScalarDB が拒む SQL）。同じことを 2 か所で判断すると、片方が
+    増えたときにもう片方が黙って古くなる——この repo が何度も直してきた形である（#12 / #21）。
+    """
+    probe = ServiceFile(file=JavaFile(package="probe", name="Probe", source=""))
+    seen = _REFUSES_LATER.get()
+    _REFUSES_LATER.set(False)   # 下書きの中でこの規則を効かせない（数えたいのは元の拒否だけ）
+    try:
+        _statements(probe.file, routine.body, routine, probe)
+        for handler in routine.exception_handlers:
+            _statements(probe.file, handler.body, routine, probe)
+    except Exception:
+        return True   # 書いてみて落ちるなら、それも拒否である
+    finally:
+        _REFUSES_LATER.set(seen)
+    return bool(probe.untranslated)
+
+
+def draws_a_sequence(statement: M.Statement) -> bool:
+    """この文が採番するか。採番は**トランザクションの外へ出る**（#25）。
+
+    `CACHE n` の sequence は hi/lo に移す（計画 §9）ので、引いた番号は呼び出し側が rollback しても
+    戻らない。DML はトランザクションの中なので戻る——だから止めるべきはここだけである。
+    """
+    return any((bind.expression or "").upper().endswith(".NEXTVAL")
+               for bind in getattr(statement, "binds", None) or [])
+
+
 def _statement(file: JavaFile, statement: M.Statement, routine: M.Routine, result: ServiceFile) -> None:
     _source_comment(file, statement)
+    if _REFUSES_LATER.get() and draws_a_sequence(statement):
+        # この routine は完走できない。採番だけはトランザクションを抜けるので、**引く前に止める**
+        # ——拒否された routine が欠番を作らないようにする（#25 / 2026-09-18 の決定）。
+        # ここより前の文はそのまま出す: どこまで移行できているかが見え、コンパイル検査も受ける。
+        file.comment("この routine には翻訳できない文がある。採番はトランザクションを抜けるので、"
+                     "引く前に止める")
+        file.line('throw new UnsupportedOperationException("routine が完走できないので、'
+                  'この文の採番は行わない");')
+        if statement.id not in result.untranslated:
+            result.untranslated.append(statement.id)
+        return
     try:
         _translate_statement(file, statement, routine, result)
     except Untranslatable as e:
