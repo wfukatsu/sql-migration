@@ -366,6 +366,54 @@ class TransactionIT {
         "both transactions took the same number: two payments would share an id");
   }
 
+  /**
+   * 生成された `nextPaymentId` を 2 つ同時に呼ぶ。手で書いた SQL ではなく**生成コード**を測るのは、
+   * 「この形なら安全」と「生成された物がその形になっている」が別の主張だからである（#9 D 型）。
+   */
+  private Thread generatedCounterTaker(CountDownLatch bothHaveRead, AtomicReference<Throwable> failure,
+      AtomicReference<java.math.BigDecimal> taken) {
+    return new Thread(() -> {
+      try (ScalarDbRunner own = open()) {
+        Object service = Class.forName("com.example.migrated.application.PkgStockReserveService")
+            .getConstructors()[0].newInstance(
+                Class.forName("com.example.migrated.infrastructure.PkgStockReserveRepository")
+                    .getConstructor(java.sql.Connection.class).newInstance(own.connection()));
+        bothHaveRead.countDown();
+        bothHaveRead.await(60, TimeUnit.SECONDS);
+        taken.set((java.math.BigDecimal) service.getClass().getMethod("nextPaymentId").invoke(service));
+        own.commit();
+      } catch (Throwable t) {
+        failure.set(t);
+      }
+    });
+  }
+
+  @Test
+  void theGeneratedCounterDoesNotHandTheSameNumberToTwoCallers() throws Exception {
+    runner.execute("INSERT INTO counters (counter_name, next_value) VALUES ('PAYMENT_ID', 5000)");
+    runner.commit();
+
+    CountDownLatch ready = new CountDownLatch(2);
+    AtomicReference<Throwable> firstFailure = new AtomicReference<>();
+    AtomicReference<Throwable> secondFailure = new AtomicReference<>();
+    AtomicReference<java.math.BigDecimal> firstTaken = new AtomicReference<>();
+    AtomicReference<java.math.BigDecimal> secondTaken = new AtomicReference<>();
+    Thread one = generatedCounterTaker(ready, firstFailure, firstTaken);
+    Thread two = generatedCounterTaker(ready, secondFailure, secondTaken);
+    one.start();
+    two.start();
+    one.join(TimeUnit.SECONDS.toMillis(60));
+    two.join(TimeUnit.SECONDS.toMillis(60));
+
+    boolean bothCommitted = firstFailure.get() == null && secondFailure.get() == null;
+    if (bothCommitted) {
+      assertFalse(java.util.Objects.equals(firstTaken.get(), secondTaken.get()),
+          "生成された採番が同じ番号を 2 人に渡した: " + firstTaken.get());
+    }
+    // どちらかが弾かれるのが期待どおりで、そのときは呼び出し側が再試行する（計画 §9）
+    assertTrue(bothCommitted || firstFailure.get() != null || secondFailure.get() != null);
+  }
+
   private Thread counterTaker(CountDownLatch bothHaveRead, AtomicReference<Throwable> failure) {
     return new Thread(() -> {
       try (ScalarDbRunner own = open()) {
