@@ -73,6 +73,25 @@ class PlsqlTest {
   }
 
   @Test
+  void bindDropsTheOffsetForATimestampColumnTheWayOracleDoes() {
+    // Oracle が TIMESTAMP WITH TIME ZONE を TIMESTAMP 列へ入れるときは offset を落とし、日時の
+    // フィールドはそのまま残す（セッションのタイムゾーンへ換算しない）。Oracle 23ai で実測した (#23)。
+    // 落とさずに渡すとドライバが型ごと拒否する: DB-SQL-10016 java.time.OffsetDateTime is not supported
+    java.time.OffsetDateTime moment =
+        java.time.OffsetDateTime.parse("2026-01-15T09:30:00-05:00");
+    assertEquals(java.time.LocalDateTime.parse("2026-01-15T09:30:00"),
+        Plsql.bind(moment, "TIMESTAMP", 0));
+  }
+
+  @Test
+  void bindLeavesAMomentAloneForAColumnThatKeepsTheZone() {
+    // TIMESTAMPTZ はタイムゾーンを保てるので、落とすと情報が減る
+    java.time.OffsetDateTime moment =
+        java.time.OffsetDateTime.parse("2026-01-15T09:30:00-05:00");
+    assertEquals(moment, Plsql.bind(moment, "TIMESTAMPTZ", 0));
+  }
+
+  @Test
   void bindRoundsToTheColumnScaleTheWayOracleDoes() {
     // Oracle stores 1234.565 into a NUMBER(14,2) as 1234.57: half-up, not half-even, and never truncated
     assertEquals(123457L, Plsql.bind(new BigDecimal("1234.565"), "BIGINT", 2));

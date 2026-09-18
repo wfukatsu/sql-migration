@@ -182,10 +182,26 @@ public final class Plsql {
   /** A PL/SQL value on its way into a ScalarDB column of the given type. */
   public static Object bind(Object value, String scalarDbType, int scale) {
     if (isNull(value)) return null;
+    String type = scalarDbType == null ? "" : scalarDbType.toUpperCase();
+    if (value instanceof java.time.OffsetDateTime moment && type.equals("TIMESTAMP")) {
+      // `SYSTIMESTAMP` と `AuditContext.now()` はタイムゾーンつきだが、行き先は TIMESTAMP 列である。
+      // Oracle が TIMESTAMP WITH TIME ZONE を TIMESTAMP 列へ入れるときと同じことをする:
+      // **offset を落とし、日時のフィールドはそのまま**——セッションのタイムゾーンへ換算はしない。
+      // Oracle 23ai で実測して確かめた（#23）:
+      //
+      //   セッション +09:00、SYSTIMESTAMP が 2026-09-18 02:55:09 +00:00
+      //     -> TIMESTAMP 列には 2026-09-18 02:55:09（11:55:09 ではない）
+      //   '2026-01-15 09:30:00 -05:00' -> 2026-01-15 09:30:00
+      //
+      // 換算しないので、ここで渡す値は「Oracle が書いたはずの壁時計」である。落とさずに渡すと
+      // ScalarDB SQL のドライバが型ごと拒否する（DB-SQL-10016）。TIMESTAMPTZ 列はタイムゾーンを
+      // 保てるので、この変換の対象ではない。
+      return moment.toLocalDateTime();
+    }
     BigDecimal decimal = value instanceof BigDecimal d ? d
         : value instanceof Number n ? OracleNumbers.toBigDecimal(n) : null;
-    if (decimal == null) return value;  // TEXT, DATE, TIMESTAMP and the like pass through untouched
-    switch (scalarDbType == null ? "" : scalarDbType.toUpperCase()) {
+    if (decimal == null) return value;  // TEXT, DATE, TIMESTAMPTZ and the like pass through untouched
+    switch (type) {
       case "BIGINT":
         return scaled(decimal, scale).longValueExact();
       case "INT":
