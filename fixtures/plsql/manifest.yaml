@@ -176,7 +176,9 @@ units:
     holdout: true
     routines:
       - {name: paid_total,   expected: REVIEW, reason: "集約は 0 件でも 1 行返る。NO_DATA_FOUND にならず NULL になる差を保つ"}
-      - {name: record_payment, expected: REVIEW, reason: "主キー SELECT INTO + INSERT。業務エラーコードの写像が要る"}
+      # 2026-09-18 / #12: payments への INSERT には `trg_payments_guard`（B 型・検証して拒否する）が
+      # 掛かる。**漏れた書き込みは検証されない**ので、網羅性の要求は監査より高い
+      - {name: record_payment, expected: REDESIGN, reason: "主キー SELECT INTO + INSERT。ただし payments への書き込みなので trg_payments_guard を呼ぶ——検証を免れる経路が無いことの担保が要る（#12）"}
       - {name: last_paid_at, expected: REVIEW, reason: "TIMESTAMP WITH TIME ZONE の MAX。セッション TZ 依存を検出する"}
 
   - name: prc_reprice_all
@@ -228,7 +230,10 @@ units:
     routines:
       - {name: line_count,      expected: REVIEW, reason: "集約の SELECT INTO。0 件でも 1 行返るため NO_DATA_FOUND にならない"}
       - {name: is_shippable,    expected: REVIEW, reason: "主キーの SELECT INTO だが line_count を呼ぶ。呼び出し先の判断に従う"}
-      - {name: mark_shipped,    expected: AUTO,   reason: "主キー UPDATE と SQL%ROWCOUNT。影響行数を Result に保持すれば足りる"}
+      # 2026-09-18 / #12: orders への UPDATE には `trg_orders_audit` が掛かる。移行先に trigger は
+      # 無いので、掛けるのは**書き込む側**になり、この routine はその trigger を呼ぶ。呼び出し先が
+      # REDESIGN（網羅性を保証できない）なら、この経路もその判断を引き継ぐ
+      - {name: mark_shipped,    expected: REDESIGN, reason: "主キー UPDATE と SQL%ROWCOUNT。ただし orders への書き込みなので trg_orders_audit を呼ぶ——網羅性の判断を引き継ぐ（#12）"}
       - {name: days_in_transit, expected: REVIEW, reason: "TRUNC と SYSDATE と TIMESTAMP から DATE への CAST。日付の意味を保つ必要がある"}
 
   - name: prc_purge_audit

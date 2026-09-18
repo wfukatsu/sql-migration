@@ -65,6 +65,53 @@ corpus の中では全経路が Service を通る。**実案件で穴になる�
 B 型（検証して拒否する）の網羅性要求は A 型より高い——A なら記録が無いだけだが、B は不正な
 データが入る。**同じ「検証で追う」でも、B 型では検出が遅れた分だけ被害が残る。**
 
+### 実装（2026-09-18 / #12）: 見えている経路には掛ける
+
+生成器は、**書き込む文のところで trigger を呼ぶ**。掛けるのは自分が見えている経路だけで、
+それ以外は検証の仕事として残る——上の決定のとおりである。
+
+```java
+// pkg_shipment（orders を書くので trg_orders_audit を受け取る）
+public PkgShipmentService(PkgShipmentRepository repository, TrgOrdersAuditService trgOrdersAudit)
+...
+    Object[] old = repository.markShippedStmt1trg1(pOrderId);   // :OLD（行が無ければ null）
+    rowCount = repository.markShippedStmt1(pWhen, pOrderId);
+    if (Plsql.gt(rowCount, 0)) {                                 // 0 行の更新では発火しない
+        trgOrdersAudit.body(vTrg1, "SHIPPED", vTrg2, audit);
+    }
+```
+
+**誰が呼ぶかが constructor に出る。** これは配線の都合ではなく、「掛かるのはこの経路だけ」という
+事実がそこに見えるということである。
+
+掛けるときに守っていること:
+
+| 守ること | どうやって |
+|---|---|
+| `:OLD` は更新の**前に**読む | 書き込みの手前に読みを挟む。後では元の値が無い |
+| 発火条件（`WHEN`） | **複製しない。** trigger 本体の先頭に番人として出ている（2 か所に書くと片方が古くなる） |
+| 掛かる列（`UPDATE OF status`） | SET にその列が無ければ掛けない。掛けると**記録される量が変わる** |
+| BEFORE と AFTER の順序 | BEFORE は書く前（値を拒否する trigger がある）、AFTER は書いた後 |
+| **0 行の更新では発火しない** | AFTER は `SQL%ROWCOUNT`、BEFORE は `:OLD` が見つかったかで判断する |
+
+最後の 1 つは**実際に壊した**。`:OLD` を無条件に `SELECT INTO` として読んだために、更新する行が
+無いときの `SQL%ROWCOUNT = 0`（`mark_shipped` の「注文が無い」-20071）が NO_DATA_FOUND に化けた。
+Oracle との比較が捕まえた——**trigger を掛ける側のバグは、掛けた表ではなく元の分岐に出る**。
+
+掛けないと決めているもの:
+
+* **1 行に絞れない更新**（主キーを等値で押さえていない WHERE）。Oracle なら行ごとに発火するので、
+  1 回の呼び出しでは同じにならない。`TRIGGER_NOT_APPLIED` を残して見えるようにする
+* **値そのものを書き換える trigger**（`:NEW.order_id := seq.NEXTVAL`）。呼び出しでは置き換えられ
+  ない——採番 Service への再設計である（下の C）
+
+**判定は動かない。** trigger が REDESIGN なら、それを呼ぶ経路も REDESIGN になる（呼び出しグラフを
+通って伝わる）。`mark_shipped` は AUTO から REDESIGN へ変わった——**簡単な routine だから安全、
+ということではない**。網羅性はその経路の設計の問題であって、routine の複雑さの問題ではない。
+
+**実測（2026-09-18、実 ScalarDB Cluster）**: `nightly_close` と `lock_cancel` が Oracle と一致した。
+`audit_log` の行が揃ったのは、`trg_orders_audit` が書いていた行をこの経路が書くようになったからである。
+
 ---
 
 ## 判定の早見表

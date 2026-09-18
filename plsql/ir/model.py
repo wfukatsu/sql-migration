@@ -339,6 +339,9 @@ class Module(Node):
     declarations: list[Declaration] = field(default_factory=list)   # package-level state
     trigger_event: str | None = None
     trigger_table: str | None = None
+    # `UPDATE OF status` の `status`。**この列が SET に無ければ trigger は掛からない**ので、
+    # 落とすと「掛からなかった書き込み」に掛けてしまう（#12）
+    trigger_columns: list[str] = field(default_factory=list)
     trigger_timing: str | None = None
     # `WHEN (OLD.status <> NEW.status)`: trigger が発火する条件。落とすと**記録される量が変わる**
     # ので、生成側は本体の前の番人として出す（#12 / trigger-patterns A-2）

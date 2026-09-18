@@ -695,6 +695,34 @@ banner は 1 種類だけ（両方あると、誰が保守するのかについ�
 
 結果: ScalarDB 実行可能率 70.0% → **73.5%**（OK 37 → 44）。KPI-3 100%、KPI-5 100%。
 
+##### 続き（2026-09-18）: 畳んだ variant を**生成する**
+
+P4-7 は列挙して検査するところまでだった。生成側は `DynamicSql is not translated` で止まっていたので、
+**検査は通っているのに動くコードが無い**状態だった。走りうる文が数えられるなら、その分だけ書く:
+
+```java
+// EXECUTE IMMEDIATE: 走りうる文は 3 通り。畳んで静的な文として生成してある（P4-7）
+if (Plsql.eq(pSortColumn, "ordered_at"))      vCount = Plsql.dec(repository.countOrdersStmt5Variant1(pStatus));
+else if (Plsql.eq(pSortColumn, "total_amount")) vCount = Plsql.dec(repository.countOrdersStmt5Variant2(pStatus));
+else                                           vCount = Plsql.dec(repository.countOrdersStmt5Variant3(pStatus));
+```
+
+生成しようとして、**列挙の側の取りこぼしが 2 つ**見つかった。どちらも「検査は通るが動かせない」形で
+隠れていた:
+
+* `INTO v_count` を**節の文字列のまま**変数名にしていた（`INTO v_count` という名前の変数を探すことになる）
+* `USING` を**見ていなかった**。束縛する値が無ければ `:s` に何も渡せない
+
+`USING` は Oracle では**位置で**束縛される——placeholder の名前は呼び出し側の変数名と関係が無い。
+畳むときに placeholder を渡す変数の名前へ直すことにした。すると畳んだ文は、そのあと**静的な文と
+まったく同じ道**を通る: 列への帰属も、型の変換も、repository の引数も、書き分けずに済む。
+
+`purge` と `truncate_staging` は**拒んだまま**である。表名が実行時に決まるものを推測で 1 つに
+決めない——allowlist か専用 Repository かは再設計であって、生成器の判断ではない（設計書 §6.8）。
+
+実測（実 ScalarDB Cluster）: `dynamic_count_orders` と `dynamic_refresh_stats` が Oracle と一致。
+比較で一致 48 → **50 / 62**、未変換の文 11 → **9**。
+
 ---
 
 #### P4-10 / P4-11 実施結果（2026-09-17）

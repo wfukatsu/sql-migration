@@ -78,7 +78,7 @@
       }
      ],
      "deterministic": false,
-     "visibility": "private",
+     "visibility": "public",
      "transactionEffects": {
       "commits": 0,
       "rollbacks": 0,
@@ -92,6 +92,9 @@
    ],
    "triggerEvent": "UPDATE",
    "triggerTable": "products",
+   "trigger_columns": [
+    "unit_price"
+   ],
    "triggerTiming": "BEFORE"
   }
  ],

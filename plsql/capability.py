@@ -32,7 +32,7 @@ from .analysis import ProgramAnalysis
 from .ir import model as M
 from .lower import _walk, walk_scoped
 from .source import Issue
-from .dynamic import annotate as annotate_dynamic
+from .dynamic import annotate as annotate_dynamic, bind_using
 from .sqlbridge import analyse as analyse_sql
 from .limits import RowLocks
 from .symbols import OracleSchema
@@ -113,9 +113,12 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
                     # and is then converted and checked like anything else. Enumerating without converting
                     # would show a reader plain SQL that nothing had looked at.
                     for index, variant in enumerate(annotate_dynamic(routine, statement) or [], start=1):
+                        # `USING` は**位置で**束縛される。placeholder を渡す変数の名前に直して
+                        # おくと、畳んだ文がそのあと静的な文とまったく同じ道を通る（P4-7）
                         operation = M.SqlOperation(
                             id=f"{statement.id}#variant-{index}", kind="SqlOperation",
-                            source_range=statement.source_range, original_sql=variant.sql,
+                            source_range=statement.source_range,
+                            original_sql=bind_using(variant.sql, statement.using),
                             binds=list(statement.using), into_targets=list(statement.into_targets))
                         result = analyse_sql(operation, scope=routine.id, symbols=symbols,
                                              registry=registry, storage=storage, lift=not locked,

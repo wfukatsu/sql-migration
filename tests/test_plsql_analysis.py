@@ -96,8 +96,14 @@ def test_calls_inside_expressions_are_edges_too(corpus):
 
 
 def test_the_corpus_call_graph_is_complete(corpus):
+    """#12 で trigger への辺が加わった。移行先に trigger は無いので、**書き込む側が呼ぶ**——
+    呼ぶということは、呼び出しグラフにそう出るということである（判定もそこを通って伝わる）。"""
     edges = {(caller, callee) for caller, callees in corpus.call_graph.calls.items() for callee in callees}
     assert edges == {
+        ("pkg_order_lock.cancel", "trg_orders_audit.body"),
+        ("pkg_payment.record_payment", "trg_payments_guard.body"),
+        ("pkg_shipment.mark_shipped", "trg_orders_audit.body"),
+        ("prc_nightly_close", "trg_orders_audit.body"),
         ("pkg_order_lock.cancel", "pkg_order_lock.is_cancellable"),
         ("pkg_order_pricing.order_total", "pkg_order_pricing.customer_tier"),
         ("pkg_order_pricing.order_total", "pkg_order_pricing.line_amount"),

@@ -110,6 +110,22 @@ def lower_source(path: str | Path, schema: OracleSchema | None = None) -> tuple[
     return lower_file(parsed, symbols, schema, public), symbols
 
 
+def _names_after(clause: str, keyword: str) -> list[str]:
+    """`INTO v_a, v_b` / `USING IN OUT v_x, v_y` から名前だけを取る。
+
+    節の文字列をそのまま変数名にすると、`INTO v_count` という名前の変数を探すことになる——
+    実際そうなっていて、動的 SQL を生成しようとして初めて分かった。
+    """
+    body = re.sub(rf"^\s*{keyword}\s+", "", clause.strip(), flags=re.IGNORECASE)
+    out = []
+    for item in body.split(","):
+        # `USING IN OUT p_x` の向きは落とす。名前として要るのは最後の識別子である
+        name = re.sub(r"^\s*(?:IN\s+OUT|IN|OUT)\s+", "", item.strip(), flags=re.IGNORECASE).strip()
+        if re.fullmatch(r"[\w$#.]+", name):
+            out.append(name)
+    return out
+
+
 class _Lowerer:
     def __init__(self, unit: Unit, symbols: SymbolTable | None, schema: OracleSchema | None,
                  public: set[str]) -> None:
@@ -165,6 +181,10 @@ class _Lowerer:
         table = _first(re.search(r"\bON\s+([\w$#.]+)", text, re.IGNORECASE))
         timing = _first(re.search(r"\b(BEFORE|AFTER|INSTEAD\s+OF)\b", text, re.IGNORECASE))
         event = _first(re.search(r"\b(INSERT|UPDATE|DELETE)(\s+OF\s+[\w$#,\s]+)?\b", text, re.IGNORECASE))
+        # `UPDATE OF status, note` の列。**SET にその列が無ければ掛からない**ので、事実として残す
+        listed = re.search(r"\b(?:INSERT|UPDATE|DELETE)\s+OF\s+(?P<columns>[\w$#,\s]+?)\s+ON\b",
+                           text, re.IGNORECASE)
+        columns = [c.strip().lower() for c in listed.group("columns").split(",")] if listed else []
         # `WHEN (...)` は発火条件である。落とすと記録される量が変わるので IR に残す（#12）。
         # `DECLARE` / `BEGIN` の手前にしか現れないので、そこまでで打ち切って探す
         header = re.split(r"\b(?:DECLARE|BEGIN)\b", text, maxsplit=1, flags=re.IGNORECASE)[0]
@@ -173,11 +193,13 @@ class _Lowerer:
         when = found.group("condition") if found else None
         module = M.Module(id=name, kind="Module", name=name, module_kind="trigger",
                           source_range=self._range(context), trigger_table=table,
-                          trigger_timing=timing, trigger_event=event,
+                          trigger_timing=timing, trigger_event=event, trigger_columns=columns,
                           trigger_when=when.strip() if when else None)
         body = _child(context, "Trigger_bodyContext") or context
+        # trigger の本体は **public** である。移行先に trigger は無いので、掛けるには書き込む側が
+        # 呼ぶしかない（#12）——呼べない本体は、掛からない trigger と同じである
         routine = M.Routine(id=f"{name}.body", kind="Routine", name="body", routine_kind="trigger-body",
-                            source_range=self._range(context), visibility="private")
+                            source_range=self._range(context), visibility="public")
         ids = M.IdFactory(routine.id)
         self.routine_id = routine.id
         # the trigger's own `BEGIN ... END` is the routine's body, not a nested block inside it (#18); read
@@ -534,13 +556,22 @@ class _Lowerer:
         literal = re.fullmatch(r"'((?:[^']|'')*)'", expression)
         if literal:
             constant = literal.group(1).replace("''", "'")
+        # `INTO v_count` / `USING p_status`。**どちらも取りこぼしていた**——INTO は `INTO` の語ごと
+        # 変数名として持ち、USING は見てさえいなかった。畳んだ文を実際に生成しようとするまで
+        # 誰も困らなかったが、束縛する値が無ければ `:s` を渡せない（#12 のあと、動的 SQL の生成で判明）
+        into = [name for clause in _descend(context, {"Into_clauseContext"})
+                for name in _names_after(_text(clause), "INTO")]
+        using = [name for clause in _descend(context, {"Using_clauseContext"})
+                 for name in _names_after(_text(clause), "USING")]
         node = M.DynamicSql(id=ids.next("stmt"), kind="DynamicSql", source_range=source,
-                            expression=expression, constant_sql=constant,
-                            into_targets=[_text(v) for v in _descend(context, {"Into_clauseContext"})])
+                            expression=expression, constant_sql=constant, into_targets=into,
+                            using=[M.BindVariable(name=name, direction="IN", plsql_variable=name)
+                                   for name in using])
         node.add("INFO" if constant else "WARN", "DYNAMIC_SQL",
                  "the statement folds to a constant and can be analysed" if constant
                  else "the statement is built at run time; only a finite set of variants can be converted")
         return node
+
 
     # -- effects ---------------------------------------------------------------------------------------------
     def _effects(self, routine: M.Routine, text: str) -> None:
