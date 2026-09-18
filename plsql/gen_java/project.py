@@ -30,6 +30,8 @@ class GeneratedProject:
     untranslated: list[str] = field(default_factory=list)
     unsupported_sql: list[str] = field(default_factory=list)
     planned_sql: list[str] = field(default_factory=list)
+    # 走査行数の上限が決められていない routine（#19）
+    undecided_limits: list[str] = field(default_factory=list)
     unknown_names: list[str] = field(default_factory=list)
     error_codes: dict = field(default_factory=dict)
     # the program this was generated from, so a check made after the fact -- `verify`, which attributes a
@@ -95,6 +97,7 @@ def generate(program: M.Program, root: str | Path, base_package: str = "com.exam
         project.files.append(repository.file)
         project.unsupported_sql.extend(repository.unsupported)
         project.planned_sql.extend(repository.planned)
+        project.undecided_limits.extend(repository.undecided_limits)
     return project
 
 

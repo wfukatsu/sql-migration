@@ -86,6 +86,9 @@ python -m plsql.generate fixtures/plsql/src --out-dir generated --limits fixture
 # 生成物が javac を通ることまで確かめる（JVM と Gradle が要る。落ちた routine を名指しして 1 を返す）
 python -m plsql.generate fixtures/plsql/src --out-dir generated --verify-compile
 
+# ルールが行数上限の確認を求めているのに誰も決めていない routine を挙げて止める
+python -m plsql.generate fixtures/plsql/src --out-dir generated --limits fixtures/plsql/limits.yaml --limits-strict
+
 # 差分比較（Oracle と ScalarDB の両方が要る）
 python difftest/plsql_capture.py --variant scaled
 python difftest/plsql_diff.py --full --json difftest/work/plsql-diff.json
