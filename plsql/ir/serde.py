@@ -44,7 +44,7 @@ _CAMEL = {
     "error_code": "errorCode", "return_type": "returnType", "auth_id": "authId",
     "exception_handlers": "exceptionHandlers", "transaction_effects": "transactionEffects",
     "external_effects": "externalEffects", "trigger_event": "triggerEvent", "trigger_table": "triggerTable",
-    "trigger_timing": "triggerTiming", "schema_snapshot": "schemaSnapshot", "else_body": "elseBody",
+    "trigger_timing": "triggerTiming", "trigger_when": "triggerWhen", "schema_snapshot": "schemaSnapshot", "else_body": "elseBody",
     "resolved_to": "resolvedTo", "oracle_type": "oracleType", "plsql_variable": "plsqlVariable",
     "not_found_flag": "notFoundFlag", "at_most_one_row": "atMostOneRow",
     "db_links": "dbLinks", "dynamic_sql": "dynamicSql", "start_line": "startLine", "end_line": "endLine",

@@ -165,9 +165,16 @@ class _Lowerer:
         table = _first(re.search(r"\bON\s+([\w$#.]+)", text, re.IGNORECASE))
         timing = _first(re.search(r"\b(BEFORE|AFTER|INSTEAD\s+OF)\b", text, re.IGNORECASE))
         event = _first(re.search(r"\b(INSERT|UPDATE|DELETE)(\s+OF\s+[\w$#,\s]+)?\b", text, re.IGNORECASE))
+        # `WHEN (...)` は発火条件である。落とすと記録される量が変わるので IR に残す（#12）。
+        # `DECLARE` / `BEGIN` の手前にしか現れないので、そこまでで打ち切って探す
+        header = re.split(r"\b(?:DECLARE|BEGIN)\b", text, maxsplit=1, flags=re.IGNORECASE)[0]
+        found = re.search(r"\bWHEN\s*\((?P<condition>.*)\)\s*$", header.strip(),
+                          re.IGNORECASE | re.DOTALL)
+        when = found.group("condition") if found else None
         module = M.Module(id=name, kind="Module", name=name, module_kind="trigger",
                           source_range=self._range(context), trigger_table=table,
-                          trigger_timing=timing, trigger_event=event)
+                          trigger_timing=timing, trigger_event=event,
+                          trigger_when=when.strip() if when else None)
         body = _child(context, "Trigger_bodyContext") or context
         routine = M.Routine(id=f"{name}.body", kind="Routine", name="body", routine_kind="trigger-body",
                             source_range=self._range(context), visibility="private")
@@ -177,6 +184,11 @@ class _Lowerer:
         # through it the way `_routine` does, or every trigger becomes one `Block` statement
         # `Trigger_body` wraps a `Block`, which wraps the `Body`; `_child` only sees one level down
         inner = next(iter(_descend(body, {"BodyContext"})), None) or body
+        # trigger の `DECLARE` は module に置く。symbol table がそこへ登録しており（`symbols._trigger`）、
+        # 生成側も module から読む。落とすと、生成コードが宣言していない変数へ代入する
+        # （#12 でここまで到達して初めて表に出た）
+        for declaration in _descend(body, {"Declare_specContext"}, stop={"BodyContext"}):
+            module.declarations.extend(self._declarations(declaration, ids, name))
         routine.body = self._statements(_child(inner, "Seq_of_statementsContext") or inner, ids)
         for handler in _descend(inner, {"Exception_handlerContext"},
                                 stop={"BodyContext", "BlockContext"}):
