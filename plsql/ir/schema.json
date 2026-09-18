@@ -81,6 +81,7 @@
             "declared",
             "rowtype",
             "record",
+            "collection",
             "column-type",
             "inferred",
             "unresolved"

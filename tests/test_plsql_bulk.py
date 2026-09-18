@@ -136,3 +136,51 @@ def test_save_exceptions_is_not_this_rewrites_business(schema):
     modules, _ = lower_source(SRC / "pkg_bulk_load.pkb", schema)
     restock = next(r for r in modules[0].routines if r.id.endswith("restock"))
     assert [s for s in _walk(restock.body) if s.kind == "Loop" and s.loop_kind == "forall"]
+
+
+# --- コレクション引数を回す FORALL（#14 / MERGE） ------------------------------------------------
+
+def test_a_collection_parameter_keeps_its_element_type(schema):
+    """`TYPE t_id_list IS TABLE OF NUMBER(19)` の要素型が無いと、引数は Java で `Object` にしか
+    ならない——`List<BigDecimal>` と書けない。名前だけでは移行先の型を決められない。"""
+    from plsql.report import analyse as build_analysis
+
+    corpus = build_analysis(SRC, SRC / "schema.sql", scalardb_schema=FIXTURES / "scalardb-schema.json")
+    routine = next(r for _, r in corpus.routines() if r.id == "pkg_customer_import.import")
+    types = {p.name: p.type.resolved for p in routine.parameters}
+    assert types == {"p_ids": "TABLE OF NUMBER(19)", "p_names": "TABLE OF VARCHAR2(100)"}
+
+
+def test_the_forall_becomes_a_loop_over_the_collection(schema):
+    """`FORALL i IN 1 .. p_ids.COUNT` は、その要素を回す Java のループである。FORALL は 1 往復、
+    ループは要素ごとに 1 回——答えは同じで、性能が変わる（#14 の走査ループと同じ代償）。"""
+    from plsql.gen_java.service import generate_module
+    from plsql.report import analyse as build_analysis
+
+    corpus = build_analysis(SRC, SRC / "schema.sql", scalardb_schema=FIXTURES / "scalardb-schema.json")
+    module = next(m for m in corpus.program.modules if m.name == "pkg_customer_import")
+    java = generate_module(module, "g.app", "g.infra", "g.domain").file.render()
+    assert "public void import_(List<BigDecimal> pIds, List<String> pNames)" in java
+    assert "for (int i = 0; i < pIds.size(); i++)" in java
+    assert "repository.import_Stmt2(pIds.get(i), pNames.get(i))" in java
+    assert "pIds(i)" not in java, "要素参照が method 呼び出しとして描画されている"
+
+
+def test_the_merge_becomes_an_upsert(schema):
+    """`MERGE ... WHEN MATCHED UPDATE ... WHEN NOT MATCHED INSERT` は、キーで届く UPSERT である。
+    枝の中の `SYSDATE` も持ち上げる——外側だけ見ていると、同じ形が UPDATE なら通るのに MERGE では
+    拒否される。"""
+    from plsql.report import analyse as build_analysis
+
+    corpus = build_analysis(SRC, SRC / "schema.sql", scalardb_schema=FIXTURES / "scalardb-schema.json")
+    routine = next(r for _, r in corpus.routines() if r.id == "pkg_customer_import.import")
+    merge = next(s for s in _walk(routine.body) if s.kind == "SqlOperation")
+    assert merge.target_sql == ["UPSERT INTO customers (customer_id, name, tier, registered_on) "
+                                "VALUES (:p_ids_i, :p_names_i, 'BRONZE', :expr3)"]
+    assert [b.expression for b in merge.binds if b.expression] == ["SYSDATE"]
+    # UPSERT は列挙した列をすべて書く。既存行に当たると `WHEN MATCHED` が触っていない列まで変わる
+    # ——比較ハーネスが実測した（tier: GOLD -> BRONZE、registered_on がずれる）。警告は**どの列か**
+    # を名指しする
+    warning = next(d for d in merge.diagnostics if d.code == "MERGE")
+    assert "tier" in warning.message and "registered_on" in warning.message
+    assert warning.severity == "WARN", "severity を上げるかは #26 の判断（I10 と計測報告に及ぶ）"

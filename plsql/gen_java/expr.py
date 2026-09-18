@@ -360,7 +360,15 @@ class _Parser:
         return f"{HELPER}.{mapped}({value})"
 
     def _call(self) -> str:
-        """A function call: the name, then each argument parsed as a full expression."""
+        """A function call: the name, then each argument parsed as a full expression.
+
+        まず**丸ごと名前として**引く。`p_ids(i)` はコレクションの要素で、生成コードは文が走る前から
+        値として持っている（`pIds.get(i)`）。関数呼び出しとして描画すると、存在しない method を
+        呼ぶ Java になる。dotted な `r.order_id` を丸ごと引いているのと同じ理由である。
+        """
+        whole = self._subscript()
+        if whole is not None:
+            return whole
         name = self._name(self.take()[1])
         self.take()  # the '('
         arguments: list[str] = []
@@ -373,6 +381,20 @@ class _Parser:
         if self.peek() is not None and self.peek()[1] == ")":
             self.take()
         return f"{name}({', '.join(a for a in arguments if a)})"
+
+    def _subscript(self) -> str | None:
+        """`name(index)` が丸ごと scope にあればそれを返し、トークンを読み進める。"""
+        tokens = self.tokens[self.position:self.position + 4]
+        if len(tokens) < 4 or tokens[1][1] != "(" or tokens[3][1] != ")":
+            return None
+        if tokens[0][0] != "name" or tokens[2][0] != "name":
+            return None
+        key = f"{tokens[0][1]}({tokens[2][1]})".lower()
+        mapped = self.scope.get(key)
+        if mapped is None:
+            return None
+        self.position += 4
+        return mapped
 
     def _atom(self, kind: str, value: str) -> str:
         if kind == "bind":

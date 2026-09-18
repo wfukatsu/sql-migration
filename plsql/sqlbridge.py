@@ -222,13 +222,30 @@ def _as_plsql(value: exp.Expression, binds: list[BindVariable]) -> str:
 
 
 def _value_positions(tree: exp.Expression) -> list[tuple[exp.Expression, list]]:
-    """Where a value may legally be lifted from: an INSERT's VALUES tuple and an UPDATE's SET right-hand sides."""
+    """Where a value may legally be lifted from: an INSERT's VALUES tuple and an UPDATE's SET right-hand sides.
+
+    MERGE の枝の中にも同じ位置がある。外側だけを見ていると、`WHEN NOT MATCHED THEN INSERT ...
+    VALUES (..., SYSDATE)` の `SYSDATE` が持ち上がらず、**ScalarDB が評価できない式として拒否
+    される**——同じ形が UPDATE / INSERT なら通っているのに、である。
+    """
     out: list[tuple[exp.Expression, list]] = []
-    if isinstance(tree, exp.Insert) and isinstance(tree.expression, exp.Values):
-        for tuple_ in tree.expression.expressions:
+    for node in [tree] + [w for w in tree.find_all(exp.When)] if isinstance(tree, exp.Merge) else [tree]:
+        out.extend(_positions_of(node))
+    return out
+
+
+def _positions_of(node: exp.Expression) -> list[tuple[exp.Expression, list]]:
+    out: list[tuple[exp.Expression, list]] = []
+    for insert in ([node] if isinstance(node, exp.Insert) else list(node.find_all(exp.Insert))):
+        values = insert.expression
+        # 素の INSERT は `VALUES (...)` を `Values`（タプルの並び）として持つが、MERGE の枝の中では
+        # `Tuple` 1 つである。見る形を 1 つに決め打つと、片方が黙って持ち上がらない
+        tuples = values.expressions if isinstance(values, exp.Values) else \
+            [values] if isinstance(values, exp.Tuple) else []
+        for tuple_ in tuples:
             out.append((tuple_, tuple_.expressions))
-    if isinstance(tree, exp.Update):
-        for assignment in tree.args.get("expressions") or []:
+    for update in ([node] if isinstance(node, exp.Update) else list(node.find_all(exp.Update))):
+        for assignment in update.args.get("expressions") or []:
             if isinstance(assignment, exp.EQ):
                 out.append((assignment, [assignment.args["expression"]]))
     return out
@@ -347,6 +364,7 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
         return []
     _correlation_as_qualified(tree, loop_fields)
     found: dict[str, BindVariable] = {}
+    _collection_elements(tree, scope, symbols, found)
     for column in list(tree.find_all(exp.Column)):
         if column.table:
             fields = loop_fields.get(column.table.lower())
@@ -371,6 +389,33 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
             oracle_type=symbol.type.oracle if symbol.type else None, plsql_variable=name)
         column.replace(exp.Placeholder(this=placeholder))
     return list(found.values())
+
+
+def _collection_elements(tree: exp.Expression, scope: str, symbols: SymbolTable | None,
+                         found: dict[str, BindVariable]) -> None:
+    """`p_ids(i)` を bind にする。`FORALL i IN 1 .. p_ids.COUNT` が回しているコレクションの要素で、
+    生成コードは文が走る前から値として持っている——cursor FOR ループの行（#10）と同じ立場である。
+
+    コレクションかどうかは**symbol table が答える**。素の `f(x)` を一律に要素参照とみなすと、
+    本物の関数呼び出しを壊す。
+    """
+    if symbols is None:
+        return
+    for node in list(tree.find_all(exp.Anonymous)):
+        name = str(node.this or "")
+        symbol = symbols.resolve(scope, name)
+        if symbol is None or symbol.type is None or symbol.type.origin != "collection":
+            continue
+        arguments = node.expressions or []
+        if len(arguments) != 1 or not isinstance(arguments[0], exp.Column) or arguments[0].table:
+            continue   # 添字が式である。どの要素かが決まらない
+        index = arguments[0].name
+        variable = f"{name}({index})"
+        placeholder = _unique(f"{name}_{index}", found, variable)
+        element = (symbol.type.resolved or "").partition("TABLE OF ")[2] or None
+        found[placeholder] = BindVariable(name=placeholder, direction="IN", oracle_type=element,
+                                          plsql_variable=variable)
+        node.replace(exp.Placeholder(this=placeholder))
 
 
 def _correlation_as_qualified(tree: exp.Expression, loop_fields: dict) -> None:

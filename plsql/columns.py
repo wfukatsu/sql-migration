@@ -29,6 +29,7 @@ COMPARISONS = (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE)
 def bind_columns(tree: exp.Expression) -> dict[str, str]:
     """{placeholder name: column name} for every bind this can attribute to exactly one column."""
     found: dict[str, str] = {}
+    _merge_source(tree, found)
     _insert_values(tree, found)
     for node in tree.walk():
         if isinstance(node, COMPARISONS):
@@ -100,18 +101,60 @@ def row_cap(tree: exp.Expression) -> tuple[exp.Expression | None, bool]:
     return (count, bool(options and options.args.get("with_ties")))
 
 
+def _merge_source(tree: exp.Expression, found: dict[str, str]) -> None:
+    """MERGE の値は `USING (SELECT :b AS c ...) s` を通って `s.c` として書かれる。
+
+    その 1 段を辿らないと、bind に列が付かない——生成コードは値を**型変換せずに**ドライバへ渡し、
+    `BigDecimal` が `DB-SQL-10016` で拒まれる。辿るのは「別名 -> その別名が選んでいる bind」の
+    1 対 1 対応だけで、式を選んでいる別名は対応が作れないので飛ばす。
+    """
+    if not isinstance(tree, exp.Merge):
+        return
+    using = tree.args.get("using")
+    inner = using.this if isinstance(using, exp.Subquery) else using
+    select = inner if isinstance(inner, exp.Select) else None
+    if select is None:
+        return
+    alias = using.alias_or_name if using is not None else ""
+    by_alias: dict[str, str] = {}
+    for item in select.expressions or []:
+        value = item.this if isinstance(item, exp.Alias) else item
+        name = item.alias if isinstance(item, exp.Alias) else getattr(item, "name", "")
+        if isinstance(value, exp.Placeholder) and name:
+            by_alias[name.lower()] = str(value.this)
+    if not by_alias:
+        return
+    for column in tree.find_all(exp.Column):
+        if alias and (column.table or "").lower() != alias.lower():
+            continue
+        placeholder = by_alias.get(column.name.lower())
+        if placeholder:
+            # `s.customer_id` が立っている位置の列名は、その別名と同じ名前である
+            found.setdefault(placeholder, column.name.lower())
+
+
 def _insert_values(tree: exp.Expression, found: dict[str, str]) -> None:
-    """INSERT names its columns in one list and its values in another; the pairing is positional."""
-    if not isinstance(tree, exp.Insert) or not isinstance(tree.this, exp.Schema):
-        return
-    columns = [c.name for c in tree.this.expressions if isinstance(c, (exp.Column, exp.Identifier))]
-    values = tree.expression
-    if not columns or not isinstance(values, exp.Values):
-        return
-    for tuple_ in values.expressions:
-        for i, value in enumerate(tuple_.expressions):
-            if isinstance(value, exp.Placeholder) and i < len(columns):
-                found.setdefault(str(value.this), columns[i].lower())
+    """INSERT names its columns in one list and its values in another; the pairing is positional.
+
+    MERGE の `WHEN NOT MATCHED THEN INSERT` も同じ形で、そこも見る。見ないと bind に列が付かず、
+    生成コードは値を**型変換せずに**ドライバへ渡す（`BigDecimal` が `DB-SQL-10016` で拒まれる）。
+    """
+    for insert in ([tree] if isinstance(tree, exp.Insert) else list(tree.find_all(exp.Insert))):
+        # 素の INSERT は列並びを `Schema` として持つが、MERGE の枝の中では `Tuple` である。
+        # 片方だけ見ていると、そちらの bind にだけ列が付かない
+        if not isinstance(insert.this, (exp.Schema, exp.Tuple)):
+            continue
+        columns = [c.name for c in insert.this.expressions
+                   if isinstance(c, (exp.Column, exp.Identifier))]
+        values = insert.expression
+        tuples = values.expressions if isinstance(values, exp.Values) else \
+            [values] if isinstance(values, exp.Tuple) else []
+        if not columns:
+            continue
+        for tuple_ in tuples:
+            for i, value in enumerate(tuple_.expressions):
+                if isinstance(value, exp.Placeholder) and i < len(columns):
+                    found.setdefault(str(value.this), columns[i].lower())
 
 
 def _pair(column: exp.Expression | None, value: exp.Expression | None, found: dict[str, str]) -> None:
