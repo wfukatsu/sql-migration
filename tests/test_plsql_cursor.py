@@ -51,12 +51,21 @@ def test_the_loop_query_binds_the_routines_variables(corpus):
     assert [b.plsql_variable for b in total.query.binds] == ["p_order_id"]
 
 
-def test_a_named_cursor_loop_has_no_inline_query(corpus):
-    """`FOR r IN c(x)` names a cursor declared elsewhere; there is no query to lift here."""
-    named = [(r, s) for r, s in loops(corpus) if s.query is None]
+def test_a_named_cursor_loop_gets_the_query_from_its_declaration(corpus):
+    """`FOR r IN c` names a cursor declared elsewhere; the query is resolved out of the declaration (#11).
+
+    Before that, the loop arrived with nothing to convert and was refused for the shape of its header rather
+    than for anything about what it does.
+    """
+    named = [(r, s) for r, s in loops(corpus)
+             if s.cursor and "(" not in s.cursor.split(" IN ", 1)[-1]]
     assert named, "the corpus has a named-cursor FOR loop"
-    for _, loop in named:
-        assert loop.cursor and "(" not in (loop.cursor.split(" IN ", 1)[-1].strip()[:1] or "")
+    routine, loop = next((r, s) for r, s in named if r.id == "pkg_stock_reserve.claim_batch")
+    assert loop.query is not None
+    assert loop.query.original_sql.upper().startswith("SELECT ORDER_ID FROM ORDERS")
+    # the lock is written in the declaration, and comes with it: it is why this routine is a redesign
+    assert loop.query.locking_mode == "FOR UPDATE SKIP LOCKED"
+    assert any(d.code == "ROW_LOCK" for d in loop.query.diagnostics)
 
 
 # ---------------------------------------------------------------- generation

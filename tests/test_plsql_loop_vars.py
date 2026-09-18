@@ -35,8 +35,25 @@ def statements(corpus):
             for s in _walk(routine.body) + [x for h in routine.exception_handlers for x in _walk(h.body)]]
 
 
+def test_a_loop_row_in_a_nested_blocks_handler_is_a_bind_too(corpus):
+    """The handler of a `BEGIN ... EXCEPTION ... END` inside the loop is inside the loop (#18).
+
+    While it was hoisted onto the routine this was the one `r.order_id` #10 could not reach.
+    """
+    insert = at_line(corpus, "prc_nightly_close.prc", 26)
+    assert "r.order_id" in [b.plsql_variable for b in insert.binds]
+    assert "TO_CHAR(r.order_id)" in [b.expression for b in insert.binds if b.expression]
+    assert [d.code for d in insert.diagnostics if d.severity == "ERROR"] == []
+
+
 def by_id(corpus, sql_id: str):
     return next(s for s in statements(corpus) if s.id == sql_id)
+
+
+def at_line(corpus, file: str, line: int):
+    """A statement by where it is written, not by its id: an id moves when the lowering changes (#18)."""
+    return next(s for s in statements(corpus)
+                if s.source_range and s.source_range.file == file and s.source_range.start_line == line)
 
 
 # --- the walk that carries the scope ------------------------------------------------------------------
@@ -44,12 +61,14 @@ def by_id(corpus, sql_id: str):
 def test_the_loop_variable_is_in_scope_for_the_body_and_not_for_its_own_query(corpus):
     """The query is what binds `r`; inside it, `r` is not a name yet."""
     routine = next(r for _, r in corpus.routines() if r.id == "prc_nightly_close")
-    scoped = dict()
+    scoped = {}
     for statement, loops in walk_scoped(routine.body):
-        scoped[statement.id] = sorted(loops)
-    assert scoped["prc_nightly_close#stmt-3#query"] == []   # the loop's own query
-    assert scoped["prc_nightly_close#stmt-5"] == ["r"]      # UPDATE ... WHERE order_id = r.order_id
-    assert scoped["prc_nightly_close#stmt-1"] == []         # before the loop
+        if statement.source_range:
+            scoped[statement.source_range.start_line] = sorted(loops)
+    assert scoped[11] == []      # the loop's own query, which is what binds `r`
+    assert scoped[14] == ["r"]   # UPDATE ... WHERE order_id = r.order_id
+    assert scoped[26] == ["r"]   # the INSERT in the nested block's handler, still inside the loop (#18)
+    assert scoped[8] == []       # before the loop
 
 
 def test_walk_scoped_visits_the_same_statements_as_walk(corpus):
@@ -62,7 +81,7 @@ def test_walk_scoped_visits_the_same_statements_as_walk(corpus):
 
 def test_a_loop_row_reference_in_a_where_clause_becomes_a_bind(corpus):
     """`WHERE order_id = r.order_id` was COL_COL: two columns compared, which ScalarDB refuses."""
-    update = by_id(corpus, "prc_nightly_close#stmt-5")
+    update = at_line(corpus, "prc_nightly_close.prc", 14)
     assert update.target_status == "OK"
     assert [b.plsql_variable for b in update.binds] == ["r.order_id"]
     assert update.target_sql == ["UPDATE orders SET status = 'CLOSED' WHERE order_id = :r_order_id"]
@@ -71,7 +90,7 @@ def test_a_loop_row_reference_in_a_where_clause_becomes_a_bind(corpus):
 
 def test_the_bind_is_typed_from_the_query_the_loop_iterates(corpus):
     """Not from the DDL: the row record is generated from the query's select list, and the two must agree."""
-    update = by_id(corpus, "prc_nightly_close#stmt-5")
+    update = at_line(corpus, "prc_nightly_close.prc", 14)
     bind = update.binds[0]
     assert bind.oracle_type == "NUMBER(19)"     # what `SELECT order_id FROM orders` declared
     assert bind.column == "order_id" and bind.scalardb_type == "BIGINT"
@@ -79,12 +98,12 @@ def test_the_bind_is_typed_from_the_query_the_loop_iterates(corpus):
 
 def test_an_expression_over_a_loop_row_is_lifted_into_the_application(corpus):
     """`TO_CHAR(r.order_id)` is computable in Java once `r.order_id` is a value rather than a column."""
-    insert = by_id(corpus, "prc_nightly_close#stmt-6")
+    insert = at_line(corpus, "prc_nightly_close.prc", 15)
     lifted = [b for b in insert.binds if b.expression]
     assert "TO_CHAR(r.order_id)" in [b.expression for b in lifted]
-    # what still stops this statement is USER (#1), not the loop row
-    assert [d.code for d in insert.diagnostics if d.severity == "ERROR"] == ["EXPR"]
-    assert "USER" in next(d.message for d in insert.diagnostics if d.code == "EXPR")
+    # `USER` used to stop this statement as well; it is now the caller's argument too (#1)
+    assert "USER" in [b.expression for b in lifted]
+    assert [d.code for d in insert.diagnostics if d.severity == "ERROR"] == []
 
 
 def test_the_corpus_has_no_column_to_column_comparison_left(corpus):

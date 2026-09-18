@@ -198,6 +198,9 @@
           "$ref": "#/$defs/loop"
         },
         {
+          "$ref": "#/$defs/block"
+        },
+        {
           "$ref": "#/$defs/sqlOperation"
         },
         {
@@ -1138,6 +1141,69 @@
         },
         "body": {
           "$ref": "#/$defs/statements"
+        }
+      }
+    },
+    "block": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "sourceRange": {
+          "$ref": "#/$defs/sourceRange"
+        },
+        "type": {
+          "$ref": "#/$defs/typeRef"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/issue"
+          }
+        },
+        "readSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "declarations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        },
+        "body": {
+          "$ref": "#/$defs/statements"
+        },
+        "exceptionHandlers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
         }
       }
     },

@@ -16,6 +16,8 @@ Three behaviours are the repository's job and nowhere else's:
 
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass, field
 
 import contextvars
@@ -397,10 +399,28 @@ def _column_scale(statement: M.SqlOperation, index: int) -> int:
     return _scale(oracle[index - 1]) if index - 1 < len(oracle) else 0
 
 
+def needs_audit(statement: M.SqlOperation) -> bool:
+    """Whether this statement's values include one the caller supplies (#1, #8).
+
+    Read off the lifted expression, the same way `_uses_sequences` reads `.NEXTVAL`: the value was taken out
+    of the SQL by P4-4 and is computed here, so the context it needs is a parameter of this method.
+
+    Asked of the translation, not of the text: `'USER'` is a string, and searching for the word in it grew a
+    parameter into the method signature that nothing in the body read.
+    """
+    return any(bind.expression and translate(bind.expression).audit
+               for bind in statement.binds or [])
+
+
 def _parameters(file: JavaFile, statement: M.SqlOperation) -> tuple[list[str], list[str]]:
     from .dto import loop_component_type
 
     parameters, arguments = [], []
+    if needs_audit(statement):
+        # first, so the value the caller supplies is visible in the signature rather than buried among binds
+        file.add_import("com.scalar.migrate.plsql.AuditContext")
+        parameters.append("AuditContext audit")
+        arguments.append("audit")
     # a lifted expression is computed here from the other binds, so it is not a parameter of its own
     for bind in (b for b in statement.binds if not b.expression):
         # a dotted PL/SQL name is a field of a row the caller is holding -- a cursor FOR loop's `r.qty` (#10).

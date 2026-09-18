@@ -17,7 +17,8 @@ Both deploy and run create and delete data, so only a disposable database is acc
 ## What the capture holds
 
     {"scenario", "unit", "routine", "source": "oracle",
-     "pinned":    {"sysdate": ..., "sequences": {...}},
+     "pinned":    {"sysdate": ..., "sequences": {...}, "user": ...},
+     "sessionUser": ...,       # Oracle の USER の実測値。`pinned.user` と食い違えば changed_by が食い違う
      "result":    {"returned": <value>, "out": {name: value}},
      "exception": {"code": -20020, "message": "..."} | null,
      "tables":    {name: {"columns": [...], "rows": [[...]]}},
@@ -357,6 +358,11 @@ def run(args) -> int:
     failures = 0
     try:
         cur = con.cursor()
+        # Oracle の USER は接続しているスキーマユーザである。生成コードはこれを呼び出し側の引数として
+        # 受け取るので（#1）、シナリオが固定した値と食い違えば changed_by が食い違う。実測値を capture に
+        # 入れて、食い違いが黙って通らないようにする
+        cur.execute("SELECT USER FROM dual")
+        session_user = cur.fetchone()[0]
         for spec in scenarios:
             pinned = spec.get("pinned") or {}
             try:
@@ -375,7 +381,9 @@ def run(args) -> int:
 
             capture = {
                 "scenario": spec["name"], "unit": spec["unit"], "routine": spec["routine"], "source": "oracle",
-                "pinned": {"sysdate": pinned.get("sysdate"), "sequences": pinned.get("sequences") or {}},
+                "pinned": {"sysdate": pinned.get("sysdate"), "sequences": pinned.get("sequences") or {},
+                           "user": pinned.get("user") or session_user},
+                "sessionUser": session_user,
                 "result": result, "exception": exception, "tables": tables, "masked": masked,
             }
             path = out_dir / f"{spec['name']}.json"

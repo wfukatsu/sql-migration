@@ -20,6 +20,7 @@ from .types import java_name
 HELPER = "Plsql"
 HELPER_IMPORT = "com.scalar.migrate.plsql.Plsql"
 SEQUENCES_IMPORT = "com.scalar.migrate.plsql.Sequences"
+AUDIT_IMPORT = "com.scalar.migrate.plsql.AuditContext"
 
 TOKEN = re.compile(r"""
     (?P<string>'(?:[^']|'')*')
@@ -40,7 +41,17 @@ FUNCTIONS = {
 }
 # Values, not calls. SYSDATE is the database clock, which is not the JVM clock -- the helper takes it from the
 # caller so that a generated routine is testable and the difference stays visible.
-VALUES = {"SYSDATE": f"{HELPER}.sysdate()", "SYSTIMESTAMP": f"{HELPER}.systimestamp()"}
+VALUES = {"SYSDATE": f"{HELPER}.sysdate()"}
+
+# Values the caller supplies instead (#1, #8). `USER` is the database session's user, which the target has
+# nothing equivalent to, and `SYSTIMESTAMP` is a clock the comparison harness cannot pin on the Oracle side
+# (`semantics.json`: fixedDatePinsSystimestamp is false), so a column written from it was masked and never
+# compared. Both become one argument the caller passes, which is what makes them fixable and comparable.
+#
+# SYSDATE is deliberately not here: `ALTER SYSTEM SET FIXED_DATE` does pin it, so it is already comparable,
+# and moving it would put an argument on many routines that buys nothing. Oracle reads the two separately
+# too, so a routine using both never had one instant to begin with.
+AUDIT = {"USER": "audit.user()", "SYSTIMESTAMP": "audit.now()"}
 KEYWORDS = {"AND", "OR", "NOT", "NULL", "IS", "TRUE", "FALSE", "MOD", "BETWEEN", "IN", "LIKE"}
 
 
@@ -51,6 +62,8 @@ class Expression:
     unknown: list[str] = field(default_factory=list)   # names the translator could not place
     # 式が採る sequence。Repository が Sequences を受け取る必要があるかを、生成側が知るため
     sequences: set[str] = field(default_factory=set)
+    # 式が呼び出し側から受け取る値（USER / SYSTIMESTAMP）を使うか。使うなら AuditContext が要る（#1・#8）
+    audit: bool = False
 
     @property
     def translatable(self) -> bool:
@@ -345,6 +358,11 @@ class _Parser:
         if upper in VALUES:
             self.result.imports.add(HELPER_IMPORT)
             return VALUES[upper]
+        if upper in AUDIT:
+            # the caller says who and when (#1, #8); the generator does not reach for an ambient value
+            self.result.imports.add(AUDIT_IMPORT)
+            self.result.audit = True
+            return AUDIT[upper]
         if following == "(" or upper in FUNCTIONS:
             # a sibling routine is a call too, and the scope knows its Java name; checking FUNCTIONS first
             # would report every local function call as unknown

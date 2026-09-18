@@ -532,6 +532,37 @@
        },
        "loopKind": "cursor-for",
        "cursor": "r IN c",
+       "query": {
+        "id": "pkg_stock_reserve.claim_batch#stmt-1#query",
+        "kind": "SqlOperation",
+        "sourceRange": {
+         "file": "pkg_stock_reserve.pkb",
+         "startLine": 42,
+         "endLine": 44,
+         "startColumn": 5,
+         "endColumn": 9
+        },
+        "diagnostics": [
+         {
+          "severity": "WARN",
+          "code": "ROW_LOCK",
+          "message": "FOR UPDATE SKIP LOCKED is row locking; the target has to provide the same guarantee another way",
+          "range": {
+           "file": "pkg_stock_reserve.pkb",
+           "startLine": 42,
+           "endLine": 44,
+           "startColumn": 5,
+           "endColumn": 9
+          }
+         }
+        ],
+        "sqlKind": "SELECT",
+        "originalSql": "SELECT order_id FROM orders WHERE status = 'NEW' AND ROWNUM <= p_limit\n      FOR UPDATE SKIP LOCKED",
+        "selectsStar": false,
+        "cardinality": "MANY",
+        "atMostOneRow": false,
+        "lockingMode": "FOR UPDATE SKIP LOCKED"
+       },
        "variable": "r",
        "body": [
         {

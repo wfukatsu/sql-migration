@@ -18,9 +18,11 @@ let anyone forget. Three rules shape the output:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
 import contextvars
+import dataclasses
+import re
+
+from dataclasses import dataclass, field
 
 from ..ir import model as M
 from ..lower import _walk
@@ -32,6 +34,9 @@ from .types import java_class_name, java_name, java_type, record_columns
 # every statement helper
 _MODULE: "contextvars.ContextVar[M.Module | None]" = contextvars.ContextVar("module", default=None)
 _DOMAIN: "contextvars.ContextVar[str | None]" = contextvars.ContextVar("domain", default=None)
+# names a nested block declares (#18). They are in scope for its body and nowhere else, which is what the
+# PL/SQL says -- reading them off the routine would make a block-local visible to the whole method.
+_BLOCK_LOCALS: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("block_locals", default={})
 _ROWCOUNT_SEEN: "contextvars.ContextVar[bool]" = contextvars.ContextVar("rowcount", default=False)
 # P4-5: `FOR r IN (SELECT qty, ...)` puts `r` in scope for the body, and the translator turns `r.qty` into the
 # record accessor `r.qty()`. Kept apart from the routine's own names so a nested loop restores the outer one.
@@ -72,6 +77,50 @@ def generate_module(module: M.Module, package: str, repository_package: str,
     return result
 
 
+# text a statement carries that is not an expression: ids and classifications, and the SQL, whose own values
+# are the repository's business (`repository.needs_audit` reads the binds lifted out of it)
+NOT_AN_EXPRESSION = {"id", "kind", "sql_kind", "loop_kind", "cardinality", "label", "direction", "name",
+                     "callee", "resolved_to", "original_sql", "target_sql", "cursor", "not_found_flag",
+                     "exception_name", "variable", "source_range"}
+
+
+def needs_audit(routine: M.Routine) -> bool:
+    """Whether anything in this routine reads a value the caller supplies (#1, #8).
+
+    Both places count: an expression the routine evaluates itself (`v := SYSTIMESTAMP`), and one lifted out
+    of a statement's SQL (P4-4), which the repository computes but the service has to hand it the context for.
+
+    The answer comes from **translating** the text, not from searching it. A regular expression cannot tell
+    `USER` from `'USER'`, and it grew a signature parameter no one read out of a string literal. It also has
+    to be asked of the right attributes, and the list of them was short by one -- `RAISE`'s message -- which
+    made a body reference `audit` that the signature did not provide: Java that does not compile. Every text
+    a statement carries is translated instead, less the ones that are not expressions, so a node added to the
+    IR is covered the day it arrives rather than the day someone remembers to add it here.
+    """
+    for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
+        for text in _expression_texts(statement):
+            if translate(text).audit:
+                return True
+    return False
+
+
+def _expression_texts(statement: M.Statement):
+    for field in dataclasses.fields(statement):
+        if field.name in NOT_AN_EXPRESSION:
+            continue
+        value = getattr(statement, field.name, None)
+        if isinstance(value, str):
+            yield value
+        elif isinstance(value, list):
+            yield from (item for item in value if isinstance(item, str))
+    for bind in getattr(statement, "binds", None) or []:
+        if bind.expression:
+            yield bind.expression
+    for branch in getattr(statement, "branches", []) or []:
+        if branch.condition:
+            yield branch.condition
+
+
 def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]:
     """PL/SQL name -> Java name for everything visible inside the method, siblings included.
 
@@ -109,6 +158,12 @@ def _method(file: JavaFile, module: M.Module, routine: M.Routine, result: Servic
         file.add_import(*mapped.imports)
         parameters.append(f"{mapped.name} {java_name(parameter.name)}")
 
+    if needs_audit(routine):
+        # #1 / #8: who and when come from the caller. Last, so adding it does not renumber the parameters a
+        # caller already passes positionally.
+        file.add_import("com.scalar.migrate.plsql.AuditContext")
+        parameters.append("AuditContext audit")
+
     visibility = "public" if routine.visibility == "public" else "private"
     _ROWCOUNT_SEEN.set(False)
     _source_comment(file, routine)
@@ -140,7 +195,7 @@ def _method(file: JavaFile, module: M.Module, routine: M.Routine, result: Servic
         if routine.exception_handlers:
             with f.block("try") as body:
                 _statements(body, routine.body, routine, result)
-            _handlers(f, routine, result, domain_package)
+            _handlers(f, routine.exception_handlers, routine, result, domain_package)
         else:
             _statements(f, routine.body, routine, result)
         if outs and not _always_exits(routine, result):
@@ -153,8 +208,12 @@ def _method(file: JavaFile, module: M.Module, routine: M.Routine, result: Servic
     result.routines.append(routine.id)
 
 
-def _handlers(file: JavaFile, routine: M.Routine, result: ServiceFile, domain_package: str) -> None:
+def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Routine,
+              result: ServiceFile, domain_package: str) -> None:
     """Exception handlers become catch blocks, in the order PL/SQL would try them.
+
+    Takes the handlers rather than reading them off the routine: a nested block has its own (#18), and they
+    become the catches of that block's `try`, reaching exactly as far as the block does.
 
     `WHEN OTHERS` is last whatever the source order, because Java resolves catches in order and a broad one first
     would swallow the specific ones. Keeping the PL/SQL order for everything else matters: two handlers can both
@@ -162,7 +221,7 @@ def _handlers(file: JavaFile, routine: M.Routine, result: ServiceFile, domain_pa
     """
     from .exception import PREDEFINED
 
-    ordered = sorted(routine.exception_handlers,
+    ordered = sorted(handlers,
                      key=lambda h: 1 if any(e.upper() == "OTHERS" for e in h.exceptions) else 0)
     caught_already: set[str] = set()
     for handler in ordered:
@@ -177,11 +236,12 @@ def _handlers(file: JavaFile, routine: M.Routine, result: ServiceFile, domain_pa
             for class_name in classes:
                 file.add_import(f"{domain_package}.{class_name}")
         if caught in caught_already:
-            # PL/SQL allows a nested block to have its own WHEN OTHERS, and the lowering attaches both to the
-            # routine; Java rejects two catches of one type. Which handler applies depends on the block
-            # structure, so the second is reported rather than silently merged into the first.
-            file.comment(f"{comment}: a second handler for the same type, from a nested block")
-            file.comment("    the block structure decides which one applies; this needs a human")
+            # Two PL/SQL exceptions can map to one Java class, and Java rejects two catches of one type.
+            # Which handler applies is then a question about the mapping, so the second is reported rather
+            # than silently merged into the first. (A nested block's handlers no longer arrive here: they
+            # belong to the block and become its own catches -- #18.)
+            file.comment(f"{comment}: a second handler for a type already caught")
+            file.comment("    two PL/SQL exceptions map to one Java class here; this needs a human")
             result.untranslated.append(handler.id)
             continue
         caught_already.add(caught)
@@ -206,7 +266,11 @@ def _always_exits(routine: M.Routine, result: ServiceFile) -> bool:
         for statement in statements:
             if statement.id in result.untranslated:
                 return True   # the refusal throws, and the rest of the block was dropped
-        return statements[-1].kind in ("Return", "Raise")
+        last = statements[-1]
+        if last.kind == "Block":
+            # a block leaves by falling out of it unless its body and every handler leave for good
+            return exits(last.body) and all(exits(h.body) for h in last.exception_handlers)
+        return last.kind in ("Return", "Raise")
 
     if not exits(routine.body):
         return False
@@ -302,6 +366,8 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
         _case(file, statement, routine, result)
     elif kind == "Loop":
         _loop(file, statement, routine, result)
+    elif kind == "Block":
+        _block(file, statement, routine, result)
     elif kind == "Raise":
         _raise(file, statement, routine, result)
     elif kind == "Exit":
@@ -318,6 +384,35 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
         _sql(file, statement, routine)
     else:
         _untranslated(file, statement, result)
+
+
+def _block(file: JavaFile, statement: M.Block, routine: M.Routine, result: ServiceFile) -> None:
+    """A nested `BEGIN ... EXCEPTION ... END` (#18), as the Java block it is.
+
+    Its handlers catch only what its own body raises, which is what the PL/SQL said and what the hoisting
+    this replaces could not express. Without handlers it is a bare block, which still matters: a `DECLARE`
+    inside it scopes its names the way PL/SQL does.
+
+    The declarations go **inside** the braces. A `DECLARE` name belongs to its block and nowhere else, so
+    writing it outside gave it the whole method instead, and two blocks declaring the same name produced a
+    Java duplicate declaration -- code that does not compile, reported as `AUTO`. The braces are the block's
+    own, not the `try`'s: a handler reads the block's variables, and a name declared inside `try` is not
+    visible from `catch`.
+    """
+    outer = _BLOCK_LOCALS.get()
+    _BLOCK_LOCALS.set({**outer, **{d.name: java_name(d.name) for d in statement.declarations}})
+    try:
+        with file.block("") as scope:
+            for declaration in statement.declarations:
+                _declaration(scope, declaration, routine, result)
+            if not statement.exception_handlers:
+                _statements(scope, statement.body, routine, result)
+                return
+            with scope.block("try") as f:
+                _statements(f, statement.body, routine, result)
+            _handlers(scope, statement.exception_handlers, routine, result, _DOMAIN.get() or "")
+    finally:
+        _BLOCK_LOCALS.set(outer)
 
 
 def _if(file: JavaFile, statement: M.If, routine: M.Routine, result: ServiceFile) -> None:
@@ -423,6 +518,9 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
             # another module's service would have to be injected; that is a composition decision, not a
             # translation, so it is refused rather than guessed
             raise Untranslatable([statement.resolved_to], f"call into {owner}")
+        callee = next((r for r in (module.routines if module else []) if r.id == statement.resolved_to), None)
+        if callee is not None and needs_audit(callee):
+            arguments = ", ".join(a for a in [arguments, "audit"] if a)
         file.line(f"{java_name(target.split('.')[-1])}({arguments});")
     else:
         file.comment(f"external call: {statement.callee}")
@@ -478,7 +576,9 @@ def _arguments(file: JavaFile, statement: M.SqlOperation, routine: M.Routine,
     holding -- so it goes through the expression translator, which renders it as the accessor the record
     generated for that loop actually has.
     """
-    out = []
+    from .repository import needs_audit as statement_needs_audit
+
+    out = ["audit"] if statement_needs_audit(statement) else []
     for bind in (b for b in statement.binds if not b.expression):
         name = bind.plsql_variable or bind.name
         out.append(_expr(file, name, routine, result) if "." in name else java_name(name))
@@ -634,7 +734,7 @@ def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "Service
     different semantics. Refusing turns the statement into a `throw` with the original next to it, which the
     compiler accepts and a reviewer can act on. Emitting it anyway is the one outcome that helps nobody.
     """
-    names = {**_scope(routine, module or _MODULE.get()), **_LOOP_ROWS.get()}
+    names = {**_scope(routine, module or _MODULE.get()), **_BLOCK_LOCALS.get(), **_LOOP_ROWS.get()}
     names.update({f"{flag}%notfound": _flag_name(flag) for flag in _not_found_flags(routine)})
     rendered = translate(text, names)
     for name in rendered.unknown:

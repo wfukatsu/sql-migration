@@ -245,22 +245,42 @@ def _liftable(value: exp.Expression) -> bool:
     value = inner
     if _sequence_of(value):
         return True   # 採番。移行先の方式へ置き換わる
+    if isinstance(value, exp.Column) and _is_pseudo_column(value):
+        return True   # a clock or session read on its own, not a stored value
     if isinstance(value, (exp.Literal, exp.Placeholder, exp.Null, exp.Column)):
         return False  # already a value, or a column this must not touch
     if any(isinstance(node, exp.Column) and not _is_pseudo_column(node) for node in value.walk()):
         return False  # mentions a column: the database holds the operand, not the application
     if isinstance(value, exp.Select) or value.find(exp.Select) is not None:
         return False  # a subquery is not an expression the application can evaluate
+    if _mentions_correlation(value):
+        # `:NEW.status` / `:OLD.status` are the trigger's row, and the target has no trigger: where those
+        # values come from is #12, not a rewrite. Lifting one would replace a clear conversion error with
+        # Java that does not compile, which is the one outcome this function exists to avoid.
+        return False
     for node in value.walk():
         if isinstance(node, (exp.Func, exp.Anonymous)) and _function_name(node) not in EVALUABLE:
             return False
     return isinstance(value, LIFTABLE_ARITHMETIC) or isinstance(value, (exp.Func, exp.Anonymous))
 
 
+# what the session is, rather than what a row holds. `USER` parses as a bare column and the converter refuses
+# it for that reason; it is the value the caller supplies (#1), so it is lifted like a clock read.
+PSEUDO_COLUMNS = {"SYSDATE", "SYSTIMESTAMP", "CURRENT_DATE", "CURRENT_TIMESTAMP", "USER"}
+
+
+CORRELATION = {"NEW", "OLD"}
+
+
+def _mentions_correlation(value: exp.Expression) -> bool:
+    """Whether the expression reads a trigger correlation name. `:NEW.x` parses as a placeholder plus a dot."""
+    return any(isinstance(node, exp.Placeholder) and str(node.this or "").upper() in CORRELATION
+               for node in value.walk())
+
+
 def _is_pseudo_column(node: exp.Column) -> bool:
-    """`SYSDATE` and friends parse as bare columns; they are clock reads, not stored values."""
-    return node.name.upper() in {"SYSDATE", "SYSTIMESTAMP", "CURRENT_DATE", "CURRENT_TIMESTAMP"} \
-        and not node.table
+    """`SYSDATE` and friends parse as bare columns; they read the session, not a stored value."""
+    return node.name.upper() in PSEUDO_COLUMNS and not node.table
 
 
 def _function_name(node: exp.Expression) -> str:
