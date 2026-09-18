@@ -222,15 +222,30 @@ class _Parser:
 
     def parse_arithmetic(self) -> str:
         """`a + b` on a BigDecimal does not compile in Java, and on a boxed null it throws."""
-        left = self.parse_primary()
+        left = self.parse_unary()
         while True:
             token = self.peek()
             if token is None or token[0] != "op" or token[1] not in self.ARITHMETIC:
                 return left
             operator = self.take()[1]
-            right = self.parse_primary()
+            right = self.parse_unary()
             self.result.imports.add(HELPER_IMPORT)
             left = f"{HELPER}.{self.ARITHMETIC[operator]}({left}, {right})"
+
+    def parse_unary(self) -> str:
+        """`-x` and `+x`. Without this the leading sign was read as a binary operator with nothing on its
+        left, and the output was `Plsql.sub(, x)` -- Java that does not compile. It had been that way for
+        every `-x`, and only stayed hidden because no corpus statement reached the generator with one (#14
+        rewrote `-v_qtys(i)` into `-r.qty`, which did)."""
+        token = self.peek()
+        if token is None or token[0] != "op" or token[1] not in ("-", "+"):
+            return self.parse_primary()
+        operator = self.take()[1]
+        operand = self.parse_unary()
+        if operator == "+":
+            return operand   # Oracle の単項プラスは値を変えない
+        self.result.imports.add(HELPER_IMPORT)
+        return f"{HELPER}.neg({operand})"
 
     def parse_concat(self) -> str:
         parts = [self.parse_arithmetic()]

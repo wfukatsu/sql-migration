@@ -123,6 +123,22 @@ public final class Plsql {
     return arith(a, b, BigDecimal::add);
   }
 
+  /**
+   * 単項マイナス。`NULL` は `NULL` のまま——Oracle の算術は NULL を伝播する。
+   *
+   * <p>`sub(0, x)` で代用しない: `sub` は DATE 同士の引き算を「日数」に解釈するので、意味の違う
+   * ものを 1 つの入口に押し込むことになる。
+   */
+  public static BigDecimal neg(Object value) {
+    if (isNull(value)) return null;
+    BigDecimal decimal = value instanceof BigDecimal d ? d
+        : value instanceof Number n ? OracleNumbers.toBigDecimal(n) : null;
+    if (decimal == null) {
+      throw new IllegalArgumentException("単項マイナスを数値でない値に適用した: " + value.getClass());
+    }
+    return decimal.negate();
+  }
+
   public static BigDecimal sub(Object a, Object b) {
     if (a instanceof LocalDateTime x && b instanceof LocalDateTime y) {
       // Oracle subtracts two DATEs into a number of days, fraction included

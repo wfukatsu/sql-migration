@@ -84,6 +84,15 @@ def test_the_echoed_source_line_and_its_caret_are_dropped():
     assert errors[0].message == "cannot find symbol / symbol:   variable audit"
 
 
+def test_a_caret_at_the_end_does_not_walk_off_the_list():
+    """javac が最後に書くのは行とキャレットだけのことがある。落とし方を後ろから index で書いていたので、
+    **報告するはずのエラーで検査そのものが落ちていた**。"""
+    errors = _errors("/x/PkgAService.java:98: error: illegal start of expression\n"
+                     "        params.put(\"e\", Plsql.sub(, rQty));\n"
+                     "                                   ^\n")
+    assert errors[0].message == "illegal start of expression"
+
+
 def test_an_unindented_line_ends_the_run_of_qualifiers():
     """Gradle prints its own notes between diagnostics; appending one to the error above it would misdescribe
     the defect."""
