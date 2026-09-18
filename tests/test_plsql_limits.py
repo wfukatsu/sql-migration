@@ -193,3 +193,49 @@ def test_the_corpus_lists_what_nobody_has_decided(tmp_path):
     """corpus では 5 件残っている。勝手に notLimited へ入れず、名前を挙げるのが門の仕事である。"""
     assert generate([SRC, "--out-dir", str(tmp_path), "--limits", CONFIG, "--limits-strict",
                      "--quiet"]) == 1
+
+
+# --- #9: 行ロックを落とす判断も routine ごとに記録する（2026-09-18） ------------------------------
+
+def test_a_row_lock_decision_is_recorded_per_routine():
+    """決めることが routine ごとに違う——呼び出し側が再試行するか、冪等か、業務例外と衝突を
+    区別できるか。だから 1 つの旗では切り替えない。"""
+    from plsql.limits import RowLocks
+
+    locks = RowLocks.load(CONFIG)
+    assert locks.decided("pkg_stock_reserve.reserve")
+    assert not locks.decided("pkg_stock_reserve.reserve_nowait"), "B 型（NOWAIT）はまだ決まっていない"
+    assert "呼び出し側" in locks.why("pkg_stock_reserve.reserve") \
+        or "commit で弾かれる" in locks.why("pkg_stock_reserve.reserve")
+
+
+def test_without_a_config_nothing_is_decided():
+    """既定は「決めていない」。決めていない routine の書き込みは拒否したままになる。"""
+    from plsql.limits import RowLocks
+
+    assert RowLocks.load(None).optimistic == {}
+
+
+def test_the_decided_routine_converts_and_says_what_the_caller_must_do():
+    """ロックが落ちた読みに基づく書き込みは、決めた routine でだけ通る。**要求は残す**。"""
+    import pathlib
+
+    from plsql.limits import RowLocks
+    from plsql.lower import _walk
+    from plsql.report import analyse as build_analysis
+
+    fixtures = pathlib.Path(__file__).resolve().parent.parent / "fixtures" / "plsql"
+    corpus = build_analysis(fixtures / "src", fixtures / "src" / "schema.sql",
+                            scalardb_schema=fixtures / "scalardb-schema.json",
+                            row_locks=RowLocks.load(CONFIG))
+    by_id = {r.id: r for _, r in corpus.routines()}
+
+    decided = [s for s in _walk(by_id["pkg_stock_reserve.reserve"].body) if s.kind == "SqlOperation"]
+    assert [s.target_status for s in decided] == ["WARN", "OK"], "決めた routine の書き込みが通っていない"
+    assert any(d.code == "OPTIMISTIC" for s in decided for d in s.diagnostics), \
+        "再試行が呼び出し側の責務であることが残っていない"
+
+    undecided = [s for s in _walk(by_id["pkg_stock_reserve.reserve_nowait"].body)
+                 if s.kind == "SqlOperation"]
+    assert "ERROR" in [s.target_status for s in undecided], \
+        "決めていない routine が通ってしまっている——ロックが落ちたまま書き換えが進んでいる"

@@ -74,12 +74,15 @@ def main(argv: list[str] | None = None) -> int:
         handover_banner(date.today().isoformat())
 
     from .gen_java.repository import set_limits
-    from .limits import Limits
+    from .limits import Limits, RowLocks
 
     limits = Limits.load(args.limits) if args.limits else Limits()
     set_limits(limits)
+    # #9: 行ロックを落として楽観制御へ移すと決めた routine。同じ config に書く——どちらも
+    # 「生成器が推測してはならない、routine ごとの決定」である
+    row_locks = RowLocks.load(args.limits) if args.limits else RowLocks()
 
-    analysis = build_analysis(root, schema, scalardb_schema=scalardb)
+    analysis = build_analysis(root, schema, scalardb_schema=scalardb, row_locks=row_locks)
     decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), Evidence())
     project = generate(analysis.program, args.out_dir, args.package, decisions)
     written = write(project, decisions)
