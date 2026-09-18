@@ -345,6 +345,7 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
     loop_fields = {name.lower(): fields for name, fields in (loop_variables or {}).items()}
     if symbols is None and not loop_fields:
         return []
+    _correlation_as_qualified(tree, loop_fields)
     found: dict[str, BindVariable] = {}
     for column in list(tree.find_all(exp.Column)):
         if column.table:
@@ -370,6 +371,28 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
             oracle_type=symbol.type.oracle if symbol.type else None, plsql_variable=name)
         column.replace(exp.Placeholder(this=placeholder))
     return list(found.values())
+
+
+def _correlation_as_qualified(tree: exp.Expression, loop_fields: dict) -> None:
+    """`:NEW.status` を `NEW.status` の形にする。呼び出し側が `NEW` / `OLD` を渡したときだけ。
+
+    Oracle の相関名は placeholder + ドットに構文解析されるので、そのままでは「修飾された参照」を
+    見る道に乗らない。乗せてしまえば、cursor FOR ループの行（#10）と同じ扱いになる——どちらも
+    「文が走る前から Java が値として持っているもの」である。
+
+    `NEW` / `OLD` を渡していない routine では何もしない。渡していないのに書き換えると、`NEW` という
+    別名の表を持つ問い合わせを壊す。
+    """
+    if not ({"new", "old"} & set(loop_fields)):
+        return
+    for dot in list(tree.find_all(exp.Dot)):
+        placeholder = dot.this
+        if not isinstance(placeholder, exp.Placeholder):
+            continue
+        qualifier = str(placeholder.this or "").upper()
+        if qualifier.lower() not in loop_fields or not dot.expression:
+            continue
+        dot.replace(exp.column(dot.expression.name, table=qualifier))
 
 
 def attribute_columns(tree: exp.Expression, binds: list[BindVariable], operation: SqlOperation,

@@ -61,7 +61,8 @@
    ],
    "triggerEvent": "UPDATE",
    "triggerTable": "orders",
-   "triggerTiming": "AFTER"
+   "triggerTiming": "AFTER",
+   "triggerWhen": "OLD.status <> NEW.status"
   }
  ],
  "schemaSnapshot": "schema.sql@23623f44"

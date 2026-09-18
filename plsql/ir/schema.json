@@ -355,6 +355,12 @@
             "string",
             "null"
           ]
+        },
+        "triggerWhen": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },

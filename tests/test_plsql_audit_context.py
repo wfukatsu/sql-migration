@@ -56,17 +56,19 @@ def test_no_user_is_left_as_a_conversion_error_in_the_corpus(corpus):
     assert not [m for m in messages if "'USER'" in m], messages
 
 
-def test_a_trigger_correlation_name_is_still_not_lifted(corpus):
-    """`:NEW.status` is the trigger's row and the target has no trigger; where it comes from is #12.
+def test_a_trigger_correlation_name_is_a_value_the_caller_supplies(corpus):
+    """`:NEW.status` は trigger が発火した行で、移行先に trigger は無い。
 
-    It used to be held back by `USER` in the same statement. Lifting it now would produce Java that does not
-    compile -- which is the one outcome `lift_expressions` exists to avoid.
+    かつてここは「どこから来るのかは #12」として**拒んでいた**。#12 が答えを決めた——`USER` と
+    同じく**呼び出し側が渡す**（#1）——ので、拒む理由が無くなった。渡される値なので bind になり、
+    文は変換できる。
     """
     insert = next(s for s in statements(routine(corpus, "trg_orders_audit.body"))
                   if s.kind == "SqlOperation")
-    assert not [b for b in insert.binds if b.expression and ":NEW" in b.expression.upper()]
-    assert not [b for b in insert.binds if b.expression and ":OLD" in b.expression.upper()]
-    assert [d.code for d in insert.diagnostics if d.severity == "ERROR"] == ["EXPR"]
+    supplied = {b.plsql_variable for b in insert.binds if b.plsql_variable}
+    assert {"NEW.order_id", "NEW.status", "OLD.status"} <= supplied
+    assert insert.target_status in ("OK", "WARN")
+    assert not [d for d in insert.diagnostics if d.severity == "ERROR"]
 
 
 def test_sysdate_is_left_alone(corpus):

@@ -343,10 +343,15 @@ class _Parser:
 
     def _atom(self, kind: str, value: str) -> str:
         if kind == "bind":
-            # `:NEW.col` / `:OLD.col` in a trigger, or a host variable. Neither has a Java equivalent here, and
-            # triggers are a REDESIGN anyway, so this is refused rather than rendered.
-            self.result.unknown.append(value)
-            return value
+            # `:NEW.col` / `:OLD.col` in a trigger, or a host variable. 以前はどちらも Java に相当する
+            # ものが無いとして拒んでいた。#12 が trigger の行について答えを決めた——**呼び出し側が
+            # 渡す**——ので、渡されたものは名前として解決する。渡されていないもの（host variable や、
+            # DDL が無くて型を作れなかった列）は今までどおり拒む。
+            mapped = self.scope.get(value.lower())
+            if mapped is None:
+                self.result.unknown.append(value)
+                return value
+            return mapped
         if kind == "attribute":
             # `SQL%ROWCOUNT`, `c%NOTFOUND`: one name, not a modulo
             key = " ".join(value.split()).replace(" ", "").lower()
