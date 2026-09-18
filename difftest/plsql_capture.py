@@ -62,8 +62,12 @@ def main(argv=None) -> int:
     setup = WORK / ("plsql-setup.json" if args.variant == "scaled" else "plsql-setup-double.json")
     # a non-zero exit means a routine the rules called AUTO did not come out cleanly. That is worth knowing and
     # worth measuring, so it is reported and the capture goes ahead: the comparison is what says what it cost.
+    # `--limits` は走査行数の上限（#19）だけでなく、**行ロックを落とす判断**（#9）も持っている。
+    # 渡さずに生成すると、比較するのは「決定が効いていない生成物」になる——決定した形が Oracle と
+    # 一致するかを測れない
     run([sys.executable, "-m", "plsql.generate", str(FIXTURES / "src"),
-         "--scalardb-schema", str(schema), "--out-dir", "generated"], allow_failure=True)
+         "--scalardb-schema", str(schema), "--limits", str(FIXTURES / "limits.yaml"),
+         "--out-dir", "generated"], allow_failure=True)
     run([sys.executable, str(ROOT / "difftest" / "plsql_setup.py"), "--variant", args.variant,
          "--schema", str(schema), "--out", str(setup)])
     run(["gradle", "test", "-Dplsql.generated=1", f"-Dplsql.variant={args.variant}",
