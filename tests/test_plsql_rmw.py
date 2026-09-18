@@ -81,3 +81,15 @@ def test_a_routine_that_was_never_locked_is_untouched(corpus):
     """`restock` の FORALL も `SET stock_qty = stock_qty + ...` だが、記録が無いので触らない。"""
     routine, _ = statements(corpus, "pkg_bulk_load.restock")
     assert not [d for d in routine.declarations if d.name.startswith("v_rmw_")]
+
+
+def test_the_counter_routine_is_recorded_and_converts(corpus):
+    """D 型（採番）は方式が既に決まっている（計画 §9: NOCACHE → counters 表 + 再試行）。
+    `next_payment_id` はまさにその形——読む・+1 する・書く——なので、記録は既存の決定に従う。"""
+    _, sql = statements(corpus, "pkg_stock_reserve.next_payment_id")
+    assert [s.target_status for s in sql] == ["WARN", "OK"]
+    # `+1` はアプリで計算して bind で渡す。ScalarDB へ渡る SQL に式は残らない
+    update = sql[1]
+    assert update.target_sql == \
+        ["UPDATE counters SET next_value = :expr2 WHERE counter_name = 'PAYMENT_ID'"]
+    assert [b.expression for b in update.binds if b.expression] == ["v_next + 1"]
