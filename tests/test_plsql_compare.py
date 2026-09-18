@@ -206,3 +206,44 @@ def test_unscale_round_trips_the_money_values_the_corpus_uses(stored, expected):
     held = capture(tables={"t": table(["amount"], [[stored]])})
     unscale(held, {"t": {"amount": 2}})
     assert decode(held["tables"]["t"]["rows"][0][0]) == Decimal(expected)
+
+
+# --- #22: `pinned` は両側が同じものを写す ------------------------------------------------------------
+
+def test_pinned_holds_only_what_the_scenario_declared():
+    """golden の `pinned` に、scenario が宣言していない鍵があってはならない。
+
+    ターゲット側の capture は scenario の宣言をそのまま写す（`Scenario.java`）。Oracle 側だけが
+    実測値を書き足すと、**golden を取り直した瞬間に全件が `pinned` の差分になる**——比較が通って
+    いたのは golden が古いおかげだった、という状態になる（#22）。実測した USER の置き場所は
+    `sessionUser` 1 つに決めてある。
+    """
+    import json
+    import pathlib
+
+    import yaml
+
+    root = pathlib.Path(__file__).resolve().parent.parent / "fixtures" / "plsql"
+    declared = {}
+    for spec in sorted((root / "scenarios").glob("*.yaml")):
+        loaded = yaml.safe_load(spec.read_text(encoding="utf-8"))
+        declared[loaded["name"]] = set((loaded.get("pinned") or {}))
+    offenders = {}
+    for golden in sorted((root / "golden").glob("*.json")):
+        capture = json.loads(golden.read_text(encoding="utf-8"))
+        extra = set(capture.get("pinned") or {}) - {"sysdate", "sequences"} \
+            - declared.get(golden.stem, set())
+        if extra:
+            offenders[golden.stem] = sorted(extra)
+    assert not offenders, f"scenario が宣言していない pinned の鍵: {offenders}"
+
+
+def test_the_measured_oracle_user_has_exactly_one_home():
+    """実測値は `sessionUser` に置く。`pinned` にも置くと、置き場所が 2 つになって食い違う。"""
+    import pathlib
+
+    run = (pathlib.Path(__file__).resolve().parent.parent / "difftest" / "plsql_run.py") \
+        .read_text(encoding="utf-8")
+    assert '"sessionUser": session_user' in run
+    assert '"user": pinned.get("user") or session_user' not in run, \
+        "実測値が pinned にも書かれている。#22 の状態に戻っている"

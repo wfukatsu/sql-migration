@@ -281,15 +281,25 @@ class ScalarDbCaptureIT {
     }
 
     /**
-     * Oracle 側の実測 USER。golden capture に入っている（`plsql_run.py` が `SELECT USER FROM dual`
-     * を記録する）。接続スキーマは環境で変わるので、シナリオに書くのではなく実測値を読む。
+     * Oracle 側の実測 USER。golden capture の `sessionUser` に入っている（`plsql_run.py` が
+     * `SELECT USER FROM dual` を記録する）。接続スキーマは環境で変わるので、シナリオに書くのでは
+     * なく実測値を読む。
+     *
+     * <p>`pinned` ではなく `sessionUser` から読む（#22）。`pinned` は**両側が使うよう指示された
+     * 値**で、こちら側の capture は scenario の宣言しか写さない。Oracle 側だけが実測値をそこに
+     * 書き足すと、golden を取り直した瞬間に全件が `pinned` の差分になる。実測値の置き場所は
+     * 1 つにする。
      */
     private static Object oracleSessionUser(Scenario scenario) {
       Path golden = Path.of("..", "fixtures", "plsql", "golden", scenario.name() + ".json");
       try {
         Map<?, ?> capture = new com.google.gson.Gson()
             .fromJson(java.nio.file.Files.readString(golden), Map.class);
-        Object pinned = capture.get("pinned");
+        Object measured = capture.get("sessionUser");
+        if (measured != null) {
+          return measured;
+        }
+        Object pinned = capture.get("pinned");   // #22 より前に取られた capture
         return pinned instanceof Map<?, ?> m ? m.get("user") : null;
       } catch (Exception e) {
         return null;   // 実行されたことのないシナリオ。既定値で走り、食い違えば差分として出る

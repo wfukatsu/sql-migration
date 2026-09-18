@@ -17,8 +17,8 @@ Both deploy and run create and delete data, so only a disposable database is acc
 ## What the capture holds
 
     {"scenario", "unit", "routine", "source": "oracle",
-     "pinned":    {"sysdate": ..., "sequences": {...}, "user": ...},
-     "sessionUser": ...,       # Oracle の USER の実測値。`pinned.user` と食い違えば changed_by が食い違う
+     "pinned":    {"sysdate": ..., "sequences": {...}, "user": ...},   # user は scenario が宣言したときだけ
+     "sessionUser": ...,       # Oracle の USER の実測値。ターゲット側の AuditContext はこれを使う
      "result":    {"returned": <value>, "out": {name: value}},
      "exception": {"code": -20020, "message": "..."} | null,
      "tables":    {name: {"columns": [...], "rows": [[...]]}},
@@ -381,8 +381,15 @@ def run(args) -> int:
 
             capture = {
                 "scenario": spec["name"], "unit": spec["unit"], "routine": spec["routine"], "source": "oracle",
-                "pinned": {"sysdate": pinned.get("sysdate"), "sequences": pinned.get("sequences") or {},
-                           "user": pinned.get("user") or session_user},
+                # `pinned` は**両側が使うよう指示された値**であり、scenario が宣言したものだけが入る。
+                # 実測した USER は `sessionUser` にだけ置く（#22）。両方に置くと、ターゲット側の
+                # capture は scenario の宣言しか写さないので、golden を取り直した瞬間に全件が
+                # `pinned` の差分になる——比較が通っていたのは golden が古いおかげだった。
+                "pinned": {k: v for k, v in
+                           (("sysdate", pinned.get("sysdate")),
+                            ("sequences", pinned.get("sequences") or {}),
+                            ("user", pinned.get("user")))
+                           if not (k == "user" and v is None)},
                 "sessionUser": session_user,
                 "result": result, "exception": exception, "tables": tables, "masked": masked,
             }
