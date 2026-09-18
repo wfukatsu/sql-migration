@@ -9,6 +9,7 @@
    "seq_audit_id": 1
   }
  },
+ "sessionUser": "SOURCE",
  "result": {
   "returned": null,
   "out": {}
