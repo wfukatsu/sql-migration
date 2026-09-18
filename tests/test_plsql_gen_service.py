@@ -59,6 +59,24 @@ def test_oracle_semantics_become_helper_calls(plsql: str, java: str):
     assert result.translatable
 
 
+@pytest.mark.parametrize("plsql,java", [
+    ("-n", "Plsql.neg(n)"),
+    ("+n", "n"),                       # Oracle の単項プラスは値を変えない
+    ("- -n", "Plsql.neg(Plsql.neg(n))"),
+    ("n - 1", "Plsql.sub(n, 1)"),      # 二項のままであること
+    ("n - -1", "Plsql.sub(n, Plsql.neg(1))"),
+])
+def test_a_leading_sign_is_unary_not_a_binary_operator_missing_its_left(plsql: str, java: str):
+    """`-n` は `Plsql.sub(, n)` になっていた——**コンパイルできない Java** である。
+
+    corpus のどの文も単項マイナスを持って生成器まで来なかったので、ずっと隠れていた。#14 が
+    `-v_qtys(i)` を `-r.qty` に書き換えて初めて表に出た（`--verify-compile` が捕まえた）。
+    """
+    result = translate(plsql, {"n": "n"})
+    assert result.java.replace(" ", "") == java.replace(" ", "")
+    assert result.translatable
+
+
 def test_precedence_is_parsed_not_pattern_matched():
     """Regression: marker substitution mis-split `a > 1 AND b = 'x'` because a marker cannot see its operands."""
     result = translate("n > 1 AND v = 'x'", {"v": "v", "n": "n"})

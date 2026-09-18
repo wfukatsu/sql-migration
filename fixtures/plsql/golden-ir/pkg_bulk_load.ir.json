@@ -551,7 +551,7 @@
      "body": [
       {
        "id": "pkg_bulk_load.archive_lines#stmt-1",
-       "kind": "SqlOperation",
+       "kind": "Loop",
        "sourceRange": {
         "file": "pkg_bulk_load.pkb",
         "startLine": 46,
@@ -561,9 +561,9 @@
        },
        "diagnostics": [
         {
-         "severity": "WARN",
-         "code": "BULK_COLLECT",
-         "message": "BULK COLLECT needs a row limit and a memory bound",
+         "severity": "INFO",
+         "code": "BULK_CHUNKED",
+         "message": "BULK COLLECT into v_products, v_qtys と、それを回す FORALL を 1 つの走査ループに した。FORALL は 1 往復、ループは行ごとに 1 回で、性能は変わるが答えは変わらない。行数上限は cursor FOR ループとして決める（CUR-002）",
          "range": {
           "file": "pkg_bulk_load.pkb",
           "startLine": 46,
@@ -573,24 +573,25 @@
          }
         }
        ],
-       "sqlKind": "SELECT",
-       "originalSql": "SELECT product_id, qty BULK COLLECT INTO v_products, v_qtys\n      FROM order_lines WHERE order_id = p_order_id",
-       "selectsStar": false,
-       "cardinality": "MANY",
-       "atMostOneRow": false
-      },
-      {
-       "id": "pkg_bulk_load.archive_lines#stmt-2",
-       "kind": "Loop",
-       "sourceRange": {
-        "file": "pkg_bulk_load.pkb",
-        "startLine": 48,
-        "endLine": 50,
-        "startColumn": 5,
-        "endColumn": 79
+       "loopKind": "cursor-for",
+       "cursor": "r IN (SELECT product_id, qty FROM order_lines WHERE order_id = p_order_id)",
+       "query": {
+        "id": "pkg_bulk_load.archive_lines#stmt-1#query",
+        "kind": "SqlOperation",
+        "sourceRange": {
+         "file": "pkg_bulk_load.pkb",
+         "startLine": 46,
+         "endLine": 47,
+         "startColumn": 5,
+         "endColumn": 41
+        },
+        "sqlKind": "SELECT",
+        "originalSql": "SELECT product_id, qty FROM order_lines WHERE order_id = p_order_id",
+        "selectsStar": false,
+        "cardinality": "MANY",
+        "atMostOneRow": false
        },
-       "loopKind": "forall",
-       "cursor": "1 .. v_products.COUNT",
+       "variable": "r",
        "body": [
         {
          "id": "pkg_bulk_load.archive_lines#stmt-3",
@@ -603,7 +604,7 @@
           "endColumn": 79
          },
          "sqlKind": "INSERT",
-         "originalSql": "INSERT INTO inventory_tx (entry_id, product_id, delta_qty, reason, created_at)\n      VALUES (seq_tx_id.NEXTVAL, v_products(i), -v_qtys(i), 'ARCHIVE', SYSDATE)",
+         "originalSql": "INSERT INTO inventory_tx (entry_id, product_id, delta_qty, reason, created_at) VALUES (seq_tx_id.NEXTVAL, r.product_id, -r.qty, 'ARCHIVE', SYSDATE)",
          "selectsStar": false,
          "cardinality": "UNKNOWN",
          "atMostOneRow": false

@@ -30,7 +30,7 @@ from pathlib import Path
 from antlr4 import ParserRuleContext
 
 from .frontend import ParsedFile
-from . import cursors
+from . import bulk, cursors
 from .ir import model as M
 from .preprocess import Unit
 from .source import SourceRange
@@ -227,6 +227,10 @@ class _Lowerer:
         # #11: an explicit cursor that takes the first row, or counts, is not a scan. Rewriting it here rather
         # than in the generator means the query it becomes goes through the converter and the capability check
         # like any other statement -- which is the whole point of doing it at all.
+        # #14: `SELECT ... BULK COLLECT INTO` と、その配列を回す `FORALL` は 1 つの走査ループである。
+        # cursor の書き換えより先に行う——出来上がるのが cursor FOR ループなので、後続の解析も生成も
+        # そちらの道に乗る。
+        bulk.rewrite(routine)
         cursors.rewrite(routine, self.symbols, module, self.schema)
         self._effects(routine, text)
         return routine
