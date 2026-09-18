@@ -41,6 +41,7 @@ def rewrite(routine: M.Routine, symbols: SymbolTable | None, module: str | None 
     """
     if symbols is None:
         return
+    _named_cursor_loops(routine, symbols, module, schema)
     rewritten: set[str] = set()
     routine.body = _sequence(routine.body, routine, symbols, module, schema, rewritten)
     for handler in routine.exception_handlers:
@@ -51,6 +52,64 @@ def rewrite(routine: M.Routine, symbols: SymbolTable | None, module: str | None 
         routine.body = _drop_isopen(routine.body, rewritten)
         for handler in routine.exception_handlers:
             handler.body = _drop_isopen(handler.body, rewritten)
+
+
+# --- `FOR r IN c LOOP` --------------------------------------------------------------------------------
+
+NAMED_LOOP = re.compile(r"^\s*[\w$#]+\s+IN\s+(?P<cursor>[\w$#.]+)\s*(?:\((?P<arguments>.*)\))?\s*$",
+                        re.IGNORECASE | re.DOTALL)
+
+
+def _named_cursor_loops(routine: M.Routine, symbols: SymbolTable, module: str | None,
+                        schema: OracleSchema | None) -> None:
+    """Give `FOR r IN c LOOP` the query the cursor was declared as.
+
+    An inline `FOR r IN (SELECT ...)` already carries its query as a statement (P4-5), and everything
+    downstream -- the converter, the capability check, the generator -- works from that node. A named cursor's
+    query lives in its declaration instead, which for a package-level cursor is not in this file's IR at all,
+    so the loop arrived with nothing to convert and was refused for the shape of its header rather than for
+    anything about what it does. Resolving it here puts the two shapes on the same path.
+
+    `FOR UPDATE` in the declaration comes with it. The lock is the reason several of these routines are a
+    redesign (`LOCK-001` / `LOCK-002`), and a query that arrived without it would look safe.
+    """
+    for loop in _loops(routine.body):
+        if (loop.loop_kind or "") != "cursor-for" or loop.query is not None or not loop.cursor:
+            continue
+        match = NAMED_LOOP.match(loop.cursor)
+        if match is None:
+            continue
+        query = _query(match.group("cursor").lower(), _arguments(match.group("arguments")),
+                       routine, symbols, module, schema)
+        if query is None:
+            continue
+        loop.query = M.SqlOperation(id=f"{loop.id}#query", kind="SqlOperation",
+                                    source_range=loop.source_range, sql_kind="SELECT",
+                                    original_sql=query, cardinality="MANY")
+        _mark_row_lock(loop.query, query)
+
+
+def _arguments(written: str | None) -> list[str]:
+    """`c(p_status, v_limit)` -> the actuals, in order. Nothing nested here needs a real parser."""
+    return [a.strip() for a in (written or "").split(",") if a.strip()]
+
+
+def _mark_row_lock(node: M.SqlOperation, text: str) -> None:
+    from .lower import mark_row_lock   # deferred: `lower` imports this module
+
+    mark_row_lock(node, text)
+
+
+def _loops(statements: list[M.Statement]):
+    for statement in statements:
+        if statement.kind == "Loop":
+            yield statement
+        yield from _loops(getattr(statement, "body", []) or [])
+        yield from _loops(getattr(statement, "else_body", []) or [])
+        for branch in getattr(statement, "branches", []) or []:
+            yield from _loops(branch.body)
+        for handler in getattr(statement, "exception_handlers", []) or []:
+            yield from _loops(handler.body)
 
 
 def _sequence(statements: list[M.Statement], routine: M.Routine, symbols: SymbolTable,
@@ -64,6 +123,9 @@ def _sequence(statements: list[M.Statement], routine: M.Routine, symbols: Symbol
                 setattr(statement, attribute, _sequence(nested, routine, symbols, module, schema, rewritten))
         for branch in getattr(statement, "branches", []) or []:
             branch.body = _sequence(branch.body, routine, symbols, module, schema, rewritten)
+        # a nested block's handler is a statement sequence like any other (#18)
+        for handler in getattr(statement, "exception_handlers", []) or []:
+            handler.body = _sequence(handler.body, routine, symbols, module, schema, rewritten)
 
     out: list[M.Statement] = []
     index = 0
@@ -107,7 +169,7 @@ def _first_row(statements: list[M.Statement], index: int, routine: M.Routine, sy
             _cursor_name(run[consumed].cursor) != cursor:
         return None
     consumed += 1
-    query = _query(cursor, run[0], routine, symbols, module, schema)
+    query = _query(cursor, list(run[0].arguments), routine, symbols, module, schema)
     if query is None:
         return None
     operation = _operation(run[1], routine, _limit_one(query), run[1].into_targets)
@@ -150,7 +212,7 @@ def _count(statements: list[M.Statement], index: int, routine: M.Routine, symbol
     fetched = list(run[1].body[0].into_targets or [])
     if fetched and _reads_outside(routine, run[:3], fetched):
         return None
-    query = _query(cursor, run[0], routine, symbols, module, schema)
+    query = _query(cursor, list(run[0].arguments), routine, symbols, module, schema)
     if query is None:
         return None
     if row_cap(sqlglot.parse_one(query, dialect="oracle"))[0] is not None:
@@ -259,7 +321,7 @@ def _word(name: str) -> re.Pattern:
     return re.compile(rf"(?<![\w$#.]){re.escape(name)}(?![\w$#])", re.IGNORECASE)
 
 
-def _query(cursor: str, opened: M.CursorStatement, routine: M.Routine, symbols: SymbolTable,
+def _query(cursor: str, arguments: list[str], routine: M.Routine, symbols: SymbolTable,
            module: str | None, schema: OracleSchema | None) -> str | None:
     """The cursor's query, with its own parameters substituted by what `OPEN` passed.
 
@@ -270,7 +332,6 @@ def _query(cursor: str, opened: M.CursorStatement, routine: M.Routine, symbols: 
     symbol = symbols.resolve(routine.id, cursor) or (symbols.resolve(module, cursor) if module else None)
     if symbol is None or symbol.kind != "cursor" or not symbol.query:
         return None
-    arguments = list(opened.arguments)
     if len(symbol.parameters) != len(arguments):
         return None   # positional only; a named actual (`c(p_status => v)`) is not read here
     return _substituted(symbol.query, symbol.parameters, arguments, schema)
@@ -350,6 +411,8 @@ def _drop_isopen(statements: list[M.Statement], rewritten: set[str]) -> list[M.S
                 setattr(statement, attribute, _drop_isopen(nested, rewritten))
         for branch in getattr(statement, "branches", []) or []:
             branch.body = _drop_isopen(branch.body, rewritten)
+        for handler in getattr(statement, "exception_handlers", []) or []:
+            handler.body = _drop_isopen(handler.body, rewritten)
         if statement.kind == "If" and len(statement.branches) == 1 and not statement.else_body:
             match = ISOPEN.match(statement.branches[0].condition or "")
             body = statement.branches[0].body

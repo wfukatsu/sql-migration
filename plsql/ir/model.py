@@ -242,6 +242,21 @@ class CursorStatement(Statement):
 
 
 @dataclass
+class Block(Statement):
+    """A nested `BEGIN ... EXCEPTION ... END`, kept where it was written (#18).
+
+    Before this, the handlers of a nested block were hoisted onto the routine and the block itself vanished.
+    Three things went with it: which loop iteration a statement in the handler belonged to, which block a
+    `ROLLBACK TO savepoint` unwound, and how far the handler actually reached. The generator could only notice
+    the third, and only when two hoisted handlers caught the same Java type.
+    """
+
+    declarations: list[Declaration] = field(default_factory=list)
+    body: list[Statement] = field(default_factory=list)
+    exception_handlers: list["ExceptionHandler"] = field(default_factory=list)
+
+
+@dataclass
 class ControlStatement(Statement):
     """EXIT / CONTINUE / GOTO / NULL. `label` and `condition` are kept: EXIT WHEN is not the same as EXIT."""
 

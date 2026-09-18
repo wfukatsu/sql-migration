@@ -53,6 +53,10 @@ STATEMENT_CONTEXTS = (
     "Open_statementContext", "Fetch_statementContext", "Close_statementContext",
     "Open_for_statementContext", "Pipe_row_statementContext", "Sql_statementContext",
     "Cursor_manipulation_statementsContext", "Transaction_control_statementsContext",
+    # a nested `BEGIN ... END` is a statement (#18). With a DECLARE it parses as a `Block`, without one the
+    # `Body` sits directly under the statement -- both shapes have to be matched, or the block is walked
+    # through and its handlers end up on the routine.
+    "BlockContext", "BodyContext",
 )
 
 
@@ -114,6 +118,7 @@ class _Lowerer:
         self.schema = schema
         self.public = public
         self.module_name = ""
+        self.routine_id: str | None = None   # whose scope a nested block's declarations resolve in (#18)
 
     # -- modules ------------------------------------------------------------------------------------------
     def modules(self, tree: ParserRuleContext) -> list[M.Module]:
@@ -167,7 +172,15 @@ class _Lowerer:
         routine = M.Routine(id=f"{name}.body", kind="Routine", name="body", routine_kind="trigger-body",
                             source_range=self._range(context), visibility="private")
         ids = M.IdFactory(routine.id)
-        routine.body = self._statements(body, ids)
+        self.routine_id = routine.id
+        # the trigger's own `BEGIN ... END` is the routine's body, not a nested block inside it (#18); read
+        # through it the way `_routine` does, or every trigger becomes one `Block` statement
+        # `Trigger_body` wraps a `Block`, which wraps the `Body`; `_child` only sees one level down
+        inner = next(iter(_descend(body, {"BodyContext"})), None) or body
+        routine.body = self._statements(_child(inner, "Seq_of_statementsContext") or inner, ids)
+        for handler in _descend(inner, {"Exception_handlerContext"},
+                                stop={"BodyContext", "BlockContext"}):
+            routine.exception_handlers.append(self._handler(handler, ids))
         self._effects(routine, _text(context))
         module.routines.append(routine)
         return module
@@ -185,6 +198,7 @@ class _Lowerer:
             source_range=self._range(context),
             visibility="public" if (module is None or name in self.public) else "private")
         ids = M.IdFactory(routine_id)
+        self.routine_id = routine_id
 
         for parameter in _descend(context, {"ParameterContext"}, stop={"BodyContext"}):
             routine.parameters.append(self._parameter(parameter, ids, routine_id))
@@ -206,7 +220,9 @@ class _Lowerer:
         body = _child(context, "BodyContext")
         if body is not None:
             routine.body = self._statements(_child(body, "Seq_of_statementsContext") or body, ids)
-            for handler in _descend(body, {"Exception_handlerContext"}):
+            # the routine's own handlers, not every handler inside it: a nested block keeps its own (#18)
+            for handler in _descend(body, {"Exception_handlerContext"},
+                                    stop={"BodyContext", "BlockContext"}):
                 routine.exception_handlers.append(self._handler(handler, ids))
         # #11: an explicit cursor that takes the first row, or counts, is not a scan. Rewriting it here rather
         # than in the generator means the query it becomes goes through the converter and the capability check
@@ -256,6 +272,23 @@ class _Lowerer:
                     type=self._type(scope, _text(spec), declared_name) if spec is not None else None))
         return out
 
+    def _block(self, context, ids, text, source) -> M.Statement:
+        """`[DECLARE ...] BEGIN ... [EXCEPTION ...] END` written inside another block.
+
+        The handlers are the block's own: `_descend` stops at the next body, so a block nested inside this one
+        keeps its own -- which is the whole point of the node.
+        """
+        inner = _child(context, "BodyContext")
+        body = inner or context
+        node = M.Block(id=ids.next("stmt"), kind="Block", source_range=source)
+        if inner is not None:   # a `DECLARE` of its own; without one the body is the whole block
+            node.declarations = self._declarations(context, ids, self.routine_id, stop={"BodyContext"})
+        node.body = self._statements(_child(body, "Seq_of_statementsContext") or body, ids)
+        for handler in _descend(body, {"Exception_handlerContext"},
+                                stop={"BodyContext", "BlockContext"}):
+            node.exception_handlers.append(self._handler(handler, ids))
+        return node
+
     def _handler(self, context: ParserRuleContext, ids: M.IdFactory) -> M.ExceptionHandler:
         names = [_text(n) for n in _descend(context, {"Exception_nameContext"})]
         handler = M.ExceptionHandler(id=ids.next("handler"), kind="ExceptionHandler",
@@ -286,6 +319,8 @@ class _Lowerer:
             "Cursor_manipulation_statementsContext": self._sql_statement,
             "Transaction_control_statementsContext": self._sql_statement,
             "Execute_immediateContext": self._dynamic,
+            "BlockContext": self._block,
+            "BodyContext": self._block,
         }.get(name)
         if handler is not None:
             return handler(context, ids, text, source)
@@ -464,11 +499,7 @@ class _Lowerer:
                 break
         node = M.SqlOperation(id=ids.next("stmt"), kind="SqlOperation", source_range=source,
                               sql_kind=kind, original_sql=text.strip().rstrip(";").strip())
-        locking = re.search(r"\bFOR\s+UPDATE\b(\s+(NOWAIT|SKIP\s+LOCKED|WAIT\s+\d+))?", text, re.IGNORECASE)
-        if locking:
-            node.locking_mode = " ".join(locking.group(0).split()).upper()
-            node.add("WARN", "ROW_LOCK",
-                     f"{node.locking_mode} is row locking; the target has to provide the same guarantee another way")
+        mark_row_lock(node, text)
         if re.search(r"\bBULK\s+COLLECT\b", text, re.IGNORECASE):
             node.cardinality = "MANY"
             node.add("WARN", "BULK_COLLECT", "BULK COLLECT needs a row limit and a memory bound")
@@ -527,6 +558,23 @@ class _Lowerer:
         return SourceRange(start.file, start.line, stop.line, start.column, stop.column)
 
 
+ROW_LOCK = re.compile(r"\bFOR\s+UPDATE\b(\s+(NOWAIT|SKIP\s+LOCKED|WAIT\s+\d+))?", re.IGNORECASE)
+
+
+def mark_row_lock(node: M.SqlOperation, text: str) -> None:
+    """Record `FOR UPDATE` on the statement, with the warning that goes with it.
+
+    Shared with `cursors`, which resolves a named cursor's query out of its declaration (#11) -- the lock is
+    written there, and a query that arrived without it would look safe.
+    """
+    locking = ROW_LOCK.search(text)
+    if not locking:
+        return
+    node.locking_mode = " ".join(locking.group(0).split()).upper()
+    node.add("WARN", "ROW_LOCK",
+             f"{node.locking_mode} is row locking; the target has to provide the same guarantee another way")
+
+
 def _cursor_for_parts(cursor: str) -> tuple[str | None, str | None]:
     """`r IN (SELECT ...)` -> ("r", "SELECT ..."). A named cursor (`r IN c(x)`) has no inline query here."""
     match = re.match(r"^\s*([\w$#]+)\s+IN\s*\((.*)\)\s*$", cursor, re.IGNORECASE | re.DOTALL)
@@ -550,6 +598,9 @@ def _walk(statements: list[M.Statement]) -> list[M.Statement]:
             out.extend(_walk(branch.body))
         out.extend(_walk(getattr(statement, "else_body", []) or []))
         out.extend(_walk(getattr(statement, "body", []) or []))
+        # a nested block's handlers hang off the block (#18); a routine's own are walked by the caller
+        for handler in getattr(statement, "exception_handlers", []) or []:
+            out.extend(_walk(handler.body))
     return out
 
 
@@ -578,6 +629,10 @@ def walk_scoped(statements: list[M.Statement],
             out.extend(walk_scoped(branch.body, inner))
         out.extend(walk_scoped(getattr(statement, "else_body", []) or [], inner))
         out.extend(walk_scoped(getattr(statement, "body", []) or [], inner))
+        # a nested block's handler sits inside whatever loops enclose the block, so it keeps their scope --
+        # which is what #10 could not do while the handler was hoisted onto the routine (#18)
+        for handler in getattr(statement, "exception_handlers", []) or []:
+            out.extend(walk_scoped(handler.body, inner))
     return out
 
 
