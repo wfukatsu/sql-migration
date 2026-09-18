@@ -305,9 +305,12 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
                 # 出したところで動かない
                 f.comment("the body is not emitted while the firing condition is unresolved")
                 return
+        written = _walk(routine.body) + [x for h in routine.exception_handlers for x in _walk(h.body)]
+        # 畳んだ動的 SQL の variant も DML でありうる。walk には出てこないので、ここで足す——
+        # 足さないと `rowCount` を使う文だけが出て、宣言が無い Java になる（P4-7 の生成で判明）
+        written += [v for s in written for v in (getattr(s, "variant_statements", None) or [])]
         if any((s.sql_kind or "").upper() in ("INSERT", "UPDATE", "DELETE", "MERGE")
-               for s in _walk(routine.body) + [x for h in routine.exception_handlers for x in _walk(h.body)]
-               if s.kind == "SqlOperation"):
+               for s in written if s.kind == "SqlOperation"):
             # one declaration per method: a routine may hold several DML statements, in different blocks
             f.line("int rowCount = 0;")
         for parameter in outs:
@@ -619,6 +622,8 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
         _call(file, statement, routine, result)
     elif kind == "SqlOperation":
         _sql(file, statement, routine)
+    elif kind == "DynamicSql":
+        _dynamic(file, statement, routine, result)
     else:
         _untranslated(file, statement, result)
 
@@ -938,6 +943,54 @@ def _sql(file: JavaFile, statement: M.SqlOperation, routine: M.Routine) -> None:
         file.line(f"repository.{method}({arguments});")
 
 
+def _dynamic(file: JavaFile, statement: M.DynamicSql, routine: M.Routine,
+             result: ServiceFile) -> None:
+    """P4-7: 走りうる文が**数えられる**なら、その分だけ書く。数えられないなら拒む。
+
+    `EXECUTE IMMEDIATE v_sql` は、文字列が literal と分岐から組まれているとき、走りうる文の集合が
+    有限で分かる。畳んだ結果は静的な文とまったく同じ道を通っている（変換・列への帰属・型）ので、
+    ここで出すのは**どの variant を走らせるかの分岐**だけである。
+
+    表名が実行時に決まるもの（`'DELETE FROM ' || p_table_name`）は数えられない。**推測で 1 つに
+    決めない**——拒んで、allowlist や専用 Repository という再設計を人に残す（設計書 §6.8）。
+
+    `EXECUTE IMMEDIATE` は呼び出し側の権限で走る（`AUTHID`）。畳んだ文を見た人が「静的な文と同じ
+    に検査された」と思わないよう、診断は文に残してある。
+    """
+    variants = statement.variant_statements or []
+    if not variants:
+        raise Untranslatable(["EXECUTE IMMEDIATE whose statement is not a knowable set"],
+                             statement.expression or "")
+    file.comment(f"EXECUTE IMMEDIATE: 走りうる文は {len(variants)} 通り。畳んで静的な文として"
+                 f"生成してある（P4-7）")
+    branches = list(zip(statement.variants, variants))
+    emitted = 0
+    for index, (variant, operation) in enumerate(branches):
+        guard = (variant or {}).get("guard") or ""
+        last = index == len(branches) - 1
+        if guard:
+            opening = ("if" if emitted == 0 else "else if") + \
+                f" ({_expr(file, guard, routine, result)})"
+            with file.block(opening) as f:
+                _variant(f, operation, statement, routine)
+            emitted += 1
+        elif emitted:
+            with file.block("else") as f:
+                _variant(f, operation, statement, routine)
+        else:
+            _variant(file, operation, statement, routine)
+        if not last and not guard:
+            # 条件の無い variant のあとに続きは無い。並べると到達しないコードになる
+            break
+
+
+def _variant(file: JavaFile, operation: M.SqlOperation, statement: M.DynamicSql,
+             routine: M.Routine) -> None:
+    """畳んだ 1 つの variant。INTO は元の `EXECUTE IMMEDIATE ... INTO` が言っている。"""
+    operation = dataclasses.replace(operation, into_targets=list(statement.into_targets))
+    _sql(file, operation, routine)
+
+
 def _arguments(file: JavaFile, statement: M.SqlOperation, routine: M.Routine,
                result: "ServiceFile | None") -> str:
     """The values passed to the repository method, in the order its parameter list was built.
@@ -1070,7 +1123,9 @@ def _local_type(routine: M.Routine, target: str) -> str:
 
 
 def _sql_suffix(statement: M.SqlOperation) -> str:
-    return "Stmt" + statement.id.rsplit("-", 1)[-1]
+    from .repository import sql_suffix
+
+    return sql_suffix(statement)
 
 
 def _untranslated(file: JavaFile, statement: M.Statement, result: ServiceFile) -> None:

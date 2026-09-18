@@ -132,3 +132,79 @@ def test_the_dynamic_sql_rule_still_applies(corpus):
     for routine_id in ("pkg_dynamic_search.refresh_stats", "pkg_dynamic_search.count_orders"):
         _, statement = dynamic(corpus, routine_id)
         assert "DYNAMIC_SQL" in {d.code for d in statement.diagnostics}
+
+
+# --- P4-7 の続き: 畳んだ variant を実際に生成する（2026-09-18） --------------------------------
+
+def _corpus():
+    import pathlib
+
+    from plsql.report import analyse as build_analysis
+
+    fixtures = pathlib.Path(__file__).resolve().parent.parent / "fixtures" / "plsql"
+    return build_analysis(fixtures / "src", fixtures / "src" / "schema.sql",
+                          scalardb_schema=fixtures / "scalardb-schema.json")
+
+
+def _dynamic_statement(corpus, routine_id):
+    from plsql.lower import _walk
+
+    routine = next(r for _, r in corpus.routines() if r.id == routine_id)
+    return routine, next(s for s in _walk(routine.body) if s.kind == "DynamicSql")
+
+
+def test_into_and_using_are_read_off_the_statement():
+    """`INTO v_count` を変数名として持つと、`INTO v_count` という名前の変数を探すことになる。
+    `USING` は見てさえいなかった——**束縛する値が無ければ `:s` を渡せない**。"""
+    corpus = _corpus()
+    _, statement = _dynamic_statement(corpus, "pkg_dynamic_search.count_orders")
+    assert statement.into_targets == ["v_count"]
+    assert [b.plsql_variable for b in statement.using] == ["p_status"]
+
+
+def test_the_using_values_land_on_the_placeholders():
+    """Oracle は `USING` を**位置で**束縛する。placeholder の名前は呼び出し側と関係が無い。
+
+    変数名に直しておくと、畳んだ文がそのあと**静的な文とまったく同じ道**を通る——列への帰属も
+    型の変換も、書き分けずに済む。
+    """
+    corpus = _corpus()
+    _, statement = _dynamic_statement(corpus, "pkg_dynamic_search.count_orders")
+    for variant in statement.variant_statements:
+        assert ":s" not in (variant.target_sql or [""])[0]
+        assert [(b.plsql_variable, b.column) for b in variant.binds] == [("p_status", "status")]
+
+
+def test_each_variant_becomes_a_method_the_service_can_call():
+    """走りうる文が数えられるなら、その分だけ生成する。呼ぶ側は分岐だけを持つ。"""
+    from plsql.gen_java.repository import generate_module as generate_repository
+    from plsql.gen_java.service import generate_module as generate_service
+
+    corpus = _corpus()
+    module = next(m for m in corpus.program.modules if m.name == "pkg_dynamic_search")
+    service = generate_service(module, "g.app", "g.infra", "g.domain", corpus.program).file.render()
+    repository = generate_repository(module, "g.infra", "g.domain").file.render()
+    for index in (1, 2, 3):
+        assert f"countOrdersStmt5Variant{index}(" in service
+        assert f"countOrdersStmt5Variant{index}(" in repository, "service が呼ぶ method が repository に無い"
+    assert "if (Plsql.eq(pSortColumn, \"ordered_at\"))" in service
+    assert "else {" in service, "条件の付かない variant が else になっていない"
+
+
+def test_a_statement_nobody_can_enumerate_is_still_refused():
+    """表名が実行時に決まるものは**推測で 1 つに決めない**。allowlist / 専用 Repository は再設計である。"""
+    from plsql.gen_java.service import generate_module as generate_service
+
+    corpus = _corpus()
+    module = next(m for m in corpus.program.modules if m.name == "pkg_dynamic_search")
+    service = generate_service(module, "g.app", "g.infra", "g.domain", corpus.program).file.render()
+    body = service[service.index("public void purge("):]
+    assert "UnsupportedOperationException" in body.split("\n    }")[0]
+
+
+def test_the_folded_statement_still_says_it_was_dynamic():
+    """畳んだ文を見た人が「静的な文と同じに検査された」と思わないようにする。`EXECUTE IMMEDIATE`
+    は呼び出し側の権限で走る（`AUTHID`）。"""
+    corpus = _corpus()
+    _, statement = _dynamic_statement(corpus, "pkg_dynamic_search.refresh_stats")
+    assert [d.code for d in statement.diagnostics if d.code == "DYNAMIC_SQL"]

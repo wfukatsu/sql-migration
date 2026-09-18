@@ -252,8 +252,15 @@
         }
        ],
        "expression": "v_sql",
+       "using": [
+        {
+         "name": "p_status",
+         "direction": "IN",
+         "plsqlVariable": "p_status"
+        }
+       ],
        "intoTargets": [
-        "INTO v_count"
+        "v_count"
        ]
       },
       {
@@ -358,7 +365,14 @@
          }
         }
        ],
-       "expression": "'DELETE FROM ' || p_table_name || ' WHERE created_at < :d'"
+       "expression": "'DELETE FROM ' || p_table_name || ' WHERE created_at < :d'",
+       "using": [
+        {
+         "name": "p_before",
+         "direction": "IN",
+         "plsqlVariable": "p_before"
+        }
+       ]
       }
      ],
      "deterministic": false,
