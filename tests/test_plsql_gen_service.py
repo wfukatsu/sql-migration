@@ -77,6 +77,18 @@ def test_a_leading_sign_is_unary_not_a_binary_operator_missing_its_left(plsql: s
     assert result.translatable
 
 
+def test_cast_as_date_drops_the_sub_second_part():
+    """Oracle の DATE は秒までしか持たない。**切り捨て**であることを 23ai で実測して確かめた
+    （`.999999` を渡しても繰り上がらない）。"""
+    result = translate("CAST(v AS DATE)", {"v": "v"})
+    assert result.java == "Plsql.castDate(v)" and result.translatable
+
+
+def test_a_cast_whose_behaviour_was_not_measured_is_refused():
+    """確かめていない型に名前を与えると、何をするか誰も知らない変換が黙って通る。"""
+    assert not translate("CAST(v AS NUMBER)", {"v": "v"}).translatable
+
+
 def test_precedence_is_parsed_not_pattern_matched():
     """Regression: marker substitution mis-split `a > 1 AND b = 'x'` because a marker cannot see its operands."""
     result = translate("n > 1 AND v = 'x'", {"v": "v", "n": "n"})
@@ -240,3 +252,25 @@ def test_no_generated_file_contains_raw_plsql_operators(program):
         for line in generate_module(module, APP, INFRA, DOMAIN).file.render().splitlines():
             code = line.split("//")[0]
             assert "<>" not in code, line
+
+
+# --- handler の中だけで意味を持つ名前（#13） ------------------------------------------------------
+
+def test_sqlcode_reads_the_exception_the_handler_caught():
+    """`SQLCODE` は「いま処理している例外の番号」である。catch が束ねている例外が持っている。"""
+    import pathlib
+
+    from plsql.gen_java.service import generate_module
+    from plsql.report import analyse as build_analysis
+
+    fixtures = pathlib.Path(__file__).resolve().parent.parent / "fixtures" / "plsql"
+    corpus = build_analysis(fixtures / "src", fixtures / "src" / "schema.sql",
+                            scalardb_schema=fixtures / "scalardb-schema.json")
+    module = next(m for m in corpus.program.modules if m.name == "pkg_bulk_load")
+    java = generate_module(module, "g.app", "g.infra", "g.domain").file.render()
+    assert "Plsql.eq(e.code(), Plsql.neg(24381))" in java
+
+
+def test_sqlcode_outside_a_handler_is_still_refused():
+    """handler の外では常に 0 である。名前として与えると、外の `SQLCODE` が黙って通る。"""
+    assert not translate("SQLCODE = -24381", {}).translatable
