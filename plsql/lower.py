@@ -221,6 +221,7 @@ class _Lowerer:
 
         for declaration in _descend(context, {"Declare_specContext"}, stop={"BodyContext"}):
             routine.declarations.extend(self._declarations(declaration, ids, routine_id))
+        _bind_exception_codes(routine, _text(context))
 
         text = _text(context)
         if re.search(r"\bAUTHID\s+CURRENT_USER\b", text, re.IGNORECASE):
@@ -650,6 +651,25 @@ def walk_scoped(statements: list[M.Statement],
         for handler in getattr(statement, "exception_handlers", []) or []:
             out.extend(walk_scoped(handler.body, inner))
     return out
+
+
+EXCEPTION_INIT = r"\bPRAGMA\s+EXCEPTION_INIT\s*\(\s*{name}\s*,\s*(?P<code>-?\d+)\s*\)"
+
+
+def _bind_exception_codes(routine: M.Routine, text: str) -> None:
+    """`PRAGMA EXCEPTION_INIT(e_locked, -54)` の番号を、その例外の宣言に載せる。
+
+    これが無いと、宣言した例外は**移行先で作った番号**を持つことになり、「Oracle のどの誤りを
+    捕まえていたのか」が分からなくなる。`-54`（行ロックが取れない）のように**移行先では起こり
+    えない**ものを見分けるのに要る（#9 §B）。宣言と PRAGMA は別の `Declare_spec` なので、
+    routine の本文から拾う。
+    """
+    for declaration in routine.declarations:
+        if declaration.declaration_kind != "exception" or declaration.initial:
+            continue
+        found = re.search(EXCEPTION_INIT.format(name=re.escape(declaration.name)), text, re.IGNORECASE)
+        if found:
+            declaration.initial = found.group("code")
 
 
 def _first(match) -> str | None:
