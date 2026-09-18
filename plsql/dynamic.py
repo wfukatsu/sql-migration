@@ -174,3 +174,33 @@ def annotate(routine: M.Routine, statement: M.DynamicSql) -> list[Variant] | Non
         "EXECUTE IMMEDIATE runs with the privileges of the executing user, which a static statement may not "
         "have; confirm the caller is allowed to run this", where))
     return variants
+
+
+PLACEHOLDER = re.compile(r":(?P<name>[\w$#]+)")
+
+
+def bind_using(sql: str, using: list) -> str:
+    """動的 SQL の `:s` を、`USING` が渡す変数の名前に置き換える。
+
+    Oracle は `USING` を**位置で**束縛する——placeholder の名前は呼び出し側の変数名と関係が無い。
+    ここで**変数名そのもの**に直しておくと、畳んだ文がそのあと静的な文とまったく同じ道を通る:
+    列への帰属も、型の変換も、生成される repository の引数も、書き分けずに済む。`:s` のまま
+    渡すと、束縛する値を持たない placeholder として残る。
+
+    置き換えられない（`USING` の数が足りない）ときは、そのまま返す。触らずに残った `:s` は
+    束縛されない値として残り、生成物の側で見える——推測で埋めるより良い。
+    """
+    values = [b.plsql_variable or b.name for b in using or []]
+    if not values:
+        return sql
+    index = 0
+
+    def replace(match):
+        nonlocal index
+        if index >= len(values):
+            return match.group(0)
+        name = values[index]
+        index += 1
+        return name
+
+    return PLACEHOLDER.sub(replace, sql)

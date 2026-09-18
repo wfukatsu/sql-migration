@@ -146,7 +146,14 @@ def generate_module(module: M.Module, package: str, domain_package: str) -> Repo
             statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
             loop_queries = {loop.query.id: loop for loop in statements
                             if loop.kind == "Loop" and getattr(loop, "query", None) is not None}
+            # P4-7: 畳んだ動的 SQL は variant ごとに 1 つの文である。**それ自身は walk に出て
+            # こない**（DynamicSql の中にある）ので、ここで並べる——並べないと、生成された
+            # service が呼ぶ method が存在しないことになる
+            expanded = []
             for statement in statements:
+                expanded.append(statement)
+                expanded.extend(getattr(statement, "variant_statements", None) or [])
+            for statement in expanded:
                 if statement.kind != "SqlOperation" or not statement.original_sql:
                     continue
                 f.line()
@@ -172,6 +179,13 @@ def _uses_sequences(module: M.Module) -> bool:
     return False
 
 
+def sql_suffix(statement: M.SqlOperation) -> str:
+    """`Stmt5` / `Stmt5Variant2`。**service と repository が同じ名前を作る必要がある**ので、
+    作る場所は 1 つである（畳んだ動的 SQL の variant が増えたときに気づいた）。"""
+    head, marked, variant = statement.id.partition("#variant-")
+    return f"Stmt{head.rsplit('-', 1)[-1]}" + (f"Variant{variant}" if marked else "")
+
+
 def loop_method(routine: M.Routine, loop: M.Loop) -> str:
     """The repository method a cursor FOR loop reads its rows from. The service calls the same name."""
     return f"{java_name(routine.name)}Loop{loop.id.rsplit('-', 1)[-1]}"
@@ -192,7 +206,7 @@ def loop_record(routine: M.Routine, loop: M.Loop) -> str:
 
 def _method(file: JavaFile, routine: M.Routine, statement: M.SqlOperation,
             result: RepositoryFile) -> None:
-    name = f"{java_name(routine.name)}Stmt{statement.id.rsplit('-', 1)[-1]}"
+    name = f"{java_name(routine.name)}{sql_suffix(statement)}"
     if statement.source_range is not None:
         file.comment(f"{statement.source_range.file}:{statement.source_range.start_line}")
     file.comment(_one_line(statement.original_sql))
