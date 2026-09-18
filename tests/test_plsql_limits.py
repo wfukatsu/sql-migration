@@ -177,6 +177,18 @@ def test_strict_says_why_even_when_quiet(tmp_path, capsys):
     assert captured.out == "" and "prc_sum_lines" in captured.err
 
 
+def test_without_a_config_the_list_says_so(tmp_path, capsys):
+    """名前の羅列は「値を書き忘れた」と読める。実際は「ファイルを渡していない」かもしれず、
+    次にすることが違う。"""
+    assert generate([SRC, "--out-dir", str(tmp_path), "--limits-strict"]) == 1
+    assert "--limits was not given" in capsys.readouterr().out
+
+
+def test_with_a_config_the_list_is_about_the_routines(tmp_path, capsys):
+    assert generate([SRC, "--out-dir", str(tmp_path), "--limits", CONFIG, "--limits-strict"]) == 1
+    assert "--limits was not given" not in capsys.readouterr().out
+
+
 def test_the_corpus_lists_what_nobody_has_decided(tmp_path):
     """corpus では 5 件残っている。勝手に notLimited へ入れず、名前を挙げるのが門の仕事である。"""
     assert generate([SRC, "--out-dir", str(tmp_path), "--limits", CONFIG, "--limits-strict",

@@ -105,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
             _print_compile(report, decisions)
         for routine in undecided:
             print(f"  the rules ask for a row limit and nobody decided one: {routine}")
+        _print_no_limits_file(undecided, limits)
     failed = bool(dirty) or bool(undecided) or (report is not None and not report.ok)
     if args.quiet and failed:
         # `--quiet` means "say nothing when it goes well". A run that returns 1 and says nothing about why is
@@ -113,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  AUTO but not cleanly generated: {routine}", file=sys.stderr)
         for routine in undecided:
             print(f"  the rules ask for a row limit and nobody decided one: {routine}", file=sys.stderr)
+        _print_no_limits_file(undecided, limits, stream=sys.stderr)
         if report is not None and not report.ok:
             _print_compile(report, decisions, stream=sys.stderr)
     return 1 if failed else 0
@@ -147,6 +149,17 @@ def _print_compile(report, decisions: dict, stream=None) -> None:
                   f"({Path(error.file).name}:{error.line})", file=out)
         else:
             print(f"    {Path(error.file).name}:{error.line}: {error.message}", file=out)
+
+
+def _print_no_limits_file(undecided: list[str], limits, stream=None) -> None:
+    """Say when the whole list is explained by there being no config at all.
+
+    Without this the names read as "somebody forgot to write these values", when the actual state is
+    "nobody passed a file". The two need different next steps, and a list of routine names cannot tell
+    them apart on its own.
+    """
+    if undecided and limits.source is None:
+        print("  (--limits was not given, so no routine has a decided limit)", file=stream or sys.stdout)
 
 
 def _undecided_limits(decisions: dict, limits) -> list[str]:
