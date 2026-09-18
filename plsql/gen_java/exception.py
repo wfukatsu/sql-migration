@@ -40,6 +40,9 @@ class ErrorCode:
     oracle_name: str
     message: str = ""
     routines: list[str] = field(default_factory=list)
+    # the generated code throws this one itself, from `SELECT INTO`. Without saying so, a class with an empty
+    # `raisedBy` reads as "nothing raises this", which is the opposite of why it is in the program.
+    by_generator: bool = False
 
 
 class Registry:
@@ -53,16 +56,23 @@ class Registry:
         self.codes: dict[int, ErrorCode] = {}
         self.conflicts: list[tuple[int, str, str]] = []
 
-    def add(self, code: int, class_name: str, oracle_name: str, message: str, routine: str) -> ErrorCode:
+    def add(self, code: int, class_name: str, oracle_name: str, message: str,
+            routine: str | None) -> ErrorCode:
+        """`routine` is None for a class the generator itself raises: it is in the program because the
+        generated code can throw it, not because a routine named it."""
         existing = self.codes.get(code)
         if existing is None:
-            entry = ErrorCode(code=code, class_name=class_name, oracle_name=oracle_name, message=message)
-            entry.routines.append(routine)
+            entry = ErrorCode(code=code, class_name=class_name, oracle_name=oracle_name, message=message,
+                              by_generator=routine is None)
+            if routine is not None:
+                entry.routines.append(routine)
             self.codes[code] = entry
             return entry
         if existing.class_name != class_name:
             self.conflicts.append((code, existing.class_name, class_name))
-        if routine not in existing.routines:
+        if routine is None:
+            existing.by_generator = True
+        elif routine not in existing.routines:
             existing.routines.append(routine)
         return existing
 
@@ -70,7 +80,7 @@ class Registry:
         return {
             "codes": [
                 {"code": e.code, "class": e.class_name, "oracle": e.oracle_name,
-                 "message": e.message, "raisedBy": e.routines}
+                 "message": e.message, "raisedBy": e.routines, "raisedByGenerator": e.by_generator}
                 for e in sorted(self.codes.values(), key=lambda e: e.code)],
             "conflicts": [{"code": c, "first": a, "second": b} for c, a, b in self.conflicts],
         }
@@ -146,8 +156,17 @@ def exception_class(entry: ErrorCode, package: str) -> JavaFile:
     return file
 
 
+# the generated repository raises these two itself, from `SELECT INTO`, whether or not the PL/SQL ever named
+# them. Emitting them only when the source mentions them left every repository importing classes that were
+# not written -- Java that does not compile, which nothing noticed until the compile check (#21) asked.
+ALWAYS = ("NO_DATA_FOUND", "TOO_MANY_ROWS")
+
+
 def generate(program: M.Program, package: str) -> tuple[list[JavaFile], Registry]:
     registry = collect(program)
+    for name in ALWAYS:
+        class_name, code, message = PREDEFINED[name]
+        registry.add(code, class_name, name, message, routine=None)
     files = [base_exception(package)]
     files += [exception_class(entry, package) for entry in
               sorted(registry.codes.values(), key=lambda e: e.code)]

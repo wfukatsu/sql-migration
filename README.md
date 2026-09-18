@@ -83,6 +83,9 @@ python -m plsql.cli fixtures/plsql/src --out-dir out/plsql     --evidence diffte
 # Java を生成する（--limits で走査行数の上限、--handover で引き渡し版の見出し）
 python -m plsql.generate fixtures/plsql/src --out-dir generated --limits fixtures/plsql/limits.yaml
 
+# 生成物が javac を通ることまで確かめる（JVM と Gradle が要る。落ちた routine を名指しして 1 を返す）
+python -m plsql.generate fixtures/plsql/src --out-dir generated --verify-compile
+
 # 差分比較（Oracle と ScalarDB の両方が要る）
 python difftest/plsql_capture.py --variant scaled
 python difftest/plsql_diff.py --full --json difftest/work/plsql-diff.json

@@ -46,13 +46,51 @@ dependencies {
 // The decision (plan §9) was to keep Spring out, so this is the whole of it: one source set entry and no new
 // dependency. `generated/` is written by `python -m plsql.generate` and must never be edited by hand -- every
 // change belongs in the rules or the generator, or the next regeneration loses it.
+//
+// `plsql.generatedDir` points the source set at another tree, which is what `python -m plsql.generate
+// --verify-compile` passes when it writes somewhere other than `generated/` (#21). Without it the check
+// would compile whatever happened to be in `generated/` and call it a verdict on this run's output.
+//
+// `plsql.verify` says the compile IS that check. The fallback below is silent by design -- an ordinary
+// `gradle compileJava` must keep working -- and a silent fallback is exactly what a check must not have: if
+// the two sides ever stop agreeing on the property name, the check would compile the previous run's output
+// and report it as this one's success. Under `plsql.verify` the fallback becomes an error instead.
+ext {
+    generatedDir = providers.gradleProperty('plsql.generatedDir').getOrElse(null)
+    if (generatedDir == null) {
+        if (providers.gradleProperty('plsql.verify').isPresent()) {
+            throw new GradleException("plsql.verify was set without plsql.generatedDir: the compile check "
+                    + "would silently compile ../generated instead of the tree it just wrote")
+        }
+        generatedDir = rootProject.file('../generated').absolutePath
+    }
+}
+
+// The check must not leave its answer in the build the repository uses. Compiling a throwaway tree into
+// `build/` replaces the corpus's classes with someone else's, and two runs at once fight over the same
+// directory. `plsql.buildDir` gives the check its own; the default is the one every other build uses.
+if (providers.gradleProperty('plsql.buildDir').isPresent()) {
+    layout.buildDirectory = file(providers.gradleProperty('plsql.buildDir').get())
+}
+
+// The compile check reads javac's output to name the routine each error came from, and javac speaks the
+// JVM's language. Pinning it here means the reader does not have to enumerate languages -- the same reason
+// `applicationDefaultJvmArgs` pins the runner's locale. Only under `plsql.verify`: forking costs a JVM, and
+// an ordinary build has no one parsing its messages.
+if (providers.gradleProperty('plsql.verify').isPresent()) {
+    tasks.withType(JavaCompile).configureEach {
+        options.fork = true
+        options.forkOptions.jvmArgs = ['-Duser.language=en', '-Duser.country=US']
+    }
+}
+
 sourceSets {
     main {
         java {
-            srcDir rootProject.file('../generated/src/main/java')
+            srcDir file("${generatedDir}/src/main/java")
         }
         resources {
-            srcDir rootProject.file('../generated/src/main/resources')
+            srcDir file("${generatedDir}/src/main/resources")
         }
     }
 }
