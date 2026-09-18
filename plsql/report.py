@@ -20,7 +20,7 @@ from pathlib import Path
 
 from .frontend import ParsedFile, coverage, parse_file
 from .ir import model as M, serde
-from . import rmw
+from . import rmw, triggers
 from .limits import RowLocks
 from .lower import _walk, lower_file
 from .source import Issue
@@ -113,6 +113,10 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
         parsed = parse_file(spec)
         analysis.parsed.append(parsed)
         program.modules.extend(lower_file(parsed, None, schema, set()))
+
+    # #12: 移行先に trigger は無いので、**書き込む側が呼ぶ**。移行先のスキーマが渡っているかに
+    # 関わらず行う——「その更新が 1 行に絞れるか」は Oracle の主キーの話である
+    triggers.rewrite(program, schema, analysis.symbol_table())
 
     if scalardb_schema is not None:
         from .capability import annotate, check

@@ -86,10 +86,14 @@ def generate(program: M.Program, root: str | Path, base_package: str = "com.exam
     project.files.extend(exception_files)
     project.error_codes = registry.to_dict()
 
+    # #12: trigger の本体は別の module にある。呼ぶ側がその routine を見られるようにする
+    from .service import _PROGRAM
+
+    _PROGRAM.set(program)
     for module in program.modules:
         project.files.extend(d.file for d in dtos_for(module, project.domain_package))
         service = generate_service(module, project.app_package, project.infra_package,
-                                   project.domain_package)
+                                   project.domain_package, program)
         project.files.append(service.file)
         project.untranslated.extend(service.untranslated)
         project.unknown_names.extend(service.unknown_names)

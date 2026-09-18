@@ -165,6 +165,10 @@ class _Lowerer:
         table = _first(re.search(r"\bON\s+([\w$#.]+)", text, re.IGNORECASE))
         timing = _first(re.search(r"\b(BEFORE|AFTER|INSTEAD\s+OF)\b", text, re.IGNORECASE))
         event = _first(re.search(r"\b(INSERT|UPDATE|DELETE)(\s+OF\s+[\w$#,\s]+)?\b", text, re.IGNORECASE))
+        # `UPDATE OF status, note` の列。**SET にその列が無ければ掛からない**ので、事実として残す
+        listed = re.search(r"\b(?:INSERT|UPDATE|DELETE)\s+OF\s+(?P<columns>[\w$#,\s]+?)\s+ON\b",
+                           text, re.IGNORECASE)
+        columns = [c.strip().lower() for c in listed.group("columns").split(",")] if listed else []
         # `WHEN (...)` は発火条件である。落とすと記録される量が変わるので IR に残す（#12）。
         # `DECLARE` / `BEGIN` の手前にしか現れないので、そこまでで打ち切って探す
         header = re.split(r"\b(?:DECLARE|BEGIN)\b", text, maxsplit=1, flags=re.IGNORECASE)[0]
@@ -173,11 +177,13 @@ class _Lowerer:
         when = found.group("condition") if found else None
         module = M.Module(id=name, kind="Module", name=name, module_kind="trigger",
                           source_range=self._range(context), trigger_table=table,
-                          trigger_timing=timing, trigger_event=event,
+                          trigger_timing=timing, trigger_event=event, trigger_columns=columns,
                           trigger_when=when.strip() if when else None)
         body = _child(context, "Trigger_bodyContext") or context
+        # trigger の本体は **public** である。移行先に trigger は無いので、掛けるには書き込む側が
+        # 呼ぶしかない（#12）——呼べない本体は、掛からない trigger と同じである
         routine = M.Routine(id=f"{name}.body", kind="Routine", name="body", routine_kind="trigger-body",
-                            source_range=self._range(context), visibility="private")
+                            source_range=self._range(context), visibility="public")
         ids = M.IdFactory(routine.id)
         self.routine_id = routine.id
         # the trigger's own `BEGIN ... END` is the routine's body, not a nested block inside it (#18); read

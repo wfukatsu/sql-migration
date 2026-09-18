@@ -53,6 +53,9 @@ class OracleSchema:
     """
 
     tables: dict[str, dict[str, str]] = field(default_factory=dict)
+    # 表ごとの主キー。**1 行に絞れるかは Oracle の話**なので、移行先のスキーマに聞かない
+    # （#12: trigger を掛けてよい書き込みかどうかがこれで決まる）
+    keys: dict[str, list[str]] = field(default_factory=dict)
     snapshot: str | None = None
 
     @classmethod
@@ -74,6 +77,7 @@ class OracleSchema:
             for column in statement.find_all(exp.ColumnDef):
                 columns[column.name.lower()] = column.args["kind"].sql(dialect="oracle")
             schema.tables[table.name.lower()] = columns
+            schema.keys[table.name.lower()] = _primary_key(statement)
         return schema
 
     def column(self, table: str, column: str) -> str | None:
@@ -81,6 +85,24 @@ class OracleSchema:
 
     def columns(self, table: str) -> dict[str, str] | None:
         return self.tables.get(table.lower())
+
+    def primary_key(self, table: str) -> list[str]:
+        return self.keys.get(table.lower(), [])
+
+
+def _primary_key(statement) -> list[str]:
+    """`CONSTRAINT pk_orders PRIMARY KEY (order_id)` と、列に付いた `PRIMARY KEY` の両方を見る。"""
+    from sqlglot import exp
+
+    for constraint in statement.find_all(exp.PrimaryKey):
+        columns = [c.name.lower() for c in constraint.find_all(exp.Identifier)]
+        if columns:
+            return columns
+    for column in statement.find_all(exp.ColumnDef):
+        if any(isinstance(c.kind, exp.PrimaryKeyColumnConstraint)
+               for c in column.args.get("constraints") or []):
+            return [column.name.lower()]
+    return []
 
 
 # --- symbols ------------------------------------------------------------------------------------------
