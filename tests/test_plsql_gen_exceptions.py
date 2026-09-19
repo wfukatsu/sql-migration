@@ -3,6 +3,9 @@ generated Java."""
 
 from __future__ import annotations
 
+import json
+import re
+
 from plsql.frontend import parse_text
 from plsql.gen_java.emit import JavaFile
 from plsql.gen_java.project import _remove_stale
@@ -134,3 +137,89 @@ def test_only_files_the_generator_owns_are_removed(tmp_path):
     removed = _remove_stale(root, {(root / "com" / "acme" / "Current.java").resolve()})
     assert [p.name for p in removed] == ["Stale.java"]
     assert sorted(p.name for p in (root / "com" / "acme").iterdir()) == ["Current.java", "Hand.java", "Handed.java"]
+
+
+# ---- review #27, 17a / 17b ---------------------------------------------------------------------------------
+
+CONSTRAINED = """CREATE OR REPLACE PACKAGE BODY pkg_c AS
+  PROCEDURE fit(p_id NUMBER) IS
+    v_rate NUMBER(5,2) := 1.005;
+    v_code VARCHAR2(3);
+    v_name VARCHAR2(10 CHAR);
+    v_free NUMBER;
+    v_pad  CHAR(4);
+  BEGIN
+    v_rate := p_id / 3;
+    v_code := 'abcd';
+    v_name := 'x';
+    v_free := p_id / 3;
+    v_pad := 'a';
+    UPDATE t SET n = 1 WHERE id = p_id;
+    SELECT name INTO v_name FROM t WHERE id = p_id;
+    IF SQL%ROWCOUNT = 0 THEN
+      v_code := NULL;
+    END IF;
+  EXCEPTION
+    WHEN VALUE_ERROR THEN
+      v_code := 'E';
+  END fit;
+END pkg_c;
+"""
+
+
+def test_a_constrained_declaration_constrains_what_is_assigned_to_it():
+    """`NUMBER(5,2)` rounds and `VARCHAR2(3)` refuses: BigDecimal and String on their own do neither."""
+    text = java(CONSTRAINED)
+    assert re.search(r"BigDecimal vRate = Plsql\.fit\(.+, 5, 2\);", text), "the initial value too"
+    assert re.search(r"vRate = Plsql\.fit\(.+, 5, 2\);", text)
+    assert 'vCode = Plsql.fit("abcd", 3, false);' in text
+    assert 'vName = Plsql.fit("x", 10, true);' in text
+    assert "vCode = null;" in text, "NULL fits anywhere"
+    assert not re.search(r"vFree = Plsql\.fit|vPad = Plsql\.fit", text), "no constraint, or CHAR's padding rule"
+
+
+def test_value_error_from_a_size_error_reaches_its_handler():
+    text = java(CONSTRAINED)
+    assert "throw new ValueErrorException(size.getMessage());" in text
+    assert text.index("catch (Plsql.ValueError size)") < text.index("catch (ValueErrorException e)")
+    assert "only the size errors of a constrained declaration" in text
+
+
+def test_select_into_sets_rowcount_when_the_routine_reads_it(tmp_path):
+    """`SQL%ROWCOUNT` after a SELECT INTO read the count of the UPDATE before it."""
+    from plsql.report import analyse
+
+    (tmp_path / "pkg_c.pkb").write_text(CONSTRAINED, encoding="utf-8")
+    (tmp_path / "schema.sql").write_text(
+        "CREATE TABLE t (id NUMBER(9) PRIMARY KEY, n NUMBER(9), name VARCHAR2(10));\n", encoding="utf-8")
+    (tmp_path / "scalardb.json").write_text(json.dumps({"ns.t": {
+        "transaction": True, "partition-key": ["id"], "clustering-key": [],
+        "columns": {"id": "INT", "n": "INT", "name": "TEXT"}}}), encoding="utf-8")
+    src = tmp_path / "src"
+    src.mkdir()
+    (tmp_path / "pkg_c.pkb").rename(src / "pkg_c.pkb")
+    module = analyse(src, tmp_path / "schema.sql", scalardb_schema=tmp_path / "scalardb.json").program.modules[0]
+    text = generate_module(module, APP, INFRA, DOMAIN).file.render()
+    select = text.index("vName = Plsql.fit(", text.index("rowCount = repository."))
+    assert select < text.index("rowCount = 1;") < text.index("Plsql.eq(rowCount")
+    assert "rowCount = 1;" not in java(), "not emitted where nothing reads SQL%ROWCOUNT"
+
+
+def test_a_constrained_integer_keeps_the_java_type_of_its_variable():
+    """CI caught this: NUMBER(10) is a Long in the generated code, and `Long v = Plsql.fit(...)` is a BigDecimal."""
+    text = java("CREATE OR REPLACE PACKAGE BODY pkg_n AS\n  PROCEDURE p(p_id NUMBER) IS\n"
+                "    v_small NUMBER(5); v_big NUMBER(12);\n  BEGIN\n    v_small := p_id; v_big := p_id;\n  END p;\n"
+                "END pkg_n;\n")
+    assert re.search(r"vSmall = Plsql\.fitInt\(.+, 5\);", text) and re.search(r"vBig = Plsql\.fitLong\(.+, 12\);", text)
+
+
+def test_a_predefined_code_raised_by_number_is_the_predefined_class():
+    """`RAISE_APPLICATION_ERROR`-shaped -6502 took the code first, and ValueErrorException was never written."""
+    from plsql.gen_java.exception import generate
+    from plsql.ir import model as M
+
+    source = ("CREATE OR REPLACE PACKAGE BODY pkg_v AS\n  PROCEDURE p IS\n  BEGIN\n"
+              "    RAISE_APPLICATION_ERROR(-6502, 'too long');\n  END p;\nEND pkg_v;\n")
+    files, registry = generate(M.Program(id="p", kind="Program", modules=[lowered(source)]), DOMAIN)
+    assert registry.codes[-6502].class_name == "ValueErrorException" and not registry.conflicts
+    assert "ValueErrorException" in {f.name for f in files}

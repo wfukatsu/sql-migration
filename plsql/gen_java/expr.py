@@ -564,4 +564,6 @@ class _Parser:
 def _string(literal: str) -> str:
     body = literal[1:-1].replace("''", "'")
     escaped = body.replace("\\", "\\\\").replace('"', '\\"')
+    # a PL/SQL literal may run over several lines; a Java one may not, and the raw newline did not compile
+    escaped = escaped.replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t")
     return f'"{escaped}"'

@@ -110,7 +110,7 @@ def test_the_iteration_takes_the_row_and_the_failure_takes_the_exception(nightly
     assert re.search(r"void prcNightlyCloseOne\(PrcNightlyCloseLoop\d+Row r, AuditContext audit\)", nightly)
     assert re.search(r"void prcNightlyCloseFailed\(PrcNightlyCloseLoop\d+Row r, Exception failed, "
                      r"AuditContext audit\)", nightly)
-    assert "vErrorText = failed.getMessage();" in nightly, \
+    assert re.search(r"vErrorText = Plsql\.fit\(failed\.getMessage\(\), \d+, false\);", nightly), \
         "`SQLERRM` は、割ったあとは渡された例外から読む"
 
 

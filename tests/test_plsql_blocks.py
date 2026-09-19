@@ -217,7 +217,7 @@ def test_a_block_declaration_stays_visible_to_its_own_handler(generated):
     """The braces are the block's, not the `try`'s: a name declared inside `try` is not visible from `catch`."""
     java = generated.file.render()
     declared = java.index("String vNote = null;")
-    assert declared < java.index("try {") < java.index("vNote = 'none'".replace("'", '"'))
+    assert declared < java.index("try {") < java.index("vNote = Plsql.fit('none'".replace("'", '"'))
 
 
 def test_the_ir_round_trips_through_the_serialiser(nightly):

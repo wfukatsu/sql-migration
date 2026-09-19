@@ -281,4 +281,37 @@ class PlsqlTest {
     assertTrue(Plsql.like("a\nb", "a_b"));
     assertFalse(Plsql.like("a\nb", "b%"));
   }
+
+  // review #27, 17a: the constraint of a declaration is behaviour
+  @Test
+  void aConstrainedNumberRoundsToItsScaleAndRefusesPastItsPrecision() {
+    assertEquals(new BigDecimal("1.01"), Plsql.fit(new BigDecimal("1.005"), 5, 2));
+    assertEquals(new BigDecimal("999.99"), Plsql.fit("999.99", 5, 2));
+    assertEquals(new BigDecimal("0.00"), Plsql.fit(0, 5, 2));
+    assertNull(Plsql.fit(null, 5, 2));
+    org.junit.jupiter.api.Assertions.assertThrows(
+        Plsql.ValueError.class, () -> Plsql.fit(new BigDecimal("999.995"), 5, 2));
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.ValueError.class, () -> Plsql.fit(1000, 3, 0));
+    assertEquals(Long.valueOf(3), Plsql.fitLong(new BigDecimal("2.5"), 10));
+    assertEquals(Integer.valueOf(-3), Plsql.fitInt(new BigDecimal("-2.5"), 5));
+    assertNull(Plsql.fitLong(null, 10));
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.ValueError.class, () -> Plsql.fitInt(100000L, 5));
+  }
+
+  @Test
+  void aConstrainedStringRefusesWhatDoesNotFit() {
+    assertEquals("abc", Plsql.fit("abc", 3, false));
+    assertNull(Plsql.fit("", 3, false));
+    assertEquals("日本語", Plsql.fit("日本語", 3, true));
+    org.junit.jupiter.api.Assertions.assertThrows(
+        Plsql.ValueError.class, () -> Plsql.fit("日本語", 3, false));   // 9 bytes
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.ValueError.class, () -> Plsql.fit("abcd", 3, true));
+  }
+
+  @Test
+  void aDoubleBelowOneIsWrittenTheWayOracleWritesIt() {
+    assertEquals(".5", Plsql.text(0.5));
+    assertEquals("-.5", Plsql.text(-0.5d));
+    assertEquals("2", Plsql.text(2.0));
+  }
 }
