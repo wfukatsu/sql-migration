@@ -377,7 +377,14 @@ def render(report: dict) -> int:
         print(f"\n  {len(auto_failures)} AUTO scenario(s) disagree with Oracle: {', '.join(sorted(auto_failures))}")
         print("  An AUTO verdict claims the routine needs no human review. A difference here is either a bug in")
         print("  the generator or a verdict that should not have been AUTO; it is never something to accept.")
-    return len(auto_failures)
+    # An AUTO routine whose scenario could not run has not been shown to agree with Oracle. Leaving it out of the
+    # count let a run with nothing compared for it exit 0.
+    auto_unverified = sorted(n for n, s in report["not_compared"].items() if s["verdict"] == "AUTO")
+    if auto_unverified:
+        print(f"\n  {len(auto_unverified)} AUTO scenario(s) were not compared at all: {', '.join(auto_unverified)}")
+    if not report["scenarios"]:
+        print("\n  nothing was compared for this variant")
+    return len(auto_failures) + len(auto_unverified) + (0 if report["scenarios"] else 1)
 
 
 def main(argv=None) -> int:
