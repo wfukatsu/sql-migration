@@ -1,0 +1,55 @@
+{
+ "scenario": "contact_set_email_and_name",
+ "unit": "pkg_contact",
+ "routine": "set_email~2",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "sessionUser": "SOURCE",
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "customers": {
+   "columns": [
+    "customer_id",
+    "name",
+    "email",
+    "tier",
+    "credit_limit",
+    "registered_on"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     "Acme Ltd",
+     "new@example.com",
+     "GOLD",
+     null,
+     {
+      "$ts": "2025-04-01T00:00:00"
+     }
+    ],
+    [
+     {
+      "$dec": "2"
+     },
+     "Beta",
+     null,
+     "BRONZE",
+     null,
+     {
+      "$ts": "2025-04-01T00:00:00"
+     }
+    ]
+   ]
+  }
+ },
+ "masked": {}
+}

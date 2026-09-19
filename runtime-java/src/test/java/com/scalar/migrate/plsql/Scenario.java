@@ -142,6 +142,20 @@ public record Scenario(String name, String unit, String routine, Map<String, Obj
     return dot < 0 ? call : call.substring(dot + 1);
   }
 
+  /**
+   * The generated method's stem: `callRoutine`, and for an overloaded routine the overload's number after it.
+   *
+   * <p>Overloads are numbered in declaration order (`pkg.put~2`, the Java method `put2`). Oracle picks the overload
+   * from the named binds by itself, so `call.name` stays `pkg.put`; the scenario says which one it means in
+   * `routine: put~2`, which is also what ties the capture to that overload's verdict.
+   */
+  public String callMethod() {
+    int mark = routine == null ? -1 : routine.lastIndexOf('~');
+    boolean numbered = mark >= 0 && routine.substring(0, mark).equalsIgnoreCase(callRoutine())
+        && routine.substring(mark + 1).chars().allMatch(Character::isDigit) && mark + 1 < routine.length();
+    return numbered ? callRoutine() + routine.substring(mark + 1) : callRoutine();
+  }
+
   /** The PL/SQL routine's arguments, in declaration order. */
   public List<Object> arguments() {
     return new ArrayList<>(args.values());

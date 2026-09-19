@@ -1,0 +1,16 @@
+name: contact_clear_email
+unit: pkg_contact
+routine: clear_email
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', 'old@example.com', 'GOLD', NULL, DATE '2025-04-01')
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (2, 'Beta', NULL, 'BRONZE', NULL, DATE '2025-04-01')
+call:
+  kind: procedure
+  name: pkg_contact.clear_email
+  args:
+    p_customer_id: 1
+capture_tables:
+- customers
+note: #29-23。オーバーロードを引数の数で解決して呼ぶ routine

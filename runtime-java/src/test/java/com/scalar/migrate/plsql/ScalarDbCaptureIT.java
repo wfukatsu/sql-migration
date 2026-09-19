@@ -308,7 +308,7 @@ class ScalarDbCaptureIT {
         throw new Unrunnable("the scenario's block does more than call the routine and project its result; "
             + "running the routine alone would capture a different thing");
       }
-      String name = camelCase(scenario.callRoutine());
+      String name = camelCase(scenario.callMethod());
       List<Object> raw = scenario.arguments();
       for (Method candidate : service.getClass().getMethods()) {
         // Java の予約語と衝突する routine 名は `_` を足して逃がしてある（`import` -> `import_`）。

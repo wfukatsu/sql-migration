@@ -1,0 +1,17 @@
+name: contact_set_email
+unit: pkg_contact
+routine: set_email~1
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', 'old@example.com', 'GOLD', NULL, DATE '2025-04-01')
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (2, 'Beta', NULL, 'BRONZE', NULL, DATE '2025-04-01')
+call:
+  kind: procedure
+  name: pkg_contact.set_email
+  args:
+    p_customer_id: 1
+    p_email: new@example.com
+capture_tables:
+- customers
+note: #29-23。オーバーロードの 1 つ目（引数 2 つ）。routine の ~1 が、生成された setEmail1 と判定に結び付く

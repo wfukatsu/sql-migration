@@ -101,20 +101,62 @@ END pkg_c;
     assert found["pkg_c.run"].rule_verdict == "REDESIGN"
 
 
-def test_overloads_are_held_back_rather_than_decided_for_each_other(tmp_path):
-    source = """CREATE OR REPLACE PACKAGE BODY pkg_o AS
+OVERLOADS = """CREATE OR REPLACE PACKAGE BODY pkg_o AS
   PROCEDURE put(p_id NUMBER) IS BEGIN UPDATE orders SET status = 'X' WHERE order_id = p_id; ROLLBACK; END put;
-  PROCEDURE put(p_id NUMBER, p_note VARCHAR2) IS BEGIN NULL; END put;
+  PROCEDURE put(p_id NUMBER, p_note VARCHAR2) IS BEGIN UPDATE orders SET note = p_note WHERE order_id = p_id; END put;
   PROCEDURE other(p_id NUMBER) IS BEGIN NULL; END other;
-END pkg_o;
+{callers}END pkg_o;
 /
 """
-    found, program = decisions(tmp_path, **{"pkg_o.pkb": source})
-    assert found["pkg_o.put"].rule_verdict == "REDESIGN", "the overload that rolls back decides, not the last one"
-    assert "LOWER-001" in rules_of(found["pkg_o.put"])
-    assert found["pkg_o.other"].rule_verdict == "AUTO", "only the overloads are held back"
-    overloads = [r for m in program.modules for r in m.routines if r.name == "put"]
-    assert len(overloads) == 2 and all(r.body[0].construct == "OverloadedRoutine" for r in overloads)
+
+
+def test_each_overload_has_its_own_id_and_its_own_verdict(tmp_path):
+    """Issue #29 (23). Overloads shared one id -- and, through it, their statement ids and their symbol scope -- so
+    all of them were held back. They are numbered in declaration order now (decision of 2026-09-20): `pkg.put~1`.
+    A routine that is not overloaded keeps its id to the letter: limits, fix times, fingerprints are keyed by it."""
+    found, program = decisions(tmp_path, **{"pkg_o.pkb": OVERLOADS.format(callers="")})
+    routines = {r.id: r for m in program.modules for r in m.routines}
+    assert set(routines) == {"pkg_o.put~1", "pkg_o.put~2", "pkg_o.other"}
+    assert [r.name for r in routines.values()] == ["put", "put", "other"]
+    assert found["pkg_o.put~1"].rule_verdict == "REDESIGN", "the one that rolls back"
+    assert found["pkg_o.put~2"].rule_verdict == "AUTO", "is no longer decided on the other's behalf"
+    assert found["pkg_o.other"].rule_verdict == "AUTO"
+    statements = [s.id for r in routines.values() for s in _walk(r.body)]
+    assert len(statements) == len(set(statements)), "statement ids are minted from the routine id"
+    assert not any(getattr(s, "construct", None) == "OverloadedRoutine" for r in routines.values() for s in r.body)
+
+
+@pytest.mark.parametrize("call,resolved", [
+    ("put(p_id);", "pkg_o.put~1"),                          # by the number of arguments
+    ("put(p_id, 'x');", "pkg_o.put~2"),
+    ("put(p_note => 'x', p_id => p_id);", "pkg_o.put~2"),   # by the names of the arguments
+    ("pkg_o.put(p_id);", "pkg_o.put~1"),
+])
+def test_a_call_to_an_overload_resolves_by_arity_and_argument_names(tmp_path, call, resolved):
+    callers = f"  PROCEDURE run(p_id NUMBER) IS BEGIN {call} END run;\n"
+    found, program = decisions(tmp_path, **{"pkg_o.pkb": OVERLOADS.format(callers=callers)})
+    run = next(r for m in program.modules for r in m.routines if r.name == "run")
+    assert [s.resolved_to for s in run.body if s.kind == "Call"] == [resolved]
+    # the verdict travels along the call that was actually made
+    assert found["pkg_o.run"].rule_verdict == ("REDESIGN" if resolved.endswith("~1") else "AUTO")
+
+
+def test_a_call_that_cannot_be_told_apart_is_not_resolved_and_not_auto(tmp_path):
+    """Same arity, types differ: nothing here infers the type of an argument, so the call is left unresolved and
+    the caller goes to REVIEW rather than borrowing one overload's verdict."""
+    source = """CREATE OR REPLACE PACKAGE BODY pkg_t AS
+  PROCEDURE log(p_value NUMBER) IS BEGIN NULL; END log;
+  PROCEDURE log(p_value VARCHAR2) IS BEGIN NULL; END log;
+  FUNCTION pick(p_value NUMBER) RETURN NUMBER IS BEGIN RETURN 1; END pick;
+  FUNCTION pick(p_value NUMBER, p_other NUMBER) RETURN NUMBER IS BEGIN RETURN 2; END pick;
+  PROCEDURE run(p_id NUMBER) IS BEGIN log(p_id); END run;
+  PROCEDURE run_expr(p_id NUMBER) IS v NUMBER; BEGIN v := pick(p_id); END run_expr;
+END pkg_t;
+/
+"""
+    found, program = decisions(tmp_path, **{"pkg_t.pkb": source})
+    for name in ("pkg_t.run", "pkg_t.run_expr"):   # a call inside an expression carries no argument list here
+        assert found[name].rule_verdict == "REVIEW" and "CALL-002" in rules_of(found[name]), name
 
 
 # --- 24: a unit that did not parse cleanly -------------------------------------------------------------------

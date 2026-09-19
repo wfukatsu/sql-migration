@@ -38,6 +38,16 @@ class ScenarioTest {
   }
 
   @Test
+  void anOverloadIsCalledByItsNumberedMethod() throws Exception {
+    // Issue #29-23: `routine: set_email~2` names the second overload; Oracle is still called as pkg_contact.set_email
+    Scenario second = Scenario.read(SCENARIOS.resolve("contact_set_email_and_name.yaml"));
+    assertEquals("set_email", second.callRoutine());
+    assertEquals("set_email2", second.callMethod());
+    Scenario plain = Scenario.read(SCENARIOS.resolve("contact_clear_email.yaml"));
+    assertEquals("clear_email", plain.callMethod());
+  }
+
+  @Test
   void aBlockScenarioFallsBackToItsUnit() throws Exception {
     Scenario scenario = Scenario.read(SCENARIOS.resolve("view_load_rowtype.yaml"));
     assertEquals(scenario.unit(), scenario.callUnit());

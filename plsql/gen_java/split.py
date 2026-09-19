@@ -37,7 +37,7 @@ from ..ir import model as M
 from ..limits import Boundaries
 from ..lower import _walk
 from .emit import JavaFile
-from .types import java_name
+from .types import java_name, routine_stem
 
 _BOUNDARIES: "contextvars.ContextVar[Boundaries]" = contextvars.ContextVar(
     "boundaries", default=Boundaries())
@@ -138,7 +138,7 @@ def _separate(file: JavaFile, module: M.Module, routine: M.Routine, result,
             handlers.append(type(handler)(**{**handler.__dict__, "body": body}))
     synthetic = M.Routine(**{**routine.__dict__, "body": _plain(routine.body),
                              "exception_handlers": handlers})
-    name = java_name(routine.name)
+    name = java_name(routine_stem(routine))
     for line in ["**別のトランザクションで呼ぶ**（自律トランザクション / #3 §G）。",
                  "呼び出し側のトランザクションの中で呼ぶと、親が rollback したときに一緒に消える——",
                  "Oracle では消えなかった（23ai で実測）。回し方の出発点:",
@@ -292,7 +292,7 @@ def _texts(statement: M.Statement):
 
 def _caller_comment(file: JavaFile, routine: M.Routine, shape: Shape, parts: list) -> None:
     """推奨の回し方。**コードとしては出さない**（#24 の決定、2026-09-18）。"""
-    name = java_name(routine.name)
+    name = java_name(routine_stem(routine))
     by_suffix = {part.suffix: part for part in parts}
     lines = ["1 反復 = 1 トランザクション（#3 / transaction-patterns §E）。",
              "**ループは呼び出し側にある**——生成コードは begin も commit もしない（計画 §9）。",
@@ -420,7 +420,7 @@ def _targets(file: JavaFile, routine: M.Routine, shape: Shape, result, domain_pa
     if key:
         file.comment("**キー順に件数つきで読む**（#19 の決定）。最初のページは pAfterKey = null で呼び、"
                      "次からは前のページの最後の行を After(...) に通した値を渡す。空が返ったら終わり")
-    with file.block(f"public List<{record}> {java_name(routine.name)}Targets({signature}) "
+    with file.block(f"public List<{record}> {java_name(routine_stem(routine))}Targets({signature}) "
                     "throws Exception") as f:
         if key:
             # 1 回に取る件数は運用の調整値で、Oracle の引数ではない。0 以下を黙って通すと、
@@ -434,7 +434,7 @@ def _targets(file: JavaFile, routine: M.Routine, shape: Shape, result, domain_pa
     if key:
         file.line()
         file.comment("次のページの起点: そのページの最後の行のキー")
-        with file.block(f"public static BigDecimal {java_name(routine.name)}After({record} row)") as f:
+        with file.block(f"public static BigDecimal {java_name(routine_stem(routine))}After({record} row)") as f:
             f.line(f"return row.{java_name(key)}();")
 
 

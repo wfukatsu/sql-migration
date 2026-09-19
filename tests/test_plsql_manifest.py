@@ -109,7 +109,8 @@ def test_manifest_routines_match_the_source(unit: dict):
     defined: set[str] = set()
     for f in unit["files"]:
         defined |= set(defined_routines(f))
-    described = {r["name"].lower() for r in unit["routines"]}
+    # an overload is described per version (`set_email~1`, `set_email~2`: Issue #29-23); the source defines the name
+    described = {r["name"].lower().partition("~")[0] for r in unit["routines"]}
     assert described - defined == set(), f"{unit['name']}: manifest names routines the source does not define"
     assert defined - described == set(), f"{unit['name']}: source defines routines the manifest does not describe"
 

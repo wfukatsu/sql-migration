@@ -196,7 +196,7 @@ def test_agreement_with_the_manifest(checked):
     decisions = decide(analysis.program, program_analysis, RuleSet.load(), Evidence())
     agree, disagree, mismatches = agreement(decisions)
     assert disagree == 0, mismatches
-    assert agree == 62   # 56 + the six routines of #29-25 (two triggers, pkg_line_edit)
+    assert agree == 65   # 56 + six routines of #29-25 (two triggers, pkg_line_edit) + three of #29-23 (pkg_contact)
 
 
 def test_agreement_on_the_holdout_is_reported_separately(checked):

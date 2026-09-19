@@ -1,0 +1,269 @@
+{
+ "id": "pkg_contact",
+ "kind": "Program",
+ "schemaVersion": "1.1.0",
+ "modules": [
+  {
+   "id": "pkg_contact",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "pkg_contact.pkb",
+    "startLine": 2,
+    "endLine": 20,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "pkg_contact",
+   "moduleKind": "package",
+   "routines": [
+    {
+     "id": "pkg_contact.set_email~1",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_contact.pkb",
+      "startLine": 4,
+      "endLine": 7,
+      "startColumn": 3,
+      "endColumn": 16
+     },
+     "name": "set_email",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_contact.set_email~1#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_contact.pkb",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 23,
+        "endColumn": 40
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_customer_id",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_contact.set_email~1#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_contact.pkb",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 48,
+        "endColumn": 59
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_email",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_contact.set_email~1#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_contact.pkb",
+        "startLine": 6,
+        "endLine": 6,
+        "startColumn": 5,
+        "endColumn": 62
+       },
+       "sqlKind": "UPDATE",
+       "originalSql": "UPDATE customers SET email = p_email WHERE customer_id = p_customer_id",
+       "selectsStar": false,
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_contact.set_email~2",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_contact.pkb",
+      "startLine": 9,
+      "endLine": 12,
+      "startColumn": 3,
+      "endColumn": 16
+     },
+     "name": "set_email",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_contact.set_email~2#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_contact.pkb",
+        "startLine": 9,
+        "endLine": 9,
+        "startColumn": 23,
+        "endColumn": 40
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_customer_id",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_contact.set_email~2#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_contact.pkb",
+        "startLine": 9,
+        "endLine": 9,
+        "startColumn": 48,
+        "endColumn": 59
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_email",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_contact.set_email~2#param-3",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_contact.pkb",
+        "startLine": 9,
+        "endLine": 9,
+        "startColumn": 69,
+        "endColumn": 79
+       },
+       "type": {
+        "oracle": "VARCHAR2",
+        "resolved": "VARCHAR2",
+        "origin": "declared"
+       },
+       "name": "p_name",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_contact.set_email~2#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_contact.pkb",
+        "startLine": 11,
+        "endLine": 11,
+        "startColumn": 5,
+        "endColumn": 77
+       },
+       "sqlKind": "UPDATE",
+       "originalSql": "UPDATE customers SET email = p_email, name = p_name WHERE customer_id = p_customer_id",
+       "selectsStar": false,
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_contact.clear_email",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_contact.pkb",
+      "startLine": 14,
+      "endLine": 18,
+      "startColumn": 3,
+      "endColumn": 18
+     },
+     "name": "clear_email",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_contact.clear_email#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_contact.pkb",
+        "startLine": 14,
+        "endLine": 14,
+        "startColumn": 25,
+        "endColumn": 42
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_customer_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_contact.clear_email#stmt-1",
+       "kind": "Call",
+       "sourceRange": {
+        "file": "pkg_contact.pkb",
+        "startLine": 17,
+        "endLine": 17,
+        "startColumn": 5,
+        "endColumn": 34
+       },
+       "callee": "set_email",
+       "arguments": [
+        "p_customer_id",
+        "NULL"
+       ]
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@23623f44"
+}

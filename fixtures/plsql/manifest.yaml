@@ -250,6 +250,18 @@ units:
       - {name: remove_line, expected: REDESIGN, reason: "主キー DELETE。消す前に :OLD を読んで trg_lines_audit を呼ぶ"}
       - {name: void_entry,  expected: REDESIGN, reason: "主キー DELETE。BEFORE DELETE の trg_inventory_tx_keep を先に呼ぶ"}
 
+  # --- Issue #29 の 23（2026-09-20）: オーバーロード。実装と一緒に書いたので holdout ではない ---------------
+  - name: pkg_contact
+    files: [pkg_contact.pks, pkg_contact.pkb]
+    categories: [simple-crud]
+    origin: synthetic
+    holdout: false
+    routines:
+      # オーバーロードは宣言順の番号で呼び分ける（`pkg_contact.set_email~1`）
+      - {name: "set_email~1", expected: AUTO, reason: "主キー UPDATE のみ（引数 2 つの版）"}
+      - {name: "set_email~2", expected: AUTO, reason: "主キー UPDATE のみ（引数 3 つの版）"}
+      - {name: clear_email,   expected: AUTO, reason: "引数の数で set_email~1 に解決できる呼び出しだけ"}
+
   # --- holdout2: ルールが固まった後（2026-09-17）に書き起こした独立ホールドアウト --------------------
   #
   # P2-2 のルール開発中に holdout の期待判定を参照してしまい、独立性が失われた（../README.md に経緯）。

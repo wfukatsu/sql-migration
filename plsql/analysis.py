@@ -197,10 +197,16 @@ class CallGraph:
 AMBIGUOUS = "<ambiguous>"
 
 
+OVERLOADED = "<overloaded>"
+
+
 class _Names(dict):
-    """name -> routine id, plus the functions that can be called with no argument list at all."""
+    """name -> routine id, plus the functions that can be called with no argument list at all, plus the overload
+    sets: a name that several routines of one package share maps to OVERLOADED, and which one a call means is
+    decided from its arguments (`_pick`)."""
 
     no_args: set[str]
+    overloads: dict[str, list[M.Routine]]
 
 
 def _names(program: M.Program) -> dict[str, str]:
@@ -211,11 +217,17 @@ def _names(program: M.Program) -> dict[str, str]:
     # `v_n := pkg.open_count;` is a call: PL/SQL needs no parentheses when every parameter can be left out
     by_name.no_args = {r.id for m in program.modules for r in m.routines
                        if r.routine_kind == "function" and all(p.default for p in r.parameters)}
+    by_name.overloads = {}
     for module in program.modules:
         for routine in module.routines:
             by_name[routine.id.lower()] = routine.id
             if module.module_kind == "package":
-                by_name[f"{module.name}.{routine.name}".lower()] = routine.id
+                qualified = f"{module.name}.{routine.name}".lower()
+                if qualified != routine.id.lower():      # `pkg.put~2`: one of several `pkg.put`
+                    by_name.overloads.setdefault(qualified, []).append(routine)
+                    by_name[qualified] = OVERLOADED
+                else:
+                    by_name[qualified] = routine.id
     for module in program.modules:
         for routine in module.routines:
             bare = routine.name.lower()
@@ -226,15 +238,44 @@ def _names(program: M.Program) -> dict[str, str]:
     return by_name
 
 
-def _resolve(callee: str, by_name: dict[str, str], module: str) -> str | None:
-    """PL/SQL's own order: a bare name is the caller's package first, and only then anything global."""
+def _resolve(callee: str, by_name: dict[str, str], module: str, arguments: list[str] | None = None) -> str | None:
+    """PL/SQL's own order: a bare name is the caller's package first, and only then anything global.
+
+    An overloaded name resolves only when the arguments leave one candidate (`_pick`); `arguments=None` -- a call
+    inside an expression, whose argument list is not captured -- leaves it unresolved."""
     lowered = callee.strip().lower()
+    found = None
     if "." not in lowered:
-        local = by_name.get(f"{module}.{lowered}".lower())
-        if local is not None:
-            return local
-    found = by_name.get(lowered)
+        found = by_name.get(f"{module}.{lowered}".lower())
+        lowered = f"{module}.{lowered}".lower() if found is not None else lowered
+    if found is None:
+        found = by_name.get(lowered)
+    if found == OVERLOADED:
+        return _pick(getattr(by_name, "overloads", {}).get(lowered, []), arguments)
     return None if found == AMBIGUOUS else found
+
+
+def overloaded(callee: str, by_name: dict[str, str], module: str) -> bool:
+    """Whether the name is an overload set of the program -- known code, even when the call cannot be resolved."""
+    lowered = callee.strip().lower()
+    names = [f"{module}.{lowered}".lower(), lowered] if "." not in lowered else [lowered]
+    return any(by_name.get(n) == OVERLOADED for n in names)
+
+
+def _pick(candidates: list[M.Routine], arguments: list[str] | None) -> str | None:
+    """The one overload a call can mean, from the number of its arguments and the names of the named ones. Nothing
+    here infers the type of an argument, so overloads that differ by type only are not told apart: the call stays
+    unresolved and the caller is reviewed, rather than given one overload's verdict (decided 2026-09-20)."""
+    if arguments is None:
+        return None
+    named = {a.partition("=>")[0].strip().lower() for a in arguments if "=>" in a}
+    fitting = []
+    for routine in candidates:
+        parameters = [p.name.lower() for p in routine.parameters]
+        required = sum(1 for p in routine.parameters if not p.default)
+        if required <= len(arguments) <= len(parameters) and named <= set(parameters):
+            fitting.append(routine.id)
+    return fitting[0] if len(fitting) == 1 else None
 
 
 # Packages whose calls change nothing a migration has to carry: output for a developer's console, and the
@@ -275,21 +316,35 @@ def build_call_graph(program: M.Program) -> CallGraph:
                 graph.external[routine.id] |= _external_in(expression, by_name, module.name, declared)
             for statement in statements:
                 if statement.kind == "Call":
-                    resolved = _resolve(statement.callee, by_name, module.name)
+                    resolved = _resolve(statement.callee, by_name, module.name, statement.arguments or [])
                     if resolved is not None:
                         graph.calls[routine.id].add(resolved)
                         statement.resolved_to = resolved
+                    elif overloaded(statement.callee, by_name, module.name):
+                        _unresolved_overload(statement, statement.callee.strip())
                     elif resolved is None:
                         graph.external[routine.id].add(statement.callee.strip())
                 # A function call is usually not a statement: `v := order_total(id)` is an assignment, and a
                 # condition may call one too. Looking only at Call nodes found one edge in the whole corpus and
                 # made every transitive transaction effect disappear.
                 for expression in _expressions(statement):
+                    if statement.kind != "Call":
+                        for name in _CALLABLE.findall(expression):
+                            if overloaded(name, by_name, module.name):
+                                _unresolved_overload(statement, name)
                     for resolved in _called_in(expression, by_name, module.name, routine.id, declared):
                         graph.calls[routine.id].add(resolved)
                     if statement.kind != "SqlOperation":   # SQL has its own functions; the converter judges those
                         graph.external[routine.id] |= _external_in(expression, by_name, module.name, declared)
     return graph
+
+
+def _unresolved_overload(statement: M.Statement, name: str) -> None:
+    if any(d.code == "OVERLOAD_UNRESOLVED" for d in statement.diagnostics):
+        return
+    statement.add("WARN", "OVERLOAD_UNRESOLVED",
+                  f"{name} is overloaded, and which one this call means cannot be told from the number and the names "
+                  f"of its arguments (a call inside an expression carries no argument list here)")
 
 
 def _external_in(expression: str, by_name: dict[str, str], module: str, declared: set[str]) -> set[str]:
@@ -299,7 +354,7 @@ def _external_in(expression: str, by_name: dict[str, str], module: str, declared
     for prefix, name in _QUALIFIED_CALL.findall(re.sub(r"'(?:[^']|'')*'", "''", expression)):
         if prefix.lower() in declared or name.lower() in _COLLECTION_METHODS:
             continue
-        if _resolve(f"{prefix}.{name}", by_name, module) is None:
+        if _resolve(f"{prefix}.{name}", by_name, module) is None and not overloaded(f"{prefix}.{name}", by_name, module):
             found.add(f"{prefix}.{name}")
     return found
 
