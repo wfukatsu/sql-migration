@@ -1,0 +1,163 @@
+# 生成コードの外で決めること — 記録（docs/plsql-decisions-outside-generator.md §0.2）
+#
+# skills/plsql-migrate/scripts/decision_items.py が読み書きする。手で直してもよいが、
+# 「決定」には 決定・決めた人・日付 が要る。答えた人のいない項目を「決定」と書かない。
+#
+#   状態      未決 / 決定 / 対象外（生成物に出ていない）
+#   出た      スクリプトが生成物から拾った根拠（毎回書き直す）
+#   案        業務文書などから引いた答えの候補。決定ではない（出典を書く）
+#   食い違い  業務文書と生成物（または元の PL/SQL）が食い違うところ。再設計の要否の問題として残す
+#   残り      決定のうち、まだ決まっていない部分（例: 時刻は決めたが、間隔に収まるかの測定は未了）
+
+items:
+  OPS-1:
+    状態: 未決
+    出た:
+    - '`application/TriggerChecks.java` / `TriggerCheckJob.java` — TriggerCheckJob.java; TriggerChecks.java'
+  OPS-2:
+    状態: 未決
+    出た:
+    - '`application/TriggerChecks.java` / `TriggerCheckJob.java` — TriggerCheckJob.java; TriggerChecks.java'
+  OPS-3:
+    状態: 未決
+    出た:
+    - '`application/TriggerChecks.java` / `TriggerCheckJob.java` — TriggerCheckJob.java; TriggerChecks.java'
+  OPS-4:
+    状態: 未決
+    出た:
+    - '`application/TriggerChecks.java` / `TriggerCheckJob.java` — TriggerCheckJob.java; TriggerChecks.java'
+    - '`db/trigger-check-baseline.sql` — db/trigger-check-baseline.sql'
+  OPS-5:
+    状態: 未決
+    出た:
+    - '`application/TriggerChecks.java` / `TriggerCheckJob.java` — TriggerCheckJob.java; TriggerChecks.java'
+  OPS-6:
+    状態: 未決
+    出た:
+    - '`db/restrict-direct-writes.sql` — db/restrict-direct-writes.sql（plsqlpoc.payments, plsqlpoc.products）'
+    - '診断 `TRIGGER_APPLIED` / `TRIGGER_CALL`（書き込む側が trigger を呼ぶ） — pkg_order_lock.cancel: TRIGGER_APPLIED, TRIGGER_CALL;
+      pkg_payment.record_payment: TRIGGER_APPLIED, TRIGGER_CALL; pkg_shipment.mark_shipped: TRIGGER_APPLIED, TRIGGER_CALL;
+      pkg_stock_reserve.claim_batch: TRIGGER_APPLIED, TRIGGER_CALL; prc_nightly_close: TRIGGER_APPLIED, TRIGGER_CALL'
+  OPS-7:
+    状態: 未決
+    出た:
+    - '`db/restrict-direct-writes.sql` — db/restrict-direct-writes.sql（plsqlpoc.payments, plsqlpoc.products）'
+  OPS-8:
+    状態: 未決
+    出た:
+    - '`db/restrict-direct-writes.sql` — db/restrict-direct-writes.sql（plsqlpoc.payments, plsqlpoc.products）'
+  OPS-9:
+    状態: 未決
+    出た:
+    - '`db/restrict-direct-writes.sql` — db/restrict-direct-writes.sql（plsqlpoc.payments, plsqlpoc.products）'
+  OPS-10:
+    状態: 未決
+    出た:
+    - '`db/restrict-direct-writes.sql` — db/restrict-direct-writes.sql（plsqlpoc.payments, plsqlpoc.products）'
+  CALL-1:
+    状態: 未決
+    出た:
+    - '`<routine>Targets` / `One` / `Failed` / `Start` / `Done` / `FailedBatch`（割った routine） — markReviewed; prcNightlyClose;
+      prcPurgeAudit; prcRepriceAll; restock'
+  CALL-2:
+    状態: 未決
+    出た:
+    - '`<routine>Targets` / `One` / `Failed` / `Start` / `Done` / `FailedBatch`（割った routine） — markReviewed; prcNightlyClose;
+      prcPurgeAudit; prcRepriceAll; restock'
+  CALL-3:
+    状態: 未決
+    出た:
+    - '`<routine>Targets` / `One` / `Failed` / `Start` / `Done` / `FailedBatch`（割った routine） — markReviewed; prcNightlyClose;
+      prcPurgeAudit; prcRepriceAll; restock'
+    - '`<routine>After` と `pAfterKey` / `pBatch` 引数（件数つきで繰り返し読む） — PkgOrderReportRepository.java: pAfterKey / pBatch;
+      PkgOrderReportService.java: pAfterKey / pBatch; PrcNightlyCloseRepository.java: pAfterKey / pBatch; PrcNightlyCloseService.java:
+      pAfterKey / pBatch; PrcPurgeAuditRepository.java: pAfterKey / pBatch; PrcPurgeAuditService.java: pAfterKey
+      / pBatch; PrcRepriceAllRepository.java: pAfterKey / pBatch; PrcRepriceAllService.java: pAfterKey / pBatch;
+      ほか 4 件'
+  CALL-4:
+    状態: 未決
+    出た:
+    - '生成コードのコメント `tx.runSeparately(...)`（自律トランザクション） — PrcAuditAutonomousService.java:23: tx.runSeparately(() ->
+      service.prcAuditAutonomous(...));   // 親とは別の境界'
+  CALL-5:
+    状態: 未決
+    出た:
+    - '診断 `OPTIMISTIC` / `RMW_SPLIT` / `MERGE_SPLIT`（楽観制御へ移したもの） — pkg_bulk_load.restock: RMW_SPLIT; pkg_customer_import.import:
+      MERGE_SPLIT; pkg_order_lock.cancel: OPTIMISTIC, RMW_SPLIT; pkg_stock_reserve.claim_batch: OPTIMISTIC; pkg_stock_reserve.next_payment_id:
+      OPTIMISTIC; pkg_stock_reserve.reserve: OPTIMISTIC; pkg_stock_reserve.reserve_nowait: OPTIMISTIC; pkg_tier_admin.promote:
+      OPTIMISTIC'
+  CALL-6:
+    状態: 未決
+    出た:
+    - '`AuditContext audit` 引数 — PkgBulkLoadRepository.java; PkgBulkLoadService.java; PkgOrderLockService.java;
+      PkgPaymentRepository.java; PkgPaymentService.java; PkgShipmentService.java; PkgStockReserveService.java; PrcAuditAutonomousRepository.java;
+      ほか 11 件'
+  BIZ-1:
+    状態: 未決
+    出た:
+    - '`<routine>Targets` / `One` / `Failed` / `Start` / `Done` / `FailedBatch`（割った routine） — markReviewed; prcNightlyClose;
+      prcPurgeAudit; prcRepriceAll; restock'
+  BIZ-2:
+    状態: 未決
+    出た:
+    - '`<routine>Targets` / `One` / `Failed` / `Start` / `Done` / `FailedBatch`（割った routine） — markReviewed; prcNightlyClose;
+      prcPurgeAudit; prcRepriceAll; restock'
+    - '`<routine>After` と `pAfterKey` / `pBatch` 引数（件数つきで繰り返し読む） — PkgOrderReportRepository.java: pAfterKey / pBatch;
+      PkgOrderReportService.java: pAfterKey / pBatch; PrcNightlyCloseRepository.java: pAfterKey / pBatch; PrcNightlyCloseService.java:
+      pAfterKey / pBatch; PrcPurgeAuditRepository.java: pAfterKey / pBatch; PrcPurgeAuditService.java: pAfterKey
+      / pBatch; PrcRepriceAllRepository.java: pAfterKey / pBatch; PrcRepriceAllService.java: pAfterKey / pBatch;
+      ほか 4 件'
+  BIZ-3:
+    状態: 未決
+    出た:
+    - '生成コードのコメント `tx.runSeparately(...)`（自律トランザクション） — PrcAuditAutonomousService.java:23: tx.runSeparately(() ->
+      service.prcAuditAutonomous(...));   // 親とは別の境界'
+  BIZ-4:
+    状態: 未決
+    出た:
+    - '診断 `OPTIMISTIC` / `RMW_SPLIT` / `MERGE_SPLIT`（楽観制御へ移したもの） — pkg_bulk_load.restock: RMW_SPLIT; pkg_customer_import.import:
+      MERGE_SPLIT; pkg_order_lock.cancel: OPTIMISTIC, RMW_SPLIT; pkg_stock_reserve.claim_batch: OPTIMISTIC; pkg_stock_reserve.next_payment_id:
+      OPTIMISTIC; pkg_stock_reserve.reserve: OPTIMISTIC; pkg_stock_reserve.reserve_nowait: OPTIMISTIC; pkg_tier_admin.promote:
+      OPTIMISTIC'
+  BIZ-5:
+    状態: 未決
+    出た:
+    - '診断 `OPTIMISTIC` / `RMW_SPLIT` / `MERGE_SPLIT`（楽観制御へ移したもの） — pkg_bulk_load.restock: RMW_SPLIT; pkg_customer_import.import:
+      MERGE_SPLIT; pkg_order_lock.cancel: OPTIMISTIC, RMW_SPLIT; pkg_stock_reserve.claim_batch: OPTIMISTIC; pkg_stock_reserve.next_payment_id:
+      OPTIMISTIC; pkg_stock_reserve.reserve: OPTIMISTIC; pkg_stock_reserve.reserve_nowait: OPTIMISTIC; pkg_tier_admin.promote:
+      OPTIMISTIC'
+  BIZ-6:
+    状態: 未決
+    出た:
+    - '`AuditContext audit` 引数 — PkgBulkLoadRepository.java; PkgBulkLoadService.java; PkgOrderLockService.java;
+      PkgPaymentRepository.java; PkgPaymentService.java; PkgShipmentService.java; PkgStockReserveService.java; PrcAuditAutonomousRepository.java;
+      ほか 11 件'
+  BIZ-7:
+    状態: 未決
+    出た:
+    - '`limits.yaml` の `scanRows.routines` の値 — scanRows.routines.pkg_order_pricing.order_total: 200; scanRows.routines.pkg_order_lock.cancel:
+      200; scanRows.routines.pkg_bulk_load.archive_lines: 200'
+  BIZ-8:
+    状態: 未決
+    出た:
+    - '`limits.yaml` の `dynamicTables` — dynamicTables.pkg_dynamic_search.purge: inventory_tx; dynamicTables.pkg_customer_import.truncate_staging:
+      inventory_tx'
+  BIZ-9:
+    状態: 未決
+    出た:
+    - '診断 `TRIGGER_APPLIED` / `TRIGGER_CALL`（書き込む側が trigger を呼ぶ） — pkg_order_lock.cancel: TRIGGER_APPLIED, TRIGGER_CALL;
+      pkg_payment.record_payment: TRIGGER_APPLIED, TRIGGER_CALL; pkg_shipment.mark_shipped: TRIGGER_APPLIED, TRIGGER_CALL;
+      pkg_stock_reserve.claim_batch: TRIGGER_APPLIED, TRIGGER_CALL; prc_nightly_close: TRIGGER_APPLIED, TRIGGER_CALL'
+  BIZ-10:
+    状態: 未決
+    出た:
+    - '診断 `TRIGGER_REDESIGN`（値を書き換える trigger）、または `TriggerChecks` の C 型（採番）の照合 — TriggerChecks.java:44: C 型（daily）:
+      orders.order_id の最大値'
+  BIZ-11:
+    状態: 未決
+    出た:
+    - TIMESTAMP WITH TIME ZONE の列（ScalarDB の `TIMESTAMPTZ`） — plsqlpoc.payments.paid_at
+  BIZ-12:
+    状態: 未決
+    出た:
+    - '`TRUNCATE` を含む動的 SQL — PkgCustomerImportRepository.java:97: "TRUNCATE TABLE inventory_tx"'
