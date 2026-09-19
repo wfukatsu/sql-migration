@@ -293,6 +293,20 @@ def _extra(criteria: dict, statement: M.Statement, module: M.Module, routine: M.
         codes = {d.code for d in statement.diagnostics}
         if not (codes & _as_set(criteria["hasDiagnostic"])):
             return False
+    if "hasAllDiagnostics" in criteria:
+        if not _as_set(criteria["hasAllDiagnostics"]) <= {d.code for d in statement.diagnostics}:
+            return False
+    # `dynamicResolved`: a dynamic statement whose every possible text was enumerated, and ScalarDB runs each of them
+    # as it stands. Without a ScalarDB schema nothing was enumerated against the target, so it is not resolved.
+    if "dynamicResolved" in criteria:
+        variants = getattr(statement, "variant_statements", None) or []
+        resolved = bool(variants) and all(getattr(v, "target_status", None) in ("OK", "WARN") for v in variants)
+        if resolved is not criteria["dynamicResolved"]:
+            return False
+    if "lacksDiagnostic" in criteria:
+        codes = {d.code for d in statement.diagnostics}
+        if codes & _as_set(criteria["lacksDiagnostic"]):
+            return False
     if "intoTargets" in criteria:
         has = bool(getattr(statement, "into_targets", None))
         if has is not criteria["intoTargets"]:

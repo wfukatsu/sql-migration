@@ -40,6 +40,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--generated", help="the generated tree, so traceability.csv can be checked against it")
     parser.add_argument("--package", default="com.example.migrated")
     parser.add_argument("--fix-times", help="YAML of measured human fix minutes per routine, for KPI-6")
+    parser.add_argument("--limits", help="the project's decisions (limits.yaml): row limits, row locks, transaction "
+                                         "boundaries. The same file `plsql.generate --limits` takes; with it the "
+                                         "report judges the code that is actually generated")
     parser.add_argument("--quiet", action="store_true", help="print nothing but the exit status")
     args = parser.parse_args(argv)
 
@@ -52,7 +55,13 @@ def main(argv: list[str] | None = None) -> int:
     if scalardb is None:
         candidate = Path(args.root).parent / "scalardb-schema.json"
         scalardb = str(candidate) if candidate.exists() else None
-    analysis = analyse(args.root, schema, scalardb_schema=scalardb)
+    decided = {}
+    if args.limits:
+        from .limits import Boundaries, Limits, RowLocks
+
+        decided = {"row_locks": RowLocks.load(args.limits), "boundaries": Boundaries.load(args.limits),
+                   "limits": Limits.load(args.limits)}
+    analysis = analyse(args.root, schema, scalardb_schema=scalardb, **decided)
     data = inventory(analysis)
     kpi, totals = data["kpi"], data["totals"]
 

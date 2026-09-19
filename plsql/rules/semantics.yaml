@@ -7,10 +7,15 @@
 # ScalarDB のスキーマを知る必要があり、P2-4 の担当になる。
 
 rules:
+  # 2026-09-20 の原則: REVIEW は「移行できるかが未解決」のときだけ。生成コードと実 DB の evidence で解決済みの問いは REVIEW に
+  # 残さず、設計・運用への助言は判定を下げない注記（decision: AUTO）に分ける。性能と実行可否は、意味論のルールと混ぜない
+  #
+  # ROUND: PL/SQL の式と、生成器が SQL の外へ持ち上げた式は、互換ランタイム（Plsql.round = half-up）が計算し、Oracle の
+  # 記録済みの答えと突き合わせてある。REVIEW にするのは、ROUND が**移行先 DB に評価される**文だけ（SEM-003 と同じ基準）
   - id: SEM-001
-    match: {statementKind: [SqlOperation, Expression], textMatches: '\bROUND\s*\('}
+    match: {statementKind: SqlOperation, evaluatedByTarget: '\bROUND\s*\('}
     decision: REVIEW
-    message: Oracle の ROUND は half-up です。Java の BigDecimal 既定（HALF_EVEN）と結果が割れます
+    message: ROUND が Oracle 互換のランタイムを通らずに移行先 DB（ScalarDB SQL か実行計画の H2）で評価されます。Oracle の ROUND は half-up で、移行先の丸めが同じとは限りません
     requiredTests:
       - rounding_boundary
 
@@ -113,10 +118,13 @@ rules:
     requiredTests:
       - null_and_empty_string
 
+  # 集約の SELECT INTO: ScalarDB がそのまま実行する集約は、0 件でも 1 行（NULL / 0）を返すことを実 DB で確かめてある
+  # （payment_paid_total_none、payment_last_paid_at_none、shipment_is_shippable_no_lines）。REVIEW にするのは、その文を
+  # ScalarDB がそのまま実行しないとき（実行計画・拒否・ScalarDB のスキーマが無い）だけ
   - id: SEM-004
-    match: {statementKind: SqlOperation, textMatches: '\b(SUM|COUNT|AVG|MIN|MAX)\s*\([^)]*\)[\s\S]{0,80}?\bINTO\b'}
+    match: {statementKind: SqlOperation, textMatches: '\b(SUM|COUNT|AVG|MIN|MAX)\s*\([^)]*\)[\s\S]{0,80}?\bINTO\b', targetStatusNot: [OK, WARN]}
     decision: REVIEW
-    message: 集約は 0 件でも 1 行返ります。NO_DATA_FOUND にならず NULL になる差を保つ必要があります
+    message: 集約の SELECT INTO で、ScalarDB がそのまま実行できる文ではありません。集約は 0 件でも 1 行返り、NO_DATA_FOUND にならず NULL になる、という差が保たれることを保証できません
     requiredTests:
       - aggregate_zero_rows
 
@@ -168,23 +176,39 @@ rules:
       - cursor_lifetime
       - row_limit
 
+  # 行数とメモリは性能の問いで、答える場所は limits.yaml である（値を書くか、上限では守らない理由を書く）。決めてあれば
+  # 生成コードがその上限を守る（超えたら RowLimitExceededException）ので、問いは開いていない。既定値に落ちた routine は
+  # 誰も決めていないので REVIEW のまま
   - id: CUR-002
-    match: {statementKind: Loop, loopKind: cursor-for}
+    match: {statementKind: Loop, loopKind: cursor-for, lacksDiagnostic: ROW_LIMIT_DECIDED}
     decision: REVIEW
-    message: Cursor FOR LOOP は N+1 とメモリ、fetch size を確認する必要があります
+    message: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
     requiredTests:
       - row_limit
       - performance
+
+  - id: CUR-OPT-002
+    match: {statementKind: Loop, loopKind: cursor-for, hasDiagnostic: ROW_LIMIT_DECIDED}
+    decision: AUTO          # 判定を下げない注記
+    severity: info
+    message: Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します
 
   # 書き換えたあとの形に合わせてある（#14 / 2026-09-18）。`FETCH ... BULK COLLECT INTO v LIMIT n`
   # は「n 件ずつ**配る**ループ」になり、行は先にまとめて読む。**LIMIT はもうメモリを守っていない**
   # ——守るのは走査行数の上限なので、この規則が要求するのは今も row_limit である
   - id: BULK-003
-    match: {statementKind: Loop, hasDiagnostic: BULK_CHUNKED}
+    match: {statementKind: Loop, hasDiagnostic: BULK_CHUNKED, lacksDiagnostic: ROW_LIMIT_DECIDED}
     decision: REVIEW
     message: 分割読みは行をまとめて読む形になりました。メモリを守るのは LIMIT ではなく走査行数の上限です
     requiredTests:
       - row_limit
+
+  - id: BULK-OPT-003
+    match: {statementKind: Loop, hasAllDiagnostics: [BULK_CHUNKED, ROW_LIMIT_DECIDED]}
+    decision: AUTO          # 判定を下げない注記
+    severity: info
+    message: 分割読みは行をまとめて読む形になりました。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります
+
 
   # レビュー #27 の 26d。`WHEN OTHERS THEN NULL` は Oracle でも悪い書き方だが、移行先ではさらに意味が変わる:
   # ScalarDB の競合（CrudConflictException など）まで握りつぶすと、使えなくなったトランザクションで先へ進む
