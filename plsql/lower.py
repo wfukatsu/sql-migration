@@ -271,7 +271,9 @@ class _Lowerer:
             or _child(context, "Function_nameContext")
         name = _text(identifier).split(".")[-1].lower() if identifier is not None else "<anonymous>"
         routine_id = f"{module}.{name}" if module else name
-        is_function = "Function" in type(context).__name__
+        # `Function_bodyContext` in a package, `Create_function_bodyContext` standalone: the second has a lower-case
+        # f, so a standalone function was lowered as a procedure -- `void`, with `return 1;` inside it
+        is_function = "function" in type(context).__name__.lower()
         routine = M.Routine(
             id=routine_id, kind="Routine", name=name,
             routine_kind="function" if is_function else "procedure",

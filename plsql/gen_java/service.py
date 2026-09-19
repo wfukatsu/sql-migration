@@ -41,6 +41,7 @@ _PROGRAM: "contextvars.ContextVar[M.Program | None]" = contextvars.ContextVar("p
 # PL/SQL says -- reading them off the routine would make a block-local visible to the whole method.
 _BLOCK_LOCALS: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("block_locals", default={})
 _ROWCOUNT_SEEN: "contextvars.ContextVar[bool]" = contextvars.ContextVar("rowcount", default=False)
+_READS_ROWCOUNT: "contextvars.ContextVar[bool]" = contextvars.ContextVar("reads_rowcount", default=False)
 # この routine が途中で拒否することが分かっているか（#25）。採番の前で止めるために要る
 _REFUSES_LATER: "contextvars.ContextVar[bool]" = contextvars.ContextVar("refuses", default=False)
 # P4-5: `FOR r IN (SELECT qty, ...)` puts `r` in scope for the body, and the translator turns `r.qty` into the
@@ -326,12 +327,24 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
                 # 出したところで動かない
                 f.comment("the body is not emitted while the firing condition is unresolved")
                 return
+        clashes = _name_clashes(routine)
+        if clashes:
+            # `p_id` and `p__id`, or a local called `row_count` beside the generated `rowCount`: two declarations
+            # of one Java name do not compile, and renaming one would have to reach every place that reads it
+            f.comment(f"not translated: {'; '.join(clashes)}")
+            f.line(f'throw new UnsupportedOperationException("names that collide in Java: '
+                   f'{"; ".join(clashes)}");')
+            if routine.id not in result.untranslated:
+                result.untranslated.append(routine.id)
+            return
         written = _walk(routine.body) + [x for h in routine.exception_handlers for x in _walk(h.body)]
         # 畳んだ動的 SQL の variant も DML でありうる。walk には出てこないので、ここで足す——
         # 足さないと `rowCount` を使う文だけが出て、宣言が無い Java になる（P4-7 の生成で判明）
         written += [v for s in written for v in (getattr(s, "variant_statements", None) or [])]
+        _READS_ROWCOUNT.set(bool(re.search(r"SQL%ROWCOUNT", repr(routine), re.IGNORECASE)))
         if any((s.sql_kind or "").upper() in ("INSERT", "UPDATE", "DELETE", "MERGE")
-               for s in written if s.kind == "SqlOperation"):
+               for s in written if s.kind == "SqlOperation") \
+                or (_READS_ROWCOUNT.get() and any(_sets_rowcount_to_one(s) for s in written)):
             # one declaration per method: a routine may hold several DML statements, in different blocks
             f.line("int rowCount = 0;")
         for parameter in outs:
@@ -420,6 +433,9 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
             comment = f"WHEN {', '.join(names)}"
             for class_name in classes:
                 file.add_import(f"{domain_package}.{class_name}")
+            if "VALUE_ERROR" in names:
+                comment += ("\nVALUE_ERROR: only the size errors of a constrained declaration (Plsql.fit) reach this "
+                            "handler. A failed conversion still throws Java's own exception (rule EXC-001)")
             unreachable = [n for n in names if n in NEVER_RAISED_BY_TARGET]
             if unreachable:
                 comment += (f"\n{', '.join(unreachable)}: nothing on the target raises this by itself, so this "
@@ -456,18 +472,27 @@ def _guarded(file: JavaFile, handlers: list[M.ExceptionHandler], body: list[M.St
              routine: M.Routine, result: ServiceFile, domain_package: str) -> None:
     """The body of a `try`. Where a handler could catch a division by zero -- ZERO_DIVIDE by name, or OTHERS --
     the helper's `Plsql.ZeroDivide` becomes the migrated `ZeroDivideException` first, so that the catch is one it
-    can reach. `catch (ZeroDivideException e)` on its own was dead code: the helper threw ArithmeticException."""
+    can reach. `catch (ZeroDivideException e)` on its own was dead code: the helper threw ArithmeticException.
+    The same goes for VALUE_ERROR and the `Plsql.ValueError` a constrained declaration raises (`Plsql.fit`)."""
     names = {e.upper() for h in handlers for e in h.exceptions}
-    if not names & {"ZERO_DIVIDE", "OTHERS"}:
+    raised = [(helper, migrated, variable) for oracle, helper, migrated, variable in _HELPER_ERRORS
+              if names & {oracle, "OTHERS"}]
+    if not raised:
         _statements(file, body, routine, result)
         return
-    if domain_package:
-        file.add_import(f"{domain_package}.ZeroDivideException")
     file.add_import("com.scalar.migrate.plsql.Plsql")
     with file.block("try") as inner:
         _statements(inner, body, routine, result)
-    with file.block("catch (Plsql.ZeroDivide zero)") as translated:
-        translated.line("throw new ZeroDivideException(zero.getMessage());")
+    for helper, migrated, variable in raised:
+        if domain_package:
+            file.add_import(f"{domain_package}.{migrated}")
+        with file.block(f"catch (Plsql.{helper} {variable})") as translated:
+            translated.line(f"throw new {migrated}({variable}.getMessage());")
+
+
+# Oracle's name, the runtime helper's own exception, the migrated class a handler names, the catch variable
+_HELPER_ERRORS = (("ZERO_DIVIDE", "ZeroDivide", "ZeroDivideException", "zero"),
+                  ("VALUE_ERROR", "ValueError", "ValueErrorException", "size"))
 
 
 # 移行先では起こりえない Oracle の誤り。いまのところ行ロックが取れないこと（ORA-54）だけである
@@ -513,6 +538,9 @@ def _always_exits(routine: M.Routine, result: ServiceFile) -> bool:
         if last.kind == "Block":
             # a block leaves by falling out of it unless its body and every handler leave for good
             return exits(last.body) and all(exits(h.body) for h in last.exception_handlers)
+        if last.kind in ("If", "Case") and last.else_body:
+            # Java sees that nothing follows an if / else whose every branch leaves, and rejects what is put there
+            return exits(last.else_body) and all(exits(b.body) for b in last.branches)
         return last.kind in ("Return", "Raise")
 
     if not exits(routine.body):
@@ -554,10 +582,14 @@ def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
     initial = " = null" if mapped.name not in ("int", "long", "double", "boolean") else ""
     if declaration.initial:
         rendered = _expr(file, declaration.initial, routine, result, boolean_value=mapped.name == "Boolean")
-        if mapped.name == "BigDecimal" and rendered.lstrip("-").replace(".", "", 1).isdigit():
+        if mapped.name == "BigDecimal" and rendered.lstrip("-").isdigit():
             file.add_import("com.scalar.migrate.plsql.Plsql")
             rendered = f"Plsql.number({rendered})"
-        initial = f" = {rendered}"
+        elif mapped.name == "BigDecimal" and rendered.lstrip("-").replace(".", "", 1).isdigit():
+            # `Plsql.number` takes a long: `v NUMBER := 1.005` came out as Java that does not compile. The text
+            # constructor keeps the literal exact, which a double would not
+            rendered = f'new BigDecimal("{rendered}")'
+        initial = f" = {_constrain(file, rendered, declaration.type)}"
     file.line(f"{mapped.name} {java_name(declaration.name)}{initial};")
 
 
@@ -646,13 +678,23 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
         target = _expr(file, statement.target, routine, result)
         target_type = _local_type(routine, statement.target)
         value = _expr(file, statement.expression, routine, result, boolean_value=target_type == "Boolean")
-        file.line(f"{target} = {_coerce(file, value, target_type)};")
+        holder = _holder(routine, statement.target)
+        file.line(f"{target} = {_constrain(file, _coerce(file, value, target_type), holder.type if holder else None)};")
     elif kind == "Return":
         returns = java_type(routine.return_type.resolved or routine.return_type.oracle).name \
             if routine.return_type is not None else "void"
+        outs = [java_name(p.name) for p in routine.parameters if p.direction in ("OUT", "IN OUT")]
+        value = None
         if statement.expression:
-            value = _expr(file, statement.expression, routine, result, boolean_value=returns == "Boolean")
-            file.line(f"return {_coerce(file, value, returns)};")
+            value = _coerce(file, _expr(file, statement.expression, routine, result,
+                                        boolean_value=returns == "Boolean"), returns)
+        if outs:
+            # the OUT arguments travel in the result record, so a RETURN in the middle has to build it too:
+            # a bare `return;` in a method that returns the record did not compile
+            components = ([value or "null"] if routine.return_type is not None else []) + outs
+            file.line(f"return new {java_class_name(routine.name)}Result({', '.join(components)});")
+        elif value is not None:
+            file.line(f"return {value};")
         else:
             file.line("return;")
     elif kind == "If":
@@ -1029,7 +1071,22 @@ def _trigger_call(file: JavaFile, statement: M.Call, routine: M.Routine,
     return True
 
 
+def _sets_rowcount_to_one(statement) -> bool:
+    """An implicit `SELECT ... INTO` that returns sets SQL%ROWCOUNT to 1 (no row and many rows raise instead).
+    An explicit cursor's FETCH (AT_MOST_ONE) does not touch the implicit cursor's attributes."""
+    return statement.kind == "SqlOperation" and bool(statement.into_targets) \
+        and statement.cardinality not in ("MANY", "AT_MOST_ONE") and not statement.plan_id \
+        and statement.target_status != "PLANNED"
+
+
 def _sql(file: JavaFile, statement: M.SqlOperation, routine: M.Routine) -> None:
+    _sql_statement(file, statement, routine)
+    if _READS_ROWCOUNT.get() and _sets_rowcount_to_one(statement):
+        # `IF SQL%ROWCOUNT = 0` after a SELECT INTO used to read the count of the DML before it
+        file.line("rowCount = 1;")
+
+
+def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine) -> None:
     method = f"{java_name(routine.name)}{_sql_suffix(statement)}"
     # a bind lifted out of the SQL (P4-4) is computed inside the repository from the other binds, so it is not
     # passed in. The repository's parameter list is built from the same rule; the two have to agree.
@@ -1047,8 +1104,9 @@ def _sql(file: JavaFile, statement: M.SqlOperation, routine: M.Routine) -> None:
     if targets and statement.cardinality == "AT_MOST_ONE":
         _first_row(file, statement, routine, method, arguments, targets)
     elif targets and len(targets) == 1:
-        file.line(f"{java_name(targets[0])} = "
-                  f"{_into(file, f'repository.{method}({arguments})', _local_type(routine, targets[0]))};")
+        holder = _holder(routine, targets[0])
+        value = _into(file, f"repository.{method}({arguments})", _local_type(routine, targets[0]))
+        file.line(f"{java_name(targets[0])} = {_constrain(file, value, holder.type if holder else None)};")
     elif targets:
         # the repository returns the columns positionally, in the order the SELECT names them
         if any("." in target for target in targets):
@@ -1057,8 +1115,9 @@ def _sql(file: JavaFile, statement: M.SqlOperation, routine: M.Routine) -> None:
         file.comment(f"SELECT INTO {', '.join(targets)}")
         file.line(f"var row = repository.{method}({arguments});")
         for index, target in enumerate(targets):
-            file.line(f"{java_name(target)} = "
-                      f"{_into(file, f'row[{index}]', _local_type(routine, target))};")
+            holder = _holder(routine, target)
+            value = _into(file, f"row[{index}]", _local_type(routine, target))
+            file.line(f"{java_name(target)} = {_constrain(file, value, holder.type if holder else None)};")
     elif (statement.sql_kind or "").upper() in ("INSERT", "UPDATE", "DELETE", "MERGE"):
         # SQL%ROWCOUNT is part of the behaviour: `update_email` raises when it is zero. One variable per
         # statement, because a routine may hold several DML statements in one scope.
@@ -1243,17 +1302,59 @@ def _local_type(routine: M.Routine, target: str) -> str:
     there and the generator emits them from there), so those count as locals here too. Without this the
     value was cast to `Object` and assigned to a `String` -- Java that does not compile (#12).
     """
+    holder = _holder(routine, target)
+    if holder is None:
+        return "Object"
+    if isinstance(holder, M.Declaration):
+        row = _row_type(holder)
+        if row is not None:
+            return row
+    return java_type(holder.type.resolved or holder.type.oracle).name
+
+
+def _name_clashes(routine: M.Routine) -> list[str]:
     module = _MODULE.get()
-    module_locals = list(module.declarations) if module is not None         and routine.routine_kind == "trigger-body" else []
-    for holder in list(routine.declarations) + module_locals + list(routine.parameters):
-        if holder.name.lower() != target.lower() or holder.type is None:
+    module_locals = list(module.declarations) if module is not None \
+        and routine.routine_kind == "trigger-body" else []
+    named: dict[str, list[str]] = {"rowCount": ["SQL%ROWCOUNT"]}
+    for holder in list(routine.parameters) + list(routine.declarations) + module_locals:
+        if getattr(holder, "declaration_kind", None) in ("cursor", "exception", "type"):
             continue
-        if isinstance(holder, M.Declaration):
-            row = _row_type(holder)
-            if row is not None:
-                return row
-        return java_type(holder.type.resolved or holder.type.oracle).name
-    return "Object"
+        named.setdefault(java_name(holder.name), []).append(holder.name)
+    return [f"{' / '.join(names)} -> {java}" for java, names in named.items()
+            if len({n.lower() for n in names}) > 1]
+
+
+def _holder(routine: M.Routine, target: str):
+    module = _MODULE.get()
+    module_locals = list(module.declarations) if module is not None \
+        and routine.routine_kind == "trigger-body" else []
+    for holder in list(routine.declarations) + module_locals + list(routine.parameters):
+        if holder.name.lower() == (target or "").lower() and holder.type is not None:
+            return holder
+    return None
+
+
+_NUMBER_CONSTRAINT = re.compile(r"(?:NUMBER|NUMERIC|DECIMAL|DEC)\s*\(\s*(\d+)\s*(?:,\s*(-?\d+)\s*)?\)", re.IGNORECASE)
+_TEXT_CONSTRAINT = re.compile(r"(?:VARCHAR2|VARCHAR|NVARCHAR2)\s*\(\s*(\d+)\s*(CHAR|BYTE)?\s*\)", re.IGNORECASE)
+
+
+def _constrain(file: JavaFile, value: str, type_ref: "M.TypeRef | None") -> str:
+    """A value on its way into a variable declared `NUMBER(5,2)` or `VARCHAR2(3)`.
+
+    The constraint is behaviour: Oracle rounds to the scale, and raises VALUE_ERROR past the precision or the
+    length. BigDecimal and String hold anything, so without this 1.005 stayed 1.005 and 'abcd' fitted in three
+    bytes. A CHAR(n) pads instead, which is another rule, and is left alone here.
+    """
+    declared = ((type_ref.resolved or type_ref.oracle) if type_ref is not None else "") or ""
+    number = _NUMBER_CONSTRAINT.fullmatch(declared.strip())
+    text = _TEXT_CONSTRAINT.fullmatch(declared.strip())
+    if value == "null" or not (number or text):
+        return value
+    file.add_import("com.scalar.migrate.plsql.Plsql")
+    if number:
+        return f"Plsql.fit({value}, {int(number.group(1))}, {int(number.group(2) or 0)})"
+    return f"Plsql.fit({value}, {int(text.group(1))}, {'true' if (text.group(2) or '').upper() == 'CHAR' else 'false'})"
 
 
 def _sql_suffix(statement: M.SqlOperation) -> str:
