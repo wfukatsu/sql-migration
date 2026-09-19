@@ -66,6 +66,8 @@ def test_kpi4_says_that_javac_is_the_other_half(measured):
 
 @pytest.mark.skipif(not EVIDENCE.exists(), reason="no comparison report; run difftest/plsql_diff.py --full")
 def test_semantic_equivalence_is_reported_per_money_convention(measured):
+    if measured["kpi5"]["staleEvidence"]:
+        pytest.skip("the local comparison report is stale (plsql/fingerprint.py); re-run difftest/plsql_capture.py")
     per_variant = measured["kpi5"]["byVariant"]
     assert per_variant, "the comparison report covered no variant"
     for name, entry in per_variant.items():
@@ -125,3 +127,34 @@ def test_a_kpi_without_a_value_never_shows_a_number(measured):
 
 def test_the_numbers_round_trip_as_json(measured):
     json.loads(json.dumps(measured, ensure_ascii=False))
+
+
+# --- #27-33: the rate says what it covers ----------------------------------------------------------------
+class _Decision:
+    def __init__(self, rule_verdict):
+        self.rule_verdict = rule_verdict
+
+
+def test_kpi5_names_what_its_rate_leaves_out(tmp_path):
+    """Regression: `100% 合格 AUTO 2/2` was printed with AUTO routines nobody compared, AUTO scenarios that could
+    not run, and the verdicts taken from the report instead of from the rules as they are now."""
+    report = {"scaled": {
+        "scenarios": {
+            "s1": {"routine": "pkg.a", "verdict": "AUTO", "differences": []},
+            "s2": {"routine": "pkg.b", "verdict": "AUTO", "differences": ["returned"]},   # REVIEW by now
+            "s3": {"routine": "pkg.old", "verdict": "AUTO", "differences": ["returned"]},  # stale
+        },
+        "not_compared": {"s4": {"routine": "pkg.c", "verdict": "AUTO", "reason": "setup does not convert"}}}}
+    path = tmp_path / "diff.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    decisions = {"pkg.a": _Decision("AUTO"), "pkg.b": _Decision("REVIEW"), "pkg.c": _Decision("AUTO"),
+                 "pkg.d": _Decision("AUTO"), "pkg.old": _Decision("AUTO")}
+    entry = kpi._kpi5(str(path), None, decisions, {"pkg.old": "比較のあとで PL/SQL のソースが変わった"})
+    scaled = entry["byVariant"]["scaled"]
+    assert scaled["auto"] == {"agreed": 1, "compared": 1, "rate": 1.0}, "pkg.b is judged as REVIEW, as it is now"
+    assert scaled["reviewOrRedesignWithDifferences"] == 1
+    assert scaled["autoScenariosNotCompared"] == ["s4"]
+    assert scaled["autoRoutinesWithoutComparison"] == ["pkg.c", "pkg.d", "pkg.old"]
+    assert scaled["staleScenarios"] == ["s3"]
+    assert "比較の無い AUTO routine 3" in entry["detail"]["scaled"]
+    assert "実行できなかった AUTO シナリオ 1" in entry["detail"]["scaled"]

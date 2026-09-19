@@ -24,6 +24,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,7 +36,7 @@ VERDICT_ORDER = {"REDESIGN": 0, "REVIEW": 1, "AUTO": 2}
 
 
 def evidence_from_diff(path: str | Path | None, variant: str | None = None,
-                       known_ids: set[str] | None = None) -> Evidence:
+                       known_ids: set[str] | None = None, current: dict | None = None) -> Evidence:
     """Turn P3-2's comparison report into the evidence the rule engine weighs.
 
     Nothing is AUTO until something has been verified: `testEvidence` is 0 for a routine with no capture, and
@@ -48,19 +49,47 @@ def evidence_from_diff(path: str | Path | None, variant: str | None = None,
 
     With no variant given, a routine must agree under *every* money convention reported. Agreeing under one and
     not the other is not agreement -- it is a result that depends on a decision nobody has taken yet.
+
+    `current` is `fingerprint.of(program, root)` for the program being judged. With it, a scenario only counts
+    if the report says it was measured on this source, by this toolchain (#27-33). Without that check any file
+    of the right shape was believed: a hand-written report, or last month's, made a routine AUTO. A report that
+    carries no fingerprint at all is one nobody can vouch for, so it counts for nothing either. A stale routine
+    is left with no capture -- `testEvidence` 0, so REVIEW -- and `Evidence.stale` says why.
     """
     if path is None or not Path(path).exists():
         return Evidence()
     report = json.loads(Path(path).read_text(encoding="utf-8"))
     wanted = [variant] if variant else sorted(report)
     tally: dict[str, list[int]] = {}
+    stale: dict[str, str] = {}
     for name in wanted:
+        recorded = (report.get(name) or {}).get("fingerprints")
         for scenario in (report.get(name) or {}).get("scenarios", {}).values():
-            counts = tally.setdefault(_resolve(scenario["routine"], known_ids), [0, 0])
+            routine = _resolve(scenario["routine"], known_ids)
+            reason = _stale(routine, recorded, current)
+            if reason:
+                stale[routine] = reason
+                continue
+            counts = tally.setdefault(routine, [0, 0])
             counts[1] += 1
             if not scenario["differences"]:
                 counts[0] += 1
-    return Evidence(captures={routine: (passed, total) for routine, (passed, total) in tally.items()})
+    # stale under one variant is stale: the routine has not been shown to agree under every convention
+    return Evidence(captures={routine: (passed, total) for routine, (passed, total) in tally.items()
+                              if routine not in stale}, stale=stale)
+
+
+def _stale(routine: str, recorded: dict | None, current: dict | None) -> str | None:
+    if current is None:
+        return None
+    if not recorded:
+        return "比較結果に fingerprint が無い（どのソース・どの生成器で測ったものか分からない）"
+    if recorded.get("toolchain") != current.get("toolchain"):
+        return "比較のあとで生成器か実行時ヘルパが変わった"
+    if routine in current.get("sources", {}) \
+            and recorded.get("sources", {}).get(routine) != current["sources"][routine]:
+        return "比較のあとで PL/SQL のソースが変わった"
+    return None
 
 
 def _resolve(routine: str, known_ids: set[str] | None) -> str:
@@ -115,7 +144,7 @@ def credit_private_callees(evidence: Evidence, program: M.Program, call_graph) -
         if not rates or min(rates) < 1.0:
             continue  # never above the weakest caller, and a caller that disagreed credits nothing
         captures[routine] = (sum(captures[c][0] for c in mine), sum(captures[c][1] for c in mine))
-    return Evidence(captures=captures)
+    return Evidence(captures=captures, stale=evidence.stale)
 
 
 def unmatched_scenarios(path: str | Path | None, known_ids: set[str], variant: str | None = None) -> list[str]:
@@ -163,7 +192,7 @@ def routine_ids(program: M.Program) -> set[str]:
 
 
 def decisions_document(program: M.Program, decisions: dict, fix_times: FixTimes | None = None,
-                       unmatched: list[str] | None = None) -> dict:
+                       unmatched: list[str] | None = None, stale: dict[str, str] | None = None) -> dict:
     fix_times = fix_times or FixTimes(minutes={})
     routines = {r.id: (m, r) for m in program.modules for r in m.routines}
 
@@ -186,7 +215,7 @@ def decisions_document(program: M.Program, decisions: dict, fix_times: FixTimes 
                       for m in decision.matches],
             "remediation": decision.remediation(),
             "requiredTests": decision.required_tests(),
-            "whyNotAuto": _why_not_auto(decision),
+            "whyNotAuto": _why_not_auto(decision, stale),
             "source": _range(routine) if routine is not None else None,
             "generated": _generated_names(module, routine) if routine is not None else None,
             "humanFixMinutes": fix_times.for_routine(routine_id),
@@ -202,6 +231,8 @@ def decisions_document(program: M.Program, decisions: dict, fix_times: FixTimes 
         "counts": _counts(records),
         # a scenario that credits nothing looks exactly like a routine nobody wrote a scenario for
         "scenariosMatchingNoRoutine": unmatched or [],
+        # comparison results that were passed in and not believed, and why (plsql/fingerprint.py)
+        "staleEvidence": dict(sorted((stale or {}).items())),
         # KPI-6. `measured` says how many routines the median rests on, because a median of one is not one.
         "humanFixMinutes": {
             "source": fix_times.source,
@@ -213,7 +244,7 @@ def decisions_document(program: M.Program, decisions: dict, fix_times: FixTimes 
     }
 
 
-def _why_not_auto(decision) -> list[str]:
+def _why_not_auto(decision, stale: dict[str, str] | None = None) -> list[str]:
     """Why this routine still needs a person, in the reviewer's words.
 
     Two different things send a routine here and they are easy to confuse. A rule can say so outright -- dynamic
@@ -227,8 +258,11 @@ def _why_not_auto(decision) -> list[str]:
                for m in decision.matches if m.rule.decision != "AUTO"]
     zeros = decision.confidence.zeros()
     if zeros:
+        old = (stale or {}).get(decision.routine)
         reasons.append("確信度が 0: " + ", ".join(zeros)
-                       + ("（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて "
+                       + (f"（testEvidence が 0 なのは、渡された比較結果が古いから: {old}。capture を取り直す）"
+                          if "testEvidence" in zeros and old else
+                          "（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて "
                           "いないから。P3-2 の比較結果を --evidence で渡す）"
                           if "testEvidence" in zeros else ""))
     if not reasons:
@@ -358,13 +392,43 @@ def _row(java_file: str, member: str, node: M.Node, kind: str, verdict: str,
     where = node.source_range
     if text is None:
         found = "not-generated"
-    elif needle and needle in text:
-        found = "yes"
+    elif kind == "routine":
+        found = "yes" if _declares(text, needle) else "not-translated"
     else:
-        found = "not-translated"
+        found = _anchored(text, needle)
     return [java_file, member,
             where.file if where else "", where.start_line if where else "",
             where.end_line if where else "", kind, verdict, found]
+
+
+def _declares(text: str, method: str) -> bool:
+    """A method declaration, not the name turning up somewhere -- in a call, a comment, another method's name."""
+    return bool(method) and re.search(
+        rf"^\s*(?:public|private|protected)\b[^;{{=]*\b{re.escape(method)}\s*\(", text, re.MULTILINE) is not None
+
+
+def _anchored(text: str, anchor: str) -> str:
+    """What the generator wrote under a statement's `// file:line` comment.
+
+    The comment goes out *before* the statement is translated, so it is there for a statement the generator then
+    refused -- and `anchor in text` called that `yes` (#27-34). The anchor has to be the whole comment, too:
+    as a substring `x.pkb:4` is found in `x.pkb:40`.
+    """
+    if not anchor:
+        return "not-translated"
+    found = False
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() != f"// {anchor}":
+            continue
+        found = True
+        # every refusal is "comments saying why, then a throw": an unplaced name, an external call, a statement
+        # kind the generator does not model. The first line of code under the anchor tells which it was
+        code = next((after.strip() for after in lines[index + 1:]
+                     if after.strip() and not after.strip().startswith("//")), "")
+        if code.startswith("throw new UnsupportedOperationException("):
+            return "not-translated"
+    return "yes" if found else "not-translated"
 
 
 def _statements(routine: M.Routine) -> list[M.Statement]:
@@ -402,13 +466,14 @@ def traceability_csv(program: M.Program, decisions: dict, generated_root: str | 
 
 def write(program: M.Program, decisions: dict, out_dir: str | Path, *,
           generated_root: str | Path | None = None, package: str = "com.example.migrated",
-          fix_times: FixTimes | None = None, unmatched: list[str] | None = None) -> dict[str, Path]:
+          fix_times: FixTimes | None = None, unmatched: list[str] | None = None,
+          stale: dict[str, str] | None = None) -> dict[str, Path]:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     written = {"decisions": out / "decisions.json", "unresolved": out / "unresolved.md",
                "traceability": out / "traceability.csv"}
     written["decisions"].write_text(
-        json.dumps(decisions_document(program, decisions, fix_times, unmatched),
+        json.dumps(decisions_document(program, decisions, fix_times, unmatched, stale),
                    ensure_ascii=False, indent=1) + "\n",
         encoding="utf-8")
     written["unresolved"].write_text(unresolved_markdown(program, decisions), encoding="utf-8")

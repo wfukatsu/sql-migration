@@ -76,7 +76,27 @@ def main(argv=None) -> int:
     run(["gradle", "test", "--rerun", "-Dplsql.generated=1", f"-Dplsql.variant={args.variant}",
          "--tests", "*ScalarDbCaptureIT*"], cwd=ROOT / "runtime-java",
         env={**__import__("os").environ, "SCALARDB_IT": "1"})
+    _record_fingerprint(args.variant)
     return 0
+
+
+def _record_fingerprint(variant: str) -> None:
+    """Say what these captures are captures *of* (plsql/fingerprint.py): the source of each routine and the
+    toolchain that generated and ran it. `plsql_compare.py` carries it into the report, and `plsql.cli` only
+    believes a report whose fingerprint matches what it is judging. Written after the run, so a capture that
+    died half-way keeps the previous run's fingerprint and its leftovers read as stale."""
+    import json
+
+    if str(ROOT) not in sys.path:     # run as a script, sys.path starts at difftest/
+        sys.path.insert(0, str(ROOT))
+    from plsql import fingerprint
+    from plsql.report import analyse
+
+    captures = WORK / f"plsql-scalardb-{variant}"
+    captures.mkdir(parents=True, exist_ok=True)
+    program = analyse(FIXTURES / "src").program
+    (captures / "fingerprint.json").write_text(
+        json.dumps(fingerprint.of(program, FIXTURES / "src"), indent=1) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

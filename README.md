@@ -98,6 +98,11 @@ python difftest/plsql_diff.py --full --json difftest/work/plsql-diff.json
 python -m plsql.kpi --evidence difftest/work/plsql-diff.json --generated generated
 ```
 
+比較結果（`--evidence`）は、**いまのソースと生成器で測ったものだけ**が数えられます。capture の時点で PL/SQL の
+ソースとツールチェーン（生成器・SQL 変換器・実行時ヘルパ）のハッシュを記録し、判定のときに照らします
+（`plsql/fingerprint.py`、[KPI](docs/plsql-kpi.md) の「確信度」）。ソースか生成器を変えたら、その分は
+「古い証拠」として REVIEW に戻り、`decisions.json` の `staleEvidence` に理由が出ます。`plsql_capture.py` から取り直してください。
+
 ### 出力
 
 | ファイル | 中身 |
@@ -173,8 +178,8 @@ runtime-java/build/install/residual-runner/bin/residual-runner validate --plan o
 ### テスト
 
 ```bash
-.venv/bin/python -m pytest -q          # 変換ツール・スキル（332 件）
-(cd runtime-java && gradle test)       # 実行基盤（39 件）
+.venv/bin/python -m pytest -q          # 変換ツール・PL/SQL 変換・スキル
+(cd runtime-java && gradle test)       # 実行基盤
 ```
 
 ---
@@ -282,7 +287,7 @@ flowchart LR
 
 ハーネスだけが移行元 DB に接続し、ScalarDB のバックエンド DB には ScalarDB 以外は接続しません。
 
-移行元 DB の接続情報は、値ではなく**環境変数の名前**を書いたプロファイル（`difftest/conf/sources/<方言>-local.json`、`difftest/sources.py`）で受け取ります。既定のプロファイルは Docker Compose のコンテナを指すので、そのままで動きます。ほかの DB を使うときは `--profile oracle=path.json` か環境変数 `DIFFTEST_PROFILE_ORACLE` で指定します。プロファイルの `environment` は必須で、表の作成とデータ投入を行うハーネスは `local` / `dev` / `test` / `ci` 以外を拒否します。本番の移行元から正解データを一度だけ取るときは、`golden.py capture --no-setup --allow-production`（読み取り専用トランザクション）を使います。
+移行元 DB の接続情報は、値ではなく**環境変数の名前**を書いたプロファイル（`difftest/conf/sources/<方言>-local.json`、`difftest/sources.py`）で受け取ります。既定のプロファイルは Docker Compose のコンテナを指すので、そのままで動きます。ほかの DB を使うときは `--profile oracle=path.json` か環境変数 `DIFFTEST_PROFILE_ORACLE` で指定します。プロファイルの `environment` は必須で、表の作成とデータ投入を行うハーネスは `local` / `dev` / `test` / `ci` 以外を拒否します。`environment` は人が書いたラベルにすぎないので、**解決したホストと一致することも確かめます**: `local` は localhost / 127.0.0.1 / ::1 だけ（`SRC_ORACLE_HOST` などでほかのホストを指すと拒否）、`dev` / `test` / `ci` に書き込むには、プロファイルの `hosts`（`"*.ci.example.internal"` のようなパターンの一覧）にそのホストが要ります。メッセージには接続先のホストとポートを出します（ユーザーとパスワードは出しません）。本番の移行元から正解データを一度だけ取るときは、`golden.py capture --no-setup --allow-production`（読み取り専用トランザクション）を使います。
 
 ```bash
 .venv/bin/python difftest/sources.py oracle --profile oracle=my-profile.json     # 接続せずに、使われるプロファイルと可否を確認

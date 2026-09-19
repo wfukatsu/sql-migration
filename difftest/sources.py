@@ -12,13 +12,20 @@ environment the database is. It never needs to hold a real host or password, so 
   * environment  required. local / dev / test / ci are disposable; anything else (production, staging, ...) is not
   * local_defaults  values used when an environment variable is unset -- only allowed with environment "local", for
                  the containers of difftest/docker-compose.yml (difftest/conf/sources/*-local.json)
+  * hosts        the hosts this profile may write to (fnmatch patterns, e.g. "*.ci.example.internal"). "local"
+                 means this machine and needs none; dev / test / ci must list theirs before a harness writes
+
+`environment` is a label somebody typed, and the host comes from an environment variable somebody else may have
+exported. A label alone therefore proves nothing: with SRC_ORACLE_HOST pointing at production, the committed
+"local" profile used to pass, and the harness went on to DROP TABLE ... PURGE there. So the label has to agree
+with the resolved host -- loopback for "local", the profile's own `hosts` list for the other disposable ones.
 
 The harnesses create tables and load data, so they refuse a database that is not disposable. Reading only (golden.py
 capture --no-setup) is allowed on other environments with an explicit --allow-production.
 
 Profile per dialect: --profile DIALECT=PATH on the harnesses, else $DIFFTEST_PROFILE_<DIALECT>, else
-difftest/conf/sources/<dialect>-local.json. Messages name the profile, the environment and environment variable
-names only -- never a host, user or password.
+difftest/conf/sources/<dialect>-local.json. Messages name the profile, the environment, the host and port the
+harness is about to use, and environment variable names -- never a user or password.
 
   .venv/bin/python difftest/sources.py oracle [--profile oracle=path.json]     # show what a harness would use
 """
@@ -26,6 +33,7 @@ names only -- never a host, user or password.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import sys
@@ -37,6 +45,7 @@ PROFILE_DIR = ROOT / "difftest/conf/sources"
 PRODUCTS = {"postgres": "postgresql", "oracle": "oracle", "mysql": "mysql"}
 DISPOSABLE = ("local", "dev", "test", "ci")
 FIELDS = ("host", "port", "user", "password", "database")
+LOOPBACK = ("localhost", "127.0.0.1", "::1", "[::1]")
 PROFILES: dict[str, Path] = {}  # --profile values of the running harness (shared by harnesses that import each other)
 
 
@@ -59,7 +68,8 @@ class SourceConfig:
         return f"SourceConfig({self.label()})"
 
     def label(self) -> str:
-        return f"profile {self.profile} ({self.product}, environment={self.environment})"
+        # the host is where the tables get dropped; the operator has to be able to see it
+        return f"profile {self.profile} ({self.product}, environment={self.environment}, host={self.host}:{self.port})"
 
     def psycopg_kwargs(self) -> dict:
         return {"host": self.host, "port": self.port, "user": self.user, "password": self.password, "dbname": self.database}
@@ -148,6 +158,19 @@ def source_config(dialect: str, profiles: dict[str, Path] | None = None, *, writ
         if value is None:
             raise ProfileError(f"profile {name}: environment variable {var} ({field}) is not set")
         values[field] = value
+    host = str(values["host"]).strip().lower()
+    hosts = profile.get("hosts") or []
+    if not isinstance(hosts, list) or not all(isinstance(h, str) for h in hosts):
+        raise ProfileError(f"profile {name}: hosts must be a list of host names or patterns")
+    allowed = [h.lower() for h in hosts] + (list(LOOPBACK) if environment == "local" else [])
+    listed = any(fnmatch.fnmatchcase(host, pattern) for pattern in allowed)
+    if environment == "local" and not listed:
+        raise ProfileError(f"profile {name}: environment \"local\" means this machine, but {profile['host_env']} "
+                           f"resolves to {host!r}; unset it, or use a profile that names that environment")
+    if environment in DISPOSABLE and writes and not listed:
+        raise ProfileError(f"profile {name}: refusing to create tables and load data on {host!r}: it is not in "
+                           f"the profile's hosts list. environment={environment!r} is only a label -- list the "
+                           f"hosts that really are disposable (\"hosts\": [...]) in the profile")
     try:
         port = int(values["port"])
     except ValueError:
