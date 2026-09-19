@@ -146,7 +146,11 @@ def _literal_value(e: exp.Expression):
     if isinstance(e, exp.Boolean):
         return bool(e.this)
     if isinstance(e, exp.Placeholder):
-        return {"param": e.name or "?"}
+        # A bare `?` is bound by its position in the *source* statement. Each fetch is a statement of its own,
+        # so a `?` copied into one would be renumbered from 1 there and take another predicate's value. The
+        # converter tags the source position; the runtime binds `:2` from the same "2" the residual SQL's
+        # second `?` uses.
+        return {"param": e.name if e.this else str(e.meta.get("bind_ordinal", "?"))}
     if isinstance(e, exp.Parameter):
         return {"param": e.name}
     if isinstance(e, exp.Cast) and isinstance(e.this, exp.Literal):  # DATE '...' style
