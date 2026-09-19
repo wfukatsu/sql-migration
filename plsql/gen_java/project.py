@@ -43,6 +43,8 @@ class GeneratedProject:
     plans: dict = field(default_factory=dict)
     # #12 §0 の決定 3: 直接の書き込みを権限で禁じる表（B / D 型の trigger が掛かる表）。namespace つき
     restricted: list[str] = field(default_factory=list)
+    # A-3: 照合の控えの表を作る namespace（照合を生成したときだけ）
+    baseline_namespace: str | None = None
 
     @property
     def app_package(self) -> str:
@@ -97,6 +99,13 @@ def generate(program: M.Program, root: str | Path, base_package: str = "com.exam
         file = generate_checks(checks, project.app_package, project.domain_package, types or {})
         if file is not None:
             project.files.append(file)
+        from .checks import generate_job
+
+        job = generate_job(checks, project.app_package)
+        if job is not None:
+            project.files.append(job)
+        namespace = next((n for n in (namespaces or {}).values() if n), None)
+        project.baseline_namespace = namespace
         # 決定 3: B / D の表は直接の書き込みを権限で禁じる
         project.restricted = sorted({f"{(namespaces or {}).get(c.table) or ''}.{c.table}".lstrip(".")
                                      for c in checks if c.kind in ("B", "D")})
@@ -165,6 +174,20 @@ def write(project: GeneratedProject, decisions: dict[str, Decision] | None = Non
         for stale in sorted(plans.glob("*.plan.json")):
             if stale.resolve() not in {p.resolve() for p in written}:
                 stale.unlink()
+
+    if project.baseline_namespace is not None or any(f.name == "TriggerChecks" for f in project.files):
+        ddl = project.root / "db" / "trigger-check-baseline.sql"
+        ddl.parent.mkdir(parents=True, exist_ok=True)
+        table = f"{project.baseline_namespace}.trigger_check_baseline" if project.baseline_namespace \
+            else "trigger_check_baseline"
+        ddl.write_text(
+            "-- #12 §0 / A-3（2026-09-19）: 照合の控えの表。監査行が削除（prc_purge_audit）で消えても、\n"
+            "-- 最後に監査した値をここに残す。残さないと、しばらく変わっていない行が照合から外れる。\n"
+            "-- 移行で足す表であり、Oracle 側には無い。照合ジョブ（TriggerCheckJob.daily）が更新する。\n\n"
+            f"CREATE TABLE IF NOT EXISTS {table} (\n"
+            "  trigger_name TEXT,\n  key_value TEXT,\n  last_value TEXT,\n  last_at TIMESTAMP,\n"
+            "  PRIMARY KEY (trigger_name, key_value)\n);\n", encoding="utf-8")
+        written.append(ddl)
 
     if project.restricted:
         grants = project.root / "db" / "restrict-direct-writes.sql"
