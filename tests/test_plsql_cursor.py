@@ -91,11 +91,16 @@ def test_the_generated_loop_says_the_rows_were_read_first(corpus):
 
 @pytest.mark.skipif(not __import__("pathlib").Path("generated/src/main/java").is_dir(),
                     reason="needs the generated tree")
-def test_a_loop_writing_what_its_query_reads_is_refused_with_the_reason(corpus):
-    """ScalarDB forbids scanning what the same transaction wrote, and reading first is not the same thing."""
+def test_a_loop_writing_what_its_query_reads_reads_first_and_says_why(corpus):
+    """パターン D は先に読む形で移す（2026-09-19 / #20 の決定 A）。以前は一律に拒否していた。
+
+    Oracle の cursor は OPEN の時点で読み取りが一貫しているので、先に全部読む形と回す行が同じであり、
+    読むのは書くより前の 1 回だけなので「同じトランザクションで書いた物の走査」にも当たらない。
+    拒否が残るのは、ループより前に同じ表を書いている routine である（test_plsql_claims が見る）。
+    """
     source = generated("PkgOrderReportService.java")
-    assert "cursor FOR loop whose body writes" in source
-    assert "orders" in source
+    assert "cursor FOR loop whose body writes" not in source
+    assert "先に読んでから書く" in source
 
 
 @pytest.mark.skipif(not __import__("pathlib").Path("generated/src/main/java").is_dir(),

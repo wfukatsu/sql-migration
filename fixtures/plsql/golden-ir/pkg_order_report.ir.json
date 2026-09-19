@@ -341,7 +341,7 @@
         "endColumn": 9
        },
        "loopKind": "cursor-for",
-       "cursor": "r IN (SELECT order_id FROM orders WHERE status = p_status ORDER BY ordered_at)",
+       "cursor": "r IN (SELECT order_id FROM orders WHERE status = p_status)",
        "query": {
         "id": "pkg_order_report.mark_reviewed#stmt-1#query",
         "kind": "SqlOperation",
@@ -352,8 +352,22 @@
          "startColumn": 5,
          "endColumn": 9
         },
+        "diagnostics": [
+         {
+          "severity": "INFO",
+          "code": "ORDER_DROPPED",
+          "message": "ORDER BY は結果に効かない（各行を主キーで指して同じことをするだけ）ので落とした。Oracle で順序が効くのはロックを取る順だけで、移行先に行ロックは無い（#20）",
+          "range": {
+           "file": "pkg_order_report.pkb",
+           "startLine": 29,
+           "endLine": 31,
+           "startColumn": 5,
+           "endColumn": 9
+          }
+         }
+        ],
         "sqlKind": "SELECT",
-        "originalSql": "SELECT order_id FROM orders WHERE status = p_status ORDER BY ordered_at",
+        "originalSql": "SELECT order_id FROM orders WHERE status = p_status",
         "selectsStar": false,
         "cardinality": "MANY",
         "atMostOneRow": false
