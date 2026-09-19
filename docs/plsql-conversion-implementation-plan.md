@@ -967,6 +967,15 @@ P0-2 の manifest）に集計し直す。
   - evidence: `crud_create_customer_empty_strings`（`p_email => ''` は NULL で入り、`NVL('', 'BRONZE')` は BRONZE）が
     金額の 2 規約とも実 DB で一致（2026-09-20）。
 
+- **キーで届かない `SELECT INTO` も、Oracle の意味論を保つ**（2026-09-19 決定、#4）。条件に一致する行を最大 2 件
+  取得し、0 件なら `NO_DATA_FOUND`、1 件なら値、2 件以上なら `TOO_MANY_ROWS` に相当する例外にする。移行ツールは
+  `LIMIT 1` も任意の `ORDER BY` も自動では足さない（複数件だけを黙って握り潰すことになる）。一意であることが業務上
+  保証されるなら、キーまたは一意制約としてデータモデルに明示する。複数件から特定の 1 件を選ぶ変更は、別の仕様変更
+  として扱う。
+  - 実装: 生成する SQL に `LIMIT 2` を足す（キーで届く文と、元から LIMIT のある文には足さない）。2 件あれば 3 つの
+    場合を見分けられるので、それ以上は読まない。どの 2 件が返るかは結果に関係しない。
+  - evidence: `status_for_customer_none` / `_one` / `_multiple` が金額の 2 規約とも実 DB で一致（2026-09-20）。
+
 - **生成コードは Spring に依存させない**（2026-09-17）。`@Transactional` は使わず、ScalarDB の
   try-with-resources 定型を `runtime-java` のヘルパに集約し、commit / abort を 1 箇所で制御する（設計書 §6.7）。
   - 理由: 注釈 1 つのために PoC のビルドへフレームワークを丸ごと持ち込むと、依存面と設定が大きく増える。
