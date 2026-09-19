@@ -129,6 +129,18 @@ rules:
     requiredTests:
       - cursor_lifetime
 
+  # 2026-09-18: 明示 cursor の「読むだけのループ」を cursor FOR ループへ書き換えるようになった。
+  # 書き換えたことは CUR_SCAN が言う。**書き換えで CUR-001 が外れても、cursor の寿命の問いは
+  # 消えていない**——ループの中で COMMIT していたなら、Oracle の cursor はそれをまたいで読み続けて
+  # いたが、移行先は先に全部読む。読む時点が変わることを、ここで人に渡す
+  - id: CUR-003
+    match: {statementKind: Loop, hasDiagnostic: CUR_SCAN}
+    decision: REVIEW
+    message: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
+    requiredTests:
+      - cursor_lifetime
+      - row_limit
+
   - id: CUR-002
     match: {statementKind: Loop, loopKind: cursor-for}
     decision: REVIEW

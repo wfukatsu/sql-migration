@@ -47,7 +47,8 @@ def test_the_decision_is_recorded_as_data():
     boundaries = Boundaries.load(CONFIG)
     assert boundaries.decided("prc_nightly_close")
     assert boundaries.decided("pkg_bulk_load.restock")
-    assert not boundaries.decided("prc_reprice_all")
+    assert boundaries.decided("prc_reprice_all"), "#3 §E が名指ししている routine である"
+    assert not boundaries.decided("prc_purge_audit")
     assert "1 受注 = 1 トランザクション" in boundaries.why("prc_nightly_close")
 
 

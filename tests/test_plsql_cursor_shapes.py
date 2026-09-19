@@ -118,38 +118,24 @@ NOT_A_SHAPE = {
         END;
         /
     """,
-    "the fetched value is read after the loop": """\
-        CREATE OR REPLACE PROCEDURE p(p_count OUT NUMBER, p_last OUT NUMBER) IS
-          CURSOR c IS SELECT order_id FROM orders;
-          v_id NUMBER;
+    "the loop fetches twice in one turn": """\
+        CREATE OR REPLACE PROCEDURE p IS
+          CURSOR c IS SELECT qty FROM order_lines;
+          v NUMBER; w NUMBER; n NUMBER := 0;
         BEGIN
-          p_count := 0;
           OPEN c;
-          LOOP FETCH c INTO v_id; EXIT WHEN c%NOTFOUND; p_count := p_count + 1; END LOOP;
-          CLOSE c;
-          p_last := v_id;
-        END;
-        /
-    """,
-    "the counted cursor caps its own rows": """\
-        CREATE OR REPLACE PROCEDURE p(p_count OUT NUMBER) IS
-          CURSOR c IS SELECT order_id FROM orders FETCH FIRST 5 ROWS ONLY;
-          v_id NUMBER;
-        BEGIN
-          p_count := 0;
-          OPEN c;
-          LOOP FETCH c INTO v_id; EXIT WHEN c%NOTFOUND; p_count := p_count + 1; END LOOP;
+          LOOP FETCH c INTO v; EXIT WHEN c%NOTFOUND; FETCH c INTO w; n := n + v; END LOOP;
           CLOSE c;
         END;
         /
     """,
-    "the loop does more than count": """\
+    "the loop leaves on something else": """\
         CREATE OR REPLACE PROCEDURE p IS
           CURSOR c IS SELECT qty FROM order_lines;
           v NUMBER; n NUMBER := 0;
         BEGIN
           OPEN c;
-          LOOP FETCH c INTO v; EXIT WHEN c%NOTFOUND; n := n + v; END LOOP;
+          LOOP FETCH c INTO v; EXIT WHEN n > 100; n := n + v; END LOOP;
           CLOSE c;
         END;
         /
@@ -201,12 +187,82 @@ def test_a_cursor_parameter_is_substituted_on_the_tree_not_in_the_text(tmp_path)
     assert query.original_sql == "SELECT COUNT(*) FROM orders o WHERE o.status = p_want"
 
 
-def test_a_counting_cursor_whose_rows_are_capped_keeps_its_cursor(tmp_path):
-    """`COUNT(*)` returns one row, so `FETCH FIRST 5` would stop capping anything -- a different number."""
+CAPPED = """\
+CREATE OR REPLACE PROCEDURE p(p_count OUT NUMBER) IS
+  CURSOR c IS SELECT order_id FROM orders FETCH FIRST 5 ROWS ONLY;
+  v_id NUMBER;
+BEGIN
+  p_count := 0;
+  OPEN c;
+  LOOP FETCH c INTO v_id; EXIT WHEN c%NOTFOUND; p_count := p_count + 1; END LOOP;
+  CLOSE c;
+END;
+/
+"""
+
+
+def test_a_counting_cursor_whose_rows_are_capped_does_not_become_a_count(tmp_path):
+    """`COUNT(*)` は 1 行返すので、`FETCH FIRST 5` が**何も上限しなくなる**——別の数になる。
+
+    走査（A）としては書き換わる。そちらは上限を持ったままの問い合わせを回すので、数は変わらない。
+    """
     source = tmp_path / "p.prc"
-    source.write_text(textwrap.dedent(NOT_A_SHAPE["the counted cursor caps its own rows"]), encoding="utf-8")
+    source.write_text(textwrap.dedent(CAPPED), encoding="utf-8")
     modules, _ = lower_source(source, OracleSchema.from_ddl(SRC / "schema.sql"))
-    assert not [s for s in _walk(modules[0].routines[0].body) if s.kind == "SqlOperation"]
+    body = _walk(modules[0].routines[0].body)
+    query = next(s for s in body if s.kind == "SqlOperation")
+    assert "COUNT(*)" not in query.original_sql
+    assert "FETCH FIRST 5" in query.original_sql
+    assert [s.loop_kind for s in body if s.kind == "Loop"] == ["cursor-for"]
+
+
+# --- A. 走査（2026-09-18 / `prc_reprice_all`）----------------------------------------------------------
+
+SCAN = """\
+CREATE OR REPLACE PROCEDURE p(p_count OUT NUMBER, p_last OUT NUMBER) IS
+  CURSOR c IS SELECT order_id FROM orders;
+  v_id NUMBER;
+BEGIN
+  p_count := 0;
+  OPEN c;
+  LOOP FETCH c INTO v_id; EXIT WHEN c%NOTFOUND; p_count := p_count + 1; END LOOP;
+  CLOSE c;
+  p_last := v_id;
+END;
+/
+"""
+
+
+def _scan(tmp_path):
+    source = tmp_path / "p.prc"
+    source.write_text(textwrap.dedent(SCAN), encoding="utf-8")
+    modules, _ = lower_source(source, OracleSchema.from_ddl(SRC / "schema.sql"))
+    return _walk(modules[0].routines[0].body)
+
+
+def test_a_scan_becomes_a_cursor_for_loop(tmp_path):
+    """読むだけのループは cursor FOR ループと同じものである。本体が何をしていてもよい——
+    「読んだ行で何かする」という形そのものだからである。"""
+    body = _scan(tmp_path)
+    assert not [s for s in body if s.kind in ("OpenCursor", "Fetch", "CloseCursor")]
+    loop = next(s for s in body if s.kind == "Loop")
+    assert loop.loop_kind == "cursor-for" and loop.query is not None
+
+
+def test_the_fetch_targets_are_still_assigned(tmp_path):
+    """参照を書き換えず、**行の値を元の変数へ代入する文を足す**。ループの後で読んでいる routine
+    でも、Oracle と同じ値が入っている（最後の FETCH は空振りしても INTO を変えない）。"""
+    body = _scan(tmp_path)
+    loop = next(s for s in body if s.kind == "Loop")
+    first = loop.body[0]
+    assert (first.kind, first.target, first.expression) == ("Assignment", "v_id", "r.order_id")
+
+
+def test_the_change_of_shape_is_recorded(tmp_path):
+    """行を先に読む形になったことは、黙って起きてよい変化ではない（動く行数がメモリで決まる）。"""
+    body = _scan(tmp_path)
+    loop = next(s for s in body if s.kind == "Loop")
+    assert [d.code for d in loop.diagnostics] == ["CUR_SCAN"]
 
 
 # --- the Java -----------------------------------------------------------------------------------------

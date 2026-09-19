@@ -88,7 +88,8 @@ def main(argv: list[str] | None = None) -> int:
 
     analysis = build_analysis(root, schema, scalardb_schema=scalardb, row_locks=row_locks)
     decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), Evidence())
-    project = generate(analysis.program, args.out_dir, args.package, decisions)
+    plans = analysis.capability.plans if analysis.capability is not None else {}
+    project = generate(analysis.program, args.out_dir, args.package, decisions, plans)
     written = write(project, decisions)
 
     summary = project.summary()

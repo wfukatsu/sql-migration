@@ -71,6 +71,9 @@ def _loop_rows(file: JavaFile, name: str, loop: M.Loop, result: RepositoryFile, 
     limit = _LIMITS.get().for_routine(routine_id) if routine_id else None
     if routine_id and not _LIMITS.get().decided(routine_id) and routine_id not in result.undecided_limits:
         result.undecided_limits.append(routine_id)
+    if statement.target_status == "PLANNED" or statement.plan_id:
+        _planned_rows(file, name, statement, record, parameters, result, limit, routine_id)
+        return
     sql = statement.target_sql[0] if statement.target_sql else statement.original_sql
     with file.block(f"public List<{record}> {name}({', '.join(parameters)}) throws SQLException") as f:
         f.line(f'String sql = "{_escape(sql)}";')
@@ -98,6 +101,55 @@ def _loop_rows(file: JavaFile, name: str, loop: M.Loop, result: RepositoryFile, 
                     g3.line(f"rows.add(new {record}({arguments}));")
         f.line("return rows;")
     result.methods.append(name)
+
+
+def _planned_rows(file: JavaFile, name: str, statement: M.SqlOperation, record: str,
+                  parameters: list[str], result: RepositoryFile, limit: int | None,
+                  routine_id: str | None) -> None:
+    """ScalarDB SQL では走らない問い合わせを回すループ（`prc_reprice_all` の JOIN）。
+
+    1 行ずつの読みと同じで、**計画が取ってくる**——ScalarDB から取り、残りを H2 で、同じ
+    トランザクションの中で走らせる。ここで書き分けるのは行の受け取り方だけである。
+
+    書き分けを忘れると、**元の Oracle SQL がそのまま ScalarDB へ飛ぶ**（JOIN を受け付けないので
+    構文エラーになる）。実際そうなっていた——ループの側だけが計画を見ていなかった。
+    """
+    file.add_import(RUNNER_IMPORT, "java.util.Map", "java.util.ArrayList", "java.util.List")
+    plan = statement.plan_id or f"{statement.id}.plan.json"
+    with file.block(f"public List<{record}> {name}({', '.join(parameters)}) throws Exception") as f:
+        f.comment("ScalarDB SQL cannot run this statement; the plan fetches through ScalarDB and runs the "
+                  "original SQL in H2, inside this transaction")
+        f.line(f'var plan = PlanRunner.resource("plans/{plan}");')
+        binds = ", ".join(f'"{b.name}", {java_name(b.name)}' for b in statement.binds)
+        f.line(f"var planned = PlanRunner.join(connection, plan, Map.of({binds}));")
+        f.line(f"List<{record}> rows = new ArrayList<>();")
+        with f.block("for (List<Object> row : planned.rows())") as g:
+            if limit is not None:
+                g.comment(f"走査行数の上限: {_LIMITS.get().explain(routine_id)}")
+                with g.block(f"if (rows.size() >= {limit})") as h:
+                    h.line(f'throw new IllegalStateException("{name}: 走査行数が上限 {limit} 行を'
+                           f'超えた。上限は limits.yaml で決める。生成コードは cursor の行を先に'
+                           f'全部読むので、ここで止めないとメモリを使い切る");')
+            arguments = ", ".join(_component(file, statement, i, f"row.get({i - 1})")
+                                  for i in range(1, len(statement.into_columns or []) + 1))
+            g.line(f"rows.add(new {record}({arguments}));")
+        f.line("return rows;")
+    result.methods.append(name)
+    result.planned.append(statement.id)
+
+
+def _component(file: JavaFile, statement: M.SqlOperation, index: int, raw: str) -> str:
+    """1 列を、その列の型で受け取る。読み方（ResultSet か、計画が返した行か）だけが違う。"""
+    from .dto import loop_component_type
+
+    oracle = (statement.into_oracle_types or [])
+    declared = oracle[index - 1] if index - 1 < len(oracle) else None
+    mapped = loop_component_type(declared)
+    file.add_import(*mapped.imports)
+    if mapped.name == "BigDecimal":
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        return f"Plsql.dec({raw})"
+    return f"({mapped.name}) {raw}"
 
 
 def _into_java(file: JavaFile, statement: M.SqlOperation, index: int) -> str:
