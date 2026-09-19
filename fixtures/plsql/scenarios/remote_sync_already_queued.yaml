@@ -18,3 +18,9 @@ capture_tables:
 - warehouse.orders
 - warehouse.shipment_queue
 note: 2 つ目のリモート書き込みが一意制約で失敗する。1 つ目（リモートの orders の UPDATE）も残らないこと——分散トランザクションの「両方か、どちらも無しか」を見る
+accepted_difference:
+  exception:
+    oracle: -2055
+    target: java.sql.SQLTransactionRollbackException
+  decided: '2026-09-20'
+  reason: ORA-02055 は DB link に固有のエラーで、link を namespace に置き換えた移行先に対応物が無い。移行先は重複 INSERT を commit 時の衝突（DB-CORE-20013）として返す。どちらも全体が rollback され、何も残らない。呼び出し側はこの衝突を無条件に再試行しないこと（行が既にあるので解消しない）

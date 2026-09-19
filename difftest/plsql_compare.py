@@ -299,9 +299,12 @@ def compare_variant(variant: str, scales: dict) -> dict:
         actual = unscale(json.loads(target.read_text(encoding="utf-8")), scales) if variant == "scaled" \
             else json.loads(target.read_text(encoding="utf-8"))
         found = compare_capture(oracle, actual)
+        accepted = _accepted(name, oracle, actual)
         report["scenarios"][name] = {
             "routine": routine, "verdict": verdicts.get(routine, "REVIEW"),
-            "differences": [d for d in found if not _scale_only(d)],
+            "differences": [d for d in found if not _scale_only(d) and not (accepted and _is_exception_code(d))],
+            # a difference somebody decided to live with is not hidden: it moves here, with who decided and why
+            "accepted": [{"difference": d, **accepted} for d in found if accepted and _is_exception_code(d)],
             "scale_only": [d for d in found if _scale_only(d)],
             "direct": _is_direct_dml(name)}
     # what the captures were taken from (plsql_capture.py). Absent for captures older than the fingerprint --
@@ -310,6 +313,31 @@ def compare_variant(variant: str, scales: dict) -> dict:
     if recorded.exists():
         report["fingerprints"] = json.loads(recorded.read_text(encoding="utf-8"))
     return report
+
+
+def _is_exception_code(line: str) -> bool:
+    return line.startswith("exception code: ")
+
+
+def _accepted(name: str, oracle: dict, target: dict) -> dict | None:
+    """The scenario's `accepted_difference`, if it names exactly the two error codes that were captured.
+
+    The target cannot always raise what Oracle raised -- ORA-02055 belongs to a DB link that no longer exists.
+    Whether that is acceptable is a person's call, so it is written in the scenario with its reason, and it covers
+    one pair of codes only: any other code on either side, or any difference in the tables or the result, is
+    still a difference.
+    """
+    import yaml
+
+    path = ROOT / "fixtures" / "plsql" / "scenarios" / f"{name}.yaml"
+    if not path.exists():
+        return None
+    declared = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("accepted_difference") or {}
+    pair = declared.get("exception") or {}
+    left, right = oracle.get("exception") or {}, target.get("exception") or {}
+    if not pair or left.get("code") != pair.get("oracle") or right.get("code") != pair.get("target"):
+        return None
+    return {"reason": declared.get("reason", ""), "decided": str(declared.get("decided", ""))}
 
 
 def _is_direct_dml(name: str) -> bool:
@@ -370,6 +398,11 @@ def render(report: dict) -> int:
         print(f"{marker} {name}  [{scenario['verdict']}] {scenario['routine']}{note}")
         for line in scenario["differences"]:
             print(f"     {line}")
+
+    for name, scenario in sorted(report["scenarios"].items()):
+        for item in scenario.get("accepted") or []:
+            print(f"   {name}  [{scenario['verdict']}] 受け入れた差（{item['decided']}）: {item['difference'][:90]}")
+            print(f"     {item['reason']}")
 
     scale_only = {n: s["scale_only"] for n, s in report["scenarios"].items() if s.get("scale_only")}
     if scale_only:

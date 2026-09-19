@@ -302,6 +302,8 @@ class TransactionIT {
    */
   @Test
   void redesignRoutinesRefuseInsteadOfRunningWithDifferentSemantics() throws Exception {
+    assumeUndecided("application", "PrcNightlyCloseService");
+    assumeUndecided("application", "PrcAuditAutonomousService");
     assertRefuses("com.example.migrated.application.PrcNightlyCloseService",
         "com.example.migrated.infrastructure.PrcNightlyCloseRepository",
         "prcNightlyClose",
@@ -330,6 +332,7 @@ class TransactionIT {
    */
   @Test
   void aRoutineThatLostItsRowLockRefusesBeforeItActsOnTheUnlockedRead() throws Exception {
+    assumeUndecided("infrastructure", "PkgStockReserveRepository");
     seedProduct(runner, 10, 100);
     runner.commit();
 
@@ -522,6 +525,20 @@ class TransactionIT {
       }
     }
     throw new AssertionError("組み立てられないコンストラクタ: " + repositoryClass);
+  }
+
+  /**
+   * A refusal is what a redesign nobody decided generates. Once the decision is recorded (`--limits`, which is
+   * how `plsql_capture.py` builds the tree) the routine is generated and runs, and its behaviour is compared
+   * with Oracle by the scenarios instead -- so against such a tree there is nothing here to check, and saying
+   * "skipped, decided" is truer than failing. `tests/test_plsql_generate.py` pins the refusal without a cluster.
+   */
+  private static void assumeUndecided(String layer, String javaClass) throws Exception {
+    Path source = Path.of("..", "generated", "src", "main", "java", "com", "example", "migrated", layer,
+        javaClass + ".java");
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        java.nio.file.Files.readString(source).contains("UnsupportedOperationException"),
+        javaClass + " was generated with its redesign decided (limits.yaml); it no longer refuses");
   }
 
   private void assertRefuses(String serviceClass, String repositoryClass, String method,

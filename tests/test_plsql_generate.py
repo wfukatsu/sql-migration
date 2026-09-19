@@ -159,3 +159,19 @@ def test_the_generated_sources_compile():
     finished = subprocess.run([gradle, "compileJava", "-q"], cwd=str(ROOT / "runtime-java"),
                               capture_output=True, text=True)
     assert finished.returncode == 0, finished.stdout[-3000:] + finished.stderr[-3000:]
+
+
+# --- a redesign nobody decided refuses at run time -------------------------------------------------------------
+
+@pytest.mark.parametrize("java", [
+    "PrcNightlyCloseService.java",       # COMMIT inside the routine
+    "PrcAuditAutonomousService.java",    # autonomous transaction
+    "PkgStockReserveRepository.java",    # a row lock that was dropped
+    "PrcRemoteSyncService.java",         # a DB link nobody mapped
+])
+def test_a_redesign_nobody_decided_refuses_instead_of_running(generated, java):
+    """Without `--limits` no decision is recorded, so the generated routine must stop rather than run with
+    different semantics. `TransactionIT` checks the same thing on a real cluster, but only for a tree generated
+    without the decisions; the corpus's own tree has them all, so this is where the refusal stays pinned."""
+    _, _, out = generated
+    assert "throw new UnsupportedOperationException" in sources(out)[java]
