@@ -32,7 +32,7 @@ from pathlib import Path
 import sqlglot
 from sqlglot import exp
 from sqlglot.dialects.dialect import Dialect
-from sqlglot.errors import ErrorLevel, ParseError, UnsupportedError
+from sqlglot.errors import ErrorLevel, ParseError, TokenError, UnsupportedError
 from sqlglot.tokens import TokenType
 from sqlglot.optimizer.annotate_types import annotate_types
 from sqlglot.optimizer.qualify import qualify
@@ -900,12 +900,25 @@ def schema_from_ddl(statements: list[str], dialect: str) -> dict:
 def convert_script(text: str, source: str, target: str, schema: dict | None = None,
                    case_insensitive: bool = False) -> list[Result]:
     """スクリプト全体を変換する。スクリプト内の CREATE TABLE と schema を合わせて型の判定に使う。"""
-    statements = _split_statements(text, source)
+    try:
+        statements = _split_statements(text, source)
+    except TokenError as e:
+        # 文の切れ目が決められない（たいていは閉じていない文字列）。1 文ずつには変換できないので、どこで
+        # つまずいたかを 1 件の ERROR として返す——トレースバックで終わると、レポートが何も残らない
+        return [Result(index=1, source_sql=text.strip()[:2000], kind="TOKEN_ERROR", status="ERROR",
+                       issues=[Issue("ERROR", "TOKENIZE", f"スクリプトを文に分けられない: {str(e).splitlines()[0][:200]}")])]
     merged = dict(schema or {})
     merged.update(schema_from_ddl(statements, source))
     results = []
     for i, stmt in enumerate(statements, start=1):
-        r = convert_statement(stmt, source, target, merged or None, case_insensitive)
+        try:
+            r = convert_statement(stmt, source, target, merged or None, case_insensitive)
+        except Exception as e:  # noqa: BLE001  1 文の想定外で、残りの文の変換まで止めない
+            r = Result(index=i, source_sql=stmt.strip(), kind="INTERNAL_ERROR", status="ERROR",
+                       issues=[Issue("ERROR", "INTERNAL",
+                                     f"この文の変換中に変換器が失敗した（{type(e).__name__}: "
+                                     f"{(str(e).splitlines() or ['メッセージなし'])[0][:160]}）。"
+                                     f"残りの文は変換した。文を添えて報告してほしい")])
         r.index = i
         results.append(r)
     return results

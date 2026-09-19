@@ -10,3 +10,8 @@ difftest/.env
 .DS_Store
 /build/
 /generated/
+.hypothesis/
+.ruff_cache/
+.claude/settings.local.json
+.cache/
+.gradle-home/
