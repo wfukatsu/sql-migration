@@ -7,7 +7,6 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.Statement;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,7 +20,6 @@ import java.util.regex.Pattern;
  * compatibility mode. Never persisted: the database disappears when the session is closed.
  */
 public class Residual implements AutoCloseable {
-  private static final Pattern NAMED = Pattern.compile("(?<![:\\w])[:](\\w+)");
   private static final List<String> MODES = List.of("Oracle", "PostgreSQL", "MySQL");
   // A table or column name from a plan goes into DDL as text. H2 runs several statements per execute, so a
   // "table" spelled `t(a INT); CREATE ALIAS x AS '...java...'; CREATE TABLE u` was code execution from a plan file
@@ -33,7 +31,9 @@ public class Residual implements AutoCloseable {
   // SELECT: H2 keeps FILE_READ, CSVWRITE, LINK_SCHEMA, RUNSCRIPT and CREATE ALIAS for admins.
   private final Connection reader;
   private final String mode;
-  private final Set<String> created = new HashSet<>();
+  // table (lower-cased) -> the columns it was created with, and the namespace it came from
+  private final Map<String, List<String>> created = new LinkedHashMap<>();
+  private final Map<String, String> namespaces = new LinkedHashMap<>();
   // table -> indexes from the plan (primary key, join columns); built once, after every fetch is loaded
   private final Map<String, List<List<String>>> indexes = new LinkedHashMap<>();
   private final boolean buildIndexes;
@@ -54,7 +54,14 @@ public class Residual implements AutoCloseable {
     // the mode comes from a plan file and goes into a JDBC URL, where `;INIT=...` would run whatever it says
     this.mode = MODES.stream().filter(m -> m.equalsIgnoreCase(mode)).findFirst()
         .orElseThrow(() -> new IllegalArgumentException("unknown H2 mode " + mode + " (expected one of " + MODES + ")"));
-    String url = "jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=" + this.mode + ";DATABASE_TO_UPPER=FALSE";
+    // CASE_INSENSITIVE_IDENTIFIERS: the tables are created with the names ScalarDB has, the residual SQL is the
+    //   source application's, and the source folds case -- `FROM ORDERS` has to find `orders`.
+    // NON_KEYWORDS: `key` and `value` are ordinary column names that H2 reserves. (Words H2 needs to parse SQL at
+    //   all -- ORDER, USER, END, OFFSET -- cannot be released this way; a column named so still fails, loudly.)
+    // TIME ZONE: TIMESTAMPTZ values arrive as UTC instants. With the session in the JVM's zone, CAST(ts AS DATE)
+    //   or EXTRACT(HOUR ...) in the residual SQL gave a different answer on a different host.
+    String url = "jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=" + this.mode + ";DATABASE_TO_UPPER=FALSE"
+        + ";CASE_INSENSITIVE_IDENTIFIERS=TRUE;NON_KEYWORDS=KEY,VALUE;TIME ZONE=UTC";
     h2 = DriverManager.getConnection(url);
     if ("Oracle".equals(this.mode)) OracleFunctions.register(h2);
     String password = UUID.randomUUID().toString();
@@ -90,7 +97,19 @@ public class Residual implements AutoCloseable {
   public void load(Plan.Fetch spec, Rows rows) throws Exception {
     String table = identifier("table", spec.table);
     for (String c : rows.columns) identifier("column", c);
-    boolean firstLoad = !created.contains(table.toLowerCase());
+    String key = table.toLowerCase();
+    boolean firstLoad = !created.containsKey(key);
+    // H2 holds one table per name and the residual SQL names tables without a namespace. Two fetches of `t` from
+    // different namespaces used to be merged into one table without a word
+    String namespace = spec.namespace == null ? "" : spec.namespace;
+    if (!namespaces.computeIfAbsent(key, k -> namespace).equals(namespace)) {
+      throw new IllegalStateException("the plan fetches table " + table + " from two namespaces ("
+          + namespaces.get(key) + ", " + namespace + "); the residual engine holds one table per name");
+    }
+    if (!firstLoad && !created.get(key).equals(lower(rows.columns))) {
+      throw new IllegalStateException("two fetches into " + table + " return different columns: "
+          + created.get(key) + " and " + lower(rows.columns));
+    }
     if (firstLoad) {
       StringBuilder ddl = new StringBuilder("CREATE TABLE " + table + " (");
       for (int i = 0; i < rows.columns.size(); i++) {
@@ -104,7 +123,7 @@ public class Residual implements AutoCloseable {
       }
       ddl.append(')');
       try (Statement s = h2.createStatement()) { s.execute(ddl.toString()); }
-      created.add(table.toLowerCase());
+      created.put(key, lower(rows.columns));
     }
     if (spec.index_columns != null) {
       List<List<String>> ixs = indexes.computeIfAbsent(table, k -> new ArrayList<>());
@@ -116,19 +135,39 @@ public class Residual implements AutoCloseable {
     if (rows.rows.isEmpty()) return;
     String cols = String.join(", ", rows.columns);
     String marks = String.join(", ", java.util.Collections.nCopies(rows.columns.size(), "?"));
-    // One fetch returns distinct rows, so the first load of a table is a plain INSERT. Only a second fetch into the
-    // same table (several scopes referencing it) needs MERGE to de-duplicate, and MERGE keyed on every column has
-    // to scan the table per row -- quadratic in the row count, so it must not be used for the bulk load.
-    String sql = firstLoad
-        ? "INSERT INTO " + table + " (" + cols + ") VALUES (" + marks + ")"
-        : "MERGE INTO " + table + " (" + cols + ") KEY (" + cols + ") VALUES (" + marks + ")";
-    try (PreparedStatement ps = h2.prepareStatement(sql)) {
+    // One fetch returns distinct rows, so the first load of a table is a plain INSERT. A second fetch into the same
+    // table (several scopes referencing it, or a key list split into one fetch per value) may bring rows that are
+    // already there. They used to go in with MERGE ... KEY (every column): KEY compares with `=`, NULL never
+    // equals NULL, and every row with a NULL in it was inserted again -- counts, sums and joins came out inflated.
+    // The rows are staged and only those not already present are added, compared with IS NOT DISTINCT FROM.
+    String target = firstLoad ? table : table + "_staging";
+    if (!firstLoad) {
+      try (Statement s = h2.createStatement()) {
+        s.execute("CREATE TABLE " + target + " AS SELECT * FROM " + table + " WHERE FALSE");
+      }
+    }
+    try (PreparedStatement ps = h2.prepareStatement("INSERT INTO " + target + " (" + cols + ") VALUES (" + marks + ")")) {
       for (Object[] r : rows.rows) {
         for (int i = 0; i < r.length; i++) ps.setObject(i + 1, Values.toH2(r[i]));
         ps.addBatch();
       }
       ps.executeBatch();
     }
+    if (!firstLoad) {
+      List<String> same = new ArrayList<>();
+      for (String c : rows.columns) same.add("t." + c + " IS NOT DISTINCT FROM s." + c);
+      try (Statement s = h2.createStatement()) {
+        s.execute("INSERT INTO " + table + " (" + cols + ") SELECT DISTINCT " + cols + " FROM " + target + " s"
+            + " WHERE NOT EXISTS (SELECT 1 FROM " + table + " t WHERE " + String.join(" AND ", same) + ")");
+        s.execute("DROP TABLE " + target);
+      }
+    }
+  }
+
+  private static List<String> lower(List<String> names) {
+    List<String> out = new ArrayList<>();
+    for (String n : names) out.add(n.toLowerCase());
+    return out;
   }
 
   /** Run the residual SQL and return the result as columns + rows (JSON-friendly values). */
@@ -176,7 +215,7 @@ public class Residual implements AutoCloseable {
   /** Compile-only check used by `validate`: prepares the statement against the (empty) tables. */
   public void prepareOnly(String sql) throws Exception {
     List<Object> binds = new ArrayList<>();
-    String bound = NAMED.matcher(sql).replaceAll("?");
+    String bound = scan(sql, null, binds);
     reader.prepareStatement(bound).close();
   }
 
@@ -189,37 +228,75 @@ public class Residual implements AutoCloseable {
    * one rule.
    */
   public static String bindNamed(String sql, Map<String, Object> params, List<Object> binds) {
-    StringBuilder sb = new StringBuilder();
-    Matcher m = NAMED.matcher(sql);
-    int last = 0;
-    int positional = 0;
-    while (m.find()) {
-      String before = sql.substring(last, m.start());
-      positional = countPositional(before, positional, params, binds);
-      sb.append(before).append('?');
-      String name = m.group(1);
-      if (!params.containsKey(name)) throw new IllegalArgumentException("missing bind parameter: " + name);
-      binds.add(params.get(name));
-      last = m.end();
-    }
-    String tail = sql.substring(last);
-    countPositional(tail, positional, params, binds);
-    sb.append(tail);
-    return sb.toString();
+    return scan(sql, params, binds);
   }
 
-  private static int countPositional(String fragment, int positional, Map<String, Object> params, List<Object> binds) {
-    boolean inString = false;
-    for (char ch : fragment.toCharArray()) {
-      if (ch == '\'') inString = !inString;
-      else if (ch == '?' && !inString) {
+  /**
+   * One pass over the SQL that knows what is code and what is not. `:name` and `?` are placeholders only outside
+   * string literals, quoted identifiers and comments.
+   *
+   * <p>It used to be a regex for `:name` over the whole text plus a quote counter for `?`: `SELECT ' :x'` failed
+   * with "missing bind parameter: x", and an apostrophe in a comment (`-- don't`) flipped the quote state, so the
+   * `?` after it was never bound. With {@code params} null nothing is bound: placeholders only become `?`
+   * (the compile-only check of `validate`).
+   */
+  static String scan(String sql, Map<String, Object> params, List<Object> binds) {
+    StringBuilder out = new StringBuilder(sql.length());
+    int positional = 0;
+    int i = 0;
+    int n = sql.length();
+    while (i < n) {
+      char c = sql.charAt(i);
+      char next = i + 1 < n ? sql.charAt(i + 1) : '\0';
+      if (c == '\'' || c == '"') {                       // literal or quoted identifier; a doubled quote stays inside
+        int j = i + 1;
+        while (j < n) {
+          if (sql.charAt(j) == c) {
+            if (j + 1 < n && sql.charAt(j + 1) == c) { j += 2; continue; }
+            break;
+          }
+          j++;
+        }
+        j = Math.min(j + 1, n);
+        out.append(sql, i, j);
+        i = j;
+      } else if (c == '-' && next == '-') {               // line comment
+        int j = sql.indexOf('\n', i);
+        j = j < 0 ? n : j;
+        out.append(sql, i, j);
+        i = j;
+      } else if (c == '/' && next == '*') {               // block comment
+        int j = sql.indexOf("*/", i + 2);
+        j = j < 0 ? n : j + 2;
+        out.append(sql, i, j);
+        i = j;
+      } else if (c == ':' && (Character.isLetterOrDigit(next) || next == '_')
+          && (i == 0 || (sql.charAt(i - 1) != ':' && !Character.isLetterOrDigit(sql.charAt(i - 1))
+              && sql.charAt(i - 1) != '_'))) {          // `:name`, but not the `::type` of a PostgreSQL cast
+        int j = i + 1;
+        while (j < n && (Character.isLetterOrDigit(sql.charAt(j)) || sql.charAt(j) == '_')) j++;
+        String name = sql.substring(i + 1, j);
+        if (params != null) {
+          if (!params.containsKey(name)) throw new IllegalArgumentException("missing bind parameter: " + name);
+          binds.add(params.get(name));
+        }
+        out.append('?');
+        i = j;
+      } else if (c == '?') {
         positional++;
-        String key = Integer.toString(positional);
-        if (!params.containsKey(key)) throw new IllegalArgumentException("missing positional parameter " + key);
-        binds.add(params.get(key));
+        if (params != null) {
+          String key = Integer.toString(positional);
+          if (!params.containsKey(key)) throw new IllegalArgumentException("missing positional parameter " + key);
+          binds.add(params.get(key));
+        }
+        out.append('?');
+        i++;
+      } else {
+        out.append(c);
+        i++;
       }
     }
-    return positional;
+    return out.toString();
   }
 
   @Override
