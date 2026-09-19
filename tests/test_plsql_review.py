@@ -298,7 +298,9 @@ def test_a_public_routine_is_never_given_someone_elses_evidence(analysis):
 
 def test_indirect_evidence_does_not_override_a_rule(analysis, rules):
     """Evidence is one factor of five. A rule that objects still blocks the routine."""
-    program = analysis.program
+    # without a ScalarDB schema nobody has said that the target runs the aggregate as it stands, so SEM-004 still
+    # objects (with one it no longer does: 2026-09-20). The point here is the rule, whichever rule it is
+    program = analyse(SRC, DDL).program
     evidence = review.credit_private_callees(
         Evidence(captures={"pkg_shipment.is_shippable": (2, 2)}), program,
         _graph({"pkg_shipment.is_shippable": ["pkg_shipment.line_count"]}))

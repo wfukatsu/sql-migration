@@ -17,6 +17,10 @@ P0-1「PL/SQL corpus と元表 DDL の作成」の成果物。
 
 ## holdout
 
+**2026-09-20**: 判定の方針が変わり（REVIEW は移行の可否が未解決のときだけ）、holdout2 の `pkg_shipment.is_shippable` と
+`line_count` は期待値（REVIEW）と判定（AUTO）が食い違っている。期待値は書き換えず、食い違いとして報告する
+（KPI-3 は 63/65）。
+
 `src/holdout/` と `src/holdout2/` の 9 ユニット（14 ファイル、全 28 ユニット中 32.1%）は、
 **grammar のパッチ作成とルール作成の際に参照しない**。Phase 2 の判定適合率は、まず holdout 上の値を根拠とする。
 ただし `holdout/` は P2-2 で独立性を失っている（下記）。現時点で独立した証拠になるのは `holdout2/` だけである。

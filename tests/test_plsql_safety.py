@@ -127,11 +127,13 @@ def test_every_rule_fires_somewhere(schema, ruleset):
 
     # 決定を渡さない解析と、渡した解析の両方を見る。どちらも実際に使う形である——記録された
     # routine は書き換わり（MERGE の分割など）、書き換えた形にだけ当たる規則がある（SEM-011）
-    from plsql.limits import RowLocks
+    from plsql.limits import Limits, RowLocks
 
-    for row_locks in (None, RowLocks.load(FIXTURES / "limits.yaml")):
+    # the notes that replace a REVIEW once somebody decided (CUR-OPT-002, BULK-OPT-003) fire only with the decisions
+    for row_locks, limits in ((None, None), (RowLocks.load(FIXTURES / "limits.yaml"),
+                                             Limits.load(FIXTURES / "limits.yaml"))):
         corpus = build_analysis(SRC, SRC / "schema.sql", scalardb_schema=FIXTURES / "scalardb-schema.json",
-                                row_locks=row_locks)
+                                row_locks=row_locks, limits=limits)
         for decision in decide(corpus.program, analyse_program(corpus.program), ruleset,
                                Evidence()).values():
             fired |= {m.rule.id for m in decision.matches}

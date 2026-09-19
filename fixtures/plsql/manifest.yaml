@@ -84,7 +84,8 @@ units:
     routines:
       - {name: count_by_status, expected: AUTO,   reason: "走査して数える cursor（#11 の C）。COUNT(*) 1 本に置き換わり、cursor の寿命そのものが無くなる"}
       - {name: mark_reviewed,   expected: REVIEW, reason: "非キー列の走査で回しながら同じ表を更新する。走査行数の上限が要る"}
-      - {name: largest_order,   expected: REVIEW, reason: "先頭 1 行を取る cursor（#11 の B）。LIMIT 1 で生成できるが、ORDER BY がパーティションキーに乗らないため走査がパーティションをまたぐ（SCAN-002）"}
+      # 2026-09-20: 以前の期待値は REVIEW（先頭 1 行を取る cursor（#11 の B）。LIMIT 1 で生成できるが、ORDER BY がパーティションキーに乗らないため走査がパーティションをまたぐ（SCAN-002））。REVIEW は移行の可否が未解決のときだけ、と決めた
+      - {name: largest_order,   expected: AUTO,   reason: "パーティションをまたぐ走査。JDBC バックエンドでは実行でき、結果は実 DB で一致（SCAN-002 は注記）"}
 
   - name: pkg_bulk_load
     files: [pkg_bulk_load.pks, pkg_bulk_load.pkb]
@@ -120,8 +121,10 @@ units:
     origin: synthetic
     holdout: false
     routines:
-      - {name: refresh_stats, expected: REVIEW,   reason: "定数 EXECUTE IMMEDIATE。定数畳込み後に静的解析できる"}
-      - {name: count_orders,  expected: REVIEW,   reason: "条件分岐による有限 variant。variant ごとに静的 query 化する"}
+      # 2026-09-20: 以前の期待値は REVIEW（定数 EXECUTE IMMEDIATE。定数畳込み後に静的解析できる）。REVIEW は移行の可否が未解決のときだけ、と決めた
+      - {name: refresh_stats, expected: AUTO,     reason: "定数の EXECUTE IMMEDIATE。とりうる文を展開でき、ScalarDB がそのまま実行できる（DYN-OPT-002 は注記）"}
+      # 2026-09-20: 以前の期待値は REVIEW（条件分岐による有限 variant。variant ごとに静的 query 化する）。REVIEW は移行の可否が未解決のときだけ、と決めた
+      - {name: count_orders,  expected: AUTO,     reason: "動的 SQL。とりうる 3 文をすべて展開でき、どれも ScalarDB がそのまま実行できる（DYN-OPT-002 は注記）"}
       - {name: purge,         expected: REDESIGN, reason: "表名が実行時に決まる。allowlist か専用 Repository へ"}
 
   - name: trg_orders_audit
@@ -154,7 +157,8 @@ units:
     origin: synthetic
     holdout: false
     routines:
-      - {name: rounded_total,    expected: REVIEW, reason: "ROUND は half-up。Java の BigDecimal 既定(HALF_EVEN)と異なる"}
+      # 2026-09-20: 以前の期待値は REVIEW（ROUND は half-up。Java の BigDecimal 既定(HALF_EVEN)と異なる）。REVIEW は移行の可否が未解決のときだけ、と決めた
+      - {name: rounded_total,    expected: AUTO,   reason: "ROUND は PL/SQL の式で、互換ランタイム（half-up）が計算する"}
       # P4-3 で REVIEW -> AUTO へ変更（2026-09-17）。元の理由は「Oracle DATE の時刻成分と TRUNC。日付差の
       # 意味を保つ必要がある」で、その懸念は全て測定で閉じた: TRUNC と日付減算は P3-3 が実機 Oracle から
       # 記録し（fixtures/plsql/semantics.json の date 族）PlsqlPropertyTest が Plsql の再現を検査する、
@@ -165,7 +169,8 @@ units:
       # 2026-09-20 / #5: 以前の期待値は REVIEW。空文字 = NULL は同一視を保つと決定し、この条件式と RTRIM は互換
       # ランタイム（Plsql.isNull / eq / rtrim）が Oracle と同じ意味で計算する。移行先 DB が評価する式は無い
       - {name: display_note,     expected: AUTO,   reason: "空文字 = NULL の条件式と RTRIM。どちらも PL/SQL の式で、互換ランタイムが計算する"}
-      - {name: apply_rate,       expected: REVIEW, reason: "NUMBER(14,2) の乗算と丸め。ScalarDB に DECIMAL が無くスケール済み整数を検討する"}
+      # 2026-09-20: 以前の期待値は REVIEW（NUMBER(14,2) の乗算と丸め。ScalarDB に DECIMAL が無くスケール済み整数を検討する）。REVIEW は移行の可否が未解決のときだけ、と決めた
+      - {name: apply_rate,       expected: AUTO,   reason: "ROUND は SQL の外へ持ち上がり、互換ランタイム（half-up）が計算して bind する"}
 
   - name: pkg_stock_reserve
     files: [pkg_stock_reserve.pks, pkg_stock_reserve.pkb]
@@ -186,11 +191,13 @@ units:
     origin: synthetic
     holdout: true
     routines:
-      - {name: paid_total,   expected: REVIEW, reason: "集約は 0 件でも 1 行返る。NO_DATA_FOUND にならず NULL になる差を保つ"}
+      # 2026-09-20: 以前の期待値は REVIEW（集約は 0 件でも 1 行返る。NO_DATA_FOUND にならず NULL になる差を保つ）。REVIEW は移行の可否が未解決のときだけ、と決めた
+      - {name: paid_total,   expected: AUTO,   reason: "集約の SELECT INTO。ScalarDB がそのまま実行し、0 件でも 1 行返ることを実 DB で確かめてある"}
       # 2026-09-18 / #12: payments への INSERT には `trg_payments_guard`（B 型・検証して拒否する）が
       # 掛かる。**漏れた書き込みは検証されない**ので、網羅性の要求は監査より高い
       - {name: record_payment, expected: REDESIGN, reason: "主キー SELECT INTO + INSERT。ただし payments への書き込みなので trg_payments_guard を呼ぶ——検証を免れる経路が無いことの担保が要る（#12）"}
-      - {name: last_paid_at, expected: REVIEW, reason: "TIMESTAMP WITH TIME ZONE の MAX。セッション TZ 依存を検出する"}
+      # 2026-09-20: 以前の期待値は REVIEW（TIMESTAMP WITH TIME ZONE の MAX。セッション TZ 依存を検出する）。REVIEW は移行の可否が未解決のときだけ、と決めた
+      - {name: last_paid_at, expected: AUTO,   reason: "集約の SELECT INTO。ScalarDB がそのまま実行し、0 件でも 1 行返ることを実 DB で確かめてある"}
 
   - name: prc_reprice_all
     files: [holdout/prc_reprice_all.prc]

@@ -130,11 +130,12 @@ python -m plsql.kpi --evidence difftest/work/plsql-diff.json --generated generat
 
 | | |
 |---|---|
-| parse 率・型解決率・判定一致・compile 率 | **100%** |
-| **意味的同等性（AUTO 対象）** | **100%**（金額の 2 規約とも AUTO 29/29 が実 Oracle と一致） |
-| 判定（2026-09-20 の実測、金額の規約ごと） | scaled: AUTO 24 / REVIEW 15 / REDESIGN 26、double: AUTO 21 / REVIEW 18 / REDESIGN 26 |
+| parse 率・型解決率・compile 率 | **100%** |
+| 判定一致 | **96.9%**（63/65。食い違う 2 件は holdout2 の期待値で、2026-09-20 の方針変更によるもの。期待値は書き換えていない） |
+| **意味的同等性（AUTO 対象）** | **100%**（金額の 2 規約とも AUTO 45/45 が実 Oracle と一致） |
+| 判定（2026-09-20 の実測。金額の 2 規約とも同じ） | AUTO 33 / REVIEW 6 / REDESIGN 26。プロジェクトの決定（`--limits fixtures/plsql/limits.yaml`）を適用すると AUTO 36 / REVIEW 3 / REDESIGN 26 |
 
-**数値は合成 corpus 上のものであり、実案件耐性の証拠ではありません。** 非 AUTO の 41 件（scaled）を塞いでいるのは
+**数値は合成 corpus 上のものであり、実案件耐性の証拠ではありません。** 非 AUTO の 29 件（決定の適用後）を塞いでいるのは
 変換できない構文ではなく、**人が決めるべきこと**です（走査行数の上限、採番方式、トランザクション境界など。
 [Phase 4 中間報告](docs/plsql-phase4-interim.md) §1）。
 

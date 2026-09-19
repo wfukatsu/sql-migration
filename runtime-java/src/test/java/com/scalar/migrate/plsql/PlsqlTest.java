@@ -309,6 +309,15 @@ class PlsqlTest {
   }
 
   @Test
+  void aDoubleMoneyColumnStillRoundsToTheOracleColumnsScale() {
+    // NUMBER(14,2) rounds on the way in; the double convention wrote 1234.565 as it stood (found 2026-09-20, when
+    // SEM-001 stopped hiding it and KPI-5 said so)
+    assertEquals(1234.57d, Plsql.bind(new BigDecimal("1234.565"), "DOUBLE", 2));
+    assertEquals(0.01d, Plsql.bind(new BigDecimal("0.005"), "DOUBLE", 2));
+    assertEquals(1234.565d, Plsql.bind(new BigDecimal("1234.565"), "DOUBLE", 0), "no declared scale: nothing to round to");
+  }
+
+  @Test
   void anEmptyStringCrossesTheWriteBoundaryAsNull() {
     // #5 (decided 2026-09-19): '' and NULL stay one thing during the migration; blanks are not empty
     assertNull(Plsql.bind(""));
