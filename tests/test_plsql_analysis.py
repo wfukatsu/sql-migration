@@ -114,6 +114,11 @@ def test_the_corpus_call_graph_is_complete(corpus):
         ("pkg_order_status.assert_open", "pkg_order_status.status_of"),
         ("prc_reprice_all", "pkg_order_pricing.reprice_order"),
         ("pkg_shipment.is_shippable", "pkg_shipment.line_count"),
+        # #29-25: DELETE の trigger と複数イベントの trigger も、書き込む側が呼ぶ
+        ("pkg_line_edit.add_line", "trg_lines_audit.body"),
+        ("pkg_line_edit.change_qty", "trg_lines_audit.body"),
+        ("pkg_line_edit.remove_line", "trg_lines_audit.body"),
+        ("pkg_line_edit.void_entry", "trg_inventory_tx_keep.body"),
     }
 
 

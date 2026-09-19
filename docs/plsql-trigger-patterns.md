@@ -176,9 +176,32 @@ Oracle との比較が捕まえた——**trigger を掛ける側のバグは、
   1 回の呼び出しでは同じにならない。`TRIGGER_NOT_APPLIED` を残して見えるようにする
 * **値そのものを書き換える trigger**（`:NEW.order_id := seq.NEXTVAL`）。呼び出しでは置き換えられ
   ない——採番 Service への再設計である（下の C）
-* **DELETE・MERGE での書き込み**と、**複数のイベントで発火する trigger**（`AFTER INSERT OR UPDATE OR DELETE`）。
-  DELETE は行の `:OLD` を読んで渡す形を、複数イベントは本体の `INSERTING` / `UPDATING` / `DELETING` に渡す形を
-  まだ持っていない。どちらも `TRIGGER_NOT_APPLIED` を残す
+* **MERGE での書き込み**（INSERT と UPDATE のどちらで発火するかが行ごとに決まる）と、本体が
+  **`UPDATING('列')` の形で列ごとのイベントを見る trigger**。どちらも `TRIGGER_NOT_APPLIED` を残す
+
+**DELETE と、複数のイベントで発火する trigger は掛ける**（2026-09-20 / #29 の 25。それまでは掛けずに
+`TRIGGER_NOT_APPLIED` にしていた）。
+
+| 形 | 掛け方 |
+|---|---|
+| DELETE | `:NEW` の行は無いので、相関行はすべて**消す前に読んだ `:OLD`**。`:NEW.x` は Oracle と同じく NULL を渡す。AFTER DELETE でも読むのは消す前。1 行に絞れる条件（主キーの等値）は UPDATE と同じ |
+| 複数イベント（`INSERT OR UPDATE OR DELETE`） | 本体が読む `INSERTING` / `UPDATING` / `DELETING` を、**相関行と同じく引数で渡す**。どの文のところで呼んでいるかは呼ぶ側が静的に知っているので、定数（`true` / `false`）になる。そのイベントに無い側の行（INSERT の `:OLD`、DELETE の `:NEW`）は NULL |
+| BEFORE で、本体が行を 1 つも読まない | 主キーだけ先に読む。BEFORE は書く前に呼ぶので `SQL%ROWCOUNT` で「当たる行があったか」を見られず、読まないと無い行の UPDATE / DELETE でも発火してしまう |
+
+相関行の数値は、列の幅（`NUMBER(10)` → `Long`）ではなく PL/SQL の NUMBER（`BigDecimal`）として受け渡す。呼ぶ側の
+引数も、本体の SQL の bind もそう型付けされているためである。
+
+`UPDATE OF qty OR DELETE ON t` の列の並びを `qty or delete` と読んで、qty を SET する更新に trigger が**黙って
+掛からない**不具合もこのとき直した（列の並びは次のイベントか ON で終わる）。
+
+実 DB の evidence は `pkg_line_edit`（`trg_lines_audit`: 3 イベントの監査、`trg_inventory_tx_keep`: BEFORE DELETE の
+検証）を **routine 経由で**通す 7 シナリオで、scaled・double とも Oracle と一致した。コーパスにこの形の trigger が
+無かったので実装と一緒に書いたもので、holdout ではない。直接の DML の 3 シナリオ（`trigger_orders_seq_assigns_id`、
+`trigger_products_audit_price`、`trigger_products_audit_rejects_big_drop`）は §0 の決定どおり相違のままで、これは
+この実装では変わらない。
+
+`trg_lines_audit` には照合（TriggerChecks の A）が組まれない: 監査行のキーが 2 列の主キーのうち 1 列だけで、
+監査の読み取りが列の役割を推測しないためである。照合の側を広げるのは別の作業になる。
 
 **掛けなかった書き込みも REDESIGN になる**（ルール TRG-002。`TRIGGER_NOT_APPLIED` / `TRIGGER_REDESIGN` の付いた
 文を見る）。以前はこの診断を読むルールが無く、さらに trigger のイベントは最初の 1 つしか残さず、DELETE で書く

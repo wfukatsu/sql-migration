@@ -1,0 +1,128 @@
+{
+ "id": "trg_lines_audit",
+ "kind": "Program",
+ "schemaVersion": "1.1.0",
+ "modules": [
+  {
+   "id": "trg_lines_audit",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "trg_lines_audit.trg",
+    "startLine": 4,
+    "endLine": 21,
+    "startColumn": 1,
+    "endColumn": 1
+   },
+   "name": "trg_lines_audit",
+   "moduleKind": "trigger",
+   "routines": [
+    {
+     "id": "trg_lines_audit.body",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "trg_lines_audit.trg",
+      "startLine": 4,
+      "endLine": 21,
+      "startColumn": 1,
+      "endColumn": 1
+     },
+     "name": "body",
+     "routineKind": "trigger-body",
+     "body": [
+      {
+       "id": "trg_lines_audit.body#stmt-1",
+       "kind": "If",
+       "sourceRange": {
+        "file": "trg_lines_audit.trg",
+        "startLine": 8,
+        "endLine": 20,
+        "startColumn": 3,
+        "endColumn": 7
+       },
+       "branches": [
+        {
+         "condition": "INSERTING",
+         "body": [
+          {
+           "id": "trg_lines_audit.body#stmt-2",
+           "kind": "SqlOperation",
+           "sourceRange": {
+            "file": "trg_lines_audit.trg",
+            "startLine": 9,
+            "endLine": 11,
+            "startColumn": 5,
+            "endColumn": 56
+           },
+           "sqlKind": "INSERT",
+           "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, old_value, new_value, changed_at, changed_by)\n    VALUES (seq_audit_id.NEXTVAL, 'ORDER_LINES', TO_CHAR(:NEW.line_no), 'INSERT',\n            NULL, TO_CHAR(:NEW.qty), SYSTIMESTAMP, USER)",
+           "selectsStar": false,
+           "cardinality": "UNKNOWN",
+           "atMostOneRow": false
+          }
+         ]
+        },
+        {
+         "condition": "UPDATING",
+         "body": [
+          {
+           "id": "trg_lines_audit.body#stmt-3",
+           "kind": "SqlOperation",
+           "sourceRange": {
+            "file": "trg_lines_audit.trg",
+            "startLine": 13,
+            "endLine": 15,
+            "startColumn": 5,
+            "endColumn": 69
+           },
+           "sqlKind": "INSERT",
+           "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, old_value, new_value, changed_at, changed_by)\n    VALUES (seq_audit_id.NEXTVAL, 'ORDER_LINES', TO_CHAR(:NEW.line_no), 'UPDATE',\n            TO_CHAR(:OLD.qty), TO_CHAR(:NEW.qty), SYSTIMESTAMP, USER)",
+           "selectsStar": false,
+           "cardinality": "UNKNOWN",
+           "atMostOneRow": false
+          }
+         ]
+        }
+       ],
+       "elseBody": [
+        {
+         "id": "trg_lines_audit.body#stmt-4",
+         "kind": "SqlOperation",
+         "sourceRange": {
+          "file": "trg_lines_audit.trg",
+          "startLine": 17,
+          "endLine": 19,
+          "startColumn": 5,
+          "endColumn": 56
+         },
+         "sqlKind": "INSERT",
+         "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, old_value, new_value, changed_at, changed_by)\n    VALUES (seq_audit_id.NEXTVAL, 'ORDER_LINES', TO_CHAR(:OLD.line_no), 'DELETE',\n            TO_CHAR(:OLD.qty), NULL, SYSTIMESTAMP, USER)",
+         "selectsStar": false,
+         "cardinality": "UNKNOWN",
+         "atMostOneRow": false
+        }
+       ]
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ],
+   "triggerEvent": "INSERT OR UPDATE OR DELETE",
+   "triggerTable": "order_lines",
+   "trigger_columns": [
+    "qty"
+   ],
+   "triggerTiming": "AFTER"
+  }
+ ],
+ "schemaSnapshot": "schema.sql@23623f44"
+}

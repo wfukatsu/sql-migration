@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from plsql.analysis import analyse as analyse_program
+from plsql.lower import _walk
 from plsql.report import analyse
 from plsql.rules.engine import Evidence, RuleSet, decide
 
@@ -145,9 +146,27 @@ END;
 ])
 def test_a_write_the_trigger_fires_on_is_never_silently_clean(tmp_path, events, statement):
     """Only the first event was kept (`INSERT OR UPDATE OR DELETE` -> INSERT) and DELETE writers were skipped, so
-    these routines had no diagnostic at all -- while a routine whose trigger *was* applied is REDESIGN."""
+    these routines had no diagnostic at all -- while a routine whose trigger *was* applied is REDESIGN.
+
+    Issue #29 (25): DELETE and multi-event triggers are applied now, so what makes the writer REDESIGN is the call
+    to the trigger body (a trigger is REDESIGN, and the verdict travels along the call), not TRG-002."""
     found, program = decisions(tmp_path, **{"trg.trg": TRIGGER.format(events=events),
                                             "p.prc": procedure("p", statement)})
+    routine = next(r for m in program.modules for r in m.routines if r.id == "p")
+    codes = {d.code for s in _walk(routine.body) for d in s.diagnostics}
+    assert "TRIGGER_CALL" in codes and "TRIGGER_NOT_APPLIED" not in codes
+    assert found["p"].rule_verdict == "REDESIGN"
+
+
+@pytest.mark.parametrize("body,statement", [
+    ("NULL;", "MERGE INTO payments t USING (SELECT 1 AS id FROM dual) s ON (t.payment_id = s.id) "
+              "WHEN MATCHED THEN UPDATE SET t.amount = 1;"),
+    ("IF UPDATING('AMOUNT') THEN NULL; END IF;", "UPDATE payments SET amount = 1 WHERE payment_id = p_id;"),
+    ("NULL;", "DELETE FROM payments WHERE amount > 1;"),                  # not one row
+])
+def test_a_shape_nobody_knows_how_to_apply_still_says_so(tmp_path, body, statement):
+    trigger = TRIGGER.format(events="AFTER INSERT OR UPDATE OR DELETE").replace("  NULL;", "  " + body)
+    found, _ = decisions(tmp_path, **{"trg.trg": trigger, "p.prc": procedure("p", statement)})
     assert found["p"].rule_verdict == "REDESIGN" and "TRG-002" in rules_of(found["p"])
 
 
@@ -311,3 +330,14 @@ def test_swallowing_others_and_an_untracked_rowcount_are_review(tmp_path):
     assert "EXC-002" in rules_of(found["p"]) and found["p"].rule_verdict == "REVIEW"
     assert "SQL-004" in rules_of(found["q"])
     assert "SQL-004" not in rules_of(found["r"]), "a static UPDATE is what the generated rowCount follows"
+
+
+def test_update_of_columns_end_at_the_next_event(tmp_path):
+    """Issue #29 (25): `UPDATE OF amount OR DELETE ON payments` was read as the column `amount or delete`, so an
+    update of amount did not fire the trigger and the routine was clean."""
+    trigger = TRIGGER.format(events="AFTER INSERT OR UPDATE OF amount, method OR DELETE")
+    found, program = decisions(tmp_path, **{"trg.trg": trigger,
+                                            "p.prc": procedure("p", "UPDATE payments SET amount = 1 WHERE payment_id = p_id;")})
+    module = next(m for m in program.modules if m.module_kind == "trigger")
+    assert module.trigger_columns == ["amount", "method"] and module.trigger_event == "INSERT OR UPDATE OR DELETE"
+    assert found["p"].rule_verdict == "REDESIGN"

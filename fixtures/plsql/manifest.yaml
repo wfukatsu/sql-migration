@@ -218,6 +218,38 @@ units:
       - {name: snapshot,       expected: AUTO,     reason: "%ROWTYPE の主キーアクセス"}
       - {name: cancel,         expected: REDESIGN, reason: "FOR UPDATE WAIT 5 の行ロック。待ち時間つきロックの意味を保てない"}
 
+  # --- Issue #29 の 25（2026-09-20）: DELETE の trigger と複数イベントの trigger ---------------------------
+  #
+  # 「trigger を呼び出しに置き換える」実装と一緒に書いた。**holdout ではない**（実装中に挙動を見ている）。
+  # 実 DB の evidence を routine 経由で取るためにある: 直接の DML に移行先の trigger は掛からない（#12 §0）。
+
+  - name: trg_lines_audit
+    files: [trg_lines_audit.trg]
+    categories: [trigger-dblink]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: trg_lines_audit, expected: REDESIGN, reason: "INSERT / UPDATE OF qty / DELETE の 3 イベントで発火する監査 trigger。本体は INSERTING / UPDATING で分岐する"}
+
+  - name: trg_inventory_tx_keep
+    files: [trg_inventory_tx_keep.trg]
+    categories: [trigger-dblink]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: trg_inventory_tx_keep, expected: REDESIGN, reason: "DELETE で発火する検証 trigger。消される行の :OLD を読む"}
+
+  - name: pkg_line_edit
+    files: [pkg_line_edit.pks, pkg_line_edit.pkb]
+    categories: [simple-crud, trigger-dblink]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: add_line,    expected: REDESIGN, reason: "order_lines への INSERT。trg_lines_audit を呼ぶ——網羅性の判断を引き継ぐ（#12）"}
+      - {name: change_qty,  expected: REDESIGN, reason: "主キー UPDATE。qty を SET するので trg_lines_audit（UPDATE OF qty）を呼ぶ"}
+      - {name: remove_line, expected: REDESIGN, reason: "主キー DELETE。消す前に :OLD を読んで trg_lines_audit を呼ぶ"}
+      - {name: void_entry,  expected: REDESIGN, reason: "主キー DELETE。BEFORE DELETE の trg_inventory_tx_keep を先に呼ぶ"}
+
   # --- holdout2: ルールが固まった後（2026-09-17）に書き起こした独立ホールドアウト --------------------
   #
   # P2-2 のルール開発中に holdout の期待判定を参照してしまい、独立性が失われた（../README.md に経緯）。

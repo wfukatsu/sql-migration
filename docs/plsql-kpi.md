@@ -14,7 +14,7 @@ corpus は全件が合成である（計画 §9 の決定、2026-09-17）。し�
 
 - レポートには必ずその旨を併記する。
 - 判定適合率（KPI-3）の最終的な根拠には、ルール・grammar の作成時に参照しない
-  **holdout**（`fixtures/plsql/src/holdout/`、全 24 ユニット中 9 ユニット = 37.5%）上の値を用いる。
+  **holdout**（`fixtures/plsql/src/holdout/`、全 27 ユニット中 9 ユニット = 33.3%）上の値を用いる。
   ただし **2026-09-17 時点で holdout の独立性は失われている**。P2-2 のルール開発中に期待値との差分一覧を
   繰り返し出力し、そこに holdout の routine 名と期待判定が含まれていたためである
   （`fixtures/plsql/README.md` に経緯を記録）。
@@ -36,7 +36,7 @@ package の中で判定が割れるためである。
 parse 率 = 構文エラーなく parse できたファイル数 / corpus の全ファイル数
 ```
 
-- 分母は `fixtures/plsql/src/` 以下の `*.pks` `*.pkb` `*.prc` `*.trg`（現在 38）。
+- 分母は `fixtures/plsql/src/` 以下の `*.pks` `*.pkb` `*.prc` `*.trg`（現在 42）。
 - 構文エラーは例外ではなく診断として数える。1 ファイルの失敗が他を止めてはならない。
 - **目標: Phase 1 で 90% 以上**。
 - 注意: parse できることは**コンパイルできることを意味しない**。P0-4 で、ANTLR が通した 32 ファイルのうち
@@ -58,7 +58,7 @@ parse 率 = 構文エラーなく parse できたファイル数 / corpus の全
 適合率 = manifest の expected と一致した routine 数 / 判定対象の routine 数
 ```
 
-- 分母は現在 56 routine（うち holdout 18）。
+- 分母は現在 62 routine（うち holdout 18）。
 - **AUTO 禁止条件（§2）に該当する routine を AUTO と判定したら、その時点で不合格**とする。
   適合率が何 % でも、この false negative は許さない。
 - **目標: Phase 2 で、AUTO 禁止条件の取りこぼし 0、全体一致 90% 以上**。

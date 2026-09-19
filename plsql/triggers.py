@@ -41,6 +41,12 @@ from .symbols import OracleSchema, Symbol, SymbolTable
 
 PREFIX = "v_trg_"
 CORRELATION = re.compile(r":?\b(?P<qualifier>NEW|OLD)\s*\.\s*(?P<column>[A-Za-z][\w$#]*)", re.IGNORECASE)
+# 複数イベントの trigger の本体が、どのイベントで発火したかを見る述語。呼び出し側は「どの文のところで
+# 呼んでいるか」を静的に知っているので、**相関行と同じく引数として渡す**（#29 の 25）
+EVENT = re.compile(r"(?<![\w$#.:])(?P<event>INSERTING|UPDATING|DELETING)\b(?!\s*\()", re.IGNORECASE)
+# `UPDATING('STATUS')`: 列ごとの述語。SET の列を見れば静的に決まるが、まだ渡す形を持っていない
+EVENT_OF_COLUMN = re.compile(r"(?<![\w$#.:])(?:INSERTING|UPDATING|DELETING)\s*\(", re.IGNORECASE)
+_LITERAL = re.compile(r"'(?:[^']|'')*'")
 
 
 @dataclass
@@ -61,6 +67,13 @@ class Trigger:
     @property
     def correlations(self) -> list[str]:
         return list(correlation_row(self.routine, self.module.trigger_when))
+
+    def asks_event_of_column(self) -> bool:
+        """`UPDATING('STATUS')` を読む本体。**掛けない**（渡す形が無い）。"""
+        from .lower import _walk
+
+        statements = _walk(self.routine.body) + [s for h in self.routine.exception_handlers for s in _walk(h.body)]
+        return any(EVENT_OF_COLUMN.search(_LITERAL.sub("''", text or "")) for s in statements for text in _texts(s))
 
     def assigns_correlation(self) -> bool:
         """`:NEW.x := ...` を書く trigger（採番 trigger）。**掛けない。**
@@ -95,7 +108,13 @@ def correlation_row(routine: M.Routine, trigger_when: str | None) -> dict[str, "
     for text in [trigger_when or ""] + [t for s in statements for t in _texts(s)]:
         for match in CORRELATION.finditer(text or ""):
             seen.setdefault(f"{match.group('qualifier').upper()}.{match.group('column')}", None)
+        # `IF INSERTING THEN`。文字列リテラルの中の単語は述語ではない
+        for match in EVENT.finditer(_LITERAL.sub("''", text or "")):
+            seen.setdefault(match.group("event").upper(), None)
     return dict(sorted(seen.items()))
+
+
+EVENTS = {"INSERTING": "INSERT", "UPDATING": "UPDATE", "DELETING": "DELETE"}
 
 
 def _texts(statement: M.Statement):
@@ -202,10 +221,9 @@ def _apply(statement: M.Statement, routine: M.Routine, found: dict[str, list[Tri
         # 掛け方を知らない形は、**掛けていないと言う**。以前は黙って通り過ぎていたので、trigger のある表へ
         # DELETE / MERGE で書く routine と、複数イベントの trigger のある表へ書く routine が、何の診断も
         # 無いまま AUTO になりえた——正しく掛けられた routine のほうが悪い判定になる、逆転である
-        unhandled = ("DELETE で発火する。行の :OLD を読んで渡す形をまだ持っていない" if kind == "DELETE" else
-                     "MERGE は INSERT と UPDATE のどちらで発火するかが行ごとに決まる" if kind == "MERGE" else
-                     f"複数のイベント（{trigger.event}）で発火する。本体は INSERTING / UPDATING / DELETING で"
-                     f"分岐しうるが、それを渡す形をまだ持っていない" if len(trigger.events) > 1 else None)
+        unhandled = ("MERGE は INSERT と UPDATE のどちらで発火するかが行ごとに決まる" if kind == "MERGE" else
+                     "本体が `UPDATING('列')` の形で列ごとのイベントを見ている。それを渡す形をまだ持っていない"
+                     if trigger.asks_event_of_column() else None)
         if unhandled is not None:
             statement.add("WARN", "TRIGGER_NOT_APPLIED",
                           f"{trigger.module.name} が掛かる書き込みだが、**掛けていない**。{unhandled}（#12）")
@@ -279,33 +297,43 @@ def _inserted(tree: exp.Expression) -> dict[str, str] | None:
 def _call(statement: M.SqlOperation, routine: M.Routine, trigger: Trigger, kind: str,
           tree: exp.Expression, schema: OracleSchema | None, index: int):
     """(:OLD を読む文, trigger を呼ぶ文)。掛けられなければ None。"""
-    correlations = trigger.correlations
+    # どのイベントの文のところで呼んでいるかは、ここで静的に決まっている
+    events = {name: ("TRUE" if EVENTS[name] == kind else "FALSE") for name in trigger.correlations if name in EVENTS}
+    correlations = [name for name in trigger.correlations if name not in EVENTS]
     if kind == "INSERT":
         written = _inserted(tree)
         if written is None:
             return None
-        if any(name.upper().startswith("OLD.") for name in correlations):
-            return None   # INSERT に :OLD は無い
-        values = {name: written.get(name.partition(".")[2].lower(), "NULL") for name in correlations}
+        # INSERT に :OLD の行は無い。Oracle でも `:OLD.x` は NULL である（複数イベントの本体は UPDATING の
+        # 枝で :OLD を読むので、読んでいること自体は掛けない理由にならない）
+        values = {name: ("NULL" if name.upper().startswith("OLD.")
+                         else written.get(name.partition(".")[2].lower(), "NULL")) for name in correlations}
         # INSERT は必ず 1 行入るので、掛かる条件は無い
-        return None, _invocation(statement, trigger, values, index)
+        return None, _invocation(statement, trigger, {**values, **events}, index)
 
-    written = _assignments(tree)
+    written = _assignments(tree) if kind == "UPDATE" else {}
     where = tree.args.get("where")
     if where is None or not _one_row(where, _table(tree), schema):
         return None
     read_columns: list[str] = []
     values: dict[str, str] = {}
+    pending: dict[str, str] = {}      # 相関名 -> 先に読む列。変数名は下で決まる
     for name in correlations:
         qualifier, _, column = name.partition(".")
         column = column.lower()
-        if qualifier.upper() == "NEW" and column in written:
+        if kind == "DELETE" and qualifier.upper() == "NEW":
+            values[name] = "NULL"                   # DELETE に :NEW の行は無い。Oracle でも NULL
+        elif qualifier.upper() == "NEW" and column in written:
             values[name] = written[column]          # 書き込む値そのもの
         else:
             # `:OLD` と、この更新が触っていない `:NEW`（更新後も同じ値である）
             if column not in read_columns:
                 read_columns.append(column)
-            values[name] = column                   # 変数名は後で差し替える
+            pending[name] = column
+    if not read_columns and trigger.timing == "BEFORE":
+        # BEFORE は書く前に呼ぶので、「当たる行があるか」を `SQL%ROWCOUNT` では見られない。相関行を 1 つも
+        # 読まない本体でも、行があるかだけは読む——無い行の UPDATE / DELETE に trigger は発火しない
+        read_columns.append(schema.primary_key(_table(tree))[0].lower())
     read = None
     flag = f"trg{index}"
     if read_columns:
@@ -315,8 +343,8 @@ def _call(statement: M.SqlOperation, routine: M.Routine, trigger: Trigger, kind:
             variables[column] = variable
             routine.declarations.append(_declaration(routine, variable, _table(tree), column, schema,
                                                      statement))
-        values = {name: (variables[value] if value in variables else value)
-                  for name, value in values.items()}
+        values.update({name: variables[column] for name, column in pending.items()})
+        values = {name: values[name] for name in correlations}   # 呼ばれる側と同じ並び
         read = M.SqlOperation(
             id=f"{statement.id}trg{index}", kind="SqlOperation", source_range=statement.source_range,
             sql_kind="SELECT", cardinality="AT_MOST_ONE", not_found_flag=flag,
@@ -327,7 +355,7 @@ def _call(statement: M.SqlOperation, routine: M.Routine, trigger: Trigger, kind:
                  f"{trigger.module.name} が読む :OLD の値。**更新の前に**読む——後では元の値が無い"
                  f"（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ "
                  f"trigger は掛からないので、これは「無い」が答えである")
-    return read, _guarded(statement, trigger, values, index, flag if read is not None else None)
+    return read, _guarded(statement, trigger, {**values, **events}, index, flag if read is not None else None)
 
 
 def _guarded(statement: M.SqlOperation, trigger: Trigger, values: dict[str, str], index: int,
@@ -396,6 +424,10 @@ def _free_name(routine: M.Routine, taken) -> str:
 def _declaration(routine: M.Routine, variable: str, table: str | None, column: str,
                  schema: OracleSchema | None, statement: M.Statement) -> M.Declaration:
     oracle = (schema.column(table, column) if schema and table else None) or f"{table}.{column}%TYPE"
+    if re.fullmatch(r"(?i)(NUMBER|NUMERIC|DECIMAL|INTEGER|INT|SMALLINT)\s*(\(\s*\d+\s*(,\s*0\s*)?\))?", oracle.strip()):
+        # trigger の本体は相関行の数値を PL/SQL の NUMBER として受ける。列の幅（NUMBER(10) -> Long）で宣言すると
+        # その引数に渡せない
+        oracle = "NUMBER"
     return M.Declaration(id=f"{routine.id}#decl-{variable}", kind="Declaration", name=variable,
                          source_range=statement.source_range,
                          type=M.TypeRef(oracle=oracle, resolved=oracle, origin="column-type"))
