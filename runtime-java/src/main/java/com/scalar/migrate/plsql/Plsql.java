@@ -64,7 +64,7 @@ public final class Plsql {
   @SuppressWarnings({"unchecked", "rawtypes"})
   private static int compare(Object a, Object b) {
     if (a instanceof Number && b instanceof Number) {
-      return OracleNumbers.toBigDecimal(a).compareTo(OracleNumbers.toBigDecimal(b));
+      return num(a).compareTo(num(b));
     }
     return ((Comparable) a).compareTo(b);
   }
@@ -111,12 +111,12 @@ public final class Plsql {
   }
 
   public static BigDecimal nvl(Object value, long fallback) {
-    return isNull(value) ? BigDecimal.valueOf(fallback) : OracleNumbers.toBigDecimal(value);
+    return isNull(value) ? BigDecimal.valueOf(fallback) : num(value);
   }
 
   /** Oracle's ROUND is half-up; BigDecimal's default is half-even. */
   public static BigDecimal round(Object value, int scale) {
-    return value == null ? null : OracleNumbers.round(OracleNumbers.toBigDecimal(value), scale);
+    return value == null ? null : OracleNumbers.round(num(value), scale);
   }
 
   /** Oracle's TRUNC on a DATE drops the time of day. */
@@ -184,7 +184,7 @@ public final class Plsql {
   public static BigDecimal neg(Object value) {
     if (isNull(value)) return null;
     BigDecimal decimal = value instanceof BigDecimal d ? d
-        : value instanceof Number n ? OracleNumbers.toBigDecimal(n) : null;
+        : value instanceof Number n ? num(n) : null;
     if (decimal == null) {
       throw new IllegalArgumentException("単項マイナスを数値でない値に適用した: " + value.getClass());
     }
@@ -214,14 +214,14 @@ public final class Plsql {
   }
 
   public static BigDecimal div(Object a, Object b) {
-    if (!isNull(a) && !isNull(b) && OracleNumbers.toBigDecimal(b).signum() == 0) throw new ZeroDivide();
+    if (!isNull(a) && !isNull(b) && num(b).signum() == 0) throw new ZeroDivide();
     return arith(a, b, OracleNumbers::divide);
   }
 
   private static BigDecimal arith(Object a, Object b,
       java.util.function.BinaryOperator<BigDecimal> operator) {
     if (a == null || b == null) return null;
-    return operator.apply(OracleNumbers.toBigDecimal(a), OracleNumbers.toBigDecimal(b));
+    return operator.apply(num(a), num(b));
   }
 
   /** {@code TO_CHAR(value, format)}. Only the formats the corpus uses are mapped; the rest raise. */
@@ -246,9 +246,32 @@ public final class Plsql {
         "TO_CHAR(" + value.getClass().getSimpleName() + ", '" + format + "') is not mapped");
   }
 
+  /**
+   * A value read as a NUMBER. Text that is not a number is ORA-06502 in PL/SQL (`v_n := 'abc';`,
+   * `TO_NUMBER('12x')`), which a VALUE_ERROR handler catches. It used to leave as Java's NumberFormatException,
+   * which no migrated handler names.
+   */
+  private static BigDecimal num(Object value) {
+    try {
+      return OracleNumbers.toBigDecimal(value);
+    } catch (NumberFormatException e) {
+      throw new ValueError("character to number conversion error");
+    }
+  }
+
+  /** TO_NUMBER(value): NULL for NULL, ORA-06502 for text that is not a number. */
+  public static BigDecimal toNumber(Object value) {
+    return isNull(value) ? null : num(value);
+  }
+
+  /** TO_NUMBER(value, format): a format model is not mapped, and guessing one would read '1,234' two ways. */
+  public static BigDecimal toNumber(Object value, Object format) {
+    throw new UnsupportedOperationException("TO_NUMBER(value, '" + format + "') is not mapped");
+  }
+
   /** Coerce to Oracle's NUMBER. Generated code uses it wherever a literal or a ternary lands in a NUMBER. */
   public static BigDecimal dec(Object value) {
-    return isNull(value) ? null : OracleNumbers.toBigDecimal(value);
+    return isNull(value) ? null : num(value);
   }
 
   public static BigDecimal number(long value) {
@@ -271,7 +294,7 @@ public final class Plsql {
   /** A value going into NUMBER(precision, scale): rounded half-up to the scale, refused past the precision. */
   public static BigDecimal fit(Object value, int precision, int scale) {
     if (isNull(value)) return null;
-    BigDecimal rounded = OracleNumbers.toBigDecimal(value).setScale(scale, java.math.RoundingMode.HALF_UP);
+    BigDecimal rounded = num(value).setScale(scale, java.math.RoundingMode.HALF_UP);
     if (rounded.signum() != 0 && rounded.precision() - rounded.scale() > precision - scale) {
       throw new ValueError("number precision too large");
     }
@@ -339,7 +362,7 @@ public final class Plsql {
       return moment.toInstant();
     }
     BigDecimal decimal = value instanceof BigDecimal d ? d
-        : value instanceof Number n ? OracleNumbers.toBigDecimal(n) : null;
+        : value instanceof Number n ? num(n) : null;
     if (decimal == null) return value;  // TEXT, DATE, TIMESTAMPTZ and the like pass through untouched
     switch (type) {
       case "BIGINT":
@@ -372,8 +395,8 @@ public final class Plsql {
     if (value instanceof Long l) return BigDecimal.valueOf(l, scale);
     if (value instanceof Integer i) return BigDecimal.valueOf(i, scale);
     if (value instanceof BigDecimal d) return scale == 0 ? d : d.movePointLeft(scale);
-    if (value instanceof Number n) return OracleNumbers.toBigDecimal(n);
-    return OracleNumbers.toBigDecimal(value);
+    if (value instanceof Number n) return num(n);
+    return num(value);
   }
 
   /**
@@ -464,13 +487,13 @@ public final class Plsql {
 
   public static BigDecimal mod(Object a, Object b) {
     if (isNull(a) || isNull(b)) return null;
-    BigDecimal divisor = OracleNumbers.toBigDecimal(b);
-    if (divisor.signum() == 0) return OracleNumbers.toBigDecimal(a);  // Oracle's MOD by zero returns the value
-    return OracleNumbers.toBigDecimal(a).remainder(divisor);
+    BigDecimal divisor = num(b);
+    if (divisor.signum() == 0) return num(a);  // Oracle's MOD by zero returns the value
+    return num(a).remainder(divisor);
   }
 
   public static BigDecimal abs(Object value) {
-    return isNull(value) ? null : OracleNumbers.toBigDecimal(value).abs();
+    return isNull(value) ? null : num(value).abs();
   }
 
   /** Oracle's {@code IN}: false when the left side is null, since the comparison is unknown. */
