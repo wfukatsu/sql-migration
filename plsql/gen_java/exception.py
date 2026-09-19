@@ -178,12 +178,15 @@ def exception_class(entry: ErrorCode, package: str) -> JavaFile:
 # not written -- Java that does not compile, which nothing noticed until the compile check (#21) asked.
 # ZERO_DIVIDE: `Plsql.div` raises the runtime's own `Plsql.ZeroDivide`, and a `try` that has a ZERO_DIVIDE or an
 # OTHERS handler turns it into this class on the way out (service._guarded). VALUE_ERROR likewise: a declaration
-# with a precision or a length raises `Plsql.ValueError` from `Plsql.fit`.
+# with a precision or a length raises `Plsql.ValueError` from `Plsql.fit`, and so does text that is not a number
+# wherever the helper reads a NUMBER (`Plsql.dec`, `Plsql.toNumber`, the arithmetic).
 ALWAYS = ("NO_DATA_FOUND", "TOO_MANY_ROWS", "ZERO_DIVIDE", "VALUE_ERROR")
 
 # Predefined exceptions nothing on the target raises by itself: the generated code has no unique-constraint
 # violation to catch (ScalarDB reports a duplicate INSERT through the transaction, which is then unusable), and the
-# helper's conversions throw Java's own exceptions (VALUE_ERROR is raised for size errors only; service notes it). A handler for one of these runs in Oracle and never here.
+# conversion that Oracle reports as INVALID_NUMBER happens inside a SQL statement, which here is a bind of a value
+# the helper has already read (a failure there is a VALUE_ERROR, as it is for a PL/SQL expression in Oracle).
+# A handler for one of these runs in Oracle and never here.
 NEVER_RAISED_BY_TARGET = ("DUP_VAL_ON_INDEX", "INVALID_NUMBER")
 
 

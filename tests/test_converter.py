@@ -677,8 +677,47 @@ def test_an_identifier_whose_quotes_carried_meaning_is_not_reported_ok():
     r = run('CREATE TABLE "Items" ("order" INT PRIMARY KEY, "UnitPrice" TEXT, "status" TEXT)', "postgres", with_schema=False)
     said = messages(r, "IDENT")
     assert r.status == "WARN"
-    assert '"order" is a SQL keyword' in said and '"UnitPrice" is case-sensitive' in said and '"Items" is case-sensitive' in said
+    assert '"UnitPrice" is case-sensitive' in said and '"Items" is case-sensitive' in said
     assert '"status"' not in said, "an ORM that quotes everything is not a finding"
+    # Issue #29 (6): the keyword keeps its quotes -- ScalarDB SQL reads "order" as a name (checked on the cluster)
+    assert '"order" INT PRIMARY KEY' in r.converted[0] and "status TEXT" in r.converted[0]
+
+
+IDENT_DDL = ('CREATE TABLE "order" ("key" INT PRIMARY KEY, type VARCHAR(10), "my col" VARCHAR(10), note VARCHAR(10)); '
+             'CREATE INDEX ix_type ON "order" (type); ')
+
+
+def test_a_name_scalardb_reserves_is_quoted_wherever_it_is_written():
+    """Issue #29 (6). Checked on ScalarDB Cluster 3.19.1: every keyword of the grammar is reserved (`SELECT type`,
+    `FROM order` are syntax errors), `"type"` and `"my col"` are names, a backtick is not a quote."""
+    results, registry = convert_script(
+        IDENT_DDL + "INSERT INTO \"order\" (\"key\", type, \"my col\") VALUES (1, 'a', 'b');\n"
+        "UPDATE \"order\" SET type = 'c' WHERE \"key\" = 1;\n"
+        "SELECT o.\"key\", o.type AS level, o.note AS mode FROM \"order\" o WHERE o.\"key\" = 1;\n"
+        "DELETE FROM \"order\" WHERE \"key\" = 1;\nDROP TABLE \"order\"", "postgres", decompose=False)
+    create, index, insert, update, select, delete, drop = (r.converted[0] for r in results)
+    assert create.startswith('CREATE TABLE "order" (\n  "key" INT PRIMARY KEY,\n  "type" TEXT,\n  "my col" TEXT,\n  note TEXT')
+    assert index == 'CREATE INDEX ON "order" ("type")'
+    assert insert.startswith('INSERT INTO "order" ("key", "type", "my col") VALUES')
+    assert update.startswith('UPDATE "order" SET "type" =') and update.endswith('WHERE "key" = 1')
+    assert 'o."key"' in select and 'o."type" AS level' in select and 'AS "mode"' in select and 'FROM "order"' in select
+    assert delete == 'DELETE FROM "order" WHERE "key" = 1' and drop == 'DROP TABLE "order"'
+    assert all(r.status != "ERROR" for r in results)
+    # the registry and the Schema Loader file hold the bare names
+    assert registry.get("order").columns.keys() >= {"key", "type", "my col"}
+    assert registry.get("order").secondary_indexes == ["type"]
+
+
+def test_an_unquoted_keyword_of_the_source_is_quoted_too():
+    r = run("CREATE TABLE t9 (id INT PRIMARY KEY, type VARCHAR(5), data VARCHAR(5), user VARCHAR(5))", "mysql",
+            with_schema=False)
+    assert '"type" TEXT' in r.converted[0] and '"data" TEXT' in r.converted[0] and '"user" TEXT' in r.converted[0]
+    assert "quoted" in messages(r, "IDENT")
+
+
+def test_a_name_with_a_double_quote_in_it_cannot_be_written():
+    r = run('CREATE TABLE t9 (id INT PRIMARY KEY, "a""b" TEXT)', "postgres", with_schema=False)
+    assert r.status == "ERROR" and "IDENT" in codes(r)
 
 
 def test_one_table_spelled_two_ways_is_flagged():
@@ -895,3 +934,29 @@ def test_updating_a_primary_key_column_is_refused():
     r = run_t("UPDATE t SET id = 5 WHERE id = 1")
     assert r.status == "ERROR" and "PK_UPDATE" in codes(r)
     assert run_t("UPDATE t SET name = 'x' WHERE id = 1").status == "OK"
+
+
+def test_a_typed_temporal_literal_is_written_as_plain_text():
+    """dml-benchmark-report 4.5: PostgreSQL's `DATE '...'` / `TIMESTAMP '...'` went out as they stood with status OK,
+    and ScalarDB SQL answered DB-SQL-10026 -- it has no typed literal."""
+    r = run_t("INSERT INTO t (id, d, ts) VALUES (7, DATE '2024-09-01', TIMESTAMP '2024-09-01 10:00:00')", "postgres")
+    assert "VALUES (7, '2024-09-01', '2024-09-01 10:00:00')" in r.converted[0]
+    r = run_t("UPDATE t SET ts = TIMESTAMP '2024-09-01 10:00:00' WHERE id = 1 AND d = '2024-09-01'::date", "postgres")
+    assert "SET ts = '2024-09-01 10:00:00'" in r.converted[0] and "d = '2024-09-01'" in r.converted[0]
+    r = run_t("SELECT id FROM t WHERE ts >= DATE '2024-09-01' AND id = 1", "postgres")
+    assert "ts >= '2024-09-01 00:00:00'" in r.converted[0]
+
+
+def test_a_boolean_for_an_integer_column_is_written_as_a_number():
+    """dml-benchmark-report 4.6: MySQL's TINYINT(1) is an INT in ScalarDB, which refuses TRUE for it (DB-SQL-10052)."""
+    ddl = "CREATE TABLE b (id INT PRIMARY KEY, vip TINYINT(1), flag BOOLEAN); "
+    results, _ = convert_script(ddl + "INSERT INTO b (id, vip, flag) VALUES (1, TRUE, TRUE);\n"
+                                "SELECT id FROM b WHERE vip = FALSE AND id = 1", "mysql", decompose=False)
+    assert "VALUES (1, 1, " in results[-2].converted[0]
+    assert "vip = 0" in results[-1].converted[0] and "BOOL_LIT" in codes(results[-1])
+
+
+def test_values_without_a_column_list_are_fitted_by_the_table_definition_order():
+    ddl = "CREATE TABLE b2 (id INT PRIMARY KEY, active TINYINT(1), ts DATETIME); "
+    results, _ = convert_script(ddl + "INSERT INTO b2 VALUES (1, TRUE, '2024-09-01')", "mysql", decompose=False)
+    assert "VALUES (1, 1, '2024-09-01 00:00:00')" in results[-1].converted[0]
