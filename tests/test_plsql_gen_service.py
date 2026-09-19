@@ -408,3 +408,46 @@ def test_a_routine_that_finishes_still_draws_its_sequence():
     java = generate_module(module, "g.app", "g.infra", "g.domain").file.render()
     assert "この文の採番は行わない" not in java
     assert "repository.prcAddProductStmt" in java
+
+
+# ---- review #27, 17c: output that did not compile, and was counted as clean ---------------------------------
+
+def test_a_standalone_function_keeps_its_return_type():
+    """`Create_function_bodyContext` has a lower-case f: the function came out `void` with `return 1;` in it."""
+    java = _service_of("CREATE OR REPLACE FUNCTION f(p NUMBER) RETURN NUMBER IS\nBEGIN\n  RETURN 1;\nEND;\n/\n")
+    assert "public BigDecimal f(BigDecimal p)" in java
+
+
+def test_nothing_is_emitted_after_an_if_whose_every_branch_returns():
+    java = _service_of("CREATE OR REPLACE FUNCTION f(p NUMBER) RETURN NUMBER IS\nBEGIN\n"
+                       "  IF p > 0 THEN\n    RETURN 1;\n  ELSE\n    RETURN 2;\n  END IF;\nEND;\n/\n")
+    assert "reached its end without RETURN" not in java, "Java rejects the unreachable throw"
+    fallthrough = _service_of("CREATE OR REPLACE FUNCTION f(p NUMBER) RETURN NUMBER IS\nBEGIN\n"
+                              "  IF p > 0 THEN\n    RETURN 1;\n  END IF;\nEND;\n/\n")
+    assert "reached its end without RETURN" in fallthrough
+
+
+def test_a_return_in_a_procedure_with_out_arguments_returns_the_result_record():
+    java = _service_of("CREATE OR REPLACE PROCEDURE q(p NUMBER, o OUT NUMBER) IS\nBEGIN\n  o := 1;\n"
+                       "  IF p > 0 THEN\n    RETURN;\n  END IF;\n  o := 2;\nEND;\n/\n")
+    assert java.count("return new QResult(o);") == 2 and "return;" not in java
+
+
+def test_a_literal_over_two_lines_stays_one_java_literal():
+    java = _service_of("CREATE OR REPLACE PROCEDURE q IS\n  v VARCHAR2(100);\nBEGIN\n  v := 'line1\nline2';\nEND;\n/\n")
+    assert '"line1\\nline2"' in java
+
+
+@pytest.mark.parametrize("declarations,clash", [
+    ("p_id NUMBER; p__id NUMBER;", "p_id / p__id -> pId"),
+    ("row_count NUMBER;", "SQL%ROWCOUNT / row_count -> rowCount"),
+])
+def test_two_plsql_names_that_are_one_java_name_are_refused(declarations, clash):
+    from plsql.frontend import parse_text
+    from plsql.lower import lower_file
+    from plsql.symbols import build
+    parsed = parse_text(f"CREATE OR REPLACE PROCEDURE q IS\n  {declarations}\nBEGIN\n  NULL;\nEND;\n/\n", "q.prc")
+    module = lower_file(parsed, build(parsed, None), None)[0]
+    generated = generate_module(module, APP, INFRA, DOMAIN)
+    assert clash in generated.file.render()
+    assert generated.untranslated == ["q"], "refused, so it is not counted as clean"
