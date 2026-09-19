@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from ..ir import model as M
 from .emit import JavaFile
-from .types import java_class_name, java_name, java_type, record_columns
+from .types import java_class_name, java_name, java_type, record_columns, routine_stem
 
 
 @dataclass
@@ -95,7 +95,7 @@ def result_record(routine: M.Routine, package: str, source: str = "") -> Dto | N
     if not outs:
         return None  # a plain return value needs no record
 
-    file = JavaFile(package=package, name=java_class_name(routine.name) + "Result", source=source)
+    file = JavaFile(package=package, name=java_class_name(routine_stem(routine)) + "Result", source=source)
     components = []
     if routine.return_type is not None:
         mapped = java_type(routine.return_type.resolved or routine.return_type.oracle)

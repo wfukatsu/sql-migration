@@ -83,6 +83,8 @@ DEPLOY_ORDER = [
     "trg_orders_audit.trg", "trg_orders_seq.trg", "holdout/trg_products_audit.trg",
     # Issue #29-25: DELETE / 複数イベントの trigger と、それを routine 経由で通す package
     "pkg_line_edit.pks", "pkg_line_edit.pkb", "trg_lines_audit.trg", "trg_inventory_tx_keep.trg",
+    # Issue #29-23: オーバーロード
+    "pkg_contact.pks", "pkg_contact.pkb",
     # holdout2: ルールを凍結した後に足した独立ホールドアウト（fixtures/plsql/README.md）
     "holdout2/pkg_shipment.pks", "holdout2/pkg_tier_admin.pks",
     "holdout2/pkg_shipment.pkb", "holdout2/pkg_tier_admin.pkb",

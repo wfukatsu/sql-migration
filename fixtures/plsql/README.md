@@ -17,7 +17,7 @@ P0-1「PL/SQL corpus と元表 DDL の作成」の成果物。
 
 ## holdout
 
-`src/holdout/` と `src/holdout2/` の 9 ユニット（14 ファイル、全 27 ユニット中 33.3%）は、
+`src/holdout/` と `src/holdout2/` の 9 ユニット（14 ファイル、全 28 ユニット中 32.1%）は、
 **grammar のパッチ作成とルール作成の際に参照しない**。Phase 2 の判定適合率は、まず holdout 上の値を根拠とする。
 ただし `holdout/` は P2-2 で独立性を失っている（下記）。現時点で独立した証拠になるのは `holdout2/` だけである。
 
