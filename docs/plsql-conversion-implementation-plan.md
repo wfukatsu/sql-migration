@@ -836,6 +836,24 @@ corpus の 4 つは宣言どおりに分かれた: `seq_audit_id` / `seq_tx_id` 
 のに繰り返し、本当の理由（`counters` に初期値が無い）が「10 回失敗した」に化けていた。再試行してよい
 失敗と、そうでない失敗を分けた。
 
+#### TIMESTAMP WITH TIME ZONE を TIMESTAMPTZ 列へ書く（2026-09-19）
+
+`record_payment` の `paid_at = SYSTIMESTAMP` は、ScalarDB SQL のドライバに**型ごと拒否**されていた
+（DB-SQL-10016）。`AuditContext.now()` は `OffsetDateTime` を返すが、ドライバが受け取るのは
+`java.time.Instant` である。TIMESTAMP 列の側は #23 で直してあったが、TIMESTAMPTZ 列の側は
+**素通し**にしていた——「タイムゾーンを保てる列だから変換は要らない」という判断が、ドライバに
+聞かずに下されていた。
+
+`Plsql.bind` が TIMESTAMPTZ 列へは瞬間（`Instant`）として渡す。**実クラスタで往復を確かめた**
+（`AuditBindIT`: 書いた瞬間と読み戻した瞬間が一致する）。
+
+**失われるものが 1 つある: 元の offset である。** Oracle の TIMESTAMP WITH TIME ZONE は瞬間と
+offset の両方を持つが、ScalarDB の TIMESTAMPTZ は瞬間だけを持つ。読み戻すと同じ瞬間の別の表記に
+なる。比較・並べ替え・差は変わらないが、**「どの地域で記録されたか」を offset で読んでいた
+業務があれば、それは移らない**。corpus にそういう読み方は無い。
+
+実測: `payment_record` が Oracle と一致。比較で一致 **54 / 63**。
+
 #### Phase 4 の現在地（2026-09-17）
 
 > **中間報告は `docs/plsql-phase4-interim.md`。**
