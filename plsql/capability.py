@@ -194,18 +194,65 @@ def scan_after_write(program: M.Program, report: CapabilityReport) -> list[tuple
     with the access path. Reading by key after writing is allowed (measured in P2-9); scanning is not.
     """
     found: list[tuple[str, str, str]] = []
+    from .analysis import build_call_graph
+
+    routines = {r.id: r for m in program.modules for r in m.routines}
+    build_call_graph(program)   # resolves each Call to the routine it names; this runs before the program analysis
+
+    def scans(statement: M.Statement, written: set[str]) -> list[str]:
+        """The tables in `written` that the statement reads other than by key."""
+        if statement.kind == "SqlOperation" and is_key_access(report.access_paths.get(statement.id)):
+            return []   # key access after a write is fine
+        return [t for t in statement.read_set if t in written]
+
+    def everything(routine: M.Routine) -> list[M.Statement]:
+        return _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
+
+    def reachable(routine_id: str, seen: set[str]) -> list[M.Routine]:
+        """The routine and what it calls, transitively. A callee writes and scans inside the caller's
+        transaction, so its statements count as the caller's."""
+        routine = routines.get(routine_id)
+        if routine is None or routine_id in seen:
+            return []
+        seen.add(routine_id)
+        out = [routine]
+        for statement in everything(routine):
+            if statement.kind == "Call" and getattr(statement, "resolved_to", None):
+                out += reachable(statement.resolved_to, seen)
+        return out
+
+    def visit(routine_id: str, statements: list[M.Statement], written: set[str]) -> None:
+        for statement in statements:
+            query = getattr(statement, "query", None)
+            if query is not None:
+                # a cursor FOR loop opens its query once, before the first iteration: the body's writes come
+                # after it, so it is checked against what was written before the loop only
+                found.extend((routine_id, table, query.id) for table in scans(query, written))
+            if statement.kind == "Loop":
+                # the back edge: the second iteration runs the top of the body after the writes at its bottom
+                written.update(t for s in _walk(statement.body) for t in s.write_set)
+            found.extend((routine_id, table, statement.id) for table in scans(statement, written))
+            if statement.kind == "Call" and getattr(statement, "resolved_to", None):
+                for callee in reachable(statement.resolved_to, set()):
+                    for inner in everything(callee):
+                        # reported on the call: that is the statement of this routine which does the scanning
+                        found.extend((routine_id, table, statement.id) for table in scans(inner, written))
+                        written.update(inner.write_set)
+            written.update(statement.write_set)
+            for branch in getattr(statement, "branches", []) or []:
+                visit(routine_id, branch.body, written)
+            visit(routine_id, getattr(statement, "else_body", []) or [], written)
+            visit(routine_id, getattr(statement, "body", []) or [], written)
+            for handler in getattr(statement, "exception_handlers", []) or []:
+                visit(routine_id, handler.body, written)
+
     for module in program.modules:
         for routine in module.routines:
             written: set[str] = set()
-            for statement in _walk(routine.body):
-                for table in statement.read_set:
-                    if table not in written:
-                        continue
-                    if statement.kind == "SqlOperation" and \
-                            is_key_access(report.access_paths.get(statement.id)):
-                        continue  # key access after a write is fine
-                    found.append((routine.id, table, statement.id))
-                written.update(statement.write_set)
+            visit(routine.id, routine.body, written)
+            # a handler runs after whatever part of the body ran before the exception
+            for handler in routine.exception_handlers:
+                visit(routine.id, handler.body, written)
     return sorted(set(found))
 
 

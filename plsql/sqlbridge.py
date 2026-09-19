@@ -103,6 +103,13 @@ def analyse(operation: SqlOperation, scope: str, symbols: SymbolTable | None = N
     operation.at_most_one_row = at_most_one_row(tree)
 
     binds = bind_variables(tree, scope, symbols, loop_variables)
+    for name in dict.fromkeys(tree.meta.get("shadowed_variables", [])):
+        issue = Issue("WARN", "BIND_SHADOWED",
+                      f"{name} is a PL/SQL variable and also a column of the statement's tables: Oracle reads the "
+                      f"column, so it is not bound. Rename the variable if the comparison was meant for it",
+                      operation.source_range)
+        operation.diagnostics.append(issue)
+        result.issues.append(_issue(issue))
     if lift:
         lift_expressions(tree, binds, scope, symbols)
     attribute_columns(tree, binds, operation, registry, symbols)
@@ -374,6 +381,9 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
     _correlation_as_qualified(tree, loop_fields)
     found: dict[str, BindVariable] = {}
     _collection_elements(tree, scope, symbols, found)
+    schema = getattr(symbols, "oracle_schema", None)
+    columns = {c for t in tree.find_all(exp.Table) for c in ((schema.columns(t.name) if schema else None) or {})}
+    shadowed: list[str] = tree.meta.setdefault("shadowed_variables", [])
     for column in list(tree.find_all(exp.Column)):
         if column.table:
             fields = loop_fields.get(column.table.lower())
@@ -391,6 +401,13 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
         name = column.name
         symbol = symbols.resolve(scope, name)
         if symbol is None or symbol.kind not in BIND_KINDS:
+            continue
+        if name.lower() in columns and not column.find_ancestor(exp.Values):
+            # Oracle resolves a bare name in SQL to a column of the statement's tables first, and to the PL/SQL
+            # variable only when no column has the name (`cursors._substituted` follows the same rule). Binding
+            # it turned `WHERE status = status` -- true for every row -- into a comparison with the variable.
+            # A VALUES list has no columns in scope, so there the name is the variable.
+            shadowed.append(name)
             continue
         placeholder = _unique(name, found)
         found[placeholder] = BindVariable(

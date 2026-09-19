@@ -650,6 +650,13 @@ class _Lowerer:
                 routine.transaction_effects.savepoints += 1
             elif statement.kind == "DynamicSql":
                 routine.external_effects.dynamic_sql = True
+                # `EXECUTE IMMEDIATE 'BEGIN ... COMMIT; END;'` commits as surely as a COMMIT statement does
+                literals = " ".join(m for t in dynamic_texts(routine, statement)
+                                    for m in re.findall(r"'((?:[^']|'')*)'", t))
+                for word in _DYNAMIC_TX.findall(literals):
+                    counter = {"COMMIT": "commits", "ROLLBACK": "rollbacks", "SAVEPOINT": "savepoints"}[word.upper()]
+                    setattr(routine.transaction_effects, counter,
+                            getattr(routine.transaction_effects, counter) + 1)
         if re.search(r"\bPRAGMA\s+AUTONOMOUS_TRANSACTION\b", text, re.IGNORECASE):
             routine.transaction_effects.autonomous = True
         routine.external_effects.db_links = sorted({m.lower() for m in DB_LINK.findall(text)})
@@ -702,6 +709,33 @@ def _cursor_for_parts(cursor: str) -> tuple[str | None, str | None]:
         return match.group(1), match.group(2).strip()
     named = re.match(r"^\s*([\w$#]+)\s+IN\s+([\w$#.]+)", cursor, re.IGNORECASE)
     return (named.group(1) if named else None), None
+
+
+def dynamic_texts(routine: M.Routine, statement: M.Statement) -> list[str]:
+    """Every expression that feeds a dynamic statement: its own, and what was assigned to the variables it names.
+
+    `EXECUTE IMMEDIATE v_sql` says nothing by itself -- the table name spliced in, or the COMMIT inside the
+    block, is in `v_sql := 'DELETE FROM ' || p_table`. Rules that read only the EXECUTE IMMEDIATE saw neither.
+    """
+    statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
+    assigned: dict[str, list[str]] = {}
+    for other in statements:
+        if other.kind == "Assignment" and other.target and other.expression:
+            assigned.setdefault(other.target.lower(), []).append(other.expression)
+    for declaration in routine.declarations:
+        if getattr(declaration, "initial", None) and declaration.declaration_kind != "cursor":
+            assigned.setdefault(declaration.name.lower(), []).append(declaration.initial)
+    texts = [getattr(statement, "expression", "") or ""]
+    seen: set[str] = set()
+    for text in texts:   # grows while it is walked: a variable built from another variable
+        for name in re.findall(r"[A-Za-z_][\w$#]*", re.sub(r"'(?:[^']|'')*'", "''", text)):
+            if name.lower() in assigned and name.lower() not in seen:
+                seen.add(name.lower())
+                texts.extend(assigned[name.lower()])
+    return texts
+
+
+_DYNAMIC_TX = re.compile(r"\b(COMMIT|ROLLBACK|SAVEPOINT)\b", re.IGNORECASE)
 
 
 def _walk(statements: list[M.Statement]) -> list[M.Statement]:

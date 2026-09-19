@@ -170,6 +170,34 @@ rules:
     requiredTests:
       - row_limit
 
+  # レビュー #27 の 26d。`WHEN OTHERS THEN NULL` は Oracle でも悪い書き方だが、移行先ではさらに意味が変わる:
+  # ScalarDB の競合（CrudConflictException など）まで握りつぶすと、使えなくなったトランザクションで先へ進む
+  - id: EXC-002
+    match: {swallowsOthers: true}
+    decision: REVIEW
+    severity: critical
+    message: WHEN OTHERS THEN NULL があります。移行先ではトランザクションの競合や接続の失敗まで握りつぶします
+    remediation:
+      - 無視してよい例外を名前で書き、それ以外は呼び出し側へ返す
+    requiredTests:
+      - exception_path
+
+  - id: SQL-003
+    match: {statementKind: SqlOperation, hasDiagnostic: BIND_SHADOWED}
+    decision: REVIEW
+    message: SQL の中の名前が、PL/SQL 変数でもあり表の列でもあります。Oracle は列として読むので、変数との比較のつもりなら結果が違います
+    remediation:
+      - 変数の名前を変える（p_ / v_ を付ける）か、列を表名で修飾する
+
+  - id: SQL-004
+    match: {rowCountUntracked: true}
+    decision: REVIEW
+    message: SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です
+    remediation:
+      - 件数を返す形に呼び出し先を直すか、件数を読む位置を静的な DML の直後に寄せる
+    requiredTests:
+      - row_count
+
   - id: EXC-001
     match: {handlesException: [DUP_VAL_ON_INDEX, INVALID_NUMBER, VALUE_ERROR]}
     decision: REVIEW
