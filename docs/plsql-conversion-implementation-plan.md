@@ -957,6 +957,16 @@ P0-2 の manifest）に集計し直す。
   接続プールの知見は `docs/oracle-backend-verification-plan.md` を引き継ぐ。
   P0-4 / P0-5 はこの環境で動かし、59 capture を 2 回実行してバイト一致することを確認済み。
 
+- **空文字と NULL は、移行中は Oracle と同じく同一視する**（2026-09-19 決定、#5）。Java と API の書き込み境界で
+  `''` を NULL に正規化し（`Plsql.bind`。列を特定できなかった bind も同じ境界を通す）、互換ランタイム
+  （`Plsql.isNull` など）も同じ意味論を保つ。空白だけの文字列は NULL にしない。`''` と NULL を区別する変更は、
+  移行完了後の明示的な仕様変更として別に扱う。
+  - 理由: AUTO の根拠は「実 Oracle と実 ScalarDB で同じ結果」である。移行と同時に区別を始めると、相違が出るたびに
+    「移行の不具合」か「意図した仕様変更」かを人が判断することになる。移行元のデータは `''` を持っていないので、
+    後から区別を始めても既存データの意味は変わらず、後戻りもできる。逆の順序はできない。
+  - evidence: `crud_create_customer_empty_strings`（`p_email => ''` は NULL で入り、`NVL('', 'BRONZE')` は BRONZE）が
+    金額の 2 規約とも実 DB で一致（2026-09-20）。
+
 - **生成コードは Spring に依存させない**（2026-09-17）。`@Transactional` は使わず、ScalarDB の
   try-with-resources 定型を `runtime-java` のヘルパに集約し、commit / abort を 1 箇所で制御する（設計書 §6.7）。
   - 理由: 注釈 1 つのために PoC のビルドへフレームワークを丸ごと持ち込むと、依存面と設定が大きく増える。
