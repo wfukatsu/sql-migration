@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 
 import sqlglot
 from sqlglot import exp
-from sqlglot.errors import ParseError, UnsupportedError
+from sqlglot.errors import ParseError, TokenError, UnsupportedError
 from sqlglot.optimizer.normalize import normalize
 from sqlglot.tokens import TokenType
 from sqlglot.transforms import eliminate_join_marks
@@ -230,8 +230,11 @@ class StatementConverter:
         res = Result(0, sql, "UNKNOWN")
         upsert = False
         src = sql
-        if re.match(r"\s*REPLACE\s+INTO\b", sql, re.I):  # MySQL REPLACE INTO is not parsed by sqlglot
-            src = re.sub(r"^\s*REPLACE\s+INTO\b", "INSERT INTO", sql, flags=re.I)
+        # MySQL REPLACE INTO is not parsed by sqlglot. The statement keeps the comments written above it, so they
+        # are allowed for here -- anchored at the very start, a commented REPLACE was an UNPARSED error
+        replace = re.match(r"(?P<lead>(?:\s|--[^\n]*(?:\n|$)|/\*.*?\*/)*)REPLACE\s+INTO\b", sql, re.I | re.S)
+        if replace:
+            src = replace.group("lead") + "INSERT INTO" + sql[replace.end():]
             upsert = True
         try:
             node = sqlglot.parse_one(src, read=self.dialect)
@@ -363,11 +366,12 @@ class StatementConverter:
         if isinstance(node, exp.Create):
             return self.create(node)
         if isinstance(node, exp.Drop):
-            return [self.drop(node)]
+            return self.drop(node)
         if isinstance(node, exp.Alter):
             return self.alter(node)
         if isinstance(node, exp.TruncateTable):
-            return [f"TRUNCATE TABLE {self._table_name(node.expressions[0])}"]
+            # one statement per table: `TRUNCATE TABLE a, b` used to come out as `TRUNCATE TABLE a`, and b kept its rows
+            return [f"TRUNCATE TABLE {self._table_name(t)}" for t in node.expressions]
         if isinstance(node, (exp.Transaction, exp.Commit, exp.Rollback)):
             if node.args.get("this") or node.args.get("savepoint"):
                 self.fail("SAVEPOINT", "savepoints / named transactions are not supported")
@@ -1441,13 +1445,18 @@ class StatementConverter:
         self.info("INDEX", f"index name '{idx.name}' dropped: ScalarDB identifies indexes by table + column")
         return f"CREATE INDEX {'IF NOT EXISTS ' if c.args.get('exists') else ''}ON {tname} ({col})"
 
-    def drop(self, d: exp.Drop) -> str:
+    def drop(self, d: exp.Drop) -> list[str]:
         kind = (d.args.get("kind") or "").upper()
         exists = "IF EXISTS " if d.args.get("exists") else ""
         if kind == "TABLE":
-            return f"DROP TABLE {exists}{self._table_name(d.this)}"
+            # `DROP TABLE a, b` parses into `tables`, with `this` empty -- reading `this` raised AttributeError and,
+            # with nothing catching it, took the rest of the file down with it
+            tables = [d.this] if d.this is not None else list(d.args.get("tables") or [])
+            if not tables:
+                self.fail("DDL", "DROP TABLE without a table name")
+            return [f"DROP TABLE {exists}{self._table_name(t)}" for t in tables]
         if kind in ("SCHEMA", "DATABASE"):
-            return f"DROP NAMESPACE {exists}{d.this.name}{' CASCADE' if d.args.get('cascade') else ''}"
+            return [f"DROP NAMESPACE {exists}{d.this.name}{' CASCADE' if d.args.get('cascade') else ''}"]
         if kind == "INDEX":
             self.fail("DROP_INDEX", "DROP INDEX must name table and column in ScalarDB: DROP INDEX ON <table> (<column>)")
         self.fail("DDL", f"DROP {kind} is not supported")
@@ -1506,8 +1515,24 @@ def convert_script(text: str, dialect: str, registry: SchemaRegistry | None = No
                               expected_rows=expected_rows, isolation=isolation, row_limit=row_limit,
                               h2_indexes=h2_indexes)
     results = []
-    for i, stmt in enumerate(_split_statements(text, dialect), start=1):
-        r = conv.convert(stmt)
+    try:
+        statements = _split_statements(text, dialect)
+    except TokenError as e:
+        # the tokenizer cannot say where statements end (an unterminated string, usually), so there is nothing to
+        # convert one by one. One ERROR that says where, instead of a traceback and no report
+        failed = Result(1, text.strip()[:2000], "TOKEN_ERROR", status="ERROR")
+        failed.issues.append(Issue("ERROR", "TOKENIZE", f"the script could not be split into statements: "
+                                                        f"{str(e).splitlines()[0]}"))
+        return [failed], registry
+    for i, stmt in enumerate(statements, start=1):
+        try:
+            r = conv.convert(stmt)
+        except Exception as e:  # noqa: BLE001  one statement the converter did not expect must not end the file
+            r = Result(i, stmt, "INTERNAL_ERROR", status="ERROR")
+            r.issues = list(conv.issues) + [Issue(
+                "ERROR", "INTERNAL", f"the converter failed on this statement ({type(e).__name__}: "
+                                     f"{str(e).splitlines()[0] if str(e) else 'no message'}); the rest of the file "
+                                     f"was converted. Please report the statement")]
         r.index = i
         results.append(r)
     return results, registry

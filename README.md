@@ -177,9 +177,15 @@ runtime-java/build/install/residual-runner/bin/residual-runner validate --plan o
 
 ### テスト
 
+DB の要らないテストは CI でも回ります（`.github/workflows/ci.yml` と `.gitlab-ci.yml`、同じ内容）: pytest、同梱コピーの
+一致（`vendor_sync.py --check`）、Java の単体テスト。DB の要る検証（`difftest/`）は手で回します。
+
 ```bash
 .venv/bin/python -m pytest -q          # 変換ツール・PL/SQL 変換・スキル
-(cd runtime-java && gradle test)       # 実行基盤
+# 実行基盤。Java のテストは生成した Java を一緒にコンパイルするので、generated/（git 管理外）が先に要る
+.venv/bin/python -m plsql.generate fixtures/plsql/src --scalardb-schema fixtures/plsql/scalardb-schema.json \
+    --limits fixtures/plsql/limits.yaml --out-dir generated
+(cd runtime-java && gradle test)
 ```
 
 ---

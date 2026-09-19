@@ -718,3 +718,40 @@ def test_mysql_string_comparisons_mention_the_collation_without_changing_the_sta
     r = run("SELECT customer_id FROM orders WHERE customer_id = 1 AND order_no = 2 AND status = 'open'", "mysql")
     note = next(i for i in r.issues if i.code == "SEMANTICS")
     assert note.severity == "INFO" and "collation" in note.message
+
+
+# ---------------------------------------------------------------- #27-41: one statement must not end the file
+def test_a_statement_the_converter_chokes_on_is_one_error_not_the_end_of_the_file(monkeypatch):
+    from scalardb_migrate import converter
+
+    real = converter.StatementConverter.select
+
+    def select(self, node):
+        if "boom" in node.sql():
+            raise AttributeError("'NoneType' object has no attribute 'sql'")
+        return real(self, node)
+
+    monkeypatch.setattr(converter.StatementConverter, "select", select)
+    results, _ = convert_script("CREATE TABLE t (id INT PRIMARY KEY); SELECT boom FROM t WHERE id = 1; "
+                                "SELECT id FROM t WHERE id = 2", "postgres", decompose=False)
+    assert [r.status for r in results] == ["OK", "ERROR", "OK"]
+    assert results[1].kind == "INTERNAL_ERROR" and "AttributeError" in messages(results[1], "INTERNAL")
+    assert [r.index for r in results] == [1, 2, 3]
+
+
+def test_a_script_the_tokenizer_cannot_split_is_one_error():
+    results, _ = convert_script("SELECT 'unterminated FROM t;\nSELECT 1;", "oracle", decompose=False)
+    assert len(results) == 1 and results[0].status == "ERROR" and "TOKENIZE" in codes(results[0])
+
+
+def test_drop_and_truncate_of_several_tables_name_every_table():
+    """`DROP TABLE a, b` raised AttributeError; `TRUNCATE TABLE a, b` silently truncated only `a`."""
+    drop = run("DROP TABLE acct, other", "postgres", with_schema=False)
+    assert drop.converted == ["DROP TABLE acct", "DROP TABLE other"]
+    truncate = run("TRUNCATE TABLE acct, other", "postgres", with_schema=False)
+    assert truncate.converted == ["TRUNCATE TABLE acct", "TRUNCATE TABLE other"]
+
+
+def test_a_replace_with_a_comment_above_it_is_still_a_replace():
+    r = run("-- refresh the row\n/* block */ REPLACE INTO orders (customer_id, order_no, status) VALUES (1, 2, 'x')", "mysql")
+    assert r.converted and r.converted[0].startswith("UPSERT INTO orders") and "REPLACE" in codes(r)

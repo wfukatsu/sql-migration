@@ -1,0 +1,48 @@
+# What a change has to keep true, run without any database: the Python tests (converter, PL/SQL pipeline, skills,
+# harness helpers), the vendored copy the sql-transpile skill ships, and the Java unit tests. Anything that needs
+# Oracle, PostgreSQL, MySQL or a ScalarDB Cluster lives in difftest/ and is run by hand.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -r requirements.txt
+      # the skill carries a copy of scalardb_migrate/; a change to one without the other is a different converter
+      - run: python skills/sql-transpile/scripts/vendor_sync.py --check
+      - run: python -m pytest -q
+
+  java:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.2.1"   # the project has no wrapper; this is the version it is developed with
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -r requirements.txt
+      # The Java tests compile against the generated sources, and generated/ is not committed: without this step
+      # the module does not compile on a clean checkout. Same arguments as difftest/plsql_capture.py.
+      - run: >
+          python -m plsql.generate fixtures/plsql/src --scalardb-schema fixtures/plsql/scalardb-schema.json
+          --limits fixtures/plsql/limits.yaml --out-dir generated
+      # integration tests (*IT) skip themselves without SCALARDB_IT / -Dplsql.generated
+      - run: gradle test
+        working-directory: runtime-java

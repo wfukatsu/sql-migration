@@ -444,3 +444,26 @@ def test_cli_mysql_case_insensitive(tmp_path):
 def test_cli_ignores_scalardb_only_options_for_other_targets(tmp_path):
     p = _cli(tmp_path, "SELECT 1;", "--source", "postgres", "--target", "mysql", "--keys", "emp=empno")
     assert "--target scalardb のときだけ有効" in p.stderr
+
+
+# ---- #27-41: 終了コードと、1 文の失敗の切り離し ------------------------------------------------------------
+def test_an_unterminated_string_is_one_error_not_a_traceback(tmp_path):
+    p = _cli(tmp_path, "SELECT 'unterminated FROM emp;\nSELECT 1 FROM dual;", "--source", "oracle", "--target", "postgres")
+    assert p.returncode == 1 and "TOKENIZE" in p.stdout and "Traceback" not in p.stderr
+
+
+@pytest.mark.parametrize("sql", ["", "-- only a comment\n"])
+def test_nothing_to_convert_is_an_input_error(tmp_path, sql):
+    p = _cli(tmp_path, sql, "--source", "oracle", "--target", "postgres")
+    assert p.returncode == 2 and "変換する文がありません" in p.stderr
+
+
+def test_input_errors_exit_with_two_not_with_a_traceback(tmp_path):
+    bad_schema = _cli(tmp_path, "SELECT 1 FROM dual;", "--source", "oracle", "--target", "scalardb",
+                      "--schema", str(tmp_path / "absent.json"))
+    assert bad_schema.returncode == 2 and "Traceback" not in bad_schema.stderr
+    latin1 = tmp_path / "latin1.sql"
+    latin1.write_bytes("SELECT 'caf\xe9' FROM dual;".encode("latin-1"))
+    p = subprocess.run([sys.executable, str(ROOT / "skills/sql-transpile/scripts/transpile.py"), str(latin1),
+                        "--source", "oracle", "--target", "postgres"], capture_output=True, text=True, cwd=ROOT)
+    assert p.returncode == 2 and "UTF-8 として読めません" in p.stderr

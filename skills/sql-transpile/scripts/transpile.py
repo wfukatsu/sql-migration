@@ -104,12 +104,24 @@ def main(argv: list[str] | None = None) -> int:
     if not path.is_file():
         print(f"ファイルが見つかりません: {path}", file=sys.stderr)
         return 2
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as e:
+        print(f"UTF-8 として読めません: {path}（{e.reason}、{e.start} バイト目）。UTF-8 に変換してから渡してください", file=sys.stderr)
+        return 2
 
     # SQLGlot の「未対応」警告は Issue として回収済みなので、標準エラーの重複表示を抑える
     logging.getLogger("sqlglot").setLevel(logging.ERROR)
 
-    registry = SchemaRegistry.from_schema_loader_json(args.schema) if args.schema else SchemaRegistry()
+    # 入力の誤り（無いファイル、壊れた JSON、形式の違う引数）は 2。1 は「ERROR の文がある」のためにあり、
+    # トレースバックで 1 が返ると、レポートの無い失敗と区別がつかない
+    try:
+        registry = SchemaRegistry.from_schema_loader_json(args.schema) if args.schema else SchemaRegistry()
+        keys = _parse_keys(args.keys)
+        expected_rows = parse_expected_rows(args.expected_rows)
+    except (OSError, ValueError, KeyError) as e:
+        print(f"引数を読めません: {type(e).__name__}: {e}", file=sys.stderr)
+        return 2
     if args.target == "scalardb":
         if args.source not in SCALARDB_SOURCES:
             print(f"注意: ScalarDB の型対応表は {', '.join(sorted(SCALARDB_SOURCES))} 向けに作り込まれています。"
@@ -117,8 +129,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.mysql_case_insensitive:
             print("注意: --mysql-case-insensitive は ScalarDB 向けには効きません。無視します。", file=sys.stderr)
         # 実行計画への分解は --plan-dir を指定したときだけ行う
-        results, _ = scalardb_convert(text, args.source, registry, _parse_keys(args.keys), decompose=bool(args.plan_dir),
-                                      storage=args.storage, expected_rows=parse_expected_rows(args.expected_rows),
+        results, _ = scalardb_convert(text, args.source, registry, keys, decompose=bool(args.plan_dir),
+                                      storage=args.storage, expected_rows=expected_rows,
                                       isolation=args.isolation, h2_indexes=args.h2_indexes)
     else:
         for name in SCALARDB_ONLY:
@@ -150,6 +162,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"TOTAL={s['total']}")
     print(f"CONVERTED={s['converted']}")
     print(f"RATE={s['rate']}")
+    if not s["total"]:
+        # 空のファイルやコメントだけのファイルは「ERROR 0 件」で 0 を返していた。変換するものが無かったのは
+        # 成功ではなく、たいていは渡すファイルの間違いである
+        print(f"変換する文がありません: {path}", file=sys.stderr)
+        return 2
     return 1 if s["error"] else 0
 
 
