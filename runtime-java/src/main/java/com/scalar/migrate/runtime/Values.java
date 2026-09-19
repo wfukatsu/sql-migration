@@ -21,6 +21,8 @@ import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Base64;
+import java.util.List;
+import java.util.Map;
 
 /** Conversions between JSON-ish Java objects, ScalarDB columns and H2 values. */
 final class Values {
@@ -43,19 +45,65 @@ final class Values {
     }
   }
 
-  static String h2TypeOf(Object v) {
-    if (v == null) return "VARCHAR";
+  /**
+   * The ScalarDB type of a column nobody declared, from the values it holds -- all of them, not the first. Typed
+   * from the first row, a column whose first value was NULL became VARCHAR: {@code MAX(amt)} answered "9" over
+   * 10, {@code ORDER BY amt} put 10 before 9, and the same query was right or wrong depending on which row the
+   * scan returned first. Returns null when every value is NULL (there is nothing to go by, and nothing to get
+   * wrong: NULLs compare and sort the same under any type).
+   */
+  static String typeOfValues(List<Object[]> rows, int column) {
+    String found = null;
+    for (Object[] row : rows) {
+      String type = typeOfValue(row[column]);
+      if (type == null) continue;
+      if (found == null || found.equals(type)) {
+        found = type;
+      } else if (NUMERIC_RANK.containsKey(found) && NUMERIC_RANK.containsKey(type)) {
+        found = NUMERIC_RANK.get(found) >= NUMERIC_RANK.get(type) ? found : type;   // INT and BIGINT: BIGINT
+      } else {
+        throw new IllegalArgumentException("column " + column + " holds both " + found + " and " + type
+            + " values and the plan declares no type for it");
+      }
+    }
+    return found;
+  }
+
+  private static final Map<String, Integer> NUMERIC_RANK = Map.of("INT", 0, "BIGINT", 1, "FLOAT", 2, "DOUBLE", 3);
+
+  static String typeOfValue(Object v) {
+    if (v == null) return null;
     if (v instanceof Boolean) return "BOOLEAN";
-    if (v instanceof Integer) return "INT";
-    if (v instanceof Long) return "BIGINT";
-    if (v instanceof Float) return "REAL";
-    if (v instanceof Double) return "DOUBLE PRECISION";
-    if (v instanceof byte[]) return "BINARY VARYING";
-    if (v instanceof LocalDate) return "DATE";
-    if (v instanceof LocalTime) return "TIME";
-    if (v instanceof LocalDateTime) return "TIMESTAMP";
-    if (v instanceof Instant || v instanceof OffsetDateTime) return "TIMESTAMP WITH TIME ZONE";
-    return "VARCHAR";
+    if (v instanceof Integer || v instanceof Short || v instanceof Byte) return "INT";
+    if (v instanceof Long || v instanceof java.math.BigInteger) return "BIGINT";
+    if (v instanceof Float) return "FLOAT";
+    if (v instanceof Double || v instanceof java.math.BigDecimal) return "DOUBLE";
+    if (v instanceof byte[]) return "BLOB";
+    if (v instanceof LocalDate || v instanceof java.sql.Date) return "DATE";
+    if (v instanceof LocalTime || v instanceof java.sql.Time) return "TIME";
+    if (v instanceof LocalDateTime || v instanceof java.sql.Timestamp) return "TIMESTAMP";
+    if (v instanceof Instant || v instanceof OffsetDateTime) return "TIMESTAMPTZ";
+    return "TEXT";
+  }
+
+  /** The ScalarDB type behind a JDBC column type, or null for one this runtime does not know. */
+  static String typeOfJdbc(int sqlType) {
+    switch (sqlType) {
+      case java.sql.Types.BOOLEAN: case java.sql.Types.BIT: return "BOOLEAN";
+      case java.sql.Types.TINYINT: case java.sql.Types.SMALLINT: case java.sql.Types.INTEGER: return "INT";
+      case java.sql.Types.BIGINT: return "BIGINT";
+      case java.sql.Types.REAL: return "FLOAT";
+      case java.sql.Types.FLOAT: case java.sql.Types.DOUBLE: return "DOUBLE";
+      case java.sql.Types.CHAR: case java.sql.Types.VARCHAR: case java.sql.Types.LONGVARCHAR:
+      case java.sql.Types.NCHAR: case java.sql.Types.NVARCHAR: return "TEXT";
+      case java.sql.Types.BINARY: case java.sql.Types.VARBINARY: case java.sql.Types.LONGVARBINARY:
+      case java.sql.Types.BLOB: return "BLOB";
+      case java.sql.Types.DATE: return "DATE";
+      case java.sql.Types.TIME: return "TIME";
+      case java.sql.Types.TIMESTAMP: return "TIMESTAMP";
+      case java.sql.Types.TIMESTAMP_WITH_TIMEZONE: return "TIMESTAMPTZ";
+      default: return null;
+    }
   }
 
   /** Build a typed ScalarDB column from a plan/JSON value (numbers arrive as Double from Gson, dates as ISO strings). */
