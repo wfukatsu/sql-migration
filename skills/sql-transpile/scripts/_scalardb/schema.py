@@ -74,11 +74,23 @@ class TableMeta:
 class SchemaRegistry:
     def __init__(self) -> None:
         self._tables: dict[str, TableMeta] = {}
+        self._qualified: dict[str, TableMeta] = {}
 
     def add(self, meta: TableMeta) -> None:
-        self._tables[meta.name.lower()] = meta
+        """Two namespaces can hold a table of the same name (`plsqlpoc.orders` and the `warehouse.orders` a DB link
+        was mapped to). The bare name keeps meaning the first one registered -- what every unqualified statement
+        has always resolved to -- and the second is reached by its namespace. It used to replace the first."""
+        if meta.namespace:
+            self._qualified[f"{meta.namespace}.{meta.name}".lower()] = meta
+        known = self._tables.get(meta.name.lower())
+        if known is None or known.namespace == meta.namespace:
+            self._tables[meta.name.lower()] = meta
 
-    def get(self, name: str) -> TableMeta | None:
+    def get(self, name: str, namespace: str | None = None) -> TableMeta | None:
+        if namespace:
+            found = self._qualified.get(f"{namespace}.{name}".lower())
+            if found is not None:
+                return found
         return self._tables.get(name.lower())
 
     def add_index(self, table: str, column: str) -> None:
@@ -87,7 +99,8 @@ class SchemaRegistry:
             meta.secondary_indexes.append(column)
 
     def tables(self) -> list[TableMeta]:
-        return list(self._tables.values())
+        seen = {id(m): m for m in list(self._tables.values()) + list(self._qualified.values())}
+        return list(seen.values())
 
     def to_schema_loader_json(self) -> str:
         return json.dumps({t.qualified(): t.to_schema_loader() for t in self.tables()}, indent=2)
