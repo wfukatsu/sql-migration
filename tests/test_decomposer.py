@@ -149,6 +149,31 @@ def test_residual_makes_source_null_ordering_explicit():
     assert "NULLS" not in sql
 
 
+def test_h2_needs_the_recursive_keyword_the_source_does_not_have():
+    """Found against a real Oracle (oracle-features.sql #34): H2 2.5 answers `Table "h" not found`."""
+    sql = _plan("oracle", "WITH h (empno, lv) AS (SELECT empno, 1 FROM emp WHERE deptno = 10 UNION ALL "
+                          "SELECT e.empno, h.lv + 1 FROM emp e JOIN h ON e.deptno = h.empno) "
+                          "SELECT empno, lv FROM h ORDER BY lv")["residual"]["java"]["sql"]
+    assert sql.startswith("WITH RECURSIVE h")
+    # a CTE that does not name itself is left alone
+    sql = _plan("postgres", "WITH big AS (SELECT * FROM emp WHERE sal > 1000) SELECT COUNT(*) FROM big")["residual"]["java"]["sql"]
+    assert "RECURSIVE" not in sql
+
+
+def test_h2_row_value_in_list_is_compared_column_by_column():
+    """Found against a real Oracle (oracle-features.sql #53): whole-number columns are NUMERIC in H2's Oracle mode,
+    and a list of two or more rows then fails with `Data conversion error converting "CLERK"`."""
+    sql = _plan("oracle", "SELECT ename FROM emp WHERE (deptno, ename) IN ((10, 'smith'), (30, 'ward')) "
+                          "ORDER BY LENGTH(ename)")["residual"]["java"]["sql"]
+    assert "((deptno = 10 AND ename = 'smith') OR (deptno = 30 AND ename = 'ward'))" in sql and " IN " not in sql
+    sql = _plan("oracle", "SELECT ename FROM emp WHERE NOT (deptno, ename) IN ((10, 'smith'), (30, 'ward')) "
+                          "ORDER BY LENGTH(ename)")["residual"]["java"]["sql"]
+    assert "NOT ((deptno = 10 AND ename = 'smith') OR (deptno = 30 AND ename = 'ward'))" in sql
+    # one row works in H2 as written, and so does a list of scalars
+    sql = _plan("oracle", "SELECT UPPER(ename) FROM emp WHERE (deptno, ename) IN ((10, 'smith'))")["residual"]["java"]["sql"]
+    assert "(deptno, ename) IN ((10, 'smith'))" in sql
+
+
 CASSANDRA_CASES = [  # (sql, pattern, access paths of the fetches)
     ("SELECT ename FROM emp WHERE deptno = 30 ORDER BY ename", "P13", ["INDEX_SCAN"]),
     ("SELECT ename FROM emp WHERE empno IN (1, 3, 4)", "P14", ["GET", "GET", "GET"]),

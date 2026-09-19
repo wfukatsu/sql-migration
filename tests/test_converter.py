@@ -792,7 +792,29 @@ def test_a_date_without_a_format_is_refused_unless_it_is_iso():
 
 def test_a_date_only_literal_is_padded_for_timestamptz_too():
     r = run_t("SELECT id FROM t WHERE tz = DATE '2024-01-15'")
-    assert "'2024-01-15 00:00:00'" in r.converted[0]
+    assert "'2024-01-15 00:00:00 Z'" in r.converted[0] and "TZ_ASSUMED_UTC" in codes(r)
+
+
+def test_a_timestamptz_literal_is_written_the_one_way_scalardb_reads_it():
+    """Checked against ScalarDB Cluster: 'YYYY-MM-DD HH:MM[:SS[.FFF]] Z' and nothing else. Without a zone, with a
+    `T`, or with +09:00 the statement was OK here and "could not be parsed" when it ran."""
+    r = run_t("SELECT id FROM t WHERE tz > TIMESTAMP '2024-01-15 09:30:00Z'")
+    assert "'2024-01-15 09:30:00 Z'" in r.converted[0] and "TZ_ASSUMED_UTC" not in codes(r)
+    r = run_t("SELECT id FROM t WHERE tz > TIMESTAMP '2024-01-15 09:30:00.123 +09:00'")
+    assert "'2024-01-15 00:30:00.123 Z'" in r.converted[0] and r.status != "ERROR"
+    r = run_t("SELECT id FROM t WHERE tz > TIMESTAMP '2024-01-01 03:30:00 -05:30'")
+    assert "'2024-01-01 09:00:00 Z'" in r.converted[0]
+    # no zone: the source reads it in the session's zone, which is not visible here -- said, not guessed silently
+    r = run_t("SELECT id FROM t WHERE tz > TIMESTAMP '2024-01-15 09:30:00'")
+    assert r.status == "WARN" and "TZ_ASSUMED_UTC" in codes(r) and "'2024-01-15 09:30:00 Z'" in r.converted[0]
+
+
+def test_a_zone_is_dropped_for_a_column_that_has_none():
+    from scalardb_migrate.types import fit_temporal_literal
+    assert fit_temporal_literal("TIMESTAMP", "2024-01-15 09:30:00 +09:00") == ("2024-01-15 09:30:00", "zone_dropped")
+    assert fit_temporal_literal("DATE", "2024-01-15 00:00:00Z") == ("2024-01-15", "zone_dropped")
+    assert fit_temporal_literal("TEXT", "2024-01-15 09:30:00Z") == ("2024-01-15 09:30:00Z", None)
+    assert fit_temporal_literal("TIMESTAMPTZ", "2024-01-15 09:30 Z") == ("2024-01-15 09:30 Z", None)
 
 
 def test_the_plan_applies_the_format_and_fits_timestamptz():
@@ -801,7 +823,7 @@ def test_the_plan_applies_the_format_and_fits_timestamptz():
     e = sqlglot.parse_one("SELECT TO_DATE('15/01/2024','DD/MM/YYYY')", read="oracle").expressions[0]
     assert _literal_value(e) == "2024-01-15"
     fitted = _fit_temporal(Predicate("tz", ">=", "2024-01-15"), {"tz": "TIMESTAMPTZ"})
-    assert fitted.value == "2024-01-15 00:00:00"
+    assert fitted.value == "2024-01-15 00:00:00 Z"
     # a real time of day against a DATE column is not rounded: that would move the bound of the fetch
     assert _fit_temporal(Predicate("d", "<", "2024-01-15 10:00:00"), {"d": "DATE"}).value == "2024-01-15 10:00:00"
 

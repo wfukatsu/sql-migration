@@ -311,8 +311,10 @@ cd difftest && docker compose up -d source-postgres backend-postgres && cd ..
 
 # ScalarDB Cluster（ScalarDB SQL 経路）。トライアルライセンスの 2 行を difftest/license.properties（git 管理外）に置く
 cd difftest && ./make-cluster-conf.sh && docker compose --profile cluster --profile oracle up -d && cd ..
-.venv/bin/python difftest/run.py difftest/cases/oracle.sql --dialect oracle --fetcher jdbc
+.venv/bin/python difftest/run.py difftest/cases/oracle.sql --dialect oracle --fetcher jdbc --restart-cluster
 ```
+
+`--restart-cluster` は、表を作り直したあとに ScalarDB Cluster のノードを再起動します。直前の回が同じ表を別の型で作っていると、ノードから PostgreSQL への接続に残った prepared plan が `cached plan must not change result type` で落ちるためです（ケースを続けて回すときに付けます）。
 
 | ハーネス | 何を確かめるか | 結果 |
 |---|---|---|

@@ -692,6 +692,29 @@ class Decomposer:
                 changed = True
         if changed:
             notes.append("java: Oracle semantics made explicit for H2 (date functions, NULL ordering)")
+        # Two things H2 2.5 cannot run as written, both found against a real Oracle (statements 34 and 53 of
+        # difftest/cases/oracle-features.sql). Oracle, PostgreSQL and MySQL accept both.
+        for w in list(node.find_all(exp.With)):  # a CTE that names itself needs WITH RECURSIVE: `Table "h" not found`
+            if not w.args.get("recursive") and any(
+                    t.name.lower() == cte.alias.lower() and not t.db
+                    for cte in w.expressions for t in cte.this.find_all(exp.Table)):
+                w.set("recursive", True)
+                notes.append("java: WITH RECURSIVE spelled out for H2")
+                changed = True
+        # (a, b) IN ((1, 'x'), (2, 'y')): with two or more rows H2 looks for one type for the whole list and fails
+        # with "Data conversion error converting 'x'" unless the column and the literal types match exactly. They do
+        # not: whole-number columns are NUMERIC in the Oracle and MySQL modes. Splitting into one IN per row does not
+        # help (H2 folds the OR back into a list), so the rows are compared column by column, which means the same
+        # under three-valued logic: (a = 1 AND b = 'x') OR (a = 2 AND b = 'y').
+        for i in list(node.find_all(exp.In)):
+            left, rows = _unparen(i.this), i.expressions
+            if isinstance(left, exp.Tuple) and len(rows) > 1 and all(
+                    isinstance(r, exp.Tuple) and len(r.expressions) == len(left.expressions) for r in rows):
+                each = [exp.paren(exp.and_(*(exp.EQ(this=c.copy(), expression=v.copy())
+                                             for c, v in zip(left.expressions, r.expressions)))) for r in rows]
+                i.replace(exp.paren(exp.or_(*each)))
+                notes.append("java: row-value IN list compared column by column for H2")
+                changed = True
         return changed
 
     def _java_residual(self, node: exp.Expression, source_sql: str, unresolved: list[str], notes: list[str]) -> str:

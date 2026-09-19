@@ -227,6 +227,56 @@ class ResidualTest {
   }
 
   @Test
+  void aTimestampComesBackAsItWentInWhateverTheHostZone() throws Exception {
+    // found against a real Oracle on a JST host: the session is UTC, java.sql.Timestamp reads in the JVM's zone,
+    // and every DATE came back nine hours late (CI runs in UTC and saw nothing)
+    java.util.TimeZone before = java.util.TimeZone.getDefault();
+    java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Tokyo"));
+    try (Residual residual = new Residual("Oracle")) {
+      // (a DATE has a time of day in the Oracle mode, as it does in Oracle)
+      residual.load(fetch("e", null), rows(List.of("id", "hired", "legacy", "born", "at"),
+          Map.of("id", "INT", "hired", "TIMESTAMP", "legacy", "TIMESTAMP", "born", "DATE", "at", "TIMESTAMPTZ"),
+          new Object[] {1, java.time.LocalDateTime.parse("1981-02-20T00:00:00"),
+              java.sql.Timestamp.valueOf("1981-02-20 00:00:00"), java.time.LocalDate.parse("1981-02-20"),
+              java.time.Instant.parse("2024-01-01T20:30:00Z")}));
+      assertEquals("[[1981-02-20T00:00, 1981-03-22T00:00, 1981-02-20T00:00, 1981-02-20T00:00, 1981-08-20T00:00, 2024-01-01T20:30Z]]",
+          residual.query("SELECT hired, hired + 30, legacy, born, ADD_MONTHS(hired, 6), at FROM e", Map.of())
+              .get("rows").toString());
+    } finally {
+      java.util.TimeZone.setDefault(before);
+    }
+  }
+
+  @Test
+  void aRecursiveWithRunsInTheFormTheDecomposerWrites() throws Exception {
+    // H2 2.5 answers `Table "h" not found` without the RECURSIVE keyword, which Oracle does not have; the
+    // decomposer spells it out (tests/test_decomposer_h2_rewrites.py)
+    try (Residual residual = new Residual("Oracle")) {
+      residual.load(fetch("emp", null), rows(List.of("empno", "mgr"), Map.of("empno", "INT", "mgr", "INT"),
+          new Object[] {1, null}, new Object[] {2, 1}, new Object[] {3, 2}));
+      assertEquals("[[1, 1], [2, 2], [3, 3]]", residual.query(
+          "WITH RECURSIVE h (empno, lv) AS (SELECT empno, 1 FROM emp WHERE mgr IS NULL UNION ALL "
+              + "SELECT e.empno, h.lv + 1 FROM emp e JOIN h ON e.mgr = h.empno) SELECT empno, lv FROM h ORDER BY lv",
+          Map.of()).get("rows").toString());
+    }
+  }
+
+  @Test
+  void aRowValueInRunsInTheFormTheDecomposerWrites() throws Exception {
+    // whole-number columns are NUMERIC in the Oracle mode, and H2 2.5 fails on a list of two or more rows whose
+    // types differ from the columns' ("Data conversion error converting 'CLERK'"), also when it is written as one
+    // IN per row joined by OR; the decomposer compares column by column
+    try (Residual residual = new Residual("Oracle")) {
+      residual.load(fetch("emp", null), rows(List.of("deptno", "job"), Map.of("deptno", "INT", "job", "TEXT"),
+          new Object[] {10, "CLERK"}, new Object[] {30, "SALESMAN"}, new Object[] {30, "CLERK"}));
+      assertEquals("[[10, CLERK], [30, SALESMAN]]", residual.query(
+          "SELECT deptno, job FROM emp WHERE ((deptno = 10 AND job = 'CLERK') OR (deptno = 30 AND job = 'SALESMAN')) "
+              + "ORDER BY deptno",
+          Map.of()).get("rows").toString());
+    }
+  }
+
+  @Test
   void placeholdersAreOnlyPlaceholdersInCode() {
     List<Object> binds = new java.util.ArrayList<>();
     String sql = "SELECT ' :x ? ', \"a:b\" -- don't bind :y or ?\n FROM t /* nor :z ? */ WHERE a = :a AND b = ? AND c = d::int AND e = :a";

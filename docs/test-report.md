@@ -193,6 +193,34 @@ Oracle 方言の追加で見つけて修正した点は 2 件。`(+)` 外部結�
 | 残余処理で `ORDER BY` の NULL 位置が Oracle と食い違う (性能比較で検出) | 残余 SQL にソース方言の NULL 順序を明示 (`NULLS FIRST` / `NULLS LAST`)。詳細は `docs/bench-report.md` §2 |
 | 取得行の H2 投入が行数の二乗で悪化 (性能比較で検出) | 初回投入を `INSERT` にし、同一テーブルの 2 回目以降だけ `MERGE`。詳細は `docs/bench-report.md` §3.4 |
 
+### 3.5 取り直し（2026-09-19、レビュー #27 の修正後）
+
+レビュー #27 で結果集合の比較を厳しくした（`difftest/rowcompare.py`: 整数は厳密、小数は有効 15 桁、日時はミリ秒まで、真偽値は真偽値とだけ一致）。3.4 の一致件数は古い比較で出した数字なので、修正後の `main` で実 Oracle 23ai / PostgreSQL / ScalarDB Cluster を使って取り直した。環境は JST の macOS、バックエンドは PostgreSQL。
+
+| ケース | 経路 | PASS | FAIL | SKIP | 備考 |
+|---|---|---|---|---|---|
+| `postgres.sql` | `--fetcher core` | 12 | 0 | 3 | SKIP は ScalarDB SQL に変換できた文（Core 経路では実行しない） |
+| `postgres.sql` | `--fetcher jdbc` | 15 | 0 | 0 | |
+| `oracle.sql` | `--fetcher core` | 10 | 0 | 7 | 同上 |
+| `oracle.sql` | `--fetcher jdbc` | 17 | 0 | 0 | |
+| `oracle-features.sql` | `--fetcher core` | 42 | 1 | 19 | |
+| `oracle-features.sql` | `--fetcher jdbc` | 51 | 1 | 10 | FAIL は #21（`NUMBER(7,2)` → DOUBLE の型対応、既知）。SKIP のうち 8 は、以前 H2 で落ちていた構文（CONNECT BY・KEEP・ROLLUP / CUBE / GROUPING SETS・PIVOT / UNPIVOT）を計画の時点で `RESIDUAL_H2` として拒否するようになったもの |
+
+一致件数は 3.4 と同じ水準に戻ったが、**そこに至るまでに実 DB でしか見つからない退行が 4 件あった**（いずれも修正済み、回帰テストあり）。
+
+| 見つかったこと | 原因 | 直し方 |
+|---|---|---|
+| Oracle の DATE を返す式（`ADD_MONTHS`、`hiredate + 30` など 5 文）が 9 時間遅れて返る | H2 のセッションを UTC にした（#27 の 32f）のに、結果を `java.sql.Timestamp`（JVM のゾーンで読む）で受けていた。CI は UTC で動くので見えなかった | 日時は `java.time` の型で読み書きする（`Residual.read`、`Values.toH2`） |
+| 再帰 WITH が `Table "h" not found` | H2 2.5 は `RECURSIVE` の語が無いと再帰 CTE を認識しない（Oracle にはその語が無い） | 分解時に `WITH RECURSIVE` と書く |
+| `(deptno, job) IN ((10, 'CLERK'), (30, 'SALESMAN'))` が `Data conversion error` | 整数列を NUMERIC にした（#27 の 27）ため、H2 が行値の並び全体に 1 つの型を探して失敗する。OR でつないだ 1 行ずつの IN も H2 が畳み直して同じ結果になる | 分解時に列ごとの比較 `(a = 1 AND b = 'x') OR …` にする |
+| TIMESTAMPTZ 列へのリテラルが判定 OK のまま実行時に `could not be parsed` | ScalarDB SQL が受け付けるのは `'YYYY-MM-DD HH:MM[:SS[.FFF]] Z'` だけ（実クラスタで確認）。ゾーンなし・`T` 区切り・`+09:00` はどれも拒否される | ゾーン付きは同じ瞬間の UTC に直して `Z` を付ける。ゾーンなしは UTC として書き、WARN `TZ_ASSUMED_UTC` を出す（移行元はセッションのタイムゾーンで読むが、それはここから見えない） |
+
+同じ表を別の型で作り直した直後は、ScalarDB Cluster から PostgreSQL への接続に残った prepared plan が `cached plan must not change result type` で落ちる（ケースを続けて回すと 1 文だけ FAIL になる）。`run.py --restart-cluster` で、表を作り直したあとにノードを再起動する。
+
+スキルの実行検証（`difftest/transpile_verify.py`、9 ペア 321 文）は見逃し 0。比較を厳しくしたことで MySQL 向けに 2 件の見逃しが出たので、WARN を足した: 真偽値の式の射影が 1 / 0 で返る（`BOOLEAN_RESULT`）、AVG と除算の小数桁が「被演算子の桁 + 4」で丸まる（`DIV_PRECISION`）。
+
+PL/SQL の evidence（`difftest/plsql_capture.py` → `plsql_diff.py --full`）も取り直した。Oracle 側の capture 69 件は、コミット済みの `fixtures/plsql/golden/` と差分なし。ScalarDB 側は両系統とも 69 / 69 シナリオを採取し、scaled は 66 一致・3 相違（3 件とも trigger の REDESIGN: 直接の DML に移行先の trigger は掛からない）、double は 63 一致・6 相違（加えて金額の丸め 2 件 REVIEW、`claim_batch` の行の選ばれ方 REDESIGN）。AUTO の routine に相違は無く、KPI-5 は両系統とも AUTO 19 / 19、`staleEvidence` は空。取り直しの途中で、実行できなかったシナリオが前回の capture ファイルのせいで「一致」と数えられることが分かったので、capture の前にディレクトリを空にし、比較側でも `unrunnable.json` に名前のあるシナリオを比較しないようにした。
+
 ## 4. 制約と未実施事項
 
 - ScalarDB SQL は Enterprise Premium 機能で、実行には ScalarDB Cluster とライセンスが必要。今回はドキュメント掲載のトライアルライセンス (2026-10-31 まで、評価目的限定、要インターネット接続、再配布禁止) を使い、キーは git 管理外の `difftest/license.properties` にのみ置いた。

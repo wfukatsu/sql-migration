@@ -6,6 +6,7 @@ Schema Loader service; it never connects to the storage itself.
 
 from __future__ import annotations
 
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,3 +50,22 @@ def schema_loader(backend: Backend, schema_file: str) -> tuple[list[str], list[s
             "cassandra", "--profile", "oracle", "run", "--rm",
             backend.loader_service, "--config", backend.loader_config, "--schema-file", schema_file]
     return base + ["--delete-all"], base + ["--coordinator", *backend.create_options]
+
+
+def restart_cluster() -> None:
+    """Restart the ScalarDB Cluster node and wait until it accepts connections. The node pools JDBC connections to the
+    PostgreSQL backend, and PostgreSQL keeps prepared plans per connection: after the tables are recreated with other
+    column types (a previous dialect's run), those plans fail with "cached plan must not change result type"."""
+    import socket
+    import time
+    compose = ["docker", "compose", "-f", str(ROOT / "difftest/docker-compose.yml"), "--profile", "cluster"]
+    print("== restarting ScalarDB Cluster")
+    subprocess.run([*compose, "restart", "scalardb-cluster"], check=True, capture_output=True)
+    for _ in range(90):
+        try:
+            with socket.create_connection(("localhost", 60053), timeout=1):
+                time.sleep(5)  # the gRPC port opens before the node finishes loading metadata
+                return
+        except OSError:
+            time.sleep(2)
+    raise RuntimeError("ScalarDB Cluster did not come back on localhost:60053")

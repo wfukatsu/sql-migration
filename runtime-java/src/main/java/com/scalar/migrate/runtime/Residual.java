@@ -184,11 +184,25 @@ public class Residual implements AutoCloseable {
         List<List<Object>> out = new ArrayList<>();
         while (rs.next()) {
           List<Object> row = new ArrayList<>();
-          for (int i = 1; i <= columns.size(); i++) row.add(Values.toJson(rs.getObject(i)));
+          for (int i = 1; i <= columns.size(); i++) row.add(Values.toJson(read(rs, m, i)));
           out.add(row);
         }
         return Map.of("columns", columns, "rows", out);
       }
+    }
+  }
+
+  /**
+   * A date or time as the java.time value H2 holds. {@code getObject} alone gives java.sql.Timestamp, which is an
+   * instant read in the JVM's zone while the session is UTC: on a JST host every Oracle DATE came back nine hours
+   * late (and CI, which runs in UTC, saw nothing).
+   */
+  private static Object read(ResultSet rs, ResultSetMetaData m, int i) throws Exception {
+    switch (m.getColumnType(i)) {
+      case java.sql.Types.TIMESTAMP: return rs.getObject(i, java.time.LocalDateTime.class);
+      case java.sql.Types.DATE: return rs.getObject(i, java.time.LocalDate.class);
+      case java.sql.Types.TIME: return rs.getObject(i, java.time.LocalTime.class);
+      default: return rs.getObject(i);
     }
   }
 

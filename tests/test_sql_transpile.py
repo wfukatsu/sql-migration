@@ -518,3 +518,23 @@ def test_vendor_check_outside_the_repository_is_not_an_error(tmp_path):
                           "--target", "scalardb", "--out-dir", str(tmp_path / "out")],
                          capture_output=True, text=True, cwd=tmp_path)
     assert run.returncode == 0, run.stderr[-800:]
+
+
+# ---- 実 DB の検証で見つかった、MySQL が返す値の差（2026-09-19、difftest/transpile_verify.py）--------
+
+def test_a_projected_boolean_is_1_or_0_in_mysql():
+    r = convert("SELECT ename, sal > 2000 AS high FROM emp", "postgres", "mysql")
+    assert r["sev"].get("BOOLEAN_RESULT") == "WARN"
+    assert "BOOLEAN_RESULT" not in convert("SELECT ename FROM emp WHERE sal > 2000", "postgres", "mysql")["codes"]
+    assert "BOOLEAN_RESULT" not in convert("SELECT ename, sal > 2000 AS high FROM emp", "postgres", "duckdb")["codes"]
+
+
+def test_a_returned_avg_or_division_is_rounded_by_mysql():
+    # DECIMAL(7,2) の AVG は MySQL で小数 6 桁。Oracle の 1566.6666666666667 と合わない
+    assert convert("SELECT deptno, AVG(sal) AS a FROM emp GROUP BY deptno", "oracle", "mysql")["sev"].get("DIV_PRECISION") == "WARN"
+    assert "DIV_PRECISION" in convert("SELECT sal / 7 AS q FROM emp", "oracle", "mysql")["codes"]
+    # 返す値にならないもの、桁を決め直したものには言わない
+    for quiet in ("SELECT ename FROM emp WHERE sal > (SELECT AVG(sal) FROM emp)",
+                  "SELECT ROUND(sal / 7, 2) AS r, FLOOR(sal / 1000) AS f FROM emp"):
+        assert "DIV_PRECISION" not in convert(quiet, "oracle", "mysql")["codes"], quiet
+    assert "DIV_PRECISION" not in convert("SELECT AVG(sal) FROM emp", "oracle", "postgres")["codes"]

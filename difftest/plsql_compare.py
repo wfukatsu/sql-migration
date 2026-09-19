@@ -283,7 +283,9 @@ def compare_variant(variant: str, scales: dict) -> dict:
         oracle = json.loads(golden.read_text(encoding="utf-8"))
         routine = f"{oracle['unit']}.{oracle['routine']}"
         target = captures / f"{name}.json"
-        if not target.exists():
+        # a scenario the capture run named as unrunnable is not compared even if a file of that name is there:
+        # it can only be a leftover of an earlier run
+        if name in unrunnable or not target.exists():
             report["not_compared"][name] = {
                 "routine": routine, "verdict": verdicts.get(routine, "REVIEW"),
                 "reason": unrunnable.get(name, "no ScalarDB capture")}

@@ -187,6 +187,10 @@ final class Values {
   /** Value as accepted by H2's setObject. */
   static Object toH2(Object v) {
     if (v instanceof Instant) return OffsetDateTime.ofInstant((Instant) v, ZoneOffset.UTC);
+    // the java.sql types are instants read in the JVM's zone; the session is UTC, so they would land shifted
+    if (v instanceof java.sql.Timestamp) return ((java.sql.Timestamp) v).toLocalDateTime();
+    if (v instanceof java.sql.Date) return ((java.sql.Date) v).toLocalDate();
+    if (v instanceof java.sql.Time) return ((java.sql.Time) v).toLocalTime();
     return v;
   }
 
