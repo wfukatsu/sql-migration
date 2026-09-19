@@ -91,7 +91,10 @@ def main(argv: list[str] | None = None) -> int:
 
     set_allowed_tables((DynamicTables.load(args.limits) if args.limits else DynamicTables()).allowed)
 
+    from .limits import DbLinks
+
     analysis = build_analysis(root, schema, scalardb_schema=scalardb, row_locks=row_locks, limits=limits,
+                              db_links=DbLinks.load(args.limits) if args.limits else None,
                               boundaries=Boundaries.load(args.limits) if args.limits else Boundaries())
     decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), Evidence())
     plans = analysis.capability.plans if analysis.capability is not None else {}

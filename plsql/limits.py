@@ -216,3 +216,43 @@ def _positive(value, where) -> int:
     if number <= 0:
         raise ValueError(f"scanRows.{where}: 正の整数でなければならない（{value!r}）")
     return number
+
+
+@dataclass
+class DbLinks:
+    """DB link の行き先（2026-09-20 の決定）。
+
+    `orders@warehouse_link` は別のデータベースの表で、Oracle はそれを分散トランザクションで書く。移行先で同じ意味を
+    保つ形は 1 つ: **その表も ScalarDB の管理下に置き、別の namespace として同じトランザクションで書く**。複数の
+    データベースにまたがるトランザクションは ScalarDB がそのためにあるもので、原子性は移行元と変わらない。
+
+    行き先を決められるのは人だけである——link の名前からは、相手の表が ScalarDB の下に来るのかどうかは分からない。
+    書いていない link は今までどおり何もしない（`LINK-001` は未決定のまま）。outbox などの結果整合へ変えるのは
+    意味を変えるので、移行とは別の仕様変更として扱う。
+    """
+
+    namespaces: dict[str, str] = field(default_factory=dict)
+    reasons: dict[str, str] = field(default_factory=dict)
+    source: str | None = None
+
+    @classmethod
+    def load(cls, path: str | Path | None) -> "DbLinks":
+        if path is None:
+            return cls()
+        file = Path(path)
+        if not file.exists():
+            raise FileNotFoundError(f"{file} が無い")
+        data = yaml.safe_load(file.read_text(encoding="utf-8")) or {}
+        namespaces, reasons = {}, {}
+        for link, entry in (data.get("dbLinks") or {}).items():
+            if not isinstance(entry, dict) or not entry.get("namespace"):
+                raise ValueError(f"dbLinks.{link}: `namespace` が要る（その link の表を置く ScalarDB の namespace）")
+            namespaces[str(link).lower()] = str(entry["namespace"])
+            reasons[str(link).lower()] = str(entry.get("reason") or "").strip()
+        return cls(namespaces=namespaces, reasons=reasons, source=str(file))
+
+    def namespace(self, link: str) -> str | None:
+        return self.namespaces.get(link.lower())
+
+    def why(self, link: str) -> str | None:
+        return self.reasons.get(link.lower())

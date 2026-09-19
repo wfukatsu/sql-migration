@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .ir import model as M
-from .limits import Boundaries, DynamicTables, Limits, RowLocks
+from .limits import Boundaries, DbLinks, DynamicTables, Limits, RowLocks
 
 STATES = ("undecided", "decided", "verified")
 LABELS = {"undecided": "未決定", "decided": "決定済み（実 DB では未検証、または相違あり）",
@@ -43,15 +43,18 @@ class Decided:
     boundaries: Boundaries = field(default_factory=Boundaries)
     dynamic_tables: DynamicTables = field(default_factory=DynamicTables)
     limits: Limits = field(default_factory=Limits)
+    db_links: DbLinks = field(default_factory=DbLinks)
 
     @classmethod
     def load(cls, path: str | Path | None) -> "Decided":
         if path is None:
             return cls()
-        return cls(RowLocks.load(path), Boundaries.load(path), DynamicTables.load(path), Limits.load(path))
+        return cls(RowLocks.load(path), Boundaries.load(path), DynamicTables.load(path), Limits.load(path),
+                   DbLinks.load(path))
 
     def for_analysis(self) -> dict:
-        return {"row_locks": self.row_locks, "boundaries": self.boundaries, "limits": self.limits}
+        return {"row_locks": self.row_locks, "boundaries": self.boundaries, "limits": self.limits,
+                "db_links": self.db_links}
 
 
 @dataclass
@@ -77,6 +80,14 @@ def _answer(rule_id: str, routine: M.Routine, module: M.Module | None, decided: 
     if rule_id in ("TX-001", "TX-002", "TX-003", "BULK-002") and decided.boundaries.decided(name):
         where = "perIteration" if name in decided.boundaries.per_iteration else "separate"
         return f"limits.yaml: transactions.{where}", decided.boundaries.why(name) or ""
+    if rule_id == "LINK-001":
+        # every link the routine reaches has to lead somewhere: one that does not is still a distributed transaction
+        # nobody has redesigned
+        links = list(routine.external_effects.db_links)
+        if links and all(decided.db_links.namespace(link) for link in links):
+            where = ", ".join(f"{link} -> namespace {decided.db_links.namespace(link)}" for link in links)
+            return "limits.yaml: dbLinks", f"{where}。{decided.db_links.why(links[0]) or ''}".strip()
+        return None
     if rule_id == "DYN-001" and decided.dynamic_tables.for_routine(name):
         tables = ", ".join(decided.dynamic_tables.for_routine(name))
         return "limits.yaml: dynamicTables", f"受け付ける表名を決めてある: {tables}。それ以外は実行時に拒否する"
