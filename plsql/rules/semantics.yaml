@@ -122,6 +122,17 @@ rules:
     requiredTests:
       - concurrent_upsert
 
+  # 2026-09-19: 記録された routine の MERGE は「読んでから UPDATE か INSERT を選ぶ」へ割る（#26 の
+  # 続き）。**割ると MERGE という語が消え、SEM-006 が外れる**——だが競合の問いは消えていない。
+  # 同時に「無い」と読んだ 2 つは commit で片方が弾かれ、再試行は呼び出し側の責務になる。
+  # 書き換えで規則が黙って外れるのは、BULK-003 / CUR-001 と同じ形である
+  - id: SEM-011
+    match: {statementKind: SqlOperation, hasDiagnostic: MERGE_SPLIT}
+    decision: REVIEW
+    message: MERGE を読んでから UPDATE か INSERT を選ぶ形に割りました。同時に同じキーを書くと片方が commit で弾かれます
+    requiredTests:
+      - concurrent_upsert
+
   - id: CUR-001
     match: {statementKind: [OpenCursor, Fetch, CloseCursor]}
     decision: REVIEW

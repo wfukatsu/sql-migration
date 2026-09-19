@@ -536,9 +536,12 @@ class _Lowerer:
 
     def _sql(self, context, ids, text, source) -> M.Statement:
         kind = "UNKNOWN"
-        for context_name, sql_kind in (("Select_statementContext", "SELECT"), ("Insert_statementContext", "INSERT"),
+        # **包む側から先に見る。** MERGE は USING に SELECT を、INSERT は `INSERT ... SELECT` を、
+        # UPDATE / DELETE は副問い合わせを含む。SELECT を先に探すと、それらが全部 SELECT になる——
+        # `pkg_customer_import.import` の MERGE は実際に SELECT として扱われていた（2026-09-19）
+        for context_name, sql_kind in (("Merge_statementContext", "MERGE"), ("Insert_statementContext", "INSERT"),
                                        ("Update_statementContext", "UPDATE"), ("Delete_statementContext", "DELETE"),
-                                       ("Merge_statementContext", "MERGE")):
+                                       ("Select_statementContext", "SELECT")):
             if _descend(context, {context_name}):
                 kind = sql_kind
                 break
