@@ -821,10 +821,17 @@ def _cursor_for(file: JavaFile, statement: M.Loop, routine: M.Routine, result: S
         raise Untranslatable(["cursor FOR loop whose query ScalarDB cannot run"], query.original_sql)
     written = {t for s in _walk(statement.body) for t in (getattr(s, "write_set", None) or [])}
     conflict = written & set(query.read_set or [])
-    if conflict:
+    if conflict and not _locked_and_decided(query):
         raise Untranslatable(
             [f"cursor FOR loop whose body writes {sorted(conflict)}, which its own query reads"],
             query.original_sql)
+    if conflict:
+        # `FOR UPDATE` の cursor で、行ロックを落とすと**決めてある**もの（#9 / 2026-09-19 claim_batch）。
+        # Oracle は OPEN の時点で行をロックして集合を固定するので、先に全部読む形と読む行が同じである。
+        # 読むのは 1 回だけで書くより前なので、「同じトランザクションで書いた物の走査」（P2-4）にも
+        # 当たらない。ロックが無い cursor（`mark_reviewed`）はこの理由が立たないので、拒否のままにする
+        file.comment("FOR UPDATE の cursor: Oracle も OPEN の時点で行を固定する。先に読む形と同じ行を回し、"
+                     "他からの変更は commit で弾かれる（#9）")
 
     variable = java_name(statement.variable or "r")
     # the translator renders `head.tail` as `scope[head].tail()`, so the loop variable itself is what goes in
@@ -853,6 +860,11 @@ def _cursor_for(file: JavaFile, statement: M.Loop, routine: M.Routine, result: S
             _statements(f, statement.body, routine, result)
     finally:
         _LOOP_ROWS.set(outer)
+
+
+def _locked_and_decided(query: M.SqlOperation) -> bool:
+    """走査が行ロックを持っていて、それを楽観制御へ移すと記録されているか（capability が付けた印）。"""
+    return bool(query.locking_mode) and any(d.code == "OPTIMISTIC" for d in query.diagnostics)
 
 
 def _raise(file: JavaFile, statement: M.Raise, routine: M.Routine, result: ServiceFile) -> None:

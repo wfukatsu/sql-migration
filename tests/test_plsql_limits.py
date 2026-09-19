@@ -204,8 +204,11 @@ def test_a_row_lock_decision_is_recorded_per_routine():
 
     locks = RowLocks.load(CONFIG)
     assert locks.decided("pkg_stock_reserve.reserve")
-    assert not locks.decided("pkg_stock_reserve.claim_batch"), \
-        "C 型（SKIP LOCKED）は担当者列と期限の設計が要る。記録するのは設計が決まってからである"
+    # C 型（SKIP LOCKED）は 2026-09-19 に決まった: 担当者列は足さず楽観制御で移す。書いていない
+    # routine は決まっていない——それは今も変わらない
+    assert locks.decided("pkg_stock_reserve.claim_batch")
+    assert "担当者列は足さない" in locks.why("pkg_stock_reserve.claim_batch")
+    assert not locks.decided("pkg_not_recorded.anything")
     assert "呼び出し側" in locks.why("pkg_stock_reserve.reserve") \
         or "commit で弾かれる" in locks.why("pkg_stock_reserve.reserve")
 
@@ -236,8 +239,11 @@ def test_the_decided_routine_converts_and_says_what_the_caller_must_do():
     assert any(d.code == "OPTIMISTIC" for s in decided for d in s.diagnostics), \
         "再試行が呼び出し側の責務であることが残っていない"
 
-    # 決めていない routine（C 型）は、ロックが落ちても楽観制御へ移す記録が無い
-    undecided = [s for s in _walk(by_id["pkg_stock_reserve.claim_batch"].body)
+    # 記録を渡さない解析では、ロックが落ちても楽観制御へ移さない
+    bare = build_analysis(fixtures / "src", fixtures / "src" / "schema.sql",
+                          scalardb_schema=fixtures / "scalardb-schema.json")
+    undecided = [s for _, r in bare.routines() if r.id == "pkg_stock_reserve.claim_batch"
+                 for s in _walk(r.body) + [l.query for l in _walk(r.body) if getattr(l, "query", None)]
                  if s.kind == "SqlOperation"]
     assert not [d for s in undecided for d in s.diagnostics if d.code == "OPTIMISTIC"], \
         "決めていない routine が楽観制御へ移されている"

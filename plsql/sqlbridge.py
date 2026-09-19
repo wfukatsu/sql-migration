@@ -461,9 +461,16 @@ def attribute_columns(tree: exp.Expression, binds: list[BindVariable], operation
     tables = [t.name.lower() for t in tree.find_all(exp.Table) if t.name]
     oracle = symbols.oracle_schema if symbols else None
     by_bind = bind_columns(tree)
+    counts = _row_count_binds(tree)
     for bind in binds:
         column = by_bind.get(bind.name)
-        if column:
+        if bind.name in counts:
+            # 件数（`ROWNUM <= :n` / `FETCH FIRST :n` / `LIMIT :n`）。列ではないが、**整数である**と
+            # 言える。言わずに渡すと PL/SQL の NUMBER が BigDecimal のまま届き、ScalarDB SQL の
+            # ドライバが型ごと拒否する（DB-SQL-10016。`claim_batch` で実際に落ちた）
+            # ROWNUM は列の形をしているので、先に見ないと「rownum という列」に帰属させてしまう
+            bind.scalardb_type = "INT"
+        elif column:
             bind.column = column
             bind.scalardb_type = _column_type(registry, tables, column)
             bind.column_oracle_type = _oracle_type(oracle, tables, column)
@@ -472,6 +479,18 @@ def attribute_columns(tree: exp.Expression, binds: list[BindVariable], operation
     operation.into_types = [_column_type(registry, tables, c) if c else None for c in operation.into_columns]
     operation.into_oracle_types = [_oracle_type(oracle, tables, c) if c else None
                                    for c in operation.into_columns]
+
+
+def _row_count_binds(tree: exp.Expression) -> set[str]:
+    """件数を渡している bind の名前。ROWNUM との比較、FETCH FIRST / LIMIT の値。"""
+    out: set[str] = set()
+    for comparison in tree.find_all(exp.LT, exp.LTE, exp.EQ):
+        sides = [comparison.this, comparison.expression]
+        if any(isinstance(s, exp.Column) and s.name.upper() == "ROWNUM" for s in sides):
+            out |= {str(s.this) for s in sides if isinstance(s, exp.Placeholder)}
+    for cap in list(tree.find_all(exp.Limit)) + list(tree.find_all(exp.Fetch)):
+        out |= {str(p.this) for p in cap.find_all(exp.Placeholder)}
+    return out
 
 
 def _oracle_type(schema, tables: list[str], column: str) -> str | None:

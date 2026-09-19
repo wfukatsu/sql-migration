@@ -576,8 +576,22 @@
           "startColumn": 7,
           "endColumn": 61
          },
+         "diagnostics": [
+          {
+           "severity": "INFO",
+           "code": "CURRENT_OF",
+           "message": "WHERE CURRENT OF c を主キー（order_id）で指す形にした。指している行は変わらない。行ロックを落とすかどうかは別に決める（#9）",
+           "range": {
+            "file": "pkg_stock_reserve.pkb",
+            "startLine": 43,
+            "endLine": 43,
+            "startColumn": 7,
+            "endColumn": 61
+           }
+          }
+         ],
          "sqlKind": "UPDATE",
-         "originalSql": "UPDATE orders SET status = 'CLAIMED' WHERE CURRENT OF c",
+         "originalSql": "UPDATE orders SET status = 'CLAIMED' WHERE order_id = r.order_id",
          "selectsStar": false,
          "cardinality": "UNKNOWN",
          "atMostOneRow": false
