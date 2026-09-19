@@ -821,17 +821,23 @@ def _cursor_for(file: JavaFile, statement: M.Loop, routine: M.Routine, result: S
         raise Untranslatable(["cursor FOR loop whose query ScalarDB cannot run"], query.original_sql)
     written = {t for s in _walk(statement.body) for t in (getattr(s, "write_set", None) or [])}
     conflict = written & set(query.read_set or [])
-    if conflict and not _locked_and_decided(query):
+    locked_undecided = bool(query.locking_mode) and not _locked_and_decided(query)
+    if conflict and (locked_undecided or not _scan_precedes_writes(routine, statement, conflict)):
         raise Untranslatable(
             [f"cursor FOR loop whose body writes {sorted(conflict)}, which its own query reads"],
             query.original_sql)
     if conflict:
-        # `FOR UPDATE` の cursor で、行ロックを落とすと**決めてある**もの（#9 / 2026-09-19 claim_batch）。
-        # Oracle は OPEN の時点で行をロックして集合を固定するので、先に全部読む形と読む行が同じである。
-        # 読むのは 1 回だけで書くより前なので、「同じトランザクションで書いた物の走査」（P2-4）にも
-        # 当たらない。ロックが無い cursor（`mark_reviewed`）はこの理由が立たないので、拒否のままにする
-        file.comment("FOR UPDATE の cursor: Oracle も OPEN の時点で行を固定する。先に読む形と同じ行を回し、"
-                     "他からの変更は commit で弾かれる（#9）")
+        # パターン D（走査しながら同じ表を更新）を、先に読む形で移す（2026-09-19 / #20 の決定 A）。
+        #
+        # Oracle の cursor は OPEN の時点で読み取りが一貫しているので、先に全部読む形と回す行が同じで
+        # ある（`FOR UPDATE` ならロックで、無くても読み取り一貫性で）。読むのは書くより前の 1 回だけ
+        # なので、「同じトランザクションで書いた物の走査」（P2-4）にも当たらない——**この routine が
+        # ループより前に同じ表を書いていなければ**。書いていたら拒否のままにする。
+        #
+        # 残る違いは、OPEN のあとで他が行を変えたときである。Oracle はそのまま上書きし、こちらは
+        # commit で弾かれる（再試行は呼び出し側の責務）。弾かれる分だけ安全側である
+        file.comment("先に読んでから書く: Oracle も OPEN の時点で回す行が決まる。他からの変更は commit で"
+                     "弾かれる（パターン D / #20）")
 
     variable = java_name(statement.variable or "r")
     # the translator renders `head.tail` as `scope[head].tail()`, so the loop variable itself is what goes in
@@ -860,6 +866,21 @@ def _cursor_for(file: JavaFile, statement: M.Loop, routine: M.Routine, result: S
             _statements(f, statement.body, routine, result)
     finally:
         _LOOP_ROWS.set(outer)
+
+
+def _scan_precedes_writes(routine: M.Routine, loop: M.Loop, tables: set[str]) -> bool:
+    """この routine が、ループより前に `tables` を書いていないか。
+
+    書いていたら、ループの走査は「同じトランザクションで書いた物の走査」になり、ScalarDB が拒否する
+    （P2-4 / DB-CORE-10106）。呼び出し側が同じトランザクションで先に書いていた場合は、ここからは
+    見えない——それはどの走査にも言えることで、呼び出し側の境界の設計である。
+    """
+    for statement in _walk(routine.body):
+        if statement is loop:
+            return True
+        if set(getattr(statement, "write_set", None) or []) & tables:
+            return False
+    return True
 
 
 def _locked_and_decided(query: M.SqlOperation) -> bool:
