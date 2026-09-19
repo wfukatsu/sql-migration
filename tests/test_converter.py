@@ -934,3 +934,29 @@ def test_updating_a_primary_key_column_is_refused():
     r = run_t("UPDATE t SET id = 5 WHERE id = 1")
     assert r.status == "ERROR" and "PK_UPDATE" in codes(r)
     assert run_t("UPDATE t SET name = 'x' WHERE id = 1").status == "OK"
+
+
+def test_a_typed_temporal_literal_is_written_as_plain_text():
+    """dml-benchmark-report 4.5: PostgreSQL's `DATE '...'` / `TIMESTAMP '...'` went out as they stood with status OK,
+    and ScalarDB SQL answered DB-SQL-10026 -- it has no typed literal."""
+    r = run_t("INSERT INTO t (id, d, ts) VALUES (7, DATE '2024-09-01', TIMESTAMP '2024-09-01 10:00:00')", "postgres")
+    assert "VALUES (7, '2024-09-01', '2024-09-01 10:00:00')" in r.converted[0]
+    r = run_t("UPDATE t SET ts = TIMESTAMP '2024-09-01 10:00:00' WHERE id = 1 AND d = '2024-09-01'::date", "postgres")
+    assert "SET ts = '2024-09-01 10:00:00'" in r.converted[0] and "d = '2024-09-01'" in r.converted[0]
+    r = run_t("SELECT id FROM t WHERE ts >= DATE '2024-09-01' AND id = 1", "postgres")
+    assert "ts >= '2024-09-01 00:00:00'" in r.converted[0]
+
+
+def test_a_boolean_for_an_integer_column_is_written_as_a_number():
+    """dml-benchmark-report 4.6: MySQL's TINYINT(1) is an INT in ScalarDB, which refuses TRUE for it (DB-SQL-10052)."""
+    ddl = "CREATE TABLE b (id INT PRIMARY KEY, vip TINYINT(1), flag BOOLEAN); "
+    results, _ = convert_script(ddl + "INSERT INTO b (id, vip, flag) VALUES (1, TRUE, TRUE);\n"
+                                "SELECT id FROM b WHERE vip = FALSE AND id = 1", "mysql", decompose=False)
+    assert "VALUES (1, 1, " in results[-2].converted[0]
+    assert "vip = 0" in results[-1].converted[0] and "BOOL_LIT" in codes(results[-1])
+
+
+def test_values_without_a_column_list_are_fitted_by_the_table_definition_order():
+    ddl = "CREATE TABLE b2 (id INT PRIMARY KEY, active TINYINT(1), ts DATETIME); "
+    results, _ = convert_script(ddl + "INSERT INTO b2 VALUES (1, TRUE, '2024-09-01')", "mysql", decompose=False)
+    assert "VALUES (1, 1, '2024-09-01 00:00:00')" in results[-1].converted[0]
