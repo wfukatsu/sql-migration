@@ -1008,6 +1008,12 @@ def _dynamic(file: JavaFile, statement: M.DynamicSql, routine: M.Routine,
         if not last and not guard:
             # 条件の無い variant のあとに続きは無い。並べると到達しないコードになる
             break
+    if branches and all((variant or {}).get("guard") for variant, _ in branches):
+        # どの variant の条件にも当たらない。**元なら何かしらの文が走った**が、それが何かは誰も
+        # 決めていない——許された表名の一覧に無い表名がここに来る。黙って何もしないのは最悪なので、拒む
+        with file.block("else") as f:
+            f.line(f'throw new IllegalArgumentException("{routine.id}: 走りうる文のどれにも当たらない'
+                   f'（limits.yaml の dynamicTables に無い表名など）");')
 
 
 def _variant(file: JavaFile, operation: M.SqlOperation, statement: M.DynamicSql,

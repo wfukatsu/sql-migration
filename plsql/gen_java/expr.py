@@ -37,7 +37,7 @@ COMPARISONS = {"=": "eq", "<>": "ne", "!=": "ne", "<": "lt", "<=": "le", ">": "g
 FUNCTIONS = {
     "NVL": f"{HELPER}.nvl", "ROUND": f"{HELPER}.round", "TRUNC": f"{HELPER}.trunc",
     "TO_CHAR": f"{HELPER}.text", "RTRIM": f"{HELPER}.rtrim", "LTRIM": f"{HELPER}.ltrim",
-    "MOD": f"{HELPER}.mod", "ABS": f"{HELPER}.abs",
+    "MOD": f"{HELPER}.mod", "ABS": f"{HELPER}.abs", "UPPER": f"{HELPER}.upper",
 }
 # Values, not calls. SYSDATE is the database clock, which is not the JVM clock -- the helper takes it from the
 # caller so that a generated routine is testable and the difference stays visible.

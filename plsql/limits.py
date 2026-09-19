@@ -5,6 +5,7 @@
 * **走査行数の上限**（P4-5 の続き、2026-09-17 の決定）
 * **行ロックを落として楽観制御へ移すと決めた routine**（#9 / 2026-09-18 の決定）
 * **トランザクション境界を 1 反復 = 1 トランザクションに割ると決めた routine**（#3 / #24 / #14）
+* **動的 SQL が受け付けてよい表名**（2026-09-19 の決定）
 
 どちらも「決めた人がいるときだけ、決めたと書ける」という同じ形である。書いていない routine に
 既定の答えを当てると、**誰も決めていないことが決まったように見える**。
@@ -122,6 +123,35 @@ class Boundaries:
 
     def why(self, routine: str) -> str | None:
         return self.per_iteration.get(routine) or self.separate.get(routine)
+
+
+@dataclass
+class DynamicTables:
+    """表名が実行時に決まる動的 SQL の、**受け付けてよい表名**（2026-09-19 の決定）。
+
+    `'DELETE FROM ' || p_table_name || ...` は走りうる文が数えられない。数えられるようにするのは
+    **人が表名を決めたとき**だけで、書いていない routine は今までどおり拒否する。一覧に無い表名が
+    渡されたら、生成コードは実行時に拒否する——Oracle ならどの表でも走ったが、それを許すことこそ
+    移行で塞ぎたい穴である。
+    """
+
+    allowed: dict[str, list[str]] = field(default_factory=dict)
+    source: str | None = None
+
+    @classmethod
+    def load(cls, path: str | Path | None) -> "DynamicTables":
+        if path is None:
+            return cls()
+        file = Path(path)
+        if not file.exists():
+            raise FileNotFoundError(f"{file} が無い")
+        data = yaml.safe_load(file.read_text(encoding="utf-8")) or {}
+        section = data.get("dynamicTables") or {}
+        return cls(allowed={str(k): [str(t) for t in (v or [])] for k, v in section.items()},
+                   source=str(file))
+
+    def for_routine(self, routine: str) -> list[str]:
+        return list(self.allowed.get(routine, []))
 
 
 @dataclass
