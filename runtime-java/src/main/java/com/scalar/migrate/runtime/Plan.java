@@ -26,6 +26,7 @@ public class Plan {
     public String access_path;
     public int max_rows;
     public List<List<String>> index_columns;  // indexes Residual builds on the fetched table before the query
+    public Map<String, String> residual_types; // column -> exact H2 type where the ScalarDB type is lossy: NUMERIC(7,2)
   }
 
   public static class Residual {
