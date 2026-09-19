@@ -247,3 +247,36 @@ def test_the_measured_oracle_user_has_exactly_one_home():
     assert '"sessionUser": session_user' in run
     assert '"user": pinned.get("user") or session_user' not in run, \
         "実測値が pinned にも書かれている。#22 の状態に戻っている"
+
+
+# --- 戻り値と OUT の桁の差（2026-09-19） ---------------------------------------------------------
+
+def test_a_return_value_differing_only_in_scale_is_set_aside():
+    """`order_total` が 900 を返し、ScalarDB 側が 900.00 を返す。値は同じで、違うのは桁の書き方だけ。
+
+    表の列の差は `... (scale)` と末尾に種類を書くが、戻り値と OUT は `returned (scale): ...` と
+    **コロンの前**に書く。末尾しか見ていなかったので、戻り値の桁だけの差が「差」として数えられていた。
+    """
+    diffs = compare_capture(capture(result={"returned": {"$dec": "900"}, "out": {}}),
+                            capture(result={"returned": {"$dec": "900.00"}, "out": {}}))
+    assert diffs == ["returned (scale): expected=900 actual=900.00"]
+    assert _scale_only(diffs[0])
+
+
+def test_an_out_value_differing_only_in_scale_is_set_aside():
+    diffs = compare_capture(capture(result={"returned": None, "out": {"p_total": {"$dec": "0"}}}),
+                            capture(result={"returned": None, "out": {"p_total": {"$dec": "0.00"}}}))
+    assert len(diffs) == 1 and _scale_only(diffs[0]), diffs
+
+
+def test_a_return_value_differing_in_value_is_still_a_difference():
+    """桁を揃えるのは値が同じときだけ。900 と 900.01 は差である。"""
+    diffs = compare_capture(capture(result={"returned": {"$dec": "900"}, "out": {}}),
+                            capture(result={"returned": {"$dec": "900.01"}, "out": {}}))
+    assert len(diffs) == 1 and not _scale_only(diffs[0])
+
+
+def test_a_missing_out_value_is_never_scale_only():
+    diffs = compare_capture(capture(result={"returned": None, "out": {"p_count": 2}}),
+                            capture(result={"returned": None, "out": {}}))
+    assert not any(_scale_only(d) for d in diffs)

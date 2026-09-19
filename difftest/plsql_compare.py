@@ -300,6 +300,10 @@ def compare_variant(variant: str, scales: dict) -> dict:
 
 # `column: expected=... actual=... (kind)` -- the kind this comparison assigned to one difference
 KIND = re.compile(r"\((value|scale|whitespace|type|masked on one side only)\)$")
+# `returned (kind): ...` / `out p_x (kind): ...` -- the same kind, written before the colon. Two places write a
+# kind and they do not put it in the same spot; recognising only the trailing one left every scale-only
+# *return value* counted as a difference (2026-09-19: `order_total` returning 900 against 900.00)
+LEADING_KIND = re.compile(r"^(?:returned|out \S+) \((value|scale|whitespace|type|masked on one side only)\):")
 
 
 def _scale_only(line: str) -> bool:
@@ -308,6 +312,9 @@ def _scale_only(line: str) -> bool:
     Matching the kinds this module writes, rather than "ends with a bracket": an exception message can end with
     one too, and reading that as a kind made the comparison crash on a capture that happened to contain one.
     """
+    leading = LEADING_KIND.match(line)
+    if leading:
+        return leading.group(1) == "scale"
     kinds = [m.group(1) for part in line.split("; ") if (m := KIND.search(part))]
     return bool(kinds) and all(kind == "scale" for kind in kinds)
 
