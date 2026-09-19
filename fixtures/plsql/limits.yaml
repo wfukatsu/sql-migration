@@ -26,6 +26,8 @@ scanRows:
     pkg_order_pricing.order_total: 200
     # 同じ order_lines を同じ order_id で絞るので、同じ質問・同じ値
     pkg_order_lock.cancel: 200
+    # これも 1 注文の明細を読む。同じ問いには同じ答え（#19 / 2026-09-19）
+    pkg_bulk_load.archive_lines: 200
 
   notLimited:
     # 締め対象の件数は業務が決める数ではなく、その日たまたま溜まった数である。上限に当たれば夜間
@@ -33,13 +35,16 @@ scanRows:
     # メモリの問題は残る（#19 / 2026-09-18）
     prc_nightly_close: TX-001 の再設計で「1 回に処理する件数」を決める
 
-# ここに無い routine は「まだ誰も決めていない」である。`--limits-strict` が名前を挙げる:
+# ここに無い routine は「まだ誰も決めていない」である。`--limits-strict` が名前を挙げる。
 #
-#   pkg_order_report.mark_reviewed     → 2026-09-19 に先に読む形で移した（#20 の決定 A）。何行来うるかは未決
-#   pkg_stock_reserve.claim_batch      → #9 の行ロック再設計とセット
-#   pkg_bulk_load.collect_open_orders  → BULK COLLECT（BULK-001）
-#   pkg_bulk_load.archive_lines        → 同上
-#   trg_payments_guard.body            → 実行計画に分解される文（SQL-002）。trigger 自体が #12
+# 2026-09-19（#19）に、**人が値を決めなくて済む形**へ変えたものがある——ここに書かなくても挙がらない:
+#
+#   問い合わせ自身が件数を絞っている走査（`claim_batch` の `LIMIT p_limit`）
+#     -> 読む行数を決めているのは問い合わせで、その件数を渡すのは呼び出し側である
+#   件数を数えるだけの分割読み（`collect_open_orders`）
+#     -> COUNT(*) にしたので、行を持たない
+#   1 反復 = 1 トランザクションに割った routine（transactions.perIteration）
+#     -> 処理対象をキー順に件数つきで繰り返し読む。上限は「1 回に何行ずつ取るか」（運用の調整値）になる
 #
 # 勝手に notLimited へ入れない。「決めた」と書けるのは、決めた人がいるときだけである。
 
@@ -122,6 +127,11 @@ transactions:
       どちらでも壊れないが、揃えると生成器の形が 1 つになる。200 件ごとの中間コミットは境界
       そのものに吸収される。対象を読むのは別トランザクションなので、自分が消す表を読んでいても
       よい（P2-4 に当たらない）
+    pkg_order_report.mark_reviewed: >-
+      1 注文 = 1 トランザクション（#19 の決定、2026-09-19）。#20 では 1 トランザクションで回す形（A）に
+      したが、`p_status = 'SHIPPED'` で呼ばれると出荷済みの注文を過去の分まで全部 1 トランザクションで
+      書き換える——行数も大きさも業務では決められない。本体は同じ値を書くだけで何度走らせても同じ
+      なので、原子性を失っても実害が小さい
     pkg_bulk_load.restock: >-
       1 要素 = 1 トランザクション。`FORALL ... SAVE EXCEPTIONS` が表している要件（続行して
       記録する）は #3 で決めたものと同じなので、同じ形に揃える（#14 / cursor-patterns §G）。

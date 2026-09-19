@@ -198,12 +198,15 @@ BEGIN
   LOOP
     FETCH c BULK COLLECT INTO v_ids LIMIT p_limit;
     EXIT WHEN v_ids.COUNT = 0;
-    p_count := p_count + v_ids.COUNT;
+    p_count := p_count + v_ids.COUNT * 2;
   END LOOP;
   CLOSE c;
 END prc_count_open;
 /
 """
+# 件数を足すだけの本体は COUNT(*) に書き換わる（#19 / 2026-09-19）。分割読みそのものを見るテストは、
+# 数える以外のことをする本体（上の `* 2`）で見る
+COUNT_ONLY = CHUNKED.replace("v_ids.COUNT * 2", "v_ids.COUNT")
 
 
 def _lowered(tmp_path, source: str):
@@ -292,3 +295,24 @@ def test_the_generated_loop_hands_out_chunks(tmp_path):
     assert "vIds.size()" in java
     assert java.count("vIds") and "List<BigDecimal> vIds" not in java, \
         "塊のループ変数を、ローカルとしても宣言している（同じ名前が 2 つ）"
+
+
+
+# --- #19: 件数を数えるだけの分割読みは COUNT(*) にする（2026-09-19） ------------------------------
+
+def test_a_chunked_read_that_only_counts_becomes_a_count(tmp_path):
+    """行を 1 行も持たずに同じ答えが出る。行数の上限を決める必要そのものが無くなる。"""
+    routine = _lowered(tmp_path, COUNT_ONLY)
+    body = _walk(routine.body)
+    assert not [s for s in body if s.kind == "Loop"]
+    count = next(s for s in body if s.kind == "SqlOperation")
+    assert count.original_sql == "SELECT COUNT(*) FROM orders WHERE status = 'NEW'"
+    assert any(s.kind == "Assignment" and s.target == "p_count" and "v_count_1" in s.expression for s in body)
+
+
+def test_a_limit_that_is_not_positive_raises_what_oracle_raises(tmp_path):
+    """2026-09-19 に Oracle 23ai で実測: LIMIT 0 / 負は ORA-06502、LIMIT NULL は ORA-06500。
+    以前は「0 件で抜けるのと同じ」と書いていた——実測せずに書いた誤りだった。"""
+    routine = _lowered(tmp_path, COUNT_ONLY)
+    raised = {s.error_code for s in _walk(routine.body) if s.kind == "Raise"}
+    assert raised == {-6500, -6502}

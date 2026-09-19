@@ -100,7 +100,9 @@ def test_a_loop_writing_what_its_query_reads_reads_first_and_says_why(corpus):
     """
     source = generated("PkgOrderReportService.java")
     assert "cursor FOR loop whose body writes" not in source
-    assert "先に読んでから書く" in source
+    # 2026-09-19 / #19: mark_reviewed はさらに 1 注文 = 1 トランザクションへ割ったので、対象は別の
+    # トランザクションで読まれ、同じ表を書く問題そのものが無くなった
+    assert "markReviewedOne(" in source
 
 
 @pytest.mark.skipif(not __import__("pathlib").Path("generated/src/main/java").is_dir(),

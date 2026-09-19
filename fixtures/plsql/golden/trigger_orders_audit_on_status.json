@@ -73,7 +73,7 @@
    "rows": [
     [
      {
-      "$dec": "1"
+      "$masked": "clock the harness cannot pin"
      },
      "ORDERS",
      "1001",
@@ -87,7 +87,7 @@
     ],
     [
      {
-      "$dec": "2"
+      "$masked": "clock the harness cannot pin"
      },
      "ORDERS",
      "1002",
@@ -104,7 +104,8 @@
  },
  "masked": {
   "audit_log": [
-   "changed_at"
+   "changed_at",
+   "audit_id"
   ]
  }
 }

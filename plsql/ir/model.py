@@ -168,6 +168,8 @@ class Loop(Statement):
     # ので、`n` はもう読み込む量ではなく、**1 回に配る量**である。その違いを残すために、
     # 「ただの走査」に潰さずに持つ
     chunk: str | None = None
+    # #19: 処理対象を件数つきで繰り返し読むとき、次のページの起点になるキー列（keyset）
+    paged_key: str | None = None
     body: list[Statement] = field(default_factory=list)
 
 

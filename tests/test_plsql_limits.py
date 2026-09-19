@@ -75,10 +75,12 @@ def test_the_generated_code_says_where_its_limit_came_from(tmp_path):
 
 
 def test_a_routine_with_no_specific_limit_says_so_in_the_code(tmp_path):
-    """"既定値" is not a decision; the generated code should not read as if it were."""
-    generate([SRC, "--out-dir", str(tmp_path), "--limits", CONFIG, "--quiet"])
+    """"既定値" is not a decision; the generated code should not read as if it were.
+
+    corpus の config では全部決まった（#19 / 2026-09-19）ので、config を渡さずに見る。"""
+    generate([SRC, "--out-dir", str(tmp_path), "--quiet"])
     source = (Path(tmp_path) / "src/main/java/com/example/migrated/infrastructure"
-              / "PkgOrderReportRepository.java").read_text(encoding="utf-8")
+              / "PkgOrderPricingRepository.java").read_text(encoding="utf-8")
     assert "この routine 固有の上限は決められていない" in source
 
 
@@ -185,14 +187,20 @@ def test_without_a_config_the_list_says_so(tmp_path, capsys):
 
 
 def test_with_a_config_the_list_is_about_the_routines(tmp_path, capsys):
-    assert generate([SRC, "--out-dir", str(tmp_path), "--limits", CONFIG, "--limits-strict"]) == 1
-    assert "--limits was not given" not in capsys.readouterr().out
+    """1 本だけ決めていない config。挙がるのはその routine で、「config が無い」ではない。"""
+    config = tmp_path / "limits.yaml"
+    config.write_text(Path(CONFIG).read_text(encoding="utf-8").replace(
+        "    pkg_bulk_load.archive_lines: 200\n", ""), encoding="utf-8")
+    assert generate([SRC, "--out-dir", str(tmp_path / "out"), "--limits", str(config), "--limits-strict"]) == 1
+    out = capsys.readouterr().out
+    assert "--limits was not given" not in out and "pkg_bulk_load.archive_lines" in out
 
 
-def test_the_corpus_lists_what_nobody_has_decided(tmp_path):
-    """corpus では 5 件残っている。勝手に notLimited へ入れず、名前を挙げるのが門の仕事である。"""
+def test_the_corpus_has_nothing_left_undecided(tmp_path):
+    """2026-09-19（#19）に残りを決めた: archive_lines は 200、ほかは人が値を決めなくて済む形にした
+    （問い合わせが件数を絞っている / COUNT(*) にした / 処理対象を件数つきで繰り返し読む）。"""
     assert generate([SRC, "--out-dir", str(tmp_path), "--limits", CONFIG, "--limits-strict",
-                     "--quiet"]) == 1
+                     "--quiet"]) == 0
 
 
 # --- #9: 行ロックを落とす判断も routine ごとに記録する（2026-09-18） ------------------------------
