@@ -24,6 +24,7 @@ from sqlglot.transforms import eliminate_join_marks
 
 from .appside import h2_unsupported
 from .schema import SchemaRegistry, TableMeta
+from .types import fit_temporal_literal, iso_temporal_literal
 
 DEFAULT_ROW_LIMIT = 10_000
 H2_MODE = {"oracle": "Oracle", "postgres": "PostgreSQL", "mysql": "MySQL"}
@@ -156,9 +157,15 @@ def _literal_value(e: exp.Expression):
     if isinstance(e, exp.Cast) and isinstance(e.this, exp.Literal):  # DATE '...' style
         return e.this.name
     # DATE '2026-01-01' / TIMESTAMP '...' (Oracle ANSI literals) and TO_DATE('...', fmt) with a constant
-    if isinstance(e, (exp.DateStrToDate, exp.TimeStrToTime, exp.StrToDate, exp.StrToTime, exp.TsOrDsToDate)) \
-            and isinstance(e.this, exp.Literal):
+    if isinstance(e, (exp.DateStrToDate, exp.TimeStrToTime)) and isinstance(e.this, exp.Literal):
         return e.this.name
+    if isinstance(e, (exp.StrToDate, exp.StrToTime, exp.TsOrDsToDate)) and isinstance(e.this, exp.Literal):
+        fmt = e.args.get("format")
+        iso = iso_temporal_literal(e.this.name, fmt.name if fmt is not None else None) \
+            if fmt is None or isinstance(fmt, exp.Literal) else None
+        if iso is None:
+            raise NotDecomposable(f"{e.sql()} cannot be rewritten as a ScalarDB literal (YYYY-MM-DD [HH:MM:SS.FFF])")
+        return iso
     raise NotDecomposable(f"not a literal: {e.sql()}")
 
 
@@ -175,14 +182,16 @@ def _sql_value(v) -> str:
 
 
 def _fit_temporal(p: Predicate, types: dict[str, str]) -> Predicate:
-    """A date-only literal compared with a TIMESTAMP column gets a midnight time: ScalarDB parses TIMESTAMP literals
-    as 'YYYY-MM-DD HH:MM:SS[.FFF]'."""
+    """The predicate's literals made to fit the column's ScalarDB type, by the same rule the converter uses: a
+    date-only literal gets midnight for TIMESTAMP / TIMESTAMPTZ, a time part is dropped for DATE."""
     ty = next((t for c, t in types.items() if c.lower() == p.column.lower()), None)
 
     def fit(v):
-        if ty == "TIMESTAMP" and isinstance(v, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
-            return v + " 00:00:00"
-        return v
+        if not isinstance(v, str):
+            return v
+        fitted, change = fit_temporal_literal(ty, v)
+        # a real time of day against a DATE column is left alone: rounding it would move the bound of a fetch
+        return v if change == "time" else fitted
 
     return Predicate(p.column, p.op, [fit(v) for v in p.value] if isinstance(p.value, list) else fit(p.value))
 

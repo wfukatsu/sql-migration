@@ -24,7 +24,7 @@ from . import appside
 from .decomposer import DEFAULT_ROW_LIMIT, ORDERED_SCAN_STORAGES, Decomposer, NotDecomposable, PlanBlocked
 from .dialect import Upsert, to_scalardb_sql
 from .schema import SchemaRegistry, TableMeta
-from .types import map_type
+from .types import fit_temporal_literal, iso_temporal_literal, map_type
 
 AGGREGATES = (exp.Count, exp.Sum, exp.Avg, exp.Min, exp.Max)
 COMPARISONS = (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE)
@@ -350,7 +350,43 @@ class StatementConverter:
             res.issues.append(Issue("WARN", "PLAN_CROSS_PARTITION", "a fetch needs a cross-partition scan"))
         res.plan["recommended_config"] = self._cost(res, [(f.table, f.access_path) for f in plan.fetch], self.row_limit)
 
+    def _source_only_syntax(self, node: exp.Expression) -> None:
+        """Source-database syntax the generator would print as it stands, because SQLGlot keeps it on the node.
+
+        ScalarDB SQL has none of it, so a statement carrying it is not valid output however clean the rest is.
+        What only advises the source optimizer is dropped with a note; what changes the rows is refused.
+        """
+        for t in node.find_all(exp.Table):
+            if t.args.get("sample"):
+                self.fail("CLAUSE", f"TABLESAMPLE on {t.name} is not supported; it returns a random subset of the rows")
+            if t.args.get("only"):
+                self.warn("ONLY", f"ONLY {t.name} dropped: ScalarDB tables have no inheritance children. If {t.name} "
+                                  f"has child tables in PostgreSQL, their rows must not be migrated into it")
+                t.set("only", None)
+            if t.args.get("hints"):
+                hints = ", ".join(h.sql(dialect=self.dialect) for h in t.args["hints"])
+                self.info("HINT", f"index hint dropped from {t.name} ({hints}); ScalarDB chooses the access path "
+                                  f"from the key and index conditions")
+                t.set("hints", None)
+            for k in ("partition", "version", "when", "changes"):
+                if t.args.get(k):
+                    self.fail("CLAUSE", f"{t.args[k].sql(dialect=self.dialect)} on {t.name} is not supported")
+        for sel in node.find_all(exp.Select):
+            for m in sel.args.get("operation_modifiers") or []:
+                name = m.name.upper()
+                if name == "SQL_CALC_FOUND_ROWS":
+                    self.warn("MODIFIER", "SQL_CALC_FOUND_ROWS dropped: FOUND_ROWS() does not exist in ScalarDB, so a "
+                                          "following SELECT FOUND_ROWS() needs a separate COUNT(*)")
+                else:
+                    self.info("MODIFIER", f"{name} dropped (it only advises the MySQL server)")
+            sel.set("operation_modifiers", None)
+            if sel.args.get("hint"):
+                self.info("HINT", f"optimizer hint dropped ({sel.args['hint'].sql(dialect=self.dialect)}); ScalarDB "
+                                  f"chooses the access path from the key and index conditions")
+                sel.set("hint", None)
+
     def _dispatch(self, node: exp.Expression) -> list:
+        self._source_only_syntax(node)
         if isinstance(node, exp.Select):
             return [self.select(node)]
         if isinstance(node, (exp.Union, exp.Intersect, exp.Except)):
@@ -443,12 +479,23 @@ class StatementConverter:
         if isinstance(e, (exp.DateStrToDate, exp.TimeStrToTime)) and isinstance(e.this, exp.Literal):
             self.info("DATE_LIT", f"{ctx}: {e.sql(dialect=self.dialect)} written as the plain literal '{e.this.name}'")
             return exp.Literal.string(e.this.name)
-        # TO_DATE('2020-01-01','YYYY-MM-DD') / TO_TIMESTAMP(...) / '...'::date with constant args
+        # TO_DATE('15/01/2024','DD/MM/YYYY') / TO_TIMESTAMP(...) with constant args: the format is applied here,
+        # because ScalarDB reads ISO text only and would take '15/01/2024' as it stands.
         if isinstance(e, (exp.StrToDate, exp.StrToTime, exp.TsOrDsToDate, exp.TsOrDsToTimestamp)) \
                 and isinstance(e.this, exp.Literal):
-            self.warn("DATE_FMT", f"{ctx}: {e.sql(dialect=self.dialect)} replaced by the plain literal "
-                                  f"'{e.this.name}'; make sure it is in ScalarDB format (YYYY-MM-DD [HH:MM:SS.FFF])")
-            return exp.Literal.string(e.this.name)
+            fmt = e.args.get("format")
+            if fmt is not None and not isinstance(fmt, exp.Literal):
+                self.fail("DATE_FMT", f"{ctx}: {e.sql(dialect=self.dialect)}: the format is not a constant")
+            iso = iso_temporal_literal(e.this.name, fmt.name if fmt is not None else None)
+            if iso is None:
+                self.fail("DATE_FMT", f"{ctx}: {e.sql(dialect=self.dialect)} cannot be rewritten as a ScalarDB literal "
+                                      f"(YYYY-MM-DD [HH:MM:SS.FFF]); convert the value in the application and bind it")
+            if fmt is None:
+                self.warn("DATE_FMT", f"{ctx}: {e.sql(dialect=self.dialect)} has no format, so the source database "
+                                      f"reads it with the session's date format; '{iso}' is written as it stands")
+            else:
+                self.info("DATE_LIT", f"{ctx}: {e.sql(dialect=self.dialect)} written as the plain literal '{iso}'")
+            return exp.Literal.string(iso)
         if isinstance(e, (exp.CurrentTimestamp, exp.CurrentDate, exp.CurrentTime)) or \
                 (isinstance(e, exp.Anonymous) and e.name.upper() in ("SYSDATE", "SYSTIMESTAMP", "NOW", "GETDATE")):
             self.fail("NOW", f"{ctx}: {e.sql(dialect=self.dialect)} must be computed in the application and bound as a literal")
@@ -482,21 +529,16 @@ class StatementConverter:
         lit = value.this if isinstance(value, exp.Cast) and isinstance(value.this, exp.Literal) else value
         if not isinstance(lit, exp.Literal) or not lit.is_string:
             return value
-        if kind == "DATE":
-            m = re.fullmatch(r"(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(:\d{2}(\.\d+)?)?)", lit.name)
-            if m and re.fullmatch(r"00:00(:00(\.0+)?)?", m.group(2)):
-                self.info("DATE_LIT", f"{ctx}: midnight time part dropped from '{lit.name}' for DATE column {column}")
-                return exp.Literal.string(m.group(1))
-            if m:
-                self.warn("DATE_LIT", f"{ctx}: '{lit.name}' has a time part but {column} is a ScalarDB DATE; "
-                                      f"the time is dropped (use TIMESTAMP for the column if the time matters)")
-                return exp.Literal.string(m.group(1))
-            return value
-        if kind in ("TIMESTAMP", "TIMESTAMPTZ") and re.fullmatch(r"\d{4}-\d{2}-\d{2}", lit.name):
-            self.info("DATE_LIT", f"{ctx}: '{lit.name}' padded to '{lit.name} 00:00:00' for {kind} column "
+        fitted, change = fit_temporal_literal(kind, lit.name)
+        if change == "midnight":
+            self.info("DATE_LIT", f"{ctx}: midnight time part dropped from '{lit.name}' for DATE column {column}")
+        elif change == "time":
+            self.warn("DATE_LIT", f"{ctx}: '{lit.name}' has a time part but {column} is a ScalarDB DATE; "
+                                  f"the time is dropped (use TIMESTAMP for the column if the time matters)")
+        elif change == "padded":
+            self.info("DATE_LIT", f"{ctx}: '{lit.name}' padded to '{fitted}' for {kind} column "
                                   f"{column}; ScalarDB does not parse a date-only literal as a timestamp")
-            return exp.Literal.string(lit.name + " 00:00:00")
-        return value
+        return exp.Literal.string(fitted) if change else value
 
     def _fit_date_literal(self, col: exp.Column, value: exp.Expression, ctx: str) -> exp.Expression:
         return self._fit_temporal_literal(col.name, value, ctx, col.table)
@@ -911,8 +953,8 @@ class StatementConverter:
         ... WHERE o.order_id = :id` breaks that rule while asking a question ScalarDB can answer perfectly
         well -- the same question, written the other way round.
 
-        An INNER JOIN is commutative: the two tables produce the same rows whichever is named first, and the
-        SELECT list names its columns, so nothing about the answer moves. Only the shape does. The swap is
+        An INNER JOIN is commutative: the two tables produce the same rows whichever is named first, and a
+        SELECT list that names its columns keeps their order (`SELECT *` does not, and is spelled out first). Only the shape does. The swap is
         made only when it settles the matter -- every reference that can be attributed to a table points at
         the joined one and none at the base -- because moving the problem from one side to the other helps
         nobody. An unqualified reference is attributed through the schema, which is what the JOIN_SCOPE check
@@ -938,6 +980,16 @@ class StatementConverter:
         owners = {o for c in refs if (o := self._owner(c, alias_of))}
         if owners != {there} or here == there:
             return base
+        if any(isinstance(p, exp.Star) for p in s.expressions):
+            # `SELECT *` lists the FROM table's columns first, so the swap would reorder the result. With both
+            # tables in the schema the star is spelled out in the source order; without them there is no swap.
+            metas = [self.registry.get(base.name), self.registry.get(joined.name)]
+            if not all(metas):
+                return base
+            spelled = [exp.column(c, table=t.alias or t.name) for t, m in zip((base, joined), metas) for c in m.columns]
+            s.set("expressions", [c for p in s.expressions for c in (spelled if isinstance(p, exp.Star) else [p])])
+            self.info("JOIN_ORDER", "SELECT * spelled out as the columns in the source order, which the swap of the "
+                                    "two tables would otherwise change")
         _from(s).set("this", joined)
         join.set("this", base)
         self.info("JOIN_ORDER", f"FROM {there} JOIN {here}: the tables were swapped so that WHERE names the "
@@ -1251,9 +1303,15 @@ class StatementConverter:
             self.fail("RETURNING", "RETURNING is not supported")
         if u.args.get("limit") or u.args.get("order"):
             self.fail("UPDATE", "UPDATE ... ORDER BY / LIMIT is not supported")
+        meta = self._meta(u.this)
+        key = {c.lower() for c in meta.primary_key} if meta else set()
         for eq in u.expressions:
             if not isinstance(eq, exp.EQ) or not isinstance(eq.this, exp.Column):
                 self.fail("SET", f"unsupported SET clause '{eq.sql()}'")
+            if eq.this.name.lower() in key:
+                self.fail("PK_UPDATE", f"SET {eq.this.name}: a primary-key column cannot be updated in ScalarDB (the key "
+                                       f"is the record's identity). DELETE the record and INSERT it under the new key "
+                                       f"inside one ScalarDB transaction")
             v = eq.expression
             if isinstance(v, exp.Column) and v.name.lower() == eq.this.name.lower() or v.find(exp.Column):
                 self.fail("RMW", f"SET {eq.sql(dialect=self.dialect)}: expressions referencing columns are not allowed; "
