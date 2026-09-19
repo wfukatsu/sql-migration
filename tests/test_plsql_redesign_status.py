@@ -72,3 +72,18 @@ def test_a_trigger_is_decided_by_the_project_and_verified_through_the_routines_t
 def test_the_counts_add_up(found):
     counts = redesign.counts(found)
     assert sum(counts.values()) == len(found) and set(counts) == set(redesign.STATES)
+
+
+def test_a_paged_per_iteration_loop_has_its_row_limit_decided():
+    """`mark_reviewed` is one transaction per order (#19) and reads its targets a batch at a time. limits.yaml says
+    such a routine needs no value from a person, and `--limits-strict` never asked for one; CUR-002 did."""
+    decided = redesign.Decided.load(LIMITS)
+    analysis = analyse(SRC, f"{SRC}/schema.sql", scalardb_schema="fixtures/plsql/scalardb-schema.json",
+                       **decided.for_analysis())
+    decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), Evidence())
+    rules = {m.rule.id for m in decisions["pkg_order_report.mark_reviewed"].matches}
+    assert "CUR-OPT-002" in rules and "CUR-002" not in rules
+    # without the project's decisions nobody split it, and the question is open
+    plain = analyse(SRC, f"{SRC}/schema.sql", scalardb_schema="fixtures/plsql/scalardb-schema.json")
+    undecided = decide(plain.program, analyse_program(plain.program), RuleSet.load(), Evidence())
+    assert "CUR-002" in {m.rule.id for m in undecided["pkg_order_report.mark_reviewed"].matches}
