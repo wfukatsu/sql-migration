@@ -1,0 +1,23 @@
+name: create_order_exact_stock
+unit: create_order
+routine: create_order
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+  sequences:
+    order_seq: 1
+setup:
+- INSERT INTO customers (customer_id, name) VALUES (1, 'Acme')
+- INSERT INTO products (product_id, stock_quantity, unit_price, updated_at) VALUES (10, 3, 100.00, NULL)
+call:
+  kind: procedure
+  name: create_order
+  args:
+    p_customer_id: 1
+    p_product_id: 10
+    p_quantity: 3
+  out:
+    p_order_id: NUMBER
+mask:
+  products:
+  - updated_at
+note: 在庫ちょうどの数量。不足にはならず、在庫は 0 になる

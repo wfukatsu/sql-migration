@@ -15,3 +15,4 @@ difftest/.env
 .claude/settings.local.json
 .cache/
 .gradle-home/
+fixtures/plsql-external/*/work/

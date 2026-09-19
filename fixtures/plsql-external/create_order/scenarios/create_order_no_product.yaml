@@ -1,0 +1,22 @@
+name: create_order_no_product
+unit: create_order
+routine: create_order
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+  sequences:
+    order_seq: 1
+setup:
+- INSERT INTO customers (customer_id, name) VALUES (1, 'Acme')
+call:
+  kind: procedure
+  name: create_order
+  args:
+    p_customer_id: 1
+    p_product_id: 99
+    p_quantity: 3
+  out:
+    p_order_id: NUMBER
+mask:
+  products:
+  - updated_at
+note: 商品が無い。NO_DATA_FOUND の handler が -20003 に変える

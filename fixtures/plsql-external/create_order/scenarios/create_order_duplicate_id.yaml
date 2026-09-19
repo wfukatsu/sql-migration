@@ -1,0 +1,24 @@
+name: create_order_duplicate_id
+unit: create_order
+routine: create_order
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+  sequences:
+    order_seq: 5
+setup:
+- INSERT INTO customers (customer_id, name) VALUES (1, 'Acme')
+- INSERT INTO products (product_id, stock_quantity, unit_price, updated_at) VALUES (10, 10, 19.99, NULL)
+- INSERT INTO orders (order_id, customer_id, order_date, status, total_amount) VALUES (5, 1, DATE '2026-01-01', 'RECEIVED', 1.00)
+call:
+  kind: procedure
+  name: create_order
+  args:
+    p_customer_id: 1
+    p_product_id: 10
+    p_quantity: 3
+  out:
+    p_order_id: NUMBER
+mask:
+  products:
+  - updated_at
+note: '採番した番号の受注が既にある。Oracle は DUP_VAL_ON_INDEX の handler が -20004 に変える（移行先では自然には起きない: EXC-001）'

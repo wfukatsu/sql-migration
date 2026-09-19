@@ -1,0 +1,23 @@
+name: create_order_zero_quantity
+unit: create_order
+routine: create_order
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+  sequences:
+    order_seq: 1
+setup:
+- INSERT INTO customers (customer_id, name) VALUES (1, 'Acme')
+- INSERT INTO products (product_id, stock_quantity, unit_price, updated_at) VALUES (10, 10, 19.99, NULL)
+call:
+  kind: procedure
+  name: create_order
+  args:
+    p_customer_id: 1
+    p_product_id: 10
+    p_quantity: 0
+  out:
+    p_order_id: NUMBER
+mask:
+  products:
+  - updated_at
+note: 数量 0。-20001 で抜け、何も書かない
