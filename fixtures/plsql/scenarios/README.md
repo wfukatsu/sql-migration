@@ -19,10 +19,21 @@ call:
                                 #   索引付き表（TABLE OF ... INDEX BY PLS_INTEGER）として束縛する
   out: {}                       # OUT / IN OUT: 名前 -> Oracle 型
   returns: VARCHAR2             # kind: function のときだけ
-capture_tables: [orders, audit_log]
+capture_tables: [orders, audit_log]   # DB link の先の表は移行先の名前で挙げる: warehouse.orders
 mask:                           # 固定できない時計から書かれる列
   audit_log: [changed_at]
+accepted_difference:            # 任意。人が受け入れると決めた差。例外コードの 1 組だけに効く
+  exception: {oracle: -2055, target: java.sql.SQLTransactionRollbackException}
+  decided: '2026-09-20'
+  reason: "..."
 ```
+
+## `accepted_difference`
+
+移行先が Oracle と同じ例外を返せないことがある（ORA-02055 は DB link に固有で、link を namespace に置き換えた
+移行先に対応物が無い）。受け入れるかどうかは人が決めることなので、シナリオに理由と決定日を書く。比較は
+**書かれた組のとおりの例外コードが両側で出たときだけ**、その差を `accepted` に移して報告に理由つきで出す。
+別のコード、表の差、戻り値の差は、これまでどおり相違になる。使っているのは `remote_sync_already_queued` だけ。
 
 ## mask が要る理由
 

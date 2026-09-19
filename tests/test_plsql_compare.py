@@ -312,3 +312,18 @@ def test_a_scenario_the_capture_run_could_not_run_is_not_compared_from_a_leftove
     report = plsql_compare.compare_variant("double", {})
     assert list(report["scenarios"]) == ["ran"]
     assert report["not_compared"]["could_not_run"]["reason"] == "setup does not convert"
+
+
+def test_an_accepted_difference_covers_exactly_the_pair_of_codes_the_scenario_names():
+    """2026-09-20: ORA-02055 belongs to the DB link; the target's commit-time conflict is accepted in its place."""
+    from difftest.plsql_compare import _accepted
+
+    oracle = {"exception": {"code": -2055, "message": "x"}}
+    target = {"exception": {"code": "java.sql.SQLTransactionRollbackException", "message": "x"}}
+    found = _accepted("remote_sync_already_queued", oracle, target)
+    assert found and found["reason"] and found["decided"] == "2026-09-20"
+    # any other code on either side is still a difference, and so is the same pair in a scenario that did not ask
+    assert _accepted("remote_sync_already_queued", {"exception": {"code": -1, "message": "x"}}, target) is None
+    assert _accepted("remote_sync_already_queued", oracle, {"exception": {"code": -1, "message": "x"}}) is None
+    assert _accepted("remote_sync_already_queued", oracle, {"exception": None}) is None
+    assert _accepted("remote_sync", oracle, target) is None
