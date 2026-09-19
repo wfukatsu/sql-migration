@@ -197,11 +197,20 @@ class CallGraph:
 AMBIGUOUS = "<ambiguous>"
 
 
+class _Names(dict):
+    """name -> routine id, plus the functions that can be called with no argument list at all."""
+
+    no_args: set[str]
+
+
 def _names(program: M.Program) -> dict[str, str]:
     """Every name a call may use -> the routine id. A bare name that two packages both define maps to AMBIGUOUS:
     "the first one seen" linked `pkg_b.run`'s call to its own `helper` (which commits) to `pkg_a.helper` (which
     does not), and `pkg_b.run` came out AUTO."""
-    by_name: dict[str, str] = {}
+    by_name = _Names()
+    # `v_n := pkg.open_count;` is a call: PL/SQL needs no parentheses when every parameter can be left out
+    by_name.no_args = {r.id for m in program.modules for r in m.routines
+                       if r.routine_kind == "function" and all(p.default for p in r.parameters)}
     for module in program.modules:
         for routine in module.routines:
             by_name[routine.id.lower()] = routine.id
@@ -262,7 +271,7 @@ def build_call_graph(program: M.Program) -> CallGraph:
                 + [d.initial for st in statements for d in getattr(st, "declarations", []) or []
                    if d.initial and d.declaration_kind != "cursor"]
             for expression in initialisers:
-                graph.calls[routine.id] |= _called_in(expression, by_name, module.name, routine.id)
+                graph.calls[routine.id] |= _called_in(expression, by_name, module.name, routine.id, declared)
                 graph.external[routine.id] |= _external_in(expression, by_name, module.name, declared)
             for statement in statements:
                 if statement.kind == "Call":
@@ -276,7 +285,7 @@ def build_call_graph(program: M.Program) -> CallGraph:
                 # condition may call one too. Looking only at Call nodes found one edge in the whole corpus and
                 # made every transitive transaction effect disappear.
                 for expression in _expressions(statement):
-                    for resolved in _called_in(expression, by_name, module.name, routine.id):
+                    for resolved in _called_in(expression, by_name, module.name, routine.id, declared):
                         graph.calls[routine.id].add(resolved)
                     if statement.kind != "SqlOperation":   # SQL has its own functions; the converter judges those
                         graph.external[routine.id] |= _external_in(expression, by_name, module.name, declared)
@@ -296,6 +305,8 @@ def _external_in(expression: str, by_name: dict[str, str], module: str, declared
 
 
 _CALLABLE = re.compile(r"\b([A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)?)\s*\(")
+# a name with no argument list: a call only if it resolves to a function that takes none (see _Names.no_args)
+_BARE_NAME = re.compile(r"(?<![\w$#.:])([A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)?)(?![\w$#.]|\s*\()")
 
 
 def _expressions(statement: M.Statement) -> list[str]:
@@ -311,13 +322,23 @@ def _expressions(statement: M.Statement) -> list[str]:
     return out
 
 
-def _called_in(expression: str, by_name: dict[str, str], module: str, caller: str) -> set[str]:
-    """Self-calls count. Direct recursion is a self-edge, and excluding it hides the plainest recursion there is."""
+def _called_in(expression: str, by_name: dict[str, str], module: str, caller: str,
+               declared: set[str] | frozenset[str] = frozenset()) -> set[str]:
+    """Self-calls count. Direct recursion is a self-edge, and excluding it hides the plainest recursion there is.
+    `declared` are the caller's own names: a variable hides a parameterless function of the same name."""
     found: set[str] = set()
     for name in _CALLABLE.findall(expression):
         resolved = _resolve(name, by_name, module)
         if resolved is not None:
             found.add(resolved)
+    no_args = getattr(by_name, "no_args", None)
+    if no_args:
+        for name in _BARE_NAME.findall(re.sub(r"'(?:[^']|'')*'", "''", expression)):
+            if name.lower() in declared:
+                continue
+            resolved = _resolve(name, by_name, module)
+            if resolved in no_args:
+                found.add(resolved)
     return found
 
 
