@@ -64,15 +64,27 @@ def map_type(dt: exp.DataType, source_dialect: str) -> TypeMapping:
     if t in _SERIAL:
         return TypeMapping("BIGINT" if t == T.BIGSERIAL else "INT", "ERROR",
                            f"{raw}: auto-generated sequence values are not supported; generate IDs in the application")
+    if source_dialect == "oracle" and (t in _INT or t in _BIGINT):
+        # Oracle has no machine integers: INTEGER, INT and SMALLINT are all NUMBER(38). Mapped to a 32-bit INT with
+        # no note, a value above 2^31 overflowed on the way in
+        return TypeMapping("BIGINT", "WARN", f"{raw}: an Oracle integer type is NUMBER(38); mapped to BIGINT, and "
+                                             f"values beyond 64-bit would overflow. Declare NUMBER(p) to map exactly")
     if t in _INT:
         if source_dialect == "mysql" and t == T.TINYINT and params == [1]:
             return TypeMapping("INT", "WARN", "TINYINT(1) is often used as boolean in MySQL; consider BOOLEAN")
         return TypeMapping("INT", "INFO", "")
     if t in _BIGINT:
-        if t != T.BIGINT:
+        if t == getattr(T, "UBIGINT", None):
             return TypeMapping("BIGINT", "WARN", f"{raw}: unsigned range exceeds ScalarDB BIGINT (signed 64-bit)")
+        if t != T.BIGINT:
+            return TypeMapping("BIGINT", "INFO", f"{raw}: unsigned 32-bit fits ScalarDB BIGINT")
         return TypeMapping("BIGINT", "INFO", "")
     if t in _FLOAT:
+        if source_dialect == "oracle":
+            # Oracle FLOAT is a NUMBER with binary precision (126 bits by default, about 38 digits), not an IEEE
+            # single. As a 32-bit FLOAT it kept 7 digits
+            return TypeMapping("DOUBLE", "WARN", f"{raw}: Oracle FLOAT is a decimal NUMBER with up to 38 digits; "
+                                                 f"mapped to DOUBLE (about 15 digits)")
         # PostgreSQL FLOAT(25..53) / FLOAT without precision is double precision
         if source_dialect == "postgres" and (not params or (params[0] or 0) > 24):
             return TypeMapping("DOUBLE", "INFO", "")
@@ -83,10 +95,14 @@ def map_type(dt: exp.DataType, source_dialect: str) -> TypeMapping:
         precision = params[0] if params else None
         scale = params[1] if len(params) > 1 else 0
         if precision is None:
-            if source_dialect == "oracle":
+            if source_dialect in ("oracle", "postgres"):
+                # PostgreSQL's NUMERIC without a precision is unconstrained too -- any number of digits, fractions
+                # included. Only MySQL defaults to (10,0). Read as (10,0) it became a BIGINT "exact, fits 64-bit",
+                # and every fraction was cut off
                 return TypeMapping("DOUBLE", "WARN",
-                                   f"{raw}: unbounded NUMBER mapped to DOUBLE; exact decimal precision is lost")
-            precision, scale = 10, 0  # MySQL / PostgreSQL default DECIMAL is (10,0)
+                                   f"{raw}: unconstrained {'NUMBER' if source_dialect == 'oracle' else 'NUMERIC'} "
+                                   f"mapped to DOUBLE; exact decimal precision is lost")
+            precision, scale = 10, 0  # MySQL's default DECIMAL is (10,0)
         if scale and scale > 0:
             return TypeMapping("DOUBLE", "WARN",
                                f"{raw}: ScalarDB has no DECIMAL type; mapped to DOUBLE (precision loss). "
@@ -97,6 +113,12 @@ def map_type(dt: exp.DataType, source_dialect: str) -> TypeMapping:
             return TypeMapping("BIGINT", "INFO", f"{raw} -> BIGINT (exact, fits 64-bit)")
         return TypeMapping("BIGINT", "WARN", f"{raw}: precision {precision} exceeds 64-bit; values may overflow BIGINT")
     if t in _TEXT:
+        if t in _t("CHAR", "NCHAR") and params and (params[0] or 0) > 1:
+            # CHAR(n) pads with blanks and compares ignoring them: `code = 'A'` finds 'A  '. As TEXT, the migrated
+            # value keeps its padding and the same comparison finds nothing
+            return TypeMapping("TEXT", "WARN", f"{raw}: fixed-length CHAR is blank-padded and compared ignoring the "
+                                               f"padding; ScalarDB TEXT compares exactly -- trim the data when "
+                                               f"migrating, or the same comparisons stop matching")
         if params:
             return TypeMapping("TEXT", "INFO", f"{raw}: length limit is not enforced by ScalarDB TEXT")
         return TypeMapping("TEXT", "INFO", "")
@@ -108,13 +130,18 @@ def map_type(dt: exp.DataType, source_dialect: str) -> TypeMapping:
                                "Oracle DATE carries a time-of-day component; use TIMESTAMP if the time part is used")
         return TypeMapping("DATE", "INFO", "")
     if t in _TIME:
+        if t == getattr(T, "TIMETZ", None):
+            return TypeMapping("TIME", "WARN", f"{raw}: ScalarDB TIME has no time zone; the offset is dropped")
         return TypeMapping("TIME", "INFO", "TIME precision is microseconds (6 digits)")
-    if t in _TIMESTAMP:
-        if params and (params[0] or 0) > 3:
-            return TypeMapping("TIMESTAMP", "WARN", f"{raw}: ScalarDB TIMESTAMP keeps millisecond precision only")
-        return TypeMapping("TIMESTAMP", "INFO", "")
-    if t in _TIMESTAMPTZ:
-        return TypeMapping("TIMESTAMPTZ", "INFO", "stored as UTC; millisecond precision")
+    if t in _TIMESTAMP or t in _TIMESTAMPTZ:
+        target = "TIMESTAMP" if t in _TIMESTAMP else "TIMESTAMPTZ"
+        # with no precision written, Oracle and PostgreSQL keep microseconds (6); MySQL keeps whole seconds (0)
+        precision = params[0] if params and params[0] is not None else (0 if source_dialect == "mysql" else 6)
+        if precision > 3:
+            written = "" if params else " (the default precision is 6)"
+            return TypeMapping(target, "WARN", f"{raw}{written}: ScalarDB {target} keeps millisecond precision only"
+                               + ("; stored as UTC" if target == "TIMESTAMPTZ" else ""))
+        return TypeMapping(target, "INFO", "stored as UTC; millisecond precision" if target == "TIMESTAMPTZ" else "")
     if t in _SEMI:
         return TypeMapping("TEXT", "WARN",
                            f"{raw}: mapped to TEXT; JSON/ENUM/UUID semantics and operators are not available")

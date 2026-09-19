@@ -31,7 +31,8 @@ ScalarDB は複数のストレージを仮想的に統合し、それらをま�
 | `ROWNUM <= n` / `FETCH FIRST n ROWS ONLY` | `LIMIT n` |
 | `FROM a, b WHERE a.x = b.y` | `INNER JOIN b ON a.x = b.y` |
 | Oracle 外部結合 `a.x = b.y(+)` | `LEFT JOIN b ON a.x = b.y` |
-| `JOIN ... USING (c)` | `JOIN ... ON a.c = b.c` |
+| `JOIN ... USING (c)` | `JOIN ... ON a.c = b.c`。結合した列 `c` は、行が全部残る側で修飾する（内部結合・LEFT は FROM 表、RIGHT は結合先の表） |
+| Oracle の `LIKE`（`ESCAPE` なし、パターンに `\` がある、または bind） | `LIKE ... ESCAPE ''`。Oracle には既定のエスケープ文字が無く、ScalarDB の既定は `\`。`ESCAPE ''` で無効にできる（公式の文法ページ） |
 | `ON CONFLICT DO UPDATE` / `ON DUPLICATE KEY UPDATE` / `REPLACE INTO` / 定数ソースの `MERGE` | `UPSERT INTO`（意味の差分を WARN） |
 
 ---
@@ -48,9 +49,30 @@ ScalarDB の型は 11 種（`BOOLEAN` / `INT` / `BIGINT` / `FLOAT` / `DOUBLE` / 
 | `VARCHAR2(n)` / `VARCHAR(n)` / `CLOB` / `TEXT` | `TEXT` | INFO（長さ制約は消える） |
 | Oracle `DATE` | `DATE` | WARN（Oracle の DATE は時刻を持つ。時刻を使うなら `TIMESTAMP`） |
 | `JSON` / `UUID` / `ENUM` | `TEXT` | WARN |
+| 精度なしの Oracle `NUMBER` / PostgreSQL `NUMERIC` | `DOUBLE` | WARN（どちらも桁数無制限で小数を持てる。精度なしで `(10,0)` になるのは MySQL だけ） |
+| Oracle `INTEGER` / `INT` / `SMALLINT` | `BIGINT` | WARN（Oracle の整数型はすべて `NUMBER(38)`。正確に対応させるなら `NUMBER(p)` と書く） |
+| Oracle `FLOAT` | `DOUBLE` | WARN（2 進精度つきの `NUMBER` で最大 38 桁。IEEE の単精度ではない） |
+| `CHAR(n)`、n > 1 | `TEXT` | WARN（空白で埋められ、埋めた分を無視して比較される。`TEXT` は厳密に比べるので、移行時に trim しないと同じ比較が当たらなくなる） |
+| `TIMESTAMP` / `TIMESTAMPTZ`、精度が 4 以上（Oracle / PostgreSQL は**精度を書かなければ 6**、MySQL は 0） | 同名 | WARN（ミリ秒まで） |
+| `TIMETZ` | `TIME` | WARN（オフセットは落ちる） |
 | `ARRAY` / `INTERVAL` / `GEOMETRY` | なし | ERROR |
 
 **金額の列は注意**。ScalarDB に `DECIMAL` が無いため `DOUBLE` になり、誤差が出る。スケール済みの整数（例: 円なら 1 倍、ドルなら 100 倍）として `BIGINT` に持たせる設計を推奨する。
+
+---
+
+## 識別子と文字列の意味論
+
+- **引用符は外して出す。** ScalarDB SQL で識別子を引用する方法は、公式の文法ページからは確認できていない。
+  そのため、引用符が意味を持っていた名前には WARN `IDENT` を出す: 文法が使う語（`"order"`、`"key"`、`"user"` など）、
+  方言が畳む大文字小文字と違う綴り（PostgreSQL の `"UnitPrice"`、Oracle の `"orders"`）。
+  すべての識別子を引用する ORM の `"status"` のような名前には出さない
+- **大文字小文字**: 移行元は引用していない識別子を畳むが、ScalarDB は畳まない。同じ表が `customers` と
+  `Customers` の 2 通りに書かれていたら WARN `IDENT`
+- **Oracle の `''`**: 変換できた文（OK / WARN）にも WARN `SEMANTICS` を出す。Oracle は `''` を NULL として保存し、
+  `= ''` は決して真にならない。ScalarDB は空文字のまま持つ
+- **MySQL の照合順序**: 文字列リテラルとの `=` / `LIKE` / `IN` に INFO `SEMANTICS`（既定の照合順序は大文字小文字を
+  区別しない。ScalarDB は厳密に比べる）。列の照合順序が分からないので、判定は変えない
 
 ---
 

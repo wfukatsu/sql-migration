@@ -212,11 +212,15 @@ class Scope:
                 self._add(j.this)
                 # sqlglot puts LEFT/RIGHT in `side`, but eliminate_join_marks() (Oracle (+)) puts it in `kind`
                 side = (j.args.get("side") or j.args.get("kind") or "").upper()
-                if side in ("LEFT", "RIGHT", "FULL"):
-                    self.outer_joined.add((j.this.alias or j.this.name).lower())
-                    if side in ("RIGHT", "FULL"):
-                        # the FROM side becomes nullable too
-                        self.outer_joined.add((from_.this.alias or from_.this.name).lower())
+                joined = (j.this.alias or j.this.name).lower()
+                if side in ("LEFT", "FULL"):
+                    self.outer_joined.add(joined)
+                if side in ("RIGHT", "FULL"):
+                    # a RIGHT / FULL join keeps the rows of the table it adds, so everything joined *before* it
+                    # becomes nullable -- not only the FROM table. With `a JOIN b ... RIGHT JOIN c`, only `a` was
+                    # marked: `WHERE b.x IS NULL` went into b's fetch, the b rows with a value were never loaded,
+                    # and their `c` rows came back as unmatched.
+                    self.outer_joined.update(alias for alias in self.tables if alias != joined)
 
     def _add(self, t: exp.Table) -> None:
         self.tables[(t.alias or t.name).lower()] = t

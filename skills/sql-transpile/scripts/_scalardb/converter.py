@@ -65,6 +65,16 @@ class Unconvertible(Exception):
 # helpers
 # --------------------------------------------------------------------------------------------------
 
+# Words the ScalarDB SQL grammar uses. A name among them that the source had to quote loses what made it a name when
+# the quotes come off. Whether ScalarDB reserves each one is not verified here, so the message says "may", and the
+# list is kept to the grammar's own words -- an ORM that quotes every identifier should not light up on "status".
+SQL_KEYWORDS = set("""
+    ADD ALL ALTER AND AS ASC BEGIN BETWEEN BIGINT BLOB BOOLEAN BY CLUSTERING COLUMN COMMIT CREATE CROSS DATE DELETE
+    DESC DESCRIBE DOUBLE DROP ESCAPE EXISTS FLOAT FROM FULL GRANT GROUP HAVING IF IN INDEX INNER INSERT INT INTO IS
+    JOIN KEY LEFT LIKE LIMIT NAMESPACE NOT NULL ON OR ORDER OUTER PRIMARY REVOKE RIGHT ROLLBACK SELECT SET SHOW TABLE
+    TABLES TEXT TIME TIMESTAMP TIMESTAMPTZ TO TRUNCATE UPDATE UPSERT USE USER VALUES WHERE WITH
+""".split())
+
 BIND_ORDINAL = "bind_ordinal"
 
 
@@ -201,6 +211,7 @@ class StatementConverter:
         self.row_limit = row_limit
         self.h2_indexes = h2_indexes  # plans ask the runtime to build H2 indexes (joins over large fetches)
         self.issues: list[Issue] = []
+        self._spellings: dict[str, str] = {}   # table name, lower-cased -> the spelling first seen in the script
 
     # -- issue helpers ------------------------------------------------------------------------------
     def info(self, code: str, msg: str) -> None:
@@ -230,6 +241,7 @@ class StatementConverter:
             return res
         res.kind = type(node).__name__.upper()
         binds = _number_positional_binds(node)
+        notes = appside.converted_notes(node, self.dialect)   # read from the source, before any rewrite adds to it
         try:
             if any(c.args.get("join_mark") for c in node.find_all(exp.Column)):
                 node = eliminate_join_marks(node)
@@ -245,6 +257,7 @@ class StatementConverter:
             out = self._dispatch(node)
             res.converted = [to_scalardb_sql(n) if isinstance(n, exp.Expression) else n for n in out]
             self._check_bind_order(binds, out)
+            self.issues.extend(Issue(severity, "SEMANTICS", message) for severity, message in notes)
         except Unconvertible as e:
             self.issues.append(Issue("ERROR", e.code, str(e)))
         except UnsupportedError as e:
@@ -376,6 +389,29 @@ class StatementConverter:
                 ident.set("quoted", False)
                 if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", ident.name):
                     self.warn("IDENT", f"identifier \"{ident.name}\" contains characters ScalarDB may not accept")
+                elif ident.name.upper() in SQL_KEYWORDS:
+                    # the quotes were what made this a name. They are removed here (how ScalarDB SQL quotes an
+                    # identifier is not something this tool has verified), so say that the name needs attention
+                    # instead of reporting OK
+                    self.warn("IDENT", f"identifier \"{ident.name}\" is a SQL keyword that the source had to quote; "
+                                       f"it is emitted unquoted and ScalarDB SQL may not parse it -- rename the "
+                                       f"column/table, or quote it by hand")
+                elif ident.name != self._folded(ident.name):
+                    self.warn("IDENT", f"identifier \"{ident.name}\" is case-sensitive in the source (quoted, and not "
+                                       f"in the dialect's folded case); ScalarDB names are case-sensitive, so every "
+                                       f"reference has to use exactly this spelling")
+        # ScalarDB does not fold case; the source does. `FROM Customers` and `CREATE TABLE customers` are one table
+        # there and two names here
+        for table in node.find_all(exp.Table):
+            if not table.name:
+                continue
+            seen = self._spellings.setdefault(table.name.lower(), table.name)
+            if seen != table.name:
+                self.warn("IDENT", f"table '{table.name}' is also written '{seen}' in this script; the source folds "
+                                   f"case, ScalarDB does not -- use one spelling")
+
+    def _folded(self, name: str) -> str:
+        return name.upper() if self.dialect == "oracle" else name.lower()
 
     def _table_name(self, t: exp.Expression) -> str:
         t = t.this if isinstance(t, exp.Schema) else t
@@ -519,6 +555,7 @@ class StatementConverter:
                 return leaf
             self.fail("PRED", f"{ctx}: IS is only supported as IS [NOT] NULL on a column")
         if isinstance(leaf, exp.Escape):
+            leaf.this.meta["escape_given"] = True
             like = self._check_leaf(leaf.this, ctx, allow_agg)
             return exp.Escape(this=like, expression=leaf.expression)
         if isinstance(leaf, exp.ILike):
@@ -528,7 +565,7 @@ class StatementConverter:
             if not isinstance(leaf.this, exp.Column):
                 self.fail("PRED", f"{ctx}: LIKE left-hand side must be a column")
             leaf.set("expression", self._value(leaf.expression, ctx))
-            return leaf
+            return self._oracle_like(leaf, ctx)
         if isinstance(leaf, exp.Between):
             if not isinstance(leaf.this, exp.Column):
                 self.fail("PRED", f"{ctx}: BETWEEN left-hand side must be a column")
@@ -799,17 +836,20 @@ class StatementConverter:
             if kind in ("CROSS", "NATURAL") or side == "FULL":
                 self.fail("JOIN", f"{kind or side} JOIN is not supported")
             if j.args.get("using"):
-                left = joins[i - 1].this if i else base
                 using_cols = {u.name.lower() for u in j.args["using"]}
-                on = [exp.EQ(this=exp.column(u.name, table=left.alias or left.name),
+                on = [exp.EQ(this=exp.column(u.name, table=self._using_side(u.name, base, joins[:i])),
                              expression=exp.column(u.name, table=j.this.alias or j.this.name))
                       for u in j.args["using"]]
                 j.set("using", None)
                 j.set("on", exp.and_(*on))
-                # the coalesced USING column is ambiguous once the join is ON-based: qualify it with the FROM table
+                # The merged USING column is COALESCE(left, right). Once the join is ON-based it has to be one of
+                # the two, and it must be the side whose rows are all kept: the FROM table for an inner or LEFT
+                # join, the joined table for a RIGHT join -- qualified with the FROM table there, it was NULL for
+                # every unmatched right row, where the source returns the right row's value.
+                kept = j.this if side == "RIGHT" else base
                 for c in s.find_all(exp.Column):
                     if not c.table and c.name.lower() in using_cols and c.find_ancestor(exp.Join) is None:
-                        c.set("table", exp.to_identifier(base.alias or base.name))
+                        c.set("table", exp.to_identifier(kept.alias or kept.name))
                 self.info("JOIN", "JOIN ... USING rewritten as JOIN ... ON")
             if not j.args.get("on"):
                 # implicit (comma) join: pull column=column equalities between tables out of WHERE
@@ -900,6 +940,34 @@ class StatementConverter:
                                 f"FROM table, which is what ScalarDB requires. An INNER JOIN returns the same "
                                 f"rows either way")
         return joined
+
+    def _oracle_like(self, like: exp.Like, ctx: str) -> exp.Expression:
+        """Oracle's LIKE has no escape character unless ESCAPE names one; ScalarDB's has `\\` by default. The same
+        pattern text therefore means something else: `'a\\_b%'` is "a, backslash, any character, b..." in Oracle
+        and "a, underscore, b..." in ScalarDB. `ESCAPE ''` turns ScalarDB's default off, which is Oracle's meaning."""
+        if self.dialect != "oracle" or like.meta.get("escape_given"):
+            return like
+        pattern = like.expression
+        if isinstance(pattern, exp.Literal) and "\\" not in pattern.name:
+            return like   # no backslash in it: both read it the same way
+        if isinstance(pattern, exp.Literal):
+            self.info("LIKE", f"{ctx}: ESCAPE '' added: Oracle has no default LIKE escape character, ScalarDB's is '\\'")
+        else:
+            self.info("LIKE", f"{ctx}: ESCAPE '' added so that a '\\' in the bound pattern stays a literal backslash, "
+                              "as in Oracle (ScalarDB's default LIKE escape character is '\\')")
+        return exp.Escape(this=like, expression=exp.Literal.string(""))
+
+    def _using_side(self, column: str, base: exp.Table, earlier: list) -> str:
+        """The table on the left of a USING column. It was always "the previous join", which is wrong when that
+        table does not have the column (`a JOIN b USING (x) JOIN c USING (y)` with y in a), and compares against a
+        NULL-extended side after a LEFT join. The first table that is known to have the column is used; with no
+        table definitions there is nothing to choose by, and the previous table stays."""
+        tables = [base] + [e.this for e in earlier if isinstance(e.this, exp.Table)]
+        for table in tables:
+            meta = self._meta(table)
+            if meta and column.lower() in {c.lower() for c in meta.columns}:
+                return table.alias or table.name
+        return tables[-1].alias or tables[-1].name
 
     def _comma_join_to_on(self, j: exp.Join, alias_of: dict, where_expr: exp.Expression | None) -> exp.Expression | None:
         right = (j.this.alias or j.this.name).lower()
