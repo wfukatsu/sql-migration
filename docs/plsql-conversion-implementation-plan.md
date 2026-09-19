@@ -991,15 +991,16 @@ P0-2 の manifest）に集計し直す。
   | CUR-002 / BULK-003（cursor ループ・分割読み） | `limits.yaml` で走査行数の上限（または上限で守らない理由）が決めてあれば注記（CUR-OPT-002 / BULK-OPT-003）。未決定なら REVIEW |
   | DYN-002（動的 SQL） | とりうる文をすべて展開でき、全部を ScalarDB がそのまま実行できるなら注記（DYN-OPT-002）。そうでなければ REVIEW |
   | SCAN-002（パーティションをまたぐ走査） | 移行先は JDBC バックエンドに限定済み（#20）なので注記。JDBC 以外では変換器が拒否し SQL-001 が REVIEW にする |
-  | SEM-006 / SEM-011（MERGE の競合）、SEM-009（TIMESTAMP → DATE の CAST）、SEM-010（SYSTIMESTAMP を書く） | REVIEW のまま。evidence では答えが出ない、または実装と evidence がまだ無い |
+  | SEM-009（TIMESTAMP → DATE の CAST） | Oracle は秒未満を切り捨てる（四捨五入しない。23ai で SQL・PL/SQL とも実測）。`Plsql.castDate` がそのとおりに計算し、`shipment_days_in_transit_*` の 3 シナリオが実 DB で一致。移行先 DB が評価する CAST だけ REVIEW |
+  | SEM-006 / SEM-011（MERGE の競合）、SEM-010（SYSTIMESTAMP を書く） | REVIEW のまま。evidence では答えが出ない |
 
   - この見直しで double 規約の穴が 1 つ見つかった: `NUMBER(14,2)` の列は書き込み時に小数 2 桁へ half-up で丸めるが、
     DOUBLE の列へは丸めずに書いていた（SEM-001 が隠していて、KPI-5 が指摘した）。`Plsql.bind` とハーネスの setup で
     列の桁に丸めるようにし、double の「丸めの相違」2 件が解消した（金額の 2 規約の判定が同じになった）。
-  - holdout2 の 2 件（`pkg_shipment.is_shippable` / `line_count`）は期待値 REVIEW のまま残し、食い違いとして数える
-    （KPI-3 は 63/65 = 96.9%）。holdout2 の期待値はルールに合わせて書き換えない、という約束を守るためである。
-  - 決定の適用後に残る REVIEW は 3 件: `pkg_customer_import.import`（同時実行の競合と再試行）、
-    `pkg_order_report.mark_reviewed`（走査行数の上限が未決定）、`pkg_shipment.days_in_transit`（CAST の秒未満）。
+  - holdout2 の 3 件（`pkg_shipment.is_shippable` / `line_count` / `days_in_transit`）は期待値 REVIEW のまま残し、食い違い
+    として数える（KPI-3 は 62/65 = 95.4%）。holdout2 の期待値はルールに合わせて書き換えない、という約束を守るためである。
+  - 決定の適用後に残る REVIEW は 2 件: `pkg_customer_import.import`（同時実行の競合と再試行）、
+    `pkg_order_report.mark_reviewed`（走査行数の上限が未決定）。
 
 - **生成コードは Spring に依存させない**（2026-09-17）。`@Transactional` は使わず、ScalarDB の
   try-with-resources 定型を `runtime-java` のヘルパに集約し、commit / abort を 1 箇所で制御する（設計書 §6.7）。

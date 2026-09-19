@@ -1,0 +1,17 @@
+name: shipment_days_in_transit_last_instant
+unit: pkg_shipment
+routine: days_in_transit
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'GOLD', NULL, DATE '2025-04-01')
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, shipped_at, total_amount, note) VALUES (1001, 1, 'SHIPPED', TIMESTAMP '2026-01-09 11:00:00', TIMESTAMP '2026-01-10 23:59:59.999', NULL, NULL)
+call:
+  kind: function
+  name: pkg_shipment.days_in_transit
+  args:
+    p_order_id: 1001
+  returns: NUMBER
+capture_tables:
+- orders
+note: "SEM-009 の evidence。CAST(TIMESTAMP AS DATE) は秒未満を切り捨てる: 23:59:59.999 は 1 月 10 日のままで 5 日。四捨五入なら 11 日になり 4 日になる"

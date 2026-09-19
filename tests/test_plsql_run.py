@@ -210,7 +210,6 @@ def test_routines_without_a_capture_are_only_the_documented_ones():
         # holdout2 was added after P0-5 ran. P4-1 covered the three that were holding back an otherwise
         # verified routine; the rest are still uncovered and listed here so the gap stays visible rather than
         # growing silently (fixtures/plsql/golden/README.md).
-        "pkg_shipment.days_in_transit",
         # prc_purge_audit は 2026-09-19 に capture を足した（#24 で割った形を比べるため）
         "trg_payments_guard.trg_payments_guard",
         "pkg_tier_admin.promote",

@@ -318,6 +318,20 @@ class PlsqlTest {
   }
 
   @Test
+  void castToDateDropsTheFractionOfASecondAndNeverRoundsUp() {
+    // Oracle 23ai, measured again on 2026-09-20 in SQL and in PL/SQL: CAST(TIMESTAMP '... 23:59:59.999999' AS DATE)
+    // is 23:59:59 of the same day. Rounding would move it to the next day, and a day count with it
+    assertEquals(java.time.LocalDateTime.of(2026, 1, 10, 23, 59, 59),
+        Plsql.castDate(java.time.LocalDateTime.of(2026, 1, 10, 23, 59, 59, 999_999_000)));
+    assertEquals(java.time.LocalDateTime.of(2026, 1, 10, 12, 0, 0),
+        Plsql.castDate(java.time.LocalDateTime.of(2026, 1, 10, 12, 0, 0, 500_000_000)));
+    // a zoned value keeps its own wall clock: no conversion to another zone
+    assertEquals(java.time.LocalDateTime.of(2026, 1, 10, 23, 59, 59), Plsql.castDate(
+        java.time.OffsetDateTime.of(2026, 1, 10, 23, 59, 59, 999_999_000, java.time.ZoneOffset.ofHours(9))));
+    assertNull(Plsql.castDate(null));
+  }
+
+  @Test
   void anEmptyStringCrossesTheWriteBoundaryAsNull() {
     // #5 (decided 2026-09-19): '' and NULL stay one thing during the migration; blanks are not empty
     assertNull(Plsql.bind(""));
