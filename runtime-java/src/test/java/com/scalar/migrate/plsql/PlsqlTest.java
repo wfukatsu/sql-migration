@@ -141,7 +141,7 @@ class PlsqlTest {
       assertEquals(java.time.ZoneOffset.UTC, Plsql.systimestamp().getOffset());
       assertEquals(pinned, Plsql.systimestamp().toLocalDateTime());
     } finally {
-      Plsql.setClock(LocalDateTime::now);
+      Plsql.resetClock();
     }
   }
 
@@ -153,7 +153,7 @@ class PlsqlTest {
       assertEquals(Plsql.sysdate(), Plsql.systimestamp().toLocalDateTime(),
           "the two must not disagree about what time it is");
     } finally {
-      Plsql.setClock(LocalDateTime::now);
+      Plsql.resetClock();
     }
   }
   // --- 日時の算術（2026-09-19 / prc_purge_audit）--------------------------------------------------
@@ -238,5 +238,20 @@ class PlsqlTest {
     assertNull(Plsql.div(null, 0), "NULL / 0 is NULL, not an error");
     assertNull(Plsql.div(1, null));
     assertEquals(0, new BigDecimal("3.5").compareTo(Plsql.div(7, 2)));
+  }
+
+  @Test
+  void theUnpinnedClockIsUtcWhateverZoneTheJvmRunsIn() {
+    // the pinned tests above could not see this: the default was the JVM's wall clock, labelled as UTC
+    java.util.TimeZone before = java.util.TimeZone.getDefault();
+    java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Tokyo"));
+    try {
+      Plsql.resetClock();
+      long skew = Math.abs(java.time.Duration.between(java.time.Instant.now(), Plsql.systimestamp().toInstant()).toSeconds());
+      assertTrue(skew < 5, "systimestamp() is " + skew + "s away from the real instant");
+      assertEquals(0, Plsql.sysdate().getNano(), "an Oracle DATE has whole seconds");
+    } finally {
+      java.util.TimeZone.setDefault(before);
+    }
   }
 }

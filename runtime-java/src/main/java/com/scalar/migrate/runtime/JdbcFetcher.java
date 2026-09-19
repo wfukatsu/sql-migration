@@ -61,8 +61,14 @@ public class JdbcFetcher implements Fetcher {
         Rows out = new Rows();
         for (int i = 1; i <= m.getColumnCount(); i++) {
           out.columns.add(m.getColumnLabel(i));
-          if (spec.column_types != null && spec.column_types.containsKey(m.getColumnLabel(i)))
+          if (spec.column_types != null && spec.column_types.containsKey(m.getColumnLabel(i))) {
             out.types.put(m.getColumnLabel(i), spec.column_types.get(m.getColumnLabel(i)));
+          } else {
+            // the plan was made without table definitions: ask the result set, which knows, before anyone has
+            // to guess from the values
+            String known = Values.typeOfJdbc(m.getColumnType(i));
+            if (known != null) out.types.put(m.getColumnLabel(i), known);
+          }
         }
         while (rs.next()) {
           if (out.rows.size() >= spec.max_rows) throw new RowLimitExceededException(spec.table, spec.max_rows);

@@ -136,4 +136,36 @@ class ResidualTest {
       assertEquals(List.of(List.of("Abc Def")), residual.query("SELECT INITCAP('abc def') FROM DUAL", Map.of()).get("rows"));
     }
   }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void anUndeclaredColumnIsTypedFromAllItsValuesNotTheFirst() throws Exception {
+    // typed from the first row, a leading NULL made the column VARCHAR: MAX answered 9 over 10
+    try (Residual residual = new Residual("PostgreSQL")) {
+      residual.load(fetch("amounts", null), rows(List.of("id", "amt"), Map.of("id", "INT"),
+          new Object[] {1, null}, new Object[] {2, 9}, new Object[] {3, 10L}));
+      List<List<Object>> max = (List<List<Object>>) residual.query("SELECT MAX(amt), SUM(amt) FROM amounts", Map.of()).get("rows");
+      assertEquals("10", max.get(0).get(0).toString());
+      assertEquals("19", max.get(0).get(1).toString());
+      List<List<Object>> ordered = (List<List<Object>>) residual.query(
+          "SELECT id FROM amounts WHERE amt IS NOT NULL ORDER BY amt", Map.of()).get("rows");
+      assertEquals(List.of(List.of(2), List.of(3)), ordered);
+    }
+  }
+
+  @Test
+  void aColumnOfNothingButNullsStillLoads() throws Exception {
+    try (Residual residual = new Residual("Oracle")) {
+      residual.load(fetch("t", null), rows(List.of("id", "note"), Map.of("id", "INT"), new Object[] {1, null}));
+      assertEquals(1, ((List<?>) residual.query("SELECT id FROM t WHERE note IS NULL", Map.of()).get("rows")).size());
+    }
+  }
+
+  @Test
+  void jdbcColumnTypesMapToScalarDbTypes() {
+    assertEquals("BIGINT", Values.typeOfJdbc(java.sql.Types.BIGINT));
+    assertEquals("TEXT", Values.typeOfJdbc(java.sql.Types.VARCHAR));
+    assertEquals("TIMESTAMPTZ", Values.typeOfJdbc(java.sql.Types.TIMESTAMP_WITH_TIMEZONE));
+    org.junit.jupiter.api.Assertions.assertNull(Values.typeOfJdbc(java.sql.Types.ARRAY));
+  }
 }
