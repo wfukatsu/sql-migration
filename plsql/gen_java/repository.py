@@ -278,8 +278,23 @@ def _method(file: JavaFile, routine: M.Routine, statement: M.SqlOperation,
     _direct(file, name, statement, result)
 
 
+def _at_most_two(statement: M.SqlOperation, sql: str) -> str:
+    """A `SELECT INTO` that does not reach its row by key, read two rows deep and no further.
+
+    Decision of 2026-09-19 (#4): such a statement keeps Oracle's meaning -- no row is NO_DATA_FOUND, one row is the
+    value, a second row is TOO_MANY_ROWS -- and the tool adds neither `LIMIT 1` nor an `ORDER BY` to make the question
+    go away. Two rows are all it takes to tell the three apart, so that is all the scan is asked for; without the
+    limit the target reads every matching row to answer a question the second one already settled. `LIMIT 2` does
+    not pick a row: which two come back is irrelevant, only whether there is a second.
+    """
+    unkeyed = any(d.code == "MULTI_ROW_INTO" for d in statement.diagnostics)
+    if not unkeyed or not statement.into_targets or re.search(r"\bLIMIT\b", sql, re.IGNORECASE):
+        return sql
+    return f"{sql} LIMIT 2"
+
+
 def _direct(file: JavaFile, name: str, statement: M.SqlOperation, result: RepositoryFile) -> None:
-    sql = statement.target_sql[0] if statement.target_sql else statement.original_sql
+    sql = _at_most_two(statement, statement.target_sql[0] if statement.target_sql else statement.original_sql)
     parameters, arguments = _parameters(file, statement)
     returns, reader = _return(file, statement)
 
