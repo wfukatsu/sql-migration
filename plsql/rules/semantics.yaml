@@ -108,8 +108,12 @@ rules:
     requiredTests:
       - aggregate_zero_rows
 
+  # 2026-09-20 / #13: 「結合制約に当たるか、実行計画へ分解されるか」は、capability の層ができてからは変換器が
+  # 答えている。そのまま実行できると判定された結合（targetStatus OK）には掛けない。実行計画になった結合は SQL-002、
+  # 拒否された結合は SQL-001 が REVIEW にし、警告つき（WARN。暗黙の結合の書き換えなど）と、ScalarDB のスキーマが
+  # 無くて誰も答えていない結合は、これまでどおりここで REVIEW になる。AUTO には実 DB の evidence が引き続き要る
   - id: SEM-005
-    match: {statementKind: SqlOperation, textMatches: '\bJOIN\b|\bFROM\b[^)]*,'}
+    match: {statementKind: SqlOperation, textMatches: '\bJOIN\b|\bFROM\b[^)]*,', targetStatusNot: OK}
     decision: REVIEW
     message: 結合です。ScalarDB SQL の結合制約に当たるか、実行計画へ分解されるかを確認してください
     requiredTests:

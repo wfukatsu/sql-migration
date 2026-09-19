@@ -263,6 +263,11 @@ def _extra(criteria: dict, statement: M.Statement, module: M.Module, routine: M.
     if "targetStatus" in criteria and getattr(statement, "target_status", None) not in \
             _as_set(criteria["targetStatus"]):
         return False
+    # `targetStatusNot: OK`: the statement is not one the converter took as it stands -- it warned, planned or
+    # refused it, or no ScalarDB schema was given and nobody asked (target_status is None)
+    if "targetStatusNot" in criteria and getattr(statement, "target_status", None) in \
+            _as_set(criteria["targetStatusNot"]):
+        return False
     if "sqlKind" in criteria and (getattr(statement, "sql_kind", None) or "").upper() not in \
             {k.upper() for k in _as_set(criteria["sqlKind"])}:
         return False
