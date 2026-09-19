@@ -87,7 +87,6 @@ def lower_file(parsed: ParsedFile, symbols: SymbolTable | None = None,
             _cannot_be_auto(lowered, "ParseError", "PARSE_RECOVERED",
                             "the unit has syntax errors; this routine was lowered from the parser's recovered tree, "
                             "which may have dropped or misread statements")
-        _flag_overloads(lowered)
         modules.extend(lowered)
     return modules
 
@@ -105,19 +104,43 @@ def _cannot_be_auto(modules: list[M.Module], construct: str, code: str, message:
             routine.body.insert(0, node)
 
 
-def _flag_overloads(modules: list[M.Module]) -> None:
-    """Overloads share one routine id, and everything downstream is keyed by it: decisions, evidence, limits, the
-    generated method. The second overload's verdict replaced the first's -- a ROLLBACK in one of them vanished.
-    Until ids carry a signature, every overload is held back, so none is decided on another's behalf."""
-    for module in modules:
-        seen: dict[str, list[M.Routine]] = {}
-        for routine in module.routines:
-            seen.setdefault(routine.id, []).append(routine)
-        clashing = {id(r) for group in seen.values() if len(group) > 1 for r in group}
-        if clashing:
-            _cannot_be_auto([module], "OverloadedRoutine", "OVERLOADED_ROUTINE",
-                            "this routine is overloaded; overloads share one id, so its verdict, evidence and "
-                            "generated method cannot be told apart from the other overloads'", only=clashing)
+def _routine_name(context: ParserRuleContext) -> str:
+    identifier = _child(context, "IdentifierContext") or _child(context, "Procedure_nameContext") \
+        or _child(context, "Function_nameContext")
+    return _text(identifier).split(".")[-1].lower() if identifier is not None else "<anonymous>"
+
+
+def overload_ordinals(names: list[str]) -> list[int | None]:
+    """For the routines of one package, in declaration order: None for a name declared once, 1, 2, ... for a name
+    declared several times. `symbols.py` numbers its scopes with the same function, so the two cannot drift."""
+    seen: dict[str, int] = {}
+    out: list[int | None] = []
+    for name in names:
+        if names.count(name) == 1:
+            out.append(None)
+        else:
+            seen[name] = seen.get(name, 0) + 1
+            out.append(seen[name])
+    return out
+
+
+def routine_id_of(module: str | None, name: str, ordinal: int | None = None) -> str:
+    """`pkg.put`, and `pkg.put~2` for the second overload of put.
+
+    Overloads used to share one id -- and through it their statement ids (`IdFactory`) and their symbol scope --
+    so every one of them was held back from AUTO. Only an overloaded routine gets the suffix: limits, fix times,
+    resolutions, fingerprints and the golden IR are keyed by the id, and a routine that is not overloaded must
+    keep the one it has. The number is the declaration order, not the signature: a parameter type that does not
+    resolve would make a signature (and the id) change between runs. (Issue #29-23, decided 2026-09-20.)
+    """
+    base = f"{module}.{name}" if module else name
+    return base if ordinal is None else f"{base}~{ordinal}"
+
+
+def overload_of(routine: M.Routine) -> int | None:
+    """1, 2, ... for an overloaded routine, None otherwise."""
+    _, mark, ordinal = routine.id.rpartition("~")
+    return int(ordinal) if mark and ordinal.isdigit() else None
 
 
 def lower_program(files: list[ParsedFile], symbols: SymbolTable | None = None,
@@ -202,8 +225,9 @@ class _Lowerer:
         module.declarations.extend(self._declarations(
             context, ids, name, stop={"Procedure_bodyContext", "Function_bodyContext"}))
         if not spec:
-            for body in _descend(context, {"Procedure_bodyContext", "Function_bodyContext"}):
-                module.routines.append(self._routine(body, module=name))
+            bodies = list(_descend(context, {"Procedure_bodyContext", "Function_bodyContext"}))
+            for body, ordinal in zip(bodies, overload_ordinals([_routine_name(b) for b in bodies])):
+                module.routines.append(self._routine(body, module=name, ordinal=ordinal))
         return module
 
     def _standalone(self, context: ParserRuleContext) -> M.Module:
@@ -268,11 +292,9 @@ class _Lowerer:
         return module
 
     # -- routines ------------------------------------------------------------------------------------------
-    def _routine(self, context: ParserRuleContext, module: str | None) -> M.Routine:
-        identifier = _child(context, "IdentifierContext") or _child(context, "Procedure_nameContext") \
-            or _child(context, "Function_nameContext")
-        name = _text(identifier).split(".")[-1].lower() if identifier is not None else "<anonymous>"
-        routine_id = f"{module}.{name}" if module else name
+    def _routine(self, context: ParserRuleContext, module: str | None, ordinal: int | None = None) -> M.Routine:
+        name = _routine_name(context)
+        routine_id = routine_id_of(module, name, ordinal)
         # `Function_bodyContext` in a package, `Create_function_bodyContext` standalone: the second has a lower-case
         # f, so a standalone function was lowered as a procedure -- `void`, with `return 1;` inside it
         is_function = "function" in type(context).__name__.lower()

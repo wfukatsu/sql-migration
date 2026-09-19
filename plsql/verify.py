@@ -171,13 +171,13 @@ def _qualifiers(lines: list[str]) -> list[str]:
 
 def _attribute(errors: list[CompileError], project: "GeneratedProject") -> None:
     """Name the routine each error sits in, by the method that encloses its line."""
-    from .gen_java.types import java_class_name, java_name
+    from .gen_java.types import java_class_name, java_name, routine_stem
 
     owners: dict[str, list[tuple[str, str]]] = {}     # file name -> [(java method prefix, routine id)]
     for module in (project.program.modules if project.program is not None else []):
         for klass in (f"{java_class_name(module.name)}Service.java",
                       f"{java_class_name(module.name)}Repository.java"):
-            owners[klass] = [(java_name(r.name), r.id) for r in module.routines]
+            owners[klass] = [(java_name(routine_stem(r)), r.id) for r in module.routines]
     spans = {Path(f.path).name: _methods(f.render()) for f in project.files}
     for error in errors:
         name = Path(error.file).name
