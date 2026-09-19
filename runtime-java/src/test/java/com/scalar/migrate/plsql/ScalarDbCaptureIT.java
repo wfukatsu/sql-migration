@@ -247,20 +247,20 @@ class ScalarDbCaptureIT {
 
     static ScalarDbRunner.Invocation forScenario(Scenario scenario, java.sql.Connection connection)
         throws Unrunnable {
-      String base = pascalCase(scenario.unit());
+      String base = pascalCase(scenario.callUnit());
       Object service;
       try {
         service = newService(Class.forName(PACKAGE + ".application." + base + "Service"), connection,
             pinnedSequences(scenario), 0);
       } catch (ReflectiveOperationException e) {
-        throw new Unrunnable("no generated service for unit " + scenario.unit() + " (" + e + ")");
+        throw new Unrunnable("no generated service for unit " + scenario.callUnit() + " (" + e + ")");
       }
 
       if (scenario.blockIsMoreThanAProjection()) {
         throw new Unrunnable("the scenario's block does more than call the routine and project its result; "
             + "running the routine alone would capture a different thing");
       }
-      String name = camelCase(scenario.routine());
+      String name = camelCase(scenario.callRoutine());
       List<Object> raw = scenario.arguments();
       for (Method candidate : service.getClass().getMethods()) {
         // Java の予約語と衝突する routine 名は `_` を足して逃がしてある（`import` -> `import_`）。
@@ -395,7 +395,7 @@ class ScalarDbCaptureIT {
           out[i] = String.valueOf(value);
         } else {
           // a collection argument means a PL/SQL table type, which the generator refuses (P2-5)
-          throw new Unrunnable("argument " + (i + 1) + " of " + scenario.routine() + " is a "
+          throw new Unrunnable("argument " + (i + 1) + " of " + scenario.callRoutine() + " is a "
               + value.getClass().getSimpleName() + ", which does not fit " + type.getSimpleName());
         }
       }
