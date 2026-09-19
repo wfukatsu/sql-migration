@@ -47,6 +47,12 @@ for case in oracle oracle-features; do
       --json-out "$out/$backend.$case.json" > "$out/$backend.$case.log" 2>&1 || true   # FAIL rows are results, not errors
   tail -1 "$out/$backend.$case.log"
 done
+# One discarded pass first. The node was restarted for the compatibility cases, and a freshly started node is slow
+# for its first few hundred requests (JIT, connection pools): measured right after, the 5,000-row point read came
+# out slower than the 40,000-row one.
+first=${SIZES%% *}
+$py difftest/bench.py --rows "$first" --iterations 10 --warmup 3 --backend "$backend" \
+    --out "$out/warmup-$backend" > "$out/warmup-$backend.log" 2>&1 || true
 for n in $SIZES; do
   $py difftest/bench.py --rows "$n" --iterations "$ITER" --warmup "$WARMUP" --backend "$backend" \
       --out "$out/bench-$backend-$n" > "$out/bench-$backend-$n.log" 2>&1 || true
