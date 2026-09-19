@@ -80,34 +80,7 @@ public class CoreFetcher implements Fetcher {
     TableMetadata md = admin.getTableMetadata(ns, spec.table);
     if (md == null) throw new IllegalStateException("table not found in ScalarDB: " + ns + "." + spec.table);
 
-    Map<String, Object> eq = new LinkedHashMap<>();
-    List<Plan.Predicate> ands = new ArrayList<>();
-    for (Object p : spec.predicates == null ? List.of() : spec.predicates) {
-      if (p instanceof Map) { // simple predicate (Gson parses unknown Object as Map / List)
-        Plan.Predicate pr = Runner.GSON.fromJson(Runner.GSON.toJson(p), Plan.Predicate.class);
-        Object v = resolve(pr.value, params);
-        if ("=".equals(pr.op)) eq.put(pr.column, v);
-        ands.add(pr);
-      } // OR groups are left to the residual engine
-    }
-    boolean partitionCovered = md.getPartitionKeyNames().stream().allMatch(eq::containsKey);
-
-    Scan scan;
-    if (partitionCovered) {
-      Key.Builder kb = Key.newBuilder();
-      for (String c : md.getPartitionKeyNames()) kb.add(Values.column(c, md.getColumnDataType(c), eq.get(c)));
-      scan = Scan.newBuilder().namespace(ns).table(spec.table).partitionKey(kb.build()).limit(spec.max_rows + 1).build();
-    } else {
-      ScanBuilder.BuildableScanAll all = Scan.newBuilder().namespace(ns).table(spec.table).all();
-      Set<ConditionalExpression> conds = new LinkedHashSet<>();
-      for (Plan.Predicate pr : ands) {
-        ConditionalExpression cond = condition(pr, md, params);
-        if (cond != null) conds.add(cond);
-      }
-      scan = conds.isEmpty()
-          ? all.limit(spec.max_rows + 1).build()
-          : all.where(ConditionSetBuilder.andConditionSet(conds).build()).limit(spec.max_rows + 1).build();
-    }
+    Scan scan = buildScan(ns, spec, md, params);
 
     List<String> cols = spec.columns == null || spec.columns.isEmpty() ? new ArrayList<>(md.getColumnNames()) : spec.columns;
     Rows out = new Rows();
@@ -123,6 +96,89 @@ public class CoreFetcher implements Fetcher {
       out.rows.add(row);
     }
     return out;
+  }
+
+  /**
+   * The scan for one fetch: the narrowest access ScalarDB offers for the plan's predicates.
+   *
+   * <p>It used to be one of two things. With the partition key covered, a bare partition scan -- every other
+   * predicate dropped, so a wide partition was read whole and tripped the row limit even when the filtered
+   * result was small. Otherwise {@code Scan.all().where(...)}, even with an {@code =} on an indexed column: the
+   * converter labels that access INDEX and splits key lists into per-value index fetches for Cassandra, and each
+   * of those ran as a filtered scan of the whole table -- the one access pattern that is not to be used there.
+   */
+  static Scan buildScan(String ns, Plan.Fetch spec, TableMetadata md, Map<String, Object> params) {
+    Map<String, Object> eq = new LinkedHashMap<>();
+    List<Plan.Predicate> ands = new ArrayList<>();
+    for (Object p : spec.predicates == null ? List.of() : spec.predicates) {
+      if (p instanceof Map) { // simple predicate (Gson parses unknown Object as Map / List)
+        Plan.Predicate pr = Runner.GSON.fromJson(Runner.GSON.toJson(p), Plan.Predicate.class);
+        Object v = resolve(pr.value, params);
+        if ("=".equals(pr.op) && v != null && Values.representable(md.getColumnDataType(pr.column), v)) {
+          eq.putIfAbsent(pr.column, v);
+        }
+        ands.add(pr);
+      } // OR groups are left to the residual engine
+    }
+    int limit = spec.max_rows + 1;
+    java.util.function.Function<Set<String>, Set<ConditionalExpression>> others = keyed -> {
+      Set<ConditionalExpression> conds = new LinkedHashSet<>();
+      for (Plan.Predicate pr : ands) {
+        if ("=".equals(pr.op) && keyed.contains(pr.column)) continue;   // already the key of the scan
+        ConditionalExpression cond = condition(pr, md, params);
+        if (cond != null) conds.add(cond);
+      }
+      return conds;
+    };
+
+    if (md.getPartitionKeyNames().stream().allMatch(eq::containsKey)) {
+      Key.Builder kb = Key.newBuilder();
+      for (String c : md.getPartitionKeyNames()) kb.add(Values.column(c, md.getColumnDataType(c), eq.get(c)));
+      var scan = Scan.newBuilder().namespace(ns).table(spec.table).partitionKey(kb.build());
+      // The first clustering column bounds the scan through start / end -- the range the storage can seek to.
+      // Conditions on key columns are not put into where(): the range says it, and the residual SQL applies
+      // every predicate again anyway, so leaving one out only costs rows, never correctness.
+      Set<String> keyed = new java.util.HashSet<>(md.getPartitionKeyNames());
+      keyed.addAll(md.getClusteringKeyNames());
+      String first = md.getClusteringKeyNames().isEmpty() ? null : md.getClusteringKeyNames().iterator().next();
+      // only for an ascending column: how start / end read on a descending one has not been checked against a
+      // cluster, and a bound that is wrong there would drop rows rather than cost some
+      if (first != null && md.getClusteringOrder(first) != Scan.Ordering.Order.ASC) first = null;
+      for (Plan.Predicate pr : ands) {
+        if (first == null || !first.equals(pr.column)) continue;
+        Object v = resolve(pr.value, params);
+        if (v == null || !Values.representable(md.getColumnDataType(first), v)) continue;
+        Key bound = Key.newBuilder().add(Values.column(first, md.getColumnDataType(first), v)).build();
+        switch (pr.op) {
+          case "=": scan = scan.start(bound, true).end(bound, true); break;
+          case ">": scan = scan.start(bound, false); break;
+          case ">=": scan = scan.start(bound, true); break;
+          case "<": scan = scan.end(bound, false); break;
+          case "<=": scan = scan.end(bound, true); break;
+          default: break;
+        }
+      }
+      Set<ConditionalExpression> conds = new LinkedHashSet<>();
+      for (Plan.Predicate pr : ands) {
+        if (keyed.contains(pr.column)) continue;
+        ConditionalExpression cond = condition(pr, md, params);
+        if (cond != null) conds.add(cond);
+      }
+      return conds.isEmpty() ? scan.limit(limit).build()
+          : scan.where(ConditionSetBuilder.andConditionSet(conds).build()).limit(limit).build();
+    }
+    String indexed = md.getSecondaryIndexNames().stream().filter(eq::containsKey).findFirst().orElse(null);
+    if (indexed != null) {
+      Key key = Key.newBuilder().add(Values.column(indexed, md.getColumnDataType(indexed), eq.get(indexed))).build();
+      var scan = Scan.newBuilder().namespace(ns).table(spec.table).indexKey(key);
+      Set<ConditionalExpression> conds = others.apply(Set.of(indexed));
+      return conds.isEmpty() ? scan.limit(limit).build()
+          : scan.where(ConditionSetBuilder.andConditionSet(conds).build()).limit(limit).build();
+    }
+    ScanBuilder.BuildableScanAll all = Scan.newBuilder().namespace(ns).table(spec.table).all();
+    Set<ConditionalExpression> conds = others.apply(Set.of());
+    return conds.isEmpty() ? all.limit(limit).build()
+        : all.where(ConditionSetBuilder.andConditionSet(conds).build()).limit(limit).build();
   }
 
   private static ConditionalExpression condition(Plan.Predicate pr, TableMetadata md, Map<String, Object> params) {

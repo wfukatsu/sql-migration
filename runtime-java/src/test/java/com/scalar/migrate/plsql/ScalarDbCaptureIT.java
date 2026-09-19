@@ -103,7 +103,7 @@ class ScalarDbCaptureIT {
         runner.rollback();
         unrunnable.put(scenario.name(), e.getMessage());
       } finally {
-        Plsql.setClock(LocalDateTime::now);
+        Plsql.resetClock();
       }
     }
 
@@ -200,7 +200,7 @@ class ScalarDbCaptureIT {
   private static void pinClock(Scenario scenario) {
     Object sysdate = scenario.pinned().get("sysdate");
     if (sysdate == null) {
-      Plsql.setClock(LocalDateTime::now);
+      Plsql.resetClock();
       return;
     }
     LocalDateTime pinned = LocalDateTime.parse(String.valueOf(sysdate).replace(' ', 'T'));

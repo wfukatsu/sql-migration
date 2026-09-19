@@ -95,9 +95,11 @@ public class Residual implements AutoCloseable {
       StringBuilder ddl = new StringBuilder("CREATE TABLE " + table + " (");
       for (int i = 0; i < rows.columns.size(); i++) {
         String c = rows.columns.get(i);
-        String type = rows.types.containsKey(c) ? columnType(rows.types.get(c))
-            : spec.column_types != null && spec.column_types.containsKey(c) ? columnType(spec.column_types.get(c))
-            : Values.h2TypeOf(rows.rows.isEmpty() ? null : rows.rows.get(0)[i]);
+        String declared = rows.types.containsKey(c) ? rows.types.get(c)
+            : spec.column_types != null && spec.column_types.containsKey(c) ? spec.column_types.get(c)
+            : Values.typeOfValues(rows.rows, i);
+        // every value NULL and no declared type: any type gives the same answers, since NULLs compare alike
+        String type = declared == null ? "VARCHAR" : columnType(declared);
         ddl.append(i > 0 ? ", " : "").append(c).append(' ').append(type);
       }
       ddl.append(')');
