@@ -45,7 +45,7 @@ from _scalardb.appside import parse_expected_rows  # noqa: E402
 from _scalardb.converter import convert_script as scalardb_convert  # noqa: E402
 from _scalardb.schema import SchemaRegistry  # noqa: E402
 
-SCALARDB_ONLY = ("keys", "storage", "plan_dir", "expected_rows", "h2_indexes")
+SCALARDB_ONLY = ("keys", "storage", "plan_dir", "expected_rows", "h2_indexes", "session_time_zone")
 
 SQLGLOT_DIALECTS = sorted(d.value for d in sqlglot.Dialects if d.value)
 TARGETS = sorted(set(SQLGLOT_DIALECTS) | {"scalardb"})
@@ -98,6 +98,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--h2-indexes", action="store_true",
                     help="[scalardb のみ] 実行計画に、取得した表へ H2 の索引を作る指定を入れる。大きな表を結合するバッチ処理向け"
                          "（小さな要求や 1 表だけの計画では、索引を作る時間とメモリの分だけ遅くなる）")
+    ap.add_argument("--session-time-zone", default=None, metavar="ZONE",
+                    help="[scalardb のみ] 移行元のセッションのタイムゾーン（Asia/Tokyo、+09:00）。ゾーンの無いリテラルを "
+                         "TIMESTAMPTZ 列に書くとき、そのゾーンの時刻として読み、同じ瞬間の UTC に直す"
+                         "（指定しないと UTC と仮定して TZ_ASSUMED_UTC を出す）")
     args = ap.parse_args(argv)
 
     path = Path(args.file)
@@ -131,7 +135,8 @@ def main(argv: list[str] | None = None) -> int:
         # 実行計画への分解は --plan-dir を指定したときだけ行う
         results, _ = scalardb_convert(text, args.source, registry, keys, decompose=bool(args.plan_dir),
                                       storage=args.storage, expected_rows=expected_rows,
-                                      isolation=args.isolation, h2_indexes=args.h2_indexes)
+                                      isolation=args.isolation, h2_indexes=args.h2_indexes,
+                                      session_time_zone=args.session_time_zone)
     else:
         for name in SCALARDB_ONLY:
             if getattr(args, name) not in (None, "jdbc", False):
