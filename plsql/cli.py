@@ -18,7 +18,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import review
+from . import fingerprint, review
 from .analysis import analyse as analyse_program
 from .report import analyse, inventory, write
 from .rules.engine import RuleSet, decide
@@ -71,20 +71,25 @@ def main(argv: list[str] | None = None) -> int:
         written = write(analysis, args.out_dir)
         known = review.routine_ids(analysis.program)
         program_analysis = analyse_program(analysis.program)
-        evidence = review.credit_private_callees(
-            review.evidence_from_diff(args.evidence, args.variant, known),
-            analysis.program, program_analysis.call_graph)
+        # the report is believed only where it was measured on this source, by this toolchain
+        measured = review.evidence_from_diff(args.evidence, args.variant, known,
+                                             current=fingerprint.of(analysis.program, args.root))
+        evidence = review.credit_private_callees(measured, analysis.program, program_analysis.call_graph)
         unmatched = review.unmatched_scenarios(args.evidence, known, args.variant)
         decisions = decide(analysis.program, program_analysis, RuleSet.load(), evidence)
         written.update(review.write(analysis.program, decisions, args.out_dir,
                                     generated_root=args.generated, package=args.package,
-                                    fix_times=review.FixTimes.load(args.fix_times), unmatched=unmatched))
+                                    fix_times=review.FixTimes.load(args.fix_times), unmatched=unmatched,
+                                    stale=measured.stale))
         if not args.quiet:
             counts: dict[str, int] = {}
             for decision in decisions.values():
                 counts[decision.verdict] = counts.get(decision.verdict, 0) + 1
             if unmatched:
                 print(f"  {len(unmatched)} scenario(s) match no routine: {unmatched}")
+            if measured.stale:
+                print(f"  {len(measured.stale)} routine(s) have stale evidence, not counted: "
+                      f"{sorted(set(measured.stale.values()))}")
             print(f"verdicts        {dict(sorted(counts.items()))}"
                   + ("" if args.evidence else "  (no --evidence: nothing can be AUTO)"))
             for name, path in written.items():
