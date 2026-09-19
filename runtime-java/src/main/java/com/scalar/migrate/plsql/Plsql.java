@@ -119,8 +119,34 @@ public final class Plsql {
    * arithmetic through here is what lets a generated expression mix a literal, an {@code Integer} and a
    * {@code BigDecimal} the way the PL/SQL did.
    */
-  public static BigDecimal add(Object a, Object b) {
+  /**
+   * `a + b`。**日時 + 数値は「日数を足した DATE」**である（Oracle は TIMESTAMP を DATE に変えてから
+   * 足す）。数値どうしは NUMBER の足し算。
+   *
+   * <p>戻り値が {@code Object} なのは、日時の算術が日時を返すからである。以前は BigDecimal に
+   * 決め打ちしていて、`SYSTIMESTAMP - p_keep_days` を WHERE の値として持ち上げた瞬間に、日時を
+   * 数値に直そうとして落ちた（`prc_purge_audit` / 2026-09-19）。
+   */
+  public static Object add(Object a, Object b) {
+    if (isTemporal(a) && b instanceof Number days) return shiftDays(a, days, 1);
+    if (a instanceof Number days && isTemporal(b)) return shiftDays(b, days, 1);
     return arith(a, b, BigDecimal::add);
+  }
+
+  private static boolean isTemporal(Object value) {
+    return value instanceof LocalDateTime || value instanceof java.time.OffsetDateTime;
+  }
+
+  /**
+   * DATE に日数を足し引きする。TIMESTAMP WITH TIME ZONE は、その値自身の時刻のまま DATE になる
+   * （ゾーン変換はしない、秒未満は落ちる——`castDate` と同じ規則。#13 で実測）。日数の端数は
+   * 秒に丸める。DATE が秒までしか持たないからである。
+   */
+  private static LocalDateTime shiftDays(Object value, Number days, int sign) {
+    LocalDateTime base = castDate(value);
+    long seconds = new BigDecimal(days.toString()).multiply(BigDecimal.valueOf(86400))
+        .setScale(0, java.math.RoundingMode.HALF_UP).longValueExact();
+    return base.plusSeconds(sign * seconds);
   }
 
   /**
@@ -153,12 +179,14 @@ public final class Plsql {
     return decimal.negate();
   }
 
-  public static BigDecimal sub(Object a, Object b) {
-    if (a instanceof LocalDateTime x && b instanceof LocalDateTime y) {
+  public static Object sub(Object a, Object b) {
+    if (isTemporal(a) && isTemporal(b)) {
       // Oracle subtracts two DATEs into a number of days, fraction included
-      return BigDecimal.valueOf(java.time.Duration.between(y, x).toSeconds())
+      return BigDecimal.valueOf(java.time.Duration.between(castDate(b), castDate(a)).toSeconds())
           .divide(BigDecimal.valueOf(86400), OracleNumbers.NUMBER);
     }
+    // `SYSTIMESTAMP - 30` は 30 日前の DATE である。日数として数値に直すと落ちる
+    if (isTemporal(a) && b instanceof Number days) return shiftDays(a, days, -1);
     return arith(a, b, BigDecimal::subtract);
   }
 
