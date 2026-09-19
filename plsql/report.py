@@ -20,7 +20,7 @@ from pathlib import Path
 
 from .frontend import ParsedFile, coverage, parse_file
 from .ir import model as M, serde
-from . import merge, rmw, triggers
+from . import merge, paging, rmw, triggers
 from .limits import RowLocks
 from .lower import _walk, lower_file
 from .source import Issue
@@ -78,7 +78,7 @@ class Analysis:
 
 def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: str = "corpus",
             scalardb_schema: str | Path | None = None,
-            row_locks: "RowLocks | None" = None) -> Analysis:
+            row_locks: "RowLocks | None" = None, boundaries=None) -> Analysis:
     """Parse, resolve and lower every source file under `root`. Nothing raises; failures become diagnostics.
 
     With `scalardb_schema`, every SQL statement is also checked against the target (P2-4) and the answer lands on
@@ -119,6 +119,8 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
     # #26 の続き: 記録された routine の MERGE を「読んでから UPDATE か INSERT を選ぶ」へ割る。
     # trigger より前に行う——Oracle の MERGE は UPDATE / INSERT の trigger を行ごとに発火させる
     merge.rewrite(program, row_locks, schema, analysis.symbol_table())
+    # #19: 割った routine の処理対象を、キー順に件数つきで繰り返し読む
+    paging.rewrite(program, boundaries, schema, analysis.symbol_table())
     triggers.rewrite(program, schema, analysis.symbol_table())
 
     if scalardb_schema is not None:

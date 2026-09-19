@@ -513,6 +513,31 @@ def _chunks(statements: list[M.Statement], index: int, routine: M.Routine, symbo
     query = _query(cursor, list(run[0].arguments), routine, symbols, module, schema)
     if query is None:
         return None
+    guards = _limit_guards(run[1], fetch.bulk_limit)
+    if guards is None:
+        return None   # LIMIT が 0 以下の literal。Oracle は必ず ORA-06502 を投げる——書き換えずに残す
+    counted = _counts_only(body[1:], collection)
+    if counted is not None:
+        # 本体が塊の件数を足しているだけなら、行を 1 行も持たずに COUNT(*) で同じ答えが出る
+        # （#19 の決定、2026-09-19）。上限の決定そのものが要らなくなる
+        variable = _free_count_name(routine)
+        routine.declarations.append(M.Declaration(
+            id=f"{routine.id}#decl-{variable}", kind="Declaration", name=variable,
+            source_range=run[1].source_range,
+            type=M.TypeRef(oracle="NUMBER", resolved="NUMBER", origin="inferred")))
+        if symbols is not None and symbols.scopes.get(routine.id) is not None:
+            from .symbols import Symbol
+
+            symbols.scopes[routine.id].declare(Symbol(name=variable, kind="variable", scope=routine.id,
+                                                      type=routine.declarations[-1].type))
+        count = _operation(run[1], routine, _count_sql(query), [variable])
+        count.cardinality = "EXACTLY_ONE"
+        count.add("INFO", "CUR_COUNT",
+                  f"cursor {cursor} は {fetch.bulk_limit} 件ずつ読んで件数を足すだけだった。COUNT(*) で同じ"
+                  f"答えが出るので、行を持たない（#19 / 2026-09-19）")
+        total = M.Assignment(id=f"{run[1].id}sum", kind="Assignment", source_range=run[1].source_range,
+                             target=counted, expression=f"{counted} + {variable}")
+        return (guards + [count, total], 3, cursor)
     operation = _operation(run[1], routine, query, [])
     if operation is None:
         return None
@@ -526,7 +551,50 @@ def _chunks(statements: list[M.Statement], index: int, routine: M.Routine, symbo
              f"cursor は無いので行は先にまとめて読み、{fetch.bulk_limit} 件ずつ**配る**ループにした。"
              f"読み込む量を決めていた値が、配る量しか決めなくなる——メモリを守るのは走査行数の上限"
              f"（--limits）である")
-    return ([loop], 3, cursor)
+    return (guards + [loop], 3, cursor)
+
+
+def _limit_guards(where: M.Statement, limit: str) -> list[M.Statement]:
+    """`LIMIT n` の n が正でないときに Oracle が投げる誤りを、そのまま投げる（2026-09-19 に実測）。
+
+        LIMIT 0 / 負の値 -> ORA-06502（VALUE_ERROR）
+        LIMIT NULL       -> ORA-06500（STORAGE_ERROR）
+
+    以前は「0 件で抜けるのと同じ」として何もしていなかった——実測せずに書いた説明で、誤りだった。
+    数値の literal なら確かめるまでもないので、変数のときだけ置く。
+    """
+    if re.fullmatch(r"\s*\d+\s*", limit):
+        return [] if int(limit) > 0 else None
+    guards = []
+    for index, (condition, code, message) in enumerate((
+            (f"{limit} IS NULL", -6500, "'PL/SQL: storage error'"),
+            (f"{limit} < 1", -6502, "'PL/SQL: value or conversion error'")), start=1):
+        raised = M.Raise(id=f"{where.id}limit{index}raise", kind="Raise", source_range=where.source_range,
+                         error_code=code, message=message)
+        guards.append(M.If(id=f"{where.id}limit{index}", kind="If", source_range=where.source_range,
+                           branches=[M.Branch(condition=condition, body=[raised])]))
+    return guards
+
+
+def _counts_only(body: list[M.Statement], collection: str) -> str | None:
+    """本体が `EXIT WHEN v.COUNT = 0; x := x + v.COUNT;` だけなら、足している変数 x。"""
+    if len(body) != 2 or body[0].kind != "Exit" or body[1].kind != "Assignment":
+        return None
+    count = rf"{re.escape(collection)}\s*\.\s*COUNT"
+    if not re.fullmatch(rf"\s*{count}\s*=\s*0\s*", body[0].condition or "", re.IGNORECASE):
+        return None
+    target = body[1].target or ""
+    if not re.fullmatch(rf"\s*{re.escape(target)}\s*\+\s*{count}\s*", body[1].expression or "", re.IGNORECASE):
+        return None
+    return target
+
+
+def _free_count_name(routine: M.Routine) -> str:
+    used = {d.name.lower() for d in routine.declarations} | {p.name.lower() for p in routine.parameters}
+    index = 1
+    while f"v_count_{index}" in used:
+        index += 1
+    return f"v_count_{index}"
 
 
 # --- shared -------------------------------------------------------------------------------------------

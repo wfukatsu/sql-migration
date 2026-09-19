@@ -18,6 +18,7 @@ to a single column, and pretending otherwise is how a silently wrong conversion 
 
 from __future__ import annotations
 
+import sqlglot
 from sqlglot import exp
 
 # an aggregate whose value has the same type as its argument; COUNT and AVG do not, and are listed separately
@@ -169,3 +170,32 @@ def _behind(item: exp.Expression) -> str | None:
     if isinstance(item, SAME_TYPE_AGGREGATES) and isinstance(item.this, exp.Column):
         return item.this.name.lower()
     return None
+
+
+def caps_its_rows(operation) -> bool:
+    """問い合わせ自身が件数を絞っているか（`LIMIT` / `FETCH FIRST` / `ROWNUM <=`）。
+
+    絞っている走査には、行数の上限を人に決めさせない（#19 の決定、2026-09-19）——読む行数を決めて
+    いるのは問い合わせであり、その件数を渡すのは呼び出し側である。変換後の文に `LIMIT` があることも
+    見る: `ROWNUM <= :n` は変換で `LIMIT :n` になり、元の文の形では bind との比較にしか見えない。
+    """
+    import re as _re
+
+    for text in list(getattr(operation, "target_sql", None) or []):
+        if _re.search(r"\bLIMIT\b", text, _re.IGNORECASE):
+            return True
+    try:
+        tree = sqlglot.parse_one(getattr(operation, "original_sql", "") or "", dialect="oracle")
+    except sqlglot.errors.ParseError:
+        # 読めない文は絞っていないとみなす。**構文の誤りだけを受ける**——広く受けると、この関数自身の
+        # 誤り（最初は `sqlglot` を import していなかった）まで「絞っていない」に化けて、黙って通る
+        return False
+    for comparison in tree.find_all(exp.LT, exp.LTE, exp.EQ):
+        # `ROWNUM <= n`——`row_cap` は FETCH / LIMIT しか数えないので、ここで見る
+        if isinstance(comparison.this, exp.Column) and comparison.this.name.upper() == "ROWNUM":
+            return True
+    if tree.find(exp.Limit) is not None or any(f.args.get("count") is not None for f in tree.find_all(exp.Fetch)):
+        # `FETCH FIRST p_batch ROWS ONLY`——件数が変数でも、絞っていることに変わりはない
+        # （`row_cap` は数の literal しか数えない。計画に回る問い合わせは変換後の文も持たない）
+        return True
+    return row_cap(tree)[0] is not None

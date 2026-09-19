@@ -68,8 +68,12 @@ def _loop_rows(file: JavaFile, name: str, loop: M.Loop, result: RepositoryFile, 
     file.add_import(f"{domain_package}.{record}", "java.util.ArrayList", "java.util.HashMap",
                     "java.util.List", "java.util.Map", "com.scalar.migrate.runtime.Residual")
     parameters, _ = _parameters(file, statement)
-    limit = _LIMITS.get().for_routine(routine_id) if routine_id else None
-    if routine_id and not _LIMITS.get().decided(routine_id) and routine_id not in result.undecided_limits:
+    from ..columns import caps_its_rows
+
+    capped = caps_its_rows(statement)
+    limit = None if capped else (_LIMITS.get().for_routine(routine_id) if routine_id else None)
+    if routine_id and not capped and not _LIMITS.get().decided(routine_id) \
+            and routine_id not in result.undecided_limits:
         result.undecided_limits.append(routine_id)
     if statement.target_status == "PLANNED" or statement.plan_id:
         _planned_rows(file, name, statement, record, parameters, result, limit, routine_id)
@@ -120,7 +124,9 @@ def _planned_rows(file: JavaFile, name: str, statement: M.SqlOperation, record: 
         f.comment("ScalarDB SQL cannot run this statement; the plan fetches through ScalarDB and runs the "
                   "original SQL in H2, inside this transaction")
         f.line(f'var plan = PlanRunner.resource("plans/{plan}");')
-        binds = ", ".join(f'"{b.name}", {java_name(b.name)}' for b in statement.binds)
+        # 計画の取得も ScalarDB SQL へ渡すので、直接の文と同じく列の型で渡す。素の値を渡すと、
+        # BigDecimal が型ごと拒否される（DB-SQL-10016。keyset の起点で実際に落ちた / 2026-09-19）
+        binds = ", ".join(f'"{b.name}", {_bound(file, b)}' for b in statement.binds)
         f.line(f"var planned = PlanRunner.join(connection, plan, Map.of({binds}));")
         f.line(f"List<{record}> rows = new ArrayList<>();")
         with f.block("for (List<Object> row : planned.rows())") as g:
@@ -349,7 +355,9 @@ def _planned(file: JavaFile, name: str, statement: M.SqlOperation, result: Repos
         f.comment("ScalarDB SQL cannot run this statement; the plan fetches through ScalarDB and runs the "
                   "original SQL in H2, inside this transaction")
         f.line(f'var plan = PlanRunner.resource("plans/{plan}");')
-        binds = ", ".join(f'"{b.name}", {java_name(b.name)}' for b in statement.binds)
+        # 計画の取得も ScalarDB SQL へ渡すので、直接の文と同じく列の型で渡す。素の値を渡すと、
+        # BigDecimal が型ごと拒否される（DB-SQL-10016。keyset の起点で実際に落ちた / 2026-09-19）
+        binds = ", ".join(f'"{b.name}", {_bound(file, b)}' for b in statement.binds)
         f.line(f"return PlanRunner.join(connection, plan, Map.of({binds}));")
     result.methods.append(name)
     result.planned.append(statement.id)

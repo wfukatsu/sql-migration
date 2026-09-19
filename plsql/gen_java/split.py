@@ -299,7 +299,14 @@ def _caller_comment(file: JavaFile, routine: M.Routine, shape: Shape, parts: lis
              "回し方の出発点:", ""]
     if "start" in by_suffix:
         lines.append(f"  tx.run(() -> service.{by_suffix['start'].call(name)});")
-    if shape.kind == "cursor":
+    paged = shape.kind == "cursor" and shape.loop.paged_key
+    if paged:
+        variable = java_name(shape.loop.variable or "r")
+        lines.append("  BigDecimal after = null;   // 1 回に取る件数（pBatch）は運用の調整値")
+        lines.append("  List<...> page;")
+        lines.append(f"  while (!(page = tx.run(() -> service.{by_suffix['targets'].call(name)})).isEmpty()) {{")
+        lines.append(f"    for (var {variable} : page) {{")
+    elif shape.kind == "cursor":
         variable = java_name(shape.loop.variable or "r")
         lines.append(f"  for (var {variable} : "
                      f"tx.run(() -> service.{by_suffix['targets'].call(name)})) {{")
@@ -307,10 +314,14 @@ def _caller_comment(file: JavaFile, routine: M.Routine, shape: Shape, parts: lis
         collections = shape_collections(shape)
         lines.append(f"  for (int {java_name(shape.index)} = 0; {java_name(shape.index)} < "
                      f"{java_name(collections[0])}.size(); {java_name(shape.index)}++) {{")
-    lines.append(f"      try {{ tx.run(() -> service.{by_suffix['one'].call(name)}); }}")
+    indent = "  " if paged else ""
+    lines.append(f"{indent}      try {{ tx.run(() -> service.{by_suffix['one'].call(name)}); }}")
     if "failed" in by_suffix:
-        lines.append(f"      catch (Exception {FAILED}) {{ "
+        lines.append(f"{indent}      catch (Exception {FAILED}) {{ "
                      f"tx.run(() -> service.{by_suffix['failed'].call(name)}); }}")
+    if paged:
+        lines.append("    }")
+        lines.append(f"    after = {name}After(page.get(page.size() - 1));")
     lines.append("  }")
     if "done" in by_suffix:
         lines.append(f"  tx.run(() -> service.{by_suffix['done'].call(name)});")
@@ -405,9 +416,26 @@ def _targets(file: JavaFile, routine: M.Routine, shape: Shape, result, domain_pa
                  "読んでいてもよい（同じトランザクションで書いた表は読み直せない: P2-4）。"
                  "代わりに読んだ時点と処理する時点がずれるので、1 反復の側が自分で確かめる")
     signature = ", ".join(f"{t} {n}" for t, n in parameters)
+    key = shape.loop.paged_key
+    if key:
+        file.comment("**キー順に件数つきで読む**（#19 の決定）。最初のページは pAfterKey = null で呼び、"
+                     "次からは前のページの最後の行を After(...) に通した値を渡す。空が返ったら終わり")
     with file.block(f"public List<{record}> {java_name(routine.name)}Targets({signature}) "
                     "throws Exception") as f:
+        if key:
+            # 1 回に取る件数は運用の調整値で、Oracle の引数ではない。0 以下を黙って通すと、
+            # LIMIT 0 で 1 件も返らず「対象が無い」ように見える
+            with f.block("if (pBatch == null || pBatch < 1)") as g:
+                g.line('throw new IllegalArgumentException("pBatch は 1 以上: " + pBatch);')
+            # 最初のページの起点は、いちばん小さい値である。null のまま渡すと `key > NULL` が偽になり、
+            # 1 件も返らない
+            f.line("if (pAfterKey == null) pAfterKey = BigDecimal.valueOf(Long.MIN_VALUE);")
         f.line(f"return repository.{loop_method(routine, shape.loop)}({arguments});")
+    if key:
+        file.line()
+        file.comment("次のページの起点: そのページの最後の行のキー")
+        with file.block(f"public static BigDecimal {java_name(routine.name)}After({record} row)") as f:
+            f.line(f"return row.{java_name(key)}();")
 
 
 def _query_needs_audit(query: M.SqlOperation) -> bool:
