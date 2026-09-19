@@ -87,6 +87,50 @@ def _named_cursor_loops(routine: M.Routine, symbols: SymbolTable, module: str | 
                                     source_range=loop.source_range, sql_kind="SELECT",
                                     original_sql=query, cardinality="MANY")
         _mark_row_lock(loop.query, query)
+        _current_of(loop, match.group("cursor").lower(), query, schema)
+
+
+CURRENT_OF = re.compile(r"\bWHERE\s+CURRENT\s+OF\s+(?P<cursor>[\w$#]+)\s*$", re.IGNORECASE)
+
+
+def _current_of(loop: M.Loop, cursor: str, query: str, schema: OracleSchema | None) -> None:
+    """`UPDATE t ... WHERE CURRENT OF c` -> `... WHERE <主キー> = r.<主キー>`（2026-09-19）。
+
+    `CURRENT OF` は「いま FETCH した行」である。cursor が表の主キーを読んでいれば、その値で同じ行を
+    指せる——行を指す手段が変わるだけで、指している行は変わらない。ScalarDB SQL に `CURRENT OF` は
+    無い（構文エラーになる）。
+
+    書き換えるのは **cursor が 1 つの表だけを読み、主キーを全部選んでいて、書く表がその表**のとき
+    だけである。行ロック（`FOR UPDATE`）を落とすかどうかは別の話で、そちらは記録された routine
+    だけが通る（#9）。ここは行の指し方しか変えない。
+    """
+    try:
+        tree = sqlglot.parse_one(query, dialect="oracle")
+    except Exception:
+        return
+    select = tree if isinstance(tree, exp.Select) else tree.find(exp.Select)
+    source = (select.args.get("from_") or select.args.get("from")) if select is not None else None
+    if select is None or source is None or not isinstance(source.this, exp.Table) or select.args.get("joins"):
+        return
+    table = source.this.name.lower()
+    key = schema.primary_key(table) if schema is not None else []
+    selected = {item.alias_or_name.lower() for item in select.expressions}
+    if not key or not all(column in selected for column in key):
+        return
+    row = loop.variable or "r"
+    for statement in loop.body:
+        found = CURRENT_OF.search(statement.original_sql or "") if statement.kind == "SqlOperation" else None
+        if found is None or found.group("cursor").lower() != cursor:
+            continue
+        written = re.match(r"^\s*(?:UPDATE|DELETE\s+FROM)\s+(?P<table>[\w$#]+)", statement.original_sql,
+                           re.IGNORECASE)
+        if written is None or written.group("table").lower() != table:
+            continue
+        predicate = " AND ".join(f"{column} = {row}.{column}" for column in key)
+        statement.original_sql = statement.original_sql[:found.start()] + f"WHERE {predicate}"
+        statement.add("INFO", "CURRENT_OF",
+                      f"WHERE CURRENT OF {cursor} を主キー（{', '.join(key)}）で指す形にした。指している行は"
+                      f"変わらない。行ロックを落とすかどうかは別に決める（#9）")
 
 
 def _arguments(written: str | None) -> list[str]:

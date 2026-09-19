@@ -863,6 +863,15 @@ class StatementConverter:
         for leaf in _flatten(where_expr, exp.And):
             u = _unparen(leaf)
             if isinstance(u, COMPARISONS) and isinstance(u.this, exp.Column) and u.this.name.upper() == "ROWNUM":
+                if isinstance(u.expression, (exp.Placeholder, exp.Parameter)) and isinstance(u, exp.LTE):
+                    # `ROWNUM <= :n` -> `LIMIT :n`。bind でも件数は件数である。`<` は n-1 が要るので
+                    # bind では作れない——そちらは今までどおり拒否する
+                    if s.args.get("limit"):
+                        self.fail("ROWNUM", "both ROWNUM and LIMIT/FETCH present")
+                    s.set("limit", exp.Limit(expression=u.expression.copy()))
+                    self.warn("ROWNUM", f"'{u.sql()}' rewritten to LIMIT {u.expression.sql()}. Note: Oracle applies "
+                                        f"ROWNUM before ORDER BY, ScalarDB LIMIT applies after ORDER BY")
+                    continue
                 if not isinstance(u.expression, exp.Literal) or u.expression.is_string:
                     self.fail("ROWNUM", "ROWNUM must be compared with an integer literal")
                 n = int(u.expression.name)

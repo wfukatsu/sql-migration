@@ -56,7 +56,9 @@ def enumerate_variants(routine: M.Routine, statement: M.DynamicSql) -> list[Vari
     if folded is not None:
         return [Variant(guard="", sql=folded)]
     if not re.fullmatch(r"[\w$#]+", target):
-        return None  # an expression, not a variable: `'DELETE FROM ' || p_table_name` and the like
+        # an expression, not a variable: `'DELETE FROM ' || p_table_name` and the like. Knowable only when
+        # a person has listed the table names it may take (2026-09-19)
+        return _allowed(routine, target)
 
     states = _trace(routine.body, statement.id, [_State(guard=(), values={})])
     if states is None:
@@ -69,6 +71,66 @@ def enumerate_variants(routine: M.Routine, statement: M.DynamicSql) -> list[Vari
         variants.append(Variant(guard=" AND ".join(state.guard), sql=value))
     unique = list(dict.fromkeys(variants))
     return unique if 0 < len(unique) <= MAX_VARIANTS else None
+
+
+import contextvars
+
+_ALLOWED: "contextvars.ContextVar[dict[str, list[str]]]" = contextvars.ContextVar("allowed", default={})
+
+
+def set_allowed_tables(allowed: dict[str, list[str]]) -> None:
+    _ALLOWED.set(dict(allowed))
+
+
+# `DBMS_ASSERT.SIMPLE_SQL_NAME(p)` は名前の**形**を確かめるだけで、**どの表か**は決めない。
+# 一覧で照合するなら同じ値である
+ASSERT = re.compile(r"^DBMS_ASSERT\s*\.\s*\w+\s*\(\s*(?P<name>[\w$#]+)\s*\)$", re.IGNORECASE)
+
+
+def _allowed(routine: M.Routine, expression: str) -> list[Variant] | None:
+    """`'DELETE FROM ' || p_table_name || ' WHERE ...'` を、**許された表名ごと**の文にする。
+
+    式は literal と **1 つの引数**の連結でなければならない。表名が 2 か所から来る、式の中で
+    加工されている、といった形は数えない。照合は大文字小文字を区別しない——Oracle の識別子が
+    そうだからである。一覧に無い値は、生成コードが実行時に拒否する（どの variant の条件にも
+    当たらない）。
+    """
+    tables = _ALLOWED.get().get(routine.id)
+    if not tables:
+        return None   # 誰も表名を決めていない。数えられないのが正しい答えである
+    parts = [part.strip() for part in _split_concat(expression)]
+    names = [part for part in parts if _unquote(part) is None]
+    if len(names) != 1:
+        return None
+    wrapped = ASSERT.match(names[0])
+    parameter = wrapped.group("name") if wrapped else names[0]
+    if not re.fullmatch(r"[\w$#]+", parameter) or \
+            parameter.lower() not in {p.name.lower() for p in routine.parameters}:
+        return None
+    variants = []
+    for table in tables:
+        sql = "".join(table if part == names[0] else _unquote(part) for part in parts)
+        variants.append(Variant(guard=f"UPPER({parameter}) = '{table.upper()}'", sql=sql))
+    return variants if len(variants) <= MAX_VARIANTS else None
+
+
+def _split_concat(expression: str) -> list[str]:
+    """`a || 'b' || c` を項に分ける。引用符の中の `||` では割らない。"""
+    out, current, quoted = [], "", False
+    index = 0
+    while index < len(expression):
+        char = expression[index]
+        if char == "'":
+            quoted = not quoted
+        if not quoted and expression.startswith("||", index):
+            out.append(current)
+            current = ""
+            index += 2
+            continue
+        current += char
+        index += 1
+    out.append(current)
+    return out
 
 
 @dataclass
