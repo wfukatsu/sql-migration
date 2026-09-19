@@ -20,3 +20,14 @@ rules:
       - CFG で region 解析を行い、構造化制御へ再構成する
     requiredTests:
       - control_flow_equivalence
+
+  - id: CALL-001
+    match: {unresolvedCallee: true}
+    decision: REVIEW
+    severity: critical
+    message: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません
+    remediation:
+      - 呼び先のソースを解析対象に加える
+      - 加えられない（Oracle 提供のパッケージなど）なら、移行先での代替を決める
+    requiredTests:
+      - equivalent_result

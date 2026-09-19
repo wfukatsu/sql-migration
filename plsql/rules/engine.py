@@ -181,15 +181,45 @@ def _statements(routine: M.Routine) -> list[M.Statement]:
     return _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
 
 
+# `statementKind: Expression` in a rule: anywhere PL/SQL evaluates an expression. The text rules used to list
+# `[Assignment, Return, If]`, which left out a WHILE condition, an EXIT WHEN, a CASE selector, a call's arguments,
+# a RAISE message -- and every declaration: `v_x NUMBER := ROUND(p / 3, 2);` reached no rule at all.
+EXPRESSION = "Expression"
+_TEXT_FIELDS = ("original_sql", "expression", "cursor", "target", "condition", "callee", "selector", "message",
+                "initial", "default", "chunk")
+
+
+def _text(node) -> str:
+    parts = [str(getattr(node, a, "") or "") for a in _TEXT_FIELDS]
+    parts += [b.condition or "" for b in getattr(node, "branches", []) or []]
+    parts += [str(a) for a in getattr(node, "arguments", []) or []]
+    return " ".join(p for p in parts if p)
+
+
+def _declarations(routine: M.Routine) -> list:
+    """Declarations that evaluate something: initialisers and parameter defaults, nested blocks included.
+    A cursor's query is left to the cursor rules."""
+    nested = [d for s in _statements(routine) for d in getattr(s, "declarations", []) or []]
+    return [d for d in list(routine.declarations) + nested
+            if getattr(d, "initial", None) and d.declaration_kind != "cursor"] \
+        + [p for p in routine.parameters if p.default]
+
+
 def _match(rule: Rule, module: M.Module, routine: M.Routine, analysis: ProgramAnalysis) -> list[Match]:
     criteria = rule.match
     hits: list[Match] = []
 
     if "statementKind" in criteria:
         wanted = _as_set(criteria["statementKind"])
+        anywhere = EXPRESSION in wanted
         for statement in _statements(routine):
-            if statement.kind in wanted and _extra(criteria, statement, module, routine, analysis):
+            if (statement.kind in wanted or (anywhere and statement.kind != "SqlOperation")) \
+                    and _extra(criteria, statement, module, routine, analysis):
                 hits.append(Match(rule, statement.id, _detail(statement)))
+        if anywhere and "textMatches" in criteria:
+            for declaration in _declarations(routine):
+                if re.search(criteria["textMatches"], _text(declaration), re.IGNORECASE):
+                    hits.append(Match(rule, declaration.id, f"{declaration.name}: {_text(declaration)}"[:120]))
         return hits
 
     if _routine_level(criteria, module, routine, analysis):
@@ -215,10 +245,7 @@ def _extra(criteria: dict, statement: M.Statement, module: M.Module, routine: M.
             {k.upper() for k in _as_set(criteria["sqlKind"])}:
         return False
     if "textMatches" in criteria:
-        haystack = " ".join([str(getattr(statement, a, "") or "")
-                             for a in ("original_sql", "expression", "cursor", "target", "condition")]
-                            + [b.condition for b in getattr(statement, "branches", []) or []])
-        if not re.search(criteria["textMatches"], haystack, re.IGNORECASE):
+        if not re.search(criteria["textMatches"], _text(statement), re.IGNORECASE):
             return False
     if "loopKind" in criteria and getattr(statement, "loop_kind", None) not in _as_set(criteria["loopKind"]):
         return False
@@ -251,7 +278,10 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
     effects = analysis.effective.get(routine.id)
     checks = {
         "autonomous": lambda v: routine.transaction_effects.autonomous is v,
-        "controlsTransaction": lambda v: (effects.controls_transaction if effects else False) is v,
+        # the routine's own statements count as well as what it reaches: `effective` is keyed by routine id, and
+        # overloads share one, so the entry may be another overload's
+        "controlsTransaction": lambda v: ((effects.controls_transaction if effects else False)
+                                          or routine.transaction_effects.controls_transaction) is v,
         "packageState": lambda v: module.has_package_state is v,
         "moduleKind": lambda v: module.module_kind in _as_set(v),
         "authId": lambda v: routine.auth_id in _as_set(v),
@@ -259,6 +289,9 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
         "externalPackage": lambda v: bool(effects and effects.external.packages) is v,
         "writeThenScan": lambda v: (routine.id in {r for r, _ in analysis.write_then_scan()}) is v,
         "recursive": lambda v: any(routine.id in cycle for cycle in analysis.call_graph.cycles()) is v,
+        # a call that resolves to no routine in the program: code nobody analysed, which may commit, send mail,
+        # or take a lock. `externalPackage` only knows a short list of names; this is everything else
+        "unresolvedCallee": lambda v: bool(_unresolved_callees(routine, analysis)) is v,
         # P4-3: how many times the routine reads the database clock. Two reads can return two values, and
         # nothing in the recorded Oracle evidence pins that -- a scenario pins the clock to one value, so a
         # routine that reads it twice is compared against something the comparison cannot distinguish.
@@ -285,6 +318,13 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
 
 _INTERPOLATED_IDENTIFIER = re.compile(
     r"(FROM|INTO|TABLE|JOIN|UPDATE)\s+'\s*\|\||(FROM|INTO|TABLE|JOIN|UPDATE)\s*'\s*\|\|", re.IGNORECASE)
+
+
+def _unresolved_callees(routine: M.Routine, analysis: ProgramAnalysis) -> list[str]:
+    from ..analysis import HARMLESS_CALLEES
+
+    return sorted(c for c in analysis.call_graph.external.get(routine.id, ())
+                  if not HARMLESS_CALLEES.match(c))
 
 
 def _interpolates_identifier(statement: M.Statement) -> bool:
@@ -315,6 +355,8 @@ def _routine_detail(criteria: dict, module: M.Module, routine: M.Routine, analys
     effects = analysis.effective.get(routine.id)
     if criteria.get("dbLink") and effects:
         return ", ".join(effects.external.db_links)
+    if criteria.get("unresolvedCallee"):
+        return ", ".join(_unresolved_callees(routine, analysis))
     if criteria.get("controlsTransaction") and effects:
         through = f" (through {', '.join(effects.through)})" if effects.through else ""
         return (f"commits={effects.transaction.commits} rollbacks={effects.transaction.rollbacks} "
@@ -346,8 +388,9 @@ def confidence_of(module: M.Module, routine: M.Routine, analysis: ProgramAnalysi
         scores = [{"OK": 1.0, "WARN": 1.0, "PLANNED": 0.5, "ERROR": 0.0}.get(s.target_status, 0.0) for s in sql]
         target_capability = 0.0 if any(s == 0.0 for s in scores) else sum(scores) / len(scores)
 
-    # symbolResolution is per routine: an unresolved type in this routine is an unresolved symbol here
-    symbol_resolution = type_resolution
+    # symbolResolution: every type resolved, and every call resolved to a routine that was analysed. It used to be
+    # a copy of typeResolution, so a call into a package outside the program cost nothing
+    symbol_resolution = 0.0 if type_resolution == 0.0 or _unresolved_callees(routine, analysis) else 1.0
 
     return Confidence(rule_coverage=rule_coverage, symbol_resolution=symbol_resolution,
                       type_resolution=type_resolution, target_capability=target_capability,
@@ -364,7 +407,12 @@ def decide(program: M.Program, analysis: ProgramAnalysis, ruleset: RuleSet,
         for routine in module.routines:
             matches = ruleset.evaluate(module, routine, analysis)
             confidence = confidence_of(module, routine, analysis, matches, evidence)
-            decisions[routine.id] = _verdict(routine, matches, confidence, evidence)
+            decision = _verdict(routine, matches, confidence, evidence)
+            # overloads share an id (lower.py holds them back from AUTO). Keep the worse of the two, so that one
+            # overload's ROLLBACK is not replaced by the other's clean bill
+            earlier = decisions.get(routine.id)
+            if earlier is None or RANK[decision.rule_verdict] > RANK[earlier.rule_verdict]:
+                decisions[routine.id] = decision
     _propagate(decisions, analysis)
     return decisions
 

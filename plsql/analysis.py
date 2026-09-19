@@ -194,26 +194,79 @@ class CallGraph:
         return found
 
 
-def build_call_graph(program: M.Program) -> CallGraph:
-    graph = CallGraph()
+AMBIGUOUS = "<ambiguous>"
+
+
+def _names(program: M.Program) -> dict[str, str]:
+    """Every name a call may use -> the routine id. A bare name that two packages both define maps to AMBIGUOUS:
+    "the first one seen" linked `pkg_b.run`'s call to its own `helper` (which commits) to `pkg_a.helper` (which
+    does not), and `pkg_b.run` came out AUTO."""
     by_name: dict[str, str] = {}
     for module in program.modules:
         for routine in module.routines:
             by_name[routine.id.lower()] = routine.id
-            by_name.setdefault(routine.name.lower(), routine.id)
             if module.module_kind == "package":
                 by_name[f"{module.name}.{routine.name}".lower()] = routine.id
+    for module in program.modules:
+        for routine in module.routines:
+            bare = routine.name.lower()
+            if by_name.get(bare, routine.id) != routine.id:
+                by_name[bare] = AMBIGUOUS
+            else:
+                by_name.setdefault(bare, routine.id)
+    return by_name
+
+
+def _resolve(callee: str, by_name: dict[str, str], module: str) -> str | None:
+    """PL/SQL's own order: a bare name is the caller's package first, and only then anything global."""
+    lowered = callee.strip().lower()
+    if "." not in lowered:
+        local = by_name.get(f"{module}.{lowered}".lower())
+        if local is not None:
+            return local
+    found = by_name.get(lowered)
+    return None if found == AMBIGUOUS else found
+
+
+# Packages whose calls change nothing a migration has to carry: output for a developer's console, and the
+# assertion helpers. Anything else that resolves to no routine in the program is a call into code nobody analysed
+HARMLESS_CALLEES = re.compile(r"^(DBMS_OUTPUT\.\w+|DBMS_ASSERT\.\w+)$", re.IGNORECASE)
+_QUALIFIED_CALL = re.compile(r"\b([A-Za-z][\w$#]*)\.([A-Za-z][\w$#]*)\s*\(")
+# `v_ids.COUNT(...)`-style collection and cursor methods, which are not calls into a package
+_COLLECTION_METHODS = {"count", "exists", "first", "last", "next", "prior", "delete", "extend", "trim", "limit"}
+
+
+def _declared_names(module: M.Module, routine: M.Routine) -> set[str]:
+    names = {d.name.lower() for d in list(routine.declarations) + list(module.declarations)}
+    names |= {p.name.lower() for p in routine.parameters}
+    for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
+        names |= {d.name.lower() for d in getattr(statement, "declarations", []) or []}
+        if getattr(statement, "variable", None):
+            names.add(statement.variable.lower())
+    return names
+
+
+def build_call_graph(program: M.Program) -> CallGraph:
+    graph = CallGraph()
+    by_name = _names(program)
 
     for module in program.modules:
         for routine in module.routines:
             graph.calls.setdefault(routine.id, set())
             graph.external.setdefault(routine.id, set())
             statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
+            declared = _declared_names(module, routine)
+            # a declaration can call too: `v_n NUMBER := f_commits(p_id);` runs before the first statement
+            initialisers = [d.initial for d in routine.declarations if d.initial and d.declaration_kind != "cursor"] \
+                + [p.default for p in routine.parameters if p.default] \
+                + [d.initial for st in statements for d in getattr(st, "declarations", []) or []
+                   if d.initial and d.declaration_kind != "cursor"]
+            for expression in initialisers:
+                graph.calls[routine.id] |= _called_in(expression, by_name, module.name, routine.id)
+                graph.external[routine.id] |= _external_in(expression, by_name, module.name, declared)
             for statement in statements:
                 if statement.kind == "Call":
-                    callee = statement.callee.strip().lower()
-                    resolved = by_name.get(callee) or (
-                        by_name.get(f"{module.name}.{callee}".lower()) if "." not in callee else None)
+                    resolved = _resolve(statement.callee, by_name, module.name)
                     if resolved is not None:
                         graph.calls[routine.id].add(resolved)
                         statement.resolved_to = resolved
@@ -225,7 +278,21 @@ def build_call_graph(program: M.Program) -> CallGraph:
                 for expression in _expressions(statement):
                     for resolved in _called_in(expression, by_name, module.name, routine.id):
                         graph.calls[routine.id].add(resolved)
+                    if statement.kind != "SqlOperation":   # SQL has its own functions; the converter judges those
+                        graph.external[routine.id] |= _external_in(expression, by_name, module.name, declared)
     return graph
+
+
+def _external_in(expression: str, by_name: dict[str, str], module: str, declared: set[str]) -> set[str]:
+    """`pkg.fn(...)` inside an expression that resolves to nothing in the program. A bare `fn(...)` is left to the
+    generator, which refuses any function it does not know; a qualified one names code that lives elsewhere."""
+    found: set[str] = set()
+    for prefix, name in _QUALIFIED_CALL.findall(re.sub(r"'(?:[^']|'')*'", "''", expression)):
+        if prefix.lower() in declared or name.lower() in _COLLECTION_METHODS:
+            continue
+        if _resolve(f"{prefix}.{name}", by_name, module) is None:
+            found.add(f"{prefix}.{name}")
+    return found
 
 
 _CALLABLE = re.compile(r"\b([A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)?)\s*\(")
@@ -248,9 +315,7 @@ def _called_in(expression: str, by_name: dict[str, str], module: str, caller: st
     """Self-calls count. Direct recursion is a self-edge, and excluding it hides the plainest recursion there is."""
     found: set[str] = set()
     for name in _CALLABLE.findall(expression):
-        lowered = name.lower()
-        resolved = by_name.get(lowered) or (
-            by_name.get(f"{module}.{lowered}") if "." not in lowered else None)
+        resolved = _resolve(name, by_name, module)
         if resolved is not None:
             found.add(resolved)
     return found

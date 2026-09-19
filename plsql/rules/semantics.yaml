@@ -8,7 +8,7 @@
 
 rules:
   - id: SEM-001
-    match: {statementKind: [SqlOperation, Assignment, Return, If], textMatches: '\bROUND\s*\('}
+    match: {statementKind: [SqlOperation, Expression], textMatches: '\bROUND\s*\('}
     decision: REVIEW
     message: Oracle の ROUND は half-up です。Java の BigDecimal 既定（HALF_EVEN）と結果が割れます
     requiredTests:
@@ -22,7 +22,7 @@ rules:
   # 「比較して一致した routine だけが AUTO になる」。ルールを緩めたのではなく、証拠に置き換えた。
   - id: SEM-002
     match:
-      statementKind: [SqlOperation, Assignment, Return, If]
+      statementKind: [SqlOperation, Expression]
       # **セッションの**タイムゾーンで値が変わる構文。CURRENT_* / LOCALTIMESTAMP / AT TIME ZONE は
       # SESSIONTIMEZONE に従うので、接続元によって別の値になる。実機で測った（semantics.json の clock 族):
       # DBTIMEZONE=+00:00 に対し SESSIONTIMEZONE=+09:00 で、CURRENT_TIMESTAMP は SYSTIMESTAMP と一致しない。
@@ -44,7 +44,7 @@ rules:
 
   - id: SEM-009
     match:
-      statementKind: [SqlOperation, Assignment, Return, If]
+      statementKind: [SqlOperation, Expression]
       # TIMESTAMP を DATE へ狭める CAST。Oracle は秒未満を捨てるが、Java 側は両方 LocalDateTime なので
       # 捨てる相当の処理が無い。記録した答えにも CAST は無いので、ここは証拠が届いていない
       textMatches: 'CAST\s*\([^)]*\bAS\s+DATE\b'
@@ -83,7 +83,7 @@ rules:
 
   - id: SEM-008
     match:
-      statementKind: [SqlOperation, Assignment, Return, If]
+      statementKind: [SqlOperation, Expression]
       # NLS の言語設定で出力が変わる TO_CHAR 書式。Plsql.text は未対応の書式で例外を上げるが、
       # 実行時に落ちるより先に人が見るべきものである
       textMatches: "TO_CHAR\\s*\\([^)]*'[^']*(DAY|DY|MONTH|MON|AM|PM|RM)[^']*'"
@@ -95,7 +95,7 @@ rules:
       - timezone
 
   - id: SEM-003
-    match: {statementKind: [SqlOperation, Assignment, Return, If], textMatches: "=\\s*''|<>\\s*''|\\bNVL\\s*\\(|\\bRTRIM\\s*\\("}
+    match: {statementKind: [SqlOperation, Expression], textMatches: "=\\s*''|<>\\s*''|\\bNVL\\s*\\(|\\bRTRIM\\s*\\("}
     decision: REVIEW
     message: Oracle では空文字が NULL と同一で、末尾空白の扱いも Java と違います
     requiredTests:
