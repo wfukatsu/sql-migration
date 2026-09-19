@@ -263,6 +263,19 @@ def _extra(criteria: dict, statement: M.Statement, module: M.Module, routine: M.
     if "targetStatus" in criteria and getattr(statement, "target_status", None) not in \
             _as_set(criteria["targetStatus"]):
         return False
+    # `evaluatedByTarget: <regex>`: the text is looked for in what the target evaluates, not in what the source says.
+    # A statement the converter took (OK / WARN) reaches ScalarDB as `target_sql`, where an expression the generator
+    # lifted out is a bind the runtime computed. A PLANNED statement runs its original SQL in the residual engine.
+    # With no ScalarDB schema nobody knows what reaches the target, so the source text stands in. A refused
+    # statement (ERROR) evaluates nothing, and SQL-001 already says so.
+    if "evaluatedByTarget" in criteria:
+        status = getattr(statement, "target_status", None)
+        if status == "ERROR":
+            return False
+        texts = list(getattr(statement, "target_sql", None) or []) if status in ("OK", "WARN") \
+            else [getattr(statement, "original_sql", None) or ""]
+        if not any(re.search(criteria["evaluatedByTarget"], text, re.IGNORECASE) for text in texts):
+            return False
     # `targetStatusNot: OK`: the statement is not one the converter took as it stands -- it warned, planned or
     # refused it, or no ScalarDB schema was given and nobody asked (target_status is None)
     if "targetStatusNot" in criteria and getattr(statement, "target_status", None) in \

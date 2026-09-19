@@ -98,10 +98,18 @@ rules:
     requiredTests:
       - timezone
 
+  # 2026-09-20 / #5: 空文字と NULL は、移行中は Oracle と同じく同一視する（決定）。その意味論を実装しているのは互換
+  # ランタイム（Plsql.isNull / nvl / rtrim / eq ...）と、'' を NULL に正規化する書き込み境界（Plsql.bind）で、どちらも
+  # 実 Oracle との比較で確かめてある。だから REVIEW にするのは、**それを通らずに移行先 DB が評価する**ときだけである:
+  # ScalarDB へ送る SQL、または実行計画の残余 SQL に、空文字との比較・NVL・RTRIM が残っている文。PL/SQL の式と、
+  # 生成器が SQL の外へ持ち上げた式（bind になる）は、ランタイムが計算するので対象にしない
   - id: SEM-003
-    match: {statementKind: [SqlOperation, Expression], textMatches: "=\\s*''|<>\\s*''|\\bNVL\\s*\\(|\\bRTRIM\\s*\\("}
+    match: {statementKind: SqlOperation, evaluatedByTarget: "(=|<>|!=)\\s*''|\\bNVL\\s*\\(|\\bRTRIM\\s*\\("}
     decision: REVIEW
-    message: Oracle では空文字が NULL と同一で、末尾空白の扱いも Java と違います
+    message: 空文字・NULL・末尾空白に関わる式が、Oracle 互換のランタイムを通らずに移行先 DB（ScalarDB SQL か実行計画の H2）で評価されます。Oracle では空文字は NULL ですが、移行先ではそうではありません
+    remediation:
+      - 式を SQL の外へ出し、値として bind する（ランタイムが Oracle と同じ意味で計算し、'' は NULL として渡る）
+      - 出せないなら、その列に空文字が入りえないこと（書き込み境界で NULL に正規化している）を前提に、結果が変わらないかを確かめる
     requiredTests:
       - null_and_empty_string
 
