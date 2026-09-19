@@ -132,6 +132,9 @@ class Evidence:
     """
 
     captures: dict[str, tuple[int, int]] = field(default_factory=dict)
+    # routine id -> why its scenarios were not counted: the comparison was run on another source or by another
+    # generator (plsql/fingerprint.py). Not a failure and not a pass -- it is evidence about something else
+    stale: dict[str, str] = field(default_factory=dict)
 
     def test_evidence(self, routine_id: str) -> float:
         passed, total = self.captures.get(routine_id, (0, 0))
