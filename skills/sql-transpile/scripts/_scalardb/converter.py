@@ -24,7 +24,7 @@ from . import appside
 from .decomposer import DEFAULT_ROW_LIMIT, ORDERED_SCAN_STORAGES, Decomposer, NotDecomposable, PlanBlocked
 from .dialect import Upsert, to_scalardb_sql
 from .schema import SchemaRegistry, TableMeta
-from .types import fit_temporal_literal, iso_temporal_literal, map_type
+from .types import fit_temporal_literal, iso_temporal_literal, map_type, session_zone
 
 AGGREGATES = (exp.Count, exp.Sum, exp.Avg, exp.Min, exp.Max)
 COMPARISONS = (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE)
@@ -200,8 +200,11 @@ class StatementConverter:
     def __init__(self, dialect: str, registry: SchemaRegistry, key_hints: dict[str, tuple[list[str], list[str]]],
                  decompose: bool = True, storage: str = "jdbc",
                  expected_rows: dict[str, tuple[int, int | None]] | None = None, isolation: str = "SERIALIZABLE",
-                 row_limit: int = DEFAULT_ROW_LIMIT, h2_indexes: bool = False):
+                 row_limit: int = DEFAULT_ROW_LIMIT, h2_indexes: bool = False, session_time_zone: str | None = None):
         self.dialect = dialect
+        # the zone the source sessions run in: what a TIMESTAMPTZ literal without a zone means there
+        self.session_time_zone = session_time_zone
+        self._session_zone = session_zone(session_time_zone)
         self.registry = registry
         self.key_hints = key_hints
         self.decompose = decompose
@@ -330,7 +333,8 @@ class StatementConverter:
             fresh = sqlglot.parse_one(src, read=self.dialect)  # the converter mutated the first AST
             _number_positional_binds(fresh)
             plan = Decomposer(self.dialect, self.registry, row_limit=self.row_limit, storage=self.storage,
-                              h2_indexes=self.h2_indexes).decompose(fresh, src.strip(), codes)
+                              h2_indexes=self.h2_indexes,
+                              session_time_zone=self.session_time_zone).decompose(fresh, src.strip(), codes)
         except PlanBlocked as e:
             res.issues.extend(Issue("ERROR", code, msg) for code, msg in e.problems)
             return
@@ -529,7 +533,7 @@ class StatementConverter:
         lit = value.this if isinstance(value, exp.Cast) and isinstance(value.this, exp.Literal) else value
         if not isinstance(lit, exp.Literal) or not lit.is_string:
             return value
-        fitted, change = fit_temporal_literal(kind, lit.name)
+        fitted, change = fit_temporal_literal(kind, lit.name, self._session_zone)
         if change == "midnight":
             self.info("DATE_LIT", f"{ctx}: midnight time part dropped from '{lit.name}' for DATE column {column}")
         elif change == "time":
@@ -538,9 +542,13 @@ class StatementConverter:
         elif change == "padded":
             self.info("DATE_LIT", f"{ctx}: '{lit.name}' padded to '{fitted}' for {kind} column "
                                   f"{column}; ScalarDB does not parse a date-only literal as a timestamp")
+        elif change == "session_zone":
+            self.info("DATE_LIT", f"{ctx}: '{lit.name}' has no time zone; read in the session time zone "
+                                  f"{self.session_time_zone} and written as the same instant in UTC, '{fitted}'")
         elif change == "assumed_utc":
             self.warn("TZ_ASSUMED_UTC", f"{ctx}: '{lit.name}' has no time zone and {column} is a TIMESTAMPTZ; the source "
-                                        f"database reads it in the session's time zone, which is not visible here. "
+                                        f"database reads it in the session's time zone, which is not visible here "
+                                        f"(name it with --session-time-zone). "
                                         f"Written as UTC ('{fitted}'): ScalarDB accepts a TIMESTAMPTZ literal only "
                                         f"with a trailing Z")
         elif change == "to_utc":
@@ -1574,15 +1582,18 @@ def convert_script(text: str, dialect: str, registry: SchemaRegistry | None = No
                    key_hints: dict[str, tuple[list[str], list[str]]] | None = None,
                    decompose: bool = True, storage: str = "jdbc",
                    expected_rows: dict[str, tuple[int, int | None]] | None = None, isolation: str = "SERIALIZABLE",
-                   row_limit: int = DEFAULT_ROW_LIMIT, h2_indexes: bool = False) -> tuple[list[Result], SchemaRegistry]:
+                   row_limit: int = DEFAULT_ROW_LIMIT, h2_indexes: bool = False,
+                   session_time_zone: str | None = None) -> tuple[list[Result], SchemaRegistry]:
     """storage: the storage behind ScalarDB ("jdbc", or a non-JDBC one such as "cassandra"); it decides whether a
     cross-partition ORDER BY can be pushed down and whether a key IN-list is worth splitting.
     expected_rows / isolation / row_limit only feed the cost estimates (appside.estimate_cost).
-    h2_indexes: plans tell the runtime to index the fetched tables in H2 (for batch jobs joining large fetches)."""
+    h2_indexes: plans tell the runtime to index the fetched tables in H2 (for batch jobs joining large fetches).
+    session_time_zone: the zone the source sessions run in ('Asia/Tokyo', '+09:00'). A TIMESTAMPTZ literal without a
+    zone means that zone in the source; without this it is written as UTC under a TZ_ASSUMED_UTC warning."""
     registry = registry or SchemaRegistry()
     conv = StatementConverter(dialect, registry, key_hints or {}, decompose=decompose, storage=storage,
                               expected_rows=expected_rows, isolation=isolation, row_limit=row_limit,
-                              h2_indexes=h2_indexes)
+                              h2_indexes=h2_indexes, session_time_zone=session_time_zone)
     results = []
     try:
         statements = _split_statements(text, dialect)

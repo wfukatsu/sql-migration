@@ -24,7 +24,7 @@ from sqlglot.transforms import eliminate_join_marks
 
 from .appside import h2_unsupported
 from .schema import SchemaRegistry, TableMeta
-from .types import fit_temporal_literal, iso_temporal_literal
+from .types import fit_temporal_literal, iso_temporal_literal, session_zone
 
 DEFAULT_ROW_LIMIT = 10_000
 H2_MODE = {"oracle": "Oracle", "postgres": "PostgreSQL", "mysql": "MySQL"}
@@ -181,7 +181,7 @@ def _sql_value(v) -> str:
     return str(v)
 
 
-def _fit_temporal(p: Predicate, types: dict[str, str]) -> Predicate:
+def _fit_temporal(p: Predicate, types: dict[str, str], zone=None) -> Predicate:
     """The predicate's literals made to fit the column's ScalarDB type, by the same rule the converter uses: a
     date-only literal gets midnight for TIMESTAMP / TIMESTAMPTZ, a time part is dropped for DATE."""
     ty = next((t for c, t in types.items() if c.lower() == p.column.lower()), None)
@@ -189,7 +189,7 @@ def _fit_temporal(p: Predicate, types: dict[str, str]) -> Predicate:
     def fit(v):
         if not isinstance(v, str):
             return v
-        fitted, change = fit_temporal_literal(ty, v)
+        fitted, change = fit_temporal_literal(ty, v, zone)
         # a real time of day against a DATE column is left alone: rounding it would move the bound of a fetch
         return v if change == "time" else fitted
 
@@ -250,8 +250,9 @@ class Scope:
 
 class Decomposer:
     def __init__(self, dialect: str, registry: SchemaRegistry, row_limit: int = DEFAULT_ROW_LIMIT,
-                 storage: str = "jdbc", h2_indexes: bool = False):
+                 storage: str = "jdbc", h2_indexes: bool = False, session_time_zone: str | None = None):
         self.dialect = dialect
+        self.session_zone = session_zone(session_time_zone)   # what a TIMESTAMPTZ literal without a zone means
         self.registry = registry
         self.row_limit = row_limit
         self.storage = storage
@@ -361,7 +362,7 @@ class Decomposer:
                     full_scans.append(part.table)
                     break
                 cross_partition |= part.access_path == "CROSS_PARTITION"
-                part.scalardb_sql = self._fetch_sql(part)
+                part.scalardb_sql = self._fetch_sql(part, self.session_zone)
                 fetch.append(part)
         blocked = {t.lower() for t in full_scans}
         for table in full_scans:
@@ -623,12 +624,12 @@ class Decomposer:
         return None, col.name.lower()
 
     @staticmethod
-    def _fetch_sql(spec: FetchSpec) -> str:
+    def _fetch_sql(spec: FetchSpec, zone=None) -> str:
         cols = ", ".join(spec.columns) if spec.columns else "*"
         name = f"{spec.namespace}.{spec.table}" if spec.namespace else spec.table
         where = " AND ".join(Decomposer._group_sql(
-            _fit_temporal(g, spec.column_types) if isinstance(g, Predicate)
-            else [_fit_temporal(p, spec.column_types) for p in g]) for g in spec.predicates)
+            _fit_temporal(g, spec.column_types, zone) if isinstance(g, Predicate)
+            else [_fit_temporal(p, spec.column_types, zone) for p in g]) for g in spec.predicates)
         return f"SELECT {cols} FROM {name}" + (f" WHERE {where}" if where else "")
 
     # -- residual -----------------------------------------------------------------------------------

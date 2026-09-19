@@ -97,6 +97,7 @@ SQL を Source 方言で読んで AST に抽象化し、Target 方言または S
 | `--expected-rows t=N[:K]` | ScalarDB | 表の行数（とキーあたりの行数）が分かっている。見積もりに使う |
 | `--isolation` | ScalarDB | 分離レベルが `SERIALIZABLE`（既定）以外 |
 | `--h2-indexes` | ScalarDB | 大きな表を結合するバッチ処理。実行計画に H2 の索引を作る指定を入れる（小さな要求では遅くなる） |
+| `--session-time-zone ZONE` | ScalarDB | `TZ_ASSUMED_UTC` が出たとき。移行元のセッションのタイムゾーン（`Asia/Tokyo`、`+09:00`）を渡すと、ゾーンの無いリテラルをその時刻として読み、UTC に直す |
 
 例（ScalarDB、Cassandra バックエンド）:
 
