@@ -47,6 +47,10 @@ _REFUSES_LATER: "contextvars.ContextVar[bool]" = contextvars.ContextVar("refuses
 # record accessor `r.qty()`. Kept apart from the routine's own names so a nested loop restores the outer one.
 _LOOP_ROWS: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("loop_rows", default={})
 # handler の中だけで意味を持つ名前（`SQLCODE`）。catch が束ねている例外から読む
+# いま内側にいる、Java のラベルとして出したループ。`EXIT outer_loop` を `break outerLoop;` にしてよいのは、
+# その名前のループを実際に出したときだけである
+_LOOP_LABELS: "contextvars.ContextVar[frozenset[str]]" = contextvars.ContextVar("loop_labels",
+                                                                                default=frozenset())
 _HANDLER_ERROR: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("handler", default={})
 
 
@@ -516,7 +520,7 @@ def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
     # reads it then fails to compile. Writing the NULL out keeps the two the same.
     initial = " = null" if mapped.name not in ("int", "long", "double", "boolean") else ""
     if declaration.initial:
-        rendered = _expr(file, declaration.initial, routine, result)
+        rendered = _expr(file, declaration.initial, routine, result, boolean_value=mapped.name == "Boolean")
         if mapped.name == "BigDecimal" and rendered.lstrip("-").replace(".", "", 1).isdigit():
             file.add_import("com.scalar.migrate.plsql.Plsql")
             rendered = f"Plsql.number({rendered})"
@@ -607,13 +611,17 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
         # the target goes through the translator too: `:NEW.col` is not a Java name, and rendering it anyway
         # produced code that did not compile
         target = _expr(file, statement.target, routine, result)
-        value = _expr(file, statement.expression, routine, result)
-        file.line(f"{target} = {_coerce(file, value, _local_type(routine, statement.target))};")
+        target_type = _local_type(routine, statement.target)
+        value = _expr(file, statement.expression, routine, result, boolean_value=target_type == "Boolean")
+        file.line(f"{target} = {_coerce(file, value, target_type)};")
     elif kind == "Return":
         returns = java_type(routine.return_type.resolved or routine.return_type.oracle).name \
             if routine.return_type is not None else "void"
-        file.line(f"return {_coerce(file, _expr(file, statement.expression, routine, result), returns)};"
-                  if statement.expression else "return;")
+        if statement.expression:
+            value = _expr(file, statement.expression, routine, result, boolean_value=returns == "Boolean")
+            file.line(f"return {_coerce(file, value, returns)};")
+        else:
+            file.line("return;")
     elif kind == "If":
         _if(file, statement, routine, result)
     elif kind == "Case":
@@ -624,12 +632,16 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
         _block(file, statement, routine, result)
     elif kind == "Raise":
         _raise(file, statement, routine, result)
-    elif kind == "Exit":
-        file.line(f"if ({_expr(file, statement.condition, routine, result)}) break;"
-                  if statement.condition else "break;")
-    elif kind == "Continue":
-        file.line(f"if ({_expr(file, statement.condition, routine, result)}) continue;"
-                  if statement.condition else "continue;")
+    elif kind in ("Exit", "Continue"):
+        # `EXIT outer_loop WHEN ...` names the loop it leaves. Dropping the label left the inner loop only, and
+        # the outer `while (true)` then never ended.
+        jump = "break" if kind == "Exit" else "continue"
+        if statement.label:
+            if statement.label.lower() not in _LOOP_LABELS.get():
+                raise Untranslatable([f"{kind.upper()} {statement.label}"], statement.label)
+            jump = f"{jump} {java_name(statement.label)}"
+        file.line(f"if ({_expr(file, statement.condition, routine, result)}) {jump};"
+                  if statement.condition else f"{jump};")
     elif kind == "Null":
         file.line("// NULL;")
     elif kind == "Call":
@@ -743,8 +755,14 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
         raise Untranslatable([f"{statement.loop_kind} loop"], statement.cursor or statement.kind)
     else:
         opening = f"{label}while (true)"
-    with file.block(opening) as f:
-        _statements(f, statement.body, routine, result)
+    outer = _LOOP_LABELS.get()
+    if statement.label:
+        _LOOP_LABELS.set(outer | {statement.label.lower()})
+    try:
+        with file.block(opening) as f:
+            _statements(f, statement.body, routine, result)
+    finally:
+        _LOOP_LABELS.set(outer)
 
 
 FORALL_BOUND = re.compile(r"^\s*1\s*\.\.\s*(?P<collection>[\w$#]+)\s*\.\s*COUNT\s*$", re.IGNORECASE)
@@ -1235,7 +1253,7 @@ def _flag_name(cursor: str) -> str:
 
 
 def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "ServiceFile | None",
-          module: M.Module | None = None) -> str:
+          module: M.Module | None = None, boolean_value: bool = False) -> str:
     """Translate an expression, or refuse.
 
     An unrecognised name reaching the output would either fail to compile or, worse, resolve to something with
@@ -1245,7 +1263,7 @@ def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "Service
     names = {**_scope(routine, module or _MODULE.get()), **_BLOCK_LOCALS.get(), **_LOOP_ROWS.get(),
              **_HANDLER_ERROR.get()}
     names.update({f"{flag}%notfound": _flag_name(flag) for flag in _not_found_flags(routine)})
-    rendered = translate(text, names)
+    rendered = translate(text, names, boolean_value=boolean_value)
     for name in rendered.unknown:
         if result is not None and name not in result.unknown_names:
             result.unknown_names.append(name)

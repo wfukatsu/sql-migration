@@ -65,6 +65,47 @@ class Unconvertible(Exception):
 # helpers
 # --------------------------------------------------------------------------------------------------
 
+BIND_ORDINAL = "bind_ordinal"
+
+
+def _is_positional(e: exp.Expression) -> bool:
+    """`?` (JDBC), or PostgreSQL's `$1`. A named `:x` carries its own identity and survives any rewrite."""
+    if isinstance(e, exp.Placeholder):
+        return not e.this
+    return isinstance(e, exp.Parameter) and isinstance(e.this, exp.Literal) and e.this.is_int
+
+
+def _number_positional_binds(node: exp.Expression) -> int:
+    """Tag every positional bind with its position in the source. `$n` says its own; `?` counts in text order,
+    which the statement's own SQL gives more reliably than a tree walk (LIMIT sits after WHERE in the text
+    whatever the order of the node's args). Returns how many binds the source expects."""
+    marks = [e for e in node.find_all(exp.Placeholder, exp.Parameter) if _is_positional(e)]
+    if not marks:
+        return 0
+    if all(isinstance(e, exp.Parameter) for e in marks):
+        for e in marks:
+            e.meta[BIND_ORDINAL] = int(e.this.name)
+        return max(e.meta[BIND_ORDINAL] for e in marks)
+    for index, e in enumerate(marks):
+        e.meta[BIND_ORDINAL] = -(index + 1)          # provisional: identifies the node, not yet its position
+    for position, mark in enumerate(_positional_bind_order(node), start=1):
+        marks[-mark - 1].meta[BIND_ORDINAL] = position
+    return len(marks)
+
+
+def _positional_bind_order(node: exp.Expression) -> list[int]:
+    """The ordinals of the positional binds, in the order they appear in the generated SQL."""
+    probe = node.copy()
+    for e in list(probe.find_all(exp.Placeholder, exp.Parameter)):
+        if BIND_ORDINAL in e.meta:
+            e.replace(exp.Placeholder(this=f"bindordinal{e.meta[BIND_ORDINAL]}x"))
+    try:
+        text = to_scalardb_sql(probe)
+    except UnsupportedError:
+        text = probe.sql()
+    return [int(n) for n in re.findall(r":bindordinal(-?\d+)x", text)]
+
+
 def _unparen(e: exp.Expression) -> exp.Expression:
     while isinstance(e, exp.Paren):
         e = e.this
@@ -188,6 +229,7 @@ class StatementConverter:
             res.issues.append(Issue("ERROR", "PARSE", str(e).splitlines()[0]))
             return res
         res.kind = type(node).__name__.upper()
+        binds = _number_positional_binds(node)
         try:
             if any(c.args.get("join_mark") for c in node.find_all(exp.Column)):
                 node = eliminate_join_marks(node)
@@ -202,6 +244,7 @@ class StatementConverter:
                 node = Upsert(**node.args)
             out = self._dispatch(node)
             res.converted = [to_scalardb_sql(n) if isinstance(n, exp.Expression) else n for n in out]
+            self._check_bind_order(binds, out)
         except Unconvertible as e:
             self.issues.append(Issue("ERROR", e.code, str(e)))
         except UnsupportedError as e:
@@ -222,6 +265,19 @@ class StatementConverter:
         if res.status == "WARN" and isinstance(node, exp.Select) and any(i.code == "CROSS_PARTITION" for i in res.issues):
             self._cost(res, [(_from(node).this.name, "CROSS_PARTITION")], row_limit=None)
         return res
+
+    def _check_bind_order(self, binds: int, out: list) -> None:
+        """Positional binds are bound by position, so a rewrite that moves or copies one changes what the caller
+        has to pass -- `ROWNUM <= ? AND id = ?` becomes `WHERE id = ? LIMIT ?`, and the OR normalisation can turn
+        four markers into five. The SQL is still right; the caller's bind list no longer is. Say which source
+        bind each `?` of the output takes."""
+        if not binds:
+            return
+        order = [n for e in out if isinstance(e, exp.Expression) for n in _positional_bind_order(e)]
+        if order != list(range(1, binds + 1)):
+            self.warn("BIND_ORDER", f"positional binds were reordered or duplicated by the rewrite: the converted "
+                                    f"SQL has {len(order)} '?' for {binds} in the source. Bind them, in order, "
+                                    f"from source positions {order}")
 
     def _reparse(self, src: str) -> exp.Expression | None:
         try:
@@ -256,6 +312,7 @@ class StatementConverter:
         codes = {i.code for i in res.issues if i.severity == "ERROR"}
         try:
             fresh = sqlglot.parse_one(src, read=self.dialect)  # the converter mutated the first AST
+            _number_positional_binds(fresh)
             plan = Decomposer(self.dialect, self.registry, row_limit=self.row_limit, storage=self.storage,
                               h2_indexes=self.h2_indexes).decompose(fresh, src.strip(), codes)
         except PlanBlocked as e:
@@ -863,6 +920,14 @@ class StatementConverter:
         for leaf in _flatten(where_expr, exp.And):
             u = _unparen(leaf)
             if isinstance(u, COMPARISONS) and isinstance(u.this, exp.Column) and u.this.name.upper() == "ROWNUM":
+                # ROWNUM counts the rows going in, LIMIT the rows coming out. With an aggregate, DISTINCT or
+                # GROUP BY in between they are different numbers: `SELECT COUNT(*) ... WHERE ROWNUM <= 5`
+                # answers 5, `SELECT COUNT(*) ... LIMIT 5` counts the whole table.
+                if s.args.get("distinct") or s.args.get("group") or s.args.get("having") \
+                        or any(e.find(exp.AggFunc, exp.Window) for e in s.expressions):
+                    self.fail("ROWNUM", f"'{u.sql()}' limits the rows read, and LIMIT would limit the rows returned "
+                                        "after the aggregate / DISTINCT / GROUP BY -- fetch the first rows, then "
+                                        "aggregate in the application")
                 if isinstance(u.expression, (exp.Placeholder, exp.Parameter)) and isinstance(u, exp.LTE):
                     # `ROWNUM <= :n` -> `LIMIT :n`。bind でも件数は件数である。`<` は n-1 が要るので
                     # bind では作れない——そちらは今までどおり拒否する
@@ -872,7 +937,7 @@ class StatementConverter:
                     self.warn("ROWNUM", f"'{u.sql()}' rewritten to LIMIT {u.expression.sql()}. Note: Oracle applies "
                                         f"ROWNUM before ORDER BY, ScalarDB LIMIT applies after ORDER BY")
                     continue
-                if not isinstance(u.expression, exp.Literal) or u.expression.is_string:
+                if not isinstance(u.expression, exp.Literal) or not u.expression.is_int:
                     self.fail("ROWNUM", "ROWNUM must be compared with an integer literal")
                 n = int(u.expression.name)
                 if isinstance(u, exp.LT):
