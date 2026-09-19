@@ -106,6 +106,27 @@ public record Scenario(String name, String unit, String routine, Map<String, Obj
         .matches("(?i)\\w+:=[\\w.]+\\([^)]*\\);END;");
   }
 
+  /**
+   * 実際に呼ぶ module。**`call` が名指すもの**であって、`unit` ではない。
+   *
+   * <p>ふつうは同じだが、trigger のシナリオは違う: `trigger_orders_audit_on_status` は
+   * `unit: trg_orders_audit` を**確かめる**ために `pkg_stock_reserve.claim_batch` を**呼ぶ**。移行先に
+   * trigger は無く、掛かるのは書き込む側が呼ぶときだけなので、書き込み経路を通すこの形が正しい。
+   * `unit` から引いていたので、存在しない `trgOrdersAudit` を探して「比較できない」になっていた。
+   */
+  public String callUnit() {
+    if (!"procedure".equals(kind) && !"function".equals(kind) || call == null || call.isBlank()) return unit;
+    int dot = call.lastIndexOf('.');
+    return dot < 0 ? call : call.substring(0, dot);
+  }
+
+  /** 実際に呼ぶ routine。`callUnit` と同じ理由で `call` から採る。 */
+  public String callRoutine() {
+    if (!"procedure".equals(kind) && !"function".equals(kind) || call == null || call.isBlank()) return routine;
+    int dot = call.lastIndexOf('.');
+    return dot < 0 ? call : call.substring(dot + 1);
+  }
+
   /** The PL/SQL routine's arguments, in declaration order. */
   public List<Object> arguments() {
     return new ArrayList<>(args.values());
