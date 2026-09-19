@@ -13,6 +13,17 @@ rules:
     requiredTests:
       - all_write_paths_covered
 
+  - id: TRG-002
+    match: {statementKind: SqlOperation, hasDiagnostic: [TRIGGER_NOT_APPLIED, TRIGGER_REDESIGN]}
+    decision: REDESIGN
+    severity: critical
+    message: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
+    remediation:
+      - trigger の処理を、この書き込みをする Service に持たせる（値を書き換える trigger は採番 Service へ）
+      - 複数行の更新・DELETE・MERGE・複数イベントの trigger は、行ごとに何を渡すかを設計する
+    requiredTests:
+      - all_write_paths_covered
+
   - id: LINK-001
     match: {dbLink: true}
     decision: REDESIGN

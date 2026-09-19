@@ -38,13 +38,25 @@ HILO = "hilo"
 COUNTER = "counter"
 SCHEMES = {HILO, COUNTER}
 
-# CREATE SEQUENCE の各要素。ORDER / CYCLE などは採番方式の選択に効かないので読まない
-SEQUENCE = re.compile(
-    r"CREATE\s+SEQUENCE\s+(?P<name>[\w$#.]+)"
-    r"(?:.*?START\s+WITH\s+(?P<start>\d+))?"
-    r"(?:.*?INCREMENT\s+BY\s+(?P<increment>\d+))?"
-    r"(?:.*?(?P<nocache>NOCACHE)|.*?CACHE\s+(?P<cache>\d+))?"
-    r"[^;]*;", re.IGNORECASE | re.DOTALL)
+# 1 つの CREATE SEQUENCE 文。オプションは **その文の `;` まで** で、順序は問わない。
+#
+# 以前は 1 本の正規表現で `.*?START WITH ...` と読んでいて、`.*?` が `;` をまたいだ。START WITH を持たない
+# sequence のあとに別の sequence が続くと、**次の文の START WITH を自分のものとして読み、次の sequence ごと
+# 飲み込んだ**——3 つ宣言して 1 つしか出ず、その開始値は別の sequence のものだった。オプションの順序も
+# START → INCREMENT → CACHE に決め打ちだった（Oracle は順序を問わない）。
+STATEMENT = re.compile(r"CREATE\s+SEQUENCE\s+(?P<name>[\w$#.\"]+)(?P<options>[^;]*);", re.IGNORECASE)
+START = re.compile(r"\bSTART\s+WITH\s+(-?\d+)", re.IGNORECASE)
+INCREMENT = re.compile(r"\bINCREMENT\s+BY\s+(-?\d+)", re.IGNORECASE)
+NOCACHE = re.compile(r"\bNOCACHE\b", re.IGNORECASE)
+CACHE = re.compile(r"\bCACHE\s+(\d+)", re.IGNORECASE)
+COMMENT = re.compile(r"--[^\n]*|/\*.*?\*/", re.DOTALL)
+# CACHE も NOCACHE も書かれていないときの Oracle の既定
+DEFAULT_CACHE = 20
+
+
+def _first(pattern: re.Pattern, text: str) -> str | None:
+    found = pattern.search(text)
+    return found.group(1) if found else None
 
 
 @dataclass(frozen=True)
@@ -70,14 +82,22 @@ class Policies(dict):
     def from_ddl(cls, ddl: str | Path, overrides: str | Path | None = None) -> "Policies":
         text = Path(ddl).read_text(encoding="utf-8")
         policies = cls()
-        for match in SEQUENCE.finditer(text):
-            name = match.group("name").rpartition(".")[2].lower()
-            start = int(match.group("start") or 1)
-            increment = int(match.group("increment") or 1)
-            cache = match.group("cache")
-            if match.group("nocache") or cache in (None, "0", "1"):
+        for match in STATEMENT.finditer(COMMENT.sub(" ", text)):
+            name = match.group("name").replace('"', "").rpartition(".")[2].lower()
+            options = match.group("options")
+            start = int(_first(START, options) or 1)
+            increment = int(_first(INCREMENT, options) or 1)
+            cache = _first(CACHE, options)
+            if NOCACHE.search(options) or cache in ("0", "1"):
                 policies[name] = Policy(name, COUNTER, 1, start, increment,
                                         "DDL が NOCACHE。欠番を避けたいという意思表示なので counters + 再試行")
+            elif cache is None:
+                # 何も書かれていなければ Oracle は CACHE 20 で動く。欠番は元から出ていたので hi/lo で性質は
+                # 変わらない——ただし「書いてある」のではなく既定なので、理由にそう書く。欠番が困る番号なら
+                # 上書きで counter にする
+                policies[name] = Policy(name, HILO, DEFAULT_CACHE, start, increment,
+                                        f"DDL に CACHE / NOCACHE の指定が無い。Oracle の既定は CACHE {DEFAULT_CACHE} で、"
+                                        f"元から欠番が出うるので hi/lo（欠番が困る番号なら上書きで counter にする）")
             else:
                 block = int(cache)
                 policies[name] = Policy(name, HILO, block, start, increment,

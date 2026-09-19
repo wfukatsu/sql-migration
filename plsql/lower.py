@@ -220,7 +220,13 @@ class _Lowerer:
         text = _text(context)
         table = _first(re.search(r"\bON\s+([\w$#.]+)", text, re.IGNORECASE))
         timing = _first(re.search(r"\b(BEFORE|AFTER|INSTEAD\s+OF)\b", text, re.IGNORECASE))
-        event = _first(re.search(r"\b(INSERT|UPDATE|DELETE)(\s+OF\s+[\w$#,\s]+)?\b", text, re.IGNORECASE))
+        # 発火するイベントは 1 つとは限らない: `AFTER INSERT OR UPDATE OR DELETE ON payments`。最初の 1 つだけを
+        # 残していたので、UPDATE や DELETE で書き込む routine には trigger が**無いこと**になり、診断も出なかった。
+        # 読むのは `ON` の手前まで——本体の中の INSERT / UPDATE を拾わないため
+        events_text = re.split(r"\bON\b", text, maxsplit=1, flags=re.IGNORECASE)[0]
+        events = list(dict.fromkeys(e.upper() for e in re.findall(r"\b(INSERT|UPDATE|DELETE)\b", events_text,
+                                                                  re.IGNORECASE)))
+        event = " OR ".join(events) or None
         # `UPDATE OF status, note` の列。**SET にその列が無ければ掛からない**ので、事実として残す
         listed = re.search(r"\b(?:INSERT|UPDATE|DELETE)\s+OF\s+(?P<columns>[\w$#,\s]+?)\s+ON\b",
                            text, re.IGNORECASE)
