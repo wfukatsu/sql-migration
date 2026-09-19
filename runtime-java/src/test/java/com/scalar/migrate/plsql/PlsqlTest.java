@@ -309,6 +309,16 @@ class PlsqlTest {
   }
 
   @Test
+  void anEmptyStringCrossesTheWriteBoundaryAsNull() {
+    // #5 (decided 2026-09-19): '' and NULL stay one thing during the migration; blanks are not empty
+    assertNull(Plsql.bind(""));
+    assertNull(Plsql.bind("", "TEXT", 0));
+    assertEquals(" ", Plsql.bind(" "));
+    assertEquals(" ", Plsql.bind(" ", "TEXT", 0));
+    assertEquals(7, Plsql.bind(7));
+  }
+
+  @Test
   void textThatIsNotANumberIsAValueErrorNotAJavaException() {
     // Issue #29 (14, 17a): `v_n := 'abc';` and TO_NUMBER('12x') are ORA-06502, which WHEN VALUE_ERROR catches
     assertEquals(new BigDecimal("12.5"), Plsql.toNumber(" 12.5 "));

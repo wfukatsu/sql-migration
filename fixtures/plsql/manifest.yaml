@@ -24,7 +24,10 @@ units:
       # 2026-09-17 修正: P2-2 のルール SEM-002 との不一致を調べ、manifest 側の誤りと判断した。
       # SYSDATE は DB サーバのクロックとタイムゾーンで決まり、JVM の時刻とは別物である。
       # 既存の scalardb_migrate/appside.py も以前から APP_SEMANTICS として警告している。
-      - {name: create_customer, expected: REVIEW, reason: "主キー INSERT のみだが registered_on に SYSDATE を書く。時刻の出所が DB サーバであることを保つ必要がある"}
+      # 2026-09-20 / #5: 以前の期待値は REVIEW。止めていたのは NVL に当たる SEM-003 だけで、SYSDATE を見るルールは
+      # P4-3 から無い（SYSDATE は呼び出し側が渡し、FIXED_DATE で固定して registered_on まで実 DB で比べている）。
+      # NVL は SQL の外へ持ち上がり、ランタイムが Oracle と同じ意味（'' は NULL）で計算する
+      - {name: create_customer, expected: AUTO,   reason: "主キー INSERT のみ。NVL はランタイムが計算し、'' は書き込み境界で NULL になる。SYSDATE は呼び出し側が渡す"}
       - {name: update_email,    expected: AUTO,   reason: "主キー UPDATE と SQL%ROWCOUNT。影響行数を Result に保持すれば足りる"}
       - {name: delete_customer, expected: AUTO,   reason: "主キー DELETE のみ"}
       - {name: customer_name,   expected: AUTO,   reason: "主キーの SELECT INTO と NO_DATA_FOUND の握り潰し"}
@@ -157,7 +160,9 @@ units:
       # TZ 依存構文・NLS 依存書式・DATE への CAST のいずれも含まない。エンジンの出力に合わせたのではなく、
       # 実機の記録に合わせた。holdout ではないユニットである（holdout の期待値は変更しない）。
       - {name: days_since_order, expected: AUTO,   reason: "TRUNC と日付差のみ。P3-3 の記録済み Oracle 挙動が覆う範囲（P4-3）"}
-      - {name: display_note,     expected: REVIEW, reason: "空文字 = NULL。Java では別物になるため条件式の意味が変わる"}
+      # 2026-09-20 / #5: 以前の期待値は REVIEW。空文字 = NULL は同一視を保つと決定し、この条件式と RTRIM は互換
+      # ランタイム（Plsql.isNull / eq / rtrim）が Oracle と同じ意味で計算する。移行先 DB が評価する式は無い
+      - {name: display_note,     expected: AUTO,   reason: "空文字 = NULL の条件式と RTRIM。どちらも PL/SQL の式で、互換ランタイムが計算する"}
       - {name: apply_rate,       expected: REVIEW, reason: "NUMBER(14,2) の乗算と丸め。ScalarDB に DECIMAL が無くスケール済み整数を検討する"}
 
   - name: pkg_stock_reserve

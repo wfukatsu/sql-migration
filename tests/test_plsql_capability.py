@@ -247,3 +247,29 @@ def test_a_join_the_converter_takes_as_it_stands_is_not_held_for_review(checked)
     unasked = build_analysis(SRC, SRC / "schema.sql")
     plain = decide(unasked.program, analyse_program(unasked.program), RuleSet.load(), Evidence())
     assert "SEM-005" in {m.rule.id for m in plain["pkg_order_pricing.customer_tier"].matches}
+
+
+def test_empty_string_semantics_are_reviewed_only_where_the_target_evaluates_them(tmp_path):
+    """#5 (decided 2026-09-19/20): '' and NULL stay one thing during the migration. The compatible runtime and the
+    normalising bind implement that and are verified against Oracle, so SEM-003 fires only where neither is on the
+    path: an expression that reaches ScalarDB SQL (or a plan's residual SQL) as it stands."""
+    source = """CREATE OR REPLACE PACKAGE BODY pkg_e AS
+  FUNCTION in_the_database(p_id NUMBER) RETURN NUMBER IS v NUMBER;
+  BEGIN
+    SELECT order_id INTO v FROM orders WHERE order_id = p_id AND note = '';
+    RETURN v;
+  END in_the_database;
+  PROCEDURE in_the_runtime(p_id NUMBER, p_note VARCHAR2) IS
+  BEGIN
+    IF p_note = '' OR RTRIM(p_note) IS NULL THEN RETURN; END IF;
+    UPDATE orders SET note = NVL(p_note, 'none') WHERE order_id = p_id;
+  END in_the_runtime;
+END pkg_e;
+/
+"""
+    (tmp_path / "pkg_e.pkb").write_text(source, encoding="utf-8")
+    analysis = build_analysis(tmp_path, SRC / "schema.sql", scalardb_schema=FIXTURES / "scalardb-schema.json")
+    decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), Evidence())
+    rules = {name: {m.rule.id for m in d.matches} for name, d in decisions.items()}
+    assert "SEM-003" in rules["pkg_e.in_the_database"], "`note = ''` is compared by ScalarDB, where '' is not NULL"
+    assert "SEM-003" not in rules["pkg_e.in_the_runtime"], "the runtime computes these, and the NVL is lifted to a bind"

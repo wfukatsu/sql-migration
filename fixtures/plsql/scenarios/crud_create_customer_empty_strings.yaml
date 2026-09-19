@@ -1,0 +1,17 @@
+name: crud_create_customer_empty_strings
+unit: pkg_customer_crud
+routine: create_customer
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup: []
+call:
+  kind: procedure
+  name: pkg_customer_crud.create_customer
+  args:
+    p_customer_id: 8
+    p_name: Empty Co
+    p_email: ''
+    p_tier: ''
+capture_tables:
+- customers
+note: "#5。'' は NULL。email は NULL で入り、NVL(p_tier, 'BRONZE') は '' を NULL と見て BRONZE になる"
