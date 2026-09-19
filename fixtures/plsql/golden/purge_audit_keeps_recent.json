@@ -1,0 +1,47 @@
+{
+ "scenario": "purge_audit_keeps_recent",
+ "unit": "prc_purge_audit",
+ "routine": "prc_purge_audit",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "sessionUser": "SOURCE",
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "audit_log": {
+   "columns": [
+    "audit_id",
+    "table_name",
+    "key_value",
+    "action",
+    "old_value",
+    "new_value",
+    "changed_at",
+    "changed_by"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "3"
+     },
+     "ORDERS",
+     "1003",
+     "NEW",
+     null,
+     null,
+     {
+      "$ts": "2099-01-01T00:00:00"
+     },
+     "SOURCE"
+    ]
+   ]
+  }
+ },
+ "masked": {}
+}

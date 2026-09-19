@@ -181,7 +181,10 @@ def _parts(file, module, routine, shape, result, domain_package) -> list:
              notes=["ループの前。**別トランザクション**である——`batch_control` のような行は"
                     "高衝突点なので、本体と同じトランザクションに入れない（#3 §D / §F）"])
     if shape.kind == "cursor":
-        out.append(Part("targets", [name for _, name in _parameters(file, routine, [shape.loop.query])],
+        targets = [name for _, name in _parameters(file, routine, [shape.loop.query])]
+        if _query_needs_audit(shape.loop.query):
+            targets.append("audit")
+        out.append(Part("targets", targets,
                         lambda: _targets(file, routine, shape, result, domain_package)))
     part("one", shape.one, carries=element,
          notes=["**1 反復 = 1 トランザクション**（#3 §E）。呼び出し側がこれを 1 回呼ぶたびに "
@@ -392,6 +395,11 @@ def _targets(file: JavaFile, routine: M.Routine, shape: Shape, result, domain_pa
     file.add_import(f"{domain_package}.{record}")
     file.add_import("java.util.List")
     parameters = _parameters(file, routine, [query])
+    if _query_needs_audit(query):
+        # `WHERE changed_at < SYSTIMESTAMP - p_keep_days` の時刻は呼び出し側が渡す（#8）。
+        # 渡さずに出すと、repository の呼び出しが `audit` を使うのに signature に無い Java になる
+        file.add_import("com.scalar.migrate.plsql.AuditContext")
+        parameters.append(("AuditContext", "audit"))
     arguments = _arguments(file, query, routine, result)
     file.comment("回す対象。**1 反復とは別のトランザクション**で読む——だから本体が書く表を"
                  "読んでいてもよい（同じトランザクションで書いた表は読み直せない: P2-4）。"
@@ -400,6 +408,12 @@ def _targets(file: JavaFile, routine: M.Routine, shape: Shape, result, domain_pa
     with file.block(f"public List<{record}> {java_name(routine.name)}Targets({signature}) "
                     "throws Exception") as f:
         f.line(f"return repository.{loop_method(routine, shape.loop)}({arguments});")
+
+
+def _query_needs_audit(query: M.SqlOperation) -> bool:
+    from .repository import needs_audit
+
+    return needs_audit(query)
 
 
 def _parameters(file: JavaFile, routine: M.Routine, statements: list[M.Statement]):

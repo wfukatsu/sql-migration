@@ -248,6 +248,15 @@ def _positions_of(node: exp.Expression) -> list[tuple[exp.Expression, list]]:
         for assignment in update.args.get("expressions") or []:
             if isinstance(assignment, exp.EQ):
                 out.append((assignment, [assignment.args["expression"]]))
+    # WHERE の比較の、**列を含まない側**。`changed_at < SYSTIMESTAMP - p_keep_days` の右辺は、
+    # データベースが持っている値を 1 つも読まない——アプリで計算して 1 つの値として渡せる。
+    # 持ち上げないと ScalarDB は式を受け付けず、計画に回っても H2 が日時の算術で止まった
+    # （`prc_purge_audit` / 2026-09-19）。列を読む側は `_liftable` が拒む
+    for where in node.find_all(exp.Where):
+        for comparison in where.find_all(exp.EQ, exp.NEQ, exp.LT, exp.LTE, exp.GT, exp.GTE):
+            if comparison.find_ancestor(exp.Select) is not where.find_ancestor(exp.Select):
+                continue   # 副問い合わせの中。外側の文の値ではない
+            out.append((comparison, [comparison.args["this"], comparison.args["expression"]]))
     return out
 
 

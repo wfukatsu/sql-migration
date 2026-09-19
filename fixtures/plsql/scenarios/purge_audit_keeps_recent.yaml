@@ -1,0 +1,19 @@
+name: purge_audit_keeps_recent
+unit: prc_purge_audit
+routine: prc_purge_audit
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+# 古い行と新しい行。どちらも「今」から十分に離してある——`SYSTIMESTAMP` を FIXED_DATE が
+# 固定するかは版によるので、境目の近くに行を置くと比較が時計の話になる
+- INSERT INTO audit_log (audit_id, table_name, key_value, action, new_value, changed_at, changed_by) VALUES (1, 'ORDERS', '1001', 'OLD', NULL, TIMESTAMP '2020-01-01 00:00:00', 'SOURCE')
+- INSERT INTO audit_log (audit_id, table_name, key_value, action, new_value, changed_at, changed_by) VALUES (2, 'ORDERS', '1002', 'OLD', NULL, TIMESTAMP '2020-06-01 00:00:00', 'SOURCE')
+- INSERT INTO audit_log (audit_id, table_name, key_value, action, new_value, changed_at, changed_by) VALUES (3, 'ORDERS', '1003', 'NEW', NULL, TIMESTAMP '2099-01-01 00:00:00', 'SOURCE')
+call:
+  kind: procedure
+  name: prc_purge_audit
+  args:
+    p_keep_days: 30
+capture_tables:
+- audit_log
+note: 明示 cursor で回しながら 200 件ごとに COMMIT する。1 行 = 1 トランザクションに割った形で比べる（#24）

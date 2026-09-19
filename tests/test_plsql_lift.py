@@ -102,10 +102,24 @@ def test_a_literal_is_not_lifted():
     assert lifted(binds) == {}
 
 
-def test_a_where_clause_is_not_a_lifting_site():
-    """Only SET right-hand sides and VALUES positions: a predicate is the database's to evaluate."""
+def test_the_column_free_side_of_a_predicate_is_lifted():
+    """**述語はデータベースが評価する。持ち上げるのは、列を読まない側の値だけ**（2026-09-19 に変えた）。
+
+    以前は WHERE を持ち上げの場所にしていなかった。だが `ordered_at < SYSDATE - 30` の右辺は、
+    データベースが持っている値を 1 つも読まない——SET / VALUES の式と同じく、アプリで計算して
+    1 つの値として渡せる。比べるのは相変わらずデータベースである。持ち上げないと ScalarDB は式を
+    受け付けず、計画に回っても H2 が日時の算術で止まった（`prc_purge_audit`）。
+
+    時計の出所は SET / VALUES と同じく呼び出し側になる（#8）。
+    """
     _, binds = lift("UPDATE orders SET status = 'X' WHERE ordered_at < SYSDATE - 30")
-    assert lifted(binds) == {}
+    assert lifted(binds) == {"expr1": "SYSDATE - 30"}
+
+
+def test_the_side_of_a_predicate_that_reads_a_column_is_not_lifted():
+    """列を読む側は持ち上げない。値を持っているのはデータベースであってアプリではない。"""
+    _, binds = lift("UPDATE orders SET status = 'X' WHERE ordered_at + 1 < SYSDATE")
+    assert "ordered_at + 1" not in lifted(binds).values()
 
 
 # ---------------------------------------------------------------- on the corpus
