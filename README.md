@@ -419,6 +419,7 @@ difftest/                  検証基盤（docker-compose.yml、conf/、cases/、
   plsql_compare.py           2 つの capture の突き合わせ
   plsql_semantics.py         実機 Oracle から式の意味論を記録する
 fixtures/plsql/            PL/SQL の corpus、シナリオ、golden、判定の期待値、記録した意味論
+fixtures/plsql-external/   corpus の外から受け取った routine（KPI には入れない）。実 DB のハーネスを `--project` で向ける
 samples/                   変換の入力例
 spikes/                    残りの処理を H2 / SQLite / DuckDB で実行する初期の検証
 tests/                     変換ツールとスキルのテスト
