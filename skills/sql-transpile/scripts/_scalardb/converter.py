@@ -23,7 +23,7 @@ from sqlglot.transforms import eliminate_join_marks
 from . import appside
 from .decomposer import DEFAULT_ROW_LIMIT, ORDERED_SCAN_STORAGES, Decomposer, NotDecomposable, PlanBlocked
 from .dialect import Upsert, to_scalardb_sql
-from .schema import SchemaRegistry, TableMeta
+from .schema import SQL_KEYWORDS, SchemaRegistry, TableMeta, needs_quotes, quoted
 from .types import fit_temporal_literal, iso_temporal_literal, map_type, session_zone
 
 AGGREGATES = (exp.Count, exp.Sum, exp.Avg, exp.Min, exp.Max)
@@ -64,16 +64,6 @@ class Unconvertible(Exception):
 # --------------------------------------------------------------------------------------------------
 # helpers
 # --------------------------------------------------------------------------------------------------
-
-# Words the ScalarDB SQL grammar uses. A name among them that the source had to quote loses what made it a name when
-# the quotes come off. Whether ScalarDB reserves each one is not verified here, so the message says "may", and the
-# list is kept to the grammar's own words -- an ORM that quotes every identifier should not light up on "status".
-SQL_KEYWORDS = set("""
-    ADD ALL ALTER AND AS ASC BEGIN BETWEEN BIGINT BLOB BOOLEAN BY CLUSTERING COLUMN COMMIT CREATE CROSS DATE DELETE
-    DESC DESCRIBE DOUBLE DROP ESCAPE EXISTS FLOAT FROM FULL GRANT GROUP HAVING IF IN INDEX INNER INSERT INT INTO IS
-    JOIN KEY LEFT LIKE LIMIT NAMESPACE NOT NULL ON OR ORDER OUTER PRIMARY REVOKE RIGHT ROLLBACK SELECT SET SHOW TABLE
-    TABLES TEXT TIME TIMESTAMP TIMESTAMPTZ TO TRUNCATE UPDATE UPSERT USE USER VALUES WHERE WITH
-""".split())
 
 BIND_ORDINAL = "bind_ordinal"
 
@@ -411,7 +401,7 @@ class StatementConverter:
             return self.alter(node)
         if isinstance(node, exp.TruncateTable):
             # one statement per table: `TRUNCATE TABLE a, b` used to come out as `TRUNCATE TABLE a`, and b kept its rows
-            return [f"TRUNCATE TABLE {self._table_name(t)}" for t in node.expressions]
+            return [f"TRUNCATE TABLE {self._table_sql(t)}" for t in node.expressions]
         if isinstance(node, (exp.Transaction, exp.Commit, exp.Rollback)):
             if node.args.get("this") or node.args.get("savepoint"):
                 self.fail("SAVEPOINT", "savepoints / named transactions are not supported")
@@ -428,22 +418,24 @@ class StatementConverter:
         for col in node.find_all(exp.Column):
             if col.name.upper() in ("ROWID", "ROWSCN", "ORA_ROWSCN"):
                 self.fail("ROWID", f"pseudo-column {col.name.upper()} does not exist in ScalarDB; use the primary key")
+        said: set[str] = set()
         for ident in node.find_all(exp.Identifier):
-            if ident.quoted:
-                ident.set("quoted", False)
-                if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", ident.name):
-                    self.warn("IDENT", f"identifier \"{ident.name}\" contains characters ScalarDB may not accept")
-                elif ident.name.upper() in SQL_KEYWORDS:
-                    # the quotes were what made this a name. They are removed here (how ScalarDB SQL quotes an
-                    # identifier is not something this tool has verified), so say that the name needs attention
-                    # instead of reporting OK
-                    self.warn("IDENT", f"identifier \"{ident.name}\" is a SQL keyword that the source had to quote; "
-                                       f"it is emitted unquoted and ScalarDB SQL may not parse it -- rename the "
-                                       f"column/table, or quote it by hand")
-                elif ident.name != self._folded(ident.name):
-                    self.warn("IDENT", f"identifier \"{ident.name}\" is case-sensitive in the source (quoted, and not "
-                                       f"in the dialect's folded case); ScalarDB names are case-sensitive, so every "
-                                       f"reference has to use exactly this spelling")
+            was_quoted = bool(ident.quoted)
+            if '"' in ident.name:
+                self.fail("IDENT", f"identifier \"{ident.name}\" has a double quote in it, which ScalarDB SQL cannot "
+                                   f"write; rename it in the source schema before migrating")
+            # the quotes go where ScalarDB needs them, which is not where the source did: `type` is a plain name in
+            # MySQL and a keyword here, "status" is quoted by an ORM and plain here
+            ident.set("quoted", needs_quotes(ident.name))
+            if ident.quoted and ident.name not in said:
+                said.add(ident.name)
+                why = "a ScalarDB SQL keyword" if ident.name.upper() in SQL_KEYWORDS else "not a plain identifier"
+                self.info("IDENT", f"identifier {ident.name} is {why}; written as \"{ident.name}\" (quoted)")
+            if was_quoted and ident.name != self._folded(ident.name) and ("case", ident.name) not in said:
+                said.add(("case", ident.name))
+                self.warn("IDENT", f"identifier \"{ident.name}\" is case-sensitive in the source (quoted, and not "
+                                   f"in the dialect's folded case); ScalarDB names are case-sensitive, so every "
+                                   f"reference has to use exactly this spelling")
         # ScalarDB does not fold case; the source does. `FROM Customers` and `CREATE TABLE customers` are one table
         # there and two names here
         for table in node.find_all(exp.Table):
@@ -465,6 +457,10 @@ class StatementConverter:
         if len(parts) > 1:
             self.warn("NAMESPACE", f"{t.sql()}: catalog dropped, schema '{t.db}' used as ScalarDB namespace")
         return f"{t.db}.{t.name}" if t.db else t.name
+
+    def _table_sql(self, t: exp.Expression) -> str:
+        """The table as the statement has to spell it: `_table_name`, each part quoted where ScalarDB needs it."""
+        return ".".join(quoted(part) for part in self._table_name(t).split("."))
 
     def _meta(self, t: exp.Expression) -> TableMeta | None:
         t = t.this if isinstance(t, exp.Schema) else t
@@ -530,9 +526,19 @@ class StatementConverter:
         time and ScalarDB TIMESTAMP requires one, so midnight is supplied. Neither changes the instant.
         """
         kind = self._column_type_by_name(column, qualifier)
-        lit = value.this if isinstance(value, exp.Cast) and isinstance(value.this, exp.Literal) else value
+        if isinstance(value, exp.Boolean) and kind in ("INT", "BIGINT"):
+            # MySQL's TINYINT(1) and Oracle's NUMBER(1) are INT here, and ScalarDB refuses TRUE for an INT column
+            # (DB-SQL-10052) where the source reads it as 1
+            number = "1" if value.this else "0"
+            self.info("BOOL_LIT", f"{ctx}: {'TRUE' if value.this else 'FALSE'} written as {number} for {kind} column {column}")
+            return exp.Literal.number(number)
+        typed = isinstance(value, exp.Cast) and isinstance(value.this, exp.Literal)
+        lit = value.this if typed else value
         if not isinstance(lit, exp.Literal) or not lit.is_string:
             return value
+        # PostgreSQL's `DATE '2024-09-01'` / `'2024-09-01'::date` reach here as a CAST. ScalarDB SQL has no typed
+        # literal (DB-SQL-10026), and the column already says the type: the text goes as it stands
+        typed = typed and kind in ("DATE", "TIME", "TIMESTAMP", "TIMESTAMPTZ")
         fitted, change = fit_temporal_literal(kind, lit.name, self._session_zone)
         if change == "midnight":
             self.info("DATE_LIT", f"{ctx}: midnight time part dropped from '{lit.name}' for DATE column {column}")
@@ -557,7 +563,9 @@ class StatementConverter:
         elif change == "zone_dropped":
             self.warn("DATE_LIT", f"{ctx}: '{lit.name}' names a time zone but {column} is a ScalarDB {kind}; "
                                   f"the zone is dropped, as the source database does for a column without one")
-        return exp.Literal.string(fitted) if change else value
+        if typed and not change:
+            self.info("DATE_LIT", f"{ctx}: {value.sql(dialect=self.dialect)} written as the plain literal '{fitted}'")
+        return exp.Literal.string(fitted) if change or typed else value
 
     def _fit_date_literal(self, col: exp.Column, value: exp.Expression, ctx: str) -> exp.Expression:
         return self._fit_temporal_literal(col.name, value, ctx, col.table)
@@ -1125,6 +1133,10 @@ class StatementConverter:
         vals = ins.expression
         if not isinstance(vals, exp.Values):
             self.fail("INSERT_SELECT", "INSERT ... SELECT is not supported; read rows in the application then insert")
+        if not cols and self._meta(target) is not None:
+            # without a column list the values land in the table's own column order, in the source and here alike:
+            # the registry knows it, so the literals can still be fitted to the column each one goes into
+            cols = list(self._meta(target).columns)
         for tup in vals.expressions:
             for i, v in enumerate(tup.expressions):
                 name = cols[i] if i < len(cols) else ""
@@ -1335,7 +1347,10 @@ class StatementConverter:
             if isinstance(v, exp.Column) and v.name.lower() == eq.this.name.lower() or v.find(exp.Column):
                 self.fail("RMW", f"SET {eq.sql(dialect=self.dialect)}: expressions referencing columns are not allowed; "
                                  f"do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction")
-            eq.set("expression", self._value(v, f"SET {eq.this.name}"))
+            # fitted to the column like a VALUES entry or a predicate: a date-only literal for a TIMESTAMP column, a
+            # typed literal and TRUE for an INT column were all written as they stood here
+            eq.set("expression", self._fit_temporal_literal(eq.this.name, self._value(v, f"SET {eq.this.name}"),
+                                                            f"SET {eq.this.name}", eq.this.table))
             eq.this.set("table", None)
         where = u.args.get("where")
         cond = self._build_condition(where.this, "WHERE") if where else None
@@ -1372,7 +1387,7 @@ class StatementConverter:
         if kind == "INDEX":
             return [self.create_index(c)]
         if kind in ("SCHEMA", "DATABASE"):
-            return [f"CREATE NAMESPACE {'IF NOT EXISTS ' if c.args.get('exists') else ''}{c.this.name}"]
+            return [f"CREATE NAMESPACE {'IF NOT EXISTS ' if c.args.get('exists') else ''}{quoted(c.this.name)}"]
         self.fail("DDL", f"CREATE {kind} is not supported (no views, sequences, triggers, procedures in ScalarDB)")
 
     def create_table(self, c: exp.Create) -> list:
@@ -1389,6 +1404,7 @@ class StatementConverter:
         columns: dict[str, str] = {}
         pk: list[str] = []
         extra_stmts: list[str] = []
+        inline_indexes: list[str] = []
         for item in c.this.expressions:
             if isinstance(item, exp.ColumnDef):
                 self._column_def(item, columns, pk)
@@ -1416,7 +1432,8 @@ class StatementConverter:
                 cols = [x.name for x in (item.args.get("expressions") or item.args.get("params", exp.Tuple()).args.get("columns", []))]
                 cols = [x if isinstance(x, str) else x.name for x in cols]
                 if len(cols) == 1:
-                    extra_stmts.append(f"CREATE INDEX ON {tname} ({cols[0]})")
+                    inline_indexes.append(cols[0])
+                    extra_stmts.append(f"CREATE INDEX ON {self._table_sql(c.this)} ({quoted(cols[0])})")
                     self.info("INDEX", f"inline index on {cols[0]} emitted as a separate CREATE INDEX")
                 else:
                     self.warn("INDEX", f"inline composite index {cols} dropped (ScalarDB indexes are single-column)")
@@ -1439,18 +1456,17 @@ class StatementConverter:
         meta.residual_types = {cd.this.name: exact for cd in c.this.expressions
                                if isinstance(cd, exp.ColumnDef) and cd.kind is not None
                                and (exact := map_type(cd.kind, self.dialect).residual_type)}
-        for ix in extra_stmts:
-            meta.secondary_indexes.append(ix.rsplit("(", 1)[1].rstrip(")"))
+        meta.secondary_indexes.extend(inline_indexes)
         self.registry.add(meta)
-        cols_sql = ",\n  ".join(f"{n} {t}" for n, t in columns.items())
+        cols_sql = ",\n  ".join(f"{quoted(n)} {t}" for n, t in columns.items())
         if len(pkey) == 1 and not ckey:
-            cols_sql = ",\n  ".join(f"{n} {t}{' PRIMARY KEY' if n == pkey[0] else ''}" for n, t in columns.items())
+            cols_sql = ",\n  ".join(f"{quoted(n)} {t}{' PRIMARY KEY' if n == pkey[0] else ''}" for n, t in columns.items())
             pk_sql = ""
         else:
-            p = f"({', '.join(pkey)})" if len(pkey) > 1 else pkey[0]
-            pk_sql = f",\n  PRIMARY KEY ({p}{', ' + ', '.join(ckey) if ckey else ''})"
+            p = f"({', '.join(map(quoted, pkey))})" if len(pkey) > 1 else quoted(pkey[0])
+            pk_sql = f",\n  PRIMARY KEY ({p}{', ' + ', '.join(map(quoted, ckey)) if ckey else ''})"
         exists = "IF NOT EXISTS " if c.args.get("exists") else ""
-        return [f"CREATE TABLE {exists}{tname} (\n  {cols_sql}{pk_sql}\n)"] + extra_stmts
+        return [f"CREATE TABLE {exists}{self._table_sql(c.this)} (\n  {cols_sql}{pk_sql}\n)"] + extra_stmts
 
     def _check_reserved(self, name: str, is_key: bool) -> None:
         """Consensus Commit stores its own columns in the same table, and those names are taken.
@@ -1523,7 +1539,8 @@ class StatementConverter:
         tname = self._table_name(idx.args["table"])
         self.registry.add_index(tname.rpartition(".")[2], col)
         self.info("INDEX", f"index name '{idx.name}' dropped: ScalarDB identifies indexes by table + column")
-        return f"CREATE INDEX {'IF NOT EXISTS ' if c.args.get('exists') else ''}ON {tname} ({col})"
+        return (f"CREATE INDEX {'IF NOT EXISTS ' if c.args.get('exists') else ''}ON "
+                f"{self._table_sql(idx.args['table'])} ({quoted(col)})")
 
     def drop(self, d: exp.Drop) -> list[str]:
         kind = (d.args.get("kind") or "").upper()
@@ -1534,9 +1551,9 @@ class StatementConverter:
             tables = [d.this] if d.this is not None else list(d.args.get("tables") or [])
             if not tables:
                 self.fail("DDL", "DROP TABLE without a table name")
-            return [f"DROP TABLE {exists}{self._table_name(t)}" for t in tables]
+            return [f"DROP TABLE {exists}{self._table_sql(t)}" for t in tables]
         if kind in ("SCHEMA", "DATABASE"):
-            return [f"DROP NAMESPACE {exists}{d.this.name}{' CASCADE' if d.args.get('cascade') else ''}"]
+            return [f"DROP NAMESPACE {exists}{quoted(d.this.name)}{' CASCADE' if d.args.get('cascade') else ''}"]
         if kind == "INDEX":
             self.fail("DROP_INDEX", "DROP INDEX must name table and column in ScalarDB: DROP INDEX ON <table> (<column>)")
         self.fail("DDL", f"DROP {kind} is not supported")
@@ -1544,7 +1561,7 @@ class StatementConverter:
     def alter(self, a: exp.Alter) -> list:
         if (a.args.get("kind") or "").upper() != "TABLE":
             self.fail("DDL", f"ALTER {a.args.get('kind')} is not supported")
-        tname = self._table_name(a.this)
+        tname = self._table_sql(a.this)
         out = []
         for act in a.args.get("actions") or []:
             if isinstance(act, exp.ColumnDef):
@@ -1553,13 +1570,13 @@ class StatementConverter:
                     self.fail("TYPE", f"column {act.this.name}: {tm.note}")
                 if act.constraints:
                     self.warn("COL_OPT", f"ADD COLUMN {act.this.name}: constraints dropped")
-                out.append(f"ALTER TABLE {tname} ADD COLUMN {act.this.name} {tm.scalardb_type}")
+                out.append(f"ALTER TABLE {tname} ADD COLUMN {quoted(act.this.name)} {tm.scalardb_type}")
             elif isinstance(act, exp.Drop) and (act.args.get("kind") or "").upper() == "COLUMN":
-                out.append(f"ALTER TABLE {tname} DROP COLUMN {act.this.name}")
+                out.append(f"ALTER TABLE {tname} DROP COLUMN {quoted(act.this.name)}")
             elif isinstance(act, exp.RenameColumn):
-                out.append(f"ALTER TABLE {tname} RENAME COLUMN {act.this.name} TO {act.args['to'].name}")
+                out.append(f"ALTER TABLE {tname} RENAME COLUMN {quoted(act.this.name)} TO {quoted(act.args['to'].name)}")
             elif isinstance(act, exp.AlterRename):
-                out.append(f"ALTER TABLE {tname} RENAME TO {act.this.name}")
+                out.append(f"ALTER TABLE {tname} RENAME TO {quoted(act.this.name)}")
             elif isinstance(act, exp.ModifyColumn) or (isinstance(act, exp.AlterColumn) and act.args.get("dtype")):
                 cd = act.this if isinstance(act, exp.ModifyColumn) else act
                 dtype = cd.kind if isinstance(cd, exp.ColumnDef) else act.args["dtype"]
@@ -1567,7 +1584,7 @@ class StatementConverter:
                 tm = map_type(dtype, self.dialect)
                 if tm.scalardb_type is None or tm.severity == "ERROR":
                     self.fail("TYPE", f"column {name}: {tm.note}")
-                out.append(f"ALTER TABLE {tname} ALTER COLUMN {name} SET DATA TYPE {tm.scalardb_type}")
+                out.append(f"ALTER TABLE {tname} ALTER COLUMN {quoted(name)} SET DATA TYPE {tm.scalardb_type}")
                 self.warn("ALTER_TYPE", "type change support depends on the underlying database")
             else:
                 self.fail("ALTER", f"ALTER TABLE action '{act.sql(dialect=self.dialect)[:60]}' is not supported "
