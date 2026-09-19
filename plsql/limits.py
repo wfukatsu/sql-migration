@@ -95,6 +95,9 @@ class Boundaries:
     """
 
     per_iteration: dict[str, str] = field(default_factory=dict)
+    # 自分だけで 1 つのトランザクションになる routine（自律トランザクション / #3 §G）。
+    # 呼び出し側のトランザクションとは**別に**回す——同じ中で呼ぶと、親の rollback で一緒に消える
+    separate: dict[str, str] = field(default_factory=dict)
     source: str | None = None
 
     @classmethod
@@ -105,14 +108,20 @@ class Boundaries:
         if not file.exists():
             raise FileNotFoundError(f"{file} が無い")
         data = yaml.safe_load(file.read_text(encoding="utf-8")) or {}
-        section = (data.get("transactions") or {}).get("perIteration") or {}
-        return cls(per_iteration={str(k): str(v).strip() for k, v in section.items()}, source=str(file))
+        transactions = data.get("transactions") or {}
+        section = transactions.get("perIteration") or {}
+        separate = transactions.get("separate") or {}
+        both = sorted(set(section) & set(separate))
+        if both:
+            raise ValueError(f"{both} が perIteration と separate の両方にある。境界の形はどちらか一方である")
+        return cls(per_iteration={str(k): str(v).strip() for k, v in section.items()},
+                   separate={str(k): str(v).strip() for k, v in separate.items()}, source=str(file))
 
     def decided(self, routine: str) -> bool:
-        return routine in self.per_iteration
+        return routine in self.per_iteration or routine in self.separate
 
     def why(self, routine: str) -> str | None:
-        return self.per_iteration.get(routine)
+        return self.per_iteration.get(routine) or self.separate.get(routine)
 
 
 @dataclass
