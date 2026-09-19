@@ -118,6 +118,7 @@ def test_every_rule_fires_somewhere(schema, ruleset):
     The sweep includes the ScalarDB capability check, because the rules that need a target verdict (SQL-001,
     SQL-002, SCAN-001, SELECT-001) can only fire once it has run. Nothing is exempt.
     """
+    from plsql import triggers
     from plsql.capability import annotate, check
     from scalardb_migrate.schema import SchemaRegistry
 
@@ -139,6 +140,7 @@ def test_every_rule_fires_somewhere(schema, ruleset):
         parsed = parse_file(case)
         symbols = build(parsed, schema)
         program = M.Program(id=case.stem, kind="Program", modules=lower_file(parsed, symbols, schema))
+        triggers.rewrite(program, schema, symbols)   # as the analysis does: TRG-002 reads what this leaves behind
         report = check(program, registry, symbols)
         annotate(program, report)
         for decision in decide(program, analyse_program(program), ruleset, Evidence()).values():
