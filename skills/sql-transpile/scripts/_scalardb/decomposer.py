@@ -60,6 +60,8 @@ class FetchSpec:
     # indexes the residual engine builds on the fetched table: the primary key and the columns compared with another
     # table's columns (joins, correlated subqueries, IN (subquery)). Without them H2 joins by nested loops.
     index_columns: list[list[str]] = field(default_factory=list)
+    # column -> the residual engine's type where the ScalarDB type loses what the source had (NUMBER(7,2) -> DOUBLE)
+    residual_types: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -310,7 +312,8 @@ class Decomposer:
                 meta = self.registry.get(t.name)
                 specs[key] = FetchSpec(table=t.name, namespace=t.db or (meta.namespace if meta else None), alias=alias,
                                        columns=None, column_types=dict(meta.columns) if meta else {},
-                                       predicates=preds, scalardb_sql="", access_path="")
+                                       predicates=preds, scalardb_sql="", access_path="",
+                                       residual_types=dict(meta.residual_types) if meta else {})
                 preds_seen[key] = [self._group_sql(g) for g in preds]
             for col in sel.find_all(exp.Column):
                 if col.find_ancestor(exp.Select) is not sel:
