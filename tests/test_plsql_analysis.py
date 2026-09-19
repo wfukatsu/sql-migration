@@ -121,6 +121,8 @@ def test_the_corpus_call_graph_is_complete(corpus):
         ("pkg_line_edit.void_entry", "trg_inventory_tx_keep.body"),
         # #29-23: オーバーロードへの呼び出しは、引数の数で決まった版への辺になる
         ("pkg_contact.clear_email", "pkg_contact.set_email~1"),
+        # trg_products_audit を routine 経由で確かめるための書き込み経路
+        ("pkg_write_paths.set_price", "trg_products_audit.body"),
     }
 
 

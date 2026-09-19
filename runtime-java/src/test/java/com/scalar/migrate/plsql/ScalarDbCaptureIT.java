@@ -252,9 +252,16 @@ class ScalarDbCaptureIT {
      * データベースに 1 つなので、こちらも 1 つにする。
      */
     private static Sequences pinnedSequences(Scenario scenario) {
+      // `pinned.sequences` is where the Oracle side starts each sequence, so it is where this side starts too. It
+      // used to start every sequence at 1 whatever the scenario said, which nobody saw because every pinned
+      // sequence of the corpus started at 1 -- until seq_order_id (START WITH 1000) was taken for a key
+      Object pinned = scenario.pinned().get("sequences");
       Map<String, java.util.concurrent.atomic.AtomicLong> counters = new LinkedHashMap<>();
       return name -> counters
-          .computeIfAbsent(name, n -> new java.util.concurrent.atomic.AtomicLong(1))
+          .computeIfAbsent(name, n -> {
+            Object start = pinned instanceof Map<?, ?> starts ? starts.get(n) : null;
+            return new java.util.concurrent.atomic.AtomicLong(start instanceof Number number ? number.longValue() : 1);
+          })
           .getAndIncrement();
     }
 

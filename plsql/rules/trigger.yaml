@@ -13,6 +13,15 @@ rules:
     requiredTests:
       - all_write_paths_covered
 
+  # 2026-09-20: 採番 trigger（`:NEW.id := seq.NEXTVAL` だけの BEFORE INSERT）は、書き込む側の INSERT に織り込む。
+  # 番号は移行先の採番方式（計画 §9）で取り、結果は実 DB の evidence で確かめる。ほかの trigger と違い、この経路を
+  # 通らない書き込みは黙って通らない——キーを書かない INSERT は ScalarDB が拒否する。判定を下げない注記にしてある
+  - id: TRG-OPT-003
+    match: {statementKind: SqlOperation, hasDiagnostic: TRIGGER_INLINED}
+    decision: AUTO          # 判定を下げない注記
+    severity: info
+    message: 採番 trigger をこの INSERT に織り込みました。番号は移行先の採番方式（counters 表か hi/lo。移行元の DDL の CACHE / NOCACHE から導く）で取ります。counters 表の行は高衝突点なので、他の更新と同じトランザクションに入れないことを推奨します
+
   - id: TRG-002
     match: {statementKind: SqlOperation, hasDiagnostic: [TRIGGER_NOT_APPLIED, TRIGGER_REDESIGN]}
     decision: REDESIGN

@@ -229,7 +229,9 @@ def test_agreement_with_the_manifest(checked):
     decisions = decide(analysis.program, program_analysis, RuleSet.load(), Evidence())
     agree, disagree, mismatches = agreement(decisions)
     assert sorted(mismatches) == POLICY_CHANGE_ON_HOLDOUT2
-    assert agree == 62   # of 65: 56 + six routines of #29-25 + three of #29-23, less the three above
+    # of 67: 56 + six of #29-25 + three of #29-23 + the two of pkg_write_paths,
+    # less the three above
+    assert agree == 64
 
 
 def test_agreement_on_the_holdout_is_reported_separately(checked):

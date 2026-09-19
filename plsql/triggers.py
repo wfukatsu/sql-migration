@@ -75,6 +75,27 @@ class Trigger:
         statements = _walk(self.routine.body) + [s for h in self.routine.exception_handlers for s in _walk(h.body)]
         return any(EVENT_OF_COLUMN.search(_LITERAL.sub("''", text or "")) for s in statements for text in _texts(s))
 
+    def sequence_key(self) -> tuple[str, str] | None:
+        """(column, sequence) for a trigger that does nothing but `:NEW.<column> := <sequence>.NEXTVAL` before an
+        INSERT, with no WHEN or with `WHEN (NEW.<column> IS NULL)`. That shape changes the written row, so it can
+        never be a call -- but what it does is known exactly, and the writer can do it (`_inline_sequence`)."""
+        from .lower import _walk
+
+        if self.timing != "BEFORE" or self.events != {"INSERT"}:
+            return None
+        body = [s for s in _walk(self.routine.body) if s.kind != "Null"]
+        if len(body) != 1 or body[0].kind != "Assignment" or self.routine.exception_handlers:
+            return None
+        target = CORRELATION.fullmatch((body[0].target or "").strip())
+        source = re.fullmatch(r"\s*([\w$#]+)\s*\.\s*NEXTVAL\s*", body[0].expression or "", re.IGNORECASE)
+        if target is None or source is None or target.group("qualifier").upper() != "NEW":
+            return None
+        column = target.group("column").lower()
+        when = (self.module.trigger_when or "").strip()
+        if when and not re.fullmatch(rf":?NEW\s*\.\s*{re.escape(column)}\s+IS\s+NULL", when, re.IGNORECASE):
+            return None
+        return column, source.group(1).lower()
+
     def assigns_correlation(self) -> bool:
         """`:NEW.x := ...` を書く trigger（採番 trigger）。**掛けない。**
 
@@ -229,6 +250,14 @@ def _apply(statement: M.Statement, routine: M.Routine, found: dict[str, list[Tri
                           f"{trigger.module.name} が掛かる書き込みだが、**掛けていない**。{unhandled}（#12）")
             continue
         if trigger.assigns_correlation():
+            inlined = _inline_sequence(statement, trigger, kind, tree)
+            if inlined is not None:
+                if inlined:
+                    statement.add("INFO", "TRIGGER_INLINED",
+                                  f"{trigger.module.name}: 採番 trigger（`:NEW.{trigger.sequence_key()[0]} := "
+                                  f"{trigger.sequence_key()[1]}.NEXTVAL`）を、この INSERT の値として織り込んだ。"
+                                  f"番号は移行先の採番方式（計画 §9）で取る。**掛かるのはこの経路だけ**である（#12 §0）")
+                continue
             statement.add("WARN", "TRIGGER_REDESIGN",
                           f"{trigger.module.name} は書き込まれる行の値そのものを変える trigger である。"
                           f"呼び出しでは置き換えられない——採番 Service への再設計である"
@@ -250,6 +279,45 @@ def _apply(statement: M.Statement, routine: M.Routine, found: dict[str, list[Tri
                       f"この書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML "
                       f"には掛からない——網羅性は検証で追う（#12 §0 の決定）")
     return head, tail
+
+
+def _inline_sequence(statement: M.SqlOperation, trigger: Trigger, kind: str, tree: exp.Expression) -> bool | None:
+    """Put the number a sequence trigger would assign into the INSERT itself.
+
+    True: the statement was rewritten. False: the trigger does not fire on this statement (the key is written and
+    the trigger only fills in a NULL one). None: not this shape, or not decidable here -- the caller reports a
+    TRIGGER_REDESIGN as before.
+
+    Decidable means statically: a literal key, a NULL, or no key at all. A variable may be NULL or not at run time,
+    and `NVL(p_id, seq.NEXTVAL)` is not the same thing -- Oracle evaluates NEXTVAL whether or not it is used, so
+    every call would burn a number, which is exactly what a NOCACHE sequence says must not happen.
+    """
+    key = trigger.sequence_key()
+    if key is None or kind != "INSERT" or not isinstance(tree, exp.Insert):
+        return None
+    column, sequence = key
+    schema = tree.this if isinstance(tree.this, exp.Schema) else None
+    values = tree.expression
+    if schema is None or not isinstance(values, exp.Values) or len(values.expressions) != 1:
+        return None
+    columns = [c.name.lower() for c in schema.expressions if isinstance(c, (exp.Column, exp.Identifier))]
+    row = values.expressions[0]
+    if not isinstance(row, exp.Tuple) or len(row.expressions) != len(columns):
+        return None
+    number = exp.column("NEXTVAL", table=sequence)
+    guarded = bool((trigger.module.trigger_when or "").strip())
+    if column in columns:
+        given = row.expressions[columns.index(column)]
+        if guarded and isinstance(given, exp.Literal):
+            return False                                   # a key is written: WHEN (NEW.col IS NULL) is false
+        if guarded and not isinstance(given, exp.Null):
+            return None                                    # a variable or an expression: NULL or not, at run time
+        given.replace(number)
+    else:
+        schema.append("expressions", exp.to_identifier(column))
+        row.append("expressions", number)
+    statement.original_sql = tree.sql(dialect="oracle")
+    return True
 
 
 def _table(tree: exp.Expression) -> str | None:

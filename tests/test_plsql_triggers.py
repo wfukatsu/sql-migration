@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 
 import pytest
 
@@ -161,3 +162,65 @@ def test_the_write_path_inherits_the_triggers_verdict(corpus):
     decision = decisions["pkg_shipment.mark_shipped"]
     assert decision.rule_verdict == "REDESIGN"
     assert any("trg_orders_audit" in reason for reason in decision.reasons)
+
+
+# --- a trigger that fills in the key from a sequence ----------------------------------------------------------
+SEQ_TRIGGER = """CREATE OR REPLACE TRIGGER trg_payments_seq
+BEFORE INSERT ON payments
+FOR EACH ROW
+{when}BEGIN
+  :NEW.payment_id := seq_payment_id.NEXTVAL;
+END;
+/
+"""
+
+
+def _insert_after_rewrite(tmp_path, statement: str, when: str = "WHEN (NEW.payment_id IS NULL)\n", body: str | None = None):
+    from plsql.report import analyse
+
+    trigger = SEQ_TRIGGER.format(when=when) if body is None else body
+    (tmp_path / "trg.trg").write_text(trigger, encoding="utf-8")
+    (tmp_path / "p.prc").write_text(
+        f"CREATE OR REPLACE PROCEDURE p(p_order_id NUMBER, p_id NUMBER) IS\nBEGIN\n  {statement}\nEND;\n/\n", encoding="utf-8")
+    program = analyse(str(tmp_path), "fixtures/plsql/src/schema.sql").program
+    routine = next(r for m in program.modules for r in m.routines if r.id == "p")
+    insert = next(s for s in _walk(routine.body) if s.kind == "SqlOperation")
+    return insert, {d.code for d in insert.diagnostics}
+
+
+def test_a_sequence_trigger_becomes_the_key_of_the_insert_it_fires_on(tmp_path):
+    """`:NEW.id := seq.NEXTVAL` changes the row that is written, so it cannot be a call (trigger-patterns C). What it
+    does is known exactly, though: the writer takes the number. The INSERT gets the column, and the NEXTVAL is then
+    migrated like any other (the counters table or hi/lo the DDL asks for -- plan §9)."""
+    insert, codes = _insert_after_rewrite(
+        tmp_path, "INSERT INTO payments (order_id, amount, method) VALUES (p_order_id, 1, 'CARD');")
+    assert "TRIGGER_INLINED" in codes and "TRIGGER_REDESIGN" not in codes
+    assert re.search(r"\(order_id, amount, method, payment_id\)\s+VALUES\s+\(p_order_id, 1, 'CARD', seq_payment_id\.NEXTVAL\)",
+                     insert.original_sql, re.IGNORECASE), insert.original_sql
+
+
+def test_the_when_clause_decides_whether_a_given_key_survives(tmp_path):
+    # WHEN (NEW.id IS NULL): a key that is written is kept, a NULL one is replaced
+    insert, codes = _insert_after_rewrite(
+        tmp_path, "INSERT INTO payments (payment_id, order_id, amount, method) VALUES (7, p_order_id, 1, 'CARD');")
+    assert "VALUES (7," in insert.original_sql and "TRIGGER_INLINED" not in codes and "TRIGGER_REDESIGN" not in codes
+    insert, _ = _insert_after_rewrite(
+        tmp_path, "INSERT INTO payments (payment_id, order_id, amount, method) VALUES (NULL, p_order_id, 1, 'CARD');")
+    assert "VALUES (seq_payment_id.NEXTVAL," in insert.original_sql
+    # no WHEN: the trigger overwrites whatever was given
+    insert, _ = _insert_after_rewrite(
+        tmp_path, "INSERT INTO payments (payment_id, order_id, amount, method) VALUES (7, p_order_id, 1, 'CARD');", when="")
+    assert "VALUES (seq_payment_id.NEXTVAL," in insert.original_sql
+
+
+def test_what_cannot_be_decided_statically_is_still_a_redesign(tmp_path):
+    # a variable may or may not be NULL at run time, and NVL(p_id, seq.NEXTVAL) would burn a number either way
+    _, codes = _insert_after_rewrite(
+        tmp_path, "INSERT INTO payments (payment_id, order_id, amount, method) VALUES (p_id, p_order_id, 1, 'CARD');")
+    assert "TRIGGER_REDESIGN" in codes
+    # a body that does more than take a number is not this shape
+    body = SEQ_TRIGGER.format(when="").replace("  :NEW.payment_id := seq_payment_id.NEXTVAL;",
+                                                "  :NEW.payment_id := seq_payment_id.NEXTVAL;\n  :NEW.method := UPPER(:NEW.method);")
+    _, codes = _insert_after_rewrite(
+        tmp_path, "INSERT INTO payments (order_id, amount, method) VALUES (p_order_id, 1, 'card');", body=body)
+    assert "TRIGGER_REDESIGN" in codes
