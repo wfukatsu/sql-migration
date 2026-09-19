@@ -1,0 +1,17 @@
+name: trigger_inventory_tx_keep_rejects
+unit: trg_inventory_tx_keep
+routine: trg_inventory_tx_keep
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO products (product_id, name, unit_price, stock_qty, discontinued) VALUES (10, 'Widget', 10.00, 100, 'N')
+- INSERT INTO inventory_tx (entry_id, product_id, delta_qty, reason, created_at) VALUES (1, 10, 5, 'IN', DATE '2026-01-01')
+- INSERT INTO inventory_tx (entry_id, product_id, delta_qty, reason, created_at) VALUES (2, 10, -3, 'AUDITED', DATE '2026-01-02')
+call:
+  kind: procedure
+  name: pkg_line_edit.void_entry
+  args:
+    p_entry_id: 2
+capture_tables:
+- inventory_tx
+note: #29-25。AUDITED の行は ORA-20081 で拒否され、行が残る

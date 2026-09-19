@@ -1,0 +1,81 @@
+{
+ "scenario": "line_remove",
+ "unit": "pkg_line_edit",
+ "routine": "remove_line",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {
+   "seq_audit_id": 1
+  }
+ },
+ "sessionUser": "SOURCE",
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "order_lines": {
+   "columns": [
+    "order_id",
+    "line_no",
+    "product_id",
+    "qty",
+    "unit_price"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1001"
+     },
+     {
+      "$dec": "2"
+     },
+     {
+      "$dec": "10"
+     },
+     {
+      "$dec": "7"
+     },
+     {
+      "$dec": "10"
+     }
+    ]
+   ]
+  },
+  "audit_log": {
+   "columns": [
+    "audit_id",
+    "table_name",
+    "key_value",
+    "action",
+    "old_value",
+    "new_value",
+    "changed_at",
+    "changed_by"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     "ORDER_LINES",
+     "1",
+     "DELETE",
+     "2",
+     null,
+     {
+      "$masked": "clock the harness cannot pin"
+     },
+     "SOURCE"
+    ]
+   ]
+  }
+ },
+ "masked": {
+  "audit_log": [
+   "changed_at"
+  ]
+ }
+}

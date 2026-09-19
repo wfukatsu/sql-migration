@@ -81,6 +81,8 @@ DEPLOY_ORDER = [
     "prc_add_product.prc", "prc_nightly_close.prc", "prc_audit_autonomous.prc", "prc_remote_sync.prc",
     "holdout/prc_reprice_all.prc",
     "trg_orders_audit.trg", "trg_orders_seq.trg", "holdout/trg_products_audit.trg",
+    # Issue #29-25: DELETE / 複数イベントの trigger と、それを routine 経由で通す package
+    "pkg_line_edit.pks", "pkg_line_edit.pkb", "trg_lines_audit.trg", "trg_inventory_tx_keep.trg",
     # holdout2: ルールを凍結した後に足した独立ホールドアウト（fixtures/plsql/README.md）
     "holdout2/pkg_shipment.pks", "holdout2/pkg_tier_admin.pks",
     "holdout2/pkg_shipment.pkb", "holdout2/pkg_tier_admin.pkb",
@@ -249,6 +251,12 @@ def reset_data(cur, sequences: dict) -> None:
         cur.execute(f"CREATE SEQUENCE {name} START WITH {int(start)} INCREMENT BY 1 NOCACHE")
 
 
+def set_triggers(cur, enabled: bool) -> None:
+    """Every trigger on the corpus tables, on or off. DDL, so it commits what came before it."""
+    for name in TABLES:
+        cur.execute(f"ALTER TABLE {name} {'ENABLE' if enabled else 'DISABLE'} ALL TRIGGERS")
+
+
 def pin_sysdate(sys_cfg, value: str | None) -> None:
     """ALTER SYSTEM SET FIXED_DATE. Instance-wide and SYSDATE-only; SYSTIMESTAMP keeps the real clock."""
     if sys_cfg is None:
@@ -368,11 +376,18 @@ def run(args) -> int:
             pinned = spec.get("pinned") or {}
             try:
                 pin_sysdate(sys_cfg, pinned.get("sysdate"))
-                reset_data(cur, pinned.get("sequences"))
-                # setup の各要素が 1 文である。連結してから分割すると、末尾に ';' の無い文が繋がってしまう
-                for stmt in (spec.get("setup") or []):
-                    cur.execute(stmt.strip().rstrip(";").rstrip())
-                con.commit()
+                # リセットと setup は「呼ぶ前からあったデータ」を作るだけで、比べる対象ではない。trigger を
+                # 生かしたままだと、前の scenario の行を消す DELETE や setup の INSERT で監査行と採番が進み、
+                # ScalarDB 側（setup は trigger の無い直接の DML）と初期状態が食い違う（#29 の 25）
+                set_triggers(cur, enabled=False)
+                try:
+                    reset_data(cur, pinned.get("sequences"))
+                    # setup の各要素が 1 文である。連結してから分割すると、末尾に ';' の無い文が繋がってしまう
+                    for stmt in (spec.get("setup") or []):
+                        cur.execute(stmt.strip().rstrip(";").rstrip())
+                    con.commit()
+                finally:
+                    set_triggers(cur, enabled=True)
 
                 result, exception = call_routine(cur, spec)
                 con.commit()

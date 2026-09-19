@@ -26,14 +26,18 @@ def found():
 
 def test_every_trigger_gets_the_checks_its_shape_calls_for(found):
     assert set(found) == {("trg_orders_audit", "A"), ("trg_products_audit", "A"),
-                          ("trg_products_audit", "B"), ("trg_payments_guard", "D"), ("trg_orders_seq", "C")}
+                          ("trg_products_audit", "B"), ("trg_payments_guard", "D"), ("trg_orders_seq", "C"),
+                          # #29-25: a DELETE guard. `trg_lines_audit` gets none: its audit row is keyed by one column
+                          # of a two-column key, which the audit reader refuses to guess a role for
+                          ("trg_inventory_tx_keep", "B")}
 
 
 def test_the_interval_follows_how_much_damage_a_late_find_leaves(found):
     """A / C は日次、B / D は短い間隔（決定 2b）。B / D は検出が遅れた分だけ不正な値が残る。"""
     assert {k: c.interval for k, c in found.items()} == {
         ("trg_orders_audit", "A"): DAILY, ("trg_products_audit", "A"): DAILY, ("trg_orders_seq", "C"): DAILY,
-        ("trg_products_audit", "B"): HOURLY, ("trg_payments_guard", "D"): HOURLY}
+        ("trg_products_audit", "B"): HOURLY, ("trg_payments_guard", "D"): HOURLY,
+        ("trg_inventory_tx_keep", "B"): HOURLY}
 
 
 def test_the_audit_insert_is_read_by_what_each_column_carries(found):
@@ -76,7 +80,7 @@ def test_the_direct_write_restriction_names_only_b_and_d_tables(tmp_path):
     grants = (tmp_path / "db" / "restrict-direct-writes.sql").read_text(encoding="utf-8")
     revoked = sorted(line.split(" ON ")[1].split(" FROM")[0] for line in grants.splitlines()
                      if line.startswith("REVOKE"))
-    assert revoked == ["plsqlpoc.payments", "plsqlpoc.products"]
+    assert revoked == ["plsqlpoc.inventory_tx", "plsqlpoc.payments", "plsqlpoc.products"]
 
 
 # --- A-2 / A-3（2026-09-19）: 照合ジョブと控えの表 -------------------------------------------------

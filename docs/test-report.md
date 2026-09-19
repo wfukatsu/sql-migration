@@ -219,6 +219,8 @@ Oracle 方言の追加で見つけて修正した点は 2 件。`(+)` 外部結�
 
 スキルの実行検証（`difftest/transpile_verify.py`、9 ペア 321 文）は見逃し 0。比較を厳しくしたことで MySQL 向けに 2 件の見逃しが出たので、WARN を足した: 真偽値の式の射影が 1 / 0 で返る（`BOOLEAN_RESULT`）、AVG と除算の小数桁が「被演算子の桁 + 4」で丸まる（`DIV_PRECISION`）。
 
+**2026-09-20 追記（#29 の 25）**: DELETE の trigger と複数イベントの trigger を routine 経由で通す 7 シナリオを足し、76 シナリオで scaled 73 一致・3 相違、double 70 一致・6 相違（相違は下と同じ既知のもの。新しい 7 件はどちらも一致）。Oracle 側の capture は、リセットと setup の間だけ trigger を無効にして取るようにした（setup の INSERT で監査行と採番が進み、trigger の無い ScalarDB 側と初期状態が食い違うため）。既存の 69 件はこの変更で変わらない。
+
 PL/SQL の evidence（`difftest/plsql_capture.py` → `plsql_diff.py --full`）も取り直した。Oracle 側の capture 69 件は、コミット済みの `fixtures/plsql/golden/` と差分なし。ScalarDB 側は両系統とも 69 / 69 シナリオを採取し、scaled は 66 一致・3 相違（3 件とも trigger の REDESIGN: 直接の DML に移行先の trigger は掛からない）、double は 63 一致・6 相違（加えて金額の丸め 2 件 REVIEW、`claim_batch` の行の選ばれ方 REDESIGN）。AUTO の routine に相違は無く、KPI-5 は両系統とも AUTO 19 / 19、`staleEvidence` は空。取り直しの途中で、実行できなかったシナリオが前回の capture ファイルのせいで「一致」と数えられることが分かったので、capture の前にディレクトリを空にし、比較側でも `unrunnable.json` に名前のあるシナリオを比較しないようにした。
 
 ## 4. 制約と未実施事項

@@ -1,0 +1,83 @@
+{
+ "id": "trg_inventory_tx_keep",
+ "kind": "Program",
+ "schemaVersion": "1.1.0",
+ "modules": [
+  {
+   "id": "trg_inventory_tx_keep",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "trg_inventory_tx_keep.trg",
+    "startLine": 4,
+    "endLine": 11,
+    "startColumn": 1,
+    "endColumn": 1
+   },
+   "name": "trg_inventory_tx_keep",
+   "moduleKind": "trigger",
+   "routines": [
+    {
+     "id": "trg_inventory_tx_keep.body",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "trg_inventory_tx_keep.trg",
+      "startLine": 4,
+      "endLine": 11,
+      "startColumn": 1,
+      "endColumn": 1
+     },
+     "name": "body",
+     "routineKind": "trigger-body",
+     "body": [
+      {
+       "id": "trg_inventory_tx_keep.body#stmt-1",
+       "kind": "If",
+       "sourceRange": {
+        "file": "trg_inventory_tx_keep.trg",
+        "startLine": 8,
+        "endLine": 10,
+        "startColumn": 3,
+        "endColumn": 7
+       },
+       "branches": [
+        {
+         "condition": ":OLD.reason = 'AUDITED'",
+         "body": [
+          {
+           "id": "trg_inventory_tx_keep.body#stmt-2",
+           "kind": "Raise",
+           "sourceRange": {
+            "file": "trg_inventory_tx_keep.trg",
+            "startLine": 9,
+            "endLine": 9,
+            "startColumn": 5,
+            "endColumn": 99
+           },
+           "errorCode": -20081,
+           "message": "'audited inventory entry cannot be removed: ' || :OLD.entry_id"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ],
+   "triggerEvent": "DELETE",
+   "triggerTable": "inventory_tx",
+   "triggerTiming": "BEFORE"
+  }
+ ],
+ "schemaSnapshot": "schema.sql@23623f44"
+}

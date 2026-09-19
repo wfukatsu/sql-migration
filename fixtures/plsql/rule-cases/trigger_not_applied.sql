@@ -6,9 +6,10 @@ BEGIN
 END;
 /
 
-CREATE OR REPLACE PROCEDURE prc_void_payment(p_id IN NUMBER) IS
+CREATE OR REPLACE PROCEDURE prc_void_payment(p_order_id IN NUMBER) IS
 BEGIN
-  -- a DELETE on a table with a trigger: nothing calls the trigger's body here
-  DELETE FROM payments WHERE payment_id = p_id;
+  -- a write that can hit several rows: Oracle fires the trigger once per row, and one call cannot stand in for
+  -- that, so nothing calls the trigger's body here (a DELETE by primary key is applied since #29-25)
+  DELETE FROM payments WHERE order_id = p_order_id;
 END prc_void_payment;
 /

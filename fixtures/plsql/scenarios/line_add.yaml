@@ -1,0 +1,29 @@
+name: line_add
+unit: pkg_line_edit
+routine: add_line
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+  sequences:
+    seq_audit_id: 1
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'GOLD', NULL, DATE '2025-04-01')
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1001, 1, 'NEW', TIMESTAMP '2026-01-10 11:00:00', NULL, NULL)
+- INSERT INTO products (product_id, name, unit_price, stock_qty, discontinued) VALUES (10, 'Widget', 10.00, 100, 'N')
+- INSERT INTO order_lines (order_id, line_no, product_id, qty, unit_price) VALUES (1001, 1, 10, 2, 10.00)
+- INSERT INTO order_lines (order_id, line_no, product_id, qty, unit_price) VALUES (1001, 2, 10, 7, 10.00)
+call:
+  kind: procedure
+  name: pkg_line_edit.add_line
+  args:
+    p_order_id: 1001
+    p_line_no: 3
+    p_product_id: 10
+    p_qty: 4
+    p_unit_price: 10.0
+capture_tables:
+- order_lines
+- audit_log
+mask:
+  audit_log:
+  - changed_at
+note: #29-25。複数イベントの trigger が INSERT の経路で掛かる（INSERTING の枝、:OLD は NULL）

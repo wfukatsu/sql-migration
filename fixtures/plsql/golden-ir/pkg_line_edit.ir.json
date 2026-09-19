@@ -1,0 +1,408 @@
+{
+ "id": "pkg_line_edit",
+ "kind": "Program",
+ "schemaVersion": "1.1.0",
+ "modules": [
+  {
+   "id": "pkg_line_edit",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "pkg_line_edit.pkb",
+    "startLine": 2,
+    "endLine": 26,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "pkg_line_edit",
+   "moduleKind": "package",
+   "routines": [
+    {
+     "id": "pkg_line_edit.add_line",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_line_edit.pkb",
+      "startLine": 4,
+      "endLine": 9,
+      "startColumn": 3,
+      "endColumn": 15
+     },
+     "name": "add_line",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_line_edit.add_line#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_line_edit.pkb",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 22,
+        "endColumn": 36
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_line_edit.add_line#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_line_edit.pkb",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 44,
+        "endColumn": 57
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_line_no",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_line_edit.add_line#param-3",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_line_edit.pkb",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 65,
+        "endColumn": 81
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_product_id",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_line_edit.add_line#param-4",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_line_edit.pkb",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 89,
+        "endColumn": 98
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_qty",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_line_edit.add_line#param-5",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_line_edit.pkb",
+        "startLine": 5,
+        "endLine": 5,
+        "startColumn": 22,
+        "endColumn": 38
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_unit_price",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_line_edit.add_line#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_line_edit.pkb",
+        "startLine": 7,
+        "endLine": 8,
+        "startColumn": 5,
+        "endColumn": 69
+       },
+       "sqlKind": "INSERT",
+       "originalSql": "INSERT INTO order_lines (order_id, line_no, product_id, qty, unit_price)\n    VALUES (p_order_id, p_line_no, p_product_id, p_qty, p_unit_price)",
+       "selectsStar": false,
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_line_edit.change_qty",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_line_edit.pkb",
+      "startLine": 11,
+      "endLine": 14,
+      "startColumn": 3,
+      "endColumn": 17
+     },
+     "name": "change_qty",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_line_edit.change_qty#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_line_edit.pkb",
+        "startLine": 11,
+        "endLine": 11,
+        "startColumn": 24,
+        "endColumn": 38
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_line_edit.change_qty#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_line_edit.pkb",
+        "startLine": 11,
+        "endLine": 11,
+        "startColumn": 46,
+        "endColumn": 59
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_line_no",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_line_edit.change_qty#param-3",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_line_edit.pkb",
+        "startLine": 11,
+        "endLine": 11,
+        "startColumn": 67,
+        "endColumn": 76
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_qty",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_line_edit.change_qty#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_line_edit.pkb",
+        "startLine": 13,
+        "endLine": 13,
+        "startColumn": 5,
+        "endColumn": 82
+       },
+       "sqlKind": "UPDATE",
+       "originalSql": "UPDATE order_lines SET qty = p_qty WHERE order_id = p_order_id AND line_no = p_line_no",
+       "selectsStar": false,
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_line_edit.remove_line",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_line_edit.pkb",
+      "startLine": 16,
+      "endLine": 19,
+      "startColumn": 3,
+      "endColumn": 18
+     },
+     "name": "remove_line",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_line_edit.remove_line#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_line_edit.pkb",
+        "startLine": 16,
+        "endLine": 16,
+        "startColumn": 25,
+        "endColumn": 39
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_order_id",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_line_edit.remove_line#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_line_edit.pkb",
+        "startLine": 16,
+        "endLine": 16,
+        "startColumn": 47,
+        "endColumn": 60
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_line_no",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_line_edit.remove_line#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_line_edit.pkb",
+        "startLine": 18,
+        "endLine": 18,
+        "startColumn": 5,
+        "endColumn": 71
+       },
+       "sqlKind": "DELETE",
+       "originalSql": "DELETE FROM order_lines WHERE order_id = p_order_id AND line_no = p_line_no",
+       "selectsStar": false,
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_line_edit.void_entry",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_line_edit.pkb",
+      "startLine": 21,
+      "endLine": 24,
+      "startColumn": 3,
+      "endColumn": 17
+     },
+     "name": "void_entry",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_line_edit.void_entry#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_line_edit.pkb",
+        "startLine": 21,
+        "endLine": 21,
+        "startColumn": 24,
+        "endColumn": 38
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_entry_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_line_edit.void_entry#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_line_edit.pkb",
+        "startLine": 23,
+        "endLine": 23,
+        "startColumn": 5,
+        "endColumn": 47
+       },
+       "sqlKind": "DELETE",
+       "originalSql": "DELETE FROM inventory_tx WHERE entry_id = p_entry_id",
+       "selectsStar": false,
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@23623f44"
+}

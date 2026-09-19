@@ -1,0 +1,45 @@
+{
+ "scenario": "inventory_void_entry",
+ "unit": "pkg_line_edit",
+ "routine": "void_entry",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "sessionUser": "SOURCE",
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "inventory_tx": {
+   "columns": [
+    "entry_id",
+    "product_id",
+    "delta_qty",
+    "reason",
+    "created_at"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "2"
+     },
+     {
+      "$dec": "10"
+     },
+     {
+      "$dec": "-3"
+     },
+     "AUDITED",
+     {
+      "$ts": "2026-01-02T00:00:00"
+     }
+    ]
+   ]
+  }
+ },
+ "masked": {}
+}
