@@ -8,6 +8,7 @@ direct edit is how a project stops being regenerable, so keeping them apart is n
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -133,15 +134,36 @@ def generate(program: M.Program, root: str | Path, base_package: str = "com.exam
     return project
 
 
+def _is_regenerable(path: Path) -> bool:
+    """Whether the file says the generator owns it. A handed-over file says the opposite ("now maintained by
+    hand"), and a file with no banner was never ours."""
+    from .emit import HEADER
+
+    try:
+        with path.open(encoding="utf-8") as handle:
+            return handle.readline().strip() == HEADER.splitlines()[0]
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
 def _remove_stale(source_root: Path, written: set[Path]) -> list[Path]:
-    """Delete generated .java files this run did not produce, and any directory left empty."""
+    """Delete generated .java files this run did not produce, and any directory left empty.
+
+    Only files that carry the generator's own "Do not edit" banner. It used to delete every other `.java` under
+    the source root, so `--out-dir` pointed at a real project -- or at a tree after `--handover` -- lost its
+    hand-written classes.
+    """
     if not source_root.is_dir():
         return []
     removed = []
     for path in sorted(source_root.rglob("*.java")):
-        if path.resolve() not in written:
-            path.unlink()
-            removed.append(path)
+        if path.resolve() in written:
+            continue
+        if not _is_regenerable(path):
+            print(f"  kept {path}: not written by this run and not marked as generated", file=sys.stderr)
+            continue
+        path.unlink()
+        removed.append(path)
     for directory in sorted(source_root.rglob("*"), reverse=True):
         if directory.is_dir() and not any(directory.iterdir()):
             directory.rmdir()

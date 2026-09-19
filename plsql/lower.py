@@ -380,7 +380,11 @@ class _Lowerer:
         return node
 
     def _handler(self, context: ParserRuleContext, ids: M.IdFactory) -> M.ExceptionHandler:
-        names = [_text(n) for n in _descend(context, {"Exception_nameContext"})]
+        # the names between WHEN and THEN only. Descending into the body picked up every exception named there
+        # too -- a `RAISE e_x;`, or the handlers of a nested block -- so `WHEN e_bad THEN BEGIN ... EXCEPTION WHEN
+        # OTHERS ...` became a handler for OTHERS, and a `WHEN OTHERS` with a nested `WHEN NO_DATA_FOUND` stopped
+        # being one
+        names = [_text(n) for n in _descend(context, {"Exception_nameContext"}, stop={"Seq_of_statementsContext"})]
         handler = M.ExceptionHandler(id=ids.next("handler"), kind="ExceptionHandler",
                                      exceptions=names or ["OTHERS"], source_range=self._range(context))
         handler.body = self._statements(_child(context, "Seq_of_statementsContext") or context, ids)

@@ -229,4 +229,14 @@ class PlsqlTest {
     // v_ok := a > 1, with a NULL a
     assertNull(Plsql.bool3(Plsql.gt(null, 1), Plsql.le(null, 1)));
   }
+
+  @Test
+  void divisionByZeroIsItsOwnException() {
+    // generated code turns this one into the migrated ZERO_DIVIDE; any other ArithmeticException stays a bug
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.ZeroDivide.class, () -> Plsql.div(1, 0));
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.ZeroDivide.class, () -> Plsql.div(new BigDecimal("2.5"), new BigDecimal("0.00")));
+    assertNull(Plsql.div(null, 0), "NULL / 0 is NULL, not an error");
+    assertNull(Plsql.div(1, null));
+    assertEquals(0, new BigDecimal("3.5").compareTo(Plsql.div(7, 2)));
+  }
 }

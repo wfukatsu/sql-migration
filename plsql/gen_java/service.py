@@ -51,6 +51,9 @@ _LOOP_ROWS: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("l
 # その名前のループを実際に出したときだけである
 _LOOP_LABELS: "contextvars.ContextVar[frozenset[str]]" = contextvars.ContextVar("loop_labels",
                                                                                 default=frozenset())
+# `_HANDLER_ERROR` のキー。値は、いま中にいる catch の変数名（`e`、入れ子なら `e2` ...）。PL/SQL の名前と
+# ぶつからないよう、識別子にならない文字を入れてある
+_CAUGHT = "<caught>"
 _HANDLER_ERROR: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("handler", default={})
 
 
@@ -354,7 +357,7 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
             f.line()
         if _emits_a_catch(routine.exception_handlers, routine):
             with f.block("try") as body:
-                _statements(body, routine.body, routine, result)
+                _guarded(body, routine.exception_handlers, routine.body, routine, result, domain_package)
             _handlers(f, routine.exception_handlers, routine, result, domain_package)
         else:
             # handler が 1 つも出ないなら `try` も出さない。`catch` の無い `try` は Java にならない
@@ -384,7 +387,7 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
     would swallow the specific ones. Keeping the PL/SQL order for everything else matters: two handlers can both
     match, and PL/SQL takes the first.
     """
-    from .exception import PREDEFINED
+    from .exception import NEVER_RAISED_BY_TARGET, PREDEFINED, user_class
 
     ordered = sorted(handlers,
                      key=lambda h: 1 if any(e.upper() == "OTHERS" for e in h.exceptions) else 0)
@@ -409,11 +412,19 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
             # ——数えると、決定の結果が KPI では失敗のように見える
             continue
         else:
-            classes = [PREDEFINED[n][0] for n in names if n in PREDEFINED]
-            caught = " | ".join(classes) if classes else "MigratedException"
+            # A PL/SQL-declared exception is its own class. It used to become `catch (MigratedException e)`, which
+            # also caught a NO_DATA_FOUND raised in the same block and relabelled it as this handler's error --
+            # in Oracle that NO_DATA_FOUND goes past a handler that does not name it.
+            classes = list(dict.fromkeys(PREDEFINED[n][0] if n in PREDEFINED else user_class(n) for n in names))
+            caught = " | ".join(classes)
             comment = f"WHEN {', '.join(names)}"
             for class_name in classes:
                 file.add_import(f"{domain_package}.{class_name}")
+            unreachable = [n for n in names if n in NEVER_RAISED_BY_TARGET]
+            if unreachable:
+                comment += (f"\n{', '.join(unreachable)}: nothing on the target raises this by itself, so this "
+                            f"handler only runs for an explicit RAISE. In Oracle it also ran for the database's "
+                            f"own error -- decide what the target should do instead (rule EXC-001)")
         if caught in caught_already:
             # Two PL/SQL exceptions can map to one Java class, and Java rejects two catches of one type.
             # Which handler applies is then a question about the mapping, so the second is reported rather
@@ -425,16 +436,38 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
             continue
         caught_already.add(caught)
         file.comment(comment)
-        with file.block(f"catch ({caught} e)") as f:
+        # a handler may hold a block with handlers of its own; Java does not let the inner `e` shadow the outer
+        outer = _HANDLER_ERROR.get()
+        depth = outer.get(_CAUGHT, "")
+        variable = "e" if not depth else f"e{int(depth[1:] or 1) + 1}"
+        with file.block(f"catch ({caught} {variable})") as f:
             # handler の中の `SQLCODE` は「いま処理している例外の番号」である。catch が束ねている
             # 例外がそれを持っているので、そこから読む。handler の外では 0 なので、外では置かない
             # ——「いつでも 0」を名前として与えると、handler の外の `SQLCODE` が黙って通る
-            outer = _HANDLER_ERROR.get()
-            _HANDLER_ERROR.set({"SQLCODE": "e.code()", "sqlcode": "e.code()"})
+            _HANDLER_ERROR.set({"SQLCODE": f"{variable}.code()", "sqlcode": f"{variable}.code()",
+                                _CAUGHT: variable})
             try:
                 _statements(f, handler.body, routine, result)
             finally:
                 _HANDLER_ERROR.set(outer)
+
+
+def _guarded(file: JavaFile, handlers: list[M.ExceptionHandler], body: list[M.Statement],
+             routine: M.Routine, result: ServiceFile, domain_package: str) -> None:
+    """The body of a `try`. Where a handler could catch a division by zero -- ZERO_DIVIDE by name, or OTHERS --
+    the helper's `Plsql.ZeroDivide` becomes the migrated `ZeroDivideException` first, so that the catch is one it
+    can reach. `catch (ZeroDivideException e)` on its own was dead code: the helper threw ArithmeticException."""
+    names = {e.upper() for h in handlers for e in h.exceptions}
+    if not names & {"ZERO_DIVIDE", "OTHERS"}:
+        _statements(file, body, routine, result)
+        return
+    if domain_package:
+        file.add_import(f"{domain_package}.ZeroDivideException")
+    file.add_import("com.scalar.migrate.plsql.Plsql")
+    with file.block("try") as inner:
+        _statements(inner, body, routine, result)
+    with file.block("catch (Plsql.ZeroDivide zero)") as translated:
+        translated.line("throw new ZeroDivideException(zero.getMessage());")
 
 
 # 移行先では起こりえない Oracle の誤り。いまのところ行ロックが取れないこと（ORA-54）だけである
@@ -704,7 +737,7 @@ def _block(file: JavaFile, statement: M.Block, routine: M.Routine, result: Servi
                 _statements(scope, statement.body, routine, result)
                 return
             with scope.block("try") as f:
-                _statements(f, statement.body, routine, result)
+                _guarded(f, statement.exception_handlers, statement.body, routine, result, _DOMAIN.get() or "")
             _handlers(scope, statement.exception_handlers, routine, result, _DOMAIN.get() or "")
     finally:
         _BLOCK_LOCALS.set(outer)
@@ -907,11 +940,25 @@ def _locked_and_decided(query: M.SqlOperation) -> bool:
 
 
 def _raise(file: JavaFile, statement: M.Raise, routine: M.Routine, result: ServiceFile) -> None:
+    from .exception import PREDEFINED, user_class
+
     if statement.error_code is not None:
         message = _expr(file, statement.message, routine, result) if statement.message else '""'
         file.line(f"throw new MigratedException({statement.error_code}, {message or chr(34) * 2});")
+    elif not statement.exception:
+        # `RAISE;` re-raises what the handler caught. It used to throw a new `MigratedException(0, "RAISE")`: the
+        # caller's `WHEN NO_DATA_FOUND` no longer matched, and SQLCODE was 0
+        caught = _HANDLER_ERROR.get().get(_CAUGHT)
+        if caught is None:
+            raise Untranslatable(["RAISE outside a handler"], "RAISE")
+        file.line(f"throw {caught};")
     else:
-        file.line(f'throw new MigratedException(0, "{statement.exception or "RAISE"}");')
+        # by its own class, so that `WHEN e_unknown_status` catches this and nothing else
+        name = statement.exception.upper()
+        class_name = PREDEFINED[name][0] if name in PREDEFINED else user_class(name)
+        if _DOMAIN.get():
+            file.add_import(f"{_DOMAIN.get()}.{class_name}")
+        file.line(f'throw new {class_name}("{statement.exception}");')
 
 
 def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: ServiceFile) -> None:

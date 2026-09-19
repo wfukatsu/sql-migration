@@ -50,6 +50,36 @@ def rewrite(program: M.Program, boundaries: Boundaries | None, schema: OracleSch
             _page(routine, loops[0], schema, symbols)
 
 
+def _joins_keep_one_row_per_key(tree: exp.Select, schema: OracleSchema | None) -> bool:
+    """Every join reaches at most one row: it is to a base table, and its ON pins that table's whole primary key
+    with equalities (`JOIN customers c ON c.customer_id = o.customer_id`). Then the driving table's key is still
+    unique in the result. Anything else -- a join to the many side, to a subquery, on part of a key, a comma join
+    -- may repeat the key, and is not shown here to be safe."""
+    for join in tree.args.get("joins") or []:
+        joined = join.this
+        if schema is None or not isinstance(joined, exp.Table) or join.args.get("using"):
+            return False
+        if (join.side or "").upper() in ("RIGHT", "FULL") or (join.kind or "").upper() == "CROSS":
+            return False
+        key = {c.lower() for c in schema.primary_key(joined.name.lower())}
+        on = join.args.get("on")
+        if not key or on is None:
+            return False
+        pinned: set[str] = set()
+        for leaf in on.flatten() if isinstance(on, exp.And) else [on]:
+            leaf = leaf.unnest()
+            if not isinstance(leaf, exp.EQ):
+                return False
+            for side, other in ((leaf.this, leaf.expression), (leaf.expression, leaf.this)):
+                if isinstance(side, exp.Column) and (side.table or "").lower() == joined.alias_or_name.lower() \
+                        and not (isinstance(other, exp.Column)
+                                 and (other.table or "").lower() == joined.alias_or_name.lower()):
+                    pinned.add(side.name.lower())
+        if not key <= pinned:
+            return False
+    return True
+
+
 def _page(routine: M.Routine, loop: M.Loop, schema: OracleSchema | None, symbols: SymbolTable | None) -> None:
     query = loop.query
     try:
@@ -60,6 +90,19 @@ def _page(routine: M.Routine, loop: M.Loop, schema: OracleSchema | None, symbols
         return
     source = tree.args.get("from_") or tree.args.get("from")
     if source is None or not isinstance(source.this, exp.Table):
+        return
+    # keyset は「キーが結果の中で一意」でないと成り立たない。`orders o JOIN order_lines l` は 1 つの order_id に
+    # 何行も返し、ページの境目がその途中に来ると、`order_id > :after` が残りの行を飛ばす——エラーにはならず、
+    # 処理されない明細が出るだけである。DISTINCT や集約も、行とキーの対応を崩す。こういう形は割らない
+    shape = next((label for label, present in (
+        ("1 対多になりうる JOIN", not _joins_keep_one_row_per_key(tree, schema)),
+        ("DISTINCT", tree.args.get("distinct")),
+        ("GROUP BY", tree.args.get("group")), ("HAVING", tree.args.get("having")),
+        ("集約・ウィンドウ関数", any(e.find(exp.AggFunc, exp.Window) for e in tree.expressions))) if present), None)
+    if shape is not None:
+        query.add("WARN", "PAGING_REFUSED",
+                  f"{shape} のある問合せはキー順のページに割らない。1 つのキーに複数の行が対応しうるので、"
+                  f"ページの境目で行を取りこぼす。走査行数の上限（limits.yaml の scanRows）の下で 1 回で読む")
         return
     table = source.this.name.lower()
     alias = source.this.alias_or_name
