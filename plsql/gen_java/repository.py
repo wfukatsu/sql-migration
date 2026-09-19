@@ -537,5 +537,25 @@ def _one_line(sql: str) -> str:
     return " ".join(sql.split())[:160]
 
 
+_SQL_LITERAL = re.compile(r"'(?:[^']|'')*'")
+_JAVA_ESCAPES = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+
+
+def _java(text: str) -> str:
+    return "".join(_JAVA_ESCAPES.get(c, c) for c in text)
+
+
 def _escape(text: str) -> str:
-    return " ".join(text.split()).replace("\\", "\\\\").replace('"', '\\"')
+    """SQL as the inside of a Java string literal, on one line.
+
+    Whitespace *between* tokens is layout and is collapsed. Whitespace inside a `'...'` literal is data: collapsing
+    it turned `'X  Y'` into `'X Y'`, so the generated statement compared against -- or stored -- another value.
+    """
+    out: list[str] = []
+    position = 0
+    for literal in _SQL_LITERAL.finditer(text):
+        out.append(_java(re.sub(r"\s+", " ", text[position:literal.start()])))
+        out.append(_java(literal.group()))
+        position = literal.end()
+    out.append(_java(re.sub(r"\s+", " ", text[position:])))
+    return "".join(out).strip()

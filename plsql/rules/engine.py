@@ -291,6 +291,8 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
         "recursive": lambda v: any(routine.id in cycle for cycle in analysis.call_graph.cycles()) is v,
         # a call that resolves to no routine in the program: code nobody analysed, which may commit, send mail,
         # or take a lock. `externalPackage` only knows a short list of names; this is everything else
+        # a handler for one of these names, anywhere in the routine (nested blocks included)
+        "handlesException": lambda v: bool(_handled(routine) & {n.upper() for n in _as_set(v)}),
         "unresolvedCallee": lambda v: bool(_unresolved_callees(routine, analysis)) is v,
         # P4-3: how many times the routine reads the database clock. Two reads can return two values, and
         # nothing in the recorded Oracle evidence pins that -- a scenario pins the clock to one value, so a
@@ -318,6 +320,12 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
 
 _INTERPOLATED_IDENTIFIER = re.compile(
     r"(FROM|INTO|TABLE|JOIN|UPDATE)\s+'\s*\|\||(FROM|INTO|TABLE|JOIN|UPDATE)\s*'\s*\|\|", re.IGNORECASE)
+
+
+def _handled(routine: M.Routine) -> set[str]:
+    handlers = list(routine.exception_handlers) + [
+        h for s in _statements(routine) for h in getattr(s, "exception_handlers", []) or []]
+    return {name.upper() for h in handlers for name in h.exceptions}
 
 
 def _unresolved_callees(routine: M.Routine, analysis: ProgramAnalysis) -> list[str]:
@@ -355,6 +363,8 @@ def _routine_detail(criteria: dict, module: M.Module, routine: M.Routine, analys
     effects = analysis.effective.get(routine.id)
     if criteria.get("dbLink") and effects:
         return ", ".join(effects.external.db_links)
+    if criteria.get("handlesException"):
+        return ", ".join(sorted(_handled(routine) & {n.upper() for n in _as_set(criteria["handlesException"])}))
     if criteria.get("unresolvedCallee"):
         return ", ".join(_unresolved_callees(routine, analysis))
     if criteria.get("controlsTransaction") and effects:

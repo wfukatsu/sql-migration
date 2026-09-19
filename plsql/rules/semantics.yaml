@@ -169,3 +169,15 @@ rules:
     message: 分割読みは行をまとめて読む形になりました。メモリを守るのは LIMIT ではなく走査行数の上限です
     requiredTests:
       - row_limit
+
+  - id: EXC-001
+    match: {handlesException: [DUP_VAL_ON_INDEX, INVALID_NUMBER, VALUE_ERROR]}
+    decision: REVIEW
+    severity: critical
+    message: 移行先では自然には起こらない例外の handler があります。Oracle では DB 自身の誤りでも走っていた処理が、移行先では走りません
+    remediation:
+      - DUP_VAL_ON_INDEX は「読んで、無ければ INSERT、あれば UPDATE」か UPSERT に書き直す（ScalarDB は重複 INSERT のあとトランザクションを続けられない）
+      - INVALID_NUMBER / VALUE_ERROR は、変換の前に値を検査する形に書き直す
+    requiredTests:
+      - exception_path
+
