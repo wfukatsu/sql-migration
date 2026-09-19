@@ -45,7 +45,9 @@ flowchart LR
 | **PL/SQL 変換** | **`plsql/`** | **PL/SQL の解析・判定・Java 生成（下記）** |
 | 実行基盤 | `runtime-java/` | 実行計画の実行（ScalarDB から取得 → H2 で元の SQL）、生成コードの実行時ヘルパ、ベンチマーク |
 | sql-transpile スキル | `skills/sql-transpile/` | 任意の SQLGlot 方言どうし、または ScalarDB SQL への変換を行う Claude Code スキル（`scalardb_migrate/` を import せず、同梱コピーで動く） |
-| plsql-migrate スキル | `skills/plsql-migrate/` | PL/SQL を Java に変換し、生成コードの外で決めること（運用・呼び出し側・業務ロジックとの整合）を確認して記録する Claude Code スキル |
+| plsql-migrate スキル | `skills/plsql-migrate/` | PL/SQL を Java に変換し、生成コードの外で決めること（運用・呼び出し側・業務ロジックとの整合）を確認して記録する Claude Code スキル。利用者に判断を求めるときは、推奨・理由・選択肢ごとの影響・決めないとどうなるかを示してから聞く。最後に、変換後のコードの文書（アーキテクチャ・仕様・使い方・制限・どのように移行したか）を `<out>/docs/` にまとめる |
+| **migrate-flow スキル** | `skills/migrate-flow/` | **PL/SQL / SQL の移行を、決まった順で最後まで進める Claude Code スキル**: 現行の仕様（Markdown + Mermaid）→ 承認 → 変換と人の判断 → 承認 → 変換後の仕様と「何がどう変わったか」→ 承認 → テスト。承認した人・日付・承認したときの中身の指紋を控え、そろうまでテストに進めない |
+| plsql-spec スキル | `skills/plsql-spec/` | 既存の PL/SQL を調べ、いまの動作を Markdown の仕様書にまとめる Claude Code スキル。引数・表・SQL・エラーコード・trigger などの事実は IR から出し、動作と業務ルールは原文の位置つきで書き、`check` で突き合わせる |
 | 検証基盤 | `difftest/` | Docker Compose の DB 群と、差分テスト・ベンチマーク・スキルの実行検証のハーネス |
 
 ---
@@ -287,6 +289,69 @@ PL/SQL を `plsql.generate` で Java に変換し（コンパイルと行数上�
   --limits fixtures/plsql/limits.yaml --scalardb-schema fixtures/plsql/scalardb-schema.json \
   --record fixtures/plsql/decisions-outside-generator.yaml --write --out out/plsql/decision-items.md
 ln -s "$PWD/skills/plsql-migrate" ~/.claude/skills/plsql-migrate      # Claude Code から使う
+```
+
+変換のあと、**変換後のコードの文書**を作ります（スキルの Step 7）。`README.md` に アーキテクチャ / 使い方 / 制限 /
+どのように移行したか、module ごとの Markdown に routine ごとの 仕様 / 移行で変わったこと / 制限と注意 が入ります。
+Java の入口と constructor、引数の対応、例外、**原文の文 → Repository の method → 移行先の SQL** の対応、当たった
+判定ルール、`limits.yaml` の決定、実 DB の比較の結果と受け入れた差は、生成物・解析・決定・比較から機械的に出します
+（事実の欄）。文章は生成された Java を読んで書き、`check` が、判定の理由・受け入れた差・決定・「比較していないこと」を
+文章が落としていないか、生成物に無い Java の名前を引いていないかを確かめます。
+書き上がった例は [`skills/plsql-migrate/examples/create_order/`](skills/plsql-migrate/examples/create_order/README.md) にあります。
+
+```bash
+.venv/bin/python -m plsql.cli fixtures/plsql/src --scalardb-schema fixtures/plsql/scalardb-schema.json \
+  --limits fixtures/plsql/limits.yaml --out-dir out/plsql/analysis --quiet
+.venv/bin/python skills/plsql-migrate/scripts/migration_doc.py facts --src fixtures/plsql/src --generated out/plsql --analysis out/plsql/analysis \
+  --limits fixtures/plsql/limits.yaml --record fixtures/plsql/decisions-outside-generator.yaml --out-dir out/plsql/docs
+```
+
+### migrate-flow スキル
+
+移行を 4 つの段階に分け、段階のあいだに承認をはさみます。各段階の中身は下の 3 つのスキルが受け持ち、このスキルは
+順番と、承認の記録と、テストの関門を受け持ちます。
+
+```mermaid
+flowchart LR
+  A["1. 現行の仕様を調べる<br/>plsql-spec"] --> A1{{"承認 spec"}}
+  A1 --> B["2. 変換し、人の判断を確認する<br/>plsql-migrate / sql-transpile"] --> B1{{"承認 decisions"}}
+  B1 --> C["3. 変換後の仕様<br/>何がどう変わったか"] --> C1{{"承認 converted"}}
+  C1 --> D["4. テスト<br/>コンパイル + 実 DB での比較"]
+```
+
+- **承認には、承認した人と日付が要り**、その段階の検査（未記入が無い、図が入っている、事実の欄が古くない、
+  決めた人のいない「決定」が無い）が通っていなければ受け付けません。順番も飛ばせません
+- 未決の判断（記録の未決の項目、判定が REVIEW のままの routine）を残して進めるなら、利用者が決めた理由を承認に控えます
+- **承認したときのファイルの指紋を控える**ので、承認のあとで仕様書・決定・文書が変わると承認は「古い」になり、
+  テストの関門（`flow.py gate`）が閉じます。テストの結果も、そのとき有効だった承認の指紋と一緒に残ります
+- 図は IR と生成物から決定的に描きます: routine ごとの処理の流れ、routine と表、呼び出しと trigger、変換後の全体の形、
+  1 回の呼び出し、**変換前の文 → 変換後の method**（赤 = 意味が変わる、黄 = 形が変わるが結果は同じ）。
+  文ごとの診断は「意味が変わる / 形が変わる / 情報」に分類してあり、分類の無い診断は「未分類」と出ます
+  （corpus に未分類が無いことをテストが確かめます）
+
+```bash
+.venv/bin/python skills/migrate-flow/scripts/flow.py init --out out/migrate/create_order --kind plsql \
+  --src fixtures/plsql-external/create_order/src --scalardb-schema fixtures/plsql-external/create_order/scalardb-schema.json \
+  --limits fixtures/plsql-external/create_order/limits.yaml
+.venv/bin/python skills/migrate-flow/scripts/flow.py status --out out/migrate/create_order    # 段階ごとの状態と、次にすること
+.venv/bin/python skills/migrate-flow/scripts/flow.py gate --out out/migrate/create_order      # 0 = テストしてよい
+ln -s "$PWD/skills/migrate-flow" ~/.claude/skills/migrate-flow        # Claude Code から使う
+```
+
+### plsql-spec スキル
+
+移行の前に、既存の PL/SQL が**いま何をしているか**を仕様書にします。引数・読み書きする表・SQL・エラーコード・
+例外ハンドラ・トランザクション制御・呼び出しの関係・発火する trigger は `plsql.cli` の IR から機械的に出し
+（事実の欄。lowering が足した文は除く）、動作・業務ルール・エラー時の振る舞い・確かめたいことは原文を読んで、
+原文の位置（`ファイル:行`）つきで書きます。事実の欄は作り直しても文章に触れません。`check` は、未記入、古い事実、
+文章に出てこないエラーコードと表、routine の範囲の外を指す引用を問題として返します。
+書き上がった例は [`skills/plsql-spec/examples/create_order/`](skills/plsql-spec/examples/create_order/README.md) にあります。
+
+```bash
+.venv/bin/python -m plsql.cli fixtures/plsql-external/create_order/src --out-dir out/plsql-spec/create_order/analysis --quiet
+.venv/bin/python skills/plsql-spec/scripts/spec_facts.py facts --analysis out/plsql-spec/create_order/analysis --out-dir out/plsql-spec/create_order/spec
+.venv/bin/python skills/plsql-spec/scripts/spec_facts.py check --analysis out/plsql-spec/create_order/analysis --out-dir out/plsql-spec/create_order/spec
+ln -s "$PWD/skills/plsql-spec" ~/.claude/skills/plsql-spec            # Claude Code から使う
 ```
 
 ---
