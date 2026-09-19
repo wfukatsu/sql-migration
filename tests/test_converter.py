@@ -848,6 +848,42 @@ def test_a_timestamptz_literal_is_written_the_one_way_scalardb_reads_it():
     assert r.status == "WARN" and "TZ_ASSUMED_UTC" in codes(r) and "'2024-01-15 09:30:00 Z'" in r.converted[0]
 
 
+@pytest.mark.parametrize("zone,expected", [
+    ("Asia/Tokyo", "'2024-01-15 00:30:00 Z'"),
+    ("+09:00", "'2024-01-15 00:30:00 Z'"),
+    ("-05:30", "'2024-01-15 15:00:00 Z'"),
+    ("UTC", "'2024-01-15 09:30:00 Z'"),
+    ("America/New_York", "'2024-01-15 14:30:00 Z'"),
+])
+def test_a_literal_without_a_zone_is_read_in_the_session_time_zone_when_one_is_given(zone, expected):
+    """Issue #29: TZ_ASSUMED_UTC says the session's zone is not visible here. When the caller names it, the literal
+    is the instant the source database meant, and there is nothing left to warn about."""
+    results, _ = convert_script(T_DDL + "SELECT id FROM t WHERE tz > TIMESTAMP '2024-01-15 09:30:00'", "oracle",
+                                decompose=False, session_time_zone=zone)
+    r = results[-1]
+    assert expected in r.converted[0] and "TZ_ASSUMED_UTC" not in codes(r)
+    assert any(i.code == "DATE_LIT" and zone in i.message for i in r.issues)
+
+
+def test_the_session_time_zone_reaches_inserts_date_only_literals_and_plans():
+    results, _ = convert_script(T_DDL + "INSERT INTO t (id, tz) VALUES (1, DATE '2024-01-15');\n"
+                                "SELECT id, UPPER(name) FROM t WHERE tz >= TIMESTAMP '2024-07-01 00:00:00' AND id = 1",
+                                "oracle", session_time_zone="Asia/Tokyo")
+    insert, select = results[-2:]
+    assert "'2024-01-14 15:00:00 Z'" in insert.converted[0] and "TZ_ASSUMED_UTC" not in codes(insert)
+    if select.plan:
+        assert "'2024-06-30 15:00:00 Z'" in select.plan["fetch"][0]["scalardb_sql"]
+    # a literal that names its zone is that instant, whatever the session says
+    results, _ = convert_script(T_DDL + "SELECT id FROM t WHERE tz > TIMESTAMP '2024-01-15 09:30:00 +01:00'", "oracle",
+                                decompose=False, session_time_zone="Asia/Tokyo")
+    assert "'2024-01-15 08:30:00 Z'" in results[-1].converted[0]
+
+
+def test_a_session_time_zone_nobody_knows_is_refused_at_once():
+    with pytest.raises(ValueError, match="Mars/Olympus"):
+        convert_script(T_DDL, "oracle", session_time_zone="Mars/Olympus")
+
+
 def test_a_zone_is_dropped_for_a_column_that_has_none():
     from scalardb_migrate.types import fit_temporal_literal
     assert fit_temporal_literal("TIMESTAMP", "2024-01-15 09:30:00 +09:00") == ("2024-01-15 09:30:00", "zone_dropped")

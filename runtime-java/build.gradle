@@ -28,6 +28,16 @@ dependencyLocking {
     lockFile = file(coreOnly ? 'gradle-core.lockfile' : 'gradle.lockfile')
 }
 
+if (coreOnly) {
+    // ScalarDB Core names every JDBC driver it can talk to as a dependency of its own. Two of them carry a licence
+    // this build promises to stay clear of (Oracle's OTN, IBM's IPLA). ScalarDB picks the driver by the JDBC URL and
+    // loads it only then, so a build that targets PostgreSQL / Cassandra / DynamoDB does not miss them.
+    configurations.configureEach {
+        exclude group: 'com.oracle.database.jdbc'
+        exclude group: 'com.ibm.db2'
+    }
+}
+
 dependencies {
     // ScalarDB Core (Apache 2): transactional CRUD API, used by CoreFetcher / Loader (no license required)
     implementation "com.scalar-labs:scalardb:${scalardbVersion}"
