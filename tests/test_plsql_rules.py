@@ -128,6 +128,21 @@ def test_evidence_distinguishes_no_capture_from_a_failing_one():
     assert evidence.test_evidence("c") == 0.0
 
 
+def test_one_scenario_that_differs_from_oracle_stops_auto(corpus, ruleset):
+    """Regression (#27-20): 19 of 20 is a confidence of 0.95, which clears the threshold. AUTO means the results
+    matched Oracle; the twentieth is a known difference, not a rounding error in a ratio."""
+    program, analysis = corpus
+    perfect = {r.id: (20, 20) for m in program.modules for r in m.routines}
+    auto = [i for i, d in decide(program, analysis, ruleset, Evidence(captures=perfect)).items()
+            if d.verdict == "AUTO"]
+    assert auto, "the corpus has routines that are AUTO on perfect evidence"
+    nearly = Evidence(captures={**perfect, auto[0]: (19, 20)})
+    assert nearly.test_evidence(auto[0]) >= AUTO_THRESHOLD, "the ratio alone would still pass"
+    decision = decide(program, analysis, ruleset, nearly)[auto[0]]
+    assert decision.verdict == "REVIEW"
+    assert "differ from Oracle" in " ".join(decision.reasons)
+
+
 def test_sql_nobody_has_checked_against_scalardb_scores_zero(corpus, ruleset):
     """Not analysed is not half a capability: AUTO must not ride on an unasked question."""
     program, analysis = corpus

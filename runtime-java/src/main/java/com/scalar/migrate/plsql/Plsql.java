@@ -399,6 +399,48 @@ public final class Plsql {
     return ge(value, low) && le(value, high);
   }
 
+  /**
+   * Oracle's {@code NOT IN}: true only when the value differs from every candidate. A null on either side makes
+   * a comparison unknown, so {@code x NOT IN (1, NULL)} is never true -- which {@code !in(...)} cannot say.
+   */
+  public static boolean notIn(Object value, Object... candidates) {
+    if (isNull(value)) return false;
+    for (Object candidate : candidates) {
+      if (!ne(value, candidate)) return false;
+    }
+    return true;
+  }
+
+  /** {@code NOT BETWEEN} is {@code value < low OR value > high}; with a null operand neither side is true. */
+  public static boolean notBetween(Object value, Object low, Object high) {
+    return lt(value, low) || gt(value, high);
+  }
+
+  /** {@code NOT LIKE}: unknown, so not true, when either side is null. */
+  public static boolean notLike(Object value, String pattern) {
+    if (isNull(value) || pattern == null) return false;
+    return !like(value, pattern);
+  }
+
+  /** A PL/SQL BOOLEAN as a Java condition: NULL is not TRUE. */
+  public static boolean isTrue(Boolean value) {
+    return Boolean.TRUE.equals(value);
+  }
+
+  /** {@code NOT x} on a PL/SQL BOOLEAN is true only when x is FALSE; a NULL x leaves it unknown. */
+  public static boolean isFalse(Boolean value) {
+    return Boolean.FALSE.equals(value);
+  }
+
+  /**
+   * A three-valued BOOLEAN from its two halves. The comparisons here answer "is it TRUE", so a condition that
+   * is stored rather than branched on is rendered twice -- once as "is TRUE", once as "is FALSE" -- and the
+   * value is NULL when neither holds.
+   */
+  public static Boolean bool3(boolean isTrue, boolean isFalse) {
+    return isTrue ? Boolean.TRUE : isFalse ? Boolean.FALSE : null;
+  }
+
   /** Oracle's {@code LIKE}: {@code %} is any run of characters, {@code _} is exactly one. */
   public static boolean like(Object value, String pattern) {
     if (isNull(value) || pattern == null) return false;

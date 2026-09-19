@@ -475,3 +475,61 @@ def test_rownum_less_than_a_bind_is_still_refused():
     """`ROWNUM < :n` は LIMIT n-1 である。bind から n-1 は作れないので、拒否のまま。"""
     result = run("SELECT order_no FROM orders WHERE ROWNUM < :n", dialect="oracle")
     assert result.status == "ERROR"
+
+
+# ---------------------------------------------------------------- #27: positional binds, ROWNUM over aggregates
+BIND_DDL = "CREATE TABLE customers (id NUMBER(9) PRIMARY KEY, name VARCHAR2(50), code VARCHAR2(10), email VARCHAR2(50));"
+
+
+def bind_order(r):
+    return next((i.message for i in r.issues if i.code == "BIND_ORDER"), None)
+
+
+def test_binds_kept_in_source_order_raise_nothing():
+    r = run(BIND_DDL + "SELECT id, name FROM customers WHERE id = ? AND name = ?", "oracle", with_schema=False)
+    assert bind_order(r) is None
+
+
+def test_rownum_bind_moved_to_limit_reports_the_new_order():
+    r = run(BIND_DDL + "SELECT id, name FROM customers WHERE ROWNUM <= ? AND id = ?", "oracle", with_schema=False)
+    assert r.converted[0].endswith("WHERE id = ? LIMIT ?")
+    assert r.status == "WARN" and "[2, 1]" in bind_order(r)
+
+
+def test_a_bind_duplicated_by_or_normalisation_is_reported():
+    r = run(BIND_DDL + "SELECT id, name FROM customers WHERE id = ? AND (name = ? OR (code = ? AND email = ?))",
+            "oracle", with_schema=False)
+    assert r.converted[0].count("?") == 5
+    assert "5 '?' for 4" in bind_order(r) and "[1, 2, 3, 4, 1]" in bind_order(r)
+
+
+def test_postgres_numbered_binds_out_of_order_are_reported():
+    ddl = "CREATE TABLE acct (id INT PRIMARY KEY, email TEXT, bal INT);"
+    swapped = run(ddl + "SELECT id FROM acct WHERE email = $2 AND bal = $1", "postgres", with_schema=False)
+    assert "[2, 1]" in bind_order(swapped)
+    assert bind_order(run(ddl + "SELECT id FROM acct WHERE id = $1 AND bal = $2", "postgres", with_schema=False)) is None
+
+
+def test_a_plan_fetch_binds_by_source_position():
+    """Each fetch is its own statement: a bare `?` copied into one would be renumbered from 1 there."""
+    ddl = "CREATE TABLE a (id INT PRIMARY KEY, x TEXT); CREATE TABLE b (id INT PRIMARY KEY, aid INT, status TEXT);"
+    results, _ = convert_script(ddl + "SELECT UPPER(a.x), b.status FROM a JOIN b ON a.id = b.aid "
+                                      "WHERE b.status = ? AND a.x = ?", "oracle")
+    fetch = {f["table"]: f for f in results[-1].plan["fetch"]}
+    assert fetch["a"]["predicates"][0]["value"] == {"param": "2"} and fetch["a"]["scalardb_sql"].endswith("x = :2")
+    assert fetch["b"]["predicates"][0]["value"] == {"param": "1"}
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT COUNT(*) FROM customers WHERE ROWNUM <= 5",
+    "SELECT MAX(id) FROM customers WHERE ROWNUM <= ?",
+])
+def test_rownum_over_an_aggregate_is_not_a_limit(sql):
+    """ROWNUM limits the rows read; LIMIT after COUNT(*) would count the whole table."""
+    r = run(BIND_DDL + sql, "oracle", with_schema=False)
+    assert r.status == "ERROR" and "ROWNUM" in codes(r)
+
+
+def test_a_fractional_rownum_is_an_error_not_a_crash():
+    r = run(BIND_DDL + "SELECT id FROM customers WHERE ROWNUM <= 1.5", "oracle", with_schema=False)
+    assert r.status == "ERROR" and "ROWNUM" in codes(r)

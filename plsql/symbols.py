@@ -252,7 +252,9 @@ class _Builder:
         scope = self._scope(scope_id, "routine", parent)
 
         parameters = []
-        for parameter in _descend(context, {"ParameterContext"}, stop={"BodyContext"}):
+        # 入れ子の subprogram の引数は、外側の routine の引数ではない
+        for parameter in _descend(context, {"ParameterContext"},
+                                  stop={"BodyContext", "Procedure_bodyContext", "Function_bodyContext"}):
             symbol = self._parameter(scope, parameter)
             if symbol is not None:
                 parameters.append(symbol)
@@ -298,7 +300,8 @@ class _Builder:
                 ("exception", "Exception_declarationContext", "Identifier"),
                 ("cursor", "Cursor_declarationContext", "Identifier"),
                 ("type", "Type_declarationContext", "Identifier")):
-            for declaration in _descend(context, {context_name}):
+            for declaration in _descend(context, {context_name},
+                                        stop={"Procedure_bodyContext", "Function_bodyContext"}):
                 identifier = _child(declaration, "IdentifierContext")
                 if identifier is None:
                     continue

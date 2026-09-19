@@ -268,3 +268,50 @@ def test_no_corpus_declaration_is_left_unresolved_in_the_ir(schema: OracleSchema
                     if declaration.type is not None and not declaration.type.is_resolved():
                         unresolved.append(f"{routine.id}.{declaration.name}: {declaration.type.oracle}")
     assert unresolved == [], unresolved
+
+
+# --- #27: constructs that used to vanish on the way to the rules ------------------------------------------
+@pytest.mark.parametrize("source", [
+    "FOR r IN (SELECT order_id FROM orders WHERE status = p_s FOR UPDATE) LOOP NULL; END LOOP;",
+    "for r in (select order_id from orders where status = p_s for update) loop null; end loop;",
+    "For r In c_orders Loop Null; End Loop;",
+])
+def test_a_cursor_for_loop_is_one_whatever_the_case_of_its_keywords(source: str):
+    """Regression (#27-18): the test was a regex over the text without IGNORECASE. Lower-case source became a
+    numeric FOR with no query, so the SELECT -- FOR UPDATE and all -- reached no rule and the routine was AUTO."""
+    routine = lower_text(f"CREATE OR REPLACE PROCEDURE p(p_s VARCHAR2) IS BEGIN {source} END;\n/\n")
+    loop = routine.body[0]
+    assert loop.kind == "Loop" and loop.loop_kind == "cursor-for"
+
+
+@pytest.mark.parametrize("source", ["FOR i IN 1 .. 10 LOOP NULL; END LOOP;", "for i in reverse 1..p_n loop null; end loop;"])
+def test_a_numeric_for_loop_stays_numeric(source: str):
+    routine = lower_text(f"CREATE OR REPLACE PROCEDURE p(p_n NUMBER) IS BEGIN {source} END;\n/\n")
+    assert routine.body[0].loop_kind == "for"
+
+
+NESTED = """CREATE OR REPLACE PROCEDURE p_nested(p_id NUMBER) IS
+  v_count NUMBER;
+  PROCEDURE flush(p_note VARCHAR2) IS
+    v_inner NUMBER;
+  BEGIN
+    UPDATE orders SET status = p_note WHERE order_id = p_id;
+    COMMIT;
+  END flush;
+BEGIN
+  flush('done');
+END;
+/
+"""
+
+
+def test_a_nested_subprogram_is_kept_as_unsupported_not_dropped():
+    """Regression (#27-19): it vanished. Its COMMIT was invisible to TX-001, the routine was AUTO, and its
+    parameter turned up among the outer routine's."""
+    routine = lower_text(NESTED)
+    assert [p.name for p in routine.parameters] == ["p_id"]
+    assert [d.name for d in routine.declarations] == ["v_count"]
+    nested = routine.body[0]
+    assert nested.kind == "Unsupported" and nested.construct == "NestedSubprogram"
+    assert "COMMIT" in nested.text.upper()
+    assert any(i.code == "UNSUPPORTED_CONSTRUCT" for i in nested.diagnostics)
