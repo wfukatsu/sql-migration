@@ -45,6 +45,7 @@ flowchart LR
 | **PL/SQL 変換** | **`plsql/`** | **PL/SQL の解析・判定・Java 生成（下記）** |
 | 実行基盤 | `runtime-java/` | 実行計画の実行（ScalarDB から取得 → H2 で元の SQL）、生成コードの実行時ヘルパ、ベンチマーク |
 | sql-transpile スキル | `skills/sql-transpile/` | 任意の SQLGlot 方言どうし、または ScalarDB SQL への変換を行う Claude Code スキル（単体で動く） |
+| plsql-migrate スキル | `skills/plsql-migrate/` | PL/SQL を Java に変換し、生成コードの外で決めること（運用・呼び出し側・業務ロジックとの整合）を確認して記録する Claude Code スキル |
 | 検証基盤 | `difftest/` | Docker Compose の DB 群と、差分テスト・ベンチマーク・スキルの実行検証のハーネス |
 
 ---
@@ -252,6 +253,20 @@ ln -s "$PWD/skills/sql-transpile" ~/.claude/skills/sql-transpile      # Claude C
 .venv/bin/python skills/sql-transpile/scripts/vendor_sync.py --update
 ```
 
+### plsql-migrate スキル
+
+PL/SQL を `plsql.generate` で Java に変換し（コンパイルと行数上限の決定漏れまで確かめる）、生成器が決めずに
+残した問い——[生成コードの外で決めること](docs/plsql-decisions-outside-generator.md) の OPS / CALL / BIZ 項目——を
+生成物から拾って、利用者に確認し、決めた人と日付つきで記録します。BIZ 項目は routine ごとに「移行で何が変わるか」を
+業務の言葉にし、業務文書と照らして整合を確かめます。リポジトリの中で動きます（`plsql/` を使う）。
+
+```bash
+.venv/bin/python skills/plsql-migrate/scripts/decision_items.py scan --generated out/plsql \
+  --limits fixtures/plsql/limits.yaml --scalardb-schema fixtures/plsql/scalardb-schema.json \
+  --record fixtures/plsql/decisions-outside-generator.yaml --write --out out/plsql/decision-items.md
+ln -s "$PWD/skills/plsql-migrate" ~/.claude/skills/plsql-migrate      # Claude Code から使う
+```
+
 ---
 
 ## 検証環境（`difftest/`）
@@ -371,6 +386,7 @@ runtime-java/              実行基盤（Java 17、Gradle）
   .../plsql/                 生成コードの実行時ヘルパ（Oracle の式の意味論）と差分ハーネス
   .../examples/              アプリ側実装の例（エリア別売上分析）
 skills/sql-transpile/      Claude Code スキル（SKILL.md、scripts/、references/、examples/）
+skills/plsql-migrate/      Claude Code スキル（PL/SQL の変換と、生成コードの外で決めることの確認・記録）
 difftest/                  検証基盤（docker-compose.yml、conf/、cases/、ハーネス、experiments/）
   plsql_run.py               Oracle 側の capture
   plsql_capture.py           ScalarDB 側の capture（金額の 2 規約）

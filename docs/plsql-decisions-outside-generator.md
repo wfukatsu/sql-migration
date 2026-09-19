@@ -32,7 +32,7 @@ PL/SQL を変換するとき、生成器は**決めてよいことだけ**を決
 | `limits.yaml` の `scanRows.routines` の値 | BIZ-7 |
 | `limits.yaml` の `dynamicTables` | BIZ-8 |
 | 診断 `TRIGGER_APPLIED` / `TRIGGER_CALL`（書き込む側が trigger を呼ぶ） | OPS-6、BIZ-9 |
-| 診断 `TRIGGER_REDESIGN`（値を書き換える trigger） | BIZ-10 |
+| 診断 `TRIGGER_REDESIGN`（値を書き換える trigger）、または `TriggerChecks` の C 型（採番）の照合 | BIZ-10 |
 | TIMESTAMP WITH TIME ZONE の列（ScalarDB の `TIMESTAMPTZ`） | BIZ-11 |
 | `TRUNCATE` を含む動的 SQL | BIZ-12 |
 
@@ -292,6 +292,9 @@ B（拒否）/ D（別表検証）の trigger が掛かる表は、アプリ以�
 ## 4. この文書の保守
 
 - 新しい決定・新しい生成物が増えたら、§0.1 の対応表と該当する節に項目を足す。ID は振り直さない
+- §0.1 の表は `skills/plsql-migrate/scripts/decision_items.py` が読む。行を足したら、その行の見分け方
+  （`DETECTORS`）も足す。見分け方の無い行があるとスクリプトは失敗する——黙って飛ばすと、その項目は
+  確認されないまま残る
 - 項目の元になった決定は、それぞれの設計文書にある:
   `docs/plsql-trigger-patterns.md`（§0・trigger）、`docs/plsql-transaction-patterns.md`（境界・行ロック）、
   `docs/plsql-cursor-patterns.md`（走査・行数の上限）、`docs/scalardb-backend-comparison.md`（JDBC 限定）、
