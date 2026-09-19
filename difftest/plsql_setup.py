@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -74,12 +75,56 @@ def scale_money(statement: str, scales: dict[str, dict[str, int]]) -> str:
     return tree.sql(dialect="oracle")
 
 
+CLOCKS = {"SYSDATE", "SYSTIMESTAMP", "CURRENT_DATE", "CURRENT_TIMESTAMP", "LOCALTIMESTAMP"}
+
+
+def pin_masked_clocks(statement: str, mask: dict[str, list[str]], pinned: str | None,
+                      registry: SchemaRegistry | None = None) -> str:
+    """時計を読む値のうち、**比べない列に入るもの**だけを、固定した時刻の literal にする（2026-09-19）。
+
+    ScalarDB SQL は VALUES に関数を受け付けないので、`paid_at = SYSTIMESTAMP` の準備行は変換できず、
+    `payment_paid_total` / `payment_last_paid_at` は比べられないままだった。
+
+    置き換えてよいのは、その列をシナリオが**マスクしている**ときだけである。マスクされた列の値は
+    比較に出ないので、どの時刻を入れても答えは変わらない。マスクされていない列の時計は置き換えない
+    ——そこに入る値は比較に出るので、Oracle が読んだ時計とこちらの literal が違えば、差を作るのは
+    この置き換えの方になる。そういう準備行は今までどおり変換できないと記録する。
+    """
+    if not pinned:
+        return statement
+    tree = sqlglot.parse_one(statement, read="oracle")
+    if not isinstance(tree, exp.Insert) or not isinstance(tree.this, exp.Schema):
+        return statement
+    table = tree.this.this.name.lower()
+    masked = {c.lower() for c in mask.get(table, [])}
+    columns = [c.name.lower() for c in tree.this.expressions]
+    changed = False
+    for row in (tree.expression.expressions if isinstance(tree.expression, exp.Values) else []):
+        for column, value in zip(columns, row.expressions):
+            # 時計は版によって別々の節で来る（`Systimestamp` / `CurrentTimestamp(sysdate=True)` / 素の列名）。
+            # 1 つの形だけを見ると、残りが黙って置き換わらない
+            name = value.name.upper() if isinstance(value, exp.Column) else \
+                ("SYSTIMESTAMP" if type(value).__name__ == "Systimestamp" else
+                 "SYSDATE" if isinstance(value, exp.CurrentTimestamp) and value.args.get("sysdate") else
+                 "CURRENT_TIMESTAMP" if isinstance(value, exp.CurrentTimestamp) else "")
+            if name in CLOCKS and column in masked:
+                # TIMESTAMPTZ 列は offset の無い文字列を読めない（ScalarDB が "could not be parsed" で
+                # 拒否した）。値はマスクされているので、UTC として書けば足りる
+                meta = registry.get(table) if registry is not None else None
+                zoned = meta is not None and (meta.columns.get(column) or "").upper() == "TIMESTAMPTZ"
+                value.replace(sqlglot.parse_one(f"TIMESTAMP '{pinned}{'Z' if zoned else ''}'", read="oracle"))
+                changed = True
+    return tree.sql(dialect="oracle") if changed else statement
+
+
 def convert(statements: list[str], registry: SchemaRegistry,
-            scales: dict[str, dict[str, int]] | None = None) -> list[str]:
+            scales: dict[str, dict[str, int]] | None = None,
+            mask: dict[str, list[str]] | None = None, pinned: str | None = None) -> list[str]:
     """Every statement, converted. Raises when one of them cannot be, naming the statement."""
     out = []
     for statement in statements:
         text = statement.strip().rstrip(";")
+        text = pin_masked_clocks(text, mask or {}, pinned, registry)
         if scales:
             text = scale_money(text, scales)
         results, _ = convert_script(text + ";", "oracle", registry, {}, decompose=False)
@@ -89,6 +134,54 @@ def convert(statements: list[str], registry: SchemaRegistry,
                 raise ValueError(f"{text!r} does not convert ({reasons or result.status})")
             out.extend(result.converted)
     return out
+
+
+BLOCK = re.compile(r"^\s*BEGIN\s+(?P<body>.*?)\s*END\s*;\s*$", re.IGNORECASE | re.DOTALL)
+DML = re.compile(r"^\s*(INSERT|UPDATE|DELETE)\b", re.IGNORECASE)
+
+
+def direct(spec: dict, registry: SchemaRegistry, scales: dict[str, dict[str, int]] | None) -> dict | None:
+    """ブロックが**素の DML だけ**のシナリオを、ScalarDB で同じ DML を直接走らせる形にする（2026-09-19）。
+
+    trigger のシナリオ（`UPDATE products SET unit_price = :p_price ...`）は routine を呼ばない——
+    **PL/SQL の外から表へ直接書く**経路である。移行先に trigger は無く、掛かるのは生成したコードが
+    書くときだけなので（#12 §0）、この経路では trigger が掛からない。それを比べずに「比較できない」と
+    しておくと、§0 が言っている穴が数字に出ない。同じ DML を ScalarDB へ直接流し、何が起きるかを
+    そのまま記録する。
+
+    bind ごとに、それが入る列の型と桁を付ける。ハーネスは生成コードと同じ `Plsql.bind` で渡す——
+    金額列は scaled の規約で整数になっているからである。変換できない DML（キーを持たない INSERT
+    など）は `refused` として理由を残し、ハーネスはそれを**結果として**記録する。
+    """
+    call = spec.get("call") or {}
+    if call.get("kind") != "block":
+        return None
+    matched = BLOCK.match(call.get("body") or "")
+    if matched is None:
+        return None
+    statements = [part.strip() for part in matched.group("body").split(";") if part.strip()]
+    if not statements or not all(DML.match(part) for part in statements):
+        return None
+    from plsql.sqlbridge import bind_columns
+
+    out = []
+    for statement in statements:
+        text = scale_money(statement, scales) if scales else statement
+        results, _ = convert_script(text + ";", "oracle", registry, {}, decompose=False)
+        result = results[-1]
+        if result.status == "ERROR" or not result.converted:
+            reasons = "; ".join(f"{i.code}: {i.message}" for i in result.issues if i.severity == "ERROR")
+            return {"refused": f"{statement!r} does not convert ({reasons or result.status})"}
+        tree = sqlglot.parse_one(statement, read="oracle")
+        table = next((t.name.lower() for t in tree.find_all(exp.Table)), "")
+        meta = registry.get(table)
+        binds = []
+        for name, column in bind_columns(tree).items():
+            kind = (meta.columns.get(column) if meta else None) or ""
+            scale = (scales or {}).get(table, {}).get(column, 0)
+            binds.append({"name": name, "type": kind, "scale": scale})
+        out.append({"sql": result.converted[0], "binds": binds})
+    return {"statements": out}
 
 
 def main(argv=None) -> int:
@@ -107,7 +200,12 @@ def main(argv=None) -> int:
     for path in sorted(SCENARIOS.glob("*.yaml")):
         spec = yaml.safe_load(path.read_text(encoding="utf-8"))
         try:
-            scenarios[spec["name"]] = {"setup": convert(spec.get("setup") or [], registry, scales)}
+            scenarios[spec["name"]] = {"setup": convert(spec.get("setup") or [], registry, scales,
+                                                        spec.get("mask") or {},
+                                                        (spec.get("pinned") or {}).get("sysdate"))}
+            straight = direct(spec, registry, scales)
+            if straight is not None:
+                scenarios[spec["name"]]["direct"] = straight
         except ValueError as e:
             unconvertible[spec["name"]] = str(e)
 

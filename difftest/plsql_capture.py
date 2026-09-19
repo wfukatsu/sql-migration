@@ -70,7 +70,10 @@ def main(argv=None) -> int:
          "--out-dir", "generated"], allow_failure=True)
     run([sys.executable, str(ROOT / "difftest" / "plsql_setup.py"), "--variant", args.variant,
          "--schema", str(schema), "--out", str(setup)])
-    run(["gradle", "test", "-Dplsql.generated=1", f"-Dplsql.variant={args.variant}",
+    # `--rerun`: このテストの入力（生成したコード・変換した準備行）は Gradle から見えない場所にある。
+    # 付けないと、Java が変わっていない回は「up to date」として飛ばされ、**前回の capture がそのまま
+    # 残って比較される**——準備行だけを直した回がそうなった（2026-09-19）
+    run(["gradle", "test", "--rerun", "-Dplsql.generated=1", f"-Dplsql.variant={args.variant}",
          "--tests", "*ScalarDbCaptureIT*"], cwd=ROOT / "runtime-java",
         env={**__import__("os").environ, "SCALARDB_IT": "1"})
     return 0

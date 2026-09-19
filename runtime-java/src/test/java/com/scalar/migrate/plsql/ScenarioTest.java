@@ -43,4 +43,12 @@ class ScenarioTest {
     assertEquals(scenario.unit(), scenario.callUnit());
     assertEquals(scenario.routine(), scenario.callRoutine());
   }
+  @Test
+  void aBlockThatOnlyAsksWhetherTheResultIsNullIsRunnable() throws Exception {
+    // `:o_is_null := CASE WHEN v IS NULL THEN 1 ELSE 0 END;` -- 時計の値そのものは固定できないので、
+    // シナリオが観るのは NULL かどうかだけである。以前は「ブロックが射影以上のことをする」として比べていなかった
+    Scenario scenario = Scenario.read(SCENARIOS.resolve("payment_last_paid_at.yaml"));
+    assertEquals(false, scenario.blockIsMoreThanAProjection());
+    assertEquals(Scenario.IS_NULL_OF_RESULT, scenario.projection().get("o_is_null"));
+  }
 }

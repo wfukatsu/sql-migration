@@ -269,6 +269,11 @@ public final class ScalarDbRunner implements AutoCloseable {
    */
   private static Map<String, Object> project(Object returned, Map<String, String> projection) {
     Map<String, Object> out = new LinkedHashMap<>();
+    // 返った値が NULL かどうかだけを観る射影（`CASE WHEN v IS NULL THEN 1 ELSE 0 END`）。値は record で
+    // なくてもよい——TIMESTAMP を返す関数の「NULL かどうか」がこれである
+    projection.forEach((bind, field) -> {
+      if (Scenario.IS_NULL_OF_RESULT.equals(field)) out.put(bind, encode(returned == null ? 1 : 0));
+    });
     if (returned == null || !returned.getClass().isRecord()) return out;
     Map<String, java.lang.reflect.RecordComponent> components = new LinkedHashMap<>();
     for (java.lang.reflect.RecordComponent component : returned.getClass().getRecordComponents()) {
