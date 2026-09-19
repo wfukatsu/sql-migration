@@ -35,7 +35,7 @@ scanRows:
 
 # ここに無い routine は「まだ誰も決めていない」である。`--limits-strict` が名前を挙げる:
 #
-#   pkg_order_report.mark_reviewed     → #20 のパターン D 再設計とセット
+#   pkg_order_report.mark_reviewed     → 2026-09-19 に先に読む形で移した（#20 の決定 A）。何行来うるかは未決
 #   pkg_stock_reserve.claim_batch      → #9 の行ロック再設計とセット
 #   pkg_bulk_load.collect_open_orders  → BULK COLLECT（BULK-001）
 #   pkg_bulk_load.archive_lines        → 同上

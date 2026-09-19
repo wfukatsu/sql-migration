@@ -127,6 +127,18 @@ Oracle 直接は ScalarDB + Oracle と同じ回に測った値である。
 
 判定ごとの文の集合は 2 つの構成で完全に一致した (向く 17、条件付き 3、残り 10)。違うのは残り 10 文の扱いだけである。
 
+## 決定（2026-09-19 / #20）: PL/SQL 移行の移行先は JDBC バックエンドに限定する
+
+PL/SQL corpus の移行（`plsql/`）は、**JDBC バックエンドを移行先とする**。パーティションをまたぐ走査
+（`SCAN-002`、フィルタや並べ替えが主キーで閉じないもの）はそのまま使う——ScalarDB がそれを受けるのは
+JDBC バックエンドのときだけである。
+
+* `largest_order`（`WHERE customer_id = ? ORDER BY total_amount DESC` の先頭 1 件）は**今の形のまま**動かす。
+  NULL を含めて Oracle と一致している（`report_largest_order_null`）。`NVL(MAX(...))` への書き換えは
+  しない——corpus の注文は価格計算の前に `total_amount = NULL` で作られており、NULL が無いという前提が立たない
+* 「Cassandra ではキーで取ってアプリ側で処理する」という方針（下の比較）は、この移行には使わない。
+  Cassandra を移行先に戻すときは、`SCAN-002` の routine を洗い直すこと
+
 ## 6. どちらを選ぶか・移行の判断基準
 
 1. **既存の SQL をできるだけそのまま動かしたいなら ScalarDB + Oracle。** 今回のケースはすべて実行でき、互換性は ScalarDB + PostgreSQL と同じだった。ScalarDB SQL に収まらない文は変換ツールがアプリ側の実行計画にする。キーで絞る処理の上乗せは 2〜4 ms で済む。
