@@ -677,8 +677,47 @@ def test_an_identifier_whose_quotes_carried_meaning_is_not_reported_ok():
     r = run('CREATE TABLE "Items" ("order" INT PRIMARY KEY, "UnitPrice" TEXT, "status" TEXT)', "postgres", with_schema=False)
     said = messages(r, "IDENT")
     assert r.status == "WARN"
-    assert '"order" is a SQL keyword' in said and '"UnitPrice" is case-sensitive' in said and '"Items" is case-sensitive' in said
+    assert '"UnitPrice" is case-sensitive' in said and '"Items" is case-sensitive' in said
     assert '"status"' not in said, "an ORM that quotes everything is not a finding"
+    # Issue #29 (6): the keyword keeps its quotes -- ScalarDB SQL reads "order" as a name (checked on the cluster)
+    assert '"order" INT PRIMARY KEY' in r.converted[0] and "status TEXT" in r.converted[0]
+
+
+IDENT_DDL = ('CREATE TABLE "order" ("key" INT PRIMARY KEY, type VARCHAR(10), "my col" VARCHAR(10), note VARCHAR(10)); '
+             'CREATE INDEX ix_type ON "order" (type); ')
+
+
+def test_a_name_scalardb_reserves_is_quoted_wherever_it_is_written():
+    """Issue #29 (6). Checked on ScalarDB Cluster 3.19.1: every keyword of the grammar is reserved (`SELECT type`,
+    `FROM order` are syntax errors), `"type"` and `"my col"` are names, a backtick is not a quote."""
+    results, registry = convert_script(
+        IDENT_DDL + "INSERT INTO \"order\" (\"key\", type, \"my col\") VALUES (1, 'a', 'b');\n"
+        "UPDATE \"order\" SET type = 'c' WHERE \"key\" = 1;\n"
+        "SELECT o.\"key\", o.type AS level, o.note AS mode FROM \"order\" o WHERE o.\"key\" = 1;\n"
+        "DELETE FROM \"order\" WHERE \"key\" = 1;\nDROP TABLE \"order\"", "postgres", decompose=False)
+    create, index, insert, update, select, delete, drop = (r.converted[0] for r in results)
+    assert create.startswith('CREATE TABLE "order" (\n  "key" INT PRIMARY KEY,\n  "type" TEXT,\n  "my col" TEXT,\n  note TEXT')
+    assert index == 'CREATE INDEX ON "order" ("type")'
+    assert insert.startswith('INSERT INTO "order" ("key", "type", "my col") VALUES')
+    assert update.startswith('UPDATE "order" SET "type" =') and update.endswith('WHERE "key" = 1')
+    assert 'o."key"' in select and 'o."type" AS level' in select and 'AS "mode"' in select and 'FROM "order"' in select
+    assert delete == 'DELETE FROM "order" WHERE "key" = 1' and drop == 'DROP TABLE "order"'
+    assert all(r.status != "ERROR" for r in results)
+    # the registry and the Schema Loader file hold the bare names
+    assert registry.get("order").columns.keys() >= {"key", "type", "my col"}
+    assert registry.get("order").secondary_indexes == ["type"]
+
+
+def test_an_unquoted_keyword_of_the_source_is_quoted_too():
+    r = run("CREATE TABLE t9 (id INT PRIMARY KEY, type VARCHAR(5), data VARCHAR(5), user VARCHAR(5))", "mysql",
+            with_schema=False)
+    assert '"type" TEXT' in r.converted[0] and '"data" TEXT' in r.converted[0] and '"user" TEXT' in r.converted[0]
+    assert "quoted" in messages(r, "IDENT")
+
+
+def test_a_name_with_a_double_quote_in_it_cannot_be_written():
+    r = run('CREATE TABLE t9 (id INT PRIMARY KEY, "a""b" TEXT)', "postgres", with_schema=False)
+    assert r.status == "ERROR" and "IDENT" in codes(r)
 
 
 def test_one_table_spelled_two_ways_is_flagged():

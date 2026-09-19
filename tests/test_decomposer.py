@@ -212,3 +212,11 @@ def test_jdbc_plans_are_not_split():
     plan = _plan("postgres", "SELECT UPPER(ename) FROM emp WHERE empno IN (1, 3)", storage="cassandra")
     assert [f["scalardb_sql"] for f in plan["fetch"]] == ["SELECT empno, ename FROM emp WHERE empno = 1",
                                                           "SELECT empno, ename FROM emp WHERE empno = 3"]
+
+
+def test_a_plan_fetch_quotes_the_names_scalardb_reserves():
+    """Issue #29 (6): `SELECT type FROM order WHERE key = 1` is a syntax error in ScalarDB SQL."""
+    ddl = 'CREATE TABLE "order" ("key" NUMBER(9) PRIMARY KEY, type VARCHAR2(10), note VARCHAR2(10));\n'
+    results, _ = convert_script(ddl + 'SELECT UPPER(type) AS t, note FROM "order" WHERE "key" = 1', "oracle")
+    assert results[-1].status == "PLANNED"
+    assert results[-1].plan["fetch"][0]["scalardb_sql"] == 'SELECT "key", "type", note FROM "order" WHERE "key" = 1'
