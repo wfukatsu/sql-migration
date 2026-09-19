@@ -58,7 +58,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="write the handover banner instead of 'do not edit'. After handover the "
                              "regeneration model ends (plan §9) and the code is maintained by hand, so the "
                              "default banner would tell maintainers not to do the thing they now have to do.")
+    parser.add_argument("--handover-anyway", action="store_true",
+                        help="hand over even though a decision that changes the generated code is still open. "
+                             "Whoever does this re-applies that decision by hand to code already edited by hand")
     args = parser.parse_args(argv)
+    args.handover = args.handover or args.handover_anyway
 
     root = Path(args.root)
     schema = args.schema or (str(root / "schema.sql") if (root / "schema.sql").exists() else None)
@@ -97,6 +101,16 @@ def main(argv: list[str] | None = None) -> int:
                               db_links=DbLinks.load(args.limits) if args.limits else None,
                               boundaries=Boundaries.load(args.limits) if args.limits else Boundaries())
     decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), Evidence())
+    if args.handover and not args.handover_anyway:
+        blockers = _handover_blockers(analysis.program, decisions, args.limits)
+        if blockers:
+            # nothing is written: a tree with the handover banner on it is one somebody will start editing
+            print("引き渡し版は書いていない。決まると生成コードが変わるものが残っている（#7）:", file=sys.stderr)
+            for line in blockers:
+                print(f"  {line}", file=sys.stderr)
+            print("決めて（limits.yaml）再生成してから引き渡すか、承知のうえで --handover-anyway を使う",
+                  file=sys.stderr)
+            return 1
     plans = analysis.capability.plans if analysis.capability is not None else {}
     trigger_checks, types, namespaces = _trigger_checks(analysis, scalardb)
     project = generate(analysis.program, args.out_dir, args.package, decisions, plans,
@@ -138,6 +152,25 @@ def main(argv: list[str] | None = None) -> int:
         if report is not None and not report.ok:
             _print_compile(report, decisions, stream=sys.stderr)
     return 1 if failed else 0
+
+
+def _handover_blockers(program, decisions: dict, limits_path) -> list[str]:
+    """What still stands between this tree and a handover (#7, decided 2026-09-20).
+
+    After handover the tool is not run again, so the moment to switch is a condition, not a date: nothing may be
+    left whose decision would change the generated code. That is a routine somebody still has to review, and a
+    redesign nobody has decided -- both come out as code that refuses to run, to be replaced when the decision
+    lands. What does not change the output (who signs the PoC off, measured fix times) does not block.
+    """
+    from . import redesign
+
+    blockers = [f"{name}: REVIEW（{', '.join(sorted({m.rule.id for m in d.matches if m.rule.decision == 'REVIEW'}))}）"
+                for name, d in sorted(decisions.items()) if d.rule_verdict == "REVIEW"]
+    found = redesign.statuses(program, decisions, analyse_program(program).call_graph,
+                              redesign.Decided.load(limits_path))
+    blockers += [f"{name}: 再設計が未決定（{', '.join(status.open) or '決定の記録が無い'}）"
+                 for name, status in sorted(found.items()) if status.state == "undecided"]
+    return blockers
 
 
 def _verify_compile(project, args):
