@@ -292,6 +292,10 @@ class PlsqlTest {
     org.junit.jupiter.api.Assertions.assertThrows(
         Plsql.ValueError.class, () -> Plsql.fit(new BigDecimal("999.995"), 5, 2));
     org.junit.jupiter.api.Assertions.assertThrows(Plsql.ValueError.class, () -> Plsql.fit(1000, 3, 0));
+    assertEquals(Long.valueOf(3), Plsql.fitLong(new BigDecimal("2.5"), 10));
+    assertEquals(Integer.valueOf(-3), Plsql.fitInt(new BigDecimal("-2.5"), 5));
+    assertNull(Plsql.fitLong(null, 10));
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.ValueError.class, () -> Plsql.fitInt(100000L, 5));
   }
 
   @Test

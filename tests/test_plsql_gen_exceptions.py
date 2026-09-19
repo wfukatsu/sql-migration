@@ -203,3 +203,23 @@ def test_select_into_sets_rowcount_when_the_routine_reads_it(tmp_path):
     select = text.index("vName = Plsql.fit(", text.index("rowCount = repository."))
     assert select < text.index("rowCount = 1;") < text.index("Plsql.eq(rowCount")
     assert "rowCount = 1;" not in java(), "not emitted where nothing reads SQL%ROWCOUNT"
+
+
+def test_a_constrained_integer_keeps_the_java_type_of_its_variable():
+    """CI caught this: NUMBER(10) is a Long in the generated code, and `Long v = Plsql.fit(...)` is a BigDecimal."""
+    text = java("CREATE OR REPLACE PACKAGE BODY pkg_n AS\n  PROCEDURE p(p_id NUMBER) IS\n"
+                "    v_small NUMBER(5); v_big NUMBER(12);\n  BEGIN\n    v_small := p_id; v_big := p_id;\n  END p;\n"
+                "END pkg_n;\n")
+    assert re.search(r"vSmall = Plsql\.fitInt\(.+, 5\);", text) and re.search(r"vBig = Plsql\.fitLong\(.+, 12\);", text)
+
+
+def test_a_predefined_code_raised_by_number_is_the_predefined_class():
+    """`RAISE_APPLICATION_ERROR`-shaped -6502 took the code first, and ValueErrorException was never written."""
+    from plsql.gen_java.exception import generate
+    from plsql.ir import model as M
+
+    source = ("CREATE OR REPLACE PACKAGE BODY pkg_v AS\n  PROCEDURE p IS\n  BEGIN\n"
+              "    RAISE_APPLICATION_ERROR(-6502, 'too long');\n  END p;\nEND pkg_v;\n")
+    files, registry = generate(M.Program(id="p", kind="Program", modules=[lowered(source)]), DOMAIN)
+    assert registry.codes[-6502].class_name == "ValueErrorException" and not registry.conflicts
+    assert "ValueErrorException" in {f.name for f in files}
