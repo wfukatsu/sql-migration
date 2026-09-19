@@ -467,3 +467,34 @@ def test_input_errors_exit_with_two_not_with_a_traceback(tmp_path):
     p = subprocess.run([sys.executable, str(ROOT / "skills/sql-transpile/scripts/transpile.py"), str(latin1),
                         "--source", "oracle", "--target", "postgres"], capture_output=True, text=True, cwd=ROOT)
     assert p.returncode == 2 and "UTF-8 として読めません" in p.stderr
+
+
+# ---- レビュー #27 の 9: 構文は通るが Oracle と意味が変わるもの ------------------------------------
+
+ORA_EMP_DDL = "CREATE TABLE emp (id NUMBER(9) PRIMARY KEY, name VARCHAR2(10), hired DATE)"
+
+
+def test_a_qualified_rowid_is_refused_like_a_bare_one():
+    assert convert("SELECT e.ROWID FROM emp e")["sev"].get("ROWID") == "ERROR"
+    assert convert('SELECT e."ROWID" FROM emp e')["status"] == "OK"   # 引用符つきは利用者の列
+
+
+@pytest.mark.parametrize("sql,code", [
+    ("SELECT SYSDATE - hired FROM emp", "DATE_ARITH"),
+    ("SELECT id FROM emp WHERE hired > SYSDATE - 7", "DATE_ARITH"),
+    ("SELECT hired - 1 FROM emp", "DATE_ARITH"),
+    ("SELECT id FROM emp WHERE name = ''", "EMPTY_STRING"),
+    ("INSERT INTO emp (id, name) VALUES (1, '')", "EMPTY_STRING"),
+])
+def test_oracle_semantics_are_reported_for_postgres(sql, code):
+    r = convert(sql, ddl=ORA_EMP_DDL)
+    assert r["status"] == "WARN" and r["sev"].get(code) == "WARN", r
+
+
+def test_an_oracle_date_column_is_reported_because_it_carries_a_time():
+    assert convert(ORA_EMP_DDL)["sev"].get("DATE_TIME") == "WARN"
+
+
+def test_plain_arithmetic_and_oracle_targets_are_left_alone():
+    assert convert("SELECT id + 1 FROM emp", ddl=ORA_EMP_DDL)["status"] == "OK"
+    assert convert("SELECT SYSDATE - hired FROM emp", target="oracle", ddl=ORA_EMP_DDL)["status"] == "OK"

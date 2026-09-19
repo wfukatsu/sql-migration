@@ -755,3 +755,85 @@ def test_drop_and_truncate_of_several_tables_name_every_table():
 def test_a_replace_with_a_comment_above_it_is_still_a_replace():
     r = run("-- refresh the row\n/* block */ REPLACE INTO orders (customer_id, order_no, status) VALUES (1, 2, 'x')", "mysql")
     assert r.converted and r.converted[0].startswith("UPSERT INTO orders") and "REPLACE" in codes(r)
+
+
+# ---------------------------------------------------------------- review #27: 7a-7d
+T_DDL = ("CREATE TABLE t (id INT PRIMARY KEY, name VARCHAR(10), d DATE, ts TIMESTAMP, tz TIMESTAMP WITH TIME ZONE); "
+         "CREATE TABLE u (id INT PRIMARY KEY, tid INT, v VARCHAR(5)); ")
+
+
+def run_t(sql, dialect="oracle", decompose=False):
+    results, _ = convert_script(T_DDL + sql, dialect, decompose=decompose)
+    return results[-1]
+
+
+@pytest.mark.parametrize("call,literal", [
+    ("TO_DATE('15/01/2024','DD/MM/YYYY')", "'2024-01-15'"),
+    ("TO_DATE('20240115','YYYYMMDD')", "'2024-01-15'"),
+    ("TO_DATE('15-01-2024 10:11:12','DD-MM-YYYY HH24:MI:SS')", "'2024-01-15 10:11:12'"),
+])
+def test_a_formatted_date_is_written_in_iso_not_as_it_stands(call, literal):
+    """'15/01/2024' used to be passed through, which ScalarDB cannot read as a date."""
+    r = run_t(f"SELECT id FROM t WHERE ts = {call}")
+    assert r.status != "ERROR", r.issues
+    assert literal.strip("'") in r.converted[0] and "15/01" not in r.converted[0]
+
+
+def test_a_format_that_cannot_be_applied_is_refused():
+    r = run_t("SELECT id FROM t WHERE d = TO_DATE('15-JAN-24','DD-MON-RR')")
+    assert r.status == "ERROR" and "DATE_FMT" in codes(r)
+
+
+def test_a_date_without_a_format_is_refused_unless_it_is_iso():
+    assert "DATE_FMT" in codes(run_t("SELECT id FROM t WHERE d = TO_DATE('15/01/2024')"))
+    ok = run_t("SELECT id FROM t WHERE d = TO_DATE('2024-01-15')")
+    assert ok.status == "WARN" and "'2024-01-15'" in ok.converted[0]
+
+
+def test_a_date_only_literal_is_padded_for_timestamptz_too():
+    r = run_t("SELECT id FROM t WHERE tz = DATE '2024-01-15'")
+    assert "'2024-01-15 00:00:00'" in r.converted[0]
+
+
+def test_the_plan_applies_the_format_and_fits_timestamptz():
+    from scalardb_migrate.decomposer import Predicate, _fit_temporal, _literal_value
+    import sqlglot
+    e = sqlglot.parse_one("SELECT TO_DATE('15/01/2024','DD/MM/YYYY')", read="oracle").expressions[0]
+    assert _literal_value(e) == "2024-01-15"
+    fitted = _fit_temporal(Predicate("tz", ">=", "2024-01-15"), {"tz": "TIMESTAMPTZ"})
+    assert fitted.value == "2024-01-15 00:00:00"
+    # a real time of day against a DATE column is not rounded: that would move the bound of the fetch
+    assert _fit_temporal(Predicate("d", "<", "2024-01-15 10:00:00"), {"d": "DATE"}).value == "2024-01-15 10:00:00"
+
+
+def test_select_star_keeps_its_column_order_when_the_join_is_swapped():
+    r = run_t("SELECT * FROM t JOIN u ON t.id = u.tid WHERE u.id = 3")
+    out = r.converted[0]
+    assert out.startswith("SELECT t.id, t.name, t.d, t.ts, t.tz, u.id, u.tid, u.v FROM u JOIN t")
+
+
+def test_select_star_is_not_swapped_without_the_schema():
+    results, _ = convert_script("SELECT * FROM t JOIN u ON t.id = u.tid WHERE u.id = 3", "oracle", decompose=False)
+    assert "JOIN_ORDER" not in codes(results[-1])
+    assert not any(c.startswith("SELECT * FROM u") for c in results[-1].converted)
+
+
+@pytest.mark.parametrize("dialect,sql,code,status", [
+    ("postgres", "SELECT id FROM ONLY t WHERE id = 1", "ONLY", "WARN"),
+    ("postgres", "SELECT id FROM t TABLESAMPLE BERNOULLI (10) WHERE id = 1", "CLAUSE", "ERROR"),
+    ("mysql", "SELECT id FROM t USE INDEX (ix) WHERE id = 1", "HINT", "OK"),
+    ("mysql", "SELECT SQL_CALC_FOUND_ROWS id FROM t WHERE id = 1", "MODIFIER", "WARN"),
+    ("oracle", "SELECT /*+ INDEX(t ix) */ id FROM t WHERE id = 1", "HINT", "OK"),
+])
+def test_source_only_syntax_never_reaches_the_output(dialect, sql, code, status):
+    ddl = T_DDL.replace("TIMESTAMP WITH TIME ZONE", "TIMESTAMP")
+    results, _ = convert_script(ddl + sql, dialect, decompose=False)
+    r = results[-1]
+    assert r.status == status and code in codes(r), r.issues
+    assert r.converted in ([], ["SELECT id FROM t WHERE id = 1"])
+
+
+def test_updating_a_primary_key_column_is_refused():
+    r = run_t("UPDATE t SET id = 5 WHERE id = 1")
+    assert r.status == "ERROR" and "PK_UPDATE" in codes(r)
+    assert run_t("UPDATE t SET name = 'x' WHERE id = 1").status == "OK"

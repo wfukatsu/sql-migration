@@ -170,7 +170,7 @@ def _check_source(node: exp.Expression, source: str, target: str, issues: list[I
             if isinstance(col.this, exp.Identifier) and col.this.quoted:
                 continue
             name = col.name.upper()
-            if name == "ROWID" and not col.table:
+            if name == "ROWID":   # 表の別名で修飾した e.ROWID も同じ疑似列
                 _add(issues, "ERROR", "ROWID", "Oracle の疑似列 ROWID。主キーで行を特定する形に書き換える")
             elif name in ("NEXTVAL", "CURRVAL") and col.table:
                 _add(issues, "ERROR", "SEQUENCE",
@@ -558,6 +558,55 @@ def _typed_arithmetic(node: exp.Expression, source: str, target: str, schema: di
                          "日付の引き算がある。MySQL で日付どうしを引いても日数にならない。日数なら DATEDIFF を使う")
 
 
+_TEMPORAL_TYPES = (exp.DataType.Type.DATE, *exp.DataType.TEMPORAL_TYPES)
+
+
+def _oracle_semantics(node: exp.Expression, target: str, schema: dict | None, issues: list[Issue]) -> None:
+    """構文はそのまま通るのに、Oracle と変換先で意味が変わるものを報告する。書き換えはしない。
+
+    - Oracle の DATE は時刻を持つ。変換先の DATE は日付だけなので、列の型をそのまま写すと時刻が落ちる
+    - Oracle の日付の引き算は日数（小数つき）。SYSDATE は CURRENT_TIMESTAMP になるので、PostgreSQL では
+      interval が返り、`SYSDATE - 7` は型が合わず実行時に失敗する
+    - Oracle は '' を NULL として扱う。変換先では空文字のままで、`= ''` や `IS NULL` の結果が変わる
+    """
+    if target == "oracle":
+        return
+    if isinstance(node, exp.Create):
+        dates = [c.name for c in node.find_all(exp.ColumnDef)
+                 if c.args.get("kind") is not None and c.args["kind"].this == exp.DataType.Type.DATE]
+        if dates:
+            _add(issues, "WARN", "DATE_TIME",
+                 f"Oracle の DATE は時刻を持つ（列: {', '.join(dates)}）。{target} の DATE は日付だけなので、"
+                 "時刻を使っている列は TIMESTAMP(0) 相当の型にする")
+        return
+
+    if any(lit.is_string and lit.name == "" for lit in node.find_all(exp.Literal)):
+        _add(issues, "WARN", "EMPTY_STRING",
+             f"空文字 '' がある。Oracle は '' を NULL として扱うが、{target} は空文字のまま持つ。"
+             "比較（= ''、IS NULL）と INSERT した値の読み出しで結果が変わる")
+
+    arithmetic = [a for a in node.find_all(exp.Sub, exp.Add)]
+    if not arithmetic or target == "mysql":   # MySQL の日付の引き算は _typed_arithmetic が扱う
+        return
+    try:
+        typed = annotate_types(qualify(node.copy(), schema=schema or None, dialect="oracle",
+                                       validate_qualify_columns=False, identify=False),
+                               schema=schema or None, dialect="oracle")
+        operands = [(t.left, t.right) for t in typed.find_all(exp.Sub, exp.Add)]
+    except Exception:  # noqa: BLE001  型が付かなければ、構文から分かるものだけを見る
+        operands = [(a.left, a.right) for a in arithmetic]
+
+    def temporal(e: exp.Expression) -> bool:
+        return isinstance(e, (exp.CurrentTimestamp, exp.CurrentDate, exp.Systimestamp)) \
+            or _is_type(e, *_TEMPORAL_TYPES)
+
+    if any(temporal(a) or temporal(b) for a, b in operands):
+        _add(issues, "WARN", "DATE_ARITH",
+             f"日付の足し引きがある。Oracle では日数（小数つき）の計算だが、{target} では型によって整数の日数、"
+             "interval、または型エラーになる（SYSDATE は CURRENT_TIMESTAMP になる）。"
+             "日数が要るなら日付どうしの差を明示し、n 日前は INTERVAL で書く")
+
+
 def _fix_intdiv(node: exp.Expression, target: str) -> None:
     """MySQL の DIV のような整数除算を Oracle の TRUNC にする。SQLGlot の CAST は四捨五入になる。"""
     if target != "oracle":
@@ -659,6 +708,7 @@ def _preprocess(node: exp.Expression, source: str, target: str, issues: list[Iss
             return node
         node = _rownum_to_limit(node, issues)
         _fix_trunc_unit(node)
+        _oracle_semantics(node, target, schema, issues)
     _fix_recursive_cte(node, target)
     _fix_dual(node, target)
     _fix_hints(node, target, issues)
