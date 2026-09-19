@@ -154,3 +154,20 @@ def is_ordered(sql: str, dialect: str) -> bool:
     except Exception:  # noqa: BLE001  a statement this cannot parse is compared in order: the stricter reading
         return True
     return tree.args.get("order") is not None
+
+
+def with_dates(sample: list[list], temporal: list[int]) -> list[list]:
+    """The source's sample with its date columns as dates. Both samples arrive as JSON, and rowcompare reads text as
+    a date only when the other side is one -- so Oracle's DATE '2023-09-29T00:00' and ScalarDB's DATE '2023-09-29'
+    were compared as text, and every statement that returns a date came out FAIL."""
+    def parse(v):
+        if not isinstance(v, str):
+            return v
+        for read in (datetime.datetime.fromisoformat, datetime.date.fromisoformat, datetime.time.fromisoformat):
+            try:
+                return read(v)
+            except ValueError:
+                pass
+        return v
+    columns = {int(i) for i in temporal or []}
+    return [[parse(v) if i in columns else v for i, v in enumerate(row)] for row in sample]

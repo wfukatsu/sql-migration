@@ -15,7 +15,6 @@ Only the harness talks to Oracle. Everything on the ScalarDB side goes through S
 from __future__ import annotations
 
 import argparse
-import datetime
 import json
 import re
 import statistics
@@ -233,7 +232,7 @@ def compare_samples(o: dict, s: dict, ordered: bool, mode: str, write: bool = Fa
         return "PASS", f"{o.get('rows')} row(s) affected on both sides"
     if mode == "count":
         return "PASS", ""
-    e, a = o.get("sample", []), s.get("sample", [])
+    e, a = rowcompare.with_dates(o.get("sample", []), o.get("temporal", [])), s.get("sample", [])
     if not ordered and o.get("rows", 0) > len(e):
         # without ORDER BY the two engines may return the rows in different orders, so a truncated sample is
         # not comparable row by row: only the row count can be verified.

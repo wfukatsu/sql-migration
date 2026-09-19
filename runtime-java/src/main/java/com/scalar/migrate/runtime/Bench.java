@@ -205,6 +205,13 @@ public class Bench {
       ResultSetMetaData m = rs.getMetaData();
       List<String> columns = new ArrayList<>();
       for (int i = 1; i <= m.getColumnCount(); i++) columns.add(m.getColumnLabel(i));
+      // the sample travels as JSON, where a date is text. The harness compares text as text unless it is told the
+      // column is a date: Oracle's DATE ('2023-09-29T00:00') and ScalarDB's DATE ('2023-09-29') are the same day
+      List<Integer> temporal = new ArrayList<>();
+      for (int i = 1; i <= m.getColumnCount(); i++) {
+        int t = m.getColumnType(i);
+        if (t == java.sql.Types.DATE || t == java.sql.Types.TIME || t == java.sql.Types.TIMESTAMP) temporal.add(i - 1);
+      }
       List<List<Object>> sample = new ArrayList<>();
       int n = 0;
       while (rs.next()) {
@@ -216,7 +223,9 @@ public class Bench {
         n++;
       }
       c.commit();
-      return map("columns", columns, "rows", n, "sample", sample);
+      Map<String, Object> out = map("columns", columns, "rows", n, "sample", sample);
+      out.put("temporal", temporal);
+      return out;
     }
   }
 
