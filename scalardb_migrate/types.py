@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, tzinfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlglot import exp
 
@@ -193,9 +194,24 @@ def iso_temporal_literal(text: str, fmt: str | None) -> str | None:
     return out + (".%03d" % (parsed.microsecond // 1000) if parsed.microsecond else "")
 
 
-def fit_temporal_literal(kind: str | None, text: str) -> tuple[str, str | None]:
+def session_zone(name: str | None) -> tzinfo | None:
+    """The time zone a source session ran in: an IANA name ('Asia/Tokyo') or a fixed offset ('+09:00')."""
+    if not name:
+        return None
+    m = re.fullmatch(r"([+-])(\d{2}):?(\d{2})", name.strip())
+    if m:
+        return timezone(timedelta(hours=int(m.group(2)), minutes=int(m.group(3))) * (1 if m.group(1) == "+" else -1))
+    try:
+        return ZoneInfo(name.strip())
+    except (ZoneInfoNotFoundError, ValueError) as e:
+        raise ValueError(f"unknown session time zone '{name}': give an IANA name (Asia/Tokyo) or an offset "
+                         f"(+09:00)") from e
+
+
+def fit_temporal_literal(kind: str | None, text: str, zone: tzinfo | None = None) -> tuple[str, str | None]:
     """``text`` made to fit a ScalarDB column of type ``kind``, and what changed: None, "midnight", "time", "padded",
-    or for time zones "assumed_utc" (the literal had none), "to_utc", "respelled", "zone_dropped".
+    or for time zones "assumed_utc" (the literal had none), "session_zone" (it had none and ``zone``, the source
+    session's, says which instant it is), "to_utc", "respelled", "zone_dropped".
 
     Oracle DATE carries a time and ScalarDB DATE does not, so the time part is dropped; ScalarDB TIMESTAMP and
     TIMESTAMPTZ need a time, so a date-only literal gets midnight.
@@ -212,16 +228,21 @@ def fit_temporal_literal(kind: str | None, text: str) -> tuple[str, str | None]:
     if m and kind == "TIMESTAMPTZ":
         # Checked against ScalarDB Cluster: a TIMESTAMPTZ literal is 'YYYY-MM-DD HH:MM[:SS[.FFF]] Z' and nothing
         # else. No zone, a `T`, or an offset such as +09:00 is "could not be parsed" when the statement runs.
-        day, minutes, rest, zone = m.groups()
-        if zone is None:
+        day, minutes, rest, written = m.groups()
+        if written is None and zone is not None:
+            # the source reads a literal without a zone in the session's zone; a local time that a DST change
+            # skips or repeats is read as the earlier offset, which is what `fold=0` means
+            utc = datetime.strptime(f"{day} {minutes}", "%Y-%m-%d %H:%M").replace(tzinfo=zone).astimezone(timezone.utc)
+            return f"{utc:%Y-%m-%d %H:%M}{rest} Z", "session_zone"
+        if written is None:
             return f"{day} {minutes}{rest} Z", "assumed_utc"
-        if zone == "Z" or zone[1:] == "00:00":
+        if written == "Z" or written[1:] == "00:00":
             fitted = f"{day} {minutes}{rest} Z"
             return fitted, None if fitted == text else "respelled"
-        offset = timedelta(hours=int(zone[1:3]), minutes=int(zone[4:6])) * (1 if zone[0] == "+" else -1)
+        offset = timedelta(hours=int(written[1:3]), minutes=int(written[4:6])) * (1 if written[0] == "+" else -1)
         utc = datetime.strptime(f"{day} {minutes}", "%Y-%m-%d %H:%M") - offset
         return f"{utc:%Y-%m-%d %H:%M}{rest} Z", "to_utc"
     if m and m.group(4) and kind in ("TIMESTAMP", "DATE"):
         # the column has no zone: the source keeps the fields as written and forgets the zone, and so does this
-        return fit_temporal_literal(kind, f"{m.group(1)} {m.group(2)}{m.group(3)}")[0], "zone_dropped"
+        return fit_temporal_literal(kind, f"{m.group(1)} {m.group(2)}{m.group(3)}", zone)[0], "zone_dropped"
     return text, None
