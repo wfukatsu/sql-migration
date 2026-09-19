@@ -334,6 +334,17 @@ public final class Plsql {
   // a BIGINT column is scale 2 -- the column holds cents. Scale 0 means the column holds the value as it is.
 
   /** A PL/SQL value on its way into a ScalarDB column of the given type. */
+  /**
+   * A value whose column the analysis could not name, at the write boundary: '' goes in as NULL.
+   *
+   * <p>Decision of 2026-09-19 (#5): during the migration '' and NULL stay one thing, as they are in Oracle, and
+   * the boundary is where that is kept -- an empty string must not reach ScalarDB, which would store it as one and
+   * make `x IS NULL` false for a row Oracle would have found. A string of blanks is not empty and is kept.
+   */
+  public static Object bind(Object value) {
+    return isNull(value) ? null : value;
+  }
+
   public static Object bind(Object value, String scalarDbType, int scale) {
     if (isNull(value)) return null;
     String type = scalarDbType == null ? "" : scalarDbType.toUpperCase();

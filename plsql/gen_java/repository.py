@@ -413,7 +413,9 @@ def _bound(file: JavaFile, bind: M.BindVariable, scope: dict[str, str] | None = 
     """
     name = _java_value(file, bind, scope)
     if not bind.scalardb_type:
-        return name
+        # still through the boundary: '' is NULL there whatever the column is (#5)
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        return f"Plsql.bind({name})"
     file.add_import("com.scalar.migrate.plsql.Plsql")
     return f'Plsql.bind({name}, "{bind.scalardb_type}", {_scale(bind.column_oracle_type)})'
 
