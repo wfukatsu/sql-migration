@@ -141,6 +141,10 @@ transactions:
   # ——別トランザクションにする。呼び出し側がそれを別の境界で呼ぶ。生成物には COMMIT / ROLLBACK は
   # 出ない（境界は呼び出し側にある / 計画 §9）
   separate:
+    prc_remote_sync: >-
+      末尾の COMMIT は「この routine 全体で 1 つのトランザクション」という意味である。移行先では呼び出し側が
+      1 つの境界で呼ぶ（計画 §9: 生成コードはトランザクションを開かない）。ローカルの読みと、倉庫側の 2 つの書き込みが
+      同じ ScalarDB トランザクションに入る（dbLinks.warehouse_link）
     prc_audit_autonomous: >-
       監査行は親が失敗しても残る（PRAGMA AUTONOMOUS_TRANSACTION。Oracle 23ai で実測）。移行先で
       同じにするには、呼び出し側が**別のトランザクションで**呼ぶ——同じ中で呼べば親と一緒に消える。
@@ -157,3 +161,15 @@ dynamicTables:
   # 名前は staging だが、corpus のシナリオが渡しているのは inventory_tx である（staging 用の表は
   # schema に無い）。移行先で staging 表を作るなら、その名前をここに書き足す
   pkg_customer_import.truncate_staging: [inventory_tx]
+
+# DB link の行き先（2026-09-20 の決定）。その link の表を ScalarDB の管理下に置き、**別の namespace として同じ
+# トランザクションで書く**。Oracle が分散トランザクションでやっていたことを、ScalarDB のトランザクションが引き受ける
+# ——原子性は変わらない。前提は、相手側の表が ScalarDB のメタデータ列を持ち、相手側への書き込みもすべて ScalarDB を
+# 通ること。outbox などの結果整合にするのは意味を変えるので、移行とは別の仕様変更として扱う。
+# ここに無い link は「まだ誰も決めていない」で、LINK-001 は未決定のまま残る。
+dbLinks:
+  warehouse_link:
+    namespace: warehouse
+    reason: >-
+      倉庫側の orders / shipment_queue も ScalarDB の管理下に置き、同じトランザクションで書く（A 案）。
+      倉庫側への書き込みはすべて ScalarDB 経由にすること

@@ -1012,7 +1012,24 @@ P0-2 の manifest）に集計し直す。
     rowLocks / transactions / dynamicTables、trigger は #12）が対応していれば「決定済み」、そのうえで比較した
     シナリオがすべて Oracle と一致していれば「決定済み・実 DB で一致」。trigger の本体はシナリオから直接呼べないので、
     呼び出し元の routine の比較で見る。呼び出し先が REDESIGN なだけの routine は、呼び出し先の状態に従う。
-  - 2026-09-20 の corpus: 27 件中、決定済み・一致 26、未決定 1（`prc_remote_sync`: DB Link）。採番 trigger
+  - **DB Link は、link の先の表も ScalarDB の namespace として管理下に置き、同じトランザクションで書く**
+    （2026-09-20 の決定、A 案）。`limits.yaml` の `dbLinks: {link: {namespace, reason}}` に書いた link だけ、
+    `table@link` を `namespace.table` に書き換えて生成する（`plsql/dblinks.py`）。書いていない link は
+    そのまま残り、LINK-001 は未決定のままになる。Oracle の分散トランザクションの「両方が確定するか、どちらも
+    確定しないか」を保てる形がこれだけだからで、link の先を ScalarDB の外に置いたまま書く形（補償や outbox）は
+    意味が変わるので採らない。前提は「link の先への書き込みもすべて ScalarDB を通す」ことである。
+    - 実 DB での確認: Oracle に loopback の link を作り（`difftest/plsql-warehouse-init.sh`）、3 シナリオを
+      両側で流した。正常系・手元に行が無い場合・**2 つ目のリモート書き込みが失敗する場合**のすべてで、手元と
+      link の先の表の状態が一致した（失敗時はどちらにも何も残らない）。
+    - 一致しないのは失敗時の**例外の種類** 1 点。Oracle は link 越しの失敗を ORA-02055 で返し、トランザクション
+      全体の rollback を求める（commit は ORA-02067 で拒否される）。ScalarDB は重複 INSERT を commit 時の
+      衝突（`DB-CORE-20013`）として返し、rollback する。結末は同じだが、呼び出し側が見るエラーは違う。
+      ORA-02055 は link に固有のもので移行先に対応物は無く、ScalarDB の衝突は**再試行しても解消しない**
+      （行が既にある）ので、呼び出し側は無条件の再試行にしないこと。このため `prc_remote_sync` の状態は
+      「決定済み（相違あり）」で、「実 DB で一致」にはしていない。
+    - NO_DATA_FOUND は、クライアントには ORA-01403、PL/SQL の SQLCODE では +100 と、同じ条件に番号が 2 つある。
+      生成した例外は SQLCODE（100）を持つので、比較はこの 1 組だけを同じものとして扱う（`plsql_compare.py`）。
+  - 2026-09-20 の corpus: 27 件中、決定済み・一致 26、決定済み・相違あり 1（`prc_remote_sync`: 上記）、未決定 0。採番 trigger
     （`trg_orders_seq`）は書き込む側の INSERT に織り込む形で生成し、`trg_products_audit` は routine 経由のシナリオを
     足して、どちらも実 DB で一致した（検証用の書き込み経路 `pkg_write_paths`）。
   - 同時実行での衝突と再試行は単一スレッドのシナリオでは確かめられず、呼び出し側の責務として決定の理由に書いてある。

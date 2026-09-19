@@ -1,0 +1,20 @@
+name: remote_sync
+unit: prc_remote_sync
+routine: prc_remote_sync
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'GOLD', NULL, DATE '2025-04-01')
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1001, 1, 'SHIPPED', TIMESTAMP '2026-01-10 11:00:00', NULL, NULL)
+- INSERT INTO orders@warehouse_link (order_id, status) VALUES (1001, 'NEW')
+- INSERT INTO orders@warehouse_link (order_id, status) VALUES (1002, 'NEW')
+call:
+  kind: procedure
+  name: prc_remote_sync
+  args:
+    p_order_id: 1001
+capture_tables:
+- orders
+- warehouse.orders
+- warehouse.shipment_queue
+note: DB link 越しの書き込み。移行先では link の先を namespace warehouse として同じトランザクションで書く（limits.yaml dbLinks）

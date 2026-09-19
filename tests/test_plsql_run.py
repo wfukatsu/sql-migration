@@ -123,7 +123,7 @@ def test_scenario_points_at_a_unit_and_routine_the_manifest_knows(spec: dict):
 
 @pytest.mark.parametrize("spec", scenarios(), ids=lambda s: s["_file"])
 def test_captured_and_masked_tables_exist(spec: dict):
-    known = set(runner.TABLES)
+    known = set(runner.TABLES) | set(runner.REMOTE_TABLES)   # a table behind a DB link, by its namespace name
     assert set(spec.get("capture_tables") or []) <= known, f"{spec['name']}: unknown table in capture_tables"
     assert set((spec.get("mask") or {})) <= known, f"{spec['name']}: unknown table in mask"
 
@@ -205,8 +205,6 @@ def test_routines_without_a_capture_are_only_the_documented_ones():
         "pkg_order_pricing.tier_discount", "pkg_order_pricing.line_amount",
         "pkg_order_pricing.customer_tier", "pkg_order_lock.is_cancellable",
         "pkg_shipment.line_count",
-        # cannot be compiled here: the DB link does not exist
-        "prc_remote_sync.prc_remote_sync",
         # holdout2 was added after P0-5 ran. P4-1 covered the three that were holding back an otherwise
         # verified routine; the rest are still uncovered and listed here so the gap stays visible rather than
         # growing silently (fixtures/plsql/golden/README.md).

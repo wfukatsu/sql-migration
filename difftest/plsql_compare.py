@@ -182,6 +182,12 @@ def _compare_result(oracle: dict, target: dict, diffs: list[str]) -> None:
                              f"actual={show(decode(out_right[name]))}")
 
 
+# One condition, two numbers. Oracle raises NO_DATA_FOUND to the client as ORA-01403 while PL/SQL's own SQLCODE for
+# it is +100 -- the number a handler reads, and so the one the generated exception carries. No other predefined
+# exception is split like this.
+CLIENT_CODE_FOR_SQLCODE = {-1403: 100}
+
+
 def _compare_exception(oracle: dict, target: dict, diffs: list[str]) -> None:
     """The business error code is the contract; the message text is not, and is shown only for context."""
     left, right = oracle.get("exception"), target.get("exception")
@@ -193,7 +199,7 @@ def _compare_exception(oracle: dict, target: dict, diffs: list[str]) -> None:
     if right is None:
         diffs.append(f"exception: expected={left.get('code')} ({left.get('message')}) actual=none")
         return
-    if left.get("code") != right.get("code"):
+    if CLIENT_CODE_FOR_SQLCODE.get(left.get("code"), left.get("code")) != right.get("code"):
         diffs.append(f"exception code: expected={left.get('code')} actual={right.get('code')} "
                      f"({right.get('message')})")
 

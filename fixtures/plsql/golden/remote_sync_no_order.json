@@ -1,0 +1,55 @@
+{
+ "scenario": "remote_sync_no_order",
+ "unit": "prc_remote_sync",
+ "routine": "prc_remote_sync",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "sessionUser": "SOURCE",
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": {
+  "code": -1403,
+  "message": "ORA-01403: no data found"
+ },
+ "tables": {
+  "orders": {
+   "columns": [
+    "order_id",
+    "customer_id",
+    "status",
+    "ordered_at",
+    "shipped_at",
+    "total_amount",
+    "note"
+   ],
+   "rows": []
+  },
+  "warehouse.orders": {
+   "columns": [
+    "order_id",
+    "status"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1001"
+     },
+     "NEW"
+    ]
+   ]
+  },
+  "warehouse.shipment_queue": {
+   "columns": [
+    "order_id",
+    "requested_at"
+   ],
+   "rows": []
+  }
+ },
+ "masked": {}
+}

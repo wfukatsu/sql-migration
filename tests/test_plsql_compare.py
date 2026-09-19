@@ -94,6 +94,15 @@ def test_the_business_error_code_is_the_contract_not_the_message():
     assert any("exception code" in d for d in compare_capture(capture(exception=raised), capture(exception=other)))
 
 
+def test_no_data_found_is_one_condition_with_two_numbers():
+    """The client sees ORA-01403; PL/SQL's SQLCODE -- what the generated exception carries -- is +100."""
+    oracle = {"code": -1403, "message": "ORA-01403: no data found"}
+    assert compare_capture(capture(exception=oracle), capture(exception={"code": 100, "message": "x"})) == []
+    # and only that pair: 100 does not stand for any other error
+    assert compare_capture(capture(exception={"code": -1422, "message": "x"}),
+                           capture(exception={"code": 100, "message": "x"})) != []
+
+
 def test_an_exception_where_oracle_raised_none_is_reported():
     diffs = compare_capture(capture(), capture(exception={"code": -1422, "message": "too many rows"}))
     assert any("exception: expected=none" in d for d in diffs)

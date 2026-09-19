@@ -51,7 +51,7 @@ def test_schema_loads_through_the_registry():
 
 def test_every_table_in_the_oracle_ddl_is_present():
     ddl_tables = set(re.findall(r"CREATE TABLE (\w+)", SCHEMA_SQL.read_text(encoding="utf-8")))
-    assert ddl_tables == {t.name for t in registry().tables()}
+    assert ddl_tables == {t.name for t in registry().tables() if t.namespace == NAMESPACE}
 
 
 def test_every_column_in_the_oracle_ddl_is_present():
@@ -66,7 +66,16 @@ def test_every_column_in_the_oracle_ddl_is_present():
 
 
 def test_every_table_is_namespaced():
-    assert {t.namespace for t in registry().tables()} == {NAMESPACE}
+    # `warehouse` is where the DB link `warehouse_link` was mapped to (limits.yaml: dbLinks, 2026-09-20): another
+    # database's tables, brought under ScalarDB so that one transaction writes both
+    assert {t.namespace for t in registry().tables()} == {NAMESPACE, "warehouse"}
+
+
+def test_a_same_named_table_of_another_namespace_does_not_replace_the_corpus_one():
+    reg = registry()
+    assert reg.get("orders").namespace == NAMESPACE and "customer_id" in reg.get("orders").columns
+    assert reg.get("orders", "warehouse").namespace == "warehouse"
+    assert set(reg.get("orders", "warehouse").columns) == {"order_id", "status"}
 
 
 def test_money_columns_are_scaled_integers_not_double():

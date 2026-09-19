@@ -1,0 +1,20 @@
+name: remote_sync_already_queued
+unit: prc_remote_sync
+routine: prc_remote_sync
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'Acme', NULL, 'GOLD', NULL, DATE '2025-04-01')
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1001, 1, 'SHIPPED', TIMESTAMP '2026-01-10 11:00:00', NULL, NULL)
+- INSERT INTO orders@warehouse_link (order_id, status) VALUES (1001, 'NEW')
+- INSERT INTO shipment_queue@warehouse_link (order_id, requested_at) VALUES (1001, TIMESTAMP '2026-01-14 08:00:00')
+call:
+  kind: procedure
+  name: prc_remote_sync
+  args:
+    p_order_id: 1001
+capture_tables:
+- orders
+- warehouse.orders
+- warehouse.shipment_queue
+note: 2 つ目のリモート書き込みが一意制約で失敗する。1 つ目（リモートの orders の UPDATE）も残らないこと——分散トランザクションの「両方か、どちらも無しか」を見る

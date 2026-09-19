@@ -3,7 +3,7 @@
 `difftest/plsql_run.py run` が採取した、Oracle 上での観測結果。Phase 3 の差分比較はこれを正解とする。
 
 - capture: **59 本**（`fixtures/plsql/scenarios/*.yaml` と 1 対 1）
-- 対象 routine: **48 中 43**（下の「capture が無い routine」を参照）
+- 対象 routine: **48 中 44**（下の「capture が無い routine」を参照）
 - **2 回実行してバイト一致**することを確認済み
 
 ## 採取手順
@@ -35,7 +35,7 @@
 突き合わせたことになる。差分だけを持つと、差分の計算方法が比較器と採取側の両方に必要になり、
 ずれる余地が増える。
 
-## capture が無い routine（48 中 5）
+## capture が無い routine（48 中 4）
 
 | routine | 理由 |
 |---|---|
@@ -43,7 +43,6 @@
 | `pkg_order_pricing.line_amount` | 同上 |
 | `pkg_order_pricing.customer_tier` | 同上 |
 | `pkg_order_lock.is_cancellable` | 同上 |
-| `prc_remote_sync` | DB Link が存在せずコンパイルできない（INVALID） |
 
 private routine は**公開 routine 経由でしか観測できない**。`order_total` と `reprice_order` の capture が
 `tier_discount` / `line_amount` / `customer_tier` の振る舞いを間接的に覆っている。
