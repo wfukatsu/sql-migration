@@ -124,3 +124,40 @@ def test_a_routine_lowered_from_a_recovered_parse_tree_is_not_auto(tmp_path):
     if "p_broken" in found:   # the parser may give up on the unit entirely; then there is nothing to decide
         assert found["p_broken"].rule_verdict != "AUTO"
         assert found["p_broken"].confidence.rule_coverage == 0.0
+
+
+# --- 25: a write to a table whose trigger nobody applied ------------------------------------------------------
+TRIGGER = """CREATE OR REPLACE TRIGGER trg_payments_any
+{events} ON payments
+FOR EACH ROW
+BEGIN
+  NULL;
+END;
+/
+"""
+
+
+@pytest.mark.parametrize("events,statement", [
+    ("AFTER INSERT OR UPDATE OR DELETE", "UPDATE payments SET amount = 1 WHERE payment_id = p_id;"),
+    ("AFTER INSERT OR UPDATE OR DELETE", "DELETE FROM payments WHERE payment_id = p_id;"),
+    ("AFTER DELETE", "DELETE FROM payments WHERE payment_id = p_id;"),
+    ("AFTER UPDATE OR DELETE", "DELETE FROM payments WHERE payment_id = p_id;"),
+])
+def test_a_write_the_trigger_fires_on_is_never_silently_clean(tmp_path, events, statement):
+    """Only the first event was kept (`INSERT OR UPDATE OR DELETE` -> INSERT) and DELETE writers were skipped, so
+    these routines had no diagnostic at all -- while a routine whose trigger *was* applied is REDESIGN."""
+    found, program = decisions(tmp_path, **{"trg.trg": TRIGGER.format(events=events),
+                                            "p.prc": procedure("p", statement)})
+    assert found["p"].rule_verdict == "REDESIGN" and "TRG-002" in rules_of(found["p"])
+
+
+def test_a_write_the_trigger_does_not_fire_on_is_left_alone(tmp_path):
+    found, _ = decisions(tmp_path, **{"trg.trg": TRIGGER.format(events="AFTER DELETE"),
+                                      "p.prc": procedure("p", "UPDATE payments SET amount = 1 WHERE payment_id = p_id;")})
+    assert "TRG-002" not in rules_of(found["p"])
+
+
+def test_every_event_of_a_trigger_is_kept(tmp_path):
+    _, program = decisions(tmp_path, **{"trg.trg": TRIGGER.format(events="BEFORE INSERT OR UPDATE OF amount, status")})
+    module = next(m for m in program.modules if m.module_kind == "trigger")
+    assert module.trigger_event == "INSERT OR UPDATE" and module.trigger_columns == ["amount", "status"]

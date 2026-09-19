@@ -51,8 +51,12 @@ class Trigger:
     routine: M.Routine
     table: str
     timing: str                       # BEFORE | AFTER
-    event: str                        # INSERT | UPDATE | DELETE
+    event: str                        # INSERT | UPDATE | DELETE、複数なら `INSERT OR UPDATE`
     columns: list[str] = field(default_factory=list)   # `UPDATE OF <列>`。空なら全列
+
+    @property
+    def events(self) -> set[str]:
+        return {e.strip() for e in self.event.split(" OR ") if e.strip()}
 
     @property
     def correlations(self) -> list[str]:
@@ -183,8 +187,8 @@ def _apply(statement: M.Statement, routine: M.Routine, found: dict[str, list[Tri
     if statement.kind != "SqlOperation":
         return head, tail
     kind = (statement.sql_kind or "").upper()
-    if kind not in ("INSERT", "UPDATE"):
-        return head, tail   # DELETE trigger は corpus に無い。掛けられないものは掛けない
+    if kind not in ("INSERT", "UPDATE", "DELETE", "MERGE"):
+        return head, tail
     try:
         tree = sqlglot.parse_one(statement.original_sql or "", dialect="oracle")
     except Exception:
@@ -194,6 +198,17 @@ def _apply(statement: M.Statement, routine: M.Routine, found: dict[str, list[Tri
         return head, tail
     for index, trigger in enumerate(found.get(table.lower(), [])):
         if not _fires(trigger, kind, tree):
+            continue
+        # 掛け方を知らない形は、**掛けていないと言う**。以前は黙って通り過ぎていたので、trigger のある表へ
+        # DELETE / MERGE で書く routine と、複数イベントの trigger のある表へ書く routine が、何の診断も
+        # 無いまま AUTO になりえた——正しく掛けられた routine のほうが悪い判定になる、逆転である
+        unhandled = ("DELETE で発火する。行の :OLD を読んで渡す形をまだ持っていない" if kind == "DELETE" else
+                     "MERGE は INSERT と UPDATE のどちらで発火するかが行ごとに決まる" if kind == "MERGE" else
+                     f"複数のイベント（{trigger.event}）で発火する。本体は INSERTING / UPDATING / DELETING で"
+                     f"分岐しうるが、それを渡す形をまだ持っていない" if len(trigger.events) > 1 else None)
+        if unhandled is not None:
+            statement.add("WARN", "TRIGGER_NOT_APPLIED",
+                          f"{trigger.module.name} が掛かる書き込みだが、**掛けていない**。{unhandled}（#12）")
             continue
         if trigger.assigns_correlation():
             statement.add("WARN", "TRIGGER_REDESIGN",
@@ -220,14 +235,16 @@ def _apply(statement: M.Statement, routine: M.Routine, found: dict[str, list[Tri
 
 
 def _table(tree: exp.Expression) -> str | None:
-    target = tree.this if isinstance(tree, (exp.Update, exp.Insert)) else None
+    target = tree.this if isinstance(tree, (exp.Update, exp.Insert, exp.Delete, exp.Merge)) else None
     if isinstance(target, exp.Schema):
         target = target.this
     return target.name if isinstance(target, exp.Table) else None
 
 
 def _fires(trigger: Trigger, kind: str, tree: exp.Expression) -> bool:
-    if trigger.event != kind:
+    if kind == "MERGE":
+        return bool(trigger.events & {"INSERT", "UPDATE", "DELETE"})   # どの枝が走るかは行ごとに決まる
+    if kind not in trigger.events:
         return False
     if kind == "UPDATE" and trigger.columns:
         # `UPDATE OF status` は status を SET していない更新には掛からない

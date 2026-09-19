@@ -176,6 +176,14 @@ Oracle との比較が捕まえた——**trigger を掛ける側のバグは、
   1 回の呼び出しでは同じにならない。`TRIGGER_NOT_APPLIED` を残して見えるようにする
 * **値そのものを書き換える trigger**（`:NEW.order_id := seq.NEXTVAL`）。呼び出しでは置き換えられ
   ない——採番 Service への再設計である（下の C）
+* **DELETE・MERGE での書き込み**と、**複数のイベントで発火する trigger**（`AFTER INSERT OR UPDATE OR DELETE`）。
+  DELETE は行の `:OLD` を読んで渡す形を、複数イベントは本体の `INSERTING` / `UPDATING` / `DELETING` に渡す形を
+  まだ持っていない。どちらも `TRIGGER_NOT_APPLIED` を残す
+
+**掛けなかった書き込みも REDESIGN になる**（ルール TRG-002。`TRIGGER_NOT_APPLIED` / `TRIGGER_REDESIGN` の付いた
+文を見る）。以前はこの診断を読むルールが無く、さらに trigger のイベントは最初の 1 つしか残さず、DELETE で書く
+routine は黙って通り過ぎていた——**正しく掛けられた routine が REDESIGN で、掛けられなかった routine が AUTO に
+なりうる**、という逆転があった（レビュー #27-25）。
 
 **判定は動かない。** trigger が REDESIGN なら、それを呼ぶ経路も REDESIGN になる（呼び出しグラフを
 通って伝わる）。`mark_shipped` は AUTO から REDESIGN へ変わった——**簡単な routine だから安全、

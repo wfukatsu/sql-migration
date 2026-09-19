@@ -118,3 +118,23 @@ def test_only_repositories_that_number_take_the_dependency():
     takes = {p.stem for p in infra.glob("*.java") if "Sequences sequences" in p.read_text(encoding="utf-8")}
     assert "PkgBulkLoadRepository" in takes
     assert "PkgCustomerCrudRepository" not in takes
+
+
+# --- #27-26: one statement, one sequence -----------------------------------------------------------------
+def test_each_create_sequence_is_read_on_its_own(tmp_path):
+    """The options were matched with `.*?`, which ran across `;`: a sequence with no START WITH took the next
+    statement's, and swallowed the next sequence whole -- three declared, one policy, with another's start."""
+    from plsql.sequences import Policies
+
+    ddl = tmp_path / "seq.sql"
+    ddl.write_text("CREATE SEQUENCE seq_a;\n"
+                   "-- CREATE SEQUENCE seq_commented START WITH 9;\n"
+                   "CREATE SEQUENCE app.seq_b CACHE 50 INCREMENT BY 2 START WITH 500;\n"
+                   "CREATE SEQUENCE seq_c NOCACHE\n  START WITH 7;\n"
+                   "CREATE SEQUENCE seq_d START WITH -5 INCREMENT BY -1 CACHE 1;\n", encoding="utf-8")
+    found = {n: (p.scheme, p.block, p.start, p.increment) for n, p in Policies.from_ddl(ddl).items()}
+    assert found == {"seq_a": ("hilo", 20, 1, 1),          # no clause: Oracle's default is CACHE 20
+                     "seq_b": ("hilo", 50, 500, 2),         # options in any order
+                     "seq_c": ("counter", 1, 7, 1),
+                     "seq_d": ("counter", 1, -5, -1)}
+    assert "既定" in Policies.from_ddl(ddl)["seq_a"].reason, "a default is not a stated intent, and the reason says so"
