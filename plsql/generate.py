@@ -91,7 +91,8 @@ def main(argv: list[str] | None = None) -> int:
 
     set_allowed_tables((DynamicTables.load(args.limits) if args.limits else DynamicTables()).allowed)
 
-    analysis = build_analysis(root, schema, scalardb_schema=scalardb, row_locks=row_locks)
+    analysis = build_analysis(root, schema, scalardb_schema=scalardb, row_locks=row_locks,
+                              boundaries=Boundaries.load(args.limits) if args.limits else Boundaries())
     decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), Evidence())
     plans = analysis.capability.plans if analysis.capability is not None else {}
     trigger_checks, types, namespaces = _trigger_checks(analysis, scalardb)
@@ -103,7 +104,8 @@ def main(argv: list[str] | None = None) -> int:
     auto = [r for r, d in decisions.items() if d.rule_verdict == "AUTO"]
     dirty = _dirty_auto(project, decisions)
     report = _verify_compile(project, args) if args.verify_compile else None
-    undecided = _undecided_limits(decisions, limits) if args.limits_strict else []
+    undecided = _undecided_limits(decisions, limits, _self_capped(analysis.program)) \
+        if args.limits_strict else []
 
     if not args.quiet:
         print(f"wrote {len(written)} files to {args.out_dir}/")
@@ -197,7 +199,7 @@ def _print_no_limits_file(undecided: list[str], limits, stream=None) -> None:
         print("  (--limits was not given, so no routine has a decided limit)", file=stream or sys.stdout)
 
 
-def _undecided_limits(decisions: dict, limits) -> list[str]:
+def _undecided_limits(decisions: dict, limits, capped: set[str] | None = None) -> list[str]:
     """Routines whose rules ask for a row limit that nobody has decided (#19).
 
     The hook is the rules' own `requiredTests: row_limit` -- `CUR-002` (cursor FOR loop), `BULK-001`
@@ -213,7 +215,26 @@ def _undecided_limits(decisions: dict, limits) -> list[str]:
     reason, which is why `prc_nightly_close` does not appear here.
     """
     return sorted(routine for routine, decision in decisions.items()
-                  if "row_limit" in decision.required_tests() and not limits.decided(routine))
+                  if "row_limit" in decision.required_tests() and not limits.decided(routine)
+                  and routine not in (capped or set()))
+
+
+def _self_capped(program) -> set[str]:
+    """走査がすべて、問い合わせ自身で件数を絞っている routine（#19 の決定、2026-09-19）。
+
+    読む行数を決めているのは問い合わせで、その件数を渡すのは呼び出し側である。人に上限を決めさせる
+    理由が無い。走査が 1 つでも絞っていなければ、今までどおり決めることを求める。
+    """
+    from .columns import caps_its_rows
+    from .lower import _walk
+
+    out = set()
+    for module in program.modules:
+        for routine in module.routines:
+            scans = [s.query for s in _walk(routine.body) if s.kind == "Loop" and getattr(s, "query", None)]
+            if scans and all(caps_its_rows(q) for q in scans):
+                out.add(routine.id)
+    return out
 
 
 def _dirty_auto(project, decisions) -> list[str]:

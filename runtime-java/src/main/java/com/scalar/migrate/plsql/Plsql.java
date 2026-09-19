@@ -421,13 +421,18 @@ public final class Plsql {
    * <p>空の塊は返さない。Oracle のループは「取れなかったら抜ける」形で、その `EXIT` は残して
    * あるが、ここが空を配らないので発火しない——どちらでも結果は同じである。
    *
-   * <p>`n` が 0 以下なら塊を 1 つも返さない。Oracle で `LIMIT 0` を指定した FETCH が 0 件を返し、
-   * ループがすぐ抜けるのと同じ結果になる。
+   * <p>`n` が正でないときは、ここへ来る前に生成コードが Oracle と同じ誤りを投げる（`LIMIT 0` / 負の値は
+   * ORA-06502、`LIMIT NULL` は ORA-06500。2026-09-19 に 23ai で実測）。以前ここには「0 件で抜けるのと
+   * 同じ結果になる」と書いていたが、**実測せずに書いた誤り**だった。ここで受け取ったら、呼び出しの誤り
+   * として投げる。
    */
   public static <T> java.util.List<java.util.List<T>> chunks(java.util.List<T> rows, Object size) {
     int n = size instanceof Number number ? number.intValue() : 0;
+    if (n <= 0) {
+      throw new IllegalArgumentException("chunks: 塊の件数が正でない（" + size + "）。生成コードが先に止めるはずである");
+    }
     java.util.List<java.util.List<T>> out = new java.util.ArrayList<>();
-    if (rows == null || n <= 0) return out;
+    if (rows == null) return out;
     for (int at = 0; at < rows.size(); at += n) {
       out.add(java.util.List.copyOf(rows.subList(at, Math.min(at + n, rows.size()))));
     }

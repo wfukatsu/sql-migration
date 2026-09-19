@@ -397,7 +397,31 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
             name=placeholder, direction=symbol.direction or "IN",
             oracle_type=symbol.type.oracle if symbol.type else None, plsql_variable=name)
         column.replace(exp.Placeholder(this=placeholder))
+    _row_counts(tree, scope, symbols, found)
     return list(found.values())
+
+
+def _row_counts(tree: exp.Expression, scope: str, symbols: SymbolTable | None,
+                found: dict[str, BindVariable]) -> None:
+    """`FETCH FIRST p_batch ROWS ONLY` の件数も変数である（#19 / 2026-09-19）。
+
+    sqlglot はここを列ではなく**識別子**として持つので、上の列の走査には現れない。見ないと
+    `LIMIT p_batch` がそのまま ScalarDB へ渡り、存在しない列として拒否される。
+    """
+    if symbols is None:
+        return
+    for fetch in list(tree.find_all(exp.Fetch)):
+        count = fetch.args.get("count")
+        if not isinstance(count, exp.Identifier):
+            continue
+        symbol = symbols.resolve(scope, count.name)
+        if symbol is None or symbol.kind not in BIND_KINDS:
+            continue
+        placeholder = _unique(count.name, found)
+        found[placeholder] = BindVariable(
+            name=placeholder, direction=symbol.direction or "IN",
+            oracle_type=symbol.type.oracle if symbol.type else None, plsql_variable=count.name)
+        fetch.set("count", exp.Placeholder(this=placeholder))
 
 
 def _collection_elements(tree: exp.Expression, scope: str, symbols: SymbolTable | None,
