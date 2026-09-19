@@ -533,3 +533,84 @@ def test_rownum_over_an_aggregate_is_not_a_limit(sql):
 def test_a_fractional_rownum_is_an_error_not_a_crash():
     r = run(BIND_DDL + "SELECT id FROM customers WHERE ROWNUM <= 1.5", "oracle", with_schema=False)
     assert r.status == "ERROR" and "ROWNUM" in codes(r)
+
+
+# ---------------------------------------------------------------- #27-2 / #27-3: UPSERT and FETCH FIRST
+MERGE = ("MERGE INTO customers t USING (SELECT 1 id, 'x' name FROM dual) s ON ({on}) "
+         "WHEN MATCHED THEN UPDATE SET t.name = s.name{update_where} "
+         "WHEN NOT MATCHED THEN INSERT (id, name) VALUES ({values})")
+
+
+def merge(on="t.id = s.id", values="s.id, s.name", update_where="", ddl=BIND_DDL):
+    return run(ddl + MERGE.format(on=on, values=values, update_where=update_where), "oracle", with_schema=False)
+
+
+def test_a_keyed_merge_with_matching_branches_is_an_upsert():
+    r = merge()
+    assert r.status == "WARN" and r.converted[0] == "UPSERT INTO customers (id, name) VALUES (1, 'x')"
+
+
+def test_a_merge_whose_branches_write_different_values_is_refused():
+    """Regression: `UPDATE SET name = s.name` / `INSERT ... VALUES (s.id, 'default')` became one UPSERT writing
+    'default', reported as "both branches set the same columns" -- an existing row lost its name."""
+    r = merge(values="s.id, 'default'")
+    assert r.status == "ERROR" and "different values to 'name'" in " ".join(i.message for i in r.issues)
+
+
+@pytest.mark.parametrize("kwargs,said", [
+    ({"on": "t.email = s.id"}, "not the primary key"),
+    ({"on": "t.id = s.id AND t.code = 'A'"}, "not 'target.key = source.col'"),
+    ({"on": "t.id > s.id"}, "not 'target.key = source.col'"),
+    ({"values": "99, s.name"}, "inserts 99 into it"),
+    ({"update_where": " WHERE t.code = 'A'"}, "conditional"),
+])
+def test_a_merge_upsert_cannot_express_is_refused(kwargs, said):
+    r = merge(**kwargs)
+    assert r.status == "ERROR" and said in " ".join(i.message for i in r.issues)
+
+
+def test_a_conditional_when_matched_is_refused():
+    ddl = "CREATE TABLE acct (id INT PRIMARY KEY, email TEXT, bal INT);"
+    r = run(ddl + "MERGE INTO acct t USING (SELECT 1 AS id, 5 AS bal) s ON t.id = s.id "
+                  "WHEN MATCHED AND t.bal < 5 THEN UPDATE SET bal = s.bal "
+                  "WHEN NOT MATCHED THEN INSERT (id, bal) VALUES (s.id, s.bal)", "postgres", with_schema=False)
+    assert r.status == "ERROR" and "conditional" in " ".join(i.message for i in r.issues)
+
+
+def test_without_the_table_definition_the_merge_key_is_an_assumption_that_is_stated():
+    r = merge(ddl="")
+    assert r.status == "WARN" and "assumed to be the primary key" in " ".join(i.message for i in r.issues)
+
+
+ACCT = "CREATE TABLE acct (id INT PRIMARY KEY, email TEXT, bal INT);"
+
+
+def test_on_conflict_on_the_primary_key_is_an_upsert():
+    r = run(ACCT + "INSERT INTO acct (id, bal) VALUES (1, 2) ON CONFLICT (id) DO UPDATE SET bal = EXCLUDED.bal",
+            "postgres", with_schema=False)
+    assert r.status in ("OK", "WARN") and r.converted[0].startswith("UPSERT INTO acct")
+
+
+@pytest.mark.parametrize("sql,said", [
+    ("INSERT INTO acct (id, email, bal) VALUES (1, 'x', 2) ON CONFLICT (email) DO UPDATE SET bal = EXCLUDED.bal",
+     "is not the primary key"),
+    ("INSERT INTO acct (id, bal) VALUES (1, 2) ON CONFLICT (id) DO UPDATE SET bal = EXCLUDED.bal WHERE acct.bal < 5",
+     "updates conditionally"),
+])
+def test_on_conflict_upsert_cannot_express_is_refused(sql, said):
+    """Regression: both came out as a plain UPSERT with status OK."""
+    r = run(ACCT + sql, "postgres", with_schema=False)
+    assert r.status == "ERROR" and said in " ".join(i.message for i in r.issues)
+
+
+def test_fetch_first_with_ties_is_not_a_limit():
+    r = run(BIND_DDL + "SELECT id, name FROM customers ORDER BY name FETCH FIRST 3 ROWS WITH TIES", "oracle",
+            with_schema=False)
+    assert r.status == "ERROR" and "LIMIT" in codes(r)
+
+
+def test_fetch_first_row_only_means_one_row():
+    """Regression: no count was emitted as a bare `LIMIT`, with status OK."""
+    r = run(BIND_DDL + "SELECT id, name FROM customers WHERE id = 1 FETCH FIRST ROW ONLY", "oracle",
+            with_schema=False)
+    assert r.converted[0].endswith("LIMIT 1")

@@ -25,7 +25,12 @@ import java.util.Map;
  * RESIDUAL_RUNNER_OPTS=-Dorg.slf4j.simpleLogger.defaultLogLevel=info (src/main/resources/simplelogger.properties).
  */
 public class Runner {
-  static final Gson GSON = new GsonBuilder().serializeNulls().create();
+  /**
+   * Whole numbers stay whole. Gson's default reads every JSON number as a double, so an 18-digit id in a plan or
+   * in the rows to load lost its last digits (9007199254740993 became ...992) and the key lookup found nothing.
+   */
+  static final Gson GSON = new GsonBuilder().serializeNulls()
+      .setObjectToNumberStrategy(com.google.gson.ToNumberPolicy.LONG_OR_DOUBLE).create();
 
   public static void main(String[] argv) throws Exception {
     if (argv.length == 0) { usage(); System.exit(2); }
@@ -34,6 +39,7 @@ public class Runner {
     for (int i = 1; i < argv.length; i++) {
       if ("--param".equals(argv[i])) {
         String[] kv = argv[++i].split("=", 2);
+        if (kv.length != 2) throw new IllegalArgumentException("--param expects name=value, got: " + kv[0]);
         params.put(kv[0], parseParam(kv[1]));
       } else if ("--h2-indexes".equals(argv[i])) {
         opt.put("h2-indexes", "true");  // a flag, takes no value
@@ -125,9 +131,19 @@ public class Runner {
     if (!problems.isEmpty()) System.exit(1);
   }
 
+  private static final java.util.regex.Pattern WHOLE = java.util.regex.Pattern.compile("-?(0|[1-9]\\d*)");
+  private static final java.util.regex.Pattern DECIMAL = java.util.regex.Pattern.compile("-?(0|[1-9]\\d*)\\.\\d+");
+
+  /**
+   * A `--param` value as the number it is, or as text. Only the canonical spelling of a number is a number:
+   * `00123` is a zero-padded code, and reading it as 123 made a lookup on a TEXT key search for "123". Whole
+   * numbers are exact at any size ({@code Long}, then {@code BigDecimal}); a double cannot hold an 18-digit id.
+   */
   static Object parseParam(String v) {
-    try { return Integer.parseInt(v); } catch (NumberFormatException ignored) { }
-    try { return Double.parseDouble(v); } catch (NumberFormatException ignored) { }
+    if (WHOLE.matcher(v).matches()) {
+      try { return Long.parseLong(v); } catch (NumberFormatException tooLong) { return new java.math.BigDecimal(v); }
+    }
+    if (DECIMAL.matcher(v).matches()) return new java.math.BigDecimal(v);
     if ("true".equalsIgnoreCase(v) || "false".equalsIgnoreCase(v)) return Boolean.parseBoolean(v);
     return v;
   }

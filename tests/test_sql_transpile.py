@@ -73,6 +73,14 @@ def test_rownum_in_a_union_branch_gets_parentheses():
     assert r["sql"] == "(SELECT * FROM emp LIMIT 5) UNION ALL (SELECT * FROM emp2 LIMIT 5)"
 
 
+def test_with_ties_is_refused_where_it_would_become_a_limit():
+    sql = "SELECT ename FROM emp ORDER BY sal FETCH FIRST 3 ROWS WITH TIES"
+    lost = convert(sql, target="mysql")
+    assert lost["status"] == "ERROR" and lost["sev"]["WITH_TIES"] == "ERROR"
+    kept = convert(sql, target="postgres")
+    assert kept["status"] == "OK" and "WITH TIES" in kept["sql"]
+
+
 def test_rownum_with_order_by_warns():
     # Oracle は ORDER BY より前に ROWNUM を適用するので、件数の意味が変わりうる
     r = convert("SELECT ename FROM emp WHERE ROWNUM <= 3 ORDER BY sal")

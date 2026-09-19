@@ -107,6 +107,10 @@ TIMESTAMP_LITERAL = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
 LETTERS = re.compile(r"[A-Za-z]")
 
 
+# FETCH FIRST n ROWS WITH TIES をそのまま書ける変換先
+WITH_TIES_TARGETS = {"oracle", "postgres", "tsql", "scalardb"}
+
+
 def _add(issues: list[Issue], severity: str, code: str, message: str) -> None:
     """同じ重要度とコードの指摘は 1 件にまとめる。"""
     if not any(i.severity == severity and i.code == code for i in issues):
@@ -151,6 +155,15 @@ def _check_source(node: exp.Expression, source: str, target: str, issues: list[I
             _add(issues, "INFO", "CONNECT_BY", "階層問合せを SQLGlot が再帰 CTE に書き換えた（1 表の START WITH と CONNECT BY PRIOR だけの形）")
         else:
             _add(issues, "ERROR", "CONNECT_BY", "階層問合せ（CONNECT BY）。再帰 CTE に書き換える")
+
+    # WITH TIES は n 番目と同順位の行をすべて返す。FETCH 句を持たない方言へは LIMIT n になり、同順位の行が黙って落ちる
+    if target not in WITH_TIES_TARGETS:
+        for fetch in node.find_all(exp.Fetch):
+            options = fetch.args.get("limit_options")
+            if options is not None and options.args.get("with_ties"):
+                _add(issues, "ERROR", "WITH_TIES",
+                     "FETCH ... WITH TIES。LIMIT n に置き換えると n 番目と同順位の行が落ちる。"
+                     "RANK() OVER (ORDER BY ...) <= n で絞る形に書き直す")
 
     if source == "oracle" and target != "oracle":
         for col in node.find_all(exp.Column):
