@@ -186,10 +186,19 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 | 因子 | 算出 | 0 になる条件 |
 |---|---|---|
 | `ruleCoverage` | ルールが判定を出せた IR ノード数 / routine 内の全 IR ノード数 | 未知の構文を 1 つでも含む |
-| `symbolResolution` | 解決できた識別子参照 / 全識別子参照（KPI-2 の routine 単位版） | 未解決シンボルが 1 つでもある |
+| `symbolResolution` | 解決できた識別子参照 / 全識別子参照（KPI-2 の routine 単位版） | 未解決シンボルが 1 つでもある。**解析した範囲に無い routine の呼び出し**（`billing_pkg.post(...)`、`UTL_MAIL.SEND` など）もここに数え、ルール CALL-001 が REVIEW にする。`DBMS_OUTPUT` / `DBMS_ASSERT` とコレクションのメソッド（`.COUNT` など）は数えない |
 | `typeResolution` | 型が確定した変数・引数・戻り値 / 全体 | 精度不明の `NUMBER` を Java 型へ確定できない、`%TYPE` の参照先 DDL が無い |
 | `targetCapability` | ScalarDB SQL で実行できる SQL 文 / routine 内の全 SQL 文。`PLANNED` は 0.5 として数える。**まだ検査していない文は 0.5 ではなく 0** — 「未解析」は能力の半分ではない | converter が `ERROR` を返す SQL を含む、または P2-4 を通していない SQL を含む |
 | `testEvidence` | 意味的同等性テストに合格した capture 数 / その routine に紐づく capture 数 | capture が 1 つも無い、または 1 つでも落ちている |
+
+`ruleCoverage` が 0 になる（＝ LOWER-001 で REVIEW になり、生成側は本体ごと拒む）のは、lowering が模していない構文の
+ほかに次の 3 つがある。どれも「ルールが見ていないものがある」ときで、見えないまま AUTO にしないためのものである:
+入れ子の subprogram（`NestedSubprogram`）、構文エラーから ANTLR が回復した木で下ろした routine（`ParseError`）、
+オーバーロード（`OverloadedRoutine`。オーバーロードは routine id を共有し、判定・証拠・生成メソッドを区別できない）。
+
+文字列で見るルール（SEM-001 など）の `statementKind: Expression` は「式が評価される場所すべて」を指す:
+SQL 以外の全ての文と、宣言の初期化式・引数の既定値。以前は `[Assignment, Return, If]` の列挙で、WHILE / EXIT WHEN の
+条件、CASE のセレクタ、呼び出しの引数、宣言部を見ていなかった。
 
 `testEvidence` の定義から、**capture が無い routine は AUTO にならない**。これは意図した性質である。
 テストの裏付けがないコードを人のレビューなしに出さない。

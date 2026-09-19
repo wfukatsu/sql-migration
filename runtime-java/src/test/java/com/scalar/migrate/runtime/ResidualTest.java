@@ -93,4 +93,47 @@ class ResidualTest {
     org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
         () -> new Residual("Oracle;INIT=CREATE TABLE pwned(x INT)"));
   }
+
+  @Test
+  void aNameFromThePlanThatIsNotAnIdentifierIsRefused() throws Exception {
+    // H2 runs several statements per execute: this "table" used to create an alias holding Java of the plan
+    // author's choosing
+    String smuggled = "u(a INT); CREATE ALIAS pwn AS 'String f() { return System.getProperty(\"user.name\"); }'; CREATE TABLE v";
+    try (Residual residual = new Residual("PostgreSQL")) {
+      org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+          () -> residual.load(fetch(smuggled, null), rows(List.of("id"), Map.of("id", "INT"), new Object[] {1})));
+      org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+          () -> residual.load(fetch("t", null), rows(List.of("id INT); DROP ALL OBJECTS; --"), Map.of(), new Object[] {1})));
+      org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+          () -> residual.load(fetch("t", List.of(List.of("id); SHUTDOWN; --"))),
+              rows(List.of("id"), Map.of("id", "INT"), new Object[] {1})));
+    }
+  }
+
+  @Test
+  void theResidualSqlCanReadTheFetchedRowsAndNothingElse() throws Exception {
+    for (String mode : List.of("Oracle", "PostgreSQL", "MySQL")) {
+      try (Residual residual = new Residual(mode, true)) {
+        load(residual);
+        assertEquals(List.of(List.of("a"), List.of("b"), List.of("a")), residual.query(JOIN, Map.of()).get("rows"), mode);
+        for (String sql : List.of(
+            "SELECT FILE_READ('/etc/hosts')",
+            "SELECT CSVWRITE('/tmp/residual-should-not-write.csv', 'SELECT 1')",
+            "SELECT * FROM LINK_SCHEMA('x', '', 'jdbc:h2:mem:other', 'sa', '', 'PUBLIC')")) {
+          org.junit.jupiter.api.Assertions.assertThrows(java.sql.SQLException.class,
+              () -> residual.query(sql, Map.of()), mode + ": " + sql);
+        }
+      }
+    }
+    org.junit.jupiter.api.Assertions.assertFalse(
+        java.nio.file.Files.exists(java.nio.file.Path.of("/tmp/residual-should-not-write.csv")));
+  }
+
+  @Test
+  void oracleFunctionsAreStillCallableFromTheResidualSql() throws Exception {
+    try (Residual residual = new Residual("Oracle")) {
+      load(residual);
+      assertEquals(List.of(List.of("Abc Def")), residual.query("SELECT INITCAP('abc def') FROM DUAL", Map.of()).get("rows"));
+    }
+  }
 }

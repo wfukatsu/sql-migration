@@ -80,8 +80,44 @@ def lower_file(parsed: ParsedFile, symbols: SymbolTable | None = None,
         if parsed_unit.tree is None:
             continue
         lowerer = _Lowerer(parsed_unit.unit, symbols, schema, public or set())
-        modules.extend(lowerer.modules(parsed_unit.tree))
+        lowered = lowerer.modules(parsed_unit.tree)
+        if not parsed_unit.ok:
+            # ANTLR recovers from a syntax error and hands back a tree anyway -- with the offending text skipped
+            # or re-read as something else. Rules run on that tree saw a clean routine and called it AUTO.
+            _cannot_be_auto(lowered, "ParseError", "PARSE_RECOVERED",
+                            "the unit has syntax errors; this routine was lowered from the parser's recovered tree, "
+                            "which may have dropped or misread statements")
+        _flag_overloads(lowered)
+        modules.extend(lowered)
     return modules
+
+
+def _cannot_be_auto(modules: list[M.Module], construct: str, code: str, message: str,
+                    only: set[int] | None = None) -> None:
+    """Put an Unsupported node at the head of each routine: LOWER-001 stops AUTO, the generator refuses the body."""
+    for module in modules:
+        for routine in module.routines:
+            if only is not None and id(routine) not in only:
+                continue
+            node = M.Unsupported(id=f"{routine.id}.{construct}", kind="Unsupported",
+                                 source_range=routine.source_range, text=routine.name, construct=construct)
+            node.add("WARN", code, message)
+            routine.body.insert(0, node)
+
+
+def _flag_overloads(modules: list[M.Module]) -> None:
+    """Overloads share one routine id, and everything downstream is keyed by it: decisions, evidence, limits, the
+    generated method. The second overload's verdict replaced the first's -- a ROLLBACK in one of them vanished.
+    Until ids carry a signature, every overload is held back, so none is decided on another's behalf."""
+    for module in modules:
+        seen: dict[str, list[M.Routine]] = {}
+        for routine in module.routines:
+            seen.setdefault(routine.id, []).append(routine)
+        clashing = {id(r) for group in seen.values() if len(group) > 1 for r in group}
+        if clashing:
+            _cannot_be_auto([module], "OverloadedRoutine", "OVERLOADED_ROUTINE",
+                            "this routine is overloaded; overloads share one id, so its verdict, evidence and "
+                            "generated method cannot be told apart from the other overloads'", only=clashing)
 
 
 def lower_program(files: list[ParsedFile], symbols: SymbolTable | None = None,

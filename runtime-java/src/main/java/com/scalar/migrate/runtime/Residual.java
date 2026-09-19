@@ -23,7 +23,15 @@ import java.util.regex.Pattern;
 public class Residual implements AutoCloseable {
   private static final Pattern NAMED = Pattern.compile("(?<![:\\w])[:](\\w+)");
   private static final List<String> MODES = List.of("Oracle", "PostgreSQL", "MySQL");
+  // A table or column name from a plan goes into DDL as text. H2 runs several statements per execute, so a
+  // "table" spelled `t(a INT); CREATE ALIAS x AS '...java...'; CREATE TABLE u` was code execution from a plan file
+  // -- and `validate`, the command one runs on a plan one did not write, got there too.
+  private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_$#]*");
+  private static final String READER = "RESIDUAL_READER";
   private final Connection h2;
+  // The residual SQL is the source application's SQL, carried in the plan. It runs as a user that can only
+  // SELECT: H2 keeps FILE_READ, CSVWRITE, LINK_SCHEMA, RUNSCRIPT and CREATE ALIAS for admins.
+  private final Connection reader;
   private final String mode;
   private final Set<String> created = new HashSet<>();
   // table -> indexes from the plan (primary key, join columns); built once, after every fetch is loaded
@@ -46,8 +54,22 @@ public class Residual implements AutoCloseable {
     // the mode comes from a plan file and goes into a JDBC URL, where `;INIT=...` would run whatever it says
     this.mode = MODES.stream().filter(m -> m.equalsIgnoreCase(mode)).findFirst()
         .orElseThrow(() -> new IllegalArgumentException("unknown H2 mode " + mode + " (expected one of " + MODES + ")"));
-    h2 = DriverManager.getConnection("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=" + this.mode + ";DATABASE_TO_UPPER=FALSE");
+    String url = "jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=" + this.mode + ";DATABASE_TO_UPPER=FALSE";
+    h2 = DriverManager.getConnection(url);
     if ("Oracle".equals(this.mode)) OracleFunctions.register(h2);
+    String password = UUID.randomUUID().toString();
+    try (Statement s = h2.createStatement()) {
+      s.execute("CREATE USER " + READER + " PASSWORD '" + password + "'");
+      s.execute("GRANT SELECT ON SCHEMA PUBLIC TO " + READER);
+    }
+    reader = DriverManager.getConnection(url, READER, password);
+  }
+
+  static String identifier(String kind, String name) {
+    if (name == null || !IDENTIFIER.matcher(name).matches()) {
+      throw new IllegalArgumentException(kind + " name in the plan is not a plain identifier: " + name);
+    }
+    return name;
   }
 
   /**
@@ -66,7 +88,8 @@ public class Residual implements AutoCloseable {
 
   /** Create the table on first use (typed from ScalarDB types when known, else from the Java values) and load rows. */
   public void load(Plan.Fetch spec, Rows rows) throws Exception {
-    String table = spec.table;
+    String table = identifier("table", spec.table);
+    for (String c : rows.columns) identifier("column", c);
     boolean firstLoad = !created.contains(table.toLowerCase());
     if (firstLoad) {
       StringBuilder ddl = new StringBuilder("CREATE TABLE " + table + " (");
@@ -83,7 +106,10 @@ public class Residual implements AutoCloseable {
     }
     if (spec.index_columns != null) {
       List<List<String>> ixs = indexes.computeIfAbsent(table, k -> new ArrayList<>());
-      for (List<String> cols : spec.index_columns) if (!cols.isEmpty() && !ixs.contains(cols)) ixs.add(cols);
+      for (List<String> cols : spec.index_columns) {
+        for (String c : cols) identifier("index column", c);
+        if (!cols.isEmpty() && !ixs.contains(cols)) ixs.add(cols);
+      }
     }
     if (rows.rows.isEmpty()) return;
     String cols = String.join(", ", rows.columns);
@@ -108,7 +134,7 @@ public class Residual implements AutoCloseable {
     ensureIndexes();
     List<Object> binds = new ArrayList<>();
     String bound = bindNamed(sql, params, binds);
-    try (PreparedStatement ps = h2.prepareStatement(bound)) {
+    try (PreparedStatement ps = reader.prepareStatement(bound)) {
       for (int i = 0; i < binds.size(); i++) ps.setObject(i + 1, binds.get(i));
       try (ResultSet rs = ps.executeQuery()) {
         ResultSetMetaData m = rs.getMetaData();
@@ -149,7 +175,7 @@ public class Residual implements AutoCloseable {
   public void prepareOnly(String sql) throws Exception {
     List<Object> binds = new ArrayList<>();
     String bound = NAMED.matcher(sql).replaceAll("?");
-    h2.prepareStatement(bound).close();
+    reader.prepareStatement(bound).close();
   }
 
   /** Replace :name markers by ? and collect the bind values in order (positional ? are taken from params "1","2",...). */
@@ -196,6 +222,7 @@ public class Residual implements AutoCloseable {
 
   @Override
   public void close() throws Exception {
+    try { reader.close(); } catch (Exception ignored) { }
     try (Statement s = h2.createStatement()) { s.execute("SHUTDOWN"); } catch (Exception ignored) { }
     h2.close();
   }
