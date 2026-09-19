@@ -228,7 +228,9 @@ class _Lowerer:
                                                                   re.IGNORECASE)))
         event = " OR ".join(events) or None
         # `UPDATE OF status, note` の列。**SET にその列が無ければ掛からない**ので、事実として残す
-        listed = re.search(r"\b(?:INSERT|UPDATE|DELETE)\s+OF\s+(?P<columns>[\w$#,\s]+?)\s+ON\b",
+        # 列の並びは次のイベント（`UPDATE OF qty OR DELETE ON t`）か ON で終わる。ON までを列と読むと
+        # `qty or delete` という列になり、qty を SET する更新に trigger が黙って掛からなかった
+        listed = re.search(r"\bUPDATE\s+OF\s+(?P<columns>[\w$#]+(?:\s*,\s*[\w$#]+)*)\s+(?:OR|ON)\b",
                            text, re.IGNORECASE)
         columns = [c.strip().lower() for c in listed.group("columns").split(",")] if listed else []
         # `WHEN (...)` は発火条件である。落とすと記録される量が変わるので IR に残す（#12）。

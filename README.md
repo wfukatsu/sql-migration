@@ -126,15 +126,15 @@ python -m plsql.kpi --evidence difftest/work/plsql-diff.json --generated generat
 
 ### 現在地
 
-合成 corpus（24 unit / 56 routine）に対して:
+合成 corpus（27 unit / 62 routine）に対して:
 
 | | |
 |---|---|
 | parse 率・型解決率・判定一致・compile 率 | **100%** |
 | **意味的同等性（AUTO 対象）** | **100%**（金額の 2 規約とも AUTO 19/19 が実 Oracle と一致） |
-| 判定 | AUTO 13 / REVIEW 25 / REDESIGN 18 |
+| 判定 | AUTO 15 / REVIEW 21 / REDESIGN 26（2026-09-20 の実測） |
 
-**数値は合成 corpus 上のものであり、実案件耐性の証拠ではありません。** 非 AUTO の 43 件を塞いでいるのは
+**数値は合成 corpus 上のものであり、実案件耐性の証拠ではありません。** 非 AUTO の 47 件を塞いでいるのは
 変換できない構文ではなく、**人が決めるべきこと**です（走査行数の上限、採番方式、トランザクション境界など。
 [Phase 4 中間報告](docs/plsql-phase4-interim.md) §1）。
 
