@@ -32,7 +32,7 @@ import java.util.Map;
  * therefore fails with {@link ScanAfterWriteException} rather than silently reading a stale image.
  */
 public final class PlanRunner {
-  private static final Gson GSON = new Gson();
+  private static final Gson GSON = Runner.GSON;   // whole numbers stay whole (see there)
 
   private PlanRunner() {}
 
