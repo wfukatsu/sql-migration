@@ -55,7 +55,9 @@ units:
     routines:
       - {name: tier_discount,  expected: AUTO,   reason: "純粋関数。spec に無いので private method"}
       - {name: line_amount,    expected: AUTO,   reason: "純粋関数"}
-      - {name: customer_tier,  expected: REVIEW, reason: "2 表 JOIN。ScalarDB SQL の JOIN 制約に当たるか要確認"}
+      # 2026-09-20 / #13: 「JOIN 制約に当たるか」は変換器が答えるようになった（FROM 側を入れ替えてそのまま実行できる）。
+      # そのまま実行できる結合に SEM-005 は掛けないと決めたので AUTO。以前の期待値は REVIEW
+      - {name: customer_tier,  expected: AUTO,   reason: "2 表 JOIN。変換器がそのまま実行できる形にする（capability が OK）"}
       - {name: order_total,    expected: REVIEW, reason: "Cursor FOR LOOP で N+1。行数次第でアプリ集計へ寄せる"}
       - {name: reprice_order,  expected: REVIEW, reason: "UPDATE の値に関数呼び出し。呼び出しを外へ出す書き換えが要る"}
 
