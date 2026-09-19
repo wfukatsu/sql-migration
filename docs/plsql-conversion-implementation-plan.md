@@ -980,6 +980,27 @@ P0-2 の manifest）に集計し直す。
     できないとき**（ScalarDB がそのまま実行できる文ではない: 実行計画・拒否・スキーマが無い）だけに残す。後者は
     判定を下げない注記 SELECT-OPT-001 にした。走査の可否と性能は別のルール（SCAN-002、SQL-001 / 002）が見る。
 
+- **REVIEW は「移行できるかが未解決」のときだけにする**（2026-09-20 決定）。生成コードと実 DB の evidence で解決済みの
+  問いは REVIEW に残さない。設計・運用への助言は判定を下げない注記（`decision: AUTO` のルール）に分ける。性能と
+  実行可否は、意味論のルールと混ぜずに別のルールで見る。この原則で 8 つのルールを見直した:
+
+  | ルール | 変更 |
+  |---|---|
+  | SEM-001（ROUND）、SEM-003（空文字・NVL・RTRIM） | 互換ランタイムが計算する式には掛けない。移行先 DB（ScalarDB SQL / 実行計画の H2）が評価する文だけ REVIEW |
+  | SEM-004（集約の SELECT INTO）、SEM-005（結合）、SELECT-001（キーで届かない SELECT INTO） | ScalarDB がそのまま実行できる文には掛けない（0 件のシナリオを含めて実 DB で確かめてある）。SELECT-001 の一意性の助言は注記 SELECT-OPT-001 |
+  | CUR-002 / BULK-003（cursor ループ・分割読み） | `limits.yaml` で走査行数の上限（または上限で守らない理由）が決めてあれば注記（CUR-OPT-002 / BULK-OPT-003）。未決定なら REVIEW |
+  | DYN-002（動的 SQL） | とりうる文をすべて展開でき、全部を ScalarDB がそのまま実行できるなら注記（DYN-OPT-002）。そうでなければ REVIEW |
+  | SCAN-002（パーティションをまたぐ走査） | 移行先は JDBC バックエンドに限定済み（#20）なので注記。JDBC 以外では変換器が拒否し SQL-001 が REVIEW にする |
+  | SEM-006 / SEM-011（MERGE の競合）、SEM-009（TIMESTAMP → DATE の CAST）、SEM-010（SYSTIMESTAMP を書く） | REVIEW のまま。evidence では答えが出ない、または実装と evidence がまだ無い |
+
+  - この見直しで double 規約の穴が 1 つ見つかった: `NUMBER(14,2)` の列は書き込み時に小数 2 桁へ half-up で丸めるが、
+    DOUBLE の列へは丸めずに書いていた（SEM-001 が隠していて、KPI-5 が指摘した）。`Plsql.bind` とハーネスの setup で
+    列の桁に丸めるようにし、double の「丸めの相違」2 件が解消した（金額の 2 規約の判定が同じになった）。
+  - holdout2 の 2 件（`pkg_shipment.is_shippable` / `line_count`）は期待値 REVIEW のまま残し、食い違いとして数える
+    （KPI-3 は 63/65 = 96.9%）。holdout2 の期待値はルールに合わせて書き換えない、という約束を守るためである。
+  - 決定の適用後に残る REVIEW は 3 件: `pkg_customer_import.import`（同時実行の競合と再試行）、
+    `pkg_order_report.mark_reviewed`（走査行数の上限が未決定）、`pkg_shipment.days_in_transit`（CAST の秒未満）。
+
 - **生成コードは Spring に依存させない**（2026-09-17）。`@Transactional` は使わず、ScalarDB の
   try-with-resources 定型を `runtime-java` のヘルパに集約し、commit / abort を 1 箇所で制御する（設計書 §6.7）。
   - 理由: 注釈 1 つのために PoC のビルドへフレームワークを丸ごと持ち込むと、依存面と設定が大きく増える。

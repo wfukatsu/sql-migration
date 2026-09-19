@@ -1,0 +1,21 @@
+name: payment_last_paid_at_none
+unit: pkg_payment
+routine: last_paid_at
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO customers (customer_id, name, email, tier, credit_limit, registered_on) VALUES (1, 'A', NULL, 'GOLD', NULL, DATE '2025-04-01')
+- INSERT INTO orders (order_id, customer_id, status, ordered_at, total_amount, note) VALUES (1001, 1, 'NEW', TIMESTAMP '2026-01-10 11:00:00', NULL, NULL)
+call:
+  kind: block
+  body: "DECLARE\n  v TIMESTAMP WITH TIME ZONE;\nBEGIN\n  v := pkg_payment.last_paid_at(:p_order_id);\n  :o_is_null := CASE WHEN v IS NULL THEN 1 ELSE 0 END;\nEND;"
+  args:
+    p_order_id: 1001
+  out:
+    o_is_null: NUMBER
+capture_tables:
+- payments
+mask:
+  payments:
+  - paid_at
+note: 支払いが 0 件。MAX は 0 件でも 1 行（NULL）を返すので、NO_DATA_FOUND にならず NULL が返る（SEM-004 の evidence、2026-09-20）

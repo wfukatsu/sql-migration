@@ -381,7 +381,10 @@ public final class Plsql {
       case "INT":
         return scaled(decimal, scale).intValueExact();
       case "DOUBLE":
-        return decimal.doubleValue();
+        // A NUMBER(p,s) column rounds what is written into it to s decimals, half-up, and a DOUBLE column rounds
+        // nothing: 1234.565 into NUMBER(14,2) is 1234.57 in Oracle and stayed 1234.565 here. `scale` is the Oracle
+        // column's; 0 means the column declares none (NUMBER, BINARY_DOUBLE) -- a NUMBER(p,0) is never a DOUBLE.
+        return (scale > 0 ? decimal.setScale(scale, java.math.RoundingMode.HALF_UP) : decimal).doubleValue();
       case "FLOAT":
         return decimal.floatValue();
       case "TEXT":

@@ -32,6 +32,7 @@ corpus（`../src/`）は KPI-1 / KPI-2 / KPI-3 の母数である。ルールを
 | 12 未解決シンボル・未解決型 | `unresolved_type.sql` | 確信度（typeResolution = 0） |
 | — 外部副作用 | `external_package.sql` | EXT-001 |
 | — GOTO | `goto.sql` | LOWER-002 |
+| — ROUND と集約が、互換ランタイムを通らずに移行先（実行計画の H2）で評価される SELECT INTO | `round_in_the_target.sql` | SEM-001、SEM-004 |
 | — オーバーロードの呼び出しで、引数の数と名前からどの版かを決められないもの | `overload_unresolved.sql` | CALL-002 |
 | — 移行先では自然には起こらない例外の handler | `unreachable_handler.sql` | EXC-001 |
 | 5 trigger の掛かる表への書き込みで、trigger を呼び出しに置き換えられていないもの | `trigger_not_applied.sql` | TRG-002 |

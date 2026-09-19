@@ -48,7 +48,7 @@ SCHEMA = ROOT / "fixtures" / "plsql" / "scalardb-schema.json"
 OUT = ROOT / "difftest" / "work" / "plsql-setup.json"
 
 
-def scale_money(statement: str, scales: dict[str, dict[str, int]]) -> str:
+def scale_money(statement: str, scales: dict[str, dict[str, int]], as_integer: bool = True) -> str:
     """Write a decimal literal as the scaled integer the column holds under the scaled-money convention.
 
     The generated repository does the same thing at the bind boundary (`Plsql.bind`), so the starting rows have
@@ -70,8 +70,14 @@ def scale_money(statement: str, scales: dict[str, dict[str, int]]) -> str:
         for tuple_ in (tree.expression.expressions if isinstance(tree.expression, exp.Values) else []):
             value = tuple_.expressions[index]
             if isinstance(value, exp.Literal) and value.is_number:
-                scaled = Decimal(value.name).scaleb(scale).quantize(Decimal(1), rounding=ROUND_HALF_UP)
-                tuple_.expressions[index].replace(exp.Literal.number(int(scaled)))
+                if as_integer:
+                    scaled = Decimal(value.name).scaleb(scale).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+                    tuple_.expressions[index].replace(exp.Literal.number(int(scaled)))
+                else:
+                    # the double convention keeps the decimals, but the Oracle column still rounds to its scale:
+                    # 1234.565 into NUMBER(14,2) is 1234.57, and the starting rows have to say so too
+                    rounded = Decimal(value.name).quantize(Decimal(1).scaleb(-scale), rounding=ROUND_HALF_UP)
+                    tuple_.expressions[index].replace(exp.Literal.number(str(rounded)))
     return tree.sql(dialect="oracle")
 
 
@@ -119,7 +125,8 @@ def pin_masked_clocks(statement: str, mask: dict[str, list[str]], pinned: str | 
 
 def convert(statements: list[str], registry: SchemaRegistry,
             scales: dict[str, dict[str, int]] | None = None,
-            mask: dict[str, list[str]] | None = None, pinned: str | None = None) -> list[str]:
+            mask: dict[str, list[str]] | None = None, pinned: str | None = None,
+            rounded: dict[str, dict[str, int]] | None = None) -> list[str]:
     """Every statement, converted. Raises when one of them cannot be, naming the statement."""
     out = []
     for statement in statements:
@@ -127,6 +134,8 @@ def convert(statements: list[str], registry: SchemaRegistry,
         text = pin_masked_clocks(text, mask or {}, pinned, registry)
         if scales:
             text = scale_money(text, scales)
+        elif rounded:
+            text = scale_money(text, rounded, as_integer=False)   # the double convention: round, do not scale
         results, _ = convert_script(text + ";", "oracle", registry, {}, decompose=False)
         for result in results:
             if result.status == "ERROR" or not result.converted:
@@ -140,7 +149,8 @@ BLOCK = re.compile(r"^\s*BEGIN\s+(?P<body>.*?)\s*END\s*;\s*$", re.IGNORECASE | r
 DML = re.compile(r"^\s*(INSERT|UPDATE|DELETE)\b", re.IGNORECASE)
 
 
-def direct(spec: dict, registry: SchemaRegistry, scales: dict[str, dict[str, int]] | None) -> dict | None:
+def direct(spec: dict, registry: SchemaRegistry, scales: dict[str, dict[str, int]] | None,
+           rounded: dict[str, dict[str, int]] | None = None) -> dict | None:
     """ブロックが**素の DML だけ**のシナリオを、ScalarDB で同じ DML を直接走らせる形にする（2026-09-19）。
 
     trigger のシナリオ（`UPDATE products SET unit_price = :p_price ...`）は routine を呼ばない——
@@ -178,7 +188,8 @@ def direct(spec: dict, registry: SchemaRegistry, scales: dict[str, dict[str, int
         binds = []
         for name, column in bind_columns(tree).items():
             kind = (meta.columns.get(column) if meta else None) or ""
-            scale = (scales or {}).get(table, {}).get(column, 0)
+            # under the double convention the column is a DOUBLE, and Plsql.bind rounds to the Oracle column's scale
+            scale = (scales or rounded or {}).get(table, {}).get(column, 0)
             binds.append({"name": name, "type": kind, "scale": scale})
         out.append({"sql": result.converted[0], "binds": binds})
     return {"statements": out}
@@ -194,16 +205,17 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     registry = SchemaRegistry.from_schema_loader_json(args.schema)
-    scales = decimal_columns(ROOT / "fixtures" / "plsql" / "src" / "schema.sql") \
-        if args.variant == "scaled" else None
+    decimals = decimal_columns(ROOT / "fixtures" / "plsql" / "src" / "schema.sql")
+    scales = decimals if args.variant == "scaled" else None
+    rounded = decimals if args.variant == "double" else None
     scenarios, unconvertible = {}, {}
     for path in sorted(SCENARIOS.glob("*.yaml")):
         spec = yaml.safe_load(path.read_text(encoding="utf-8"))
         try:
             scenarios[spec["name"]] = {"setup": convert(spec.get("setup") or [], registry, scales,
                                                         spec.get("mask") or {},
-                                                        (spec.get("pinned") or {}).get("sysdate"))}
-            straight = direct(spec, registry, scales)
+                                                        (spec.get("pinned") or {}).get("sysdate"), rounded=rounded)}
+            straight = direct(spec, registry, scales, rounded)
             if straight is not None:
                 scenarios[spec["name"]]["direct"] = straight
         except ValueError as e:

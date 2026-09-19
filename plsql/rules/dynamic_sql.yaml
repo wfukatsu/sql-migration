@@ -15,12 +15,21 @@ rules:
     requiredTests:
       - dynamic_sql_variants
 
+  # 2026-09-20: 動的 SQL のとりうる文をすべて静的な文に展開でき、その全部を ScalarDB がそのまま実行できるなら、bind の
+  # 復元は展開の時点で済んでいて、結果は実 DB の evidence で確かめられる。残る権限の確認は運用への助言で、移行の可否
+  # ではない（DYN-OPT-002）。展開できない・一部が実行計画や拒否になる・ScalarDB のスキーマが無いときは REVIEW のまま
   - id: DYN-002
-    match: {statementKind: DynamicSql}
+    match: {statementKind: DynamicSql, dynamicResolved: false}
     decision: REVIEW
-    message: 動的 SQL は定数に畳み込めても bind の復元と権限の確認が要ります
+    message: 動的 SQL です。とりうる文をすべて展開して ScalarDB がそのまま実行できる、とは確かめられていません。bind の復元と権限の確認が要ります
     requiredTests:
       - bind_restoration
+
+  - id: DYN-OPT-002
+    match: {statementKind: DynamicSql, dynamicResolved: true}
+    decision: AUTO          # 判定を下げない注記
+    severity: info
+    message: 動的 SQL は、とりうる文をすべて静的な文に展開して生成しました（どれも ScalarDB がそのまま実行できます）。Oracle で EXECUTE IMMEDIATE に与えていた権限に相当するものが移行先に要るかは、運用で確認することを推奨します
 
   - id: DYN-003
     match: {statementKind: [SqlOperation, Expression], textMatches: '\bDBMS_SQL\b'}

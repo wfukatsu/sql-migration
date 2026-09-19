@@ -59,6 +59,9 @@ parse 率 = 構文エラーなく parse できたファイル数 / corpus の全
 ```
 
 - 分母は現在 65 routine（うち holdout 18）。
+- 2026-09-20 現在 63/65 = 96.9%（holdout は 16/18）。食い違う 2 件は holdout2 の `pkg_shipment.is_shippable` と `line_count` で、
+  期待値は REVIEW、判定は AUTO。原因は判定の方針変更（REVIEW は移行の可否が未解決のときだけ。計画書 §9）で、ルールの
+  取りこぼしではない。holdout2 の期待値は書き換えないと決めてあるので、食い違いのまま数える。
 - **AUTO 禁止条件（§2）に該当する routine を AUTO と判定したら、その時点で不合格**とする。
   適合率が何 % でも、この false negative は許さない。
 - **目標: Phase 2 で、AUTO 禁止条件の取りこぼし 0、全体一致 90% 以上**。
