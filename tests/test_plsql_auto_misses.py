@@ -57,10 +57,11 @@ def test_console_output_and_collection_methods_are_not_external_calls(tmp_path):
 
 # --- 22: expressions outside the four statement kinds ------------------------------------------------------
 @pytest.mark.parametrize("declare,body,rule", [
-    # SEM-009 since 2026-09-20: SEM-001 (ROUND) no longer looks at PL/SQL expressions -- the runtime computes those
-    ("  v_x DATE := CAST(SYSTIMESTAMP AS DATE);", "NULL;", "SEM-009"),
-    ("", "WHILE CAST(SYSTIMESTAMP AS DATE) > SYSDATE LOOP EXIT; END LOOP;", "SEM-009"),
-    ("", "LOOP EXIT WHEN CAST(SYSTIMESTAMP AS DATE) > SYSDATE; END LOOP;", "SEM-009"),
+    # SEM-002 since 2026-09-20: SEM-001 (ROUND) and SEM-009 (CAST AS DATE) no longer look at PL/SQL expressions --
+    # the runtime computes those. What depends on the session's time zone is still read wherever it is evaluated
+    ("  v_x TIMESTAMP WITH TIME ZONE := CURRENT_TIMESTAMP;", "NULL;", "SEM-002"),
+    ("", "WHILE CURRENT_TIMESTAMP > SYSTIMESTAMP LOOP EXIT; END LOOP;", "SEM-002"),
+    ("", "LOOP EXIT WHEN CURRENT_TIMESTAMP > SYSTIMESTAMP; END LOOP;", "SEM-002"),
     ("  v_c INTEGER := DBMS_SQL.OPEN_CURSOR;", "NULL;", "DYN-003"),
     ("", "DBMS_SQL.PARSE(p_id, 'DELETE FROM audit_log', 1);", "DYN-003"),
 ])

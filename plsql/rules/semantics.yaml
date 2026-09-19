@@ -47,17 +47,18 @@ rules:
     requiredTests:
       - timezone
 
+  # 2026-09-20: 「秒未満を捨ててよいかは業務の判断」と書いていたが、移行は Oracle の挙動を保つものである。Oracle は
+  # 秒未満を**切り捨てる**（四捨五入しない。23:59:59.999999 は同じ日の 23:59:59。Oracle 23ai で SQL・PL/SQL とも実測）。
+  # PL/SQL の式の CAST は互換ランタイム（Plsql.castDate）がそのとおりに計算し、実 DB の evidence もある
+  # （shipment_days_in_transit_*）。REVIEW にするのは、CAST が**移行先 DB に評価される**文だけ（SEM-001 / 003 と同じ基準）
   - id: SEM-009
     match:
-      statementKind: [SqlOperation, Expression]
-      # TIMESTAMP を DATE へ狭める CAST。Oracle は秒未満を捨てるが、Java 側は両方 LocalDateTime なので
-      # 捨てる相当の処理が無い。記録した答えにも CAST は無いので、ここは証拠が届いていない
-      textMatches: 'CAST\s*\([^)]*\bAS\s+DATE\b'
+      statementKind: SqlOperation
+      evaluatedByTarget: 'CAST\s*\([^)]*\bAS\s+DATE\b'
     decision: REVIEW
-    message: TIMESTAMP から DATE への CAST です。Oracle は秒未満を捨てます。捨ててよいかは業務の判断です
+    message: TIMESTAMP から DATE への CAST が、Oracle 互換のランタイムを通らずに移行先 DB（ScalarDB SQL か実行計画の H2）で評価されます。Oracle は秒未満を切り捨てますが、移行先が同じとは限りません
     remediation:
-      - 秒未満を捨ててよいなら、生成側でも明示的に捨てる
-      - 捨ててはいけないなら TIMESTAMP のまま扱う
+      - CAST を SQL の外へ出し、値として bind する（ランタイムが Oracle と同じく秒未満を切り捨てる）
     requiredTests:
       - date_time_component
 

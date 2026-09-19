@@ -184,7 +184,6 @@ def test_full_evidence_and_a_checked_statement_gives_auto(corpus, ruleset):
     ("pkg_bulk_load.restock", "BULK-002"),
     # P4-3: SEM-002 は TZ 依存構文だけを見るようになった。TRUNC と日付差は記録済みの
     # Oracle 挙動が覆うので、ここは当たらないのが正しい
-    ("pkg_shipment.days_in_transit", "SEM-009"),
     ("pkg_payment.paid_total", "SEM-004"),
     ("pkg_order_pricing.customer_tier", "SEM-005"),
     ("pkg_customer_import.import", "SEM-006"),

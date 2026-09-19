@@ -218,7 +218,10 @@ END;
 # (fixtures/plsql/README.md). On 2026-09-20 the *policy* changed -- a REVIEW now means "whether the routine can move is
 # open", and an aggregate SELECT INTO that ScalarDB runs as it stands is not -- so these two disagree with what was
 # written down then. The disagreement is reported, not erased.
-POLICY_CHANGE_ON_HOLDOUT2 = [("pkg_shipment.is_shippable", "REVIEW", "AUTO"), ("pkg_shipment.line_count", "REVIEW", "AUTO")]
+# `days_in_transit` joined them when SEM-009 was narrowed the same day: CAST(... AS DATE) in a PL/SQL expression is the
+# runtime's, which drops the fraction of a second as Oracle does (measured, and compared on the real databases).
+POLICY_CHANGE_ON_HOLDOUT2 = [("pkg_shipment.days_in_transit", "REVIEW", "AUTO"), ("pkg_shipment.is_shippable", "REVIEW", "AUTO"),
+                             ("pkg_shipment.line_count", "REVIEW", "AUTO")]
 
 
 def test_agreement_with_the_manifest(checked):
@@ -226,7 +229,7 @@ def test_agreement_with_the_manifest(checked):
     decisions = decide(analysis.program, program_analysis, RuleSet.load(), Evidence())
     agree, disagree, mismatches = agreement(decisions)
     assert sorted(mismatches) == POLICY_CHANGE_ON_HOLDOUT2
-    assert agree == 63   # of 65: 56 + six routines of #29-25 + three of #29-23, less the two above
+    assert agree == 62   # of 65: 56 + six routines of #29-25 + three of #29-23, less the three above
 
 
 def test_agreement_on_the_holdout_is_reported_separately(checked):
@@ -235,7 +238,7 @@ def test_agreement_on_the_holdout_is_reported_separately(checked):
     decisions = decide(analysis.program, program_analysis, RuleSet.load(), Evidence())
     agree, disagree, mismatches = agreement(decisions, only_holdout=True)
     assert agree + disagree == 18
-    assert sorted(mismatches) == POLICY_CHANGE_ON_HOLDOUT2, "16 / 18 on the holdout, and the two are known"
+    assert sorted(mismatches) == POLICY_CHANGE_ON_HOLDOUT2, "15 / 18 on the holdout, and the three are known"
 
 
 def test_no_auto_prohibition_is_missed(checked):
