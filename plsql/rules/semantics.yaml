@@ -151,10 +151,17 @@ rules:
   # 続き）。**割ると MERGE という語が消え、SEM-006 が外れる**——だが競合の問いは消えていない。
   # 同時に「無い」と読んだ 2 つは commit で片方が弾かれ、再試行は呼び出し側の責務になる。
   # 書き換えで規則が黙って外れるのは、BULK-003 / CUR-001 と同じ形である
+  # 2026-09-20: MERGE が割られるのは、その routine について「楽観制御にして、弾かれた要素を呼び出し側が再試行する」と
+  # 決めて記録したとき（limits.yaml の rowLocks.optimistic）だけである。だから MERGE_SPLIT が付いている時点で、再試行の
+  # 方針は決まっている。同時実行の挙動は実クラスタで確かめた（TransactionIT の
+  # twoImportsOfTheSameNewCustomerDoNotBothInsertAndTheLoserRetriesAsAnUpdate: 同じ新規の顧客を同時に入れると片方が
+  # commit で弾かれ、行は 1 つ、再試行は UPDATE の枝を通る）。移行の可否は開いていないので、判定を下げない注記にした。
+  # 割られていない MERGE は SEM-006 が REVIEW にする
   - id: SEM-011
     match: {statementKind: SqlOperation, hasDiagnostic: MERGE_SPLIT}
-    decision: REVIEW
-    message: MERGE を読んでから UPDATE か INSERT を選ぶ形に割りました。同時に同じキーを書くと片方が commit で弾かれます
+    decision: AUTO          # 判定を下げない注記
+    severity: info
+    message: MERGE を読んでから UPDATE か INSERT を選ぶ形に割りました。同時に同じキーを書くと片方が commit で弾かれます。弾かれた要素だけを呼び出し側が再試行してください（その要素は冪等です。決定は limits.yaml の rowLocks.optimistic）
     requiredTests:
       - concurrent_upsert
 

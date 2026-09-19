@@ -153,7 +153,7 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
     # #19: 割った routine の処理対象を、キー順に件数つきで繰り返し読む
     paging.rewrite(program, boundaries, schema, analysis.symbol_table())
     triggers.rewrite(program, schema, analysis.symbol_table())
-    _record_row_limits(program, limits)
+    _record_row_limits(program, limits, boundaries)
 
     if scalardb_schema is not None:
         from .capability import annotate, check
@@ -169,13 +169,19 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
     return analysis
 
 
-def _record_row_limits(program: M.Program, limits) -> None:
+def _record_row_limits(program: M.Program, limits, boundaries=None) -> None:
     """Say on the loop that somebody decided how many rows it may read.
 
     CUR-002 / BULK-003 ask a person to look at the number of rows a loop reads. `limits.yaml` is where that person
     answers -- a value the generated code enforces (RowLimitExceededException), or a reason why a limit is not what
     protects this routine -- and once it is answered the question is no longer open (decided 2026-09-20). The rules
     read this diagnostic; a routine that falls to the default has decided nothing and is still reviewed.
+
+    A routine split into one transaction per iteration (`transactions.perIteration`) answers it another way: its
+    loop was rewritten to read its targets in key order, a batch at a time (`paging.rewrite`, diagnostic PAGED), so
+    what it holds at once is the batch -- an operational setting -- and not the total, which nobody can decide
+    (#19; limits.yaml says so itself, and `--limits-strict` never asked about these). Only a loop that was
+    actually paged counts: a refused paging (PAGING_REFUSED) reads everything, and is still reviewed.
     """
     if limits is None:
         return
@@ -183,12 +189,18 @@ def _record_row_limits(program: M.Program, limits) -> None:
 
     for module in program.modules:
         for routine in module.routines:
-            if not limits.decided(routine.id):
-                continue
             statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
             for statement in statements:
-                if statement.kind == "Loop" and not any(d.code == "ROW_LIMIT_DECIDED" for d in statement.diagnostics):
+                if statement.kind != "Loop" or any(d.code == "ROW_LIMIT_DECIDED" for d in statement.diagnostics):
+                    continue
+                query = getattr(statement, "query", None)
+                paged = query is not None and any(d.code == "PAGED" for d in query.diagnostics)
+                if limits.decided(routine.id):
                     statement.add("INFO", "ROW_LIMIT_DECIDED", limits.explain(routine.id))
+                elif paged and boundaries is not None and routine.id in boundaries.per_iteration:
+                    statement.add("INFO", "ROW_LIMIT_DECIDED",
+                                  f"1 反復 = 1 トランザクションに割り、対象をキー順に件数つきで繰り返し読む形にした"
+                                  f"（limits.yaml: transactions.perIteration）。一度に持つ行数は読む単位で決まる")
 
 
 # --- inventory ----------------------------------------------------------------------------------------
