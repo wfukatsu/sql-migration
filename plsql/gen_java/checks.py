@@ -72,6 +72,9 @@ def generate(checks: list[Check], package: str, domain_package: str,
     return file
 
 
+# 照合の控え（A-3）。監査行が削除されても、最後に監査した値をここに残す
+BASELINE = "trigger_check_baseline"
+
 # B 型の照合を持つ trigger。A の補完は、B が拒否する行を飛ばす必要がある
 _REJECTING: set[str] = set()
 
@@ -111,6 +114,15 @@ def _audit_reads(file: JavaFile, check: Check, types) -> None:
                  f"{' / '.join(order) or '（無し）'}——hi/lo の採番は時刻順とは限らないので、時刻を先に見る")
     with file.block(f"private Map<String, Object[]> {prefix}LastAudited() throws SQLException") as f:
         f.line("Map<String, Object[]> out = new LinkedHashMap<>();")
+        # A-3（2026-09-19）: 控えの表から始める。監査行が削除（prc_purge_audit）で消えても、最後に
+        # 監査した値はここに残る——残さないと、しばらく変わっていない行が照合から外れる
+        baseline = (f"SELECT key_value, last_value, last_at FROM {BASELINE} "
+                    f"WHERE trigger_name = '{check.trigger}'")
+        with f.block(f'try (PreparedStatement statement = connection.prepareStatement("{baseline}"); '
+                     f"ResultSet rows = statement.executeQuery())") as g:
+            with g.block("while (rows.next())") as h:
+                h.line(f"out.put(String.valueOf(rows.getObject(1)), new Object[] {{rows.getObject(2), "
+                       f"{', '.join(['rows.getObject(3)'] + ['null'] * (len(order) - 1)) or 'null'}}});")
         selected = [column_of["key"], column_of["new"]] + order
         sql = f"SELECT {', '.join(selected)} FROM {audit.table}" + (f" WHERE {filters}" if filters else "")
         with f.block(f'try (PreparedStatement statement = connection.prepareStatement("{sql}"); '
@@ -129,6 +141,26 @@ def _audit_reads(file: JavaFile, check: Check, types) -> None:
                                f"(Objects.equals(seen[{i + 1}], kept[{i + 1}]) && ({compare}))")
                 h.line(f"if (kept == null || {compare}) out.put(key, seen);")
         f.line("return out;")
+
+
+def _remember(file: JavaFile, check: Check) -> None:
+    """控えの表を、最後に監査した値で更新する（A-3）。**今の値ではない**——今の値を控えると、
+    ずれを「監査済み」として洗い流してしまう。B が拒否する行を補わないのと同じ理由である。"""
+    prefix = java_name(check.trigger)
+    upsert = f"UPSERT INTO {BASELINE} (trigger_name, key_value, last_value, last_at) VALUES (?, ?, ?, ?)"
+    file.comment(f"控えの表（{BASELINE}）を、最後に監査した値で更新する（A-3）。**今の値ではない**——\n"
+                 f"今の値を控えると、ずれを監査済みとして洗い流してしまう。監査を全件読むので、補完と同じ\n"
+                 f"トランザクションでは回せない（同じトランザクションで書いた表の走査になる: DB-CORE-10106）")
+    with file.block(f"public int {prefix}Remember() throws SQLException") as f:
+        f.line("int written = 0;")
+        with f.block(f"for (Map.Entry<String, Object[]> entry : {prefix}LastAudited().entrySet())") as g:
+            with g.block(f'try (PreparedStatement statement = connection.prepareStatement("{upsert}"))') as h:
+                h.line(f'statement.setObject(1, "{check.trigger}");')
+                h.line("statement.setObject(2, entry.getKey());")
+                h.line("statement.setObject(3, entry.getValue()[0] == null ? null : String.valueOf(entry.getValue()[0]));")
+                h.line("statement.setObject(4, entry.getValue()[1]);")
+                h.line("written += statement.executeUpdate();")
+        f.line("return written;")
 
 
 def _unaudited(file: JavaFile, check: Check, types, domain_package: str) -> None:
@@ -150,6 +182,8 @@ def _unaudited(file: JavaFile, check: Check, types, domain_package: str) -> None
         f.line("return out;")
     file.line()
     _backfill(file, check, types)
+    file.line()
+    _remember(file, check)
 
 
 def _backfill(file: JavaFile, check: Check, types) -> None:
@@ -267,3 +301,111 @@ def _violations(file: JavaFile, check: Check, types, domain_package: str) -> Non
                 with h.block("catch (MigratedException rejected)") as i:
                     i.line(f'out.add(new Drift("{check.trigger}", "D", key, rejected.getMessage()));')
         f.line("return out;")
+
+
+
+def generate_job(checks: list[Check], package: str) -> JavaFile | None:
+    """照合を回すジョブの雛形（A-2 / 2026-09-19）。
+
+    **1 回の照合は 1 つの読み取り専用トランザクションで読む。** `orders` と `audit_log` を別々のトランザ
+    クションで読むと、その間の書き込みで誤検知が出る。移行後の trigger は書き込みと同じトランザクション
+    で呼ばれるので、同じ時点を読めば誤検知は出ない。`Connection.setReadOnly(true)` が ScalarDB の
+    読み取り専用トランザクションになることは実クラスタで確かめた（書き込みは DB-CORE-10211 で拒否される）。
+
+    補完と控えの更新は、別々の書き込みトランザクションで行う（控えの更新は監査を全件読むので、補完と
+    同じトランザクションでは走査が拒否される）。スケジューラは持たない——いつ回すかは運用が決める。
+    """
+    usable = [c for c in checks if c.refused is None]
+    if not usable:
+        return None
+    file = JavaFile(package=package, name="TriggerCheckJob", source="(triggers)")
+    file.add_import("java.sql.Connection", "java.sql.SQLException", "java.util.ArrayList", "java.util.List",
+                    "java.util.LinkedHashMap", "java.util.Map", "java.math.BigDecimal",
+                    "com.scalar.migrate.plsql.AuditContext")
+    daily = [c for c in usable if c.interval == DAILY_]
+    hourly = [c for c in usable if c.interval != DAILY_]
+    file.comment("#12 §0 の照合を回すジョブの雛形（A-2）。1 回の照合は 1 つの読み取り専用トランザクションで読む。\n"
+                 "日次（A / C）: 照合 -> 補完 -> 控えの更新。**監査の削除（prc_purge_audit）より先に回す**——\n"
+                 "削除のあとに控えを更新すると、消えた監査行の値が控えに残らない。\n"
+                 "短い間隔（B / D）: 照合だけ。見つけたものは人が判断する。")
+    with file.block("public final class TriggerCheckJob") as f:
+        f.line("public record Report(List<TriggerChecks.Drift> drifts, Map<String, BigDecimal> maxKeys, "
+               "int backfilled, int remembered) {}")
+        f.line()
+        f.comment("読み取り専用トランザクションが衝突で弾かれたときに、読み直す回数（SERIALIZABLE では起こりうる）")
+        f.line("private static final int ATTEMPTS = 3;")
+        f.line()
+        f.line("private final Connection connection;")
+        f.line("private final TriggerChecks checks;")
+        f.line()
+        with f.block("public TriggerCheckJob(Connection connection, TriggerChecks checks)") as g:
+            g.line("this.connection = connection;")
+            g.line("this.checks = checks;")
+        f.line()
+        f.comment("日次（A / C）: 照合 -> 補完 -> 控えの更新")
+        with f.block("public Report daily(AuditContext audit) throws Exception") as g:
+            g.line("Map<String, BigDecimal> maxKeys = new LinkedHashMap<>();")
+            with g.block("List<TriggerChecks.Drift> drifts = readOnly(() ->") as h:
+                h.line("List<TriggerChecks.Drift> out = new ArrayList<>();")
+                for check in daily:
+                    if check.kind == "A":
+                        h.line(f"out.addAll(checks.{java_name(check.trigger)}Unaudited());")
+                    elif check.kind == "C":
+                        h.line(f'maxKeys.put("{check.trigger}", checks.{java_name(check.trigger)}MaxKey());')
+                h.line("return out;")
+            g.line(");")
+            audits = sorted({c.trigger for c in daily if c.kind == "A"})
+            backfill = " + ".join(f"checks.{java_name(t)}Backfill(drifts, audit)" for t in audits) or "0"
+            remember = " + ".join(f"checks.{java_name(t)}Remember()" for t in audits) or "0"
+            g.line(f"int backfilled = write(() -> {backfill});")
+            g.comment("補完とは別のトランザクション: 控えの更新は監査を全件読む")
+            g.line(f"int remembered = write(() -> {remember});")
+            g.line("return new Report(drifts, maxKeys, backfilled, remembered);")
+        f.line()
+        f.comment("短い間隔（B / D）: 照合だけ。見つけたものは人が判断する")
+        with f.block("public Report hourly() throws Exception") as g:
+            with g.block("List<TriggerChecks.Drift> drifts = readOnly(() ->") as h:
+                h.line("List<TriggerChecks.Drift> out = new ArrayList<>();")
+                for check in hourly:
+                    suffix = {"B": "Rejected", "D": "Violations"}[check.kind]
+                    h.line(f"out.addAll(checks.{java_name(check.trigger)}{suffix}());")
+                h.line("return out;")
+            g.line(");")
+            g.line("return new Report(drifts, Map.of(), 0, 0);")
+        f.line()
+        f.line("@FunctionalInterface")
+        f.line("private interface Work<T> { T run() throws Exception; }")
+        f.line()
+        with f.block("private <T> T readOnly(Work<T> work) throws Exception") as g:
+            with g.block("for (int attempt = 1; ; attempt++)") as h:
+                h.line("connection.setReadOnly(true);")
+                with h.block("try") as i:
+                    i.line("T result = work.run();")
+                    i.line("connection.commit();")
+                    i.line("return result;")
+                with h.block("catch (SQLException e)") as i:
+                    i.line("rollbackQuietly();")
+                    i.comment("衝突で弾かれた読み取りだけを読み直す。それ以外の誤りは隠さない")
+                    i.line('if (attempt >= ATTEMPTS || e.getMessage() == null || '
+                           '!e.getMessage().contains("conflict")) throw e;')
+                with h.block("finally") as i:
+                    i.line("connection.setReadOnly(false);")
+        f.line()
+        with f.block("private <T> T write(Work<T> work) throws Exception") as g:
+            with g.block("try") as h:
+                h.line("T result = work.run();")
+                h.line("connection.commit();")
+                h.line("return result;")
+            with g.block("catch (Exception e)") as h:
+                h.line("rollbackQuietly();")
+                h.line("throw e;")
+        f.line()
+        with f.block("private void rollbackQuietly()") as g:
+            with g.block("try") as h:
+                h.line("connection.rollback();")
+            with g.block("catch (SQLException ignored)") as h:
+                h.comment("トランザクションが始まっていない（DB-SQL-10015）。戻すものが無い")
+    return file
+
+
+DAILY_ = "daily"

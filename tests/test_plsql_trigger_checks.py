@@ -77,3 +77,52 @@ def test_the_direct_write_restriction_names_only_b_and_d_tables(tmp_path):
     revoked = sorted(line.split(" ON ")[1].split(" FROM")[0] for line in grants.splitlines()
                      if line.startswith("REVOKE"))
     assert revoked == ["plsqlpoc.payments", "plsqlpoc.products"]
+
+
+# --- A-2 / A-3（2026-09-19）: 照合ジョブと控えの表 -------------------------------------------------
+
+def _generated(tmp_path):
+    from plsql.generate import main as generate
+
+    generate([str(SRC), "--scalardb-schema", str(FIXTURES / "scalardb-schema.json"),
+              "--limits", str(FIXTURES / "limits.yaml"), "--out-dir", str(tmp_path), "--quiet"])
+    app = tmp_path / "src/main/java/com/example/migrated/application"
+    return (app / "TriggerChecks.java").read_text(encoding="utf-8"), \
+        (app / "TriggerCheckJob.java").read_text(encoding="utf-8"), tmp_path
+
+
+def test_each_check_reads_in_one_read_only_transaction(tmp_path):
+    """別々に読むと、その間の書き込みで誤検知が出る。`setReadOnly(true)` が ScalarDB の読み取り専用
+    トランザクションになることは実クラスタで確かめた（書き込みは DB-CORE-10211 で拒否される）。"""
+    _, job, _ = _generated(tmp_path)
+    assert "connection.setReadOnly(true);" in job and "connection.setReadOnly(false);" in job
+    assert 'contains("conflict")' in job, "衝突で弾かれた読み取りだけを読み直す"
+
+
+def test_the_backfill_and_the_baseline_update_are_separate_transactions(tmp_path):
+    """控えの更新は監査を全件読む。補完と同じトランザクションだと、書いた表の走査として拒否される。"""
+    _, job, _ = _generated(tmp_path)
+    daily = job[job.index("public Report daily("):job.index("public Report hourly(")]
+    assert daily.index("Backfill(") < daily.index("Remember(")
+    assert daily.count("write(() ->") == 2
+
+
+def test_the_last_audited_value_starts_from_the_baseline(tmp_path):
+    """監査行が削除されても、最後に監査した値は控えに残る。"""
+    checks, _, _ = _generated(tmp_path)
+    last = checks[checks.index("private Map<String, Object[]> trgProductsAuditLastAudited()"):]
+    assert last.index("FROM trigger_check_baseline") < last.index("FROM audit_log")
+
+
+def test_the_baseline_remembers_the_audited_value_not_the_current_one(tmp_path):
+    """今の値を控えると、ずれを監査済みとして洗い流してしまう。"""
+    checks, _, _ = _generated(tmp_path)
+    remember = checks[checks.index("public int trgProductsAuditRemember()"):].split("return written;")[0]
+    assert "LastAudited()" in remember and "Current()" not in remember
+
+
+def test_the_baseline_table_ddl_is_generated(tmp_path):
+    _, _, root = _generated(tmp_path)
+    ddl = (root / "db" / "trigger-check-baseline.sql").read_text(encoding="utf-8")
+    assert "CREATE TABLE IF NOT EXISTS plsqlpoc.trigger_check_baseline" in ddl
+    assert "PRIMARY KEY (trigger_name, key_value)" in ddl

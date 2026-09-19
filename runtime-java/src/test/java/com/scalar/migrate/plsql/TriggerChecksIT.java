@@ -41,6 +41,17 @@ class TriggerChecksIT {
     Variant.assertGeneratedForThisVariant();
     runner = new ScalarDbRunner(Variant.PROPERTIES, Variant.NAMESPACE, Variant.SCHEMA);
     runner.reset();
+    // A-3 の控えの表。移行で足す表なので、fixture の schema には無い（db/trigger-check-baseline.sql）
+    try (var statement = runner.connection().createStatement()) {
+      statement.execute("CREATE TABLE IF NOT EXISTS " + Variant.NAMESPACE + ".trigger_check_baseline ("
+          + "trigger_name TEXT, key_value TEXT, last_value TEXT, last_at TIMESTAMP, "
+          + "PRIMARY KEY (trigger_name, key_value))");
+    }
+    for (Map<String, Object> row : runner.select("SELECT trigger_name, key_value FROM trigger_check_baseline")) {
+      runner.execute("DELETE FROM trigger_check_baseline WHERE trigger_name = '" + row.get("trigger_name")
+          + "' AND key_value = '" + row.get("key_value") + "'");
+    }
+    runner.commit();
     for (String sql : List.of(
         "INSERT INTO customers (customer_id, name, tier) VALUES (1, 'A', 'GOLD')",
         "INSERT INTO orders (order_id, customer_id, status) VALUES (1001, 1, 'NEW')",
@@ -137,6 +148,57 @@ class TriggerChecksIT {
   @Test
   void aPaymentOnACancelledOrderIsFound() throws Exception {
     assertEquals(Map.of("5001", "D"), drifts("trgPaymentsGuardViolations"));
+  }
+
+  @Test
+  void theBaselineKeepsTheLastAuditedValueAfterThePurge() throws Exception {
+    // 控えを取ってから、監査行を消す（prc_purge_audit が古い行を消すのと同じこと）
+    checks.getClass().getMethod("trgProductsAuditRemember").invoke(checks);
+    runner.commit();
+    runner.execute("DELETE FROM audit_log WHERE audit_id = 2");
+    runner.execute("DELETE FROM audit_log WHERE audit_id = 3");
+    runner.commit();
+    // 監査行はもう無いが、最後に監査した値は控えに残っている——ずれも拒否も、まだ見える
+    assertEquals(Map.of("10", "A", "20", "A"), drifts("trgProductsAuditUnaudited"),
+        "監査を削除したら、照合から外れた");
+    assertEquals(Map.of("10", "B"), drifts("trgProductsAuditRejected"));
+  }
+
+  @Test
+  void withoutTheBaselineThePurgeHidesTheDrift() throws Exception {
+    // 控えを取らずに消すと、監査行の無い行は比べる相手が無く、照合から外れる——A-3 が塞いでいる穴
+    runner.execute("DELETE FROM audit_log WHERE audit_id = 2");
+    runner.execute("DELETE FROM audit_log WHERE audit_id = 3");
+    runner.commit();
+    assertEquals(Map.of(), drifts("trgProductsAuditUnaudited"));
+    assertEquals(Map.of(), drifts("trgProductsAuditRejected"));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void theJobReadsInReadOnlyTransactionsAndBackfillsSeparately() throws Exception {
+    Class<?> type = Class.forName(PACKAGE + ".application.TriggerCheckJob");
+    Object job = type.getConstructors()[0].newInstance(runner.connection(), checks);
+    AuditContext audit = AuditContext.of("OPS", OffsetDateTime.of(2026, 1, 20, 0, 0, 0, 0, ZoneOffset.UTC));
+
+    Object daily = type.getMethod("daily", AuditContext.class).invoke(job, audit);
+    List<Object> found = (List<Object>) daily.getClass().getMethod("drifts").invoke(daily);
+    assertEquals(3, found.size(), "orders 1001、products 10 と 20 の A");
+    // 補うのは orders 1001 と products 20。products 10 は B が拒否するはずの行なので補わない
+    assertEquals(2, daily.getClass().getMethod("backfilled").invoke(daily));
+    assertEquals(true, ((int) daily.getClass().getMethod("remembered").invoke(daily)) > 0);
+    Map<String, BigDecimal> maxKeys = (Map<String, BigDecimal>) daily.getClass().getMethod("maxKeys").invoke(daily);
+    assertEquals(0, new BigDecimal("1002").compareTo(maxKeys.get("trg_orders_seq")));
+
+    Object hourly = type.getMethod("hourly").invoke(job);
+    Map<String, String> kinds = new TreeMap<>();
+    for (Object drift : (List<Object>) hourly.getClass().getMethod("drifts").invoke(hourly)) {
+      kinds.put((String) drift.getClass().getMethod("key").invoke(drift),
+          (String) drift.getClass().getMethod("kind").invoke(drift));
+    }
+    assertEquals(Map.of("10", "B", "5001", "D"), kinds);
+    // ジョブは読み取り専用の状態を残さない（次の書き込みが拒否されないこと）
+    assertEquals(false, runner.connection().isReadOnly());
   }
 
   @Test
