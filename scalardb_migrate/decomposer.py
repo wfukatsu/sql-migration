@@ -23,7 +23,7 @@ from sqlglot.optimizer.normalize import normalize
 from sqlglot.transforms import eliminate_join_marks
 
 from .appside import h2_unsupported
-from .schema import SchemaRegistry, TableMeta
+from .schema import SchemaRegistry, TableMeta, quoted
 from .types import fit_temporal_literal, iso_temporal_literal
 
 DEFAULT_ROW_LIMIT = 10_000
@@ -197,11 +197,12 @@ def _fit_temporal(p: Predicate, types: dict[str, str]) -> Predicate:
 
 
 def _pred_sql(p: Predicate) -> str:
+    column = quoted(p.column)   # `type`, `key`: a keyword of ScalarDB SQL is a name only in double quotes
     if p.op in ("IS NULL", "IS NOT NULL"):
-        return f"{p.column} {p.op}"
+        return f"{column} {p.op}"
     if p.op == "BETWEEN":
-        return f"{p.column} BETWEEN {_sql_value(p.value[0])} AND {_sql_value(p.value[1])}"
-    return f"{p.column} {p.op} {_sql_value(p.value)}"
+        return f"{column} BETWEEN {_sql_value(p.value[0])} AND {_sql_value(p.value[1])}"
+    return f"{column} {p.op} {_sql_value(p.value)}"
 
 
 class Scope:
@@ -624,8 +625,8 @@ class Decomposer:
 
     @staticmethod
     def _fetch_sql(spec: FetchSpec) -> str:
-        cols = ", ".join(spec.columns) if spec.columns else "*"
-        name = f"{spec.namespace}.{spec.table}" if spec.namespace else spec.table
+        cols = ", ".join(map(quoted, spec.columns)) if spec.columns else "*"
+        name = f"{quoted(spec.namespace)}.{quoted(spec.table)}" if spec.namespace else quoted(spec.table)
         where = " AND ".join(Decomposer._group_sql(
             _fit_temporal(g, spec.column_types) if isinstance(g, Predicate)
             else [_fit_temporal(p, spec.column_types) for p in g]) for g in spec.predicates)
