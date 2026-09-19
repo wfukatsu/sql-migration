@@ -348,6 +348,11 @@ public final class Plsql {
     return isNull(value) ? null : emptyIsNull(text(value).stripLeading());
   }
 
+  /** `UPPER`。Oracle の識別子は大文字小文字を区別しないので、表名の照合に使う。 */
+  public static String upper(Object value) {
+    return isNull(value) ? null : text(value).toUpperCase(java.util.Locale.ROOT);
+  }
+
   private static String emptyIsNull(String value) {
     return value.isEmpty() ? null : value;
   }

@@ -85,6 +85,11 @@ def main(argv: list[str] | None = None) -> int:
     # #24 / #14: トランザクション境界を 1 反復 = 1 トランザクションに割ると決めた routine。
     # 決めていない routine は 1 つの method のまま出て、`COMMIT` のところで止まる
     set_boundaries(Boundaries.load(args.limits) if args.limits else Boundaries())
+    # 2026-09-19: 表名が実行時に決まる動的 SQL の、受け付けてよい表名。書いていなければ数えない
+    from .dynamic import set_allowed_tables
+    from .limits import DynamicTables
+
+    set_allowed_tables((DynamicTables.load(args.limits) if args.limits else DynamicTables()).allowed)
 
     analysis = build_analysis(root, schema, scalardb_schema=scalardb, row_locks=row_locks)
     decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), Evidence())

@@ -129,3 +129,15 @@ transactions:
       監査行は親が失敗しても残る（PRAGMA AUTONOMOUS_TRANSACTION。Oracle 23ai で実測）。移行先で
       同じにするには、呼び出し側が**別のトランザクションで**呼ぶ——同じ中で呼べば親と一緒に消える。
       corpus にこの routine の呼び出し元は無いので、境界を持つのは移行後のアプリである
+
+# 表名が実行時に決まる動的 SQL の、**受け付けてよい表名**（2026-09-19 の決定）。
+#
+# `'DELETE FROM ' || p_table_name || ...` は走りうる文が数えられない。数えられるようにするのは、人が
+# 表名を決めたときだけである。一覧に無い表名が渡されたら、生成コードは実行時に拒否する——Oracle なら
+# どの表でも走ったが、それを許すことこそ移行で塞ぎたい穴である。書いていない routine は拒否のまま。
+dynamicTables:
+  # 古い在庫履歴を消す。created_at を持つ表だけが意味を持つ
+  pkg_dynamic_search.purge: [inventory_tx]
+  # 名前は staging だが、corpus のシナリオが渡しているのは inventory_tx である（staging 用の表は
+  # schema に無い）。移行先で staging 表を作るなら、その名前をここに書き足す
+  pkg_customer_import.truncate_staging: [inventory_tx]
