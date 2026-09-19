@@ -204,9 +204,37 @@ def write(project: GeneratedProject, decisions: dict[str, Decision] | None = Non
                       "factors": decision.confidence.as_dict(),
                       "reasons": decision.reasons}
             for routine, decision in sorted(decisions.items())}
+    diagnostics = _diagnostic_codes(project.program)
+    if diagnostics:
+        payload["diagnostics"] = diagnostics
     report.write_text(json.dumps(payload, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     written.append(report)
     return written
+
+
+def _diagnostic_codes(program: M.Program | None) -> dict[str, list[str]]:
+    """routine ごとの診断コード（2026-09-19、PL/SQL 変換スキル）。
+
+    `OPTIMISTIC` / `MERGE_SPLIT` / `TRIGGER_CALL` のような診断は、生成コードの外で決めること
+    （`docs/plsql-decisions-outside-generator.md` §0.1）の目印である。IR の中にしか無いと、生成物だけを
+    見る人やスキルには、どの項目を確かめればよいかが分からない。
+    """
+    if program is None:
+        return {}
+    from ..lower import _walk
+
+    out: dict[str, list[str]] = {}
+    for module in program.modules:
+        for routine in module.routines:
+            codes = {d.code for d in routine.diagnostics}
+            for statement in _walk(routine.body):
+                codes.update(d.code for d in statement.diagnostics)
+            for handler in routine.exception_handlers:
+                for statement in _walk(handler.body):
+                    codes.update(d.code for d in statement.diagnostics)
+            if codes:
+                out[routine.id] = sorted(codes)
+    return dict(sorted(out.items()))
 
 
 def _restrict(tables: list[str]) -> str:
