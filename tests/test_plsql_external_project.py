@@ -73,3 +73,18 @@ def test_the_sample_generates_and_needs_exactly_the_row_lock_decision(tmp_path, 
     assert generate(base + ["--out-dir", str(tmp_path / "open"), "--handover"]) == 1, "LOCK-001 is still open"
     assert generate(base + ["--out-dir", str(tmp_path / "decided"), "--limits", str(PROJECT / "limits.yaml"),
                             "--handover"]) == 0
+
+
+def test_the_one_difference_of_the_sample_is_accepted_with_its_reason():
+    """2026-09-20: the DUP_VAL_ON_INDEX handler does not run on the target; numbering is unique, so it is accepted."""
+    import difftest.plsql_compare as compare
+
+    try:
+        compare.use_project(PROJECT)
+        oracle = {"exception": {"code": -20004, "message": "x"}}
+        target = {"exception": {"code": "java.sql.SQLTransactionRollbackException", "message": "x"}}
+        found = compare._accepted("create_order_duplicate_id", oracle, target)
+        assert found and "EXC-001" in found["reason"] and found["decided"] == "2026-09-20"
+        assert compare._accepted("create_order_ok", oracle, target) is None
+    finally:
+        importlib.reload(compare)
