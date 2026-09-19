@@ -41,6 +41,8 @@ class GeneratedProject:
     # repository はこれを classpath から読む。書き出していなかったので、計画を使う経路は
     # 実行時に「plan not found」で落ちていた（走査ループを計画で回すまで誰も通らなかった）
     plans: dict = field(default_factory=dict)
+    # #12 §0 の決定 3: 直接の書き込みを権限で禁じる表（B / D 型の trigger が掛かる表）。namespace つき
+    restricted: list[str] = field(default_factory=list)
 
     @property
     def app_package(self) -> str:
@@ -84,9 +86,20 @@ def regeneration_banner() -> None:
 
 def generate(program: M.Program, root: str | Path, base_package: str = "com.example.migrated",
              decisions: dict[str, Decision] | None = None,
-             plans: dict | None = None) -> GeneratedProject:
+             plans: dict | None = None, checks: list | None = None,
+             types: dict | None = None, namespaces: dict | None = None) -> GeneratedProject:
     project = GeneratedProject(root=Path(root), base_package=base_package, program=program,
                                plans=dict(plans or {}))
+    if checks:
+        # #12 §0: 移行先の trigger を通らなかった書き込みを見つける照合（決定 1a / 2b / 4）
+        from .checks import generate as generate_checks
+
+        file = generate_checks(checks, project.app_package, project.domain_package, types or {})
+        if file is not None:
+            project.files.append(file)
+        # 決定 3: B / D の表は直接の書き込みを権限で禁じる
+        project.restricted = sorted({f"{(namespaces or {}).get(c.table) or ''}.{c.table}".lstrip(".")
+                                     for c in checks if c.kind in ("B", "D")})
 
     exception_files, registry = generate_exceptions(program, project.domain_package)
     project.files.extend(exception_files)
@@ -153,6 +166,12 @@ def write(project: GeneratedProject, decisions: dict[str, Decision] | None = Non
             if stale.resolve() not in {p.resolve() for p in written}:
                 stale.unlink()
 
+    if project.restricted:
+        grants = project.root / "db" / "restrict-direct-writes.sql"
+        grants.parent.mkdir(parents=True, exist_ok=True)
+        grants.write_text(_restrict(project.restricted), encoding="utf-8")
+        written.append(grants)
+
     report = project.root / "generation-report.json"
     payload = {"summary": project.summary(), "errorCodes": project.error_codes}
     if decisions is not None:
@@ -165,3 +184,20 @@ def write(project: GeneratedProject, decisions: dict[str, Decision] | None = Non
     report.write_text(json.dumps(payload, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     written.append(report)
     return written
+
+
+def _restrict(tables: list[str]) -> str:
+    """#12 §0 の決定 3: B / D 型の trigger が掛かる表への、直接の書き込みを禁じる（雛形）。
+
+    移行先では trigger が掛かるのは生成したコードが書くときだけで、他の経路から書かれると検証
+    （拒否）を免れる。被害が残るのはこの型だけなので、ここだけ権限で塞ぐ。**誰に禁じるかは運用が
+    決める**——`<other_user>` を、アプリ以外で書き込み権限を持つ利用者に置き換えて流す。
+    """
+    lines = ["-- #12 §0 の決定 3（2026-09-19）: B / D 型の trigger が掛かる表への直接の書き込みを禁じる。",
+             "-- 移行先の trigger は生成したコードが書くときにしか掛からないので、他の経路から書かれると",
+             "-- 検証（拒否）を免れ、不正な値がそのまま入る。<other_user> を、アプリ以外で書き込み権限を",
+             "-- 持つ利用者に置き換えて流すこと。ScalarDB Cluster の認証・認可が有効である必要がある。",
+             ""]
+    for table in tables:
+        lines.append(f"REVOKE INSERT, UPDATE, DELETE ON {table} FROM <other_user>;")
+    return "\n".join(lines) + "\n"
