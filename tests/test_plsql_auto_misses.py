@@ -161,3 +161,115 @@ def test_every_event_of_a_trigger_is_kept(tmp_path):
     _, program = decisions(tmp_path, **{"trg.trg": TRIGGER.format(events="BEFORE INSERT OR UPDATE OF amount, status")})
     module = next(m for m in program.modules if m.module_kind == "trigger")
     assert module.trigger_event == "INSERT OR UPDATE" and module.trigger_columns == ["amount", "status"]
+
+
+# --- review #27, 26a-26d -----------------------------------------------------------------------------------
+SCALARDB = "fixtures/plsql/scalardb-schema.json"
+
+
+def checked(tmp_path, **files):
+    """`decisions`, with the ScalarDB capability check run: the rules below read what it leaves on the IR."""
+    for name, text in files.items():
+        (tmp_path / name).write_text(text, encoding="utf-8")
+    program = analyse(str(tmp_path), SCHEMA, scalardb_schema=SCALARDB).program
+    perfect = Evidence(captures={r.id: (3, 3) for m in program.modules for r in m.routines})
+    return decide(program, analyse_program(program), RuleSet.load(), perfect)
+
+
+def test_an_unresolved_type_in_a_nested_block_costs_confidence(tmp_path):
+    """26a: only the routine's own declarations were counted."""
+    body = "DECLARE v_x nowhere_pkg.t_thing%TYPE; BEGIN NULL; END;"
+    found, _ = decisions(tmp_path, **{"p.prc": procedure("p", body)})
+    assert found["p"].confidence.type_resolution == 0.0
+
+
+def test_a_locking_cursor_declared_on_the_package_reaches_the_routine_that_uses_it(tmp_path):
+    """26a: LOCK-002 looked at the routine's declarations, and the cursor was the package's."""
+    package = ("CREATE OR REPLACE PACKAGE BODY pkg_l AS\n"
+               "  CURSOR c_lock IS SELECT order_id FROM orders WHERE status = 'NEW' FOR UPDATE;\n"
+               "  PROCEDURE uses IS\n  BEGIN\n    FOR r IN c_lock LOOP NULL; END LOOP;\n  END;\n"
+               "  PROCEDURE ignores IS\n  BEGIN\n    NULL;\n  END;\n"
+               "END pkg_l;\n/\n")
+    found, _ = decisions(tmp_path, **{"pkg_l.pkb": package})
+    assert "LOCK-002" in rules_of(found["pkg_l.uses"])
+    assert "LOCK-002" not in rules_of(found["pkg_l.ignores"])
+
+
+def test_a_variable_named_like_a_column_is_the_column(tmp_path):
+    """26b: `WHERE status = status` is true for every row in Oracle; binding the right-hand side changed that."""
+    source = ("CREATE OR REPLACE PROCEDURE p(status VARCHAR2, p_note VARCHAR2) IS\nBEGIN\n"
+              "  UPDATE orders SET note = p_note WHERE status = status;\n"
+              "  INSERT INTO audit_log (audit_id, action) VALUES (1, status);\nEND;\n/\n")
+    (tmp_path / "p.prc").write_text(source, encoding="utf-8")
+    program = analyse(str(tmp_path), SCHEMA, scalardb_schema=SCALARDB).program
+    update, insert = [s for s in program.modules[0].routines[0].body if s.kind == "SqlOperation"]
+    assert [b.plsql_variable for b in update.binds] == ["p_note"]
+    assert any(d.code == "BIND_SHADOWED" for d in update.diagnostics)
+    assert "status" in [b.plsql_variable for b in insert.binds], "a VALUES list has no columns in scope"
+    assert "SQL-003" in rules_of(checked(tmp_path)["p"])
+
+
+@pytest.mark.parametrize("body", [
+    # through a callee: the write is the helper's
+    "pkg_s.touch(p_id); SELECT COUNT(*) INTO v_n FROM orders WHERE status = 'NEW';",
+    # the back edge: the second iteration scans what the first one wrote
+    "FOR i IN 1..2 LOOP SELECT COUNT(*) INTO v_n FROM orders WHERE status = 'NEW'; "
+    "UPDATE orders SET note = 'x' WHERE order_id = p_id; END LOOP;",
+])
+def test_a_scan_after_a_write_is_found_through_calls_and_loops(tmp_path, body):
+    """26c."""
+    package = ("CREATE OR REPLACE PACKAGE BODY pkg_s AS\n"
+               "  PROCEDURE touch(p_id NUMBER) IS\n  BEGIN\n"
+               "    UPDATE orders SET note = 'x' WHERE order_id = p_id;\n  END;\n"
+               f"  PROCEDURE run(p_id NUMBER) IS\n    v_n NUMBER;\n  BEGIN\n    {body}\n  END;\n"
+               "END pkg_s;\n/\n")
+    assert "SCAN-001" in rules_of(checked(tmp_path, **{"pkg_s.pkb": package})["pkg_s.run"])
+
+
+def test_a_scan_in_a_handler_after_the_body_wrote_is_found(tmp_path):
+    source = ("CREATE OR REPLACE PROCEDURE p(p_id NUMBER) IS\n  v_n NUMBER;\nBEGIN\n"
+              "  UPDATE orders SET note = 'x' WHERE order_id = p_id;\nEXCEPTION\n  WHEN NO_DATA_FOUND THEN\n"
+              "    SELECT COUNT(*) INTO v_n FROM orders WHERE status = 'NEW';\nEND;\n/\n")
+    assert "SCAN-001" in rules_of(checked(tmp_path, **{"p.prc": source})["p"])
+
+
+def test_a_cursor_for_loop_that_updates_its_own_table_is_not_a_scan_after_write(tmp_path):
+    """The loop's query opens once, before the body writes anything."""
+    body = ("FOR r IN (SELECT order_id FROM orders WHERE status = 'NEW') LOOP "
+            "UPDATE orders SET note = 'x' WHERE order_id = r.order_id; END LOOP;")
+    assert "SCAN-001" not in rules_of(checked(tmp_path, **{"p.prc": procedure("p", body)})["p"])
+
+
+def test_dynamic_sql_built_in_a_variable_is_read_through_the_variable(tmp_path):
+    """26c: `EXECUTE IMMEDIATE v_sql` showed the rules neither the spliced table name nor the COMMIT."""
+    splice = procedure("p", "v_sql := 'DELETE FROM ' || v_table; EXECUTE IMMEDIATE v_sql;",
+                       "  v_sql VARCHAR2(200); v_table VARCHAR2(30) := 'orders';")
+    commit = procedure("q", "v_sql := 'BEGIN UPDATE orders SET note = NULL; COMMIT; END;'; EXECUTE IMMEDIATE v_sql;",
+                       "  v_sql VARCHAR2(200);")
+    found, _ = decisions(tmp_path, **{"p.prc": splice, "q.prc": commit})
+    assert "DYN-001" in rules_of(found["p"]) and found["p"].rule_verdict == "REDESIGN"
+    assert "TX-001" in rules_of(found["q"]) and found["q"].rule_verdict == "REDESIGN"
+
+
+def test_bodies_are_found_whatever_the_suffix_looks_like(tmp_path):
+    """26d: `PKG.PKB` and `proc.sql` were parsed for KPI-1 and then never analysed."""
+    from plsql.report import source_bodies
+
+    (tmp_path / "A.PRC").write_text(procedure("a", "NULL;"), encoding="utf-8")
+    (tmp_path / "b.sql").write_text(procedure("b", "NULL;"), encoding="utf-8")
+    (tmp_path / "c.pls").write_text(procedure("c", "NULL;"), encoding="utf-8")
+    (tmp_path / "schema.sql").write_text("CREATE TABLE t (id NUMBER PRIMARY KEY);\n", encoding="utf-8")
+    (tmp_path / "data.sql").write_text("INSERT INTO t VALUES (1);\n", encoding="utf-8")
+    assert [p.name for p in source_bodies(tmp_path, tmp_path / "schema.sql")] == ["A.PRC", "b.sql", "c.pls"]
+    program = analyse(str(tmp_path), str(tmp_path / "schema.sql")).program
+    assert sorted(m.name for m in program.modules) == ["a", "b", "c"]
+
+
+def test_swallowing_others_and_an_untracked_rowcount_are_review(tmp_path):
+    swallow = procedure("p", "NULL;\nEXCEPTION\n  WHEN OTHERS THEN\n    NULL;")
+    count = procedure("q", "EXECUTE IMMEDIATE 'DELETE FROM orders'; v_n := SQL%ROWCOUNT;", "  v_n NUMBER;")
+    plain = procedure("r", "UPDATE orders SET note = 'x' WHERE order_id = p_id; v_n := SQL%ROWCOUNT;", "  v_n NUMBER;")
+    found, _ = decisions(tmp_path, **{"p.prc": swallow, "q.prc": count, "r.prc": plain})
+    assert "EXC-002" in rules_of(found["p"]) and found["p"].rule_verdict == "REVIEW"
+    assert "SQL-004" in rules_of(found["q"])
+    assert "SQL-004" not in rules_of(found["r"]), "a static UPDATE is what the generated rowCount follows"

@@ -35,4 +35,7 @@ corpus（`../src/`）は KPI-1 / KPI-2 / KPI-3 の母数である。ルールを
 | — 移行先では自然には起こらない例外の handler | `unreachable_handler.sql` | EXC-001 |
 | 5 trigger の掛かる表への書き込みで、trigger を呼び出しに置き換えられていないもの | `trigger_not_applied.sql` | TRG-002 |
 | — 再帰 | `recursive.sql` | RECUR-001 |
+| — `WHEN OTHERS THEN NULL` | `others_swallowed.sql` | EXC-002 |
+| — PL/SQL 変数と同名の列（Oracle は列として読む） | `variable_named_like_column.sql` | SQL-003 |
+| — 静的な DML 以外が決める `SQL%ROWCOUNT` | `rowcount_after_dynamic_sql.sql` | SQL-004 |
 | — どの書き換えの形にも当たらない明示 cursor | `explicit_cursor_unshaped.sql` | CUR-001（読むだけのループは 2026-09-18 から cursor FOR ループへ書き換わり、CUR-003 が持つ） |
