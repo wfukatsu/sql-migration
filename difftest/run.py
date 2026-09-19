@@ -30,6 +30,8 @@ import psycopg
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "difftest"))
+import rowcompare  # noqa: E402
+sys.path.insert(0, str(ROOT / "difftest"))
 from scalardb_migrate.converter import convert_script  # noqa: E402
 from backends import BACKENDS, schema_loader  # noqa: E402
 from sources import PROFILES, ProfileError, jdbc_spec, parse_profile_args, source_config  # noqa: E402
@@ -115,33 +117,18 @@ def body_of(sql: str) -> str:
 
 
 def norm(v):
-    """Make values from PostgreSQL / Oracle / H2 / ScalarDB comparable: numbers as int-if-integral floats, dates as ISO."""
-    if isinstance(v, bool):
-        return int(v)
+    """A display form for reports. **Not** for comparing -- `rowcompare.same_value` does that, in pairs."""
     if isinstance(v, decimal.Decimal):
-        v = float(v)
-    if isinstance(v, float):
-        v = round(v, 6)
-        return int(v) if v.is_integer() else v
+        return int(v) if v == v.to_integral_value() else float(v)
     if isinstance(v, datetime.datetime):
         return v.date().isoformat() if v.time() == datetime.time(0) else v.isoformat(sep=" ")
     if isinstance(v, datetime.date):
         return v.isoformat()
-    if isinstance(v, str):
-        try:  # H2 / JDBC may return a date-time string for a DATE value
-            d = datetime.datetime.fromisoformat(v.replace("T", " ").split(".")[0])
-            return d.date().isoformat() if d.time() == datetime.time(0) else d.isoformat(sep=" ")
-        except ValueError:
-            return v
-    if v is None or isinstance(v, int):
-        return v
-    return str(v)
+    return v if v is None or isinstance(v, (bool, int, float, str)) else str(v)
 
 
 def compare(expected, actual, ordered: bool) -> bool:
-    e = [tuple(norm(x) for x in r) for r in expected]
-    a = [tuple(norm(x) for x in r) for r in actual]
-    return e == a if ordered else sorted(map(str, e)) == sorted(map(str, a))
+    return rowcompare.same(expected, actual, ordered)
 
 
 def main() -> int:
@@ -199,7 +186,10 @@ def main() -> int:
                           "--rows", str(rows_file)).strip())
 
     print("== queries")
-    summary = {"PASS": 0, "FAIL": 0, "SKIP": 0}
+    # CASE_ERROR: the source database rejected the case. That is a broken case, not a skipped one -- counted as
+    # SKIP it let a run "pass" on statements nobody had executed. EMPTY: both sides returned no row, which agrees
+    # with any conversion at all; it passes, and is counted so that a reader can see how much of PASS it is.
+    summary = {"PASS": 0, "FAIL": 0, "SKIP": 0, "CASE_ERROR": 0, "EMPTY": 0}
     src = Source(args.dialect)
     for r in results:
         if r.kind not in ("SELECT", "UNION", "EXCEPT", "INTERSECT", "PARSE_ERROR") and not (r.kind == "COMMAND" and "SELECT" in r.source_sql.upper()):
@@ -211,12 +201,12 @@ def main() -> int:
                "fetch_sql": [f["scalardb_sql"] for f in (r.plan or {}).get("fetch", [])],
                "unresolved": (r.plan or {}).get("unresolved", [])}
         records.append(rec)
-        ordered = "ORDER BY" in body.upper()
+        ordered = rowcompare.is_ordered(body, args.dialect)
         try:
             expected = src.fetch(body)
         except Exception as e:  # noqa: BLE001
             rec["result"], rec["error"] = "CASE_ERROR", f"source database rejected the statement: {str(e).splitlines()[0][:200]}"
-            summary["SKIP"] += 1
+            summary["CASE_ERROR"] += 1
             print(f"CASE [{r.index}] {body[:70]}  ({rec['error']})")
             continue
         if r.status == "PLANNED":
@@ -226,7 +216,7 @@ def main() -> int:
             plan_file = work / f"plan.{r.index}.json"
             plan_file.write_text(json.dumps(plan))
             try:
-                out = json.loads(sh(str(RUNNER), "run", "--plan", str(plan_file), "--properties",
+                out = rowcompare.loads(sh(str(RUNNER), "run", "--plan", str(plan_file), "--properties",
                                     props if args.fetcher == "core" else backend.sql,
                                     "--fetcher", args.fetcher))
             except RuntimeError as e:
@@ -234,27 +224,32 @@ def main() -> int:
                 rec["result"], rec["error"] = "FAIL", str(e)
                 print(f"FAIL [{r.index}] {body[:70]}\n      runner error: {e}")
                 continue
-            ok = compare(expected, out["rows"], ordered)
+            why = rowcompare.difference(expected, out["rows"], ordered)
+            ok = why is None
             summary["PASS" if ok else "FAIL"] += 1
+            summary["EMPTY"] += int(ok and not expected)
             rec["result"], rec["fetched"] = "PASS" if ok else "FAIL", out["stats"]["fetched_rows"]
+            rec["empty"] = ok and not expected
             print(f"{'PASS' if ok else 'FAIL'} [{r.index}] plan {plan['pattern']:<6} fetched={out['stats']['fetched_rows']:<3} {body[:70]}")
             if not ok:
-                rec["error"] = f"result mismatch: expected {expected[:5]} actual {out['rows'][:5]}"
-                print(f"      expected {expected}\n      actual   {out['rows']}")
+                rec["error"] = f"result mismatch ({why}): expected {expected[:5]} actual {out['rows'][:5]}"
+                print(f"      {why}\n      expected {expected}\n      actual   {out['rows']}")
         elif r.status in ("OK", "WARN") and args.fetcher == "jdbc":
             try:
-                out = json.loads(sh(str(RUNNER), "sql", "--properties", backend.sql,
+                out = rowcompare.loads(sh(str(RUNNER), "sql", "--properties", backend.sql,
                                     "--sql", r.converted[0]))  # default namespace comes from the client properties
             except RuntimeError as e:
                 summary["FAIL"] += 1
                 rec["result"], rec["error"] = "FAIL", str(e)
                 print(f"FAIL [{r.index}] {body[:70]}\n      {e}")
                 continue
-            ok = compare(expected, out["rows"], ordered)
+            why = rowcompare.difference(expected, out["rows"], ordered)
+            ok = why is None
             summary["PASS" if ok else "FAIL"] += 1
-            rec["result"] = "PASS" if ok else "FAIL"
+            summary["EMPTY"] += int(ok and not expected)
+            rec["result"], rec["empty"] = "PASS" if ok else "FAIL", ok and not expected
             if not ok:
-                rec["error"] = f"result mismatch: expected {expected[:5]} actual {out['rows'][:5]}"
+                rec["error"] = f"result mismatch ({why}): expected {expected[:5]} actual {out['rows'][:5]}"
             print(f"{'PASS' if ok else 'FAIL'} [{r.index}] scalardb-sql {body[:70]}")
         elif r.status in ("OK", "WARN"):
             summary["SKIP"] += 1
@@ -266,10 +261,23 @@ def main() -> int:
             rec["result"], rec["error"] = "NOT_CONVERTIBLE", reason
             print(f"SKIP [{r.index}] {r.status:<7} {body[:70]}  ({reason[:80]})")
     src.close()
-    print(f"\nPASS={summary['PASS']} FAIL={summary['FAIL']} SKIP={summary['SKIP']}")
+    print(f"\nPASS={summary['PASS']} FAIL={summary['FAIL']} SKIP={summary['SKIP']} "
+          f"CASE_ERROR={summary['CASE_ERROR']} (of PASS, EMPTY={summary['EMPTY']})")
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(records, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
-    return 1 if summary["FAIL"] else 0
+    return exit_code(summary)
+
+
+def exit_code(summary: dict) -> int:
+    """0 only when something was compared and all of it agreed. A run where every statement was skipped used to
+    exit 0, and so did one whose cases the source database rejected."""
+    if summary["FAIL"] or summary["CASE_ERROR"]:
+        return 1
+    if not summary["PASS"]:
+        print("nothing was compared: every statement was skipped (with --fetcher core, converted statements need "
+              "--fetcher jdbc to run)", file=sys.stderr)
+        return 2
+    return 0
 
 
 if __name__ == "__main__":

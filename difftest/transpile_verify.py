@@ -36,8 +36,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime
-import decimal
 import json
 import logging
 import re
@@ -60,6 +58,7 @@ from _scalardb.converter import _split_statements  # noqa: E402
 logging.getLogger("sqlglot").setLevel(logging.CRITICAL)
 
 EXAMPLES = SKILL / "examples"
+import rowcompare  # noqa: E402
 from sources import PROFILES, ProfileError, jdbc_spec, parse_profile_args, source_config
 
 TARGETS = {"oracle": ["postgres", "mysql", "duckdb"],
@@ -255,29 +254,6 @@ def is_ordered(sql: str, dialect: str) -> bool:
 # ---------------------------------------------------------------------------------------------
 # 実行と比較
 # ---------------------------------------------------------------------------------------------
-def norm(v):
-    """Oracle / PostgreSQL / MySQL / DuckDB の値を比べられる形にそろえる。"""
-    if isinstance(v, bool):
-        return int(v)
-    if isinstance(v, decimal.Decimal):
-        v = float(v)
-    if isinstance(v, float):
-        v = round(v, 6)
-        return int(v) if v.is_integer() else v
-    if isinstance(v, datetime.datetime):
-        return v.date().isoformat() if v.time() == datetime.time(0) else v.isoformat(sep=" ")
-    if isinstance(v, datetime.date):
-        return v.isoformat()
-    if isinstance(v, str):
-        m = re.fullmatch(r"(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.\d+)?", v.strip())
-        if m:   # 日時を文字列で返す方言がある（MySQL の DATE_ADD など）
-            return m.group(1) if m.group(2) == "00:00:00" else f"{m.group(1)} {m.group(2)}"
-        return v
-    if v is None or isinstance(v, int):
-        return v
-    return str(v)
-
-
 @dataclass
 class Run:
     ok: bool
@@ -308,16 +284,9 @@ def run(db: DB, sql: str, check: str | None, kind: str, keep_ddl: bool) -> Run:
 
 
 def same(a: Run, b: Run, ordered: bool) -> tuple[bool, str]:
-    ra = [tuple(norm(x) for x in r) for r in (a.rows or [])]
-    rb = [tuple(norm(x) for x in r) for r in (b.rows or [])]
-    if not ordered:
-        ra, rb = sorted(ra, key=repr), sorted(rb, key=repr)
-    if ra == rb:
-        return True, ""
-    if len(ra) != len(rb):
-        return False, f"行数が違う: 変換元 {len(ra)} 行 / 変換先 {len(rb)} 行"
-    i = next(i for i, (x, y) in enumerate(zip(ra, rb)) if x != y)
-    return False, f"{i + 1} 行目: 変換元 {ra[i]} / 変換先 {rb[i]}"
+    """値はペアで比べる（rowcompare）。片側ずつ正規化して比べると、違う結果が一致に見える。"""
+    why = rowcompare.difference(a.rows or [], b.rows or [], ordered)
+    return (True, "") if why is None else (False, why)
 
 
 def state(src: Run, tgt: Run, ordered: bool) -> tuple[str, str]:
@@ -583,8 +552,15 @@ def main(argv=None) -> int:
         indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\nレポート: {out / 'report.md'}")
     misses = sum(1 for r in results for x in r.cases if x.cls == "見逃し")
-    print(f"MISSES={misses}")
-    return 1 if misses else 0
+    print(f"MISSES={misses} PAIRS={len(results)} SKIPPED_PAIRS={len(skipped)}")
+    if misses:
+        return 1
+    if skipped:
+        # 接続できなかった組は「見逃しなし」ではなく「確かめていない」。0 で終わると、DB が 1 つも
+        # 動いていない回が合格に見える
+        print(f"確かめられなかった組がある: {', '.join(skipped)}", file=sys.stderr)
+        return 2
+    return 0
 
 
 if __name__ == "__main__":

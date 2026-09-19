@@ -29,7 +29,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "difftest"))
 from scalardb_migrate.converter import convert_script  # noqa: E402
-from run import RUNNER, Source, norm, sh  # noqa: E402
+import rowcompare  # noqa: E402
+from run import RUNNER, Source, sh  # noqa: E402
 from sources import PROFILES, ProfileError, jdbc_spec, parse_profile_args, source_config  # noqa: E402
 from backends import BACKENDS, schema_loader  # noqa: E402
 
@@ -232,18 +233,15 @@ def compare_samples(o: dict, s: dict, ordered: bool, mode: str, write: bool = Fa
         return "PASS", f"{o.get('rows')} row(s) affected on both sides"
     if mode == "count":
         return "PASS", ""
-    e = [tuple(norm(x) for x in row) for row in o.get("sample", [])]
-    a = [tuple(norm(x) for x in row) for row in s.get("sample", [])]
-    if not ordered:
+    e, a = o.get("sample", []), s.get("sample", [])
+    if not ordered and o.get("rows", 0) > len(e):
         # without ORDER BY the two engines may return the rows in different orders, so a truncated sample is
         # not comparable row by row: only the row count can be verified.
-        if o.get("rows", 0) > len(e):
-            return "PASS_COUNT_ONLY", f"unordered result larger than the {len(e)}-row sample; only the row count was compared"
-        e, a = sorted(map(str, e)), sorted(map(str, a))
-    if e == a:
+        return "PASS_COUNT_ONLY", f"unordered result larger than the {len(e)}-row sample; only the row count was compared"
+    why = rowcompare.difference(e, a, ordered)
+    if why is None:
         return "PASS", ""
-    first = next((i for i, (x, y) in enumerate(zip(e, a)) if x != y), 0)
-    return "FAIL", f"row {first}: Oracle {e[first] if first < len(e) else None} vs ScalarDB {a[first] if first < len(a) else None}"
+    return "FAIL", why
 
 
 def main() -> int:
