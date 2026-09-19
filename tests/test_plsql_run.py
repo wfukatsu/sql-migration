@@ -212,6 +212,5 @@ def test_routines_without_a_capture_are_only_the_documented_ones():
         # growing silently (fixtures/plsql/golden/README.md).
         # prc_purge_audit は 2026-09-19 に capture を足した（#24 で割った形を比べるため）
         "trg_payments_guard.trg_payments_guard",
-        "pkg_tier_admin.promote",
     }
     assert uncovered == documented, f"undocumented gap: {sorted(uncovered - documented)}"

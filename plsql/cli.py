@@ -55,13 +55,10 @@ def main(argv: list[str] | None = None) -> int:
     if scalardb is None:
         candidate = Path(args.root).parent / "scalardb-schema.json"
         scalardb = str(candidate) if candidate.exists() else None
-    decided = {}
-    if args.limits:
-        from .limits import Boundaries, Limits, RowLocks
+    from . import redesign
 
-        decided = {"row_locks": RowLocks.load(args.limits), "boundaries": Boundaries.load(args.limits),
-                   "limits": Limits.load(args.limits)}
-    analysis = analyse(args.root, schema, scalardb_schema=scalardb, **decided)
+    project = redesign.Decided.load(args.limits) if args.limits else None
+    analysis = analyse(args.root, schema, scalardb_schema=scalardb, **(project.for_analysis() if project else {}))
     data = inventory(analysis)
     kpi, totals = data["kpi"], data["totals"]
 
@@ -86,7 +83,10 @@ def main(argv: list[str] | None = None) -> int:
         evidence = review.credit_private_callees(measured, analysis.program, program_analysis.call_graph)
         unmatched = review.unmatched_scenarios(args.evidence, known, args.variant)
         decisions = decide(analysis.program, program_analysis, RuleSet.load(), evidence)
-        written.update(review.write(analysis.program, decisions, args.out_dir,
+        # what has become of each REDESIGN. Without --limits nobody said what was decided, and nothing is claimed
+        redesigns = redesign.statuses(analysis.program, decisions, program_analysis.call_graph, project,
+                                      evidence) if project else {}
+        written.update(review.write(analysis.program, decisions, args.out_dir, redesigns=redesigns,
                                     generated_root=args.generated, package=args.package,
                                     fix_times=review.FixTimes.load(args.fix_times), unmatched=unmatched,
                                     stale=measured.stale))
@@ -101,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
                       f"{sorted(set(measured.stale.values()))}")
             print(f"verdicts        {dict(sorted(counts.items()))}"
                   + ("" if args.evidence else "  (no --evidence: nothing can be AUTO)"))
+            if redesigns:
+                print(f"redesign        {redesign.counts(redesigns)}")
             for name, path in written.items():
                 print(f"  {name:12} {path}")
     return 1 if kpi["failedFiles"] else 0

@@ -1002,6 +1002,18 @@ P0-2 の manifest）に集計し直す。
   - 決定の適用後に残る REVIEW は 2 件: `pkg_customer_import.import`（同時実行の競合と再試行）、
     `pkg_order_report.mark_reviewed`（走査行数の上限が未決定）。
 
+- **REDESIGN の判定は動かさず、再設計の状態を分けて見せる**（2026-09-20 決定）。REDESIGN は移行元の分類で、行ロック・
+  routine 内の COMMIT・trigger などは AUTO 禁止条件（`docs/plsql-kpi.md` §2）なので、再設計を決めて生成・検証しても
+  AUTO にはしない。ただし報告は「まだ誰も決めていない」と「決定を記録し、そのとおりに生成し、実 DB で一致した」を
+  区別する（`plsql/redesign.py`、`decisions.json` の `redesign` / `redesignStates`、`unresolved.md` の冒頭）。
+  - 状態は宣言ではなく導出する: routine に当たった REDESIGN のルールすべてに、記録された決定（`limits.yaml` の
+    rowLocks / transactions / dynamicTables、trigger は #12）が対応していれば「決定済み」、そのうえで比較した
+    シナリオがすべて Oracle と一致していれば「決定済み・実 DB で一致」。trigger の本体はシナリオから直接呼べないので、
+    呼び出し元の routine の比較で見る。呼び出し先が REDESIGN なだけの routine は、呼び出し先の状態に従う。
+  - 2026-09-20 の corpus: 26 件中、決定済み・一致 23、決定済み 1（`trg_products_audit`: routine 経由の比較が無い）、
+    未決定 2（`prc_remote_sync`: DB Link、`trg_orders_seq`: 採番 Service は方式が決まっているが未生成）。
+  - 同時実行での衝突と再試行は単一スレッドのシナリオでは確かめられず、呼び出し側の責務として決定の理由に書いてある。
+
 - **生成コードは Spring に依存させない**（2026-09-17）。`@Transactional` は使わず、ScalarDB の
   try-with-resources 定型を `runtime-java` のヘルパに集約し、commit / abort を 1 箇所で制御する（設計書 §6.7）。
   - 理由: 注釈 1 つのために PoC のビルドへフレームワークを丸ごと持ち込むと、依存面と設定が大きく増える。
