@@ -251,3 +251,20 @@ def test_the_record_is_replaced_whole_and_the_doc_is_found_from_anywhere(tmp_pat
     assert items.main(["set", "OPS-1", "--record", str(record), *DECIDE, "--decision", "a"]) == 0
     assert not (tmp_path / "record.yaml.tmp").exists()
     assert "コメントは保存されない" in record.read_text(encoding="utf-8")
+
+
+def test_every_command_in_step_0_matches_the_allow_list_on_its_own():
+    """Review #27 (46): `java -version 2>&1 | head -1; gradle ...` is three commands, and only one was allowed."""
+    import fnmatch
+    import pathlib
+    import re
+
+    text = (pathlib.Path(__file__).resolve().parents[1] / "skills/plsql-migrate/SKILL.md").read_text(encoding="utf-8")
+    allowed = re.findall(r"^  - Bash\((.+)\)$", text, re.M)
+    step = text[text.index("### Step 0"):text.index("### Step 1")]
+    commands = [line for line in re.search(r"```bash\n(.*?)```", step, re.S).group(1).splitlines() if line.strip()]
+    assert commands
+    for command in commands:
+        bare = re.sub(r"\"[^\"]*\"|'[^']*'", "", command)   # a `;` inside a quoted argument is not a separator
+        assert not re.search(r"[|;&<>]", bare), f"a compound command never matches the allow list: {command}"
+        assert any(fnmatch.fnmatch(command, pattern) for pattern in allowed), command

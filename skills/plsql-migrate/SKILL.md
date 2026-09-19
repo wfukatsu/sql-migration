@@ -23,6 +23,7 @@ allowed-tools:
   - Glob
   - Bash(.venv/bin/python -c *)
   - Bash(java -version*)
+  - Bash(runtime-java/gradlew --version*)
   - Bash(gradle --version*)
   - Bash(.venv/bin/python -m plsql.generate *)
   - Bash(.venv/bin/python -m plsql.cli *)
@@ -66,10 +67,13 @@ PL/SQL を読んで ScalarDB 向けの Java を生成し、生成器が決めず
 
 ```bash
 .venv/bin/python -c "import sqlglot, yaml; print('ok')"
-java -version 2>&1 | head -1; gradle --version 2>/dev/null | grep '^Gradle'
+java -version
+runtime-java/gradlew --version
 ```
 
-JVM と Gradle が無いとき、または利用者が外すよう言ったときは `--verify-compile` を外し、「コンパイルは確かめていない」と報告で明記する。
+1 行に 1 コマンドで、パイプもリダイレクトも付けない（`allowed-tools` は単独のコマンドにしか合わないので、`| head -1` を付けると毎回許可を求められる）。出力が長くても、見るのはバージョンの行だけでよい。
+
+JVM が無いとき（Gradle は `runtime-java/gradlew` が取ってくる。ネットワークに出られず `gradle` も無いときも同じ）、または利用者が外すよう言ったときは `--verify-compile` を外し、「コンパイルは確かめていない」と報告で明記する。
 
 ### Step 1: 入力を確定する
 

@@ -14,6 +14,7 @@ the part a subprocess cannot do: point each javac error at the routine it came f
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -67,6 +68,11 @@ class CompileReport:
         return sorted({e.routine for e in self.errors if e.routine})
 
 
+def _wrapper(gradle_project: Path) -> str | None:
+    wrapper = gradle_project / ("gradlew.bat" if os.name == "nt" else "gradlew")
+    return str(wrapper) if wrapper.is_file() else None
+
+
 def verify(out_dir: str | Path, project: "GeneratedProject | None" = None,
            gradle_project: Path = GRADLE_PROJECT, timeout: int = 900) -> CompileReport:
     """Compile the tree just written, and attribute what javac says to the routines it came from.
@@ -75,11 +81,12 @@ def verify(out_dir: str | Path, project: "GeneratedProject | None" = None,
     that asked for the check fails on it -- an unverifiable answer reported as a verified one is the failure
     mode this whole check exists to remove.
     """
-    gradle = shutil.which("gradle")
-    if gradle is None:
-        return CompileReport(ran=False, unavailable="gradle is not on PATH")
     if not gradle_project.is_dir():
         return CompileReport(ran=False, unavailable=f"no Gradle project at {gradle_project}")
+    # the project's wrapper first: it pins the Gradle version the lock file was written with
+    gradle = _wrapper(gradle_project) or shutil.which("gradle")
+    if gradle is None:
+        return CompileReport(ran=False, unavailable="no gradlew in the project and gradle is not on PATH")
     # a build directory of its own: compiling a throwaway tree into `runtime-java/build/` would replace the
     # classes the rest of the repository just built, and two checks at once would overwrite each other
     with tempfile.TemporaryDirectory(prefix="plsql-verify-") as build_dir:

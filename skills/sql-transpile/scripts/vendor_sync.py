@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """同梱した ScalarDB 変換モジュールと、リポジトリ本体との差分を管理する。
 
-このスキルは単体で動くよう scalardb_migrate/ の 7 モジュール（MODULES）を
-scripts/_scalardb/ にコピー（vendoring）して持っている。
+このスキルは scalardb_migrate/ を import せずに動くよう、その 7 モジュール（MODULES）を
+scripts/_scalardb/ にコピー（vendoring）して持っている。スキルのディレクトリを別の場所へコピーしても
+変換は動く（そのときは比べる本体が無いので、--check は何もせず 0 で終わる）。
 本体を改善してもコピーには自動で反映されないため、乖離を「見える」状態にするのがこのツール。
 
 使い方 (リポジトリルートから):
@@ -10,12 +11,12 @@ scripts/_scalardb/ にコピー（vendoring）して持っている。
     .venv/bin/python skills/sql-transpile/scripts/vendor_sync.py --update
 
 終了コード:
-    0 = 同梱コピーは本体と一致 (--check) / コピー完了 (--update)
+    0 = 同梱コピーは本体と一致、または比べる本体が無い (--check) / コピー完了 (--update)
     1 = 差分あり (--check)
-    2 = 実行エラー (本体が見つからない等)
+    2 = 実行エラー (--update で本体が見つからない等)
 
 出力の最終行は機械可読:
-    VENDOR_DRIFT=0
+    VENDOR_DRIFT=0        （本体が無いときは VENDOR_DRIFT=n/a）
 """
 
 from __future__ import annotations
@@ -58,8 +59,15 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     if not UPSTREAM.is_dir():
+        if args.check:
+            # リポジトリの外へコピーされたスキルには、比べる相手が無い。それは食い違いでも失敗でもない——
+            # 同梱コピーだけで動く、というのがコピーを持っている理由である。以前は終了コード 2 で、
+            # SKILL.md の手順どおりに動かすと「実行エラー」に見えた
+            print(f"本体（{UPSTREAM}）がありません。同梱コピーだけで動いています。比べる相手が無いので確認は省きます。")
+            print("VENDOR_DRIFT=n/a")
+            return 0
         print(f"本体が見つかりません: {UPSTREAM}", file=sys.stderr)
-        print("このスキルは sql-migration リポジトリ内に置かれている前提です。", file=sys.stderr)
+        print("--update は sql-migration リポジトリ内のスキルでだけ使えます。", file=sys.stderr)
         return 2
 
     if args.update:

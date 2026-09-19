@@ -28,7 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from difftest.plsql_run import connect, encode  # noqa: E402
-from difftest.sources import parse_profile_args, source_config  # noqa: E402
+from difftest.sources import SYS_PASSWORD_ENV, parse_profile_args, source_config, sys_config  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "fixtures" / "plsql" / "semantics.json"
@@ -155,18 +155,23 @@ def _probe_fixed_date(cur, sys_cfg) -> bool:
     """
     from difftest.plsql_run import pin_sysdate
 
+    if sys_cfg is None:
+        return True   # not measured (--probe-fixed-date was not given): keep the mask
     probe = "2020-01-02 03:04:05"
     try:
         pin_sysdate(sys_cfg, probe)
         cur.execute("SELECT TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD') FROM dual")
-        return cur.fetchone()[0] == probe[:10]
+        answer = cur.fetchone()[0] == probe[:10]
     except Exception:  # noqa: BLE001 -- no privilege, or the instance refuses; keep the mask
-        return True
-    finally:
-        try:
-            pin_sysdate(sys_cfg, None)
-        except Exception:  # noqa: BLE001
-            pass
+        answer = True
+    # Not in a `finally` that swallows: if this fails, every session of the instance keeps reading 2020-01-02 as
+    # SYSDATE, and the operator has to know. The error names the statement that puts it right.
+    try:
+        pin_sysdate(sys_cfg, None)
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError("FIXED_DATE could not be reset and may still be pinned on the instance. Run "
+                           "`ALTER SYSTEM SET FIXED_DATE=NONE` as a privileged user now") from e
+    return answer
 
 
 def evaluate(cur, case: dict) -> dict:
@@ -188,11 +193,17 @@ def main(argv=None) -> int:
     ap.add_argument("--profile", action="append")
     ap.add_argument("--out", default=str(OUT))
     ap.add_argument("--sys-user", default="system", help="ALTER SYSTEM SET FIXED_DATE を打つ特権ユーザ")
-    ap.add_argument("--sys-password", default="oracle")
+    ap.add_argument("--sys-password-env", default=SYS_PASSWORD_ENV,
+                    help="特権ユーザのパスワードを持つ環境変数の名前（引数では渡さない: ps から読める）")
+    ap.add_argument("--probe-fixed-date", action="store_true",
+                    help="FIXED_DATE が SYSTIMESTAMP に届くかを実測する。インスタンス全体の時計を一時的に変えるので、"
+                         "使い捨ての環境でだけ動く。付けなければ測らず、保守的な答え（届く＝マスクする）を記録する")
     args = ap.parse_args(argv)
 
-    cfg = source_config("oracle", parse_profile_args(args.profile), writes=False)
-    sys_cfg = cfg.__class__(**{**cfg.__dict__, "user": args.sys_user, "password": args.sys_password})
+    # the cases only read. The probe is the one thing here that writes -- to the whole instance -- so it is asked
+    # for by name, and `sys_config` refuses it outside a disposable environment. It used to run under writes=False.
+    cfg = source_config("oracle", parse_profile_args(args.profile), writes=args.probe_fixed_date)
+    sys_cfg = sys_config(cfg, args.sys_user, args.sys_password_env) if args.probe_fixed_date else None
     con = connect(cfg)
     cur = con.cursor()
     cur.execute("SELECT banner FROM v$version WHERE ROWNUM = 1")

@@ -30,9 +30,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "9.2.1"   # the project has no wrapper; this is the version it is developed with
+      - uses: gradle/actions/setup-gradle@v4   # caching, and it checks gradle-wrapper.jar against Gradle's checksums
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
@@ -44,5 +42,8 @@ jobs:
           python -m plsql.generate fixtures/plsql/src --scalardb-schema fixtures/plsql/scalardb-schema.json
           --limits fixtures/plsql/limits.yaml --out-dir generated
       # integration tests (*IT) skip themselves without SCALARDB_IT / -Dplsql.generated
-      - run: gradle test
+      - run: ./gradlew test
+        working-directory: runtime-java
+      # the build that carries no commercial SDK, no GPL and no OTN driver has to keep compiling and passing
+      - run: ./gradlew -PcoreOnly test
         working-directory: runtime-java

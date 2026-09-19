@@ -1,0 +1,7 @@
+# Drivers for the harnesses under difftest/, which need the databases of difftest/docker-compose.yml.
+# Not in requirements.txt: the converter, the PL/SQL tools and their tests (what CI runs) need none of them.
+-r requirements.txt
+oracledb==4.0.2
+psycopg[binary]==3.3.5
+PyMySQL==1.2.0
+cryptography==50.0.1   # PyMySQL needs it for MySQL 8's caching_sha2_password

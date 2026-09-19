@@ -37,7 +37,7 @@ import fnmatch
 import json
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -86,6 +86,27 @@ class SourceConfig:
         if self.product == "postgresql":
             return f"jdbc:postgresql://{self.host}:{self.port}/{self.database}" + (f"?currentSchema={schema}" if schema else "")
         return f"jdbc:mysql://{self.host}:{self.port}/{self.database}?useSSL=false&allowPublicKeyRetrieval=true"
+
+
+SYS_PASSWORD_ENV = "SRC_ORACLE_SYS_PASSWORD"
+
+
+def sys_config(cfg: SourceConfig, user: str, password_env: str = SYS_PASSWORD_ENV) -> SourceConfig:
+    """The privileged account that runs `ALTER SYSTEM SET FIXED_DATE`, on the same database as `cfg`.
+
+    `ALTER SYSTEM` changes the clock of the whole instance, for every session: it is a write whatever the
+    statements around it do, so only a disposable environment gets one. The password comes from the environment
+    (a command-line argument is readable in `ps`); docker-compose's own default is used for `local` only.
+    """
+    if cfg.environment not in DISPOSABLE:
+        raise ProfileError(f"{cfg.label()}: ALTER SYSTEM SET FIXED_DATE changes the clock of the whole instance; "
+                           f"it is only run against a disposable environment ({' / '.join(DISPOSABLE)})")
+    password = os.environ.get(password_env)
+    if not password:
+        if cfg.environment != "local":
+            raise ProfileError(f"set {password_env} to the password of {user} (not read from the command line)")
+        password = "oracle"   # difftest/docker-compose.yml
+    return replace(cfg, user=user, password=password)
 
 
 def jdbc_spec(cfg: SourceConfig, schema: str | None = None, password_env: str = "DIFFTEST_SOURCE_PASSWORD") -> dict:
