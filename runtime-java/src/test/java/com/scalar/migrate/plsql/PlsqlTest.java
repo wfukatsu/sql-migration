@@ -309,6 +309,20 @@ class PlsqlTest {
   }
 
   @Test
+  void textThatIsNotANumberIsAValueErrorNotAJavaException() {
+    // Issue #29 (14, 17a): `v_n := 'abc';` and TO_NUMBER('12x') are ORA-06502, which WHEN VALUE_ERROR catches
+    assertEquals(new BigDecimal("12.5"), Plsql.toNumber(" 12.5 "));
+    assertNull(Plsql.toNumber(null));
+    assertNull(Plsql.toNumber(""));
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.ValueError.class, () -> Plsql.toNumber("12x"));
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.ValueError.class, () -> Plsql.dec("abc"));
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.ValueError.class, () -> Plsql.fit("abc", 5, 2));
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.ValueError.class, () -> Plsql.add("1", "x"));
+    org.junit.jupiter.api.Assertions.assertThrows(
+        UnsupportedOperationException.class, () -> Plsql.toNumber("1,234", "9,999"));
+  }
+
+  @Test
   void aDoubleBelowOneIsWrittenTheWayOracleWritesIt() {
     assertEquals(".5", Plsql.text(0.5));
     assertEquals("-.5", Plsql.text(-0.5d));
