@@ -104,14 +104,26 @@ def collect(program: M.Program) -> Registry:
                     if known:
                         registry.add(known[1], known[0], name, known[2], routine.id)
                     else:
-                        registry.add(_user_code(name), java_class_name(name) + "Exception", name,
+                        registry.add(_user_code(name), user_class(name), name,
                                      "declared in PL/SQL", routine.id)
-            for handler in routine.exception_handlers:
+            handlers = list(routine.exception_handlers) + [
+                h for s in statements for h in getattr(s, "exception_handlers", []) or []]
+            for handler in handlers:
                 for name in handler.exceptions:
                     known = PREDEFINED.get(name.upper())
                     if known:
                         registry.add(known[1], known[0], name.upper(), known[2], routine.id)
+                    elif name.upper() != "OTHERS":
+                        # a handler catches this class by name, so the class has to exist even when the RAISE is
+                        # in another routine (or nowhere: `PRAGMA EXCEPTION_INIT` binds it to an Oracle error)
+                        registry.add(_user_code(name.upper()), user_class(name), name.upper(),
+                                     "declared in PL/SQL", routine.id)
     return registry
+
+
+def user_class(name: str) -> str:
+    """The Java class of a PL/SQL-declared exception. One place, because RAISE and WHEN have to agree on it."""
+    return java_class_name(name) + "Exception"
 
 
 def _class_for(statement: M.Raise, module: M.Module) -> str:
@@ -159,7 +171,14 @@ def exception_class(entry: ErrorCode, package: str) -> JavaFile:
 # the generated repository raises these two itself, from `SELECT INTO`, whether or not the PL/SQL ever named
 # them. Emitting them only when the source mentions them left every repository importing classes that were
 # not written -- Java that does not compile, which nothing noticed until the compile check (#21) asked.
-ALWAYS = ("NO_DATA_FOUND", "TOO_MANY_ROWS")
+# ZERO_DIVIDE: `Plsql.div` raises the runtime's own `Plsql.ZeroDivide`, and a `try` that has a ZERO_DIVIDE or an
+# OTHERS handler turns it into this class on the way out (service._guarded).
+ALWAYS = ("NO_DATA_FOUND", "TOO_MANY_ROWS", "ZERO_DIVIDE")
+
+# Predefined exceptions nothing on the target raises by itself: the generated code has no unique-constraint
+# violation to catch (ScalarDB reports a duplicate INSERT through the transaction, which is then unusable), and the
+# helper's conversions throw Java's own exceptions. A handler for one of these runs in Oracle and never here.
+NEVER_RAISED_BY_TARGET = ("DUP_VAL_ON_INDEX", "INVALID_NUMBER", "VALUE_ERROR")
 
 
 def generate(program: M.Program, package: str) -> tuple[list[JavaFile], Registry]:

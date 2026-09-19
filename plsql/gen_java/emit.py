@@ -63,8 +63,11 @@ class JavaFile:
         return _Block(self, opening)
 
     def comment(self, text: str) -> "JavaFile":
+        # javac translates `\uXXXX` before it knows what a comment is: source text holding `\u000a` ended the
+        # comment and turned the rest of the line into code, and `'C:\users\...'` was an illegal escape. The
+        # space keeps the text readable and stops it being an escape
         for part in text.splitlines():
-            self.line(f"// {part}")
+            self.line("// " + part.replace("\\u", "\\ u"))
         return self
 
     def render(self) -> str:

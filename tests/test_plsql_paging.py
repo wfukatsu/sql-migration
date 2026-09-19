@@ -90,3 +90,25 @@ def test_the_generated_targets_start_from_the_smallest_key_and_refuse_a_bad_batc
         "null のまま渡すと `key > NULL` が偽になり、1 件も返らない"
     assert "if (pBatch == null || pBatch < 1)" in java
     assert "public static BigDecimal prcNightlyCloseAfter(" in java
+
+
+# --- #27-15: a key that is not unique in the result ---------------------------------------------------------
+def _paged(select: str):
+    import sqlglot
+
+    from plsql.paging import _joins_keep_one_row_per_key
+    from plsql.symbols import OracleSchema
+
+    schema = OracleSchema.from_ddl("fixtures/plsql/src/schema.sql")
+    return _joins_keep_one_row_per_key(sqlglot.parse_one(select, dialect="oracle"), schema)
+
+
+def test_a_join_that_can_repeat_the_key_is_not_paged():
+    """Regression: `orders JOIN order_lines` returns several rows per order_id. When a page ended inside one
+    order, `order_id > :after` skipped the rest of its lines -- no error, just lines never processed."""
+    assert _paged("SELECT o.order_id FROM orders o JOIN customers c ON c.customer_id = o.customer_id"), "N:1"
+    assert not _paged("SELECT o.order_id, l.line_no FROM orders o JOIN order_lines l ON l.order_id = o.order_id")
+    assert not _paged("SELECT o.order_id FROM orders o JOIN customers c ON c.tier = o.status"), "not on the key"
+    assert not _paged("SELECT o.order_id FROM orders o, customers c WHERE c.customer_id = o.customer_id")
+    assert not _paged("SELECT o.order_id FROM orders o JOIN (SELECT customer_id FROM customers) c "
+                      "ON c.customer_id = o.customer_id")

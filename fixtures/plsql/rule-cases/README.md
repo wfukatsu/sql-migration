@@ -32,5 +32,6 @@ corpus（`../src/`）は KPI-1 / KPI-2 / KPI-3 の母数である。ルールを
 | 12 未解決シンボル・未解決型 | `unresolved_type.sql` | 確信度（typeResolution = 0） |
 | — 外部副作用 | `external_package.sql` | EXT-001 |
 | — GOTO | `goto.sql` | LOWER-002 |
+| — 移行先では自然には起こらない例外の handler | `unreachable_handler.sql` | EXC-001 |
 | — 再帰 | `recursive.sql` | RECUR-001 |
 | — どの書き換えの形にも当たらない明示 cursor | `explicit_cursor_unshaped.sql` | CUR-001（読むだけのループは 2026-09-18 から cursor FOR ループへ書き換わり、CUR-003 が持つ） |

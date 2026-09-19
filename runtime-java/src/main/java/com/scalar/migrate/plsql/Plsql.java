@@ -194,7 +194,15 @@ public final class Plsql {
     return arith(a, b, OracleNumbers::multiply);
   }
 
+  /** ORA-01476. Its own type so that generated code can tell it from Java's other ArithmeticExceptions. */
+  public static final class ZeroDivide extends ArithmeticException {
+    public ZeroDivide() {
+      super("ORA-01476: divisor is equal to zero");
+    }
+  }
+
   public static BigDecimal div(Object a, Object b) {
+    if (!isNull(a) && !isNull(b) && OracleNumbers.toBigDecimal(b).signum() == 0) throw new ZeroDivide();
     return arith(a, b, OracleNumbers::divide);
   }
 
