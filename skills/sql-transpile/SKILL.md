@@ -129,7 +129,8 @@ ScalarDB を Target にしたときは、`vendor_sync.py --check` も実行す�
    - **結果を変えないための注意**（`APP_SEMANTICS`）: 0 除算、`ROUND` の丸め方、NULL の並び順など。手で書き換えるなら全部伝える
    - **設計の提案**（`DESIGN`）、**取得コスト**（`COST` / `ROW_LIMIT` / `COST_DEADLINE`）、**推奨設定**（`CONFIG`）
 3. **要確認の文**（WARN）。コードごとに次の手が違う
-   - `DIVISION` / `DATE_ARITH`: 表定義を渡せば自動で直る。表定義を持っていないか利用者に尋ねる
+   - `DIVISION` / `DATE_ARITH`: 表定義を渡せば自動で直る。表定義を持っていないか利用者に尋ねる。Oracle → MySQL 以外の `DATE_ARITH` は書き換えない（日数か interval かは元の意図による）ので、式を見せて確かめる
+   - `EMPTY_STRING` / `DATE_TIME`: Oracle は `''` を NULL として扱い、DATE は時刻を持つ。その列で空文字と NULL を区別しているか、時刻を使っているかを尋ねる
    - `COLLATION`: 大文字小文字を区別しない比較を保つ必要があるか尋ねる。必要なら `--mysql-case-insensitive` で再変換する
    - `FUNC_PORTABILITY`: 名前の出た関数が Target にあるか、利用者定義の関数かを確かめる
    - `ROWNUM`: ORDER BY を伴う場合は件数の意味が変わりうる。元の意図を確かめる

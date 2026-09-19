@@ -94,7 +94,7 @@ INSERT INTO audit_log (log_id, table_name, action, logged_at) VALUES (3, 'custom
 -- @id: I07
 -- @note: 採番列（IDENTITY / AUTO_INCREMENT）に任せて主キーを省く。表定義の変換が AUTO_INC で失敗するため、変換ツールは主キーの欠落を検出できない
 -- @check: SELECT COUNT(*) AS n FROM audit_log WHERE action = 'EXPORT'
--- @expect-scalardb: WARN
+-- @expect-scalardb: OK
 INSERT INTO audit_log (table_name, action, logged_at) VALUES ('orders', 'EXPORT', TIMESTAMP '2024-09-03 12:00:00');
 -- @id: I08
 -- @note: シーケンスで主キーを採番（MySQL はシーケンスが無いので採番表を更新する）
@@ -139,7 +139,7 @@ UPDATE orders SET status = 'SHIPPED' WHERE order_id = 1002;
 -- @id: U02
 -- @note: 複合主キーを指定した UPDATE（タイムスタンプのリテラル）
 -- @check: SELECT qty, updated_at FROM stock WHERE warehouse_id = 1 AND product_id = 101
--- @expect-scalardb: WARN
+-- @expect-scalardb: OK
 UPDATE stock SET qty = 45, updated_at = TIMESTAMP '2024-09-01 10:00:00' WHERE warehouse_id = 1 AND product_id = 101;
 -- @id: U03
 -- @note: キー以外の条件で複数行を UPDATE（クロスパーティション走査になる）

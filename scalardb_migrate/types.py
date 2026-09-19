@@ -6,7 +6,9 @@ Reference: https://scalardb.scalar-labs.com/docs/latest/scalardb-sql/grammar/
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlglot import exp
 
@@ -146,3 +148,58 @@ def map_type(dt: exp.DataType, source_dialect: str) -> TypeMapping:
         return TypeMapping("TEXT", "WARN",
                            f"{raw}: mapped to TEXT; JSON/ENUM/UUID semantics and operators are not available")
     return TypeMapping(None, "ERROR", f"{raw}: no ScalarDB equivalent")
+
+
+# -- date / time literals -------------------------------------------------------------------------------
+# ScalarDB parses 'YYYY-MM-DD', 'HH:MM:SS[.FFF]' and 'YYYY-MM-DD HH:MM:SS[.FFF]' and nothing else. The converter and
+# the decomposer both land literals in ScalarDB columns, so the two rules below live here and both call them.
+_ISO_DATE = r"\d{4}-\d{2}-\d{2}"
+_ISO_CLOCK = r"\d{2}:\d{2}(:\d{2}(\.\d+)?)?"
+_ISO_TEMPORAL = re.compile(rf"{_ISO_DATE}([ T]{_ISO_CLOCK})?|{_ISO_CLOCK}")
+_STRPTIME_DIRECTIVES = set("YmdHMSfbByjIp")
+_CLOCK_DIRECTIVES = set("HMSfIp")
+
+
+def is_iso_temporal(text: str) -> bool:
+    return bool(_ISO_TEMPORAL.fullmatch(text))
+
+
+def iso_temporal_literal(text: str, fmt: str | None) -> str | None:
+    """The ISO text of ``TO_DATE(text, fmt)``, or None when it cannot be worked out here.
+
+    ``fmt`` is the strftime form SQLGlot gives every dialect's format model. Without a format the source database
+    reads the text with its session settings (NLS_DATE_FORMAT), which this tool cannot see: only text that is
+    already ISO is passed through. Format elements with no strftime counterpart (RR, FF, ...) are refused rather
+    than guessed.
+    """
+    if fmt is None:
+        return text if is_iso_temporal(text) else None
+    if fmt.startswith("%Y-%m-%d") and is_iso_temporal(text):
+        return text   # the ANSI literal TIMESTAMP '...' arrives with the ISO format, fraction or not
+    fmt = re.sub(r"\.FF\d?$", ".%f", fmt)
+    directives = re.findall(r"%(.)", fmt)
+    if re.search(r"[A-Za-z]", re.sub(r"%.", "", fmt)) or not set(directives) <= _STRPTIME_DIRECTIVES:
+        return None
+    try:
+        parsed = datetime.strptime(text, fmt)
+    except ValueError:
+        return None
+    if not set(directives) & _CLOCK_DIRECTIVES:
+        return parsed.strftime("%Y-%m-%d")
+    out = parsed.strftime("%Y-%m-%d %H:%M:%S")
+    return out + (".%03d" % (parsed.microsecond // 1000) if parsed.microsecond else "")
+
+
+def fit_temporal_literal(kind: str | None, text: str) -> tuple[str, str | None]:
+    """``text`` made to fit a ScalarDB column of type ``kind``, and what was lost: None, "midnight" or "time".
+
+    Oracle DATE carries a time and ScalarDB DATE does not, so the time part is dropped; ScalarDB TIMESTAMP and
+    TIMESTAMPTZ need a time, so a date-only literal gets midnight.
+    """
+    if kind == "DATE":
+        m = re.fullmatch(rf"({_ISO_DATE})[ T]({_ISO_CLOCK})", text)
+        if m:
+            return m.group(1), "midnight" if re.fullmatch(r"00:00(:00(\.0+)?)?", m.group(2)) else "time"
+    if kind in ("TIMESTAMP", "TIMESTAMPTZ") and re.fullmatch(_ISO_DATE, text):
+        return text + " 00:00:00", "padded"
+    return text, None
