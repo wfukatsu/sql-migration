@@ -77,6 +77,12 @@ rowLocks:
       **弾かれた要素は何も書いていない**ので、呼び出し側はその要素だけを安全に再試行できる
       ——二重加算にならない。失敗した要素を記録して続けるのは `SAVE EXCEPTIONS` の要件そのもの
       で、それは #14 / #3 で決めた形が持っている（cursor-patterns §G）
+    pkg_customer_import.import: >-
+      MERGE を「読んでから UPDATE か INSERT を選ぶ」へ割る。UPSERT にすると既存行で WHEN MATCHED が
+      設定していない列まで上書きする（#26 で実害を実測: tier GOLD->BRONZE、registered_on がずれる）。
+      #26 は converter を WARN のままにし、許容できない移行では読んでから選ぶ形にする、と決めて
+      いる。同じトランザクションの中で読んで書くので、同時に「無い」と読んだ 2 つは commit で片方が
+      弾かれる。呼び出し側はその 1 要素だけを再試行する（FORALL の 1 要素は冪等: 同じ名前を書く）
     pkg_order_lock.cancel: >-
       在庫を戻す `SET stock_qty = stock_qty + r.qty` を、同じトランザクションの中で読んでから書く
       2 文に割る。同じ商品が明細に 2 行あっても更新は失われない（RmwIT で実測——自分の書き込みは

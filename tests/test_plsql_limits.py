@@ -266,7 +266,7 @@ def test_every_row_lock_decision_is_about_something():
     for routine_id in locks.optimistic:
         statements = _walk(by_id[routine_id].body)
         if not any(getattr(s, "locking_mode", None) or
-                   any(d.code in ("RMW_SPLIT", "OPTIMISTIC") for d in s.diagnostics)
+                   any(d.code in ("RMW_SPLIT", "OPTIMISTIC", "MERGE_SPLIT") for d in s.diagnostics)
                    for s in statements):
             empty.append(routine_id)
     assert empty == [], f"行ロックも読み書きも持たない routine が記録されている: {empty}"

@@ -361,6 +361,41 @@ public void prcAuditAutonomous(String pTableName, ..., AuditContext audit) throw
 
 ---
 
+## H. `MERGE`（読んで、あれば更新、無ければ挿入）
+
+`MERGE` を `UPSERT` にすると、**既存行に当たったときに `WHEN MATCHED` が設定していない列まで
+上書きする**（#26 で実測: `pkg_customer_import.import` の tier が GOLD→BRONZE、registered_on がずれる）。
+#26 は converter を **WARN のまま**にし、それが許容できない移行では「読んでから UPDATE / INSERT を
+選ぶ形にすること」と決めた。**PL/SQL の移行はそれである**——Oracle と同じ行が残ることが目的だからである。
+
+### 実装（2026-09-19）: 記録された routine の MERGE を割る
+
+```sql
+SELECT COUNT(*) INTO v_merge_1 FROM customers WHERE customer_id = p_ids(i);
+IF v_merge_1 > 0 THEN
+  UPDATE customers SET name = p_names(i) WHERE customer_id = p_ids(i);   -- WHEN MATCHED だけ
+ELSE
+  INSERT INTO customers (customer_id, name, tier, registered_on) VALUES (p_ids(i), p_names(i), 'BRONZE', SYSDATE);
+END IF;
+```
+
+* **converter は変えない。** 単体ツール `sql-transpile` の挙動（I10 とベンチマークの数字）を守るのが
+  #26 で WARN を選んだ理由であり、ここは PL/SQL の移行だけの話である
+* **同じトランザクションの中で読んで書く**ので、同時に「無い」と読んだ 2 つは commit で片方が弾かれる。
+  だから #9 の RMW と同じく `rowLocks.optimistic` に**記録された routine だけ**を割る
+* 割れない形（USING が表を読む、ON が等値の AND でない、WHEN MATCHED が書き込む先の列を読む、
+  DELETE 句や条件つきの枝がある）は触らない。UPSERT と、上書きされる列を名指しする警告が残る
+* **割ると MERGE という語が消え、SEM-006（競合の確認）が外れる。** 競合の問いは消えていないので、
+  割った形には SEM-011 が同じ要求（concurrent_upsert）を当てる
+
+割ろうとして、**lowering が MERGE を SELECT として扱っていた**のが見つかった。`USING (SELECT ...)` の
+SELECT を先に見つけていたためで、包む側（MERGE / INSERT / UPDATE / DELETE）から先に見るよう直した。
+
+**実測（2026-09-19、実 ScalarDB Cluster）**: `import_merge` が Oracle と一致した——既存の customer_id=1 は
+name だけが変わり、tier も registered_on も残る。
+
+---
+
 ## 共通して決めること
 
 1. **再試行の責務。** 生成コードはトランザクションを開始も commit もしない（計画 §9）ので、

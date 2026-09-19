@@ -92,7 +92,7 @@
           "startColumn": 7,
           "endColumn": 58
          },
-         "sqlKind": "SELECT",
+         "sqlKind": "MERGE",
          "originalSql": "MERGE INTO customers c\n      USING (SELECT p_ids(i) AS customer_id, p_names(i) AS name FROM dual) s\n         ON (c.customer_id = s.customer_id)\n       WHEN MATCHED THEN UPDATE SET c.name = s.name\n       WHEN NOT MATCHED THEN\n         INSERT (customer_id, name, tier, registered_on)\n         VALUES (s.customer_id, s.name, 'BRONZE', SYSDATE)",
          "selectsStar": false,
          "cardinality": "UNKNOWN",
