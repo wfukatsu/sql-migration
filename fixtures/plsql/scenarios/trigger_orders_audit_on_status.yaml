@@ -20,3 +20,7 @@ capture_tables:
 mask:
   audit_log:
   - changed_at
+  # claim_batch は ORDER BY の無い `ROWNUM <= p_limit` で取るので、どの行から処理するかは Oracle でも
+  # 決まっていない。2 件とも CLAIMED になり監査行も 2 行揃うが、**どちらが audit_id=1 になるかは偶然**
+  # である——移行先でも実行ごとに入れ替わった（2026-09-19）。番号は比べず、行の組として比べる
+  - audit_id

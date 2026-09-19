@@ -86,7 +86,9 @@ units:
     holdout: false
     routines:
       - {name: restock,             expected: REDESIGN, reason: "FORALL SAVE EXCEPTIONS。部分失敗を許す原子性は業務要件で決める"}
-      - {name: collect_open_orders, expected: REVIEW,   reason: "BULK COLLECT LIMIT。メモリ上限と走査行数の上限が要る"}
+      # 2026-09-19 / #19: 本体は塊の件数を足すだけなので COUNT(*) に書き換える。行を持たず、LIMIT が
+      # 正でないときの誤り（ORA-06502 / ORA-06500）も Oracle と同じに投げる——人が見る論点が残らない
+      - {name: collect_open_orders, expected: AUTO,     reason: "件数を数えるだけの分割読み。COUNT(*) で同じ答えになる（#19）"}
       - {name: archive_lines,       expected: REVIEW,   reason: "BULK COLLECT + FORALL INSERT。採番に順序オブジェクトを使う点は別途 REDESIGN"}
 
   - name: prc_nightly_close

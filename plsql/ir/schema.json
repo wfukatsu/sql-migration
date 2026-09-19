@@ -1158,6 +1158,12 @@
             "null"
           ]
         },
+        "paged_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "body": {
           "$ref": "#/$defs/statements"
         }

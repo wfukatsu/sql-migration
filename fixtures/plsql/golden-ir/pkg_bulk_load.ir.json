@@ -355,6 +355,24 @@
        },
        "name": "v_ids",
        "declarationKind": "variable"
+      },
+      {
+       "id": "pkg_bulk_load.collect_open_orders#decl-v_count_1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 34,
+        "endLine": 38,
+        "startColumn": 5,
+        "endColumn": 9
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "inferred"
+       },
+       "name": "v_count_1",
+       "declarationKind": "variable"
       }
      ],
      "body": [
@@ -372,8 +390,70 @@
        "expression": "0"
       },
       {
+       "id": "pkg_bulk_load.collect_open_orders#stmt-3limit1",
+       "kind": "If",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 34,
+        "endLine": 38,
+        "startColumn": 5,
+        "endColumn": 9
+       },
+       "branches": [
+        {
+         "condition": "p_limit IS NULL",
+         "body": [
+          {
+           "id": "pkg_bulk_load.collect_open_orders#stmt-3limit1raise",
+           "kind": "Raise",
+           "sourceRange": {
+            "file": "pkg_bulk_load.pkb",
+            "startLine": 34,
+            "endLine": 38,
+            "startColumn": 5,
+            "endColumn": 9
+           },
+           "errorCode": -6500,
+           "message": "'PL/SQL: storage error'"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "pkg_bulk_load.collect_open_orders#stmt-3limit2",
+       "kind": "If",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 34,
+        "endLine": 38,
+        "startColumn": 5,
+        "endColumn": 9
+       },
+       "branches": [
+        {
+         "condition": "p_limit < 1",
+         "body": [
+          {
+           "id": "pkg_bulk_load.collect_open_orders#stmt-3limit2raise",
+           "kind": "Raise",
+           "sourceRange": {
+            "file": "pkg_bulk_load.pkb",
+            "startLine": 34,
+            "endLine": 38,
+            "startColumn": 5,
+            "endColumn": 9
+           },
+           "errorCode": -6502,
+           "message": "'PL/SQL: value or conversion error'"
+          }
+         ]
+        }
+       ]
+      },
+      {
        "id": "pkg_bulk_load.collect_open_orders#stmt-3",
-       "kind": "Loop",
+       "kind": "SqlOperation",
        "sourceRange": {
         "file": "pkg_bulk_load.pkb",
         "startLine": 34,
@@ -384,8 +464,8 @@
        "diagnostics": [
         {
          "severity": "INFO",
-         "code": "BULK_CHUNKED",
-         "message": "cursor c は p_limit 件ずつ読んでいた。移行先に跨トランザクションの cursor は無いので行は先にまとめて読み、p_limit 件ずつ**配る**ループにした。読み込む量を決めていた値が、配る量しか決めなくなる——メモリを守るのは走査行数の上限（--limits）である",
+         "code": "CUR_COUNT",
+         "message": "cursor c は p_limit 件ずつ読んで件数を足すだけだった。COUNT(*) で同じ答えが出るので、行を持たない（#19 / 2026-09-19）",
          "range": {
           "file": "pkg_bulk_load.pkb",
           "startLine": 34,
@@ -395,53 +475,27 @@
          }
         }
        ],
-       "loopKind": "cursor-for",
-       "cursor": "v_ids IN chunks(SELECT order_id FROM orders WHERE status = 'NEW', p_limit)",
-       "query": {
-        "id": "pkg_bulk_load.collect_open_orders#stmt-3",
-        "kind": "SqlOperation",
-        "sourceRange": {
-         "file": "pkg_bulk_load.pkb",
-         "startLine": 34,
-         "endLine": 38,
-         "startColumn": 5,
-         "endColumn": 9
-        },
-        "sqlKind": "SELECT",
-        "originalSql": "SELECT order_id FROM orders WHERE status = 'NEW'",
-        "selectsStar": false,
-        "cardinality": "MANY",
-        "atMostOneRow": false
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT COUNT(*) FROM orders WHERE status = 'NEW'",
+       "intoTargets": [
+        "v_count_1"
+       ],
+       "selectsStar": false,
+       "cardinality": "EXACTLY_ONE",
+       "atMostOneRow": false
+      },
+      {
+       "id": "pkg_bulk_load.collect_open_orders#stmt-3sum",
+       "kind": "Assignment",
+       "sourceRange": {
+        "file": "pkg_bulk_load.pkb",
+        "startLine": 34,
+        "endLine": 38,
+        "startColumn": 5,
+        "endColumn": 9
        },
-       "variable": "v_ids",
-       "chunk": "p_limit",
-       "body": [
-        {
-         "id": "pkg_bulk_load.collect_open_orders#stmt-5",
-         "kind": "Exit",
-         "sourceRange": {
-          "file": "pkg_bulk_load.pkb",
-          "startLine": 36,
-          "endLine": 36,
-          "startColumn": 7,
-          "endColumn": 31
-         },
-         "condition": "v_ids.COUNT = 0"
-        },
-        {
-         "id": "pkg_bulk_load.collect_open_orders#stmt-6",
-         "kind": "Assignment",
-         "sourceRange": {
-          "file": "pkg_bulk_load.pkb",
-          "startLine": 37,
-          "endLine": 37,
-          "startColumn": 7,
-          "endColumn": 34
-         },
-         "target": "p_count",
-         "expression": "p_count + v_ids.COUNT"
-        }
-       ]
+       "target": "p_count",
+       "expression": "p_count + v_count_1"
       }
      ],
      "deterministic": false,

@@ -299,6 +299,23 @@ void prcNightlyCloseDone() / void prcNightlyCloseFailedBatch()
 `audit_log` の 2 行だけで、それは `trg_orders_audit` が書いていた行である（#12 の trigger の話で、
 境界の話ではない）。割る前は最初の `COMMIT` で `UnsupportedOperationException` だった。
 
+### 処理対象の読み方（2026-09-19 / #19）
+
+割った routine の `Targets` は、処理対象を**キー順に件数つきで**返す。最初は起点を null で呼び、次からは
+前のページの最後の行を `<routine>After(...)` に通した値を渡す。空が返ったら終わりである:
+
+```java
+BigDecimal after = null;
+List<PrcNightlyCloseLoop3Row> page;
+while (!(page = tx.run(() -> service.prcNightlyCloseTargets(batchDate, after, 100))).isEmpty()) {
+    for (var r : page) { ... One / Failed ... }
+    after = PrcNightlyCloseService.prcNightlyCloseAfter(page.get(page.size() - 1));
+}
+```
+
+1 回に取る件数（`pBatch`）は運用の調整値で、業務の数ではない。これで割った routine に行数の上限を
+決める必要が無くなった（cursor-patterns「共通して決めておくこと」1）。`mark_reviewed` もこの形に加えた。
+
 ## F. `SAVEPOINT` / `ROLLBACK TO`
 
 ```sql

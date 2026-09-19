@@ -527,7 +527,22 @@ class ScalarDbCaptureIT {
         call(parts.get("Start"), List.of(), -1, null);
         runner.commit();
       }
-      if (parts.containsKey("Targets")) {
+      Method after = null;
+      for (Method candidate : service.getClass().getMethods()) {
+        if (candidate.getName().equals(parts.get("One").getName().replaceFirst("One$", "After"))) after = candidate;
+      }
+      if (parts.containsKey("Targets") && after != null) {
+        // #19: 処理対象はキー順に件数つきで読む。件数を 1 にして、ページの境目を毎回またがせる
+        Object key = null;
+        int index = 0;
+        while (true) {
+          List<?> page = (List<?>) page(parts.get("Targets"), key);
+          runner.commit();
+          if (page.isEmpty()) break;
+          for (Object row : page) iteration(List.of(row), index++);
+          key = after.invoke(null, page.get(page.size() - 1));
+        }
+      } else if (parts.containsKey("Targets")) {
         Object targets = call(parts.get("Targets"), List.of(), -1, null);
         runner.commit();
         List<?> rows = (List<?>) targets;
@@ -551,6 +566,22 @@ class ScalarDbCaptureIT {
         runner.commit();
       }
       return null;
+    }
+
+    /** 1 ページ分の処理対象。引数の並びは [routine の引数][起点のキー][件数][AuditContext]。 */
+    private Object page(Method targets, Object key) throws Exception {
+      Class<?>[] types = targets.getParameterTypes();
+      Object[] arguments = new Object[types.length];
+      int at = types.length;
+      if (at > 0 && types[at - 1] == AuditContext.class) arguments[--at] = Invoker.auditContext(scenario);
+      arguments[--at] = 1;          // 件数
+      arguments[--at] = key;        // 起点（最初は null）
+      if (at > 0) {
+        Object[] head = Invoker.coerce(raw.subList(0, at), java.util.Arrays.copyOf(types, at),
+            targets.getGenericParameterTypes(), scenario);
+        System.arraycopy(head, 0, arguments, 0, head.length);
+      }
+      return Invoker.invoke(service, targets, arguments);
     }
 
     /** 1 反復 = 1 トランザクション。失敗したら**別のトランザクション**で記録する（#3 §F / §G）。 */
