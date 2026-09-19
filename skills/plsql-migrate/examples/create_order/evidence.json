@@ -1,0 +1,76 @@
+{
+ "double": {
+  "variant": "double",
+  "scenarios": {
+   "create_order_duplicate_id": {
+    "routine": "create_order.create_order",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [
+     {
+      "difference": "exception code: expected=-20004 actual=java.sql.SQLTransactionRollbackException (Transaction conflict (FAILED_PRECONDITION: DB-CORE-20013: The record being prepared already exists. Details: DB-CORE-20000: No mutation was applied. Mutations: [{Type: Put, Table: shop.order_items, Partition Key: Key{BigIntColumn{name=order_id, value=5, hasNullValue=false}}, Clustering Key: Optional[Key{IntColumn{name=line_no, value=1, hasNullValue=false}}], Condition: Optional[PutIfNotExists{}]}, {Type: Put, Table: shop.products, Partition Key: Key{BigIntColumn{name=product_id, value=10, hasNullValue=false}}, Clustering Key: Optional.empty, Condition: Optional[PutIf{expressions=[ConditionalExpression{column=TextColumn{name=tx_id, value=eb488004-3af1-4323-9fa9-3d427d9fb671}, operator=EQ}]}]}, {Type: Put, Table: shop.orders, Partition Key: Key{BigIntColumn{name=order_id, value=5, hasNullValue=false}}, Clustering Key: Optional.empty, Condition: Optional[PutIfNotExists{}]}]. Transaction ID: 19eeaf2b-c947-4a6a-aaf3-3ace0d46d198))",
+      "reason": "移行先は重複 INSERT をその文では弾かず、commit 時の衝突（DB-CORE-20013）として返すので、DUP_VAL_ON_INDEX の handler（-20004）は走らない（EXC-001）。受注番号は採番で取るので、採番が一意であるかぎり実運用では起きない。どちらも何も書かない。-20004 を再現するには INSERT の前に存在を読む必要があり、受注のたびに読みが 1 回増えるので採らない。呼び出し側はこの衝突を無条件に再試行しないこと（同じ番号なら解消しない）",
+      "decided": "2026-09-20"
+     }
+    ],
+    "scale_only": [
+     "table orders row order_id=5: total_amount: expected=1 actual=1.0 (scale)"
+    ],
+    "direct": false
+   },
+   "create_order_exact_stock": {
+    "routine": "create_order.create_order",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [
+     "table order_items row order_id=1: unit_price: expected=100 actual=100.0 (scale)",
+     "table orders row order_id=1: total_amount: expected=300 actual=300.0 (scale)",
+     "table products row product_id=10: unit_price: expected=100 actual=100.0 (scale)"
+    ],
+    "direct": false
+   },
+   "create_order_fractional_quantity": {
+    "routine": "create_order.create_order",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   },
+   "create_order_no_product": {
+    "routine": "create_order.create_order",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   },
+   "create_order_ok": {
+    "routine": "create_order.create_order",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   },
+   "create_order_short_stock": {
+    "routine": "create_order.create_order",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   },
+   "create_order_zero_quantity": {
+    "routine": "create_order.create_order",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   }
+  },
+  "not_compared": {}
+ }
+}

@@ -44,8 +44,10 @@ flowchart LR
 | 変換ツール | `scalardb_migrate/` | 文ごとの変換、スキーマ変換、アクセスパス分析、実行計画への分解、アプリ側に移す処理の分析 |
 | **PL/SQL 変換** | **`plsql/`** | **PL/SQL の解析・判定・Java 生成（下記）** |
 | 実行基盤 | `runtime-java/` | 実行計画の実行（ScalarDB から取得 → H2 で元の SQL）、生成コードの実行時ヘルパ、ベンチマーク |
+| **migrate-flow スキル** | `skills/migrate-flow/` | **PL/SQL / SQL の移行を、決まった順で最後まで進める Claude Code スキル**: 現行の仕様（Markdown + Mermaid）→ 承認 → 変換と人の判断 → 承認 → 変換後の仕様と「何がどう変わったか」→ 承認 → テスト。承認した人・日付・承認したときの中身の指紋を控え、そろうまでテストに進めない |
+| plsql-spec スキル | `skills/plsql-spec/` | 既存の PL/SQL を調べ、いまの動作を Markdown の仕様書にまとめる Claude Code スキル。引数・表・SQL・エラーコード・trigger などの事実は IR から出し、動作と業務ルールは原文の位置つきで書き、`check` で突き合わせる |
+| plsql-migrate スキル | `skills/plsql-migrate/` | PL/SQL を Java に変換し、生成コードの外で決めること（運用・呼び出し側・業務ロジックとの整合）を確認して記録する Claude Code スキル。利用者に判断を求めるときは、推奨・理由・選択肢ごとの影響・決めないとどうなるかを示してから聞く。最後に、変換後のコードの文書（アーキテクチャ・仕様・使い方・制限・どのように移行したか）を `<out>/docs/` にまとめる |
 | sql-transpile スキル | `skills/sql-transpile/` | 任意の SQLGlot 方言どうし、または ScalarDB SQL への変換を行う Claude Code スキル（`scalardb_migrate/` を import せず、同梱コピーで動く） |
-| plsql-migrate スキル | `skills/plsql-migrate/` | PL/SQL を Java に変換し、生成コードの外で決めること（運用・呼び出し側・業務ロジックとの整合）を確認して記録する Claude Code スキル |
 | 検証基盤 | `difftest/` | Docker Compose の DB 群と、差分テスト・ベンチマーク・スキルの実行検証のハーネス |
 
 ---
@@ -76,6 +78,8 @@ flowchart LR
 ```
 
 ### 使い方
+
+Claude Code から、仕様の調査 → 変換と人の判断 → 変換後の仕様 → 承認 → テストの順に進めるなら [migrate-flow スキル](#migrate-flow-スキル) を使います。下はその中で動いているコマンドです。
 
 ```bash
 # 判定・レポート・トレーサビリティ
@@ -128,6 +132,9 @@ python -m plsql.kpi --evidence difftest/work/plsql-diff.json --generated generat
 | [cursor の移行パターン](docs/plsql-cursor-patterns.md) | 6 つの形と、それぞれ人が決めること |
 | [トランザクションと行ロック](docs/plsql-transaction-patterns.md) | 7 つの形。**P3-4 の実測から始まる** |
 | [trigger と外部副作用](docs/plsql-trigger-patterns.md) | 5 つの形。**書込経路の網羅性が先** |
+| [生成コードの外で決めること](docs/plsql-decisions-outside-generator.md) | 運用（OPS）・呼び出し側（CALL）・業務ロジックとの整合（BIZ）の項目。選択肢・推奨・代償 |
+| [業務ロジックとの整合の問い](docs/plsql-biz-alignment-questions.md) | corpus の BIZ 項目を、routine ごとの具体的な問いにしたもの |
+| [現行の仕様の例](skills/plsql-spec/examples/create_order/README.md) / [変換後の文書の例](skills/plsql-migrate/examples/create_order/README.md) | `create_order` で書き上げたもの。事実の欄と Mermaid の図は IR・生成物から出している |
 
 ### 現在地
 
@@ -189,7 +196,7 @@ DB の要らないテストは CI でも回ります（`.github/workflows/ci.yml
 一致（`vendor_sync.py --check`）、Java の単体テスト。DB の要る検証（`difftest/`）は手で回します。
 
 ```bash
-.venv/bin/python -m pytest -q          # 変換ツール・PL/SQL 変換・スキル
+.venv/bin/python -m pytest -q          # 変換ツール・PL/SQL 変換・スキル（図の描画のテストは mmdc が無ければ skip）
 # 実行基盤。Java のテストは生成した Java を一緒にコンパイルするので、generated/（git 管理外）が先に要る
 .venv/bin/python -m plsql.generate fixtures/plsql/src --scalardb-schema fixtures/plsql/scalardb-schema.json \
     --limits fixtures/plsql/limits.yaml --out-dir generated
@@ -258,6 +265,83 @@ runtime-java/build/install/residual-runner/bin/residual-runner run --plan out/pl
 
 結果は標準出力に JSON で、ログ（ScalarDB のログを含む）は標準エラーに WARN 以上だけ出ます。詳しいログが要るときは `RESIDUAL_RUNNER_OPTS=-Dorg.slf4j.simpleLogger.defaultLogLevel=info` を付けて実行します。
 
+### migrate-flow スキル
+
+移行を 4 つの段階に分け、段階のあいだに承認をはさみます。各段階の中身は下の 3 つのスキルが受け持ち、このスキルは
+順番と、承認の記録と、テストの関門を受け持ちます。
+
+```mermaid
+flowchart LR
+  A["1. 現行の仕様を調べる<br/>plsql-spec"] --> A1{{"承認 spec"}}
+  A1 --> B["2. 変換し、人の判断を確認する<br/>plsql-migrate / sql-transpile"] --> B1{{"承認 decisions"}}
+  B1 --> C["3. 変換後の仕様<br/>何がどう変わったか"] --> C1{{"承認 converted"}}
+  C1 --> D["4. テスト<br/>コンパイル + 実 DB での比較"]
+```
+
+- **承認には、承認した人と日付が要り**、その段階の検査（未記入が無い、図が入っている、事実の欄が古くない、
+  決めた人のいない「決定」が無い）が通っていなければ受け付けません。順番も飛ばせません
+- 未決の判断（記録の未決の項目、判定が REVIEW のままの routine）を残して進めるなら、利用者が決めた理由を承認に控えます
+- **承認したときのファイルの指紋を控える**ので、承認のあとで仕様書・決定・文書が変わると承認は「古い」になり、
+  テストの関門（`flow.py gate`）が閉じます。テストの結果も、そのとき有効だった承認の指紋と一緒に残ります
+- 図は IR と生成物から決定的に描きます: routine ごとの処理の流れ、routine と表、呼び出しと trigger、変換後の全体の形、
+  1 回の呼び出し、**変換前の文 → 変換後の method**（赤 = 意味が変わる、黄 = 形が変わるが結果は同じ）。
+  文ごとの診断は「意味が変わる / 形が変わる / 情報」に分類してあり、分類の無い診断は「未分類」と出ます
+  （corpus に未分類が無いことをテストが確かめます）
+
+```bash
+.venv/bin/python skills/migrate-flow/scripts/flow.py init --out out/migrate/create_order --kind plsql \
+  --src fixtures/plsql-external/create_order/src --scalardb-schema fixtures/plsql-external/create_order/scalardb-schema.json \
+  --limits fixtures/plsql-external/create_order/limits.yaml
+.venv/bin/python skills/migrate-flow/scripts/flow.py status --out out/migrate/create_order    # 段階ごとの状態と、次にすること
+.venv/bin/python skills/migrate-flow/scripts/flow.py gate --out out/migrate/create_order      # 0 = テストしてよい
+ln -s "$PWD/skills/migrate-flow" ~/.claude/skills/migrate-flow        # Claude Code から使う
+```
+
+### plsql-spec スキル
+
+移行の前に、既存の PL/SQL が**いま何をしているか**を仕様書にします。引数・読み書きする表・SQL・エラーコード・
+例外ハンドラ・トランザクション制御・呼び出しの関係・発火する trigger は `plsql.cli` の IR から機械的に出し
+（事実の欄。lowering が足した文は除く）、動作・業務ルール・エラー時の振る舞い・確かめたいことは原文を読んで、
+原文の位置（`ファイル:行`）つきで書きます。事実の欄は作り直しても文章に触れません。`check` は、未記入、古い事実、
+文章に出てこないエラーコードと表、routine の範囲の外を指す引用を問題として返します。
+書き上がった例は [`skills/plsql-spec/examples/create_order/`](skills/plsql-spec/examples/create_order/README.md) にあります。
+
+```bash
+.venv/bin/python -m plsql.cli fixtures/plsql-external/create_order/src --out-dir out/plsql-spec/create_order/analysis --quiet
+.venv/bin/python skills/plsql-spec/scripts/spec_facts.py facts --analysis out/plsql-spec/create_order/analysis --out-dir out/plsql-spec/create_order/spec
+.venv/bin/python skills/plsql-spec/scripts/spec_facts.py check --analysis out/plsql-spec/create_order/analysis --out-dir out/plsql-spec/create_order/spec
+ln -s "$PWD/skills/plsql-spec" ~/.claude/skills/plsql-spec            # Claude Code から使う
+```
+
+### plsql-migrate スキル
+
+PL/SQL を `plsql.generate` で Java に変換し（コンパイルと行数上限の決定漏れまで確かめる）、生成器が決めずに
+残した問い——[生成コードの外で決めること](docs/plsql-decisions-outside-generator.md) の OPS / CALL / BIZ 項目——を
+生成物から拾って、利用者に確認し、決めた人と日付つきで記録します。BIZ 項目は routine ごとに「移行で何が変わるか」を
+業務の言葉にし、業務文書と照らして整合を確かめます。リポジトリの中で動きます（`plsql/` を使う）。
+
+```bash
+.venv/bin/python skills/plsql-migrate/scripts/decision_items.py scan --generated out/plsql \
+  --limits fixtures/plsql/limits.yaml --scalardb-schema fixtures/plsql/scalardb-schema.json \
+  --record fixtures/plsql/decisions-outside-generator.yaml --write --out out/plsql/decision-items.md
+ln -s "$PWD/skills/plsql-migrate" ~/.claude/skills/plsql-migrate      # Claude Code から使う
+```
+
+変換のあと、**変換後のコードの文書**を作ります（スキルの Step 7）。`README.md` に アーキテクチャ / 使い方 / 制限 /
+どのように移行したか、module ごとの Markdown に routine ごとの 仕様 / 移行で変わったこと / 制限と注意 が入ります。
+Java の入口と constructor、引数の対応、例外、**原文の文 → Repository の method → 移行先の SQL** の対応、当たった
+判定ルール、`limits.yaml` の決定、実 DB の比較の結果と受け入れた差は、生成物・解析・決定・比較から機械的に出します
+（事実の欄）。文章は生成された Java を読んで書き、`check` が、判定の理由・受け入れた差・決定・「比較していないこと」を
+文章が落としていないか、生成物に無い Java の名前を引いていないかを確かめます。
+書き上がった例は [`skills/plsql-migrate/examples/create_order/`](skills/plsql-migrate/examples/create_order/README.md) にあります。
+
+```bash
+.venv/bin/python -m plsql.cli fixtures/plsql/src --scalardb-schema fixtures/plsql/scalardb-schema.json \
+  --limits fixtures/plsql/limits.yaml --out-dir out/plsql/analysis --quiet
+.venv/bin/python skills/plsql-migrate/scripts/migration_doc.py facts --src fixtures/plsql/src --generated out/plsql --analysis out/plsql/analysis \
+  --limits fixtures/plsql/limits.yaml --record fixtures/plsql/decisions-outside-generator.yaml --out-dir out/plsql/docs
+```
+
 ### sql-transpile スキル
 
 任意の方言どうし（SQLGlot の 32 方言）または ScalarDB SQL に変換します。素の `sqlglot.transpile()` が黙って通してしまう構文（`ROWNUM`、Oracle の外部結合 `(+)`、`CONNECT BY`、`NEXTVAL` など）を直すか、理由付きで報告します。
@@ -273,20 +357,6 @@ ln -s "$PWD/skills/sql-transpile" ~/.claude/skills/sql-transpile      # Claude C
 ```bash
 .venv/bin/python skills/sql-transpile/scripts/vendor_sync.py --check    # 差分があれば終了コード 1
 .venv/bin/python skills/sql-transpile/scripts/vendor_sync.py --update
-```
-
-### plsql-migrate スキル
-
-PL/SQL を `plsql.generate` で Java に変換し（コンパイルと行数上限の決定漏れまで確かめる）、生成器が決めずに
-残した問い——[生成コードの外で決めること](docs/plsql-decisions-outside-generator.md) の OPS / CALL / BIZ 項目——を
-生成物から拾って、利用者に確認し、決めた人と日付つきで記録します。BIZ 項目は routine ごとに「移行で何が変わるか」を
-業務の言葉にし、業務文書と照らして整合を確かめます。リポジトリの中で動きます（`plsql/` を使う）。
-
-```bash
-.venv/bin/python skills/plsql-migrate/scripts/decision_items.py scan --generated out/plsql \
-  --limits fixtures/plsql/limits.yaml --scalardb-schema fixtures/plsql/scalardb-schema.json \
-  --record fixtures/plsql/decisions-outside-generator.yaml --write --out out/plsql/decision-items.md
-ln -s "$PWD/skills/plsql-migrate" ~/.claude/skills/plsql-migrate      # Claude Code から使う
 ```
 
 ---
@@ -411,8 +481,12 @@ runtime-java/              実行基盤（Java 17、Gradle）
   .../appside/               アプリ側で Oracle の動きを再現する補助クラス（階層、ウィンドウ関数、数値、並び順、日付）
   .../plsql/                 生成コードの実行時ヘルパ（Oracle の式の意味論）と差分ハーネス
   .../examples/              アプリ側実装の例（エリア別売上分析）
-skills/sql-transpile/      Claude Code スキル（SKILL.md、scripts/、references/、examples/）
-skills/plsql-migrate/      Claude Code スキル（PL/SQL の変換と、生成コードの外で決めることの確認・記録）
+skills/                    Claude Code スキル（どれも SKILL.md、scripts/、references/、examples/ の形）
+  migrate-flow/              移行の流れ。scripts/flow.py が段階の状態・承認（人・日付・指紋）・テストの関門を持つ
+  plsql-spec/                現行の PL/SQL の仕様。scripts/spec_facts.py が IR から事実の欄と Mermaid の図を出し、check で突き合わせる
+  plsql-migrate/             PL/SQL の変換。scripts/decision_items.py（生成コードの外で決めることの確認・記録）、
+                             scripts/migration_doc.py（変換後のコードの文書。何がどう変わったかの分類と図）
+  sql-transpile/             SQL の方言変換（scalardb_migrate/ の同梱コピーで動く）
 difftest/                  検証基盤（docker-compose.yml、conf/、cases/、ハーネス、experiments/）
   plsql_run.py               Oracle 側の capture
   plsql_capture.py           ScalarDB 側の capture（金額の 2 規約）
@@ -432,7 +506,8 @@ docs/                      設計・検証レポート・調査、slides/（説�
 
 | 分類 | 文書 |
 |---|---|
-| **PL/SQL 変換** | [実装計画](docs/plsql-conversion-implementation-plan.md)、[KPI](docs/plsql-kpi.md)、[Phase 3 完了報告](docs/plsql-phase3-completion.md)、[Phase 4 中間報告](docs/plsql-phase4-interim.md)、[cursor](docs/plsql-cursor-patterns.md) / [トランザクション](docs/plsql-transaction-patterns.md) / [trigger](docs/plsql-trigger-patterns.md) の移行パターン |
+| **PL/SQL 変換** | [実装計画](docs/plsql-conversion-implementation-plan.md)、[KPI](docs/plsql-kpi.md)、[Phase 3 完了報告](docs/plsql-phase3-completion.md)、[Phase 4 中間報告](docs/plsql-phase4-interim.md)、[cursor](docs/plsql-cursor-patterns.md) / [トランザクション](docs/plsql-transaction-patterns.md) / [trigger](docs/plsql-trigger-patterns.md) の移行パターン、[生成コードの外で決めること](docs/plsql-decisions-outside-generator.md)、[業務ロジックとの整合の問い](docs/plsql-biz-alignment-questions.md)、[移行基盤の設計](plsql-migration-platform-design.md) |
+| **スキル** | [migrate-flow](skills/migrate-flow/SKILL.md)（[承認の求め方](skills/migrate-flow/references/approval.md)、[SQL 文だけの移行](skills/migrate-flow/references/sql.md)）、[plsql-spec](skills/plsql-spec/SKILL.md)（[仕様書の書き方](skills/plsql-spec/references/writing.md)、[例](skills/plsql-spec/examples/create_order/README.md)）、[plsql-migrate](skills/plsql-migrate/SKILL.md)（[業務ロジックとの整合](skills/plsql-migrate/references/alignment.md)、[変換後の文書の書き方](skills/plsql-migrate/references/documenting.md)、[運用の手順](skills/plsql-migrate/references/operations.md)、[例](skills/plsql-migrate/examples/create_order/README.md)）、[sql-transpile](skills/sql-transpile/SKILL.md) |
 | 仕組み | [architecture.md](docs/architecture.md)（本ツールのアーキテクチャと仕組み）、[app-side-processing-plan.md](docs/app-side-processing-plan.md)（アプリ側処理の実装計画）、[diagrams/architecture.drawio](docs/diagrams/architecture.drawio) |
 | 変換ルール | [skills/sql-transpile/SKILL.md](skills/sql-transpile/SKILL.md)、[references/scalardb-grammar.md](skills/sql-transpile/references/scalardb-grammar.md)、[references/dialect-notes.md](skills/sql-transpile/references/dialect-notes.md)、[references/app-side-notes.md](skills/sql-transpile/references/app-side-notes.md) |
 | テスト・互換性 | [test-report.md](docs/test-report.md)、[oracle-sql-report.md](docs/oracle-sql-report.md)、[transpile-fix-research.md](docs/transpile-fix-research.md) |
@@ -448,6 +523,7 @@ docs/                      設計・検証レポート・調査、slides/（説�
 - **ScalarDB のバックエンド DB には直接接続しません。** 取得も書き込みも、ScalarDB（SQL / JDBC または Core API）を通します
 - **パーティションをまたぐ走査は RDBMS のバックエンドでだけ使います。** Cassandra ではキーで取得し、残りはアプリ側で処理します
 - 調査用の PoC です。性能の数値は Apple M3 Pro 上の Docker（1 ノードの ScalarDB Cluster、単一クライアント）での計測です
+- **スキルが書く仕様書と文書は、事実の欄（IR・生成物から機械的に出す）と文章（モデルが原文と生成物を読んで書く）に分かれます。** `check` が確かめるのは文章が事実から離れていないことまでで、文章が正しいことは確かめません。承認は人が行い、`migrate-flow` は承認の無いままテストに進みません。SQL 文だけの移行には事実の欄を作る仕組みがまだ無く、検査は未記入・図の有無・変換できなかった文の記録までです。図の描画の確認には `mmdc`（mermaid-cli）を使います（無くても動きます）
 - **PL/SQL 変換の KPI は合成 corpus 上の値です。** 実案件のコードでの達成を示すものではありません（実装計画 §9 の決定）。また **移行工数は測っていません**（KPI-6 を計測しないと決めたため）——AUTO 率が上がったときに移行が速くなるかは、この数値からは分かりません
 
 ---

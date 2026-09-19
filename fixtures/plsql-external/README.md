@@ -24,6 +24,22 @@
 
 表・sequence・deploy の順序は DDL とファイル名から読む（`plsql_run.use_project`）。corpus のように手で並べた一覧は無い。
 
+## Claude Code から進める
+
+`migrate-flow` スキルが、現行の仕様 → 変換と人の判断 → 変換後の仕様 → 承認 → テストの順に進める。作業ディレクトリは
+`out/migrate/<project>/`（git には入れない）で、`limits.yaml` と記録はこのプロジェクトのディレクトリに置く。
+下の「流し方」は、その最後の段階（テスト）で回すコマンドである。
+
+```sh
+P=fixtures/plsql-external/create_order
+python skills/migrate-flow/scripts/flow.py init --out out/migrate/create_order --kind plsql --src $P/src \
+    --scalardb-schema $P/scalardb-schema.json --limits $P/limits.yaml
+python skills/migrate-flow/scripts/flow.py status --out out/migrate/create_order
+```
+
+`create_order` で書き上げた現行の仕様は `skills/plsql-spec/examples/create_order/`、変換後の文書は
+`skills/plsql-migrate/examples/create_order/` にある（後者の `evidence.json` は、下の比較の結果の写しである）。
+
 ## 流し方
 
 Oracle 側はプロジェクト専用のユーザで繋ぐ。`deploy` は DDL にある表を drop して作り直す。

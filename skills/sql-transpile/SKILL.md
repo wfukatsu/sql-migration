@@ -12,6 +12,7 @@ when_to_use: >-
   "SQL を変換して", "Oracle の SQL を PostgreSQL に変換", "ScalarDB 用に SQL を変換",
   "SQL の変換率を出して", "方言を変換", "transpile SQL", "convert SQL to ScalarDB",
   "migrate Oracle SQL to PostgreSQL"。
+  仕様の調査から承認・テストまでの一連の流れは migrate-flow スキルが受け持ち、その中でこのスキルの手順を使う。
   対象外: 実データベースへ接続して結果を比較する検証（difftest/run.py、difftest/golden.py capture）、
   性能測定（difftest/bench.py）、SQL の整形だけの依頼。
 # 変換そのものは決定的な Python スクリプトが行い、モデルの仕事はコマンドの実行とレポートの要約・説明なので、
