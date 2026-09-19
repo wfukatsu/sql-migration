@@ -1010,8 +1010,9 @@ P0-2 の manifest）に集計し直す。
     rowLocks / transactions / dynamicTables、trigger は #12）が対応していれば「決定済み」、そのうえで比較した
     シナリオがすべて Oracle と一致していれば「決定済み・実 DB で一致」。trigger の本体はシナリオから直接呼べないので、
     呼び出し元の routine の比較で見る。呼び出し先が REDESIGN なだけの routine は、呼び出し先の状態に従う。
-  - 2026-09-20 の corpus: 26 件中、決定済み・一致 23、決定済み 1（`trg_products_audit`: routine 経由の比較が無い）、
-    未決定 2（`prc_remote_sync`: DB Link、`trg_orders_seq`: 採番 Service は方式が決まっているが未生成）。
+  - 2026-09-20 の corpus: 27 件中、決定済み・一致 26、未決定 1（`prc_remote_sync`: DB Link）。採番 trigger
+    （`trg_orders_seq`）は書き込む側の INSERT に織り込む形で生成し、`trg_products_audit` は routine 経由のシナリオを
+    足して、どちらも実 DB で一致した（検証用の書き込み経路 `pkg_write_paths`）。
   - 同時実行での衝突と再試行は単一スレッドのシナリオでは確かめられず、呼び出し側の責務として決定の理由に書いてある。
 
 - **生成コードは Spring に依存させない**（2026-09-17）。`@Transactional` は使わず、ScalarDB の

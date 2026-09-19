@@ -1,0 +1,77 @@
+{
+ "scenario": "product_set_price",
+ "unit": "pkg_write_paths",
+ "routine": "set_price",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {
+   "seq_audit_id": 1
+  }
+ },
+ "sessionUser": "SOURCE",
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "products": {
+   "columns": [
+    "product_id",
+    "name",
+    "unit_price",
+    "stock_qty",
+    "discontinued"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "10"
+     },
+     "Widget",
+     {
+      "$dec": "90"
+     },
+     {
+      "$dec": "5"
+     },
+     "N"
+    ]
+   ]
+  },
+  "audit_log": {
+   "columns": [
+    "audit_id",
+    "table_name",
+    "key_value",
+    "action",
+    "old_value",
+    "new_value",
+    "changed_at",
+    "changed_by"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     "PRODUCTS",
+     "10",
+     "PRICE",
+     "100",
+     "90",
+     {
+      "$masked": "clock the harness cannot pin"
+     },
+     "SOURCE"
+    ]
+   ]
+  }
+ },
+ "masked": {
+  "audit_log": [
+   "changed_at"
+  ]
+ }
+}

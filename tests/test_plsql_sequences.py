@@ -94,7 +94,9 @@ def test_every_nextval_in_the_corpus_is_lifted():
     lifted = [b.expression for _, routine in program.routines()
               for s in _walk(routine.body) + [x for h in routine.exception_handlers for x in _walk(h.body)]
               for b in (getattr(s, "binds", None) or []) if b.expression and "NEXTVAL" in b.expression.upper()]
-    assert len(lifted) == 10, lifted   # 7 + the three audit INSERTs of trg_lines_audit (#29-25)
+    # 7 + the three audit INSERTs of trg_lines_audit (#29-25) + the order id trg_orders_seq used to assign, now
+    # woven into pkg_write_paths.place_order's INSERT
+    assert len(lifted) == 11, lifted
 
 
 def test_no_statement_is_refused_for_using_a_sequence_any_more():

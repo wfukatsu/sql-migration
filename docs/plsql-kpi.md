@@ -14,7 +14,7 @@ corpus は全件が合成である（計画 §9 の決定、2026-09-17）。し�
 
 - レポートには必ずその旨を併記する。
 - 判定適合率（KPI-3）の最終的な根拠には、ルール・grammar の作成時に参照しない
-  **holdout**（`fixtures/plsql/src/holdout/`、全 28 ユニット中 9 ユニット = 32.1%）上の値を用いる。
+  **holdout**（`fixtures/plsql/src/holdout/`、全 29 ユニット中 9 ユニット = 31.0%）上の値を用いる。
   ただし **2026-09-17 時点で holdout の独立性は失われている**。P2-2 のルール開発中に期待値との差分一覧を
   繰り返し出力し、そこに holdout の routine 名と期待判定が含まれていたためである
   （`fixtures/plsql/README.md` に経緯を記録）。
@@ -36,7 +36,7 @@ package の中で判定が割れるためである。
 parse 率 = 構文エラーなく parse できたファイル数 / corpus の全ファイル数
 ```
 
-- 分母は `fixtures/plsql/src/` 以下の `*.pks` `*.pkb` `*.prc` `*.trg`（現在 44）。
+- 分母は `fixtures/plsql/src/` 以下の `*.pks` `*.pkb` `*.prc` `*.trg`（現在 46）。
 - 構文エラーは例外ではなく診断として数える。1 ファイルの失敗が他を止めてはならない。
 - **目標: Phase 1 で 90% 以上**。
 - 注意: parse できることは**コンパイルできることを意味しない**。P0-4 で、ANTLR が通した 32 ファイルのうち
@@ -58,8 +58,8 @@ parse 率 = 構文エラーなく parse できたファイル数 / corpus の全
 適合率 = manifest の expected と一致した routine 数 / 判定対象の routine 数
 ```
 
-- 分母は現在 65 routine（うち holdout 18）。
-- 2026-09-20 現在 62/65 = 95.4%（holdout は 15/18）。食い違う 3 件は holdout2 の `pkg_shipment.is_shippable`・`line_count`・`days_in_transit` で、
+- 分母は現在 67 routine（うち holdout 18）。
+- 2026-09-20 現在 64/67 = 95.5%（holdout は 15/18）。食い違う 3 件は holdout2 の `pkg_shipment.is_shippable`・`line_count`・`days_in_transit` で、
   期待値は REVIEW、判定は AUTO。原因は判定の方針変更（REVIEW は移行の可否が未解決のときだけ。計画書 §9）で、ルールの
   取りこぼしではない。holdout2 の期待値は書き換えないと決めてあるので、食い違いのまま数える。
 - **AUTO 禁止条件（§2）に該当する routine を AUTO と判定したら、その時点で不合格**とする。

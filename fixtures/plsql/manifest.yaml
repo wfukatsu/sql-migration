@@ -278,6 +278,16 @@ units:
       - {name: "set_email~2", expected: AUTO, reason: "主キー UPDATE のみ（引数 3 つの版）"}
       - {name: clear_email,   expected: AUTO, reason: "引数の数で set_email~1 に解決できる呼び出しだけ"}
 
+  # --- trigger を routine 経由で確かめるための書き込み経路（2026-09-20）。実装と一緒に書いたので holdout ではない ------
+  - name: pkg_write_paths
+    files: [pkg_write_paths.pks, pkg_write_paths.pkb]
+    categories: [simple-crud, trigger-dblink]
+    origin: synthetic
+    holdout: false
+    routines:
+      - {name: place_order, expected: AUTO, reason: "order_id を書かない INSERT。trg_orders_seq の採番を織り込み、番号は移行先の採番方式で取る（TRG-OPT-003 は注記）"}
+      - {name: set_price,   expected: REDESIGN, reason: "主キー UPDATE。unit_price を SET するので trg_products_audit を呼ぶ——網羅性の判断を引き継ぐ（#12）"}
+
   # --- holdout2: ルールが固まった後（2026-09-17）に書き起こした独立ホールドアウト --------------------
   #
   # P2-2 のルール開発中に holdout の期待判定を参照してしまい、独立性が失われた（../README.md に経緯）。

@@ -130,17 +130,17 @@ python -m plsql.kpi --evidence difftest/work/plsql-diff.json --generated generat
 
 ### 現在地
 
-合成 corpus（28 unit / 65 routine）に対して:
+合成 corpus（29 unit / 67 routine）に対して:
 
 | | |
 |---|---|
 | parse 率・型解決率・compile 率 | **100%** |
-| 判定一致 | **95.4%**（62/65。食い違う 3 件は holdout2 の期待値で、2026-09-20 の方針変更によるもの。期待値は書き換えていない） |
-| **意味的同等性（AUTO 対象）** | **100%**（金額の 2 規約とも AUTO 48/48 が実 Oracle と一致） |
-| 判定（2026-09-20 の実測。金額の 2 規約とも同じ） | AUTO 34 / REVIEW 5 / REDESIGN 26。プロジェクトの決定（`--limits fixtures/plsql/limits.yaml`）を適用すると AUTO 37 / REVIEW 2 / REDESIGN 26 |
-| REDESIGN 26 件の状態（決定の適用後） | **再設計を決定済みで実 DB でも一致 23** / 決定済み 1（routine 経由の比較が無い `trg_products_audit`）/ **未決定 2**（DB Link の `prc_remote_sync`、採番 trigger の `trg_orders_seq`）。判定は REDESIGN のまま動かさない（AUTO 禁止条件） |
+| 判定一致 | **95.5%**（64/67。食い違う 3 件は holdout2 の期待値で、2026-09-20 の方針変更によるもの。期待値は書き換えていない） |
+| **意味的同等性（AUTO 対象）** | **100%**（金額の 2 規約とも AUTO 49/49 が実 Oracle と一致） |
+| 判定（2026-09-20 の実測。金額の 2 規約とも同じ） | AUTO 35 / REVIEW 5 / REDESIGN 27。プロジェクトの決定（`--limits fixtures/plsql/limits.yaml`）を適用すると AUTO 38 / REVIEW 2 / REDESIGN 27 |
+| REDESIGN 27 件の状態（決定の適用後） | **再設計を決定済みで実 DB でも一致 26** / **未決定 1**（DB Link の `prc_remote_sync`）。判定は REDESIGN のまま動かさない（AUTO 禁止条件） |
 
-**数値は合成 corpus 上のものであり、実案件耐性の証拠ではありません。** 非 AUTO の 28 件（決定の適用後）を塞いでいるのは
+**数値は合成 corpus 上のものであり、実案件耐性の証拠ではありません。** 非 AUTO の 29 件（決定の適用後）を塞いでいるのは
 変換できない構文ではなく、**人が決めるべきこと**です（走査行数の上限、採番方式、トランザクション境界など。
 [Phase 4 中間報告](docs/plsql-phase4-interim.md) §1）。
 

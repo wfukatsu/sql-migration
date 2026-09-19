@@ -1,0 +1,168 @@
+{
+ "id": "pkg_write_paths",
+ "kind": "Program",
+ "schemaVersion": "1.1.0",
+ "modules": [
+  {
+   "id": "pkg_write_paths",
+   "kind": "Module",
+   "sourceRange": {
+    "file": "pkg_write_paths.pkb",
+    "startLine": 4,
+    "endLine": 18,
+    "startColumn": 1,
+    "endColumn": 5
+   },
+   "name": "pkg_write_paths",
+   "moduleKind": "package",
+   "routines": [
+    {
+     "id": "pkg_write_paths.place_order",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_write_paths.pkb",
+      "startLine": 6,
+      "endLine": 10,
+      "startColumn": 3,
+      "endColumn": 18
+     },
+     "name": "place_order",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_write_paths.place_order#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_write_paths.pkb",
+        "startLine": 6,
+        "endLine": 6,
+        "startColumn": 25,
+        "endColumn": 42
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_customer_id",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_write_paths.place_order#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_write_paths.pkb",
+        "startLine": 9,
+        "endLine": 9,
+        "startColumn": 5,
+        "endColumn": 95
+       },
+       "sqlKind": "INSERT",
+       "originalSql": "INSERT INTO orders (customer_id, status, ordered_at) VALUES (p_customer_id, 'NEW', SYSDATE)",
+       "selectsStar": false,
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    },
+    {
+     "id": "pkg_write_paths.set_price",
+     "kind": "Routine",
+     "sourceRange": {
+      "file": "pkg_write_paths.pkb",
+      "startLine": 12,
+      "endLine": 16,
+      "startColumn": 3,
+      "endColumn": 16
+     },
+     "name": "set_price",
+     "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "pkg_write_paths.set_price#param-1",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_write_paths.pkb",
+        "startLine": 12,
+        "endLine": 12,
+        "startColumn": 23,
+        "endColumn": 39
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_product_id",
+       "direction": "IN",
+       "nocopy": false
+      },
+      {
+       "id": "pkg_write_paths.set_price#param-2",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "pkg_write_paths.pkb",
+        "startLine": 12,
+        "endLine": 12,
+        "startColumn": 47,
+        "endColumn": 58
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "declared"
+       },
+       "name": "p_price",
+       "direction": "IN",
+       "nocopy": false
+      }
+     ],
+     "body": [
+      {
+       "id": "pkg_write_paths.set_price#stmt-1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "pkg_write_paths.pkb",
+        "startLine": 15,
+        "endLine": 15,
+        "startColumn": 5,
+        "endColumn": 65
+       },
+       "sqlKind": "UPDATE",
+       "originalSql": "UPDATE products SET unit_price = p_price WHERE product_id = p_product_id",
+       "selectsStar": false,
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false
+      }
+     ],
+     "deterministic": false,
+     "visibility": "public",
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dynamicSql": false
+     }
+    }
+   ]
+  }
+ ],
+ "schemaSnapshot": "schema.sql@23623f44"
+}

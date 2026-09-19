@@ -174,8 +174,14 @@ Oracle との比較が捕まえた——**trigger を掛ける側のバグは、
 
 * **1 行に絞れない更新**（主キーを等値で押さえていない WHERE）。Oracle なら行ごとに発火するので、
   1 回の呼び出しでは同じにならない。`TRIGGER_NOT_APPLIED` を残して見えるようにする
-* **値そのものを書き換える trigger**（`:NEW.order_id := seq.NEXTVAL`）。呼び出しでは置き換えられ
-  ない——採番 Service への再設計である（下の C）
+* **値そのものを書き換える trigger**のうち、採番だけの形に当てはまらないもの。呼び出しでは置き換えられない
+  （下の C）。**採番だけの trigger は織り込む**（2026-09-20）: `BEFORE INSERT` で本体が `:NEW.<列> := <seq>.NEXTVAL` の
+  1 文だけ、`WHEN` は無いか `WHEN (NEW.<列> IS NULL)` のとき、書き込む側の INSERT にその列と `seq.NEXTVAL` を足す
+  （診断 `TRIGGER_INLINED`、注記のルール TRG-OPT-003）。番号は移行先の採番方式（計画 §9）で取る。静的に決まる場合
+  だけ扱う: キーを書いていない・`NULL` を書いている → 織り込む、リテラルのキーを書いている（WHEN つき）→ 発火しない。
+  変数のキーは実行時まで NULL かどうか分からず、`NVL(p_id, seq.NEXTVAL)` は使わなくても番号を消費するので、
+  `TRIGGER_REDESIGN` のまま残す。ほかの trigger と違って、この経路を通らない書き込みは黙って通らない——キーを書かない
+  INSERT は ScalarDB が拒否する
 * **MERGE での書き込み**（INSERT と UPDATE のどちらで発火するかが行ごとに決まる）と、本体が
   **`UPDATING('列')` の形で列ごとのイベントを見る trigger**。どちらも `TRIGGER_NOT_APPLIED` を残す
 

@@ -21,7 +21,8 @@ def found():
                        **decided.for_analysis())
     program_analysis = analyse_program(analysis.program)
     evidence = Evidence(captures={"pkg_stock_reserve.reserve": (2, 2), "pkg_shipment.mark_shipped": (2, 2),
-                                  "pkg_order_lock.cancel": (1, 2), "pkg_payment.record_payment": (3, 3)})
+                                  "pkg_order_lock.cancel": (1, 2), "pkg_payment.record_payment": (3, 3),
+                                  "pkg_write_paths.place_order": (1, 1)})
     decisions = decide(analysis.program, program_analysis, RuleSet.load(), evidence)
     return redesign.statuses(analysis.program, decisions, program_analysis.call_graph, decided, evidence)
 
@@ -48,8 +49,14 @@ def test_a_decision_without_evidence_or_with_a_disagreement_is_not_verified(foun
 def test_what_nobody_decided_says_which_rule_is_open(found):
     status = found["prc_remote_sync"]
     assert status.state == "undecided" and "LINK-001" in status.open
-    # the sequence trigger: the way is decided (a counters table, plan §9) but nothing generates it yet
-    assert found["trg_orders_seq.body"].state == "undecided" and found["trg_orders_seq.body"].open == ["TRG-001"]
+
+
+def test_a_sequence_trigger_is_decided_and_verified_through_the_insert_it_was_woven_into(found):
+    """It can never be a call (it changes the written row), so there is no call edge: the writer's INSERT says
+    which trigger it took the number for."""
+    body = found["trg_orders_seq.body"]
+    assert body.open == [] and body.decisions[0]["decidedBy"].startswith("計画 §9")
+    assert body.state == "verified" and body.through == ["pkg_write_paths.place_order"]
 
 
 def test_a_trigger_is_decided_by_the_project_and_verified_through_the_routines_that_call_it(found):

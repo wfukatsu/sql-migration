@@ -1,0 +1,22 @@
+name: product_set_price
+unit: pkg_write_paths
+routine: set_price
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+  sequences:
+    seq_audit_id: 1
+setup:
+- INSERT INTO products (product_id, name, unit_price, stock_qty, discontinued) VALUES (10, 'Widget', 100.0, 5, 'N')
+call:
+  kind: procedure
+  name: pkg_write_paths.set_price
+  args:
+    p_product_id: 10
+    p_price: 90.0
+capture_tables:
+- products
+- audit_log
+mask:
+  audit_log:
+  - changed_at
+note: 'trg_products_audit を routine 経由で通す（直接の DML では掛からない。#12 §0）。10% の値下げ: 監査行が 1 行入る'
