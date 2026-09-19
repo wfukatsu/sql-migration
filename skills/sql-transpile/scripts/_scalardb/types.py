@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlglot import exp
 
@@ -155,7 +155,10 @@ def map_type(dt: exp.DataType, source_dialect: str) -> TypeMapping:
 # the decomposer both land literals in ScalarDB columns, so the two rules below live here and both call them.
 _ISO_DATE = r"\d{4}-\d{2}-\d{2}"
 _ISO_CLOCK = r"\d{2}:\d{2}(:\d{2}(\.\d+)?)?"
-_ISO_TEMPORAL = re.compile(rf"{_ISO_DATE}([ T]{_ISO_CLOCK})?|{_ISO_CLOCK}")
+# a time zone is `Z` or `+09:00`, with or without a space before it (Oracle's TIMESTAMP '... +09:00' literal)
+_ISO_ZONE = r"Z|[+-]\d{2}:\d{2}"
+_ISO_TEMPORAL = re.compile(rf"{_ISO_DATE}([ T]{_ISO_CLOCK}( ?({_ISO_ZONE}))?)?|{_ISO_CLOCK}")
+_ZONED = re.compile(rf"({_ISO_DATE})[ T](\d{{2}}:\d{{2}})((?::\d{{2}}(?:\.\d+)?)?) ?({_ISO_ZONE})?")
 _STRPTIME_DIRECTIVES = set("YmdHMSfbByjIp")
 _CLOCK_DIRECTIVES = set("HMSfIp")
 
@@ -191,7 +194,8 @@ def iso_temporal_literal(text: str, fmt: str | None) -> str | None:
 
 
 def fit_temporal_literal(kind: str | None, text: str) -> tuple[str, str | None]:
-    """``text`` made to fit a ScalarDB column of type ``kind``, and what was lost: None, "midnight" or "time".
+    """``text`` made to fit a ScalarDB column of type ``kind``, and what changed: None, "midnight", "time", "padded",
+    or for time zones "assumed_utc" (the literal had none), "to_utc", "respelled", "zone_dropped".
 
     Oracle DATE carries a time and ScalarDB DATE does not, so the time part is dropped; ScalarDB TIMESTAMP and
     TIMESTAMPTZ need a time, so a date-only literal gets midnight.
@@ -201,5 +205,23 @@ def fit_temporal_literal(kind: str | None, text: str) -> tuple[str, str | None]:
         if m:
             return m.group(1), "midnight" if re.fullmatch(r"00:00(:00(\.0+)?)?", m.group(2)) else "time"
     if kind in ("TIMESTAMP", "TIMESTAMPTZ") and re.fullmatch(_ISO_DATE, text):
-        return text + " 00:00:00", "padded"
+        if kind == "TIMESTAMP":
+            return text + " 00:00:00", "padded"
+        text += " 00:00:00"   # and, below, the zone a TIMESTAMPTZ literal has to carry
+    m = _ZONED.fullmatch(text)
+    if m and kind == "TIMESTAMPTZ":
+        # Checked against ScalarDB Cluster: a TIMESTAMPTZ literal is 'YYYY-MM-DD HH:MM[:SS[.FFF]] Z' and nothing
+        # else. No zone, a `T`, or an offset such as +09:00 is "could not be parsed" when the statement runs.
+        day, minutes, rest, zone = m.groups()
+        if zone is None:
+            return f"{day} {minutes}{rest} Z", "assumed_utc"
+        if zone == "Z" or zone[1:] == "00:00":
+            fitted = f"{day} {minutes}{rest} Z"
+            return fitted, None if fitted == text else "respelled"
+        offset = timedelta(hours=int(zone[1:3]), minutes=int(zone[4:6])) * (1 if zone[0] == "+" else -1)
+        utc = datetime.strptime(f"{day} {minutes}", "%Y-%m-%d %H:%M") - offset
+        return f"{utc:%Y-%m-%d %H:%M}{rest} Z", "to_utc"
+    if m and m.group(4) and kind in ("TIMESTAMP", "DATE"):
+        # the column has no zone: the source keeps the fields as written and forgets the zone, and so does this
+        return fit_temporal_literal(kind, f"{m.group(1)} {m.group(2)}{m.group(3)}")[0], "zone_dropped"
     return text, None

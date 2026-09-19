@@ -280,3 +280,26 @@ def test_a_missing_out_value_is_never_scale_only():
     diffs = compare_capture(capture(result={"returned": None, "out": {"p_count": 2}}),
                             capture(result={"returned": None, "out": {}}))
     assert not any(_scale_only(d) for d in diffs)
+
+
+def test_a_scenario_the_capture_run_could_not_run_is_not_compared_from_a_leftover(tmp_path, monkeypatch):
+    """Found retaking the evidence (2026-09-19): two scenarios whose setup no longer converted were reported
+    "identical", from the files an earlier run had left in the capture directory."""
+    import json
+    from difftest import plsql_compare
+
+    golden, work = tmp_path / "golden", tmp_path / "work"
+    captures = work / "plsql-scalardb-double"
+    golden.mkdir()
+    captures.mkdir(parents=True)
+    for name in ("ran", "could_not_run"):
+        (golden / f"{name}.json").write_text(json.dumps(capture(scenario=name)), encoding="utf-8")
+        (captures / f"{name}.json").write_text(json.dumps(capture(scenario=name, source="scalardb")), encoding="utf-8")
+    (captures / "unrunnable.json").write_text(json.dumps({"could_not_run": "setup does not convert"}), encoding="utf-8")
+    monkeypatch.setattr(plsql_compare, "GOLDEN", golden)
+    monkeypatch.setattr(plsql_compare, "WORK", work)
+    monkeypatch.setattr(plsql_compare, "expected_verdicts", lambda: {})
+
+    report = plsql_compare.compare_variant("double", {})
+    assert list(report["scenarios"]) == ["ran"]
+    assert report["not_compared"]["could_not_run"]["reason"] == "setup does not convert"

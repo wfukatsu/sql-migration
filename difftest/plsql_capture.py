@@ -54,6 +54,8 @@ def main(argv=None) -> int:
 
     schema = schema_for(args.variant)
     if args.print_schema_command:
+        if schema.parent != WORK:   # the loader's container sees difftest/work only
+            print(f"cp {schema} {WORK / schema.name}")
         print(f"cd difftest && docker compose --profile tools --profile oracle --profile cassandra "
               f"--profile cluster run --rm schema-loader --config /conf/scalardb-in-docker.properties "
               f"--schema-file /work/{schema.name} --coordinator")
@@ -70,10 +72,17 @@ def main(argv=None) -> int:
          "--out-dir", "generated"], allow_failure=True)
     run([sys.executable, str(ROOT / "difftest" / "plsql_setup.py"), "--variant", args.variant,
          "--schema", str(schema), "--out", str(setup)])
+    # A scenario that cannot run this time leaves no file, and the file an earlier run left for it would be compared
+    # as if it were this run's: 2 scenarios whose setup no longer converted were reported "identical" from captures
+    # taken six hours before (2026-09-19). The directory holds this run's captures and nothing else.
+    captures = WORK / f"plsql-scalardb-{args.variant}"
+    for stale in captures.glob("*.json") if captures.is_dir() else []:
+        stale.unlink()
     # `--rerun`: このテストの入力（生成したコード・変換した準備行）は Gradle から見えない場所にある。
     # 付けないと、Java が変わっていない回は「up to date」として飛ばされ、**前回の capture がそのまま
     # 残って比較される**——準備行だけを直した回がそうなった（2026-09-19）
-    run(["gradle", "test", "--rerun", "-Dplsql.generated=1", f"-Dplsql.variant={args.variant}",
+    wrapper = ROOT / "runtime-java" / "gradlew"
+    run([str(wrapper) if wrapper.exists() else "gradle", "test", "--rerun", "-Dplsql.generated=1", f"-Dplsql.variant={args.variant}",
          "--tests", "*ScalarDbCaptureIT*"], cwd=ROOT / "runtime-java",
         env={**__import__("os").environ, "SCALARDB_IT": "1"})
     _record_fingerprint(args.variant)

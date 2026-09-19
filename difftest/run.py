@@ -33,7 +33,7 @@ sys.path.insert(0, str(ROOT / "difftest"))
 import rowcompare  # noqa: E402
 sys.path.insert(0, str(ROOT / "difftest"))
 from scalardb_migrate.converter import convert_script  # noqa: E402
-from backends import BACKENDS, schema_loader  # noqa: E402
+from backends import BACKENDS, restart_cluster, schema_loader  # noqa: E402
 from sources import PROFILES, ProfileError, jdbc_spec, parse_profile_args, source_config  # noqa: E402
 
 NAMESPACE = "difftest"
@@ -140,6 +140,9 @@ def main() -> int:
     ap.add_argument("--convert-storage", choices=["jdbc", "cassandra"],
                     help="storage the converter targets (default: the backend's; jdbc = conversion unaware of Cassandra)")
     ap.add_argument("--skip-setup", action="store_true", help="tables and data already loaded")
+    ap.add_argument("--restart-cluster", action="store_true",
+                    help="restart ScalarDB Cluster after the tables are recreated (needed when the previous run "
+                         "used other column types: PostgreSQL answers \"cached plan must not change result type\")")
     ap.add_argument("--json-out", help="write structured per-statement results here")
     ap.add_argument("--profile", action="append", metavar="DIALECT=PATH",
                     help="source-database profile (difftest/sources.py); default difftest/conf/sources/<dialect>-local.json")
@@ -184,6 +187,9 @@ def main() -> int:
             rows_file.write_text(json.dumps(rows))
             print("  ", sh(str(RUNNER), "load", "--properties", props, "--namespace", NAMESPACE, "--table", table,
                           "--rows", str(rows_file)).strip())
+
+    if args.restart_cluster:
+        restart_cluster()
 
     print("== queries")
     # CASE_ERROR: the source database rejected the case. That is a broken case, not a skipped one -- counted as

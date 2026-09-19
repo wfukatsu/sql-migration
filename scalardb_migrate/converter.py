@@ -538,6 +538,17 @@ class StatementConverter:
         elif change == "padded":
             self.info("DATE_LIT", f"{ctx}: '{lit.name}' padded to '{fitted}' for {kind} column "
                                   f"{column}; ScalarDB does not parse a date-only literal as a timestamp")
+        elif change == "assumed_utc":
+            self.warn("TZ_ASSUMED_UTC", f"{ctx}: '{lit.name}' has no time zone and {column} is a TIMESTAMPTZ; the source "
+                                        f"database reads it in the session's time zone, which is not visible here. "
+                                        f"Written as UTC ('{fitted}'): ScalarDB accepts a TIMESTAMPTZ literal only "
+                                        f"with a trailing Z")
+        elif change == "to_utc":
+            self.info("DATE_LIT", f"{ctx}: '{lit.name}' written as the same instant in UTC, '{fitted}' "
+                                  f"(ScalarDB accepts a TIMESTAMPTZ literal only with a trailing Z)")
+        elif change == "zone_dropped":
+            self.warn("DATE_LIT", f"{ctx}: '{lit.name}' names a time zone but {column} is a ScalarDB {kind}; "
+                                  f"the zone is dropped, as the source database does for a column without one")
         return exp.Literal.string(fitted) if change else value
 
     def _fit_date_literal(self, col: exp.Column, value: exp.Expression, ctx: str) -> exp.Expression:

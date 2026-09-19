@@ -35,7 +35,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "difftest"))
 from scalardb_migrate.cli import render_markdown  # noqa: E402
 from scalardb_migrate.converter import _split_statements, convert_script  # noqa: E402
-from backends import BACKENDS, schema_loader  # noqa: E402
+from backends import BACKENDS, restart_cluster, schema_loader  # noqa: E402
 from bench import compare_samples, stats, strip_comments  # noqa: E402
 from run import RUNNER, sh  # noqa: E402
 from sources import PROFILES, ProfileError, jdbc_spec, parse_profile_args, source_config  # noqa: E402
@@ -223,23 +223,6 @@ def load_scalardb(registry, data: dict[str, list[dict]]) -> dict[str, list[dict]
 # benchmark
 # --------------------------------------------------------------------------------------------------
 
-def restart_cluster() -> None:
-    """Restart the ScalarDB Cluster node and wait until it accepts connections. The node pools JDBC connections to the
-    PostgreSQL backend, and PostgreSQL keeps prepared plans per connection: after the tables are recreated with other
-    column types (a previous dialect's run), those plans fail with "cached plan must not change result type"."""
-    import socket
-    import time
-    compose = ["docker", "compose", "-f", str(ROOT / "difftest/docker-compose.yml"), "--profile", "cluster"]
-    print("== restarting ScalarDB Cluster")
-    sh(*compose, "restart", "scalardb-cluster")
-    for _ in range(90):
-        try:
-            with socket.create_connection(("localhost", 60053), timeout=1):
-                time.sleep(5)  # the gRPC port opens before the node finishes loading metadata
-                return
-        except OSError:
-            time.sleep(2)
-    raise RuntimeError("ScalarDB Cluster did not come back on localhost:60053")
 
 
 def setup_source(src: Source, stmts: list[dict], tables: list[str]) -> None:
