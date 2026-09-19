@@ -48,6 +48,9 @@ class TableMeta:
     clustering_order: dict[str, str]  # column -> ASC/DESC
     columns: dict[str, str]  # column -> ScalarDB type
     secondary_indexes: list[str] = field(default_factory=list)
+    # column -> the type the residual engine uses instead of the ScalarDB one (TypeMapping.residual_type). Known only
+    # when the table comes from the source DDL; a Schema Loader file has ScalarDB types and nothing else
+    residual_types: dict[str, str] = field(default_factory=dict)
 
     @property
     def primary_key(self) -> list[str]:
