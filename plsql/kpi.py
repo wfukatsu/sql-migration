@@ -27,7 +27,7 @@ from pathlib import Path
 
 import yaml
 
-from . import review
+from . import fingerprint, review
 from .analysis import analyse as analyse_program
 from .report import analyse, inventory
 from .rules.engine import RuleSet, decide
@@ -52,7 +52,9 @@ def measure(src: Path, ddl: Path | None, scalardb: Path | None, evidence_path: s
     analysis = analyse(str(src), str(ddl) if ddl else None,
                        scalardb_schema=str(scalardb) if scalardb else None)
     data = inventory(analysis)
-    evidence = review.evidence_from_diff(evidence_path, variant)
+    known = review.routine_ids(analysis.program)
+    evidence = review.evidence_from_diff(evidence_path, variant, known,
+                                         current=fingerprint.of(analysis.program, src))
     decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), evidence)
     document = review.decisions_document(analysis.program, decisions, review.FixTimes.load(fix_times))
 
@@ -63,7 +65,7 @@ def measure(src: Path, ddl: Path | None, scalardb: Path | None, evidence_path: s
         "kpi2": _kpi2(data),
         "kpi3": _kpi3(decisions),
         "kpi4": _kpi4(analysis, decisions, generated),
-        "kpi5": _kpi5(evidence_path, variant),
+        "kpi5": _kpi5(evidence_path, variant, decisions, evidence.stale),
         "kpi6": _kpi6(document),
         "kpi7": _kpi7(src, analysis),
     }
@@ -126,29 +128,64 @@ def _kpi4(analysis, decisions: dict, generated: str | None) -> dict:
             "note": "javac そのものは `gradle compileJava` が担う（`plsql.generate --verify-compile` がそれを合否ゲートとして呼ぶ）。ここで測るのは生成が完結したかまで"}
 
 
-def _kpi5(evidence_path: str | None, variant: str | None) -> dict:
-    """Semantic equivalence, from P3-2's comparison. AUTO must be 100%; REVIEW need only be explainable."""
+def _kpi5(evidence_path: str | None, variant: str | None, decisions: dict | None = None,
+          stale: dict[str, str] | None = None) -> dict:
+    """Semantic equivalence, from P3-2's comparison. AUTO must be 100%; REVIEW need only be explainable.
+
+    The rate is over the scenarios that were compared, so on its own it cannot tell "every AUTO routine agrees"
+    from "the two that were looked at agree". It used to print 100% 合格 with scenarios not compared and routines
+    nobody had a scenario for (#27-33). So the entry also says what the rate does not cover: AUTO routines with no
+    compared scenario, AUTO scenarios that could not run, and results left out because they are stale.
+
+    "AUTO" is what the rules say *now* (`decisions`), not the verdict written into the report when it was made --
+    a routine that has since become AUTO or stopped being AUTO is counted as what it is.
+    """
     if evidence_path is None or not Path(evidence_path).exists():
         return {"name": "意味的同等性", "unit": "rate", "target": 1.0, "value": None,
                 "detail": "比較結果が無い（difftest/plsql_diff.py --full --json ...）", "source": None}
     report = json.loads(Path(evidence_path).read_text(encoding="utf-8"))
+    known = set(decisions) if decisions else None
+    stale = stale or {}
+
+    def routine_of(scenario: dict) -> str:
+        return review._resolve(scenario["routine"], known)
+
+    def is_auto(scenario: dict) -> bool:
+        current = decisions.get(routine_of(scenario)) if decisions else None
+        return (current.rule_verdict if current is not None else scenario["verdict"]) == "AUTO"
+
+    auto_routines = sorted(r for r, d in (decisions or {}).items() if d.rule_verdict == "AUTO")
     per_variant = {}
     for name in ([variant] if variant else sorted(report)):
         scenarios = (report.get(name) or {}).get("scenarios", {})
-        auto = [s for s in scenarios.values() if s["verdict"] == "AUTO"]
+        fresh = [s for s in scenarios.values() if routine_of(s) not in stale]
+        auto = [s for s in fresh if is_auto(s)]
         agreed = [s for s in auto if not s["differences"]]
-        other = [s for s in scenarios.values() if s["verdict"] != "AUTO" and s["differences"]]
+        other = [s for s in fresh if not is_auto(s) and s["differences"]]
+        not_compared = (report.get(name) or {}).get("not_compared", {})
+        covered = {routine_of(s) for s in auto}
         per_variant[name] = {
             "auto": {"agreed": len(agreed), "compared": len(auto),
                      "rate": len(agreed) / len(auto) if auto else None},
             "reviewOrRedesignWithDifferences": len(other),
-            "notCompared": len((report.get(name) or {}).get("not_compared", {})),
+            "notCompared": len(not_compared),
+            "autoScenariosNotCompared": sorted(n for n, s in not_compared.items() if is_auto(s)),
+            "autoRoutinesWithoutComparison": [r for r in auto_routines if r not in covered],
+            "staleScenarios": sorted(n for n, s in scenarios.items() if routine_of(s) in stale),
         }
     rates = [v["auto"]["rate"] for v in per_variant.values() if v["auto"]["rate"] is not None]
+
+    def shown(v: dict) -> str:
+        text = f"AUTO {v['auto']['agreed']}/{v['auto']['compared']}"
+        gaps = [f"{label} {len(v[key])}" for key, label in (
+            ("autoRoutinesWithoutComparison", "比較の無い AUTO routine"),
+            ("autoScenariosNotCompared", "実行できなかった AUTO シナリオ"),
+            ("staleScenarios", "古くて数えなかったシナリオ")) if v[key]]
+        return text + (f"（率に入っていないもの: {'、'.join(gaps)}）" if gaps else "")
+
     return {"name": "意味的同等性", "unit": "rate", "target": 1.0, "value": min(rates) if rates else None,
-            "detail": {k: f"AUTO {v['auto']['agreed']}/{v['auto']['compared']}"
-                       for k, v in per_variant.items()},
-            "byVariant": per_variant, "source": evidence_path}
+            "detail": {k: shown(v) for k, v in per_variant.items()},
+            "byVariant": per_variant, "staleEvidence": dict(sorted(stale.items())), "source": evidence_path}
 
 
 def _kpi6(document: dict) -> dict:

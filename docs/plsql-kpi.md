@@ -106,6 +106,11 @@ compile 率 = compile が通った AUTO 対象 routine 数 / AUTO 判定され�
   マスクは capture の `masked` に残るので、黙って落ちることはない（P0-4）。
 - **目標: Phase 3 で AUTO 対象 100%**。REVIEW 対象は 100% でなくてよいが、**差分の理由を説明できること**を
   合格条件とする。
+- 「AUTO 対象」は**いまのルールの判定**（`ruleVerdict`）で決める。比較結果に書き込まれた当時の判定は使わない。
+- 率は**比較できた capture の中での割合**なので、率だけでは「AUTO は全部一致した」と「見た 2 件は一致した」を
+  区別できない。そのため KPI-5 は率に**入っていないもの**を併記する: 比較の無い AUTO routine
+  （`autoRoutinesWithoutComparison`）、実行できなかった AUTO シナリオ（`autoScenariosNotCompared`）、
+  古くて数えなかったシナリオ（`staleScenarios`）。
 
 ### KPI-6 人手修正時間 — **本 PoC では計測しない**（2026-09-17 の決定）
 
@@ -189,6 +194,23 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 `testEvidence` の定義から、**capture が無い routine は AUTO にならない**。これは意図した性質である。
 テストの裏付けがないコードを人のレビューなしに出さない。
 
+**比較結果は、何を測ったものかが分かるときだけ数える**（`plsql/fingerprint.py`）。`plsql_capture.py` は capture の
+横に fingerprint を書き、`plsql_compare.py` がそれを比較結果へ運ぶ:
+
+- routine ごとの **PL/SQL ソースのハッシュ**（`source_range` の行）
+- **ツールチェーンのハッシュ**: 生成器とそれに入力を渡すモジュール、SQL 変換器、生成コードが動く実行時ヘルパ。
+  結果を読むだけのモジュール（`review` / `kpi` / `report` / `cli` など）は含めない
+
+`plsql.cli --evidence` と `plsql.kpi` は、いま判定しているソース・ツールチェーンと一致する分だけを数える。
+ソースが変わった routine、生成器が変わったあとの全 routine、**fingerprint を持たない比較結果の全 routine** は
+「古い証拠」として `testEvidence` 0（＝ REVIEW）になり、理由が `decisions.json` の `staleEvidence` と
+`whyNotAuto` に出る。形さえ合えばどんなファイルでも信じていたので、手書きの 1 シナリオで AUTO にできた
+（レビュー #27-33）。ツールチェーンのハッシュは粗い——生成器を 1 行直せば全 routine が古くなる——が、
+「測ってから生成器は変わっていない」は安く確かめられ、危ない側に間違えない。
+
+また、**比較した中に 1 件でも Oracle と違うものがあれば AUTO にしない**。19/20 は確信度 0.95 でしきい値を
+越えるが、残りの 1 件は「違うと分かっている」であって、割合で薄めてよいものではない（#27-20）。
+
 ### AUTO の下限しきい値
 
 ```text
@@ -267,7 +289,8 @@ python -m plsql.kpi --evidence difftest/work/plsql-diff.json --generated generat
 ```
 
 - `--evidence` を渡さないと **KPI-5 は「未計測」**になる。0% ではない。誰も聞いていないことと、聞いて
-  失敗したことは別の答えである。
+  失敗したことは別の答えである。**古い比較結果を渡したときも「未計測」**になる（上の fingerprint）。
+  ソースか生成器を変えたら、`plsql_capture.py` から取り直す。
 - **KPI-6 は `--fix-times` に人が測った値を渡さない限り `null`** のままで、`unmeasured` に routine 名が
   並ぶ。埋めるために数字を作れば、6 つのうち実際の移行工数を測る唯一の指標が最も信用できないものになる。
 - KPI-4 がここで測るのは「AUTO 判定の routine が生成しきれたか」まで。`javac` そのものは

@@ -296,6 +296,11 @@ def compare_variant(variant: str, scales: dict) -> dict:
             "differences": [d for d in found if not _scale_only(d)],
             "scale_only": [d for d in found if _scale_only(d)],
             "direct": _is_direct_dml(name)}
+    # what the captures were taken from (plsql_capture.py). Absent for captures older than the fingerprint --
+    # `plsql.cli --evidence` then counts none of this report, which is the point: nobody can say what it measured
+    recorded = captures / "fingerprint.json"
+    if recorded.exists():
+        report["fingerprints"] = json.loads(recorded.read_text(encoding="utf-8"))
     return report
 
 

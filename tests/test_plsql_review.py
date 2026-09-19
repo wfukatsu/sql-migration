@@ -304,3 +304,110 @@ def test_why_not_auto_never_contradicts_the_confidence_it_reports(analysis, rule
         for reason in record["whyNotAuto"]:
             if "しきい値に届いていない" in reason:
                 assert record["confidence"]["value"] < 0.95, record["routine"]
+
+
+# ---------------------------------------------------------------- #27-33: what the evidence is evidence of
+ROUTINE = "pkg_order_status.status_of"
+
+
+def report_with(tmp_path, fingerprints):
+    entry = {"scenarios": {"a": {"routine": ROUTINE, "verdict": "AUTO", "differences": []}}}
+    if fingerprints is not None:
+        entry["fingerprints"] = fingerprints
+    path = tmp_path / "diff.json"
+    path.write_text(json.dumps({"scaled": entry}), encoding="utf-8")
+    return path
+
+
+def test_evidence_measured_on_this_source_by_this_toolchain_counts(analysis, tmp_path):
+    from plsql import fingerprint
+    current = fingerprint.of(analysis.program, SRC)
+    assert ROUTINE in current["sources"]
+    evidence = review.evidence_from_diff(report_with(tmp_path, current), current=current)
+    assert evidence.captures[ROUTINE] == (1, 1) and not evidence.stale
+
+
+def test_a_report_nobody_can_vouch_for_makes_nothing_auto(analysis, rules, tmp_path):
+    """Regression: any file of the right shape was believed, so one hand-written scenario made a routine AUTO."""
+    from plsql import fingerprint
+    current = fingerprint.of(analysis.program, SRC)
+    evidence = review.evidence_from_diff(report_with(tmp_path, None), current=current)
+    assert ROUTINE not in evidence.captures and "fingerprint が無い" in evidence.stale[ROUTINE]
+    decisions = decisions_for(analysis, rules, evidence)
+    assert decisions[ROUTINE].verdict == "REVIEW"
+    record = next(r for r in review.decisions_document(analysis.program, decisions, stale=evidence.stale)["routines"]
+                  if r["routine"] == ROUTINE)
+    assert "古い" in " ".join(record["whyNotAuto"])
+
+
+@pytest.mark.parametrize("change,reason", [
+    (lambda f: {**f, "toolchain": "0" * 64}, "生成器か実行時ヘルパが変わった"),
+    (lambda f: {**f, "sources": {**f["sources"], ROUTINE: "0" * 64}}, "ソースが変わった"),
+    (lambda f: {**f, "sources": {k: v for k, v in f["sources"].items() if k != ROUTINE}}, "ソースが変わった"),
+])
+def test_evidence_about_another_source_or_generator_is_stale(analysis, tmp_path, change, reason):
+    from plsql import fingerprint
+    current = fingerprint.of(analysis.program, SRC)
+    evidence = review.evidence_from_diff(report_with(tmp_path, change(current)), current=current)
+    assert ROUTINE not in evidence.captures and reason in evidence.stale[ROUTINE]
+
+
+def test_the_source_fingerprint_follows_the_routine_not_the_file(tmp_path):
+    from plsql import fingerprint
+    body = ("CREATE OR REPLACE PACKAGE BODY pkg_x AS\n"
+            "  FUNCTION a RETURN NUMBER IS BEGIN RETURN 1; END a;\n"
+            "  FUNCTION b RETURN NUMBER IS BEGIN RETURN {b}; END b;\n"
+            "END pkg_x;\n/\n")
+    hashes = []
+    for value in ("2", "3"):
+        root = tmp_path / value
+        root.mkdir()
+        (root / "pkg_x.pkb").write_text(body.format(b=value), encoding="utf-8")
+        hashes.append(fingerprint.sources(analyse(str(root)).program, root))
+    assert hashes[0]["pkg_x.a"] == hashes[1]["pkg_x.a"], "editing b does not make a's evidence stale"
+    assert hashes[0]["pkg_x.b"] != hashes[1]["pkg_x.b"]
+
+
+def test_reporting_modules_are_not_part_of_the_toolchain():
+    """Or writing a report would invalidate the evidence it reports on."""
+    from plsql import fingerprint
+    assert {"review.py", "kpi.py", "cli.py"} <= fingerprint.REPORTING
+    assert len(fingerprint.toolchain()) == 64 and fingerprint.toolchain() == fingerprint.toolchain()
+
+
+# ---------------------------------------------------------------- #27-34: a refused statement is not `yes`
+GENERATED = """package x;
+public class PService {
+    // p.prc:1
+    public void run(BigDecimal pId) throws Exception {
+        // p.prc:4
+        v = Plsql.dec(pId);
+        // p.prc:40
+        // not translated: p_a ** 2
+        //     unresolved: **
+        throw new UnsupportedOperationException("unresolved in Assignment: **");
+        // p.prc:41
+        // external call: UTL_MAIL.SEND
+        throw new UnsupportedOperationException("external call: UTL_MAIL.SEND");
+    }
+    private void runner() { run(null); }
+}
+"""
+
+
+@pytest.mark.parametrize("anchor,state", [
+    ("p.prc:4", "yes"),
+    ("p.prc:40", "not-translated"),      # the comment is written before the statement is refused
+    ("p.prc:41", "not-translated"),
+    ("p.prc:400", "not-translated"),     # never emitted
+    ("p.prc", "not-translated"),         # a prefix of an anchor is not the anchor
+])
+def test_an_anchor_is_read_for_what_the_generator_wrote_under_it(anchor, state):
+    assert review._anchored(GENERATED, anchor) == state
+
+
+def test_a_routine_row_needs_the_declaration_not_the_name():
+    assert review._declares(GENERATED, "run") and review._declares(GENERATED, "runner")
+    assert not review._declares(GENERATED, "ru")
+    assert not review._declares(GENERATED.replace("public void run(", "public void other("), "run"), \
+        "`run(null)` in another method is a call, not the routine"

@@ -17,7 +17,7 @@ ENV = {"host_env": "T_HOST", "port_env": "T_PORT", "user_env": "T_USER", "passwo
 
 def profile(tmp_path, **fields) -> dict:
     path = tmp_path / "p.json"
-    path.write_text(json.dumps({"product": "oracle", **ENV, **fields}))
+    path.write_text(json.dumps({"product": "oracle", "hosts": ["db.internal"], **ENV, **fields}))
     return {"oracle": path}
 
 
@@ -34,7 +34,8 @@ def test_values_come_from_the_named_environment_variables(tmp_path, env):
     cfg = source_config("oracle", profile(tmp_path, environment="test"))
     assert cfg.oracle_kwargs() == {"user": "reader", "password": "s3cret", "dsn": "db.internal:1522/ORCL"}
     assert cfg.jdbc_url() == "jdbc:oracle:thin:@//db.internal:1522/ORCL"
-    assert "s3cret" not in repr(cfg) and "db.internal" not in cfg.label()
+    assert "s3cret" not in repr(cfg) and "s3cret" not in cfg.label() and "reader" not in cfg.label()
+    assert "db.internal:1522" in cfg.label(), "where the harness writes is not a secret; the operator must see it"
 
 
 def test_bundled_local_profiles_work_without_any_variable(monkeypatch):
@@ -80,3 +81,38 @@ def test_profile_arguments_and_the_environment_override(tmp_path, env, monkeypat
     path = profile(tmp_path, environment="ci")["oracle"]
     monkeypatch.setenv("DIFFTEST_PROFILE_ORACLE", str(path))
     assert source_config("oracle").environment == "ci"
+
+
+# --- #27-37: the environment label has to agree with the host it resolves to ---------------------------
+def test_the_committed_local_profile_refuses_a_host_that_is_not_this_machine(env, monkeypatch):
+    """Regression: SRC_ORACLE_HOST overrides local_defaults, and the label stayed "local" -- so a harness would
+    have gone on to DROP TABLE ... PURGE on whatever that variable pointed at."""
+    assert source_config("oracle").host == "localhost"
+    monkeypatch.setenv("SRC_ORACLE_HOST", "prod-db.corp.example")
+    with pytest.raises(ProfileError, match="means this machine.*prod-db.corp.example"):
+        source_config("oracle")
+    with pytest.raises(ProfileError, match="means this machine"):
+        source_config("oracle", writes=False)
+
+
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "::1", "LOCALHOST"])
+def test_local_accepts_loopback(tmp_path, env, monkeypatch, host):
+    monkeypatch.setenv("T_HOST", host)
+    assert source_config("oracle", profile(tmp_path, environment="local", hosts=[])).environment == "local"
+
+
+def test_a_disposable_label_is_not_enough_to_write(tmp_path, env):
+    unlisted = profile(tmp_path, environment="dev", hosts=[])
+    with pytest.raises(ProfileError, match="refusing to create tables and load data on 'db.internal'"):
+        source_config("oracle", unlisted)
+    assert source_config("oracle", unlisted, writes=False).host == "db.internal", "reading needs no list"
+
+
+def test_hosts_are_patterns_and_the_label_shows_where_it_writes(tmp_path, env, monkeypatch):
+    monkeypatch.setenv("T_HOST", "ora7.ci.example.internal")
+    cfg = source_config("oracle", profile(tmp_path, environment="ci", hosts=["*.ci.example.internal"]))
+    assert "host=ora7.ci.example.internal:1522" in cfg.label()
+    assert "s3cret" not in cfg.label() and "reader" not in cfg.label()
+    monkeypatch.setenv("T_HOST", "ora7.prod.example.internal")
+    with pytest.raises(ProfileError, match="not in the profile's hosts list"):
+        source_config("oracle", profile(tmp_path, environment="ci", hosts=["*.ci.example.internal"]))
