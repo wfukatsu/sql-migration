@@ -192,8 +192,13 @@ def routine_ids(program: M.Program) -> set[str]:
 
 
 def decisions_document(program: M.Program, decisions: dict, fix_times: FixTimes | None = None,
-                       unmatched: list[str] | None = None, stale: dict[str, str] | None = None) -> dict:
+                       unmatched: list[str] | None = None, stale: dict[str, str] | None = None,
+                       redesigns: dict | None = None) -> dict:
+    """`redesigns` is `plsql.redesign.statuses(...)`: what has become of each REDESIGN (nobody decided / decided /
+    decided and verified). The verdict does not move -- those are the conditions that are never AUTO -- but a
+    reviewer has to be able to tell the routines that still need a decision from the ones that do not."""
     fix_times = fix_times or FixTimes(minutes={})
+    redesigns = redesigns or {}
     routines = {r.id: (m, r) for m in program.modules for r in m.routines}
 
     records = []
@@ -216,6 +221,7 @@ def decisions_document(program: M.Program, decisions: dict, fix_times: FixTimes 
             "remediation": decision.remediation(),
             "requiredTests": decision.required_tests(),
             "whyNotAuto": _why_not_auto(decision, stale),
+            "redesign": redesigns[routine_id].as_dict() if routine_id in redesigns else None,
             "source": _range(routine) if routine is not None else None,
             "generated": _generated_names(module, routine) if routine is not None else None,
             "humanFixMinutes": fix_times.for_routine(routine_id),
@@ -229,6 +235,8 @@ def decisions_document(program: M.Program, decisions: dict, fix_times: FixTimes 
     return {
         "schemaVersion": M.SCHEMA_VERSION,
         "counts": _counts(records),
+        # REDESIGN, by what has become of it. Empty when nobody passed the project's decisions (`--limits`)
+        "redesignStates": _redesign_counts(redesigns),
         # a scenario that credits nothing looks exactly like a routine nobody wrote a scenario for
         "scenariosMatchingNoRoutine": unmatched or [],
         # comparison results that were passed in and not believed, and why (plsql/fingerprint.py)
@@ -242,6 +250,29 @@ def decisions_document(program: M.Program, decisions: dict, fix_times: FixTimes 
         },
         "routines": records,
     }
+
+
+def _redesign_lines(status) -> list[str]:
+    """What has become of this REDESIGN, before the rules: the recorded decision, or what is still open."""
+    if status is None:
+        return []
+    from . import redesign
+
+    lines = [f"**再設計の状態: {redesign.LABELS[status.state]}**", ""]
+    for item in status.decisions:
+        lines.append(f"- `{item['rule']}` は決定済み（{item['decidedBy']}）: {item['why']}")
+    for rule in status.open:
+        lines.append(f"- `{rule}` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）")
+    if status.evidence is not None:
+        lines.append(f"- 実 DB の比較: {status.evidence[0]} / {status.evidence[1]} シナリオが Oracle と一致")
+    elif status.through:
+        lines.append(f"- 実 DB の比較: 呼び出し元（{', '.join(status.through)}）経由で一致")
+    else:
+        lines.append("- 実 DB の比較: まだ無い")
+    if status.state != "undecided":
+        lines.append("- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は"
+                     "決定の理由に書いてある")
+    return lines + [""]
 
 
 def _why_not_auto(decision, stale: dict[str, str] | None = None) -> list[str]:
@@ -272,6 +303,14 @@ def _why_not_auto(decision, stale: dict[str, str] | None = None) -> list[str]:
         reasons = [r for r in decision.reasons if not r.startswith("confidence ")] or \
             [f"確信度 {decision.confidence.value:.4f} が AUTO のしきい値に届いていない"]
     return reasons
+
+
+def _redesign_counts(redesigns: dict) -> dict:
+    if not redesigns:
+        return {}
+    from . import redesign
+
+    return redesign.counts(redesigns)
 
 
 def _counts(records: list[dict]) -> dict:
@@ -307,8 +346,9 @@ def _generated_names(module: M.Module | None, routine: M.Routine) -> dict | None
 # unresolved.md
 # --------------------------------------------------------------------------------------------------
 
-def unresolved_markdown(program: M.Program, decisions: dict) -> str:
+def unresolved_markdown(program: M.Program, decisions: dict, redesigns: dict | None = None) -> str:
     routines = {r.id: (m, r) for m in program.modules for r in m.routines}
+    redesigns = redesigns or {}
     open_items = [(routine_id, decisions[routine_id]) for routine_id in decisions
                   if decisions[routine_id].verdict != "AUTO"]
     open_items.sort(key=lambda item: (VERDICT_ORDER.get(item[1].verdict, 9), item[0]))
@@ -326,6 +366,7 @@ def unresolved_markdown(program: M.Program, decisions: dict) -> str:
         if routine is not None and routine.source_range is not None:
             where = f" — `{routine.source_range.file}:{routine.source_range.start_line}`"
         lines += [f"## {decision.verdict}: `{routine_id}`{where}", ""]
+        lines += _redesign_lines(redesigns.get(routine_id))
 
         if decision.reasons:
             lines += ["**根拠**", ""] + [f"- {reason}" for reason in decision.reasons] + [""]
@@ -467,16 +508,16 @@ def traceability_csv(program: M.Program, decisions: dict, generated_root: str | 
 def write(program: M.Program, decisions: dict, out_dir: str | Path, *,
           generated_root: str | Path | None = None, package: str = "com.example.migrated",
           fix_times: FixTimes | None = None, unmatched: list[str] | None = None,
-          stale: dict[str, str] | None = None) -> dict[str, Path]:
+          stale: dict[str, str] | None = None, redesigns: dict | None = None) -> dict[str, Path]:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     written = {"decisions": out / "decisions.json", "unresolved": out / "unresolved.md",
                "traceability": out / "traceability.csv"}
     written["decisions"].write_text(
-        json.dumps(decisions_document(program, decisions, fix_times, unmatched, stale),
+        json.dumps(decisions_document(program, decisions, fix_times, unmatched, stale, redesigns),
                    ensure_ascii=False, indent=1) + "\n",
         encoding="utf-8")
-    written["unresolved"].write_text(unresolved_markdown(program, decisions), encoding="utf-8")
+    written["unresolved"].write_text(unresolved_markdown(program, decisions, redesigns), encoding="utf-8")
     written["traceability"].write_text(
         traceability_csv(program, decisions, generated_root, package), encoding="utf-8")
     return written
