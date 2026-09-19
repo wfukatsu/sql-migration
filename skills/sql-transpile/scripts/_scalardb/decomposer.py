@@ -23,7 +23,7 @@ from sqlglot.optimizer.normalize import normalize
 from sqlglot.transforms import eliminate_join_marks
 
 from .appside import h2_unsupported
-from .schema import SchemaRegistry, TableMeta
+from .schema import SchemaRegistry, TableMeta, quoted
 from .types import fit_temporal_literal, iso_temporal_literal, session_zone
 
 DEFAULT_ROW_LIMIT = 10_000
@@ -60,6 +60,8 @@ class FetchSpec:
     # indexes the residual engine builds on the fetched table: the primary key and the columns compared with another
     # table's columns (joins, correlated subqueries, IN (subquery)). Without them H2 joins by nested loops.
     index_columns: list[list[str]] = field(default_factory=list)
+    # column -> the residual engine's type where the ScalarDB type loses what the source had (NUMBER(7,2) -> DOUBLE)
+    residual_types: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -197,11 +199,12 @@ def _fit_temporal(p: Predicate, types: dict[str, str], zone=None) -> Predicate:
 
 
 def _pred_sql(p: Predicate) -> str:
+    column = quoted(p.column)   # `type`, `key`: a keyword of ScalarDB SQL is a name only in double quotes
     if p.op in ("IS NULL", "IS NOT NULL"):
-        return f"{p.column} {p.op}"
+        return f"{column} {p.op}"
     if p.op == "BETWEEN":
-        return f"{p.column} BETWEEN {_sql_value(p.value[0])} AND {_sql_value(p.value[1])}"
-    return f"{p.column} {p.op} {_sql_value(p.value)}"
+        return f"{column} BETWEEN {_sql_value(p.value[0])} AND {_sql_value(p.value[1])}"
+    return f"{column} {p.op} {_sql_value(p.value)}"
 
 
 class Scope:
@@ -310,7 +313,8 @@ class Decomposer:
                 meta = self.registry.get(t.name)
                 specs[key] = FetchSpec(table=t.name, namespace=t.db or (meta.namespace if meta else None), alias=alias,
                                        columns=None, column_types=dict(meta.columns) if meta else {},
-                                       predicates=preds, scalardb_sql="", access_path="")
+                                       predicates=preds, scalardb_sql="", access_path="",
+                                       residual_types=dict(meta.residual_types) if meta else {})
                 preds_seen[key] = [self._group_sql(g) for g in preds]
             for col in sel.find_all(exp.Column):
                 if col.find_ancestor(exp.Select) is not sel:
@@ -625,8 +629,8 @@ class Decomposer:
 
     @staticmethod
     def _fetch_sql(spec: FetchSpec, zone=None) -> str:
-        cols = ", ".join(spec.columns) if spec.columns else "*"
-        name = f"{spec.namespace}.{spec.table}" if spec.namespace else spec.table
+        cols = ", ".join(map(quoted, spec.columns)) if spec.columns else "*"
+        name = f"{quoted(spec.namespace)}.{quoted(spec.table)}" if spec.namespace else quoted(spec.table)
         where = " AND ".join(Decomposer._group_sql(
             _fit_temporal(g, spec.column_types, zone) if isinstance(g, Predicate)
             else [_fit_temporal(p, spec.column_types, zone) for p in g]) for g in spec.predicates)

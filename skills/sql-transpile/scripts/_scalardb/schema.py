@@ -7,7 +7,36 @@ ScalarDB Schema Loader JSON file (https://scalardb.scalar-labs.com/docs/latest/s
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
+
+# The keywords of the ScalarDB SQL grammar: the K_ tokens of the 3.19.1 lexer (SqlLexer in scalardb-sql-direct-mode).
+# Checked on a cluster: every one of them is reserved (`SELECT type FROM t`, `FROM order` are syntax errors), a name
+# in double quotes is a name whatever it spells (`"type"`, `"my col"`), a backtick is not a quote, and a double quote
+# inside a name cannot be written (`"a""b"` is a syntax error).
+SQL_KEYWORDS = set("""
+    ABAC_COMPARTMENT ABAC_COMPARTMENTS ABAC_GROUP ABAC_GROUPS ABAC_LEVEL ABAC_LEVELS ABAC_NAMESPACE_POLICY
+    ABAC_NAMESPACE_POLICIES ABAC_POLICY ABAC_POLICIES ABAC_READ_TAG ABAC_TABLE_POLICY ABAC_TABLE_POLICIES
+    ABAC_USER_TAG_INFO ABAC_WRITE_TAG ABORT ACCESS ADMIN ADD ALL ALTER AND AS ASC AUTH_METHOD BEGIN BETWEEN ESCAPE BY
+    CASCADE CLUSTERING COLUMN COMMIT COORDINATOR CREATE DATA DATA_TAG_COLUMN DEFAULT DEFAULT_LEVEL DELETE DESC
+    DESCRIBE DISABLE DROP ENABLE ENCRYPTED EXIST EXISTS FALSE FOR FROM GROUP GRANT GRANTS HAVING IF IN INDEX INFO
+    INNER INSERT INTO IS JOIN KEY LEFT LEVEL_NUMBER LIKE LIMIT LONG_NAME MODE NAMESPACE NAMESPACES NO_SUPERUSER NONE
+    NOT NULL OIDC ON ONLY OPTION OR ORDER OUTER PASSWORD PARENT_GROUP POLICY POLICIES PREPARE PRIMARY PRIVILEGES READ
+    READ_ONLY_ACCESS READ_WRITE_ACCESS REMOVE RENAME RESUME RIGHT ROLLBACK ROW ROW_LEVEL REVOKE ROLE ROLES SELECT SET
+    SHOW START SUPERUSER SUSPEND TABLE TABLES TO TRANSACTION TRUE TRUNCATE TWO_PHASE_COMMIT_TRANSACTION TYPE UPDATE
+    UPSERT USE USER USERPASS USERS USING VALIDATE VALUES WHERE WITH WRITE BIGINT BLOB BOOLEAN DOUBLE FLOAT INT TEXT
+    DATE TIME TIMESTAMP TIMESTAMPTZ
+""".split())
+
+
+def needs_quotes(name: str) -> bool:
+    """Whether ScalarDB SQL reads `name` as a name only in double quotes."""
+    return name.upper() in SQL_KEYWORDS or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name)
+
+
+def quoted(name: str) -> str:
+    """`name` as ScalarDB SQL has to see it. The caller has refused a name with a double quote in it."""
+    return f'"{name}"' if needs_quotes(name) else name
 
 
 @dataclass
@@ -19,6 +48,9 @@ class TableMeta:
     clustering_order: dict[str, str]  # column -> ASC/DESC
     columns: dict[str, str]  # column -> ScalarDB type
     secondary_indexes: list[str] = field(default_factory=list)
+    # column -> the type the residual engine uses instead of the ScalarDB one (TypeMapping.residual_type). Known only
+    # when the table comes from the source DDL; a Schema Loader file has ScalarDB types and nothing else
+    residual_types: dict[str, str] = field(default_factory=dict)
 
     @property
     def primary_key(self) -> list[str]:
