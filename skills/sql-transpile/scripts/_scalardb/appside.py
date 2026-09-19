@@ -266,6 +266,26 @@ def semantic_notes(node: exp.Expression, dialect: str, registry: SchemaRegistry)
     return notes
 
 
+def converted_notes(node: exp.Expression, dialect: str) -> list[tuple[str, str]]:
+    """(severity, message) for a statement that *was* converted, and that ScalarDB will run as written.
+
+    `semantic_notes` is for statements that move to the application; a plan runs the original SQL in H2, which
+    keeps the source's semantics by itself. A converted statement has neither: it runs on ScalarDB, whose string
+    semantics are not the source's, and nothing said so while the status read OK.
+    """
+    notes: list[tuple[str, str]] = []
+    strings = [n for n in node.find_all(exp.Literal) if n.is_string]
+    if dialect == "oracle" and any(n.name == "" for n in strings):
+        notes.append(("WARN", "'' is NULL in Oracle: it is stored as NULL, and `= ''` is never true. ScalarDB keeps "
+                              "an empty string as an empty string -- write NULL / IS NULL if that is what was meant"))
+    compared = [n for n in node.find_all(exp.EQ, exp.NEQ, exp.Like, exp.In)
+                if any(isinstance(x, exp.Literal) and x.is_string for x in n.iter_expressions())]
+    if dialect == "mysql" and compared:
+        notes.append(("INFO", "MySQL compares strings by the column's collation, case-insensitively by default "
+                              "('abc' = 'ABC'); ScalarDB compares exactly. Check the collation of the compared columns"))
+    return notes
+
+
 # --------------------------------------------------------------------------------------------------
 # design advice
 # --------------------------------------------------------------------------------------------------

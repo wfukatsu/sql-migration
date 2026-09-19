@@ -614,3 +614,107 @@ def test_fetch_first_row_only_means_one_row():
     r = run(BIND_DDL + "SELECT id, name FROM customers WHERE id = 1 FETCH FIRST ROW ONLY", "oracle",
             with_schema=False)
     assert r.converted[0].endswith("LIMIT 1")
+
+
+# ---------------------------------------------------------------- #27-4..7: joins, types, identifiers, string semantics
+JOIN_DDL = ("CREATE TABLE a (id INT PRIMARY KEY, x TEXT); CREATE TABLE b (id INT PRIMARY KEY, aid INT, x TEXT); "
+            "CREATE TABLE c (id INT PRIMARY KEY, bid INT);")
+
+
+def messages(r, code=None):
+    return " | ".join(i.message for i in r.issues if code is None or i.code == code)
+
+
+def test_a_right_join_makes_every_earlier_table_nullable():
+    """Regression: only the FROM table was marked. `WHERE b.x IS NULL` went into b's fetch, the b rows with a value
+    were never loaded, and their c rows came back as unmatched."""
+    results, _ = convert_script(JOIN_DDL + "SELECT UPPER(c.id), b.x FROM a JOIN b ON a.id = b.aid "
+                                           "RIGHT JOIN c ON c.bid = b.id WHERE b.x IS NULL", "postgres")
+    fetch = {f["table"]: f for f in results[-1].plan["fetch"]}
+    assert fetch["b"]["predicates"] == [] and fetch["a"]["predicates"] == []
+
+
+def test_a_left_join_still_pushes_a_null_test_on_the_kept_side():
+    results, _ = convert_script(JOIN_DDL + "SELECT UPPER(a.x), b.x FROM a LEFT JOIN b ON a.id = b.aid "
+                                           "WHERE a.x IS NULL AND b.x IS NULL", "postgres")
+    fetch = {f["table"]: f for f in results[-1].plan["fetch"]}
+    assert [p["op"] for p in fetch["a"]["predicates"]] == ["IS NULL"] and fetch["b"]["predicates"] == []
+
+
+@pytest.mark.parametrize("join,column", [("RIGHT JOIN", "b.id"), ("LEFT JOIN", "a.id"), ("JOIN", "a.id")])
+def test_the_merged_using_column_is_the_side_whose_rows_are_kept(join, column):
+    """Regression: always the FROM table, so after a RIGHT JOIN it was NULL for every unmatched right row."""
+    r = run(JOIN_DDL + f"SELECT id FROM a {join} b USING (id)", "postgres", with_schema=False)
+    assert r.converted[0].startswith(f"SELECT {column} FROM a")
+
+
+@pytest.mark.parametrize("dialect,declared,mapped,severity,said", [
+    ("postgres", "NUMERIC", "DOUBLE", "WARN", "unconstrained NUMERIC"),      # was BIGINT, "exact, fits 64-bit"
+    ("mysql", "DECIMAL", "BIGINT", "INFO", "exact"),                          # MySQL really does default to (10,0)
+    ("oracle", "INTEGER", "BIGINT", "WARN", "NUMBER(38)"),                    # was a 32-bit INT, no note
+    ("oracle", "SMALLINT", "BIGINT", "WARN", "NUMBER(38)"),
+    ("oracle", "FLOAT", "DOUBLE", "WARN", "up to 38 digits"),                 # was a 32-bit FLOAT, no note
+    ("oracle", "TIMESTAMP", "TIMESTAMP", "WARN", "default precision is 6"),   # only an explicit (6) used to warn
+    ("postgres", "TIMESTAMPTZ", "TIMESTAMPTZ", "WARN", "millisecond"),
+    ("mysql", "DATETIME", "TIMESTAMP", "INFO", ""),                           # MySQL's default is whole seconds
+    ("oracle", "TIMESTAMP(3)", "TIMESTAMP", "INFO", ""),
+    ("postgres", "TIMETZ", "TIME", "WARN", "offset is dropped"),
+    ("mysql", "INT UNSIGNED", "BIGINT", "INFO", "fits"),                      # the message said it "exceeds" BIGINT
+    ("mysql", "BIGINT UNSIGNED", "BIGINT", "WARN", "exceeds"),
+    ("oracle", "CHAR(3)", "TEXT", "WARN", "blank-padded"),
+    ("oracle", "CHAR(1)", "TEXT", "INFO", ""),
+])
+def test_type_mappings_that_lose_data_say_so(dialect, declared, mapped, severity, said):
+    r = run(f"CREATE TABLE t (id INT PRIMARY KEY, c {declared})", dialect, with_schema=False)
+    assert f"c {mapped}" in r.converted[0]
+    issue = next((i for i in r.issues if i.code == "TYPE" and i.message.startswith("column c")), None)
+    assert (issue.severity if issue else "INFO") == severity
+    assert said in (issue.message if issue else "")
+
+
+def test_an_identifier_whose_quotes_carried_meaning_is_not_reported_ok():
+    """Regression: `"order"` and `"UnitPrice"` came out unquoted with status OK."""
+    r = run('CREATE TABLE "Items" ("order" INT PRIMARY KEY, "UnitPrice" TEXT, "status" TEXT)', "postgres", with_schema=False)
+    said = messages(r, "IDENT")
+    assert r.status == "WARN"
+    assert '"order" is a SQL keyword' in said and '"UnitPrice" is case-sensitive' in said and '"Items" is case-sensitive' in said
+    assert '"status"' not in said, "an ORM that quotes everything is not a finding"
+
+
+def test_one_table_spelled_two_ways_is_flagged():
+    results, _ = convert_script("CREATE TABLE customers (id INT PRIMARY KEY); SELECT id FROM Customers WHERE id = 1",
+                                "postgres", decompose=False)
+    assert "also written 'customers'" in messages(results[-1], "IDENT")
+
+
+def test_an_oracle_like_pattern_keeps_its_backslash():
+    """Oracle has no default LIKE escape character; ScalarDB's is a backslash (its grammar reference), and
+    `ESCAPE ''` turns that off."""
+    ddl = "CREATE TABLE t (id NUMBER(9) PRIMARY KEY, name VARCHAR2(20));"
+    assert run(ddl + r"SELECT id FROM t WHERE id = 1 AND name LIKE 'a\_b%'", "oracle", with_schema=False) \
+        .converted[0].endswith(r"LIKE 'a\_b%' ESCAPE ''")
+    assert run(ddl + "SELECT id FROM t WHERE id = 1 AND name LIKE :p", "oracle", with_schema=False) \
+        .converted[0].endswith("LIKE :p ESCAPE ''")
+    assert run(ddl + "SELECT id FROM t WHERE id = 1 AND name LIKE 'ab%'", "oracle", with_schema=False) \
+        .converted[0].endswith("LIKE 'ab%'"), "no backslash: both read it the same way"
+    assert run(ddl + r"SELECT id FROM t WHERE id = 1 AND name LIKE 'a!_b' ESCAPE '!'", "oracle", with_schema=False) \
+        .converted[0].endswith("ESCAPE '!'")
+    assert "ESCAPE" not in run("CREATE TABLE t (id INT PRIMARY KEY, name TEXT);"
+                               r"SELECT id FROM t WHERE id = 1 AND name LIKE 'a\_b%'", "postgres",
+                               with_schema=False).converted[0], "PostgreSQL's default escape is a backslash too"
+
+
+def test_an_empty_string_in_a_converted_oracle_statement_is_a_warning():
+    """Regression: the note existed, but only for statements that were *not* converted."""
+    ddl = "CREATE TABLE t (id NUMBER(9) PRIMARY KEY, name VARCHAR2(20));"
+    r = run(ddl + "INSERT INTO t (id, name) VALUES (1, '')", "oracle", with_schema=False)
+    assert r.status == "WARN" and "'' is NULL in Oracle" in messages(r, "SEMANTICS")
+    assert "SEMANTICS" not in codes(run(ddl + "INSERT INTO t (id, name) VALUES (1, 'x')", "oracle", with_schema=False))
+    assert "SEMANTICS" not in codes(run("CREATE TABLE t (id INT PRIMARY KEY, name TEXT);"
+                                        "INSERT INTO t (id, name) VALUES (1, '')", "postgres", with_schema=False))
+
+
+def test_mysql_string_comparisons_mention_the_collation_without_changing_the_status():
+    r = run("SELECT customer_id FROM orders WHERE customer_id = 1 AND order_no = 2 AND status = 'open'", "mysql")
+    note = next(i for i in r.issues if i.code == "SEMANTICS")
+    assert note.severity == "INFO" and "collation" in note.message
