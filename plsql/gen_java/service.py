@@ -434,8 +434,9 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
             for class_name in classes:
                 file.add_import(f"{domain_package}.{class_name}")
             if "VALUE_ERROR" in names:
-                comment += ("\nVALUE_ERROR: only the size errors of a constrained declaration (Plsql.fit) reach this "
-                            "handler. A failed conversion still throws Java's own exception (rule EXC-001)")
+                comment += ("\nVALUE_ERROR: the size errors of a constrained declaration (Plsql.fit) and text that "
+                            "is not a number (Plsql.dec / toNumber / arithmetic) reach this handler. CHAR(n) "
+                            "padding and a conversion inside a SQL statement do not (rule EXC-001)")
             unreachable = [n for n in names if n in NEVER_RAISED_BY_TARGET]
             if unreachable:
                 comment += (f"\n{', '.join(unreachable)}: nothing on the target raises this by itself, so this "
