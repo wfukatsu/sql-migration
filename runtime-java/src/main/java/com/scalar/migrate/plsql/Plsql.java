@@ -318,7 +318,8 @@ public final class Plsql {
    * visible and a test can pin it; leaving {@code LocalDateTime.now()} inline would make it neither.
    */
   public static LocalDateTime sysdate() {
-    return CLOCK.get();
+    // an Oracle DATE has whole seconds; SYSTIMESTAMP is the one with a fraction
+    return CLOCK.get().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
   }
 
   /**
@@ -330,15 +331,28 @@ public final class Plsql {
    * comparison against Oracle would pass or fail by accident of the machine.
    */
   public static java.time.OffsetDateTime systimestamp() {
-    return sysdate().atOffset(java.time.ZoneOffset.UTC);
+    return CLOCK.get().atOffset(java.time.ZoneOffset.UTC);
   }
 
-  /** Pin the clock, for a test or for a run that has to be reproducible. */
+  /**
+   * Pin the clock, for a test or for a run that has to be reproducible. The supplier gives the **UTC** wall
+   * clock: that is what {@link #systimestamp()} labels it as.
+   */
   public static void setClock(java.util.function.Supplier<LocalDateTime> clock) {
     CLOCK = clock;
   }
 
-  private static java.util.function.Supplier<LocalDateTime> CLOCK = LocalDateTime::now;
+  /** Back to the real clock. */
+  public static void resetClock() {
+    CLOCK = UTC_NOW;
+  }
+
+  // The wall clock *in UTC*. This was `LocalDateTime::now` -- the JVM's zone -- which systimestamp() then labelled
+  // as UTC: on a machine in Asia/Tokyo every stored instant was nine hours in the future. The decision above was
+  // taken, the tests pinned the clock, and the unpinned default never met it.
+  private static final java.util.function.Supplier<LocalDateTime> UTC_NOW =
+      () -> LocalDateTime.now(java.time.ZoneOffset.UTC);
+  private static java.util.function.Supplier<LocalDateTime> CLOCK = UTC_NOW;
 
   /**
    * Oracle's RTRIM / LTRIM, including on the empty string.
