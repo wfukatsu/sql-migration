@@ -607,6 +607,41 @@ def _oracle_semantics(node: exp.Expression, target: str, schema: dict | None, is
              "日数が要るなら日付どうしの差を明示し、n 日前は INTERVAL で書く")
 
 
+def _mysql_result_values(node: exp.Expression, source: str, target: str, issues: list[Issue]) -> None:
+    """MySQL が返す値そのものが変換元と違うものを報告する。書き換えはしない。
+
+    どちらも実 DB での検証（difftest/transpile_verify.py）で、判定 OK のまま結果が違った形。
+    - 真偽値の式の射影: MySQL に真偽値の型は無く、`sal > 2000` は 0 / 1 で返る
+    - AVG と除算: MySQL は結果の小数桁を「被演算子の桁 + 4」（div_precision_increment）で丸める。
+      DECIMAL(7,2) の AVG は 1566.666667 で、Oracle・PostgreSQL の 1566.6666666666667 と合わない
+    """
+    if target != "mysql" or source == "mysql" or isinstance(node, exp.Create):
+        return
+    for sel in node.find_all(exp.Select):
+        shown = [e.unalias() for e in sel.expressions]
+        if any(isinstance(e, (exp.Predicate, exp.Connector, exp.Not, exp.Boolean)) for e in map(_unparen, shown)):
+            _add(issues, "WARN", "BOOLEAN_RESULT",
+                 "真偽値の式を射影している。MySQL に真偽値の型は無く、結果は TRUE / FALSE ではなく 1 / 0 で返る")
+            break
+    # 返す値として見えるものだけ: 条件の中の AVG や、ROUND / FLOOR / CEIL で桁を決め直した式は対象にしない
+    outer = node if isinstance(node, exp.Select) else node.find(exp.Select)
+    rounded = (exp.Round, exp.Floor, exp.Ceil, exp.IntDiv)
+
+    def visible(e: exp.Expression, top: exp.Expression) -> bool:
+        while e is not top:
+            e = e.parent
+            if isinstance(e, rounded) or isinstance(e, exp.Subquery) \
+                    or (isinstance(e, exp.Func) and e.sql_name().upper().startswith("TRUNC")) \
+                    or (isinstance(e, exp.Anonymous) and e.name.upper() in ("TRUNC", "TRUNCATE")):
+                return False
+        return True
+
+    if outer is not None and any(visible(e, p) for p in outer.expressions for e in p.find_all(exp.Avg, exp.Div)):
+        _add(issues, "WARN", "DIV_PRECISION",
+             "AVG か除算の結果をそのまま返している。MySQL は結果の小数桁を「被演算子の小数桁 + 4」で丸める（div_precision_increment、"
+             "DECIMAL(7,2) の AVG は小数 6 桁）。桁が要るなら、変換先で div_precision_increment を上げるか DOUBLE に CAST する")
+
+
 def _fix_intdiv(node: exp.Expression, target: str) -> None:
     """MySQL の DIV のような整数除算を Oracle の TRUNC にする。SQLGlot の CAST は四捨五入になる。"""
     if target != "oracle":
@@ -720,6 +755,7 @@ def _preprocess(node: exp.Expression, source: str, target: str, issues: list[Iss
     _fix_intervals(node, target)
     _fix_datediff_for_oracle(node, target)
     _typed_arithmetic(node, source, target, schema, issues)
+    _mysql_result_values(node, source, target, issues)
     _fix_intdiv(node, target)
     _fix_date_literals(node, target)
     _fix_caseless_quotes(node, source, target)
