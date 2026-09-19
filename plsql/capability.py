@@ -194,10 +194,27 @@ def scan_after_write(program: M.Program, report: CapabilityReport) -> list[tuple
     with the access path. Reading by key after writing is allowed (measured in P2-9); scanning is not.
     """
     found: list[tuple[str, str, str]] = []
-    from .analysis import build_call_graph
+    from .analysis import _called_in, _declared_names, _expressions, _names, build_call_graph
 
     routines = {r.id: r for m in program.modules for r in m.routines}
+    module_of = {r.id: m.name for m in program.modules for r in m.routines}
+    declared = {r.id: _declared_names(m, r) for m in program.modules for r in m.routines}
+    by_name = _names(program)
     build_call_graph(program)   # resolves each Call to the routine it names; this runs before the program analysis
+
+    def called(routine_id: str, expressions: list[str]) -> list[str]:
+        return sorted({c for e in expressions for c in _called_in(e, by_name, module_of[routine_id], routine_id, declared[routine_id])})
+
+    def callees(routine_id: str, statement: M.Statement) -> list[str]:
+        """What the statement runs: the routine a Call names, and the functions its expressions call. A function
+        is usually called from an assignment or a condition, so following Call statements alone missed its write."""
+        direct = [statement.resolved_to] if statement.kind == "Call" and getattr(statement, "resolved_to", None) else []
+        return direct + [c for c in called(routine_id, _expressions(statement)) if c not in direct]
+
+    def initialisers(routine: M.Routine) -> list[str]:
+        """The functions the declarations call: `v_n NUMBER := f(p_id);` runs before the first statement."""
+        return called(routine.id, [d.initial for d in routine.declarations
+                                   if d.initial and d.declaration_kind != "cursor"])
 
     def scans(statement: M.Statement, written: set[str]) -> list[str]:
         """The tables in `written` that the statement reads other than by key."""
@@ -216,10 +233,18 @@ def scan_after_write(program: M.Program, report: CapabilityReport) -> list[tuple
             return []
         seen.add(routine_id)
         out = [routine]
-        for statement in everything(routine):
-            if statement.kind == "Call" and getattr(statement, "resolved_to", None):
-                out += reachable(statement.resolved_to, seen)
+        for callee in initialisers(routine) + [c for s in everything(routine) for c in callees(routine_id, s)]:
+            out += reachable(callee, seen)
         return out
+
+    def run(routine_id: str, sql_id: str, callee_ids: list[str], written: set[str]) -> None:
+        """The callees' statements, as if they were the caller's: they run inside its transaction."""
+        for callee_id in callee_ids:
+            for callee in reachable(callee_id, set()):
+                for inner in everything(callee):
+                    # reported on the caller's statement: that is the one of this routine which does the scanning
+                    found.extend((routine_id, table, sql_id) for table in scans(inner, written))
+                    written.update(inner.write_set)
 
     def visit(routine_id: str, statements: list[M.Statement], written: set[str]) -> None:
         for statement in statements:
@@ -230,14 +255,12 @@ def scan_after_write(program: M.Program, report: CapabilityReport) -> list[tuple
                 found.extend((routine_id, table, query.id) for table in scans(query, written))
             if statement.kind == "Loop":
                 # the back edge: the second iteration runs the top of the body after the writes at its bottom
-                written.update(t for s in _walk(statement.body) for t in s.write_set)
+                for inner in _walk(statement.body):
+                    written.update(inner.write_set)
+                    written.update(t for c in callees(routine_id, inner) for r in reachable(c, set())
+                                   for s in everything(r) for t in s.write_set)
             found.extend((routine_id, table, statement.id) for table in scans(statement, written))
-            if statement.kind == "Call" and getattr(statement, "resolved_to", None):
-                for callee in reachable(statement.resolved_to, set()):
-                    for inner in everything(callee):
-                        # reported on the call: that is the statement of this routine which does the scanning
-                        found.extend((routine_id, table, statement.id) for table in scans(inner, written))
-                        written.update(inner.write_set)
+            run(routine_id, statement.id, callees(routine_id, statement), written)
             written.update(statement.write_set)
             for branch in getattr(statement, "branches", []) or []:
                 visit(routine_id, branch.body, written)
@@ -249,6 +272,8 @@ def scan_after_write(program: M.Program, report: CapabilityReport) -> list[tuple
     for module in program.modules:
         for routine in module.routines:
             written: set[str] = set()
+            if routine.body:
+                run(routine.id, routine.body[0].id, initialisers(routine), written)
             visit(routine.id, routine.body, written)
             # a handler runs after whatever part of the body ran before the exception
             for handler in routine.exception_handlers:
