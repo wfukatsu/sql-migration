@@ -31,6 +31,10 @@ TRIGGER_DECISION = ("#12: 書き込む側が trigger を呼ぶ。他の書き込
                     "docs/plsql-trigger-patterns.md")
 
 
+SEQUENCE_DECISION = ("計画 §9: 採番は移行先の方式（counters 表 / hi-lo）で取り、書き込む側の INSERT に織り込む",
+                     "キーを書かない INSERT は ScalarDB が拒否するので、この経路を通らない書き込みは黙って通らず、失敗する")
+
+
 @dataclass
 class Decided:
     """The project's recorded decisions, as the generator reads them."""
@@ -82,9 +86,17 @@ def _answer(rule_id: str, routine: M.Routine, module: M.Module | None, decided: 
 
         assigns = any(s.kind == "Assignment" and CORRELATION.match((s.target or "").strip())
                       for s in _walk(routine.body))
-        # `:NEW.id := seq.NEXTVAL`: the way is decided (a counters table, plan §9) but nothing generates it, and
-        # a call cannot stand in for it (trigger-patterns C). Still open as far as this routine goes.
-        return None if assigns else TRIGGER_DECISION
+        if not assigns:
+            return TRIGGER_DECISION
+        # `:NEW.id := seq.NEXTVAL` changes the written row, so a call cannot stand in for it (trigger-patterns C).
+        # The one shape that is decided: a trigger that does nothing but take the key from a sequence. The writer
+        # takes the number itself (`triggers._inline_sequence`), by the scheme the DDL asks for (plan §9). Any
+        # other assigning trigger is still open.
+        from .triggers import Trigger
+
+        shape = Trigger(module=module, routine=routine, table=(module.trigger_table or "").lower(),
+                        timing=(module.trigger_timing or "BEFORE").upper(), event=(module.trigger_event or "").upper())
+        return SEQUENCE_DECISION if shape.sequence_key() is not None else None
     return None
 
 
@@ -134,6 +146,18 @@ def statuses(program: M.Program, decisions: dict, call_graph, decided: Decided |
         for caller in decisions:
             for callee in call_graph.callees(caller):
                 callers.setdefault(callee, []).append(caller)
+    # a trigger that was woven into the INSERT instead of being called leaves no call edge: the writer says so
+    from .lower import _walk
+
+    bodies = {m.name: r.id for m in program.modules if m.module_kind == "trigger" for r in m.routines}
+    for module in program.modules:
+        for routine in module.routines:
+            for statement in _walk(routine.body):
+                for diagnostic in statement.diagnostics:
+                    if diagnostic.code == "TRIGGER_INLINED":
+                        body = bodies.get(diagnostic.message.split(":", 1)[0].strip())
+                        if body and routine.id not in callers.setdefault(body, []):
+                            callers[body].append(routine.id)
     for name, status in out.items():
         if status.open or not status.decisions:
             status.state = "undecided"
