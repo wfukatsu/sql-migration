@@ -234,3 +234,16 @@ def test_the_report_leaves_the_capability_unasked_when_no_schema_is_given():
 
     analysis = build_analysis(SRC, SRC / "schema.sql")
     assert inventory(analysis)["targetCapability"] is None
+
+
+def test_a_join_the_converter_takes_as_it_stands_is_not_held_for_review(checked):
+    """#13: SEM-005 asked a person whether a join hits ScalarDB's join limits. With a ScalarDB schema the converter
+    answers that, so the rule only fires where it did not say OK (WARN, or nobody asked)."""
+    analysis, program_analysis = checked
+    decisions = decide(analysis.program, program_analysis, RuleSet.load(), Evidence())
+    assert "SEM-005" not in {m.rule.id for m in decisions["pkg_order_pricing.customer_tier"].matches}
+    assert decisions["pkg_order_pricing.customer_tier"].rule_verdict == "AUTO"
+    # without a ScalarDB schema nobody has answered, and the join is still a question for a person
+    unasked = build_analysis(SRC, SRC / "schema.sql")
+    plain = decide(unasked.program, analyse_program(unasked.program), RuleSet.load(), Evidence())
+    assert "SEM-005" in {m.rule.id for m in plain["pkg_order_pricing.customer_tier"].matches}
