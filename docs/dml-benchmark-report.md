@@ -196,7 +196,7 @@ PostgreSQL の `DATE '2024-09-01'`・`TIMESTAMP '2024-09-01 10:00:00'` は、変
 
 MySQL の `TINYINT(1)` は ScalarDB では INT になるが、`TRUE` / `FALSE` はそのまま出力され、ScalarDB で型の不一致（DB-SQL-10052）になった（書き込み 3 文と S16）。列の型が INT のときは `1` / `0` に書き換える必要がある。
 
-S10 の `name LIKE 'FRANK%'` は、MySQL では既定の照合順序が大文字小文字を区別しないので 1 行返るが、ScalarDB（PostgreSQL バックエンド）では区別するので 0 行になった。変換ツールは照合順序の差を警告していない。
+S10 の `name LIKE 'FRANK%'` は、MySQL では既定の照合順序が大文字小文字を区別しないので 1 行返るが、ScalarDB（PostgreSQL バックエンド）では区別するので 0 行になった。変換ツールは照合順序の差を INFO（`SEMANTICS`）で知らせるが、判定は変えない（文字列の比較はほとんどの文にあり、WARN にすると MySQL の文の大半が WARN になるため。レビュー #27 の決定）。移行の際は、比較する列の照合順序を確認する。
 
 ---
 
