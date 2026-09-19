@@ -22,3 +22,9 @@ mask:
   products:
   - updated_at
 note: '採番した番号の受注が既にある。Oracle は DUP_VAL_ON_INDEX の handler が -20004 に変える（移行先では自然には起きない: EXC-001）'
+accepted_difference:
+  exception:
+    oracle: -20004
+    target: java.sql.SQLTransactionRollbackException
+  decided: '2026-09-20'
+  reason: 移行先は重複 INSERT をその文では弾かず、commit 時の衝突（DB-CORE-20013）として返すので、DUP_VAL_ON_INDEX の handler（-20004）は走らない（EXC-001）。受注番号は採番で取るので、採番が一意であるかぎり実運用では起きない。どちらも何も書かない。-20004 を再現するには INSERT の前に存在を読む必要があり、受注のたびに読みが 1 回増えるので採らない。呼び出し側はこの衝突を無条件に再試行しないこと（同じ番号なら解消しない）
