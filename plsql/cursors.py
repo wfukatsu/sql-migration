@@ -132,7 +132,8 @@ def _sequence(statements: list[M.Statement], routine: M.Routine, symbols: Symbol
     while index < len(statements):
         match = _first_row(statements, index, routine, symbols, module, schema) or \
             _count(statements, index, routine, symbols, module, schema) or \
-            _chunks(statements, index, routine, symbols, module, schema)
+            _chunks(statements, index, routine, symbols, module, schema) or \
+            _scan(statements, index, routine, symbols, module, schema)
         if match is None:
             out.append(statements[index])
             index += 1
@@ -254,6 +255,96 @@ def _count_sql(sql: str) -> str:
     select.set("expressions", [exp.Count(this=exp.Star())])
     select.set("order", None)
     return select.sql(dialect="oracle")
+
+
+# --- A. 走査（`OPEN c; LOOP FETCH c INTO v; EXIT WHEN c%NOTFOUND; ... END LOOP; CLOSE c;`）--------
+
+def _scan(statements: list[M.Statement], index: int, routine: M.Routine, symbols: SymbolTable,
+          module: str | None,
+          schema: OracleSchema | None) -> tuple[list[M.Statement], int, str] | None:
+    """明示 cursor で回すだけのループ。**cursor FOR ループと同じもの**である。
+
+    B（先頭 1 件）や C（件数）と違い、本体が何をしていてもよい——読んだ行で何かする、という形
+    そのものだからである。だから本体には触らず、**行の値を元の変数へ代入する文を先頭に足す**:
+
+        OPEN c; LOOP FETCH c INTO v_order_id; EXIT WHEN c%NOTFOUND; <本体> END LOOP; CLOSE c;
+
+        -> FOR r IN (<cursor の問い合わせ>) LOOP
+             v_order_id := r.order_id;   -- 足すのはこれだけ
+             <本体>
+           END LOOP;
+
+    変数を残すのは、**ループの後でも Oracle と同じ値が入っている**ためでもある。Oracle は最後の
+    FETCH が空振りしたとき INTO の対象を変えない——つまり最後の行の値が残る。参照を書き換えて
+    しまうと、ループの外で読んでいる routine で意味が変わる。
+    """
+    run = statements[index:]
+    if len(run) < 3 or run[0].kind != "OpenCursor" or run[1].kind != "Loop" or run[2].kind != "CloseCursor":
+        return None
+    cursor = _cursor_name(run[0].cursor)
+    if _cursor_name(run[2].cursor) != cursor or (run[1].loop_kind or "basic") != "basic":
+        return None
+    body = list(run[1].body)
+    if len(body) < 2 or body[0].kind != "Fetch" or _cursor_name(body[0].cursor) != cursor:
+        return None
+    if getattr(body[0], "bulk_limit", None):
+        return None   # 分割読み。E が扱う
+    if body[1].kind != "Exit" or not _names(body[1].condition, cursor, NOTFOUND):
+        return None   # 抜ける条件が `%NOTFOUND` でない。何行読むのかがこの形では決まらない
+    rest = body[2:]
+    if any(s.kind in ("Fetch", "OpenCursor", "CloseCursor") for s in _walk_all(rest)):
+        return None   # 1 反復に 2 回読む、あるいは中で開き直す。行を配るループでは同じにならない
+    if any(s.kind == "Exit" and _names(s.condition, cursor, NOTFOUND) for s in _walk_all(rest)):
+        return None
+    targets = list(body[0].into_targets or [])
+    query = _query(cursor, list(run[0].arguments), routine, symbols, module, schema)
+    if query is None or not targets:
+        return None
+    columns = _output_names(query)
+    if columns is None or len(columns) != len(targets):
+        return None   # 位置で対応させられない（射影が式で名前を持たないときなど）
+    row = _row_name(routine)
+    operation = _operation(run[1], routine, query, [])
+    if operation is None:
+        return None
+    operation.cardinality = "MANY"
+    assignments = [
+        M.Assignment(id=f"{body[0].id}row{position}", kind="Assignment",
+                     source_range=body[0].source_range, target=target,
+                     expression=f"{row}.{column}")
+        for position, (target, column) in enumerate(zip(targets, columns), start=1)]
+    loop = M.Loop(id=run[1].id, kind="Loop", source_range=run[1].source_range,
+                  loop_kind="cursor-for", variable=row, query=operation,
+                  body=assignments + rest, cursor=f"{row} IN ({query})")
+    loop.add("INFO", "CUR_SCAN",
+             f"cursor {cursor} は読むだけのループだった。行を先に読んで回す形にした——移行先に"
+             f"跨トランザクションの cursor は無いので、動く行数はメモリで決まる（上限は --limits）。"
+             f"FETCH の代入先はそのまま残してあるので、ループの後でも Oracle と同じ値が入っている")
+    return ([loop], 3, cursor)
+
+
+def _walk_all(statements: list[M.Statement]) -> list[M.Statement]:
+    from .lower import _walk
+
+    return _walk(statements)
+
+
+def _output_names(sql: str) -> list[str] | None:
+    """射影ごとの出力名。1 つでも決まらなければ None。"""
+    from .bulk import _select_names
+
+    return _select_names(sql)
+
+
+def _row_name(routine: M.Routine) -> str:
+    """ループ変数の名前。元のコードが持っている名前を踏まない。"""
+    used = {d.name.lower() for d in routine.declarations} | {p.name.lower() for p in routine.parameters}
+    if "r" not in used:
+        return "r"
+    index = 1
+    while f"r{index}" in used:
+        index += 1
+    return f"r{index}"
 
 
 # --- E. 分割読み（`FETCH ... BULK COLLECT INTO v LIMIT n`）-----------------------------------------

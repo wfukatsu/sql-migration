@@ -37,6 +37,10 @@ class GeneratedProject:
     # the program this was generated from, so a check made after the fact -- `verify`, which attributes a
     # javac error to a routine (#21) -- can get back from a Java method name to the PL/SQL it came from
     program: "M.Program | None" = None
+    # ScalarDB SQL では走らない文の実行計画（P2-4 / P4-6）。**生成物と一緒に書き出す**——
+    # repository はこれを classpath から読む。書き出していなかったので、計画を使う経路は
+    # 実行時に「plan not found」で落ちていた（走査ループを計画で回すまで誰も通らなかった）
+    plans: dict = field(default_factory=dict)
 
     @property
     def app_package(self) -> str:
@@ -79,8 +83,10 @@ def regeneration_banner() -> None:
 
 
 def generate(program: M.Program, root: str | Path, base_package: str = "com.example.migrated",
-             decisions: dict[str, Decision] | None = None) -> GeneratedProject:
-    project = GeneratedProject(root=Path(root), base_package=base_package, program=program)
+             decisions: dict[str, Decision] | None = None,
+             plans: dict | None = None) -> GeneratedProject:
+    project = GeneratedProject(root=Path(root), base_package=base_package, program=program,
+                               plans=dict(plans or {}))
 
     exception_files, registry = generate_exceptions(program, project.domain_package)
     project.files.extend(exception_files)
@@ -133,6 +139,19 @@ def write(project: GeneratedProject, decisions: dict[str, Decision] | None = Non
     # there can only mislead: a renamed class leaves its old file behind and javac compiles both, failing on
     # the stale one for a reason that has nothing to do with the current output (found in P4-5).
     _remove_stale(source_root, {p.resolve() for p in written})
+
+    plans = source_root.parent / "resources" / "plans"
+    if project.plans:
+        plans.mkdir(parents=True, exist_ok=True)
+    for statement_id, plan in sorted(project.plans.items()):
+        path = plans / f"{statement_id}.plan.json"
+        path.write_text(json.dumps(plan, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        written.append(path)
+    if plans.is_dir():
+        # 前の実行が書いた計画は、今回の生成物のものではない。残すと classpath に古い計画が並ぶ
+        for stale in sorted(plans.glob("*.plan.json")):
+            if stale.resolve() not in {p.resolve() for p in written}:
+                stale.unlink()
 
     report = project.root / "generation-report.json"
     payload = {"summary": project.summary(), "errorCodes": project.error_codes}

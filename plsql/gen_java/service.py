@@ -105,15 +105,29 @@ def generate_module(module: M.Module, package: str, repository_package: str,
 
 
 def trigger_services(module: M.Module) -> list[str]:
-    """この module が呼ぶ trigger の module 名。constructor に出る順（名前順）で返す。"""
+    """この module が呼ぶ**他の module** の名前。constructor に出る順（名前順）で返す。
+
+    trigger（#12）と、PL/SQL がそう書いている別 package の呼び出しの両方である。どちらも
+    「誰に依存しているか」が constructor に出る——移行先で何を配線するかが、そこで分かる。
+    """
     out: set[str] = set()
     for routine in module.routines:
         for statement in _walk(routine.body) + [s for h in routine.exception_handlers
                                                 for s in _walk(h.body)]:
-            owner = _trigger_owner(statement, module)
+            owner = _trigger_owner(statement, module) or _sibling_owner(statement, module)
             if owner:
                 out.add(owner)
     return sorted(out)
+
+
+def _sibling_owner(statement: M.Statement, module: M.Module) -> str | None:
+    """別の module の routine を呼ぶ文なら、その module 名。"""
+    if statement.kind != "Call" or not getattr(statement, "resolved_to", None):
+        return None
+    owner, _, _ = statement.resolved_to.rpartition(".")
+    if not owner or owner == module.name or _routine(statement.resolved_to) is None:
+        return None
+    return owner
 
 
 def _trigger_owner(statement: M.Statement, module: M.Module) -> str | None:
@@ -857,11 +871,18 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
     if statement.resolved_to:
         module = _MODULE.get()
         owner = statement.resolved_to.rsplit(".", 1)[0] if "." in statement.resolved_to else None
+        callee = _routine(statement.resolved_to) or \
+            next((r for r in (module.routines if module else []) if r.id == statement.resolved_to), None)
         if module is not None and owner is not None and owner != module.name:
-            # another module's service would have to be injected; that is a composition decision, not a
-            # translation, so it is refused rather than guessed
-            raise Untranslatable([statement.resolved_to], f"call into {owner}")
-        callee = next((r for r in (module.routines if module else []) if r.id == statement.resolved_to), None)
+            # 別の module の routine を呼ぶ。**PL/SQL がそう書いてある**ので、誰を呼ぶかは決定では
+            # ない——注入するのは trigger と同じ形である（#12）。以前はここで拒んでいたが、
+            # そのために「呼ばれる側が REVIEW なだけの routine」まで動かせなかった
+            if callee is None:
+                raise Untranslatable([statement.resolved_to], f"call into {owner}")
+            if needs_audit(callee):
+                arguments = ", ".join(a for a in [arguments, "audit"] if a)
+            file.line(f"{java_name(owner)}.{java_name(callee.name)}({arguments});")
+            return
         if callee is not None and needs_audit(callee):
             arguments = ", ".join(a for a in [arguments, "audit"] if a)
         file.line(f"{java_name(target.split('.')[-1])}({arguments});")
