@@ -76,8 +76,13 @@ def test_the_concurrency_question_stays_attached(corpus):
 
     decision = decide(corpus.program, analyse_program(corpus.program), RuleSet.load(),
                       Evidence())["pkg_customer_import.import"]
-    assert decision.rule_verdict == "REVIEW"
+    # 2026-09-20: the question is still said out loud -- SEM-011 stays on the statement with the same required test --
+    # but it no longer holds the routine. The split only happens where the retry policy was decided and recorded,
+    # and what two concurrent imports do was measured on a cluster (TransactionIT)
+    note = next(m.rule for m in decision.matches if m.rule.id == "SEM-011")
+    assert note.decision == "AUTO" and "再試行" in note.message
     assert "concurrent_upsert" in decision.required_tests()
+    assert decision.rule_verdict == "AUTO"
 
 
 def test_without_a_record_the_merge_stays_an_upsert(undecided):

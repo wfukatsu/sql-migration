@@ -999,8 +999,10 @@ P0-2 の manifest）に集計し直す。
     列の桁に丸めるようにし、double の「丸めの相違」2 件が解消した（金額の 2 規約の判定が同じになった）。
   - holdout2 の 3 件（`pkg_shipment.is_shippable` / `line_count` / `days_in_transit`）は期待値 REVIEW のまま残し、食い違い
     として数える（KPI-3 は 62/65 = 95.4%）。holdout2 の期待値はルールに合わせて書き換えない、という約束を守るためである。
-  - 決定の適用後に残る REVIEW は 2 件: `pkg_customer_import.import`（同時実行の競合と再試行）、
-    `pkg_order_report.mark_reviewed`（走査行数の上限が未決定）。
+  - 決定の適用後に残る REVIEW は 0 件（2026-09-20）。最後の 2 件は、決定が既に記録されていてツールが読めていなかった:
+    `pkg_order_report.mark_reviewed` は 1 注文 = 1 トランザクションに割って件数つきで読む形（#19）なので、走査行数の
+    上限は読む単位で決まる（CUR-OPT-002）。`pkg_customer_import.import` は MERGE を割るときに再試行の方針を記録して
+    あり（rowLocks.optimistic）、同時実行の挙動を実クラスタで確かめた（`TransactionIT`）ので SEM-011 は注記にした。
 
 - **REDESIGN の判定は動かさず、再設計の状態を分けて見せる**（2026-09-20 決定）。REDESIGN は移行元の分類で、行ロック・
   routine 内の COMMIT・trigger などは AUTO 禁止条件（`docs/plsql-kpi.md` §2）なので、再設計を決めて生成・検証しても

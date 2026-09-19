@@ -219,6 +219,77 @@ class TransactionIT {
     });
   }
 
+  /**
+   * `pkg_customer_import.import`: the MERGE became "read whether the row is there, then UPDATE or INSERT" (SEM-011,
+   * limits.yaml rowLocks.optimistic). Two imports of the same new customer both read "not there".
+   *
+   * <p>Oracle's MERGE makes the second one wait and then update. Here nothing waits, so the question is whether
+   * the second one is rejected or whether the customer is written twice / one name is silently lost. The decision
+   * on record says: rejected at commit, and the caller retries that one element, which then takes the UPDATE
+   * branch. This runs exactly the three statements the generated repository runs.
+   */
+  @Test
+  void twoImportsOfTheSameNewCustomerDoNotBothInsertAndTheLoserRetriesAsAnUpdate() throws Exception {
+    CountDownLatch bothHaveRead = new CountDownLatch(2);
+    AtomicReference<Throwable> first = new AtomicReference<>();
+    AtomicReference<Throwable> second = new AtomicReference<>();
+    Thread one = importer(77, "First Co", bothHaveRead, first);
+    Thread two = importer(77, "Second Co", bothHaveRead, second);
+    one.start();
+    two.start();
+    one.join(TimeUnit.SECONDS.toMillis(60));
+    two.join(TimeUnit.SECONDS.toMillis(60));
+
+    assertTrue(first.get() == null || second.get() == null, "at least one import has to land");
+    assertTrue(first.get() != null || second.get() != null,
+        "both imports read 'not there' and both committed an INSERT of the same customer: nothing serialised them");
+    assertEquals(1, runner.select("SELECT customer_id FROM customers WHERE customer_id = 77").size());
+    runner.commit();
+
+    // the caller retries the rejected element on its own: the row is there now, so it is the UPDATE branch
+    String loser = first.get() != null ? "First Co" : "Second Co";
+    try (ScalarDbRunner retry = open()) {
+      importOnce(retry, 77, loser);
+      retry.commit();
+    }
+    List<Map<String, Object>> rows = runner.select("SELECT name FROM customers WHERE customer_id = 77");
+    runner.commit();
+    assertEquals(1, rows.size(), "the retry must not add a second row");
+    assertEquals(loser, rows.get(0).get("name"), "the retried element wins, as the later MERGE would have in Oracle");
+  }
+
+  private Thread importer(int id, String name, CountDownLatch bothHaveRead, AtomicReference<Throwable> failure) {
+    return new Thread(() -> {
+      try (ScalarDbRunner own = open()) {
+        boolean exists = exists(own, id);            // both read before either writes
+        bothHaveRead.countDown();
+        bothHaveRead.await(60, TimeUnit.SECONDS);
+        write(own, id, name, exists);
+        own.commit();
+      } catch (Throwable t) {
+        failure.set(t);
+      }
+    });
+  }
+
+  private void importOnce(ScalarDbRunner on, int id, String name) throws Exception {
+    write(on, id, name, exists(on, id));
+  }
+
+  private boolean exists(ScalarDbRunner on, int id) throws Exception {
+    List<Map<String, Object>> rows = on.select("SELECT COUNT(*) AS n FROM customers WHERE customer_id = " + id);
+    return ((Number) rows.get(0).get("n")).longValue() > 0;
+  }
+
+  private void write(ScalarDbRunner on, int id, String name, boolean exists) throws Exception {
+    if (exists) {
+      on.execute("UPDATE customers SET name = '" + name + "' WHERE customer_id = " + id);
+    } else {
+      on.execute("INSERT INTO customers (customer_id, name, tier, registered_on) VALUES (" + id + ", '" + name
+          + "', 'BRONZE', '2026-01-15 09:30:00')");
+    }
+  }
+
   // --- the REDESIGN verdicts, shown rather than asserted ---------------------------------------------
 
   /**
