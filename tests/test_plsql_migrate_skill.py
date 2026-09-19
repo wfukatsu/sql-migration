@@ -268,3 +268,17 @@ def test_every_command_in_step_0_matches_the_allow_list_on_its_own():
         bare = re.sub(r"\"[^\"]*\"|'[^']*'", "", command)   # a `;` inside a quoted argument is not a separator
         assert not re.search(r"[|;&<>]", bare), f"a compound command never matches the allow list: {command}"
         assert any(fnmatch.fnmatch(command, pattern) for pattern in allowed), command
+
+
+def test_every_place_that_asks_the_user_points_at_the_shape_of_a_question():
+    """A choice is never put to the user bare: recommendation, reason and impact come with it."""
+    import pathlib
+
+    text = (pathlib.Path(__file__).resolve().parents[1] / "skills/plsql-migrate/SKILL.md").read_text(encoding="utf-8")
+    shape = text[text.index("## 判断を求めるときの形"):text.index("## Workflow")]
+    for part in ("何を決めるか", "推奨", "理由", "影響", "決めないとどうなるか", "誰が答える問いか"):
+        assert f". {part} |" in shape, part
+    workflow = text[text.index("## Workflow"):]
+    for step in ("### Step 2", "### Step 5", "### Step 6", "## Error Handling"):
+        end = workflow.find("\n##", workflow.index(step) + 1)
+        assert "判断を求めるときの形" in workflow[workflow.index(step):end] or "推奨と理由" in workflow[workflow.index(step):end], step
