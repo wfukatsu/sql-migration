@@ -168,4 +168,72 @@ class ResidualTest {
     assertEquals("TIMESTAMPTZ", Values.typeOfJdbc(java.sql.Types.TIMESTAMP_WITH_TIMEZONE));
     org.junit.jupiter.api.Assertions.assertNull(Values.typeOfJdbc(java.sql.Types.ARRAY));
   }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void aSecondLoadDoesNotDuplicateRowsThatHoldANull() throws Exception {
+    // MERGE ... KEY (every column) compares with `=`, and NULL never equals NULL: the row with a NULL went in twice
+    try (Residual residual = new Residual("PostgreSQL")) {
+      Map<String, String> types = Map.of("id", "INT", "note", "TEXT");
+      residual.load(fetch("t", null), rows(List.of("id", "note"), types, new Object[] {1, null}, new Object[] {2, "x"}));
+      residual.load(fetch("t", null), rows(List.of("id", "note"), types,
+          new Object[] {1, null}, new Object[] {2, "x"}, new Object[] {3, null}, new Object[] {3, null}));
+      List<List<Object>> counted = (List<List<Object>>) residual.query("SELECT id, COUNT(*) FROM t GROUP BY id ORDER BY id", Map.of()).get("rows");
+      assertEquals("[[1, 1], [2, 1], [3, 1]]", counted.toString());
+    }
+  }
+
+  @Test
+  void fetchesThatDisagreeAboutATableAreRefused() throws Exception {
+    try (Residual residual = new Residual("PostgreSQL")) {
+      Plan.Fetch first = fetch("t", null);
+      first.namespace = "ns1";
+      residual.load(first, rows(List.of("id"), Map.of("id", "INT"), new Object[] {1}));
+      Plan.Fetch other = fetch("t", null);
+      other.namespace = "ns2";
+      org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+          () -> residual.load(other, rows(List.of("id"), Map.of("id", "INT"), new Object[] {2})));
+      org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+          () -> residual.load(first, rows(List.of("id", "extra"), Map.of("id", "INT"), new Object[] {2, 3})));
+    }
+  }
+
+  @Test
+  void theSourcesSpellingOfANameFindsTheTable() throws Exception {
+    // the residual SQL is the source application's, and the source folds case
+    for (String mode : List.of("Oracle", "PostgreSQL", "MySQL")) {
+      try (Residual residual = new Residual(mode)) {
+        residual.load(fetch("orders", null), rows(List.of("order_id", "key", "value"),
+            Map.of("order_id", "INT", "key", "TEXT", "value", "TEXT"), new Object[] {1, "k", "v"}));
+        assertEquals(List.of(List.of("k", "v")),
+            residual.query("SELECT KEY, VALUE FROM ORDERS WHERE Order_Id = 1", Map.of()).get("rows"), mode);
+      }
+    }
+  }
+
+  @Test
+  void theSessionTimeZoneDoesNotFollowTheHost() throws Exception {
+    java.util.TimeZone before = java.util.TimeZone.getDefault();
+    java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Tokyo"));
+    try (Residual residual = new Residual("PostgreSQL")) {
+      residual.load(fetch("e", null), rows(List.of("id", "at"), Map.of("id", "INT", "at", "TIMESTAMPTZ"),
+          new Object[] {1, java.time.Instant.parse("2024-01-01T20:30:00Z")}));
+      // 20:30 UTC is already the next day in Tokyo
+      assertEquals("[[2024-01-01, 20]]",
+          residual.query("SELECT CAST(at AS DATE), EXTRACT(HOUR FROM at) FROM e", Map.of()).get("rows").toString());
+    } finally {
+      java.util.TimeZone.setDefault(before);
+    }
+  }
+
+  @Test
+  void placeholdersAreOnlyPlaceholdersInCode() {
+    List<Object> binds = new java.util.ArrayList<>();
+    String sql = "SELECT ' :x ? ', \"a:b\" -- don't bind :y or ?\n FROM t /* nor :z ? */ WHERE a = :a AND b = ? AND c = d::int AND e = :a";
+    String bound = Residual.bindNamed(sql, Map.of("a", 1, "1", "first"), binds);
+    assertEquals("SELECT ' :x ? ', \"a:b\" -- don't bind :y or ?\n FROM t /* nor :z ? */ WHERE a = ? AND b = ? AND c = d::int AND e = ?", bound);
+    assertEquals(List.of(1, "first", 1), binds);
+    org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+        () -> Residual.bindNamed("SELECT :missing", Map.of(), new java.util.ArrayList<>()));
+  }
 }

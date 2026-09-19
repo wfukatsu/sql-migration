@@ -254,4 +254,31 @@ class PlsqlTest {
       java.util.TimeZone.setDefault(before);
     }
   }
+
+  @Test
+  void aNumberBelowOneHasNoLeadingZeroAsText() {
+    // Oracle's implicit TO_CHAR: 'x' || 0.5 is 'x.5'
+    assertEquals(".5", Plsql.text(new BigDecimal("0.50")));
+    assertEquals("-.5", Plsql.text(new BigDecimal("-0.5")));
+    assertEquals("0", Plsql.text(new BigDecimal("0.00")));
+    assertEquals("10.5", Plsql.text(new BigDecimal("10.50")));
+    assertEquals("x.5", Plsql.concat("x", new BigDecimal("0.5")));
+  }
+
+  @Test
+  void aDateFormatAppliesToEveryKindOfDateOrFails() {
+    // it used to return the value's default rendering for anything but a LocalDateTime -- a wrong string, no error
+    assertEquals("2026-01-02", Plsql.text(java.time.LocalDate.of(2026, 1, 2), "YYYY-MM-DD"));
+    assertEquals("2026", Plsql.text(java.time.OffsetDateTime.parse("2026-01-02T03:04:05Z"), "YYYY"));
+    assertEquals("202601", Plsql.text(LocalDateTime.of(2026, 1, 2, 3, 4), "YYYYMM"));
+    org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class,
+        () -> Plsql.text(new BigDecimal("1"), "YYYY"));
+  }
+
+  @Test
+  void likeMatchesAcrossLineBreaks() {
+    assertTrue(Plsql.like("a\nb", "a%"));
+    assertTrue(Plsql.like("a\nb", "a_b"));
+    assertFalse(Plsql.like("a\nb", "b%"));
+  }
 }

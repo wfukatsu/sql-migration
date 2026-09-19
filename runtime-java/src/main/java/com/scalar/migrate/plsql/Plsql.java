@@ -80,7 +80,14 @@ public final class Plsql {
 
   public static String text(Object value) {
     if (value == null) return "";
-    if (value instanceof BigDecimal d) return d.stripTrailingZeros().toPlainString();
+    if (value instanceof BigDecimal d) {
+      // Oracle's implicit TO_CHAR writes no zero before the point: 0.5 is '.5' and -0.5 is '-.5'. With Java's
+      // "0.5", every `'...' || number` below one came out one character longer than Oracle's
+      String plain = d.stripTrailingZeros().toPlainString();
+      if (plain.startsWith("0.")) return plain.substring(1);
+      if (plain.startsWith("-0.")) return "-" + plain.substring(2);
+      return plain;
+    }
     return String.valueOf(value);
   }
 
@@ -222,8 +229,16 @@ public final class Plsql {
       case "YYYY" -> "yyyy";
       default -> throw new UnsupportedOperationException("TO_CHAR format not mapped: " + format);
     };
-    if (value instanceof LocalDateTime d) return d.format(java.time.format.DateTimeFormatter.ofPattern(pattern));
-    return text(value);
+    java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern(pattern);
+    if (value instanceof LocalDateTime d) return d.format(formatter);
+    if (value instanceof java.time.LocalDate d) return d.atStartOfDay().format(formatter);
+    if (value instanceof java.time.OffsetDateTime d) return d.toLocalDateTime().format(formatter);
+    if (value instanceof java.time.Instant d) return d.atOffset(java.time.ZoneOffset.UTC).toLocalDateTime().format(formatter);
+    // A date format applied to something that is not a date. It used to fall through to text(value) and return
+    // the value's default rendering -- `TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD')` gave `2026-09-19T15:11:33.746771Z`,
+    // a wrong string and no error
+    throw new UnsupportedOperationException(
+        "TO_CHAR(" + value.getClass().getSimpleName() + ", '" + format + "') is not mapped");
   }
 
   /** Coerce to Oracle's NUMBER. Generated code uses it wherever a literal or a ternary lands in a NUMBER. */
@@ -472,7 +487,9 @@ public final class Plsql {
       else if (c == '_') regex.append('.');
       else regex.append(java.util.regex.Pattern.quote(String.valueOf(c)));
     }
-    return text(value).matches(regex.toString());
+    // DOTALL: `%` and `_` match a line break in Oracle; Java's `.` does not unless told to
+    return java.util.regex.Pattern.compile(regex.toString(), java.util.regex.Pattern.DOTALL)
+        .matcher(text(value)).matches();
   }
   /**
    * `FETCH c BULK COLLECT INTO v LIMIT n` が回していた分割読みの、移行先での形（#14）。
