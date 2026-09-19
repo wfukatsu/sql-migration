@@ -17,6 +17,7 @@ SQL → ScalarDB SQL 移行ツールの構成と、変換・実行計画・実�
 11. [検証基盤（difftest）](#11-検証基盤difftest)
 12. [トランザクションと整合性](#12-トランザクションと整合性)
 13. [性能の特性](#13-性能の特性)
+14. [移行の流れのスキル（migrate-flow / plsql-spec / plsql-migrate）](#14-移行の流れのスキルmigrate-flow--plsql-spec--plsql-migrate)
 
 ---
 
@@ -767,3 +768,68 @@ flowchart LR
 ```
 
 改善の優先順位と根拠は [dml-followup-research.md](dml-followup-research.md) の 4 章を参照。
+
+---
+
+## 14. 移行の流れのスキル（migrate-flow / plsql-spec / plsql-migrate）
+
+PL/SQL / SQL の移行を、Claude Code から決まった順で進めるためのスキル群。変換そのものは `plsql/` と
+`scalardb_migrate/` の決定的なコードが行い、スキルは**順番、人への確認、文書、承認**を受け持つ。
+
+### 14.1 段階と承認
+
+```mermaid
+flowchart LR
+    S1["1. 現行の仕様<br/>plsql-spec"] --> G1{{"承認 spec"}}
+    G1 --> S2["2. 変換と人の判断<br/>plsql-migrate / sql-transpile"] --> G2{{"承認 decisions"}}
+    G2 --> S3["3. 変換後の仕様<br/>何がどう変わったか"] --> G3{{"承認 converted"}}
+    G3 --> S4["4. テスト<br/>コンパイル + 実 DB での比較"]
+    S4 -.->|"比較の結果を文書に入れる"| S3
+```
+
+`skills/migrate-flow/scripts/flow.py` が、1 つの移行の作業ディレクトリ（`<out>/flow.yaml`）に状態を持つ。
+
+| 仕組み | 中身 |
+|---|---|
+| 段階の検査 | 承認に出せるのは、その段階の検査が通ったものだけ: 未記入が無い、Mermaid の図が入っている、事実の欄が古くない（`spec_facts.check` / `migration_doc.check`）、変換できなかった文が残っていない、決めた人のいない「決定」が無い |
+| 順番 | `approve` は前の段階が承認済みでなければ断る。`gate` は 3 つの承認がそろうまで閉じている |
+| 承認の記録 | 承認した人（役割）・日付・**承認したときのファイルの指紋**（SHA-256）・対象のファイル。未決の判断（記録の未決の項目、判定が REVIEW の routine）を残して進めるなら、利用者が決めた理由も控える |
+| 承認の失効 | 指紋が合わなくなった承認は「古い」になり、`gate` が閉じる。承認を取り直すと、前のテストの結果は消える（別の中身を確かめたものだから） |
+
+### 14.2 事実の欄と文章
+
+仕様書（`plsql-spec`）と変換後の文書（`plsql-migrate` の Step 7）は同じ作りをしている。
+
+```mermaid
+flowchart TD
+    SRC["PL/SQL の原文"] --> IR["plsql.cli<br/>program.ir.json / decisions.json"]
+    IR --> F1["spec_facts.py facts<br/>引数・表・SQL・エラーコード・trigger<br/>+ Mermaid（処理の流れ、routine と表、呼び出し）"]
+    SRC --> GEN["plsql.generate<br/>Java / generation-report.json"]
+    GEN --> F2["migration_doc.py facts<br/>Java の入口・文の対応・判定ルール・決定・比較<br/>+ Mermaid（全体の形、1 回の呼び出し、変換前 → 変換後）"]
+    IR --> F2
+    DEC["limits.yaml / 記録 / plsql-diff.json"] --> F2
+    F1 --> MD1["spec/*.md<br/>事実の欄 + 文章"]
+    F2 --> MD2["docs/*.md<br/>事実の欄 + 文章"]
+    M["モデルが原文と生成物を読んで書く<br/>動作・業務ルール・変わったこと・制限"] --> MD1
+    M --> MD2
+    MD1 --> C1["check"]
+    MD2 --> C2["check"]
+```
+
+- **事実の欄**（`<!-- facts:begin ID -->` 〜 `<!-- facts:end ID -->`）は機械的に出す。作り直しても、欄の外の文章には触れない。
+  lowering が IR に足した文（trigger の織り込み、そのための読み取り、行数上限の RAISE）は node の id の形で見分けて、
+  現行の仕様からは外す。変換前の文は、解析が書き換えたあとの IR ではなく原文から引く（`--src`）
+- **文章**はモデルが書き、`check` が事実と突き合わせる: 未記入、古い事実、文章に出てこないエラーコード・書き込む表・
+  判定の理由（ルール ID）・受け入れた差のシナリオ・決定の名前、routine の範囲の外を指す `ファイル:行`、生成物に無い
+  `.java` の名前、比較を渡していないのに「比べていない」と書いていない「制限」
+- **何がどう変わったか**は、文ごとの診断コードを `migration_doc.py` の `CHANGES` で 3 つに分ける: 意味が変わる
+  （行ロック → 楽観制御、routine の中の COMMIT、trigger の経路、行数の上限…）/ 形が変わるが結果は同じ
+  （`SET col = col ± x` の分割、MERGE の分割…）/ 情報。表に無いコードは「未分類」と出る。corpus に未分類が無いことを
+  テストが確かめるので、診断を足したら分類も足すことになる
+
+### 14.3 人への確認
+
+判断を求めるとき（行数の上限、OPS / CALL / BIZ 項目、REDESIGN の直し方、Oracle との差を受け入れるか、承認）は、
+どのスキルも同じ形をとる: **何を決めるか / 推奨 / 理由 / 選択肢ごとの影響 / 決めないとどうなるか / 誰が答える問いか**。
+記録に「決定」と書けるのは、決めた人と日付があるときだけで（`decision_items.py`）、承認も同じ（`flow.py`）。
+
