@@ -256,6 +256,15 @@ public final class Plsql {
       // 保てるので、この変換の対象ではない。
       return moment.toLocalDateTime();
     }
+    if (value instanceof java.time.OffsetDateTime moment && type.equals("TIMESTAMPTZ")) {
+      // TIMESTAMPTZ 列へは**瞬間**として渡す。ScalarDB SQL のドライバは OffsetDateTime を型ごと
+      // 拒否する（DB-SQL-10016。`record_payment` の `paid_at = SYSTIMESTAMP` で実際に落ちた）。
+      //
+      // **失われるものが 1 つある: 元の offset である。** Oracle の TIMESTAMP WITH TIME ZONE は
+      // 瞬間と offset の両方を持つが、ScalarDB の TIMESTAMPTZ は瞬間だけを持つ。読み戻すと同じ
+      // 瞬間の別の表記（UTC）になる。瞬間は同じなので、比較・並べ替え・差は変わらない。
+      return moment.toInstant();
+    }
     BigDecimal decimal = value instanceof BigDecimal d ? d
         : value instanceof Number n ? OracleNumbers.toBigDecimal(n) : null;
     if (decimal == null) return value;  // TEXT, DATE, TIMESTAMPTZ and the like pass through untouched
