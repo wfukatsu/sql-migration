@@ -154,4 +154,31 @@ class PlsqlTest {
       Plsql.setClock(LocalDateTime::now);
     }
   }
+  // --- 日時の算術（2026-09-19 / prc_purge_audit）--------------------------------------------------
+
+  @Test
+  void aTimestampMinusDaysIsADate() {
+    // `SYSTIMESTAMP - 30` は 30 日前の DATE。秒未満は落ち、ゾーンは変換しない（castDate と同じ規則）
+    var now = java.time.OffsetDateTime.of(2026, 1, 15, 9, 30, 0, 123_000_000, java.time.ZoneOffset.ofHours(9));
+    assertEquals(LocalDateTime.of(2025, 12, 16, 9, 30, 0), Plsql.sub(now, 30));
+  }
+
+  @Test
+  void aDatePlusAFractionOfADayMovesBySeconds() {
+    // DATE は秒までしか持たないので、日数の端数は秒に丸める
+    assertEquals(LocalDateTime.of(2026, 1, 15, 21, 30, 0),
+        Plsql.add(LocalDateTime.of(2026, 1, 15, 9, 30, 0), new BigDecimal("0.5")));
+  }
+
+  @Test
+  void twoDatesStillSubtractIntoDays() {
+    assertEquals(0, new BigDecimal("1.5").compareTo((BigDecimal) Plsql.sub(
+        LocalDateTime.of(2026, 1, 16, 21, 0, 0), LocalDateTime.of(2026, 1, 15, 9, 0, 0))));
+  }
+
+  @Test
+  void numbersAreUnchanged() {
+    assertEquals(0, new BigDecimal("3").compareTo((BigDecimal) Plsql.sub(5, 2)));
+    assertNull(Plsql.add(null, 1));
+  }
 }

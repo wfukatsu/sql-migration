@@ -119,8 +119,34 @@ public final class Plsql {
    * arithmetic through here is what lets a generated expression mix a literal, an {@code Integer} and a
    * {@code BigDecimal} the way the PL/SQL did.
    */
-  public static BigDecimal add(Object a, Object b) {
+  /**
+   * `a + b`。**日時 + 数値は「日数を足した DATE」**である（Oracle は TIMESTAMP を DATE に変えてから
+   * 足す）。数値どうしは NUMBER の足し算。
+   *
+   * <p>戻り値が {@code Object} なのは、日時の算術が日時を返すからである。以前は BigDecimal に
+   * 決め打ちしていて、`SYSTIMESTAMP - p_keep_days` を WHERE の値として持ち上げた瞬間に、日時を
+   * 数値に直そうとして落ちた（`prc_purge_audit` / 2026-09-19）。
+   */
+  public static Object add(Object a, Object b) {
+    if (isTemporal(a) && b instanceof Number days) return shiftDays(a, days, 1);
+    if (a instanceof Number days && isTemporal(b)) return shiftDays(b, days, 1);
     return arith(a, b, BigDecimal::add);
+  }
+
+  private static boolean isTemporal(Object value) {
+    return value instanceof LocalDateTime || value instanceof java.time.OffsetDateTime;
+  }
+
+  /**
+   * DATE に日数を足し引きする。TIMESTAMP WITH TIME ZONE は、その値自身の時刻のまま DATE になる
+   * （ゾーン変換はしない、秒未満は落ちる——`castDate` と同じ規則。#13 で実測）。日数の端数は
+   * 秒に丸める。DATE が秒までしか持たないからである。
+   */
+  private static LocalDateTime shiftDays(Object value, Number days, int sign) {
+    LocalDateTime base = castDate(value);
+    long seconds = new BigDecimal(days.toString()).multiply(BigDecimal.valueOf(86400))
+        .setScale(0, java.math.RoundingMode.HALF_UP).longValueExact();
+    return base.plusSeconds(sign * seconds);
   }
 
   /**
@@ -153,12 +179,14 @@ public final class Plsql {
     return decimal.negate();
   }
 
-  public static BigDecimal sub(Object a, Object b) {
-    if (a instanceof LocalDateTime x && b instanceof LocalDateTime y) {
+  public static Object sub(Object a, Object b) {
+    if (isTemporal(a) && isTemporal(b)) {
       // Oracle subtracts two DATEs into a number of days, fraction included
-      return BigDecimal.valueOf(java.time.Duration.between(y, x).toSeconds())
+      return BigDecimal.valueOf(java.time.Duration.between(castDate(b), castDate(a)).toSeconds())
           .divide(BigDecimal.valueOf(86400), OracleNumbers.NUMBER);
     }
+    // `SYSTIMESTAMP - 30` は 30 日前の DATE である。日数として数値に直すと落ちる
+    if (isTemporal(a) && b instanceof Number days) return shiftDays(a, days, -1);
     return arith(a, b, BigDecimal::subtract);
   }
 
@@ -227,6 +255,15 @@ public final class Plsql {
       // ScalarDB SQL のドライバが型ごと拒否する（DB-SQL-10016）。TIMESTAMPTZ 列はタイムゾーンを
       // 保てるので、この変換の対象ではない。
       return moment.toLocalDateTime();
+    }
+    if (value instanceof java.time.OffsetDateTime moment && type.equals("TIMESTAMPTZ")) {
+      // TIMESTAMPTZ 列へは**瞬間**として渡す。ScalarDB SQL のドライバは OffsetDateTime を型ごと
+      // 拒否する（DB-SQL-10016。`record_payment` の `paid_at = SYSTIMESTAMP` で実際に落ちた）。
+      //
+      // **失われるものが 1 つある: 元の offset である。** Oracle の TIMESTAMP WITH TIME ZONE は
+      // 瞬間と offset の両方を持つが、ScalarDB の TIMESTAMPTZ は瞬間だけを持つ。読み戻すと同じ
+      // 瞬間の別の表記（UTC）になる。瞬間は同じなので、比較・並べ替え・差は変わらない。
+      return moment.toInstant();
     }
     BigDecimal decimal = value instanceof BigDecimal d ? d
         : value instanceof Number n ? OracleNumbers.toBigDecimal(n) : null;

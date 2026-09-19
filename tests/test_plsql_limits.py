@@ -241,3 +241,32 @@ def test_the_decided_routine_converts_and_says_what_the_caller_must_do():
                  if s.kind == "SqlOperation"]
     assert not [d for s in undecided for d in s.diagnostics if d.code == "OPTIMISTIC"], \
         "決めていない routine が楽観制御へ移されている"
+
+
+def test_every_row_lock_decision_is_about_something():
+    """記録された routine は、**落とす行ロックか、割る読み書き**を実際に持っていなければならない。
+
+    何も持たない routine の記録は、決定ではなく書き間違いである。実際に一度あった——
+    `transactions.perIteration` に足すつもりの `prc_reprice_all` が、同じ見出しの下にある別の欄
+    （`rowLocks.optimistic`）にも入ってしまい、**誰も決めていない「行ロックを落とす」決定**として
+    マージされた（2026-09-19 に気づいて外した）。
+    """
+    import pathlib
+
+    from plsql.limits import RowLocks
+    from plsql.lower import _walk
+    from plsql.report import analyse as build_analysis
+
+    fixtures = pathlib.Path(__file__).resolve().parent.parent / "fixtures" / "plsql"
+    locks = RowLocks.load(CONFIG)
+    corpus = build_analysis(fixtures / "src", fixtures / "src" / "schema.sql",
+                            scalardb_schema=fixtures / "scalardb-schema.json", row_locks=locks)
+    by_id = {r.id: r for _, r in corpus.routines()}
+    empty = []
+    for routine_id in locks.optimistic:
+        statements = _walk(by_id[routine_id].body)
+        if not any(getattr(s, "locking_mode", None) or
+                   any(d.code in ("RMW_SPLIT", "OPTIMISTIC") for d in s.diagnostics)
+                   for s in statements):
+            empty.append(routine_id)
+    assert empty == [], f"行ロックも読み書きも持たない routine が記録されている: {empty}"

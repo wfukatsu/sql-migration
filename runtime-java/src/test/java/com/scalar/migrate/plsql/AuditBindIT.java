@@ -73,4 +73,32 @@ class AuditBindIT {
     assertEquals(LocalDateTime.of(2026, 1, 15, 9, 30, 0), rows.get(0).get("changed_at"));
     assertEquals("SOURCE", rows.get(0).get("changed_by"));
   }
+  @Test
+  void theMomentReachesATimestamptzColumnAsTheSameInstant() throws Exception {
+    // `record_payment` の `paid_at = SYSTIMESTAMP`。TIMESTAMPTZ 列へは瞬間として渡す。
+    // **同じ瞬間が戻ってくるか**を確かめる——offset は保たれない（Oracle とはそこが違う）
+    OffsetDateTime paid = OffsetDateTime.of(2026, 1, 15, 9, 30, 0, 0, ZoneOffset.ofHours(9));
+    runner.execute("INSERT INTO customers (customer_id, name, tier) VALUES (1, 'A', 'GOLD')");
+    runner.execute("INSERT INTO orders (order_id, customer_id, status) VALUES (1001, 1, 'NEW')");
+    runner.commit();
+    String sql = "INSERT INTO payments (payment_id, order_id, amount, method, paid_at) "
+        + "VALUES (?, ?, ?, ?, ?)";
+    try (PreparedStatement statement = runner.connection().prepareStatement(sql)) {
+      statement.setObject(1, 5001L);
+      statement.setObject(2, 1001L);
+      statement.setObject(3, Plsql.bind(new java.math.BigDecimal("99.99"), "BIGINT", 2));
+      statement.setObject(4, "CARD");
+      statement.setObject(5, Plsql.bind(paid, "TIMESTAMPTZ", 0));
+      statement.executeUpdate();
+    }
+    runner.commit();
+
+    List<Map<String, Object>> rows = runner.select("SELECT paid_at FROM payments WHERE payment_id = 5001");
+    runner.commit();
+    Object stored = rows.get(0).get("paid_at");
+    java.time.Instant instant = stored instanceof java.time.Instant i ? i
+        : stored instanceof OffsetDateTime o ? o.toInstant()
+        : ((java.sql.Timestamp) stored).toInstant();
+    assertEquals(paid.toInstant(), instant, "TIMESTAMPTZ 列に書いた瞬間が変わっている: " + stored);
+  }
 }

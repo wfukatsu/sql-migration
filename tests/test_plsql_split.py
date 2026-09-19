@@ -48,7 +48,9 @@ def test_the_decision_is_recorded_as_data():
     assert boundaries.decided("prc_nightly_close")
     assert boundaries.decided("pkg_bulk_load.restock")
     assert boundaries.decided("prc_reprice_all"), "#3 §E が名指ししている routine である"
-    assert not boundaries.decided("prc_purge_audit")
+    # TX-001 の routine は 2026-09-19 までに全部決まった。「書いていなければ決まっていない」を見る
+    assert boundaries.decided("prc_purge_audit")
+    assert not boundaries.decided("prc_not_recorded")
     assert "1 受注 = 1 トランザクション" in boundaries.why("prc_nightly_close")
 
 
