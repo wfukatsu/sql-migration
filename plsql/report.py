@@ -14,6 +14,7 @@ synthetic corpus (§9 of the plan), so the report repeats that caveat rather tha
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,7 +28,37 @@ from .source import Issue
 from .symbols import OracleSchema, SymbolTable, build, public_routines
 
 SARIF_LEVEL = {"ERROR": "error", "WARN": "warning", "INFO": "note"}
-BODY_SUFFIXES = {".pkb", ".prc", ".fnc", ".trg"}
+BODY_SUFFIXES = {".pkb", ".prc", ".fnc", ".trg", ".pls"}
+SPEC_SUFFIX = ".pks"
+# a `.sql` file is a body when it creates a PL/SQL unit. The schema DDL is `.sql` too, which is why the suffix
+# alone cannot decide -- but skipping every `.sql` left a routine kept in one out of the analysis without a word
+_CREATES_UNIT = re.compile(r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:(?:NON)?EDITIONABLE\s+)?"
+                           r"(?:PACKAGE\s+BODY|PROCEDURE|FUNCTION|TRIGGER)\b", re.IGNORECASE | re.MULTILINE)
+
+
+def _sibling(path: Path, suffix: str) -> Path | None:
+    """`pkg_a.PKS` beside `pkg_a.pkb`: the same stem, the suffix in any case."""
+    return next((p for p in sorted(path.parent.iterdir())
+                 if p.stem == path.stem and p.suffix.lower() == suffix and p != path), None)
+
+
+def source_bodies(root: Path, schema_ddl: str | Path | None = None) -> list[Path]:
+    """The files that hold a routine body, whatever the case of the suffix (`frontend.SOURCE_SUFFIXES` folds the
+    case; this used not to, so `PKG_A.PKB` was parsed for KPI-1 and never analysed)."""
+    ddl = Path(schema_ddl).resolve() if schema_ddl else None
+    bodies = []
+    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+        suffix = path.suffix.lower()
+        if suffix in BODY_SUFFIXES:
+            bodies.append(path)
+        elif suffix == ".sql" and path.resolve() != ddl:
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if _CREATES_UNIT.search(text):
+                bodies.append(path)
+    return bodies
 
 
 @dataclass
@@ -90,25 +121,25 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
                         schema_snapshot=schema.snapshot if schema else None)
     analysis = Analysis(program=program, schema=schema)
 
-    for body in sorted(p for p in root.rglob("*") if p.suffix in BODY_SUFFIXES):
-        spec = body.with_suffix(".pks")
+    for body in source_bodies(root, schema_ddl):
+        spec = _sibling(body, SPEC_SUFFIX)
         public: set[str] = set()
-        if spec.exists():
+        if spec is not None:
             # the specification is parsed for its public names, and counted: KPI-1's denominator is every
             # source file, so leaving it out of `parsed` would quietly shrink the parse rate's denominator
             parsed_spec = parse_file(spec)
             analysis.parsed.append(parsed_spec)
             public = public_routines(parsed_spec)
         parsed = parse_file(body)
-        symbols = build(parsed, schema, public, spec=parsed_spec if spec.exists() else None)
+        symbols = build(parsed, schema, public, spec=parsed_spec if spec is not None else None)
         analysis.parsed.append(parsed)
         analysis.symbols.append(symbols)
         program.modules.extend(lower_file(parsed, symbols, schema, public))
         program.unresolved.extend(symbols.unresolved)
 
     # a specification with no body is still an asset: it declares an interface nothing implements here
-    for spec in sorted(root.rglob("*.pks")):
-        if spec.with_suffix(".pkb").exists():
+    for spec in sorted(p for p in root.rglob("*") if p.suffix.lower() == SPEC_SUFFIX):
+        if _sibling(spec, ".pkb") is not None:
             continue
         parsed = parse_file(spec)
         analysis.parsed.append(parsed)
