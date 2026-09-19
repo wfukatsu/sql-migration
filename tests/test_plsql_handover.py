@@ -15,6 +15,7 @@ from plsql.gen_java import emit, project
 from plsql.generate import main as generate
 
 SRC = "fixtures/plsql/src"
+LIMITS = "fixtures/plsql/limits.yaml"
 DOCS = Path("docs")
 
 
@@ -36,15 +37,34 @@ def test_the_default_banner_says_not_to_edit(tmp_path):
 
 
 def test_the_handover_banner_does_not(tmp_path):
-    assert generate([SRC, "--out-dir", str(tmp_path), "--handover", "--quiet"]) in (0, 1)
+    assert generate([SRC, "--out-dir", str(tmp_path), "--handover", "--limits", LIMITS, "--quiet"]) in (0, 1)
     header = header_of(tmp_path)
     assert "Do not edit" not in header
     assert "maintained by hand" in header
 
 
+def test_a_handover_is_refused_while_a_decision_that_changes_the_code_is_open(tmp_path, capsys):
+    """#7: the moment to switch is a condition, not a date. Without the project's decisions every redesign is
+    open, and a tree handed over now would have those decisions re-applied by hand later."""
+    assert generate([SRC, "--out-dir", str(tmp_path), "--handover", "--quiet"]) == 1
+    assert not list(tmp_path.rglob("*.java")), "a refused handover must not leave a tree somebody starts editing"
+    said = capsys.readouterr().err
+    assert "prc_remote_sync: 再設計が未決定" in said and "prc_nightly_close: 再設計が未決定" in said and "--handover-anyway" in said
+
+
+def test_the_corpus_with_its_decisions_recorded_can_be_handed_over(tmp_path):
+    assert generate([SRC, "--out-dir", str(tmp_path), "--handover", "--limits", LIMITS, "--quiet"]) == 0
+    assert "maintained by hand" in header_of(tmp_path)
+
+
+def test_somebody_who_knows_the_cost_can_hand_over_anyway(tmp_path):
+    assert generate([SRC, "--out-dir", str(tmp_path), "--handover-anyway", "--quiet"]) in (0, 1)
+    assert "maintained by hand" in header_of(tmp_path)
+
+
 def test_the_handover_banner_keeps_what_stays_true(tmp_path):
     """Where the code came from: that is what makes it reviewable against the PL/SQL it replaced."""
-    generate([SRC, "--out-dir", str(tmp_path), "--handover", "--quiet"])
+    generate([SRC, "--out-dir", str(tmp_path), "--handover", "--limits", LIMITS, "--quiet"])
     header = header_of(tmp_path)
     assert "Source:" in header
     assert "traceability.csv" in header
@@ -52,7 +72,7 @@ def test_the_handover_banner_keeps_what_stays_true(tmp_path):
 
 
 def test_a_run_carries_one_banner_not_two(tmp_path):
-    generate([SRC, "--out-dir", str(tmp_path), "--handover", "--quiet"])
+    generate([SRC, "--out-dir", str(tmp_path), "--handover", "--limits", LIMITS, "--quiet"])
     banners = {"\n".join(p.read_text(encoding="utf-8").splitlines()[:1])
                for p in Path(tmp_path).rglob("*.java")}
     assert len(banners) == 1, banners

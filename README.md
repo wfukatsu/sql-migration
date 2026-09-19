@@ -81,7 +81,8 @@ flowchart LR
 # 判定・レポート・トレーサビリティ
 python -m plsql.cli fixtures/plsql/src --out-dir out/plsql     --evidence difftest/work/plsql-diff.json --generated generated
 
-# Java を生成する（--limits で走査行数の上限、--handover で引き渡し版の見出し）
+# Java を生成する（--limits でプロジェクトの決定を渡す。--handover は引き渡し版の見出しに替える。
+# 決まると生成コードが変わるもの（REVIEW、未決定の REDESIGN）が残っていれば、--handover は何も書かずに拒否する）
 python -m plsql.generate fixtures/plsql/src --out-dir generated --limits fixtures/plsql/limits.yaml
 
 # 生成物が javac を通ることまで確かめる（JVM と Gradle が要る。落ちた routine を名指しして 1 を返す）
