@@ -1,0 +1,10 @@
+{
+  "shop.customers": {"transaction": true, "partition-key": ["customer_id"],
+    "columns": {"customer_id": "BIGINT", "name": "TEXT"}},
+  "shop.products": {"transaction": true, "partition-key": ["product_id"],
+    "columns": {"product_id": "BIGINT", "stock_quantity": "BIGINT", "unit_price": "DOUBLE", "updated_at": "TIMESTAMP"}},
+  "shop.orders": {"transaction": true, "partition-key": ["order_id"],
+    "columns": {"order_id": "BIGINT", "customer_id": "BIGINT", "order_date": "TIMESTAMP", "status": "TEXT", "total_amount": "DOUBLE"}},
+  "shop.order_items": {"transaction": true, "partition-key": ["order_id"], "clustering-key": ["line_no ASC"],
+    "columns": {"order_id": "BIGINT", "line_no": "INT", "product_id": "BIGINT", "quantity": "BIGINT", "unit_price": "DOUBLE"}}
+}

@@ -103,6 +103,31 @@ REMOTE_TABLES = {"warehouse.orders": "orders@warehouse_link",
 SEQUENCES = {"seq_order_id": 1000, "seq_payment_id": 5000, "seq_audit_id": 1, "seq_tx_id": 1}
 
 
+def use_project(directory: str | Path) -> Path:
+    """Point the harness at a project other than the corpus: `<dir>/src` (with `schema.sql`) and `<dir>/scenarios`.
+
+    The corpus lists its tables, sequences and deploy order by hand because they carry decisions (parents before
+    children, specs before the bodies that need them). A project that arrives from outside has no such list, so
+    they are read off its DDL and its file names. Connect as that project's own Oracle user
+    (`SRC_ORACLE_USER` / `SRC_ORACLE_PASSWORD`): deploy drops and recreates every table the DDL names.
+    """
+    global SRC, SCENARIOS, TABLES, SEQUENCES, DEPLOY_ORDER, REMOTE_TABLES
+    root = Path(directory).resolve()
+    SRC, SCENARIOS = root / "src", root / "scenarios"
+    ddl = (SRC / "schema.sql").read_text(encoding="utf-8")
+    ddl = re.sub(r"--[^\n]*", "", ddl)
+    TABLES = [m.lower() for m in re.findall(r"CREATE\s+TABLE\s+([A-Za-z_][\w$#]*)", ddl, re.IGNORECASE)]
+    SEQUENCES = {}
+    for name, rest in re.findall(r"CREATE\s+SEQUENCE\s+([A-Za-z_][\w$#]*)([^;]*);", ddl, re.IGNORECASE):
+        start = re.search(r"START\s+WITH\s+(\d+)", rest, re.IGNORECASE)
+        SEQUENCES[name.lower()] = int(start.group(1)) if start else 1
+    units = sorted(p for p in SRC.rglob("*") if p.suffix in {".pks", ".pkb", ".prc", ".fnc", ".trg"})
+    order = {".pks": 0, ".fnc": 1, ".prc": 1, ".pkb": 2, ".trg": 3}   # a spec before whatever calls it
+    DEPLOY_ORDER = [str(p.relative_to(SRC)) for p in sorted(units, key=lambda p: (order[p.suffix], p.name))]
+    REMOTE_TABLES = {}
+    return root
+
+
 # --------------------------------------------------------------------------------------------------
 # canonical encoding (same shapes as difftest/golden.py)
 # --------------------------------------------------------------------------------------------------
@@ -457,12 +482,15 @@ def main(argv=None) -> int:
 
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--profile", action="append", metavar="DIALECT=PATH")
+    common.add_argument("--project", metavar="DIR",
+                        help="a project other than the corpus: DIR/src (with schema.sql) and DIR/scenarios; "
+                             "captures go to DIR/golden. Connect as that project's own user")
 
     p = sub.add_parser("deploy", parents=[common], help="create the schema and compile the corpus")
     p.set_defaults(func=deploy)
 
     p = sub.add_parser("run", parents=[common], help="run scenarios and write captures")
-    p.add_argument("--out", default=str(FIXTURES / "golden"))
+    p.add_argument("--out", default=None, help="default: fixtures/plsql/golden, or DIR/golden with --project")
     p.add_argument("--scenario", help="run only this scenario")
     p.add_argument("--sys-user", default="system", help="privileged user for ALTER SYSTEM SET FIXED_DATE")
     p.add_argument("--sys-password-env", default=SYS_PASSWORD_ENV,
@@ -475,6 +503,9 @@ def main(argv=None) -> int:
     p.set_defaults(func=list_scenarios)
 
     args = ap.parse_args(argv)
+    project = use_project(args.project) if args.project else None
+    if getattr(args, "out", "set") is None:
+        args.out = str((project or FIXTURES) / "golden")
     try:
         return args.func(args)
     except ProfileError as e:

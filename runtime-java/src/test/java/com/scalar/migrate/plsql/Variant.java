@@ -18,19 +18,36 @@ final class Variant {
   static final String NAME = System.getProperty("plsql.variant", "scaled");
   static final boolean DOUBLE = NAME.equals("double");
 
-  static final String NAMESPACE = DOUBLE ? "plsqlpoc_dbl" : "plsqlpoc";
+  /**
+   * A project other than the corpus ({@code -Dplsql.project=DIR -Dplsql.namespace=NS}): its scenarios, its
+   * schema and its captures live under DIR, laid out as {@code difftest/plsql_run.py --project} expects. Null
+   * for the corpus.
+   */
+  static final Path PROJECT = System.getProperty("plsql.project") == null
+      ? null : Path.of(System.getProperty("plsql.project"));
+
+  static final String NAMESPACE = PROJECT != null
+      ? java.util.Objects.requireNonNull(System.getProperty("plsql.namespace"), "plsql.project needs plsql.namespace")
+      : DOUBLE ? "plsqlpoc_dbl" : "plsqlpoc";
+
+  static final Path SCENARIOS = PROJECT != null ? PROJECT.resolve("scenarios")
+      : Path.of("..", "fixtures", "plsql", "scenarios");
+
+  static final Path GOLDEN = PROJECT != null ? PROJECT.resolve("golden")
+      : Path.of("..", "fixtures", "plsql", "golden");
 
   static final Path PROPERTIES = Path.of("..", "difftest", "conf", "scalardb-sql-jdbc.properties");
 
-  static final Path SCHEMA = DOUBLE
+  static final Path SCHEMA = PROJECT != null ? PROJECT.resolve("scalardb-schema.json") : DOUBLE
       ? Path.of("..", "difftest", "work", "plsql-schema-double.json")
       : Path.of("..", "fixtures", "plsql", "scalardb-schema.json");
 
-  static final Path SETUP = DOUBLE
+  static final Path SETUP = PROJECT != null ? PROJECT.resolve("work").resolve("plsql-setup.json") : DOUBLE
       ? Path.of("..", "difftest", "work", "plsql-setup-double.json")
       : Path.of("..", "difftest", "work", "plsql-setup.json");
 
-  static final Path CAPTURES = Path.of("..", "difftest", "work", "plsql-scalardb-" + NAME);
+  static final Path CAPTURES = PROJECT != null ? PROJECT.resolve("work").resolve("plsql-scalardb-" + NAME)
+      : Path.of("..", "difftest", "work", "plsql-scalardb-" + NAME);
 
   /** A generated file that binds a money column, used to tell which variant the tree was built for. */
   private static final Path WITNESS = Path.of("..", "generated", "src", "main", "java", "com", "example",
@@ -45,6 +62,9 @@ final class Variant {
    * testing the other is an easy mistake to make and a slow one to diagnose.
    */
   static void assertGeneratedForThisVariant() {
+    if (PROJECT != null) {
+      return;   // the witness is a corpus class; a project has one schema and is generated against it
+    }
     String source;
     try {
       source = java.nio.file.Files.readString(WITNESS);

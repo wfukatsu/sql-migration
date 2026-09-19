@@ -45,7 +45,7 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 @EnabledIfEnvironmentVariable(named = "SCALARDB_IT", matches = "1")
 @EnabledIfSystemProperty(named = "plsql.generated", matches = "1")
 class ScalarDbCaptureIT {
-  private static final Path SCENARIOS = Path.of("..", "fixtures", "plsql", "scenarios");
+  private static final Path SCENARIOS = Variant.SCENARIOS;
   private static final String PACKAGE = "com.example.migrated";
 
   private static final String VARIANT = Variant.NAME;
@@ -382,7 +382,7 @@ class ScalarDbCaptureIT {
      * 1 つにする。
      */
     private static Object oracleSessionUser(Scenario scenario) {
-      Path golden = Path.of("..", "fixtures", "plsql", "golden", scenario.name() + ".json");
+      Path golden = Variant.GOLDEN.resolve(scenario.name() + ".json");
       try {
         Map<?, ?> capture = new com.google.gson.Gson()
             .fromJson(java.nio.file.Files.readString(golden), Map.class);

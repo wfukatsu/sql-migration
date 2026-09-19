@@ -1,0 +1,23 @@
+name: create_order_fractional_quantity
+unit: create_order
+routine: create_order
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+  sequences:
+    order_seq: 1
+setup:
+- INSERT INTO customers (customer_id, name) VALUES (1, 'Acme')
+- INSERT INTO products (product_id, stock_quantity, unit_price, updated_at) VALUES (10, 10, 19.99, NULL)
+call:
+  kind: procedure
+  name: create_order
+  args:
+    p_customer_id: 1
+    p_product_id: 10
+    p_quantity: 2.5
+  out:
+    p_order_id: NUMBER
+mask:
+  products:
+  - updated_at
+note: p_quantity は NUMBER なので小数が通る。金額は ROUND(…, 2)、NUMBER(10) の列へは Oracle が丸めて入れる

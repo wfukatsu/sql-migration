@@ -119,6 +119,17 @@ sourceSets {
             srcDir file("${generatedDir}/src/main/resources")
         }
     }
+    // `-Dplsql.project=DIR`: the generated tree is another project's, so the tests written against the corpus's
+    // own classes (they name `PkgCustomerCrudService` and friends) have nothing to compile against. The capture
+    // harness reaches generated code by reflection only, and is the one that runs for a project.
+    if (System.getProperty('plsql.project') != null) {
+        test {
+            java {
+                exclude '**/TransactionIT.java', '**/GeneratedDiffTest.java', '**/TriggerChecksIT.java',
+                        '**/AuditBindIT.java', '**/RmwIT.java', '**/TruncateIT.java'
+            }
+        }
+    }
 }
 
 test {
@@ -126,7 +137,7 @@ test {
     // Gradle runs tests in a forked JVM, so -D on the gradle command line does NOT reach @EnabledIfSystemProperty.
     // Without this, `gradle test -Dplsql.generated=1` disables the generated-code harnesses and the build passes
     // green having run nothing -- a silent skip that looks exactly like a pass.
-    for (String property : ['plsql.generated', 'plsql.variant']) {
+    for (String property : ['plsql.generated', 'plsql.variant', 'plsql.project', 'plsql.namespace']) {
         if (System.getProperty(property) != null) systemProperty property, System.getProperty(property)
     }
     testLogging { showStandardStreams = true }

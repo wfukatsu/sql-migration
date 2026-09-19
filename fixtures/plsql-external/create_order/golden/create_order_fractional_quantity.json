@@ -1,0 +1,119 @@
+{
+ "scenario": "create_order_fractional_quantity",
+ "unit": "create_order",
+ "routine": "create_order",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {
+   "order_seq": 1
+  }
+ },
+ "sessionUser": "SHOP",
+ "result": {
+  "returned": null,
+  "out": {
+   "p_order_id": 1
+  }
+ },
+ "exception": null,
+ "tables": {
+  "customers": {
+   "columns": [
+    "customer_id",
+    "name"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     "Acme"
+    ]
+   ]
+  },
+  "products": {
+   "columns": [
+    "product_id",
+    "stock_quantity",
+    "unit_price",
+    "updated_at"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "10"
+     },
+     {
+      "$dec": "8"
+     },
+     {
+      "$dec": "19.99"
+     },
+     {
+      "$masked": "clock the harness cannot pin"
+     }
+    ]
+   ]
+  },
+  "orders": {
+   "columns": [
+    "order_id",
+    "customer_id",
+    "order_date",
+    "status",
+    "total_amount"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     {
+      "$dec": "1"
+     },
+     {
+      "$ts": "2026-01-15T09:30:00"
+     },
+     "RECEIVED",
+     {
+      "$dec": "49.98"
+     }
+    ]
+   ]
+  },
+  "order_items": {
+   "columns": [
+    "order_id",
+    "line_no",
+    "product_id",
+    "quantity",
+    "unit_price"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     {
+      "$dec": "1"
+     },
+     {
+      "$dec": "10"
+     },
+     {
+      "$dec": "3"
+     },
+     {
+      "$dec": "19.99"
+     }
+    ]
+   ]
+  }
+ },
+ "masked": {
+  "products": [
+   "updated_at"
+  ]
+ }
+}

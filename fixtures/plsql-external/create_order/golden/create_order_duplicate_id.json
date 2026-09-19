@@ -1,0 +1,100 @@
+{
+ "scenario": "create_order_duplicate_id",
+ "unit": "create_order",
+ "routine": "create_order",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {
+   "order_seq": 5
+  }
+ },
+ "sessionUser": "SHOP",
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": {
+  "code": -20004,
+  "message": "ORA-20004: 受注番号が重複しました"
+ },
+ "tables": {
+  "customers": {
+   "columns": [
+    "customer_id",
+    "name"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     "Acme"
+    ]
+   ]
+  },
+  "products": {
+   "columns": [
+    "product_id",
+    "stock_quantity",
+    "unit_price",
+    "updated_at"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "10"
+     },
+     {
+      "$dec": "10"
+     },
+     {
+      "$dec": "19.99"
+     },
+     null
+    ]
+   ]
+  },
+  "orders": {
+   "columns": [
+    "order_id",
+    "customer_id",
+    "order_date",
+    "status",
+    "total_amount"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "5"
+     },
+     {
+      "$dec": "1"
+     },
+     {
+      "$ts": "2026-01-01T00:00:00"
+     },
+     "RECEIVED",
+     {
+      "$dec": "1"
+     }
+    ]
+   ]
+  },
+  "order_items": {
+   "columns": [
+    "order_id",
+    "line_no",
+    "product_id",
+    "quantity",
+    "unit_price"
+   ],
+   "rows": []
+  }
+ },
+ "masked": {
+  "products": [
+   "updated_at"
+  ]
+ }
+}

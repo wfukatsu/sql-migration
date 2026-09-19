@@ -206,15 +206,23 @@ def main(argv=None) -> int:
     ap.add_argument("--variant", choices=["scaled", "double"], default="scaled",
                     help="scaled writes money as an integer times 10^scale, matching Plsql.bind in the "
                          "generated repository; double writes it as it stands")
+    ap.add_argument("--project", metavar="DIR",
+                    help="a project other than the corpus: DIR/scenarios, DIR/src/schema.sql, DIR/limits.yaml, "
+                         "DIR/scalardb-schema.json; writes DIR/work/plsql-setup.json")
     args = ap.parse_args(argv)
+    project = Path(args.project).resolve() if args.project else ROOT / "fixtures" / "plsql"
+    scenario_dir = project / "scenarios"
+    if args.project:
+        args.schema = str(project / "scalardb-schema.json") if args.schema == str(SCHEMA) else args.schema
+        args.out = str(project / "work" / "plsql-setup.json") if args.out == str(OUT) else args.out
 
     registry = SchemaRegistry.from_schema_loader_json(args.schema)
-    decimals = decimal_columns(ROOT / "fixtures" / "plsql" / "src" / "schema.sql")
+    decimals = decimal_columns(project / "src" / "schema.sql")
     scales = decimals if args.variant == "scaled" else None
     rounded = decimals if args.variant == "double" else None
-    db_links = DbLinks.load(ROOT / "fixtures" / "plsql" / "limits.yaml")
+    db_links = DbLinks.load(project / "limits.yaml") if (project / "limits.yaml").exists() else None
     scenarios, unconvertible = {}, {}
-    for path in sorted(SCENARIOS.glob("*.yaml")):
+    for path in sorted(scenario_dir.glob("*.yaml")):
         spec = yaml.safe_load(path.read_text(encoding="utf-8"))
         try:
             scenarios[spec["name"]] = {"setup": convert(spec.get("setup") or [], registry, scales,

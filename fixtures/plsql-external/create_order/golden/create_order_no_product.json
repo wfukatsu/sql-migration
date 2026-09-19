@@ -1,0 +1,71 @@
+{
+ "scenario": "create_order_no_product",
+ "unit": "create_order",
+ "routine": "create_order",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {
+   "order_seq": 1
+  }
+ },
+ "sessionUser": "SHOP",
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": {
+  "code": -20003,
+  "message": "ORA-20003: 商品が見つかりません"
+ },
+ "tables": {
+  "customers": {
+   "columns": [
+    "customer_id",
+    "name"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     "Acme"
+    ]
+   ]
+  },
+  "products": {
+   "columns": [
+    "product_id",
+    "stock_quantity",
+    "unit_price",
+    "updated_at"
+   ],
+   "rows": []
+  },
+  "orders": {
+   "columns": [
+    "order_id",
+    "customer_id",
+    "order_date",
+    "status",
+    "total_amount"
+   ],
+   "rows": []
+  },
+  "order_items": {
+   "columns": [
+    "order_id",
+    "line_no",
+    "product_id",
+    "quantity",
+    "unit_price"
+   ],
+   "rows": []
+  }
+ },
+ "masked": {
+  "products": [
+   "updated_at"
+  ]
+ }
+}

@@ -267,12 +267,22 @@ def _row(columns: list[str], row: list) -> str:
 
 def expected_verdicts() -> dict[str, str]:
     """{unit.routine: AUTO|REVIEW|REDESIGN} from the corpus manifest."""
+    if not (FIXTURES / "manifest.yaml").exists():   # a project from outside states no expectations
+        return {}
     manifest = yaml.safe_load((FIXTURES / "manifest.yaml").read_text(encoding="utf-8"))
     out = {}
     for unit in manifest.get("units") or []:
         for routine in unit.get("routines") or []:
             out[f"{unit['name']}.{routine['name']}"] = routine.get("expected", "REVIEW")
     return out
+
+
+def use_project(directory: str | Path) -> Path:
+    """Compare a project other than the corpus: DIR/golden against DIR/work/plsql-scalardb-<variant>."""
+    global FIXTURES, GOLDEN, WORK, DDL
+    FIXTURES = Path(directory).resolve()
+    GOLDEN, WORK, DDL = FIXTURES / "golden", FIXTURES / "work", FIXTURES / "src" / "schema.sql"
+    return FIXTURES
 
 
 def compare_variant(variant: str, scales: dict) -> dict:
@@ -329,7 +339,7 @@ def _accepted(name: str, oracle: dict, target: dict) -> dict | None:
     """
     import yaml
 
-    path = ROOT / "fixtures" / "plsql" / "scenarios" / f"{name}.yaml"
+    path = FIXTURES / "scenarios" / f"{name}.yaml"
     if not path.exists():
         return None
     declared = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("accepted_difference") or {}
@@ -350,7 +360,7 @@ def _is_direct_dml(name: str) -> bool:
 
     from difftest.plsql_setup import BLOCK, DML
 
-    path = ROOT / "fixtures" / "plsql" / "scenarios" / f"{name}.yaml"
+    path = FIXTURES / "scenarios" / f"{name}.yaml"
     if not path.exists():
         return False
     call = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("call") or {}
@@ -433,7 +443,10 @@ def main(argv=None) -> int:
     ap.add_argument("--variant", action="append", choices=["scaled", "double"],
                     help="repeatable; the default compares both")
     ap.add_argument("--json", help="write the full report here, for P3-5")
+    ap.add_argument("--project", metavar="DIR", help="a project other than the corpus (see plsql_run.py --project)")
     args = ap.parse_args(argv)
+    if args.project:
+        use_project(args.project)
 
     scales = decimal_columns(DDL)
     reports = [compare_variant(v, scales) for v in (args.variant or ["scaled", "double"])]
