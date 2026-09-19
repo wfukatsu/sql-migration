@@ -348,6 +348,24 @@ public final class Plsql {
     return isNull(value) ? null : emptyIsNull(text(value).stripLeading());
   }
 
+  /**
+   * TIMESTAMP WITH TIME ZONE の値として受け取る（2026-09-19）。
+   *
+   * <p>ScalarDB の TIMESTAMPTZ 列は、読むと {@code Instant} で返る。生成コードは PL/SQL の型から
+   * {@code OffsetDateTime} を宣言するので、そのまま cast すると {@code ClassCastException} で落ちた
+   * （`last_paid_at`）。書くときに offset を落として瞬間にしている（`bind`）ので、読むときは同じ瞬間を
+   * UTC で表す——元の offset はもう無い。
+   */
+  public static java.time.OffsetDateTime zoned(Object value) {
+    if (isNull(value)) return null;
+    if (value instanceof java.time.OffsetDateTime moment) return moment;
+    if (value instanceof java.time.Instant instant) return instant.atOffset(java.time.ZoneOffset.UTC);
+    if (value instanceof java.time.ZonedDateTime zoned) return zoned.toOffsetDateTime();
+    if (value instanceof java.sql.Timestamp stamp) return stamp.toInstant().atOffset(java.time.ZoneOffset.UTC);
+    if (value instanceof LocalDateTime local) return local.atOffset(java.time.ZoneOffset.UTC);
+    throw new IllegalArgumentException("TIMESTAMP WITH TIME ZONE として読めない値: " + value.getClass());
+  }
+
   /** `UPPER`。Oracle の識別子は大文字小文字を区別しないので、表名の照合に使う。 */
   public static String upper(Object value) {
     return isNull(value) ? null : text(value).toUpperCase(java.util.Locale.ROOT);
