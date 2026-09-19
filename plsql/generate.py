@@ -94,7 +94,9 @@ def main(argv: list[str] | None = None) -> int:
     analysis = build_analysis(root, schema, scalardb_schema=scalardb, row_locks=row_locks)
     decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), Evidence())
     plans = analysis.capability.plans if analysis.capability is not None else {}
-    project = generate(analysis.program, args.out_dir, args.package, decisions, plans)
+    trigger_checks, types, namespaces = _trigger_checks(analysis, scalardb)
+    project = generate(analysis.program, args.out_dir, args.package, decisions, plans,
+                       trigger_checks, types, namespaces)
     written = write(project, decisions)
 
     summary = project.summary()
@@ -162,6 +164,26 @@ def _print_compile(report, decisions: dict, stream=None) -> None:
                   f"({Path(error.file).name}:{error.line})", file=out)
         else:
             print(f"    {Path(error.file).name}:{error.line}: {error.message}", file=out)
+
+
+def _trigger_checks(analysis, scalardb):
+    """#12 §0 の照合と、それが読む列の型（ScalarDB の型と桁）、表の namespace。"""
+    from .gen_java.repository import _scale
+    from .trigger_checks import checks
+
+    oracle = analysis.symbol_table().oracle_schema if analysis.symbol_table() is not None else None
+    found = checks(analysis.program, oracle)
+    types, namespaces = {}, {}
+    if scalardb is not None:
+        from scalardb_migrate.schema import SchemaRegistry
+
+        registry = SchemaRegistry.from_schema_loader_json(str(scalardb))
+        for meta in registry.tables():
+            namespaces[meta.name.lower()] = meta.namespace
+            for column, kind in meta.columns.items():
+                oracle_type = oracle.column(meta.name, column) if oracle is not None else None
+                types[(meta.name.lower(), column.lower())] = (kind, _scale(oracle_type))
+    return found, types, namespaces
 
 
 def _print_no_limits_file(undecided: list[str], limits, stream=None) -> None:
