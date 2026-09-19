@@ -464,7 +464,7 @@ class StatementConverter:
 
     def _meta(self, t: exp.Expression) -> TableMeta | None:
         t = t.this if isinstance(t, exp.Schema) else t
-        return self.registry.get(t.name) if isinstance(t, exp.Table) else None
+        return self.registry.get(t.name, t.db or None) if isinstance(t, exp.Table) else None
 
     # -- literal / value rewriting ------------------------------------------------------------------
     def _value(self, e: exp.Expression, ctx: str) -> exp.Expression:
@@ -509,7 +509,7 @@ class StatementConverter:
     def _column_type_by_name(self, name: str, qualifier: str = "") -> str | None:
         col = exp.column(name, table=qualifier) if qualifier else exp.column(name)
         for t in getattr(self, "_tables", []):
-            meta = self.registry.get(t.name)
+            meta = self.registry.get(t.name, t.db or None)
             if meta and (not col.table or col.table.lower() in ((t.alias or "").lower(), t.name.lower())):
                 for c, ty in meta.columns.items():
                     if c.lower() == col.name.lower():

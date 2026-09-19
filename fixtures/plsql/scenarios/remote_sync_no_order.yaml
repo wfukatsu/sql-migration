@@ -1,0 +1,17 @@
+name: remote_sync_no_order
+unit: prc_remote_sync
+routine: prc_remote_sync
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO orders@warehouse_link (order_id, status) VALUES (1001, 'NEW')
+call:
+  kind: procedure
+  name: prc_remote_sync
+  args:
+    p_order_id: 1001
+capture_tables:
+- orders
+- warehouse.orders
+- warehouse.shipment_queue
+note: 手元に注文が無い。NO_DATA_FOUND で抜け、リモートには何も書かない

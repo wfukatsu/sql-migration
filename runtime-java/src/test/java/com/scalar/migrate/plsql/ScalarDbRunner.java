@@ -88,8 +88,17 @@ public final class ScalarDbRunner implements AutoCloseable {
     return connection;
   }
 
+  /**
+   * The corpus tables: what a scenario that names no {@code capture_tables} compares. A table in another
+   * namespace (what a DB link led to, {@code limits.yaml: dbLinks}) is compared only when the scenario asks for
+   * it by its qualified name, as the Oracle side does.
+   */
   public List<String> tables() {
-    return new ArrayList<>(primaryKeys.keySet());
+    List<String> local = new ArrayList<>();
+    for (String table : primaryKeys.keySet()) {
+      if (!table.contains(".")) local.add(table);
+    }
+    return local;
   }
 
   /**
@@ -327,7 +336,11 @@ public final class ScalarDbRunner implements AutoCloseable {
     return "'" + String.valueOf(value).replace("'", "''") + "'";
   }
 
-  /** The corpus tables, keyed by bare name, in the order the Schema Loader JSON declares them. */
+  /**
+   * The corpus tables, keyed by bare name, in the order the Schema Loader JSON declares them. A table of another
+   * namespace keeps its qualified name: the generated SQL names it that way too, and {@link #reset()} has to
+   * empty it like any other.
+   */
   private static Map<String, Map<String, Object>> readSchema(Path schemaJson, String namespace) throws Exception {
     try (Reader reader = Files.newBufferedReader(schemaJson)) {
       Map<String, Map<String, Object>> schema = GSON.fromJson(
@@ -336,9 +349,11 @@ public final class ScalarDbRunner implements AutoCloseable {
       for (Map.Entry<String, Map<String, Object>> entry : schema.entrySet()) {
         if (entry.getKey().startsWith(namespace + ".")) {
           out.put(entry.getKey().substring(namespace.length() + 1), entry.getValue());
+        } else {
+          out.put(entry.getKey(), entry.getValue());
         }
       }
-      if (out.isEmpty()) {
+      if (out.keySet().stream().allMatch(table -> table.contains("."))) {
         throw new IllegalArgumentException(schemaJson + " declares no table in namespace " + namespace);
       }
       return out;

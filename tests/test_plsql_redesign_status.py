@@ -47,8 +47,14 @@ def test_a_decision_without_evidence_or_with_a_disagreement_is_not_verified(foun
 
 
 def test_what_nobody_decided_says_which_rule_is_open(found):
-    status = found["prc_remote_sync"]
-    assert status.state == "undecided" and "LINK-001" in status.open
+    # the DB link was mapped to a namespace on 2026-09-20 (limits.yaml: dbLinks); with no decisions at all it is open
+    from plsql.report import analyse as plain_analyse
+
+    analysis = plain_analyse(SRC, f"{SRC}/schema.sql", scalardb_schema="fixtures/plsql/scalardb-schema.json")
+    program_analysis = analyse_program(analysis.program)
+    decisions = decide(analysis.program, program_analysis, RuleSet.load(), Evidence())
+    status = redesign.statuses(analysis.program, decisions, program_analysis.call_graph, redesign.Decided())["prc_remote_sync"]
+    assert status.state == "undecided" and {"LINK-001", "TX-001"} <= set(status.open)
 
 
 def test_a_sequence_trigger_is_decided_and_verified_through_the_insert_it_was_woven_into(found):

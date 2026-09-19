@@ -140,5 +140,27 @@
       "last_run_at": "TIMESTAMP",
       "status": "TEXT"
     }
+  },
+  "warehouse.orders": {
+    "transaction": true,
+    "partition-key": [
+      "order_id"
+    ],
+    "clustering-key": [],
+    "columns": {
+      "order_id": "BIGINT",
+      "status": "TEXT"
+    }
+  },
+  "warehouse.shipment_queue": {
+    "transaction": true,
+    "partition-key": [
+      "order_id"
+    ],
+    "clustering-key": [],
+    "columns": {
+      "order_id": "BIGINT",
+      "requested_at": "TIMESTAMP"
+    }
   }
 }

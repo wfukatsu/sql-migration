@@ -39,6 +39,8 @@ from sqlglot import exp
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from difftest.plsql_schema import decimal_columns  # noqa: E402
+from plsql import dblinks  # noqa: E402
+from plsql.limits import DbLinks  # noqa: E402
 from scalardb_migrate.converter import convert_script  # noqa: E402
 from scalardb_migrate.schema import SchemaRegistry  # noqa: E402
 
@@ -126,11 +128,13 @@ def pin_masked_clocks(statement: str, mask: dict[str, list[str]], pinned: str | 
 def convert(statements: list[str], registry: SchemaRegistry,
             scales: dict[str, dict[str, int]] | None = None,
             mask: dict[str, list[str]] | None = None, pinned: str | None = None,
-            rounded: dict[str, dict[str, int]] | None = None) -> list[str]:
+            rounded: dict[str, dict[str, int]] | None = None, db_links=None) -> list[str]:
     """Every statement, converted. Raises when one of them cannot be, naming the statement."""
     out = []
     for statement in statements:
         text = statement.strip().rstrip(";")
+        # a setup row behind a DB link goes where the generated code will look for it (limits.yaml: dbLinks)
+        text, _ = dblinks.rewrite_sql(text, db_links)
         text = pin_masked_clocks(text, mask or {}, pinned, registry)
         if scales:
             text = scale_money(text, scales)
@@ -208,13 +212,15 @@ def main(argv=None) -> int:
     decimals = decimal_columns(ROOT / "fixtures" / "plsql" / "src" / "schema.sql")
     scales = decimals if args.variant == "scaled" else None
     rounded = decimals if args.variant == "double" else None
+    db_links = DbLinks.load(ROOT / "fixtures" / "plsql" / "limits.yaml")
     scenarios, unconvertible = {}, {}
     for path in sorted(SCENARIOS.glob("*.yaml")):
         spec = yaml.safe_load(path.read_text(encoding="utf-8"))
         try:
             scenarios[spec["name"]] = {"setup": convert(spec.get("setup") or [], registry, scales,
                                                         spec.get("mask") or {},
-                                                        (spec.get("pinned") or {}).get("sysdate"), rounded=rounded)}
+                                                        (spec.get("pinned") or {}).get("sysdate"), rounded=rounded,
+                                                        db_links=db_links)}
             straight = direct(spec, registry, scales, rounded)
             if straight is not None:
                 scenarios[spec["name"]]["direct"] = straight

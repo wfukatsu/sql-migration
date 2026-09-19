@@ -122,8 +122,11 @@ ANTLR パーサで取り出した定義名と突き合わせて確認する。
 .venv/bin/python difftest/plsql_run.py run --out fixtures/plsql/golden
 ```
 
-`deploy` は 32 ユニットすべてをコンパイルする。`prc_remote_sync` だけは DB Link が存在しないため INVALID
-のまま残るが、これは想定内としてランナーが許容している。
+`deploy` は全ユニットをコンパイルする。`prc_remote_sync` は DB Link `warehouse_link` を参照するので、先に
+`difftest/plsql-warehouse-init.sh` を流して、link の先のユーザ `warehouse`・その表・loopback の link を作っておく
+（流していなければ INVALID のまま残り、ランナーはそれを許容する。link を使わないシナリオは動く）。
+シナリオでは link の先の表を、移行先と同じ名前（`warehouse.orders` など。`limits.yaml` の `dbLinks`）で
+`capture_tables` に挙げる。Oracle 側は link 越しに読む。
 
 **parse できることとコンパイルできることは別である。** P0-1 の時点で 32 ファイルすべてが ANTLR で parse
 できていたが、Oracle に流したところ 2 件がコンパイルに失敗した（`SQL%BULK_EXCEPTIONS` と `SQLERRM` を

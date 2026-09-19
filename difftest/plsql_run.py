@@ -95,6 +95,11 @@ DEPLOY_ORDER = [
 
 TABLES = ["customers", "products", "orders", "order_lines", "payments", "inventory_tx",
           "audit_log", "counters", "batch_control"]
+# DB link の先の表（difftest/plsql-warehouse-init.sh が作る）。capture では移行先と同じ名前——
+# `namespace.table`（limits.yaml: dbLinks）——で呼び、Oracle へは link 越しに読む。既定の capture には
+# 入れない: link を使わない scenario の golden を動かさないためで、比べたい scenario が名前で挙げる
+REMOTE_TABLES = {"warehouse.orders": "orders@warehouse_link",
+                 "warehouse.shipment_queue": "shipment_queue@warehouse_link"}
 SEQUENCES = {"seq_order_id": 1000, "seq_payment_id": 5000, "seq_audit_id": 1, "seq_tx_id": 1}
 
 
@@ -247,6 +252,13 @@ def reset_data(cur, sequences: dict) -> None:
     import oracledb
     for name in reversed(TABLES):  # TABLES は親 -> 子の順。削除は子から
         cur.execute(f"DELETE FROM {name}")
+    for remote in REMOTE_TABLES.values():
+        try:
+            cur.execute(f"DELETE FROM {remote}")
+        except oracledb.DatabaseError as e:
+            # link が無い環境（plsql-warehouse-init.sh を流していない）でも、link を使わない scenario は動く
+            if e.args[0].code not in (2019, 942, 4063):   # link 無し / 表無し / 無効な synonym
+                raise
     for name, start in {**SEQUENCES, **(sequences or {})}.items():
         try:
             cur.execute(f"DROP SEQUENCE {name}")
@@ -335,7 +347,7 @@ def _oracle_type(cur, name: str):
 def dump_tables(cur, tables: list[str], mask: dict) -> tuple[dict, dict]:
     dumped, masked = {}, {}
     for table in tables:
-        cur.execute(f"SELECT * FROM {table}")
+        cur.execute(f"SELECT * FROM {REMOTE_TABLES.get(table, table)}")
         columns = [d[0].lower() for d in cur.description]
         mask_columns = [c.lower() for c in (mask or {}).get(table, [])]
         rows = []
@@ -394,7 +406,16 @@ def run(args) -> int:
                     set_triggers(cur, enabled=True)
 
                 result, exception = call_routine(cur, spec)
-                con.commit()
+                try:
+                    con.commit()
+                except Exception as e:
+                    # 失敗した呼び出しは、ふつう Oracle が文の単位で巻き戻すので、commit しても何も残らない。
+                    # DB link 越しに書いた後の失敗だけは違う: Oracle はリモートの分だけを巻き戻せず、
+                    # トランザクション全体の rollback を求める（ORA-02067）。呼び出し側に残された道はそれだけ
+                    # なので、そうする——移行先の「例外なら rollback」と同じ結末になる
+                    if exception is None or "ORA-02067" not in str(e):
+                        raise
+                    con.rollback()
                 tables, masked = dump_tables(cur, spec.get("capture_tables") or TABLES, spec.get("mask"))
             finally:
                 pin_sysdate(sys_cfg, None)

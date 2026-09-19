@@ -60,9 +60,15 @@ def build(variant: str, namespace: str) -> dict:
     decimals = decimal_columns(DDL)
     base = json.loads(BASE.read_text(encoding="utf-8"))
     out = {}
+    corpus = next(iter(base)).split(".", 1)[0]   # the namespace the corpus itself lives in (`plsqlpoc`)
     for qualified, definition in base.items():
-        table = qualified.split(".", 1)[1]
+        owner, table = qualified.split(".", 1)
         definition = json.loads(json.dumps(definition))  # the base file is not ours to mutate
+        if owner != corpus:
+            # a namespace a DB link was mapped to (`warehouse`): it is another database's, the same under either
+            # money convention, and must keep its name -- renamed, `warehouse.orders` replaced `plsqlpoc.orders`
+            out[qualified] = definition
+            continue
         if variant == "double":
             for column in decimals.get(table, {}):
                 if column in definition["columns"]:
