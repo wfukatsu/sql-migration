@@ -20,10 +20,14 @@ rules:
     requiredTests:
       - scan_after_write
 
+  # 2026-09-20: PL/SQL の移行先は JDBC バックエンドに限定すると決めてある（#20）。そこではこの走査は実行でき、結果は
+  # 実 DB の evidence で確かめられるので、移行の可否は開いていない: 判定を下げない注記にした。JDBC 以外を対象に変換
+  # すると変換器がこの文を拒否し、SQL-001 が REVIEW にする。走査する行数は行数上限のルール（CUR-002 など）が見る
   - id: SCAN-002
     match: {statementKind: SqlOperation, hasDiagnostic: CROSS_PARTITION}
-    decision: REVIEW
-    message: パーティションキーで絞れない走査です。フィルタも順序もパーティションをまたぐため、JDBC バックエンド以外では同じ問い合わせが通りません
+    decision: AUTO          # 判定を下げない注記
+    severity: info
+    message: パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります
     remediation:
       - キーで届く読み取りに変える
       - 全行を取得してアプリ側で絞る・並べる（docs/app-side-processing-plan.md）

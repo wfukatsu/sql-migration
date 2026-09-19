@@ -109,7 +109,7 @@ class Analysis:
 
 def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: str = "corpus",
             scalardb_schema: str | Path | None = None,
-            row_locks: "RowLocks | None" = None, boundaries=None) -> Analysis:
+            row_locks: "RowLocks | None" = None, boundaries=None, limits=None) -> Analysis:
     """Parse, resolve and lower every source file under `root`. Nothing raises; failures become diagnostics.
 
     With `scalardb_schema`, every SQL statement is also checked against the target (P2-4) and the answer lands on
@@ -153,6 +153,7 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
     # #19: 割った routine の処理対象を、キー順に件数つきで繰り返し読む
     paging.rewrite(program, boundaries, schema, analysis.symbol_table())
     triggers.rewrite(program, schema, analysis.symbol_table())
+    _record_row_limits(program, limits)
 
     if scalardb_schema is not None:
         from .capability import annotate, check
@@ -166,6 +167,28 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
                                     row_locks=row_locks)
         annotate(program, analysis.capability)
     return analysis
+
+
+def _record_row_limits(program: M.Program, limits) -> None:
+    """Say on the loop that somebody decided how many rows it may read.
+
+    CUR-002 / BULK-003 ask a person to look at the number of rows a loop reads. `limits.yaml` is where that person
+    answers -- a value the generated code enforces (RowLimitExceededException), or a reason why a limit is not what
+    protects this routine -- and once it is answered the question is no longer open (decided 2026-09-20). The rules
+    read this diagnostic; a routine that falls to the default has decided nothing and is still reviewed.
+    """
+    if limits is None:
+        return
+    from .lower import _walk
+
+    for module in program.modules:
+        for routine in module.routines:
+            if not limits.decided(routine.id):
+                continue
+            statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
+            for statement in statements:
+                if statement.kind == "Loop" and not any(d.code == "ROW_LIMIT_DECIDED" for d in statement.diagnostics):
+                    statement.add("INFO", "ROW_LIMIT_DECIDED", limits.explain(routine.id))
 
 
 # --- inventory ----------------------------------------------------------------------------------------
