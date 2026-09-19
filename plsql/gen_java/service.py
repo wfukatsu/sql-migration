@@ -867,6 +867,11 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
     if _trigger_call(file, statement, routine, result):
         return
     target = statement.resolved_to or statement.callee
+    if statement.resolved_to and split.runs_separately(statement.resolved_to):
+        # 自律トランザクションの routine を**同じトランザクションの中で**呼ぶと、親が rollback した
+        # ときに一緒に消える（#3 §G）。どこで別の境界を開くかは呼び出し側の設計なので、推測しない
+        raise Untranslatable([f"{statement.resolved_to} は別トランザクションで呼ぶ routine である"],
+                             statement.callee)
     arguments = ", ".join(_expr(file, a, routine, result) for a in statement.arguments)
     if statement.resolved_to:
         module = _MODULE.get()

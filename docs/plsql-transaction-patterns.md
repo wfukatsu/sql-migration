@@ -334,6 +334,31 @@ outbox は採らない。**失敗した作業と一緒に消える**ので、失
 **F のエラー行と同じ決定である。** 別々に決めると、片方だけ実装されて食い違う——実測するまで
 この 2 つが同じものを要求しているとは気づいていなかった。
 
+### 実装（2026-09-19）: 中身だけを出し、境界は呼び出し側が別に開く
+
+`limits.yaml` の `transactions.separate` に記録した routine は、**中身だけ**の method として出る:
+
+```java
+// **別のトランザクションで呼ぶ**（自律トランザクション / #3 §G）。回し方の出発点:
+//   tx.runSeparately(() -> service.prcAuditAutonomous(...));   // 親とは別の境界
+public void prcAuditAutonomous(String pTableName, ..., AuditContext audit) throws Exception {
+    rowCount = repository.prcAuditAutonomousStmt1(audit, pTableName, pKeyValue, pAction, pNewValue);
+}
+```
+
+* `COMMIT` / `ROLLBACK` は出さない。境界は呼び出し側にある（計画 §9）
+* `WHEN OTHERS THEN ROLLBACK; RAISE;` は **handler ごと出さない**。別の境界で呼ぶ側がまさにそれを
+  する。出すと `RAISE` が別の例外に包み直され、**元の例外が変わる**
+* **同じトランザクションの中で呼ぶ文は拒む。** 呼べば親の rollback で一緒に消える——Oracle では
+  消えなかった。どこで別の境界を開くかは呼び出し側の設計なので、生成器は推測しない
+
+`perIteration`（§E）と並べて別の欄にしたのは、**形が違う**からである——こちらは routine 全体が
+1 つの境界で、ループを割るのではない。両方に書くと読み込みで止まる。
+
+**実測（2026-09-19、実 ScalarDB Cluster）**: `audit_autonomous` が Oracle と一致した。前は #25 の
+規則（完走できない routine は採番の前で止める）で止まっていた——止まっていたのは正しく、止める
+理由（`COMMIT`）が境界の決定で消えたので、動くようになった。
+
 ---
 
 ## 共通して決めること

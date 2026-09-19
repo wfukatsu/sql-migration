@@ -113,3 +113,12 @@ transactions:
       1 要素 = 1 トランザクション。`FORALL ... SAVE EXCEPTIONS` が表している要件（続行して
       記録する）は #3 で決めたものと同じなので、同じ形に揃える（#14 / cursor-patterns §G）。
       `SQL%BULK_EXCEPTIONS` は移行先に無いが、**どの要素が失敗したかは catch した側が知っている**
+
+  # 自分だけで 1 つのトランザクションになる routine（自律トランザクション）。**#3 §G で決めてある**
+  # ——別トランザクションにする。呼び出し側がそれを別の境界で呼ぶ。生成物には COMMIT / ROLLBACK は
+  # 出ない（境界は呼び出し側にある / 計画 §9）
+  separate:
+    prc_audit_autonomous: >-
+      監査行は親が失敗しても残る（PRAGMA AUTONOMOUS_TRANSACTION。Oracle 23ai で実測）。移行先で
+      同じにするには、呼び出し側が**別のトランザクションで**呼ぶ——同じ中で呼べば親と一緒に消える。
+      corpus にこの routine の呼び出し元は無いので、境界を持つのは移行後のアプリである
