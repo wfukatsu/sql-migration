@@ -128,6 +128,10 @@ public class CoreFetcher implements Fetcher {
   private static ConditionalExpression condition(Plan.Predicate pr, TableMetadata md, Map<String, Object> params) {
     DataType type = md.getColumnDataType(pr.column);
     Object v = resolve(pr.value, params);
+    // The fetch has to be a superset of what the residual SQL needs. `qty < 1.5` narrowed to the INT column's
+    // type became `qty < 1`, and the rows with qty = 1 were never fetched. A value the column type cannot hold
+    // exactly is not pushed down; the residual engine still applies the predicate.
+    if (v != null && !Values.representable(type, v)) return null;
     switch (pr.op) {
       case "=": return ConditionBuilder.buildConditionalExpression(Values.column(pr.column, type, v), Operator.EQ);
       case "<>": return ConditionBuilder.buildConditionalExpression(Values.column(pr.column, type, v), Operator.NE);

@@ -24,7 +24,9 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -32,7 +34,14 @@ from pathlib import Path
 
 import yaml
 
-DEFAULT_DOC = "docs/plsql-decisions-outside-generator.md"
+# リポジトリの根からの相対。別のディレクトリから呼んでも同じ文書を読む
+DEFAULT_DOC = str(Path(__file__).resolve().parents[3] / "docs" / "plsql-decisions-outside-generator.md")
+ITEM_ID = re.compile(r"^(OPS|CALL|BIZ)-\d+$")
+
+
+class RecordError(Exception):
+    """記録が読めない形をしている。問題（終了コード 1）ではなく、入力の誤り（2）として扱う。"""
+
 STATUSES = ("未決", "決定", "対象外")
 ITEM_HEADER = re.compile(r"^####\s+((?:OPS|CALL|BIZ)-\d+)\s+(.+?)\s*$")
 ITEM_ID = re.compile(r"(OPS|CALL|BIZ)-(\d+)")
@@ -43,12 +52,18 @@ RECORD_HEADER = """\
 #
 # skills/plsql-migrate/scripts/decision_items.py が読み書きする。手で直してもよいが、
 # 「決定」には 決定・決めた人・日付 が要る。答えた人のいない項目を「決定」と書かない。
+# **コメントは保存されない**（書き込みのたびにファイル全体を作り直す）。残したいことは メモ に書く。
 #
 #   状態      未決 / 決定 / 対象外（生成物に出ていない）
 #   出た      スクリプトが生成物から拾った根拠（毎回書き直す）
 #   案        業務文書などから引いた答えの候補。決定ではない（出典を書く）
 #   食い違い  業務文書と生成物（または元の PL/SQL）が食い違うところ。再設計の要否の問題として残す
 #   残り      決定のうち、まだ決まっていない部分（例: 時刻は決めたが、間隔に収まるかの測定は未了）
+#   メモ      自由記述（set --note）
+#   決定時の題 / 決定時の根拠
+#             決めたときの問いと、そのとき生成物から出ていた根拠。いまの文書・生成物と違えば、その決定は
+#             別の問いに対するものかもしれない——scan が「要再確認」として挙げる
+#   履歴      上書きされた、または取り消された以前の決定（決定・決めた人・日付）
 """
 
 
@@ -194,12 +209,32 @@ DETECTORS = {
 }
 
 
-def detector_for(row: Row):
+# 生成物ではなく、生成に渡したファイルを読む見分け方。そのファイルが渡されていなければ、結果は
+# 「出ていない」ではなく「分からない」である
+NEEDS = {"scanRows.routines": "limits", "dynamicTables": "limits", "TIMESTAMP WITH TIME ZONE": "schema"}
+
+
+def detector_key(row: Row) -> str:
     found = [key for key in DETECTORS if key in row.artifact]
     if len(found) != 1:
         raise SystemExit(f"§0.1 の行「{row.artifact}」の見分け方が {len(found)} 個ある（1 個であるべき）。"
                          f"DETECTORS を直す")
-    return DETECTORS[found[0]]
+    return found[0]
+
+
+def undetectable(doc: Doc, given: set[str]) -> dict[str, str]:
+    """項目 ID → 渡されなかった入力。その項目が出たかどうかは、今回の scan では言えない。"""
+    out: dict[str, str] = {}
+    for row in doc.rows:
+        need = NEEDS.get(detector_key(row))
+        if need and need not in given:
+            for item in row.items:
+                out[item] = {"limits": "--limits", "schema": "--scalardb-schema"}[need]
+    return out
+
+
+def detector_for(row: Row):
+    return DETECTORS[detector_key(row)]
 
 
 def detect(doc: Doc, tree: Tree) -> dict[str, list[str]]:
@@ -220,16 +255,31 @@ def detect(doc: Doc, tree: Tree) -> dict[str, list[str]]:
 def read_record(path: Path) -> dict[str, dict]:
     if not path.exists():
         return {}
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return data.get("items") or {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as e:
+        raise RecordError(f"{path}: YAML として読めない: {str(e).splitlines()[0]}") from None
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(data, dict) or not isinstance(items or {}, dict):
+        raise RecordError(f"{path}: 最上位は `items:` の下に 項目 ID → 内容 を並べた形であるべき")
+    for item, entry in (items or {}).items():
+        if not ITEM_ID.match(str(item)):
+            raise RecordError(f"{path}: 「{item}」は項目 ID（OPS-1 / CALL-2 / BIZ-3 の形）ではない")
+        if not isinstance(entry, dict):
+            raise RecordError(f"{path}: {item} の内容が 名前: 値 の形になっていない")
+    return items or {}
 
 
 def write_record(path: Path, items: dict[str, dict]) -> None:
     order = {"OPS": 0, "CALL": 1, "BIZ": 2}
     ordered = dict(sorted(items.items(), key=lambda kv: (order[kv[0].split("-")[0]], int(kv[0].split("-")[1]))))
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(RECORD_HEADER + "\n" + yaml.safe_dump({"items": ordered}, allow_unicode=True,
-                                                           sort_keys=False, width=110), encoding="utf-8")
+    text = RECORD_HEADER + "\n" + yaml.safe_dump({"items": ordered}, allow_unicode=True, sort_keys=False,
+                                                  width=110)
+    # 書きかけで落ちても、決定の記録が半分のファイルにならないようにする
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(text, encoding="utf-8")
+    os.replace(temporary, path)
 
 
 def problems(items: dict[str, dict], doc: Doc) -> list[str]:
@@ -246,14 +296,45 @@ def problems(items: dict[str, dict], doc: Doc) -> list[str]:
             missing = [k for k in ("決定", "決めた人", "日付") if not str(entry.get(k) or "").strip()]
             if missing:
                 out.append(f"{item}: 「決定」だが {' / '.join(missing)} が無い——答えた人のいない項目は決定と書かない")
+            elif not _is_date(entry.get("日付")):
+                out.append(f"{item}: 日付「{entry.get('日付')}」が YYYY-MM-DD の日付ではない")
+            # 決めたあとで問いか根拠が変わったなら、その決定は別のものに対する答えかもしれない
+            if "決定時の題" in entry and entry["決定時の題"] != doc.titles[item]:
+                out.append(f"{item}: 要再確認——決めたときの問いは「{entry['決定時の題']}」だったが、"
+                           f"いまの文書では「{doc.titles[item]}」")
+            if "決定時の根拠" in entry and "出た" in entry and entry["決定時の根拠"] != entry["出た"]:
+                out.append(f"{item}: 要再確認——決めたあとで生成物から出る根拠が変わった"
+                           f"（決定時: {entry['決定時の根拠']} / いま: {entry['出た']}）。"
+                           f"決定がまだ当てはまるなら set で記録し直す")
+        else:
+            stray = [k for k in ("決定", "決めた人", "日付") if k in entry]
+            if stray:
+                out.append(f"{item}: 状態は「{status}」なのに {' / '.join(stray)} が残っている（決定に見えてしまう）")
     return out
 
 
-def merge(items: dict[str, dict], fired: dict[str, list[str]], doc: Doc) -> dict[str, dict]:
-    """出た項目を未決として足し、根拠を書き直す。決定は変えない。出なくなった未決は対象外にする。"""
+def _is_date(value) -> bool:
+    if isinstance(value, datetime.date):
+        return True
+    try:
+        datetime.date.fromisoformat(str(value))
+        return True
+    except ValueError:
+        return False
+
+
+def merge(items: dict[str, dict], fired: dict[str, list[str]], doc: Doc,
+          unknown: dict[str, str] | None = None) -> dict[str, dict]:
+    """出た項目を未決として足し、根拠を書き直す。決定は変えない。出なくなった未決は対象外にする。
+
+    `unknown` の項目は、見分けるための入力（--limits / --scalardb-schema）が渡されなかったもの。出たとも
+    出ていないとも言えないので、**記録に触らない**——以前は「出ていない」と読んで、未決を黙って対象外にしていた。
+    """
     out = {k: dict(v) for k, v in items.items()}
     for item in doc.titles:
         entry = out.get(item)
+        if item in (unknown or {}) and item not in fired:
+            continue
         if item in fired:
             if entry is None:
                 entry = out[item] = {"状態": "未決"}
@@ -318,9 +399,18 @@ def cmd_scan(args) -> int:
         print("注意: generation-report.json に diagnostics が無い。OPTIMISTIC / TRIGGER_CALL などの"
               "診断で出る項目は拾えない（生成器が古い）", file=sys.stderr)
     fired = detect(doc, tree)
+    unknown = undetectable(doc, {name for name, given in (("limits", args.limits),
+                                                         ("schema", args.scalardb_schema)) if given})
     record = Path(args.record) if args.record else None
     items = read_record(record) if record else {}
-    merged = merge(items, fired, doc)
+    merged = merge(items, fired, doc, unknown)
+    for item, option in sorted(unknown.items()):
+        if item not in fired:
+            print(f"注意: {item} は {option} が無いので見分けられない。記録はそのままにした", file=sys.stderr)
+    for item in sorted(set(items) | set(merged)):
+        before, after = (items.get(item) or {}).get("状態"), (merged.get(item) or {}).get("状態")
+        if before != after:
+            print(f"状態が変わった: {item} {before or '（新規）'} → {after}", file=sys.stderr)
     text = render(doc, merged, fired)
     if args.out:
         Path(args.out).write_text(text, encoding="utf-8")
@@ -347,12 +437,30 @@ def cmd_set(args) -> int:
     record = Path(args.record)
     items = read_record(record)
     entry = dict(items.get(args.item) or {})
+    previous = {k: entry[k] for k in ("決定", "決めた人", "日付") if k in entry}
+    changed = args.status != "決定" or (args.decision is not None and args.decision != entry.get("決定"))
+    if previous and changed:
+        if args.status == "決定" and (args.by is None or args.date is None):
+            # 黙って引き継ぐと、新しい決定が「前に決めた人が、前の日付に決めた」ことになる
+            print(f"{args.item}: 決定を書き換えるなら --by と --date も要る（前の決定は"
+                  f" {previous.get('決めた人')} / {previous.get('日付')} のもの）", file=sys.stderr)
+            return 1
+        entry.setdefault("履歴", []).append(previous)
+        for key in previous:
+            entry.pop(key)
+        entry.pop("決定時の題", None)
+        entry.pop("決定時の根拠", None)
     entry["状態"] = args.status
     for key, value in (("決定", args.decision), ("決めた人", args.by), ("日付", args.date),
                        ("記録先", args.where), ("案", args.proposal), ("食い違い", args.conflict),
-                       ("残り", args.remaining)):
+                       ("残り", args.remaining), ("メモ", args.note)):
         if value is not None:
             entry[key] = value
+    if args.status == "決定":
+        # 何に対して決めたのかを残す。あとで問いか根拠が変われば、scan が「要再確認」として挙げる
+        entry["決定時の題"] = doc.titles[args.item]
+        if "出た" in entry:
+            entry["決定時の根拠"] = list(entry["出た"])
     candidate = {**items, args.item: entry}
     bad = problems({args.item: entry}, doc)
     if bad:
@@ -390,10 +498,18 @@ def main(argv: list[str] | None = None) -> int:
     setter.add_argument("--proposal", help="答えの候補と出典。決定ではない")
     setter.add_argument("--conflict", help="業務文書との食い違い（出典つき）。再設計の要否として残す")
     setter.add_argument("--remaining", help="決定のうち、まだ決まっていない部分")
+    setter.add_argument("--note", help="メモ（自由記述）。ファイルのコメントは保存されないので、ここに書く")
     setter.set_defaults(func=cmd_set)
 
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except RecordError as e:
+        print(f"記録が読めない: {e}", file=sys.stderr)
+        return 2
+    except FileNotFoundError as e:
+        print(f"ファイルが無い: {e.filename}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

@@ -743,8 +743,15 @@ class StatementConverter:
         if isinstance(lim, exp.Fetch):
             if lim.args.get("percent") or (lim.args.get("limit_options") and lim.args["limit_options"].args.get("percent")):
                 self.fail("LIMIT", "FETCH ... PERCENT is not supported")
-            s.set("limit", exp.Limit(expression=lim.args["count"]))
-            self.info("LIMIT", "FETCH FIRST n ROWS ONLY rewritten to LIMIT n")
+            options = lim.args.get("limit_options")
+            if options is not None and options.args.get("with_ties"):
+                # WITH TIES returns every row that ties with the n-th; LIMIT n cuts them off
+                self.fail("LIMIT", "FETCH ... WITH TIES is not supported: LIMIT n drops the rows that tie with the "
+                                   "n-th; fetch in order and keep reading while the sort key is equal")
+            # `FETCH FIRST ROW ONLY` has no count -- it means one row. It used to come out as a bare `LIMIT`
+            count = lim.args.get("count") or exp.Literal.number(1)
+            s.set("limit", exp.Limit(expression=count))
+            self.info("LIMIT", f"FETCH FIRST {count.sql()} ROWS ONLY rewritten to LIMIT {count.sql()}")
         elif isinstance(lim, exp.Limit) and not _is_literal(lim.expression):
             self.fail("LIMIT", "LIMIT must be a literal or bind marker")
         grouped = bool(s.args.get("group")) or any(_is_aggregate(p.this if isinstance(p, exp.Alias) else p)
@@ -1013,10 +1020,27 @@ class StatementConverter:
                                     f"'col = EXCLUDED.col / VALUES(col)'; UPSERT cannot express it "
                                     f"(read-modify-write inside a transaction instead)")
             set_cols.append(target.lower())
+        if conflict.args.get("where"):
+            # `DO UPDATE ... WHERE acct.bal < 5` updates only some of the conflicting rows. UPSERT overwrites them all
+            self.fail("UPSERT", f"ON CONFLICT ... DO UPDATE {conflict.args['where'].sql()} updates conditionally; UPSERT "
+                                "always overwrites (read-modify-write inside a transaction instead)")
         non_key = [c for c in cols if c.lower() not in set_cols]
         meta = self._meta(ins.this)
         pk = {c.lower() for c in meta.primary_key} if meta else set()
-        pk |= {k.this.name.lower() for k in conflict.args.get("conflict_keys") or [] if isinstance(k.this, exp.Column)}
+        target = {k.this.name.lower() for k in conflict.args.get("conflict_keys") or [] if isinstance(k.this, exp.Column)}
+        # UPSERT resolves a conflict on the primary key and on nothing else. `ON CONFLICT (email)` on a UNIQUE
+        # column means "update the row that has this email"; as an UPSERT it would insert a second row, or
+        # overwrite whichever row has this id.
+        if target and pk and target != pk:
+            self.fail("UPSERT", f"ON CONFLICT ({', '.join(sorted(target))}) is not the primary key "
+                                f"({', '.join(sorted(pk))}); UPSERT only resolves conflicts on the primary key")
+        if conflict.args.get("constraint") and not target:
+            self.warn("UPSERT", f"ON CONFLICT ON CONSTRAINT {conflict.args['constraint'].name}: UPSERT is only equivalent "
+                                "if that constraint is the primary key")
+        if target and not pk:
+            self.warn("UPSERT", f"ON CONFLICT ({', '.join(sorted(target))}) is assumed to be the primary key (table "
+                                "definition unknown); UPSERT only resolves conflicts on the primary key")
+        pk |= target
         extra = [c for c in non_key if c.lower() not in pk]
         if extra and not pk:
             self.warn("UPSERT", f"converted to UPSERT: on conflict ScalarDB overwrites ALL listed columns, the original "
@@ -1051,6 +1075,12 @@ class StatementConverter:
         updated: set[str] = set()
         for w in (whens.expressions if whens else []):
             then = w.args.get("then")
+            # a branch that applies to some rows only -- `WHEN MATCHED AND ...`, Oracle's `UPDATE SET ... WHERE`,
+            # `INSERT ... WHERE` -- has no UPSERT: that writes every time. These used to be dropped without a word
+            guard = w.args.get("condition") or (then.args.get("where") if isinstance(then, exp.Expression) else None)
+            if guard is not None:
+                self.fail("MERGE", f"MERGE branch is conditional ({guard.sql()}); UPSERT writes unconditionally "
+                                   "(read, decide and write inside a transaction instead)")
             if isinstance(then, exp.Insert):
                 ins_cols = [c.name for c in then.this.expressions] if isinstance(then.this, (exp.Schema, exp.Tuple)) else []
                 vals = then.expression
@@ -1065,6 +1095,16 @@ class StatementConverter:
                 self.fail("MERGE", "MERGE ... WHEN MATCHED THEN DELETE cannot be expressed as UPSERT")
         if not ins_cols:
             self.fail("MERGE", "MERGE without WHEN NOT MATCHED THEN INSERT cannot be expressed as UPSERT")
+        self._merge_is_keyed(m, src_alias, ins_cols, ins_vals)
+        # One UPSERT writes one set of values, so both branches have to write the same ones. WHEN MATCHED sets
+        # `col = src.col` (checked above); the INSERT has to take the same column from the same place. With
+        # `UPDATE SET name = s.name` and `INSERT ... VALUES (s.id, 'default')` an existing row got 'default'.
+        for column, v in zip(ins_cols, ins_vals):
+            if column.lower() in updated and not (isinstance(v, exp.Column) and (v.table or "").lower() == src_alias
+                                                  and v.name.lower() == column.lower()):
+                self.fail("MERGE", f"MERGE writes different values to '{column}': WHEN MATCHED sets it from "
+                                   f"{src_alias or 'the source'}.{column.lower()}, WHEN NOT MATCHED inserts {v.sql()}; "
+                                   "one UPSERT cannot do both")
         values = []
         for v in ins_vals:
             if isinstance(v, exp.Column) and v.name.lower() in row:
@@ -1092,6 +1132,43 @@ class StatementConverter:
         target.set("alias", None)
         return Upsert(this=exp.Schema(this=target, expressions=[exp.to_identifier(c) for c in ins_cols]),
                       expression=exp.Values(expressions=[exp.Tuple(expressions=values)]))
+
+    def _merge_is_keyed(self, m: exp.Merge, src_alias: str, ins_cols: list[str], ins_vals: list) -> None:
+        """UPSERT decides "matched" by the primary key. The MERGE decides it by ON, so ON has to be exactly
+        `target.key = source.col` for every key column, and the INSERT has to put that same source column into
+        the key -- otherwise "the row ON found" and "the row UPSERT overwrites" are different rows."""
+        on = m.args.get("on")
+        target_alias = (m.this.alias or m.this.name or "").lower()
+        keyed: dict[str, str] = {}
+        for leaf in _flatten(_unparen(on), exp.And) if on is not None else []:
+            u = _unparen(leaf)
+            sides = [u.this, u.expression] if isinstance(u, exp.EQ) else []
+            if len(sides) != 2 or not all(isinstance(x, exp.Column) for x in sides):
+                self.fail("MERGE", f"MERGE ON '{u.sql()}' is not 'target.key = source.col'; UPSERT matches rows by "
+                                   "the primary key only")
+            mine = [x for x in sides if (x.table or "").lower() in (target_alias, m.this.name.lower())]
+            theirs = [x for x in sides if (x.table or "").lower() == src_alias]
+            if len(mine) != 1 or len(theirs) != 1:
+                self.fail("MERGE", f"MERGE ON '{u.sql()}' does not compare a target column with a source column")
+            keyed[mine[0].name.lower()] = theirs[0].name.lower()
+        if not keyed:
+            self.fail("MERGE", "MERGE without an ON equality cannot be expressed as UPSERT")
+        meta = self._meta(m.this)
+        pk = {c.lower() for c in meta.primary_key} if meta else set()
+        if pk and set(keyed) != pk:
+            self.fail("MERGE", f"MERGE ON matches rows by ({', '.join(sorted(keyed))}), which is not the primary key "
+                               f"({', '.join(sorted(pk))}); UPSERT matches by the primary key only")
+        if not pk:
+            self.warn("MERGE", f"MERGE ON ({', '.join(sorted(keyed))}) is assumed to be the primary key (table "
+                               "definition unknown); UPSERT matches rows by the primary key only")
+        inserted = {c.lower(): v for c, v in zip(ins_cols, ins_vals)}
+        for key, source in keyed.items():
+            v = inserted.get(key)
+            if not (isinstance(v, exp.Column) and (v.table or "").lower() in (src_alias, "")
+                    and v.name.lower() == source):
+                self.fail("MERGE", f"MERGE matches '{key}' against {src_alias or 'the source'}.{source} but inserts "
+                                   f"{v.sql() if v is not None else 'nothing'} into it; the UPSERT would write "
+                                   "another row")
 
     # -- UPDATE / DELETE ---------------------------------------------------------------------------
     def update(self, u: exp.Update) -> exp.Update:

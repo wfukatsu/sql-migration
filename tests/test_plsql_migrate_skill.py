@@ -147,3 +147,107 @@ def test_the_corpus_record_keeps_the_promise():
     record = items.read_record(FIXTURES / "decisions-outside-generator.yaml")
     assert record
     assert items.problems(record, items.read_doc(DOC)) == []
+
+
+# --- #27-35: the record does not change, or lie, behind the user's back -----------------------------------
+DECIDE = ["--status", "決定", "--by", "運用担当", "--date", "2026-09-20"]
+
+
+def setter(record, item, *extra):
+    return items.main(["--doc", str(DOC), "set", item, "--record", str(record), *extra])
+
+
+def test_an_item_that_could_not_be_detected_is_left_alone(generated, tmp_path, capsys):
+    """Regression: a scan without --limits / --scalardb-schema read "cannot tell" as "did not fire", and open
+    BIZ items silently became 対象外."""
+    record = tmp_path / "record.yaml"
+    assert scan(generated, "--record", str(record), "--write", "--out", str(tmp_path / "a.md")) == 0
+    before = items.read_record(record)
+    assert {before[i]["状態"] for i in ("BIZ-7", "BIZ-8", "BIZ-11")} == {"未決"}
+    capsys.readouterr()
+    assert items.main(["--doc", str(DOC), "scan", "--generated", str(generated), "--record", str(record),
+                       "--write", "--out", str(tmp_path / "b.md")]) == 0
+    assert items.read_record(record) == before
+    noted = capsys.readouterr().err
+    assert "BIZ-7 は --limits が無い" in noted and "BIZ-11 は --scalardb-schema が無い" in noted
+
+
+def test_a_changed_decision_needs_its_own_decider_and_keeps_the_old_one(tmp_path):
+    """Regression: the new text inherited the previous decider and date."""
+    record = tmp_path / "record.yaml"
+    assert setter(record, "OPS-1", *DECIDE, "--decision", "a. CronJob") == 0
+    assert setter(record, "OPS-1", "--status", "決定", "--decision", "b. 別の決定") == 1
+    assert items.read_record(record)["OPS-1"]["決定"] == "a. CronJob"
+    assert setter(record, "OPS-1", "--status", "決定", "--decision", "b. 別の決定",
+                  "--by", "移行担当", "--date", "2026-09-21") == 0
+    entry = items.read_record(record)["OPS-1"]
+    assert (entry["決定"], entry["決めた人"], str(entry["日付"])) == ("b. 別の決定", "移行担当", "2026-09-21")
+    assert entry["履歴"] == [{"決定": "a. CronJob", "決めた人": "運用担当", "日付": "2026-09-20"}]
+    # adding a remaining part to the same decision is not a new decision
+    assert setter(record, "OPS-1", "--status", "決定", "--remaining", "測定は未了") == 0
+    assert len(items.read_record(record)["OPS-1"]["履歴"]) == 1
+
+
+def test_a_withdrawn_decision_does_not_stay_looking_decided(tmp_path):
+    record = tmp_path / "record.yaml"
+    assert setter(record, "OPS-2", *DECIDE, "--decision", "毎時") == 0
+    assert setter(record, "OPS-2", "--status", "未決") == 0
+    entry = items.read_record(record)["OPS-2"]
+    assert "決定" not in entry and "決めた人" not in entry and entry["履歴"][0]["決定"] == "毎時"
+    doc = items.read_doc(DOC)
+    assert items.problems({"OPS-2": {"状態": "未決", "決定": "毎時"}}, doc), "hand-edited into that shape"
+
+
+def test_a_date_has_to_be_a_date(tmp_path):
+    record = tmp_path / "record.yaml"
+    assert setter(record, "BIZ-1", "--status", "決定", "--decision", "x", "--by", "業務担当", "--date", "banana") == 1
+    assert not record.exists()
+
+
+def test_a_decision_whose_question_or_evidence_changed_is_flagged():
+    """Regression: `出た` was overwritten on every scan, so a decision taken for routines A and B stayed 決定
+    when C started firing the same item; and a renumbered doc handed the old answer to a new question."""
+    doc = items.read_doc(DOC)
+    title = doc.titles["OPS-1"]
+    decided = {"状態": "決定", "決定": "a", "決めた人": "運用担当", "日付": "2026-09-20",
+               "決定時の題": title, "決定時の根拠": ["A; B"], "出た": ["A; B"]}
+    assert items.problems({"OPS-1": decided}, doc) == []
+    merged = items.merge({"OPS-1": decided}, {"OPS-1": ["A; B; C"]}, doc)
+    assert merged["OPS-1"]["状態"] == "決定"
+    assert any("要再確認" in line and "根拠が変わった" in line for line in items.problems(merged, doc))
+    renamed = {**decided, "決定時の題": "別の問い"}
+    assert any("要再確認" in line and "別の問い" in line for line in items.problems({"OPS-1": renamed}, doc))
+    legacy = {k: v for k, v in decided.items() if not k.startswith("決定時")}
+    assert items.problems({"OPS-1": {**legacy, "出た": ["anything"]}}, doc) == [], "older records carry neither"
+
+
+def test_set_records_what_the_decision_was_about(generated, tmp_path):
+    record = tmp_path / "record.yaml"
+    assert scan(generated, "--record", str(record), "--write", "--out", str(tmp_path / "a.md")) == 0
+    assert setter(record, "OPS-1", *DECIDE, "--decision", "a", "--note", "手書きのメモ") == 0
+    entry = items.read_record(record)["OPS-1"]
+    assert entry["決定時の題"] == items.read_doc(DOC).titles["OPS-1"]
+    assert entry["決定時の根拠"] == entry["出た"] and entry["メモ"] == "手書きのメモ"
+    assert scan(generated, "--record", str(record), "--write", "--out", str(tmp_path / "b.md")) == 0
+
+
+@pytest.mark.parametrize("text,said", [
+    ("items:\n  FOO-1: {状態: 未決}\n", "項目 ID"),
+    ("- just\n- a list\n", "最上位"),
+    ("items:\n  OPS-1: 決定\n", "名前: 値"),
+    ("items: [unclosed\n", "YAML として読めない"),
+])
+def test_a_malformed_record_is_an_input_error_not_a_traceback(tmp_path, capsys, text, said):
+    record = tmp_path / "record.yaml"
+    record.write_text(text, encoding="utf-8")
+    assert setter(record, "OPS-1", "--status", "未決") == 2
+    assert said in capsys.readouterr().err
+    assert record.read_text(encoding="utf-8") == text, "and it is not overwritten"
+
+
+def test_the_record_is_replaced_whole_and_the_doc_is_found_from_anywhere(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    record = tmp_path / "record.yaml"
+    assert items.main(["set", "OPS-1", "--record", str(record), *DECIDE, "--decision", "a"]) == 0
+    assert not (tmp_path / "record.yaml.tmp").exists()
+    assert "コメントは保存されない" in record.read_text(encoding="utf-8")

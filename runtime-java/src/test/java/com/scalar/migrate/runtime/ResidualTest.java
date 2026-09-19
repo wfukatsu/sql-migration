@@ -60,4 +60,37 @@ class ResidualTest {
       assertEquals(3L, planIndexes(residual));
     }
   }
+
+  private static Object ratio(String mode) throws Exception {
+    try (Residual residual = new Residual(mode)) {
+      residual.load(fetch("lines", null), rows(List.of("id", "qty"), Map.of("id", "BIGINT", "qty", "INT"),
+          new Object[] {1L, 7}));
+      return ((List<List<Object>>) residual.query("SELECT qty / 2 FROM lines", Map.of()).get("rows")).get(0).get(0);
+    }
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void wholeNumberColumnsDivideAsTheSourceDatabaseDoes() throws Exception {
+    // ScalarDB has no DECIMAL, so NUMBER(9) arrives as INT. H2 divides INT by INT as integers in every mode.
+    assertEquals(0, new java.math.BigDecimal("3.5").compareTo(new java.math.BigDecimal(ratio("Oracle").toString())));
+    assertEquals(0, new java.math.BigDecimal("3.5").compareTo(new java.math.BigDecimal(ratio("MySQL").toString())));
+    assertEquals(0, new java.math.BigDecimal("3").compareTo(new java.math.BigDecimal(ratio("PostgreSQL").toString())),
+        "PostgreSQL truncates integer division itself");
+  }
+
+  @Test
+  void wholeNumberColumnsStillJoinCompareAndSum() throws Exception {
+    try (Residual residual = new Residual("Oracle")) {
+      load(residual);
+      assertEquals(List.of(List.of("a"), List.of("b"), List.of("a")), residual.query(JOIN, Map.of()).get("rows"));
+    }
+  }
+
+  @Test
+  void aModeThatIsNotOneOfTheThreeIsRefused() {
+    // the mode is concatenated into the JDBC URL; `;INIT=` there runs SQL of the plan author's choosing
+    org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+        () -> new Residual("Oracle;INIT=CREATE TABLE pwned(x INT)"));
+  }
 }

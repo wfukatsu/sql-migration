@@ -22,7 +22,9 @@ import java.util.regex.Pattern;
  */
 public class Residual implements AutoCloseable {
   private static final Pattern NAMED = Pattern.compile("(?<![:\\w])[:](\\w+)");
+  private static final List<String> MODES = List.of("Oracle", "PostgreSQL", "MySQL");
   private final Connection h2;
+  private final String mode;
   private final Set<String> created = new HashSet<>();
   // table -> indexes from the plan (primary key, join columns); built once, after every fetch is loaded
   private final Map<String, List<List<String>>> indexes = new LinkedHashMap<>();
@@ -41,8 +43,25 @@ public class Residual implements AutoCloseable {
    */
   public Residual(String mode, boolean buildIndexes) throws Exception {
     this.buildIndexes = buildIndexes;
-    h2 = DriverManager.getConnection("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=" + mode + ";DATABASE_TO_UPPER=FALSE");
-    if ("Oracle".equalsIgnoreCase(mode)) OracleFunctions.register(h2);
+    // the mode comes from a plan file and goes into a JDBC URL, where `;INIT=...` would run whatever it says
+    this.mode = MODES.stream().filter(m -> m.equalsIgnoreCase(mode)).findFirst()
+        .orElseThrow(() -> new IllegalArgumentException("unknown H2 mode " + mode + " (expected one of " + MODES + ")"));
+    h2 = DriverManager.getConnection("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=" + this.mode + ";DATABASE_TO_UPPER=FALSE");
+    if ("Oracle".equals(this.mode)) OracleFunctions.register(h2);
+  }
+
+  /**
+   * The H2 type of a fetched column. ScalarDB has no DECIMAL, so an Oracle {@code NUMBER(9)} or a MySQL
+   * {@code INT} arrives as INT / BIGINT -- and H2 divides two integers as integers in every mode: {@code qty / 2}
+   * was 3 where Oracle and MySQL answer 3.5, with no error. In those two modes whole-number columns are NUMERIC,
+   * which divides exactly. PostgreSQL truncates integer division itself, so there the integer types are right.
+   */
+  String columnType(String scalardbType) {
+    if (!"PostgreSQL".equals(mode)) {
+      if ("INT".equals(scalardbType)) return "NUMERIC(10)";
+      if ("BIGINT".equals(scalardbType)) return "NUMERIC(19)";
+    }
+    return Values.h2Type(scalardbType);
   }
 
   /** Create the table on first use (typed from ScalarDB types when known, else from the Java values) and load rows. */
@@ -53,8 +72,8 @@ public class Residual implements AutoCloseable {
       StringBuilder ddl = new StringBuilder("CREATE TABLE " + table + " (");
       for (int i = 0; i < rows.columns.size(); i++) {
         String c = rows.columns.get(i);
-        String type = rows.types.containsKey(c) ? Values.h2Type(rows.types.get(c))
-            : spec.column_types != null && spec.column_types.containsKey(c) ? Values.h2Type(spec.column_types.get(c))
+        String type = rows.types.containsKey(c) ? columnType(rows.types.get(c))
+            : spec.column_types != null && spec.column_types.containsKey(c) ? columnType(spec.column_types.get(c))
             : Values.h2TypeOf(rows.rows.isEmpty() ? null : rows.rows.get(0)[i]);
         ddl.append(i > 0 ? ", " : "").append(c).append(' ').append(type);
       }
