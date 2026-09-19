@@ -821,10 +821,17 @@ def _cursor_for(file: JavaFile, statement: M.Loop, routine: M.Routine, result: S
         raise Untranslatable(["cursor FOR loop whose query ScalarDB cannot run"], query.original_sql)
     written = {t for s in _walk(statement.body) for t in (getattr(s, "write_set", None) or [])}
     conflict = written & set(query.read_set or [])
-    if conflict:
+    if conflict and not _locked_and_decided(query):
         raise Untranslatable(
             [f"cursor FOR loop whose body writes {sorted(conflict)}, which its own query reads"],
             query.original_sql)
+    if conflict:
+        # `FOR UPDATE` の cursor で、行ロックを落とすと**決めてある**もの（#9 / 2026-09-19 claim_batch）。
+        # Oracle は OPEN の時点で行をロックして集合を固定するので、先に全部読む形と読む行が同じである。
+        # 読むのは 1 回だけで書くより前なので、「同じトランザクションで書いた物の走査」（P2-4）にも
+        # 当たらない。ロックが無い cursor（`mark_reviewed`）はこの理由が立たないので、拒否のままにする
+        file.comment("FOR UPDATE の cursor: Oracle も OPEN の時点で行を固定する。先に読む形と同じ行を回し、"
+                     "他からの変更は commit で弾かれる（#9）")
 
     variable = java_name(statement.variable or "r")
     # the translator renders `head.tail` as `scope[head].tail()`, so the loop variable itself is what goes in
@@ -853,6 +860,11 @@ def _cursor_for(file: JavaFile, statement: M.Loop, routine: M.Routine, result: S
             _statements(f, statement.body, routine, result)
     finally:
         _LOOP_ROWS.set(outer)
+
+
+def _locked_and_decided(query: M.SqlOperation) -> bool:
+    """走査が行ロックを持っていて、それを楽観制御へ移すと記録されているか（capability が付けた印）。"""
+    return bool(query.locking_mode) and any(d.code == "OPTIMISTIC" for d in query.diagnostics)
 
 
 def _raise(file: JavaFile, statement: M.Raise, routine: M.Routine, result: ServiceFile) -> None:
@@ -1008,6 +1020,12 @@ def _dynamic(file: JavaFile, statement: M.DynamicSql, routine: M.Routine,
         if not last and not guard:
             # 条件の無い variant のあとに続きは無い。並べると到達しないコードになる
             break
+    if branches and all((variant or {}).get("guard") for variant, _ in branches):
+        # どの variant の条件にも当たらない。**元なら何かしらの文が走った**が、それが何かは誰も
+        # 決めていない——許された表名の一覧に無い表名がここに来る。黙って何もしないのは最悪なので、拒む
+        with file.block("else") as f:
+            f.line(f'throw new IllegalArgumentException("{routine.id}: 走りうる文のどれにも当たらない'
+                   f'（limits.yaml の dynamicTables に無い表名など）");')
 
 
 def _variant(file: JavaFile, operation: M.SqlOperation, statement: M.DynamicSql,

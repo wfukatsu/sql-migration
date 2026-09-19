@@ -208,3 +208,48 @@ def test_the_folded_statement_still_says_it_was_dynamic():
     corpus = _corpus()
     _, statement = _dynamic_statement(corpus, "pkg_dynamic_search.refresh_stats")
     assert [d.code for d in statement.diagnostics if d.code == "DYNAMIC_SQL"]
+
+
+# --- 許された表名（2026-09-19 の決定） ------------------------------------------------------------
+
+def _with_allowed(allowed):
+    from plsql.dynamic import set_allowed_tables
+
+    set_allowed_tables(allowed)
+    try:
+        return _corpus()
+    finally:
+        set_allowed_tables({})
+
+
+def test_without_a_list_the_table_name_stays_unknowable():
+    """書いていない routine は数えない。数えられないのが正しい答えである。"""
+    corpus = _corpus()
+    _, statement = _dynamic_statement(corpus, "pkg_dynamic_search.purge")
+    assert statement.variant_statements == []
+
+
+def test_each_allowed_table_becomes_a_variant():
+    corpus = _with_allowed({"pkg_dynamic_search.purge": ["inventory_tx"]})
+    _, statement = _dynamic_statement(corpus, "pkg_dynamic_search.purge")
+    assert [v["guard"] for v in statement.variants] == ["UPPER(p_table_name) = 'INVENTORY_TX'"]
+    # created_at は鍵でないので走査になる（WARN）。拒否でなければよい
+    assert statement.variant_statements[0].target_status in ("OK", "WARN")
+
+
+def test_dbms_assert_does_not_stop_the_list_from_applying():
+    """`DBMS_ASSERT.SIMPLE_SQL_NAME` は名前の形を確かめるだけで、どの表かは決めない。"""
+    corpus = _with_allowed({"pkg_customer_import.truncate_staging": ["inventory_tx"]})
+    _, statement = _dynamic_statement(corpus, "pkg_customer_import.truncate_staging")
+    assert statement.variants[0]["sql"] == "TRUNCATE TABLE inventory_tx"
+
+
+def test_a_name_not_on_the_list_is_refused_at_run_time():
+    """どの variant にも当たらないとき、黙って何もしないのは最悪である。"""
+    from plsql.gen_java.service import generate_module as generate_service
+
+    corpus = _with_allowed({"pkg_dynamic_search.purge": ["inventory_tx"]})
+    module = next(m for m in corpus.program.modules if m.name == "pkg_dynamic_search")
+    java = generate_service(module, "g.app", "g.infra", "g.domain", corpus.program).file.render()
+    body = java[java.index("public void purge("):].split("\n    }")[0]
+    assert "IllegalArgumentException" in body and "dynamicTables" in body

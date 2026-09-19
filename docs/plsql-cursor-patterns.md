@@ -146,6 +146,11 @@ cursor FOR loop whose body writes ['orders'], which its own query reads
 Oracle でこの形が何を見るかは cursor の一貫性モデルの話であり、**先に読む実装がたまたま一致する保証は
 無い**。だから書き換えずに、再設計として扱う。
 
+**例外（2026-09-19）: `FOR UPDATE` の cursor で、行ロックを落とすと記録してあるもの。** Oracle は
+OPEN の時点で行をロックして集合を固定するので、先に読む形と読む行が同じになる。読むのは書くより前の
+1 回だけなので P2-4 にも当たらない。他からの変更は commit で弾かれる。`claim_batch` がこれに当たる
+（transaction-patterns §C）。ロックの無い cursor には理由が立たないので、拒否のままである。
+
 再設計の選択肢:
 
 - **キーを先に確定させ、別トランザクションで更新する。** 部分失敗と再試行の方針が要る。

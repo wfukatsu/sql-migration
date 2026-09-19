@@ -462,3 +462,16 @@ def test_insert_drops_a_midnight_time_for_a_date_column():
 def test_insert_leaves_a_timestamp_literal_alone():
     r = temporal("INSERT INTO ev (id, at_ts) VALUES (1, TIMESTAMP '2025-04-01 10:30:00');")
     assert "'2025-04-01 10:30:00'" in r.converted[0]
+
+
+def test_rownum_compared_with_a_bind_becomes_a_limit_bind():
+    """件数は bind でも件数である（2026-09-19、`claim_batch` の `ROWNUM <= p_limit`）。"""
+    result = run("SELECT order_no FROM orders WHERE status = 'NEW' AND ROWNUM <= :n", dialect="oracle")
+    assert result.status != "ERROR", result.issues
+    assert "LIMIT :n" in result.converted[0]
+
+
+def test_rownum_less_than_a_bind_is_still_refused():
+    """`ROWNUM < :n` は LIMIT n-1 である。bind から n-1 は作れないので、拒否のまま。"""
+    result = run("SELECT order_no FROM orders WHERE ROWNUM < :n", dialect="oracle")
+    assert result.status == "ERROR"

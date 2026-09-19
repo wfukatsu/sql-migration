@@ -854,6 +854,20 @@ offset の両方を持つが、ScalarDB の TIMESTAMPTZ は瞬間だけを持つ
 
 実測: `payment_record` が Oracle と一致。比較で一致 **54 / 63**。
 
+#### 表名が実行時に決まる動的 SQL（2026-09-19 の決定）
+
+`'DELETE FROM ' || p_table_name || ...` は走りうる文が数えられない。**人が表名を決めたときだけ**
+数えられるようにする——`limits.yaml` の `dynamicTables` に routine ごとに書く。書いていない routine は
+拒否のまま。許された表名ごとに variant を作り、既存の「variant ごとに静的な文として生成する」仕組みに
+流す。照合は大文字小文字を区別しない。`DBMS_ASSERT` は名前の形を確かめるだけで、どの表かは決めない。
+
+**どの variant にも当たらないときは実行時に拒否する。** 元ならどの表でも走ったが、それを許すことこそ
+移行で塞ぎたい穴である。
+
+`TRUNCATE` を実クラスタで測った（`TruncateIT`）: 呼び出し側のトランザクションの中で走らせても、
+rollback で行は戻らない——Oracle と同じ。違うのは、**Oracle の TRUNCATE は直前の作業ごと暗黙に commit
+するが、ScalarDB はしない**ことである。
+
 #### Phase 4 の現在地（2026-09-17）
 
 > **中間報告は `docs/plsql-phase4-interim.md`。**

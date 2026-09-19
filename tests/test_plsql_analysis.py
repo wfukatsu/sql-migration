@@ -104,6 +104,8 @@ def test_the_corpus_call_graph_is_complete(corpus):
         ("pkg_payment.record_payment", "trg_payments_guard.body"),
         ("pkg_shipment.mark_shipped", "trg_orders_audit.body"),
         ("prc_nightly_close", "trg_orders_audit.body"),
+        # 2026-09-19: WHERE CURRENT OF を主キーで指すようになり、1 行に絞れる更新として trigger が掛かる
+        ("pkg_stock_reserve.claim_batch", "trg_orders_audit.body"),
         ("pkg_order_lock.cancel", "pkg_order_lock.is_cancellable"),
         ("pkg_order_pricing.order_total", "pkg_order_pricing.customer_tier"),
         ("pkg_order_pricing.order_total", "pkg_order_pricing.line_amount"),
