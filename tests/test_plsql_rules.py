@@ -176,7 +176,8 @@ def test_full_evidence_and_a_checked_statement_gives_auto(corpus, ruleset):
     ("pkg_order_pricing.customer_tier", "SEM-005"),
     ("pkg_customer_import.import", "SEM-006"),
     # #11 が count_by_status の cursor を COUNT(*) にしたので、明示 cursor が残っているのはこちら
-    ("prc_purge_audit", "CUR-001"),
+    # 2026-09-18: 明示 cursor の走査は cursor FOR ループへ書き換わった。寿命の問いは CUR-003 が持つ
+    ("prc_purge_audit", "CUR-003"),
     ("pkg_order_report.mark_reviewed", "CUR-002"),
 ])
 def test_the_expected_rule_fires(decisions, routine_id: str, rule_id: str):

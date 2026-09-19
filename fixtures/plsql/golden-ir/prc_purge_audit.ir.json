@@ -105,18 +105,6 @@
      ],
      "body": [
       {
-       "id": "prc_purge_audit#stmt-1",
-       "kind": "OpenCursor",
-       "sourceRange": {
-        "file": "prc_purge_audit.prc",
-        "startLine": 8,
-        "endLine": 8,
-        "startColumn": 3,
-        "endColumn": 8
-       },
-       "cursor": "c_old"
-      },
-      {
        "id": "prc_purge_audit#stmt-2",
        "kind": "Loop",
        "sourceRange": {
@@ -126,11 +114,43 @@
         "startColumn": 3,
         "endColumn": 7
        },
-       "loopKind": "basic",
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "CUR_SCAN",
+         "message": "cursor c_old は読むだけのループだった。行を先に読んで回す形にした——移行先に跨トランザクションの cursor は無いので、動く行数はメモリで決まる（上限は --limits）。FETCH の代入先はそのまま残してあるので、ループの後でも Oracle と同じ値が入っている",
+         "range": {
+          "file": "prc_purge_audit.prc",
+          "startLine": 9,
+          "endLine": 17,
+          "startColumn": 3,
+          "endColumn": 7
+         }
+        }
+       ],
+       "loopKind": "cursor-for",
+       "cursor": "r IN (SELECT audit_id FROM audit_log WHERE changed_at < SYSTIMESTAMP - p_keep_days)",
+       "query": {
+        "id": "prc_purge_audit#stmt-2",
+        "kind": "SqlOperation",
+        "sourceRange": {
+         "file": "prc_purge_audit.prc",
+         "startLine": 9,
+         "endLine": 17,
+         "startColumn": 3,
+         "endColumn": 7
+        },
+        "sqlKind": "SELECT",
+        "originalSql": "SELECT audit_id FROM audit_log WHERE changed_at < SYSTIMESTAMP - p_keep_days",
+        "selectsStar": false,
+        "cardinality": "MANY",
+        "atMostOneRow": false
+       },
+       "variable": "r",
        "body": [
         {
-         "id": "prc_purge_audit#stmt-3",
-         "kind": "Fetch",
+         "id": "prc_purge_audit#stmt-3row1",
+         "kind": "Assignment",
          "sourceRange": {
           "file": "prc_purge_audit.prc",
           "startLine": 10,
@@ -138,22 +158,8 @@
           "startColumn": 5,
           "endColumn": 22
          },
-         "cursor": "c_old",
-         "intoTargets": [
-          "v_id"
-         ]
-        },
-        {
-         "id": "prc_purge_audit#stmt-4",
-         "kind": "Exit",
-         "sourceRange": {
-          "file": "prc_purge_audit.prc",
-          "startLine": 11,
-          "endLine": 11,
-          "startColumn": 5,
-          "endColumn": 20
-         },
-         "condition": "c_old%NOTFOUND"
+         "target": "v_id",
+         "expression": "r.audit_id"
         },
         {
          "id": "prc_purge_audit#stmt-5",
@@ -228,18 +234,6 @@
          ]
         }
        ]
-      },
-      {
-       "id": "prc_purge_audit#stmt-9",
-       "kind": "CloseCursor",
-       "sourceRange": {
-        "file": "prc_purge_audit.prc",
-        "startLine": 18,
-        "endLine": 18,
-        "startColumn": 3,
-        "endColumn": 9
-       },
-       "cursor": "c_old"
       },
       {
        "id": "prc_purge_audit#stmt-10",

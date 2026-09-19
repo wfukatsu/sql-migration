@@ -105,18 +105,6 @@
      ],
      "body": [
       {
-       "id": "prc_reprice_all#stmt-1",
-       "kind": "OpenCursor",
-       "sourceRange": {
-        "file": "prc_reprice_all.prc",
-        "startLine": 9,
-        "endLine": 9,
-        "startColumn": 3,
-        "endColumn": 8
-       },
-       "cursor": "c_orders"
-      },
-      {
        "id": "prc_reprice_all#stmt-2",
        "kind": "Loop",
        "sourceRange": {
@@ -126,11 +114,43 @@
         "startColumn": 3,
         "endColumn": 7
        },
-       "loopKind": "basic",
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "CUR_SCAN",
+         "message": "cursor c_orders は読むだけのループだった。行を先に読んで回す形にした——移行先に跨トランザクションの cursor は無いので、動く行数はメモリで決まる（上限は --limits）。FETCH の代入先はそのまま残してあるので、ループの後でも Oracle と同じ値が入っている",
+         "range": {
+          "file": "prc_reprice_all.prc",
+          "startLine": 10,
+          "endLine": 18,
+          "startColumn": 3,
+          "endColumn": 7
+         }
+        }
+       ],
+       "loopKind": "cursor-for",
+       "cursor": "r IN (SELECT o.order_id FROM orders o JOIN customers c ON c.customer_id = o.customer_id\n     WHERE c.tier = p_tier AND o.status = 'NEW')",
+       "query": {
+        "id": "prc_reprice_all#stmt-2",
+        "kind": "SqlOperation",
+        "sourceRange": {
+         "file": "prc_reprice_all.prc",
+         "startLine": 10,
+         "endLine": 18,
+         "startColumn": 3,
+         "endColumn": 7
+        },
+        "sqlKind": "SELECT",
+        "originalSql": "SELECT o.order_id FROM orders o JOIN customers c ON c.customer_id = o.customer_id\n     WHERE c.tier = p_tier AND o.status = 'NEW'",
+        "selectsStar": false,
+        "cardinality": "MANY",
+        "atMostOneRow": false
+       },
+       "variable": "r",
        "body": [
         {
-         "id": "prc_reprice_all#stmt-3",
-         "kind": "Fetch",
+         "id": "prc_reprice_all#stmt-3row1",
+         "kind": "Assignment",
          "sourceRange": {
           "file": "prc_reprice_all.prc",
           "startLine": 11,
@@ -138,22 +158,8 @@
           "startColumn": 5,
           "endColumn": 25
          },
-         "cursor": "c_orders",
-         "intoTargets": [
-          "v_order_id"
-         ]
-        },
-        {
-         "id": "prc_reprice_all#stmt-4",
-         "kind": "Exit",
-         "sourceRange": {
-          "file": "prc_reprice_all.prc",
-          "startLine": 12,
-          "endLine": 12,
-          "startColumn": 5,
-          "endColumn": 23
-         },
-         "condition": "c_orders%NOTFOUND"
+         "target": "v_order_id",
+         "expression": "r.order_id"
         },
         {
          "id": "prc_reprice_all#stmt-5",
@@ -227,18 +233,6 @@
          ]
         }
        ]
-      },
-      {
-       "id": "prc_reprice_all#stmt-9",
-       "kind": "CloseCursor",
-       "sourceRange": {
-        "file": "prc_reprice_all.prc",
-        "startLine": 19,
-        "endLine": 19,
-        "startColumn": 3,
-        "endColumn": 9
-       },
-       "cursor": "c_orders"
       },
       {
        "id": "prc_reprice_all#stmt-10",

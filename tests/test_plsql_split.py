@@ -47,7 +47,8 @@ def test_the_decision_is_recorded_as_data():
     boundaries = Boundaries.load(CONFIG)
     assert boundaries.decided("prc_nightly_close")
     assert boundaries.decided("pkg_bulk_load.restock")
-    assert not boundaries.decided("prc_reprice_all")
+    assert boundaries.decided("prc_reprice_all"), "#3 §E が名指ししている routine である"
+    assert not boundaries.decided("prc_purge_audit")
     assert "1 受注 = 1 トランザクション" in boundaries.why("prc_nightly_close")
 
 
@@ -188,3 +189,80 @@ def test_the_decision_does_not_change_the_verdict():
     from plsql.rules.engine import Decision  # noqa: F401  (読む人へ: 判定は rules が決める)
 
     assert Boundaries.load(CONFIG).decided("prc_nightly_close")
+
+
+# --- 自律トランザクション（#3 §G / 2026-09-19） --------------------------------------------------
+
+@pytest.fixture(scope="module")
+def autonomous(tmp_path_factory):
+    return _service(tmp_path_factory.mktemp("autonomous"), "PrcAuditAutonomousService")
+
+
+def test_the_autonomous_routine_is_recorded_as_separate():
+    boundaries = Boundaries.load(CONFIG)
+    assert "prc_audit_autonomous" in boundaries.separate
+    assert boundaries.decided("prc_audit_autonomous")
+
+
+def test_the_separate_routine_has_no_commit_or_rollback(autonomous):
+    """境界は呼び出し側にある（計画 §9）。中身だけを出す。"""
+    code = "\n".join(line for line in autonomous.splitlines() if not line.strip().startswith("//"))
+    assert "Commit is not translated" not in autonomous and "Rollback" not in code
+    assert "repository.prcAuditAutonomousStmt1(" in code
+
+
+def test_a_handler_that_only_reraises_is_not_emitted(autonomous):
+    """`WHEN OTHERS THEN ROLLBACK; RAISE;` は、別のトランザクションで呼ぶ側がまさにすること。
+    出すと `RAISE` が別の例外に包み直され、**元の例外が変わる**。"""
+    assert "catch (" not in autonomous
+    assert 'MigratedException(0, "RAISE")' not in autonomous
+
+
+def test_the_caller_is_told_to_use_its_own_boundary(autonomous):
+    assert "別のトランザクションで呼ぶ" in autonomous
+    assert "tx.runSeparately(" in autonomous
+
+
+def test_a_call_inside_another_transaction_is_refused(tmp_path):
+    """同じトランザクションの中で呼ぶと、親が rollback したときに一緒に消える。どこで別の境界を
+    開くかは呼び出し側の設計なので、生成器は推測しない。"""
+    split.set_boundaries(Boundaries(separate={"prc_log": "自律"}))
+    try:
+        source = tmp_path / "src"
+        source.mkdir()
+        (source / "schema.sql").write_text(
+            pathlib_path(SRC, "schema.sql").read_text(encoding="utf-8"), encoding="utf-8")
+        (source / "prc_log.prc").write_text("""\
+CREATE OR REPLACE PROCEDURE prc_log(p_text IN VARCHAR2) IS
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  UPDATE batch_control SET status = p_text WHERE batch_name = 'LOG';
+  COMMIT;
+END prc_log;
+/
+""", encoding="utf-8")
+        (source / "prc_work.prc").write_text("""\
+CREATE OR REPLACE PROCEDURE prc_work IS
+BEGIN
+  prc_log('start');
+END prc_work;
+/
+""", encoding="utf-8")
+        from plsql.report import analyse
+        from plsql.gen_java.service import generate_module
+
+        from plsql.analysis import analyse as analyse_program
+
+        analysis = analyse(source, source / "schema.sql")
+        analyse_program(analysis.program)   # 呼び出しの解決（P2-1）。生成の前に走る段である
+        module = next(m for m in analysis.program.modules if m.name == "prc_work")
+        java = generate_module(module, "g.app", "g.infra", "g.domain", analysis.program).file.render()
+        assert "は別トランザクションで呼ぶ routine である" in java
+    finally:
+        split.set_boundaries(Boundaries())
+
+
+def pathlib_path(*parts):
+    import pathlib
+
+    return pathlib.Path(*parts)

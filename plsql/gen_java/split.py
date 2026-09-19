@@ -47,6 +47,11 @@ def set_boundaries(boundaries: Boundaries) -> None:
     _BOUNDARIES.set(boundaries)
 
 
+def runs_separately(routine_id: str) -> bool:
+    """別のトランザクションで回すと決めてある routine か（自律トランザクション / #3 §G）。"""
+    return routine_id in _BOUNDARIES.get().separate
+
+
 # handler の中の `SQLERRM` は「いま処理している例外の文言」である。割ったあとは、それを持って
 # いるのは呼び出し側が渡す例外なので、そこから読む
 FAILED = "failed"
@@ -89,6 +94,8 @@ def emit(file: JavaFile, module: M.Module, routine: M.Routine, result, domain_pa
 
     if not _BOUNDARIES.get().decided(routine.id):
         return False
+    if routine.id in _BOUNDARIES.get().separate:
+        return _separate(file, module, routine, result, domain_package)
     shape = _shape(routine)
     if shape is None:
         # 決めてあっても、形が合わなければ割らない。**合わない形を割ると、元と違うことをする**
@@ -103,6 +110,47 @@ def emit(file: JavaFile, module: M.Module, routine: M.Routine, result, domain_pa
         if index:
             file.line()
         part.emit()
+    return True
+
+
+def _separate(file: JavaFile, module: M.Module, routine: M.Routine, result,
+              domain_package: str) -> bool:
+    """自分だけで 1 つのトランザクションになる routine（自律トランザクション / #3 §G）。
+
+    `PRAGMA AUTONOMOUS_TRANSACTION` の routine は、**親のトランザクションが rollback しても残る**。
+    Oracle 23ai で実測した性質である。移行先で同じにするには、呼び出し側が**別のトランザクションで**
+    呼ぶしかない——同じ中で呼べば、親と一緒に消える。
+
+    だから生成するのは中身だけで、`COMMIT` / `ROLLBACK` は出さない。境界は呼び出し側にある
+    （計画 §9）。`WHEN OTHERS THEN ROLLBACK; RAISE;` は「失敗したら巻き戻して投げ直す」で、
+    別のトランザクションで呼ぶ側がまさにそれをするので、handler ごと出さない——出すと
+    `RAISE` が別の例外に包み直され、**元の例外が変わる**。
+    """
+    from .service import _method
+
+    handlers = []
+    for handler in routine.exception_handlers:
+        body = _plain(handler.body)
+        if len(body) == 1 and body[0].kind == "Raise" and body[0].error_code is None \
+                and not body[0].exception:
+            continue   # 投げ直すだけ。呼び出し側の境界が同じことをする
+        if body:
+            handlers.append(type(handler)(**{**handler.__dict__, "body": body}))
+    synthetic = M.Routine(**{**routine.__dict__, "body": _plain(routine.body),
+                             "exception_handlers": handlers})
+    name = java_name(routine.name)
+    for line in ["**別のトランザクションで呼ぶ**（自律トランザクション / #3 §G）。",
+                 "呼び出し側のトランザクションの中で呼ぶと、親が rollback したときに一緒に消える——",
+                 "Oracle では消えなかった（23ai で実測）。回し方の出発点:",
+                 "",
+                 f"  tx.runSeparately(() -> service.{name}(...));   // 親とは別の境界",
+                 "",
+                 "`COMMIT` / `ROLLBACK` は出していない。境界は呼び出し側にある（計画 §9）。",
+                 "**このコメントは出発点であって、決定ではない。**"]:
+        file.comment(line)
+    _method(file, module, synthetic, result, domain_package,
+            notes=[f"{routine.id} は別トランザクションで回すと決めてある"
+                   f"（{_BOUNDARIES.get().separate[routine.id]}）"])
     return True
 
 
