@@ -27,8 +27,14 @@ import java.util.Map;
  *
  * Connections are opened once and reused (a pooled application is the realistic model); the H2 residual database is
  * created per iteration, because it only holds one request's rows. Warm-up iterations are excluded from the numbers.
- * Every iteration's result set is compared for row count, and the first `verify_rows` rows are returned so that the
- * harness can check the values, so the benchmark doubles as a compatibility test at data-set scale.
+ * The row count of every measured iteration is kept (`rows_min` / `rows_max`: they differ for a statement that does
+ * not return the same thing each time, which is expected for an `${i}` statement and a finding for any other), and
+ * the last iteration's first `verify_rows` rows are returned so that the harness can check the values -- the
+ * benchmark doubles as a compatibility test at data-set scale. (This comment used to say every iteration was
+ * compared; only the last result was kept.)
+ *
+ * What the numbers do not control for: each query runs its Oracle leg to completion before its ScalarDB leg, so the
+ * two are not interleaved, and the plan leg converts every row to JSON where the JDBC legs convert `verify_rows`.
  */
 public class Bench {
 
@@ -147,6 +153,8 @@ public class Bench {
     Map<String, Object> res = new LinkedHashMap<>();
     List<Double> ms = new ArrayList<>();
     Map<String, Object> last = null;
+    long rowsMin = Long.MAX_VALUE;
+    long rowsMax = Long.MIN_VALUE;
     try {
       for (int i = 0; i < warmup; i++) {
         if (reset != null) reset.run();
@@ -157,12 +165,20 @@ public class Bench {
         long t0 = System.nanoTime();
         last = exec.call(warmup + i);
         ms.add((System.nanoTime() - t0) / 1_000_000.0);
+        if (last.get("rows") instanceof Number n) {
+          rowsMin = Math.min(rowsMin, n.longValue());
+          rowsMax = Math.max(rowsMax, n.longValue());
+        }
       }
     } catch (Exception e) {
       res.put("error", e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage()).split("\n")[0]);
     }
     res.put("ms", ms);
     if (last != null) res.putAll(last);
+    if (rowsMax >= rowsMin) {
+      res.put("rows_min", rowsMin);
+      res.put("rows_max", rowsMax);
+    }
     return res;
   }
 
@@ -171,8 +187,19 @@ public class Bench {
     return sql.replace("${i}", Integer.toString((base == null ? 0 : ((Number) base).intValue()) + i));
   }
 
+  // Oracle's thin driver fetches 10 rows per round trip unless told otherwise, so a large result paid n/10 round
+  // trips that the ScalarDB legs (scan_fetch_size 1000 in the bench configuration) did not. Same size for both.
+  static final int FETCH_SIZE = 1000;
+
   static Map<String, Object> jdbcQuery(Connection c, String sql, int verifyRows) throws Exception {
-    try (PreparedStatement ps = c.prepareStatement(sql); ResultSet rs = ps.executeQuery()) {
+    try (PreparedStatement ps = c.prepareStatement(sql)) {
+      ps.setFetchSize(FETCH_SIZE);
+      return readAll(c, ps, verifyRows);
+    }
+  }
+
+  private static Map<String, Object> readAll(Connection c, PreparedStatement ps, int verifyRows) throws Exception {
+    try (ResultSet rs = ps.executeQuery()) {
       ResultSetMetaData m = rs.getMetaData();
       List<String> columns = new ArrayList<>();
       for (int i = 1; i <= m.getColumnCount(); i++) columns.add(m.getColumnLabel(i));

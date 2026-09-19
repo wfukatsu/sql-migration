@@ -105,4 +105,26 @@ class HierarchyTest {
         () -> Hierarchy.connectBy(rows, Node::id, Node::parent, n -> n.parent() == null, Node::name, " > "));
     assertTrue(e.getMessage().contains("ORA-30004"), e.getMessage());
   }
+
+  private record Link(Object id, Object parent) {}
+
+  @Test
+  void numericKeysMatchByValueWhateverTheirType() {
+    // an id as Integer and its parent_id as Long or BigDecimal: equals() calls them different, and the tree came
+    // back as its root alone
+    List<Link> rows = List.of(new Link(1, null), new Link(2L, new java.math.BigDecimal("1.0")),
+        new Link(new java.math.BigDecimal("3"), 2), new Link(100, 3L), new Link(5, new java.math.BigDecimal("1E+2")));
+    List<Hierarchy.Entry<Link>> out = Hierarchy.connectBy(rows, Link::id, Link::parent, n -> n.parent() == null, null, null);
+    assertEquals(List.of(1, 2, 3, 4, 5), out.stream().map(Hierarchy.Entry::level).toList());
+  }
+
+  @Test
+  void aVeryDeepChainDoesNotRunOutOfStack() {
+    int depth = 200_000;
+    List<Link> rows = new java.util.ArrayList<>();
+    for (int i = 1; i <= depth; i++) rows.add(new Link(i, i == 1 ? null : i - 1));
+    List<Hierarchy.Entry<Link>> out = Hierarchy.connectBy(rows, Link::id, Link::parent, n -> n.parent() == null, null, null);
+    assertEquals(depth, out.size());
+    assertEquals(depth, out.get(depth - 1).level());
+  }
 }
