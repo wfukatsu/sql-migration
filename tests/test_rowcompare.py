@@ -104,3 +104,14 @@ def test_a_run_that_compared_nothing_does_not_pass():
     assert run.exit_code({**base, "PASS": 3, "CASE_ERROR": 1}) == 1, "a case the source rejected is a broken case"
     assert run.exit_code({**base, "SKIP": 9}) == 2, "everything skipped is not a pass"
     assert run.compare([(Decimal("1.0"),)], [[1]], True) and not run.compare([(True,)], [[1]], True)
+
+
+def test_two_json_samples_compare_their_date_columns_as_dates():
+    """Issue #28: the benchmark gets both samples as JSON. Oracle's DATE ('2023-09-29T00:00') and ScalarDB's DATE
+    ('2023-09-29') were two different texts, and every statement returning a date was a FAIL."""
+    oracle, scalardb = [[106, "2023-09-29T00:00", "S4"]], [[106, "2023-09-29", "S4"]]
+    assert rowcompare.difference(oracle, scalardb, ordered=True) is not None
+    assert rowcompare.difference(rowcompare.with_dates(oracle, [1]), scalardb, ordered=True) is None
+    # a text column that happens to look like a date stays text
+    assert rowcompare.with_dates([["2023-09-29"]], []) == [["2023-09-29"]]
+    assert rowcompare.difference(rowcompare.with_dates([[1, "2023-09-29T09:00"]], [1]), [[1, "2023-09-29"]], True) is not None

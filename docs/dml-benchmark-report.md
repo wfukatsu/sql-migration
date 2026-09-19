@@ -1,15 +1,15 @@
 # DML テスト SQL の ScalarDB 変換とベンチマーク
 
-作成日: 2026-09-15
+作成日: 2026-09-15（3 章の数値は 2026-09-19 に取り直した。レビュー #27 の修正後の `main`、Issue #28。4.5・4.6 はその際に直した）
 関連文書: `skills/sql-transpile/examples/dml/`（テスト用 SQL）、`docs/bench-report.md`（性能測定の基準）、`docs/app-side-benchmark-comparison.md`（変換ツールの新旧比較）
 説明資料: [Google スライド 26 枚](https://docs.google.com/presentation/d/1DQJZKhjteIoAxuSTsPqmW4cF15VovnDhT2nL-2TVn-c/edit)（生成元 `docs/slides/dml-benchmark-deck.py`）
 
 ## 結論
 
 - **ScalarDB で実行できるのは 51 文中 31〜32 文。** 書き込み 33 文のうち 17〜18 文は ScalarDB SQL にできず、アプリ側で「読む → 計算する → キーを指定して書く」実装が要る。SELECT 17 文はすべて実行でき、うち 10〜11 文は実行計画（ScalarDB から取得して H2 で処理）になる
-- **変換できた書き込みは速い。** ScalarDB 側の p50 の中央値は 3.3〜6.4 ms（COMMIT 込み、変換元 DB の 7〜20 倍）。キーで絞る読み取りも 4.5〜5.6 ms（6〜13 倍）
-- **実行計画の読み取りは、読む行数で決まる。** 中央値 0.6 秒前後。3 表結合（S04）と反結合（S05）は当初 26〜28 秒かかり、その 9 割以上は H2 の処理だった（取得した表に索引が無く、結合が総当たりになる）。H2 に主キーと結合列の索引を作る改善で 1.5〜1.9 秒（14〜17 倍）になり、残りのほとんどは ScalarDB からの取得
-- **変換ツールが OK / WARN と判定したのに、ScalarDB で失敗するか結果が変わる文があった。** Oracle 1 文、PostgreSQL 3 文、MySQL 5 文（ほかに実行計画の S11 が 3 方言とも失敗）。原因は PostgreSQL の型付き日付リテラル、MySQL の真偽値リテラルと照合順序、落ちる NULLS LAST、H2 の予約語で、いずれも変換ツールで直せる
+- **変換できた書き込みは速い。** ScalarDB 側の p50 の中央値は 4.7〜5.7 ms（COMMIT 込み、変換元 DB の 5〜9 倍）。キーで絞る読み取りも 4.7〜6.3 ms
+- **実行計画の読み取りは、読む行数で決まる。** 中央値 0.6 秒前後。3 表結合（S04）と反結合（S05）は当初 26〜28 秒かかり、その 9 割以上は H2 の処理だった（取得した表に索引が無く、結合が総当たりになる）。H2 に主キーと結合列の索引を作る改善で 1.4〜1.8 秒（14〜17 倍）になり、残りのほとんどは ScalarDB からの取得
+- **変換ツールが OK / WARN と判定したのに、ScalarDB で失敗するか結果が変わる文があった。** 2026-09-15 の時点で Oracle 1 文、PostgreSQL 3 文、MySQL 5 文（ほかに実行計画の S11 が 3 方言とも失敗）。このうち PostgreSQL の型付き日付リテラル（I01・U02）と MySQL の真偽値リテラル（I01・I02・I10・S16）は 2026-09-19 に変換ツールを直し、実 DB で通ることを確かめた（PostgreSQL 27 → 29 PASS、MySQL 26 → 29 PASS）。残っているのは照合順序（S10）、落ちる NULLS LAST（S12）、H2 の予約語（S11）、MySQL の upsert の影響行数（I10、4.6）
 
 ---
 
@@ -62,64 +62,64 @@ ScalarDB 側だけ、`audit_log` の採番（IDENTITY / AUTO_INCREMENT）を外�
 
 | dialect | statements | timed | PASS | FAIL | not convertible | writes p50 ratio (median) | reads p50 ratio (median) |
 |---|---|---|---|---|---|---|---|
-| Oracle | 51 | 31 | 29 | 2 | 20 | 7.5x | 51.0x |
-| PostgreSQL | 51 | 31 | 27 | 4 | 20 | 19.6x | 68.5x |
-| MySQL | 51 | 32 | 26 | 6 | 19 | 6.7x | 50.0x |
+| Oracle | 51 | 31 | 29 | 2 | 20 | 7.4x | 51.2x |
+| PostgreSQL | 51 | 31 | 29 | 2 | 20 | 9.0x | 52.0x |
+| MySQL | 51 | 32 | 29 | 3 | 19 | 5.2x | 37.2x |
 
 ### 3.2 文ごとの結果（変換元 p50 / ScalarDB p50 ms、倍率）
 
 | id | statement | Oracle conversion | Oracle | PostgreSQL conversion | PostgreSQL | MySQL conversion | MySQL |
 |---|---|---|---|---|---|---|---|
-| I01 | 列リスト付きの 1 行 INSERT（主キーを含む） | OK | 0.6 / 5.4 (9.2x) | OK | FAIL | OK | FAIL |
-| I02 | 列リストなしの INSERT（表定義の列順に依存する） | WARN | 0.5 / 3.7 (7.9x) | WARN | 0.3 / 10.3 (30.3x) | WARN | FAIL |
-| I03 | 複数行の INSERT（Oracle は INSERT ALL、PostgreSQL・MySQL は VALUES を並べる） | ERROR | — | OK | 0.3 / 7.1 (21.0x) | OK | 0.9 / 11.5 (13.0x) |
+| I01 | 列リスト付きの 1 行 INSERT（主キーを含む） | OK | 1.0 / 10.7 (11.0x) | OK | 0.6 / 8.3 (13.2x) | OK | 1.0 / 9.4 (9.1x) |
+| I02 | 列リストなしの INSERT（表定義の列順に依存する） | WARN | 0.7 / 5.3 (7.3x) | WARN | 0.5 / 5.4 (10.3x) | WARN | 0.9 / 4.9 (5.6x) |
+| I03 | 複数行の INSERT（Oracle は INSERT ALL、PostgreSQL・MySQL は VALUES を並べる） | ERROR | — | OK | 0.5 / 5.0 (9.9x) | OK | 0.9 / 5.6 (6.2x) |
 | I04 | INSERT ... SELECT（別の表から行を写す） | ERROR | — | ERROR | — | ERROR | — |
 | I05 | VALUES の中の DEFAULT（列の既定値を使う。ScalarDB には既定値が無い） | ERROR | — | ERROR | — | ERROR | — |
 | I06 | 現在時刻を入れる（SYSTIMESTAMP / CURRENT_TIMESTAMP / NOW()） | ERROR | — | ERROR | — | ERROR | — |
 | I07 | 採番列（IDENTITY / AUTO_INCREMENT）に任せて主キーを省く。表定義の変換が AUTO_INC で失敗するため、変換ツールは主キーの欠落を検出できない | ERROR | — | ERROR | — | ERROR | — |
 | I08 | シーケンスで主キーを採番（MySQL はシーケンスが無いので採番表を更新する） | ERROR | — | ERROR | — | ERROR | — |
 | I09 | あれば加算、無ければ挿入する upsert（列を参照する更新） | ERROR | — | ERROR | — | ERROR | — |
-| I10 | あれば一部の列を上書き、無ければ挿入する upsert（UPSERT は全列を上書きする） | WARN | 0.5 / 5.0 (9.6x) | WARN | 0.4 / 7.2 (19.9x) | WARN | FAIL |
+| I10 | あれば一部の列を上書き、無ければ挿入する upsert（UPSERT は全列を上書きする） | WARN | 0.7 / 6.1 (8.3x) | WARN | 0.5 / 4.7 (8.7x) | WARN | FAIL |
 | I11 | 無いときだけ挿入する（Oracle は NOT EXISTS、PostgreSQL は ON CONFLICT DO NOTHING、MySQL は INSERT IGNORE） | ERROR | — | ERROR | — | ERROR | — |
 | I12 | VALUES の中のスカラー副問合せ（別の表から単価を引く） | ERROR | — | ERROR | — | ERROR | — |
-| U01 | 主キーを指定した 1 行の UPDATE | OK | 0.5 / 3.9 (8.2x) | OK | 0.3 / 8.4 (24.8x) | OK | 0.9 / 7.7 (8.4x) |
-| U02 | 複合主キーを指定した UPDATE（タイムスタンプのリテラル） | WARN | 0.5 / 5.1 (10.8x) | OK | FAIL | OK | 0.9 / 8.4 (9.1x) |
-| U03 | キー以外の条件で複数行を UPDATE（クロスパーティション走査になる） | WARN | 0.5 / 4.5 (9.9x) | WARN | 0.3 / 6.4 (19.3x) | WARN | 0.8 / 7.5 (9.1x) |
+| U01 | 主キーを指定した 1 行の UPDATE | OK | 0.7 / 6.5 (9.1x) | OK | 0.5 / 5.4 (10.4x) | OK | 0.9 / 5.7 (6.2x) |
+| U02 | 複合主キーを指定した UPDATE（タイムスタンプのリテラル） | OK | 0.7 / 6.3 (8.6x) | OK | 0.5 / 6.1 (12.0x) | OK | 0.9 / 5.7 (6.6x) |
+| U03 | キー以外の条件で複数行を UPDATE（クロスパーティション走査になる） | WARN | 0.7 / 6.7 (9.2x) | WARN | 0.5 / 4.9 (9.2x) | WARN | 1.0 / 5.4 (5.5x) |
 | U04 | 現在の値を使う UPDATE（在庫を減らす。読んで計算して書く必要がある） | ERROR | — | ERROR | — | ERROR | — |
 | U05 | CASE で複数の列を条件付きで更新 | ERROR | — | ERROR | — | ERROR | — |
 | U06 | SET の中の相関副問合せ（明細の合計で注文の合計を直す） | ERROR | — | ERROR | — | ERROR | — |
 | U07 | 別の表を条件にした UPDATE（Oracle は EXISTS、PostgreSQL は UPDATE ... FROM、MySQL は UPDATE ... JOIN） | ERROR | — | ERROR | — | ERROR | — |
-| U08 | NULL を設定し、IS NULL で絞る | WARN | 0.4 / 3.4 (7.7x) | WARN | 0.3 / 6.3 (19.8x) | WARN | 0.8 / 5.1 (6.4x) |
-| U09 | 主キーの IN と BETWEEN を組み合わせた UPDATE | WARN | 0.4 / 3.2 (7.2x) | WARN | 0.3 / 7.0 (21.1x) | WARN | 0.8 / 7.2 (8.8x) |
+| U08 | NULL を設定し、IS NULL で絞る | WARN | 0.8 / 6.1 (7.5x) | WARN | 0.5 / 4.5 (8.8x) | WARN | 0.9 / 4.4 (4.9x) |
+| U09 | 主キーの IN と BETWEEN を組み合わせた UPDATE | WARN | 0.8 / 7.1 (8.7x) | WARN | 0.5 / 5.0 (10.4x) | WARN | 0.9 / 6.0 (6.9x) |
 | U10 | 日付の加算（Oracle は日数の足し算、PostgreSQL は INTERVAL、MySQL は DATE_ADD） | ERROR | — | ERROR | — | ERROR | — |
 | U11 | 並べた先頭 1 行だけを UPDATE（Oracle は ROWNUM、PostgreSQL は副問合せの LIMIT、MySQL は ORDER BY ... LIMIT） | ERROR | — | ERROR | — | ERROR | — |
-| U12 | セカンダリインデックスの列で絞る UPDATE | OK | 0.6 / 3.3 (5.3x) | OK | 0.3 / 5.4 (17.0x) | OK | 0.9 / 5.9 (6.9x) |
-| D01 | 複合主キーを指定した 1 行の DELETE | OK | 0.4 / 2.8 (7.1x) | OK | 0.3 / 4.2 (12.8x) | OK | 0.8 / 4.3 (5.1x) |
-| D02 | パーティションキーとクラスタリングキーの範囲で DELETE | OK | 0.4 / 3.1 (7.2x) | OK | 0.3 / 4.7 (14.5x) | OK | 0.8 / 4.6 (6.0x) |
-| D03 | キー以外の列の IN で DELETE（クロスパーティション走査になる） | WARN | 0.4 / 2.7 (6.8x) | WARN | 0.3 / 4.5 (13.9x) | WARN | 0.8 / 4.5 (6.0x) |
-| D04 | WHERE の無い DELETE（全行） | WARN | 0.5 / 2.4 (5.0x) | WARN | 0.4 / 3.6 (9.6x) | WARN | 0.9 / 4.3 (4.6x) |
+| U12 | セカンダリインデックスの列で絞る UPDATE | OK | 0.7 / 4.8 (6.8x) | OK | 0.5 / 3.8 (8.3x) | OK | 0.8 / 3.6 (4.2x) |
+| D01 | 複合主キーを指定した 1 行の DELETE | OK | 0.8 / 3.9 (5.0x) | OK | 0.5 / 3.1 (6.5x) | OK | 0.8 / 3.0 (3.6x) |
+| D02 | パーティションキーとクラスタリングキーの範囲で DELETE | OK | 0.8 / 4.1 (5.3x) | OK | 2.6 / 15.8 (6.2x) | OK | 0.8 / 3.5 (4.2x) |
+| D03 | キー以外の列の IN で DELETE（クロスパーティション走査になる） | WARN | 0.8 / 3.9 (5.1x) | WARN | 2.5 / 17.8 (7.3x) | WARN | 0.8 / 3.3 (3.9x) |
+| D04 | WHERE の無い DELETE（全行） | WARN | 0.7 / 3.4 (4.8x) | WARN | 2.4 / 12.2 (5.1x) | WARN | 0.8 / 2.7 (3.4x) |
 | D05 | EXISTS 副問合せで絞る DELETE（取り消された注文の明細） | ERROR | — | ERROR | — | ERROR | — |
 | D06 | NOT EXISTS で明細の無い注文を消す | ERROR | — | ERROR | — | ERROR | — |
 | D07 | 別の表を条件にした DELETE（Oracle は IN 副問合せ、PostgreSQL は USING、MySQL は複数表の DELETE） | ERROR | — | ERROR | — | ERROR | — |
 | D08 | 並べた先頭 1 行だけを DELETE（Oracle は ROWNUM、PostgreSQL は副問合せの LIMIT、MySQL は ORDER BY ... LIMIT） | ERROR | — | ERROR | — | ERROR | — |
-| D09 | 消した行を返す DELETE（PostgreSQL は RETURNING。Oracle と MySQL の SQL には無いので主キーで消すだけ） | OK | 0.4 / 2.5 (6.2x) | ERROR | — | OK | 0.9 / 3.0 (3.3x) |
-| S01 | パーティションキーの等値とクラスタリングキーの範囲 | OK | 0.5 / 23.8 (50.6x) | OK | 0.4 / 25.4 (60.5x) | OK | 0.7 / 22.6 (30.6x) |
-| S02 | キーセットページング（行値の比較。Oracle は OR で書く） | WARN | 0.9 / 41.2 (45.8x) | PLANNED | 0.7 / 1314.8 (1933.5x) | PLANNED | 0.6 / 1247.3 (2188.3x) |
-| S03 | OFFSET ページング | PLANNED | 2.4 / 639.0 (268.5x) | PLANNED | 1.7 / 529.1 (304.1x) | PLANNED | 2.8 / 572.9 (208.3x) |
-| S04 | 3 表の結合と集約・HAVING | PLANNED | 8.1 / 1857.9 (230.5x) | PLANNED | 26.9 / 1725.0 (64.1x) | PLANNED | 31.6 / 1820.6 (57.5x) |
-| S05 | LEFT JOIN と IS NULL による反結合（明細の無い注文） | PLANNED | 3.1 / 1517.3 (495.9x) | PLANNED | 5.0 / 1727.4 (346.2x) | PLANNED | 10.7 / 1643.6 (153.3x) |
-| S06 | SELECT 句の相関スカラー副問合せ | PLANNED | 4.9 / 613.6 (125.5x) | PLANNED | 8.4 / 575.1 (68.5x) | PLANNED | 3.5 / 622.0 (178.7x) |
-| S07 | グループごとの上位 1 件（ROW_NUMBER） | PLANNED | 8.3 / 575.7 (69.3x) | PLANNED | 6.2 / 613.9 (99.8x) | PLANNED | 12.4 / 585.0 (47.0x) |
-| S08 | CASE を使った条件付き集約 | PLANNED | 6.4 / 618.0 (96.3x) | PLANNED | 4.5 / 590.9 (130.4x) | PLANNED | 12.1 / 651.8 (54.0x) |
-| S09 | LIKE の ESCAPE（% を含むメールアドレス） | WARN | 0.3 / 6.5 (18.7x) | WARN | 0.5 / 5.7 (12.1x) | WARN | 0.7 / 5.8 (8.4x) |
-| S10 | 大文字小文字を区別しない検索（Oracle は UPPER、PostgreSQL は ILIKE、MySQL は既定の照合順序） | PLANNED | 0.4 / 58.2 (145.5x) | WARN | 0.8 / 6.2 (7.5x) | WARN | FAIL |
+| D09 | 消した行を返す DELETE（PostgreSQL は RETURNING。Oracle と MySQL の SQL には無いので主キーで消すだけ） | OK | 0.8 / 4.2 (5.6x) | ERROR | — | OK | 0.8 / 2.7 (3.2x) |
+| S01 | パーティションキーの等値とクラスタリングキーの範囲 | OK | 0.8 / 7.7 (9.5x) | OK | 0.7 / 8.5 (11.5x) | OK | 1.0 / 6.9 (7.2x) |
+| S02 | キーセットページング（行値の比較。Oracle は OR で書く） | WARN | 1.3 / 32.2 (25.1x) | PLANNED | 1.0 / 1192.0 (1146.1x) | PLANNED | 1.1 / 1347.5 (1182.0x) |
+| S03 | OFFSET ページング | PLANNED | 1.9 / 580.1 (297.5x) | PLANNED | 2.2 / 473.9 (211.6x) | PLANNED | 3.1 / 524.0 (169.0x) |
+| S04 | 3 表の結合と集約・HAVING | PLANNED | 16.2 / 1847.5 (113.9x) | PLANNED | 35.5 / 1677.9 (47.3x) | PLANNED | 41.0 / 1724.4 (42.1x) |
+| S05 | LEFT JOIN と IS NULL による反結合（明細の無い注文） | PLANNED | 4.4 / 1616.9 (367.5x) | PLANNED | 5.5 / 1419.9 (260.5x) | PLANNED | 13.1 / 1505.6 (115.2x) |
+| S06 | SELECT 句の相関スカラー副問合せ | PLANNED | 4.5 / 598.7 (132.5x) | PLANNED | 4.1 / 529.1 (129.7x) | PLANNED | 4.3 / 537.4 (125.6x) |
+| S07 | グループごとの上位 1 件（ROW_NUMBER） | PLANNED | 7.8 / 574.8 (73.9x) | PLANNED | 9.0 / 567.4 (63.1x) | PLANNED | 14.4 / 594.8 (41.4x) |
+| S08 | CASE を使った条件付き集約 | PLANNED | 6.3 / 586.4 (92.6x) | PLANNED | 5.6 / 550.0 (97.9x) | PLANNED | 12.7 / 593.7 (46.7x) |
+| S09 | LIKE の ESCAPE（% を含むメールアドレス） | WARN | 0.8 / 4.8 (6.0x) | WARN | 0.9 / 7.3 (7.9x) | WARN | 1.0 / 4.7 (4.7x) |
+| S10 | 大文字小文字を区別しない検索（Oracle は UPPER、PostgreSQL は ILIKE、MySQL は既定の照合順序） | PLANNED | 1.1 / 54.8 (51.2x) | WARN | 1.2 / 6.2 (5.4x) | WARN | FAIL |
 | S11 | 月ごとに丸めて集計（Oracle は TRUNC、PostgreSQL は DATE_TRUNC、MySQL は DATE_FORMAT） | PLANNED | FAIL | PLANNED | FAIL | PLANNED | FAIL |
-| S12 | NULL の並び位置を指定（MySQL には NULLS LAST が無いので IS NULL で並べる） | WARN | FAIL | WARN | FAIL | PLANNED | 0.6 / 10.0 (18.1x) |
-| S13 | UNION ALL で 2 つの表の行を並べる | PLANNED | 1.2 / 18.4 (15.4x) | PLANNED | 0.6 / 21.9 (36.5x) | PLANNED | 0.8 / 21.8 (28.3x) |
-| S14 | EXISTS による半結合（支払い済みの注文がある顧客） | PLANNED | 3.3 / 170.4 (51.0x) | PLANNED | 2.0 / 277.4 (138.7x) | PLANNED | 3.4 / 182.7 (53.1x) |
-| S15 | FOR UPDATE で行をロックして読む | WARN | 0.6 / 5.0 (9.0x) | WARN | 0.4 / 5.0 (12.6x) | WARN | 0.5 / 4.0 (8.6x) |
-| S16 | 真偽値の列で絞る（Oracle は NUMBER(1)、PostgreSQL は BOOLEAN、MySQL は TINYINT(1)） | WARN | 1.0 / 12.4 (12.2x) | PLANNED | 0.6 / 60.7 (94.8x) | WARN | FAIL |
-| S17 | セカンダリインデックスで絞った集約 | OK | 0.3 / 5.3 (16.2x) | OK | 0.4 / 4.2 (10.7x) | OK | 0.4 / 7.3 (17.4x) |
+| S12 | NULL の並び位置を指定（MySQL には NULLS LAST が無いので IS NULL で並べる） | WARN | FAIL | WARN | FAIL | PLANNED | 0.9 / 8.2 (8.9x) |
+| S13 | UNION ALL で 2 つの表の行を並べる | PLANNED | 1.0 / 19.2 (18.5x) | PLANNED | 1.0 / 18.1 (18.5x) | PLANNED | 1.3 / 17.4 (13.7x) |
+| S14 | EXISTS による半結合（支払い済みの注文がある顧客） | PLANNED | 2.5 / 190.1 (76.6x) | PLANNED | 2.8 / 164.6 (58.0x) | PLANNED | 4.5 / 167.7 (37.2x) |
+| S15 | FOR UPDATE で行をロックして読む | WARN | 1.4 / 4.1 (3.0x) | WARN | 0.8 / 4.2 (5.4x) | WARN | 0.6 / 3.6 (5.9x) |
+| S16 | 真偽値の列で絞る（Oracle は NUMBER(1)、PostgreSQL は BOOLEAN、MySQL は TINYINT(1)） | WARN | 1.0 / 9.5 (9.4x) | PLANNED | 1.0 / 50.4 (52.0x) | WARN | 1.2 / 9.4 (7.9x) |
+| S17 | セカンダリインデックスで絞った集約 | OK | 0.6 / 4.2 (6.8x) | OK | 0.7 / 4.2 (6.3x) | OK | 0.7 / 4.4 (6.4x) |
 | T01 | SAVEPOINT（ScalarDB にはセーブポイントが無い） | ERROR | — | ERROR | — | ERROR | — |
 
 ### 3.3 失敗した文
@@ -127,17 +127,12 @@ ScalarDB 側だけ、`audit_log` の採番（IDENTITY / AUTO_INCREMENT）を外�
 | dialect | id | conversion | detail |
 |---|---|---|---|
 | Oracle | S11 | PLANNED | JdbcSQLSyntaxErrorException: Syntax error in SQL statement "SELECT DATE_TRUNC('MONTH', order_date) AS [*]month, COUNT(*) AS n, SUM(total) AS amount FROM orders GROUP BY DATE_TRUNC('MONTH', order_date) |
-| Oracle | S12 | WARN | row 0: Oracle (1081, 1502.99) vs ScalarDB (106, None) |
-| PostgreSQL | I01 | OK | SQLSyntaxErrorException: Invalid query (INVALID_ARGUMENT: DB-SQL-10026: Syntax error. Line 1:135 no viable alternative at input 'INSERT INTO customers (customer_id, name, email, region, vip, created_a |
-| PostgreSQL | U02 | OK | SQLSyntaxErrorException: Invalid query (INVALID_ARGUMENT: DB-SQL-10026: Syntax error. Line 1:40 no viable alternative at input 'UPDATE stock SET qty = 45, updated_at = TIMESTAMP') |
+| Oracle | S12 | WARN | row 1: expected (1081, 1502.99), actual (106, None) |
 | PostgreSQL | S11 | PLANNED | JdbcSQLSyntaxErrorException: Syntax error in SQL statement "SELECT DATE_TRUNC('MONTH', order_date) AS [*]month, COUNT(*) AS n, SUM(total) AS amount FROM orders GROUP BY DATE_TRUNC('MONTH', order_date) |
-| PostgreSQL | S12 | WARN | row 0: Oracle (1081, 1502.99) vs ScalarDB (106, None) |
-| MySQL | I01 | OK | SQLSyntaxErrorException: Invalid query (INVALID_ARGUMENT: DB-SQL-10052: Unmatched column type. The type of the column vip should be INT, but a boolean value (BOOLEAN) is specified) |
-| MySQL | I02 | WARN | SQLSyntaxErrorException: Invalid query (INVALID_ARGUMENT: DB-SQL-10052: Unmatched column type. The type of the column active should be INT, but a boolean value (BOOLEAN) is specified) |
-| MySQL | I10 | WARN | SQLSyntaxErrorException: Invalid query (INVALID_ARGUMENT: DB-SQL-10052: Unmatched column type. The type of the column active should be INT, but a boolean value (BOOLEAN) is specified) |
+| PostgreSQL | S12 | WARN | row 1: expected (1081, 1502.99), actual (106, None) |
+| MySQL | I10 | WARN | affected row count differs: Oracle 2 vs ScalarDB 1 |
 | MySQL | S10 | WARN | result row count differs: Oracle 1 vs ScalarDB 0 |
 | MySQL | S11 | PLANNED | JdbcSQLSyntaxErrorException: Syntax error in SQL statement "SELECT FORMATDATETIME(order_date, 'yyyy-MM-01') AS [*]month, COUNT(*) AS n, SUM(total) AS amount FROM orders GROUP BY FORMATDATETIME(order_d |
-| MySQL | S16 | WARN | SQLSyntaxErrorException: Invalid query (INVALID_ARGUMENT: DB-SQL-10052: Unmatched column type. The type of the column vip should be INT, but a boolean value (BOOLEAN) is specified) |
 
 ### 3.4 H2 の索引による改善（実行計画の読み取り）
 
@@ -189,11 +184,15 @@ PostgreSQL と MySQL の書き込みは、1 回目の計測で ScalarDB 側が�
 
 変換や ScalarDB SQL の問題ではない。ScalarDB Cluster を再起動してから書き込みを計測し直した（`difftest/bench_dml.py --restart-cluster`）。本番でも、表を削除して別の型で作り直したときは、ScalarDB Cluster のノードを再起動する必要がある。
 
-### 4.5 PostgreSQL の DATE / TIMESTAMP リテラルがそのまま残る（I01・U02）
+### 4.5 PostgreSQL の DATE / TIMESTAMP リテラルがそのまま残る（I01・U02）→ 修正済み（2026-09-19）
+
+**修正**: 列の型が日時のとき、型付きリテラル（`DATE '...'`、`TIMESTAMP '...'`、`'...'::date`）を素の文字列リテラルにする。あわせて、`UPDATE` の `SET` の値を列の型に合わせていなかった（日付だけのリテラルの補完も漏れていた）のを、`VALUES`・述語と同じ扱いにした。取り直しで I01・U02 は PASS。以下は当時の記述。
 
 PostgreSQL の `DATE '2024-09-01'`・`TIMESTAMP '2024-09-01 10:00:00'` は、変換ツールがそのまま ScalarDB SQL に出力し（判定は OK）、ScalarDB で構文エラー（DB-SQL-10026）になった。Oracle の同じ書き方は文字列リテラルに書き換えているので動く。PostgreSQL の型付きリテラル（sqlglot では CAST）も、文字列リテラルに書き換える必要がある。
 
-### 4.6 MySQL の真偽値リテラルと照合順序（I01・I02・I10・S16、S10）
+### 4.6 MySQL の真偽値リテラルと照合順序（I01・I02・I10・S16、S10）→ 真偽値は修正済み（2026-09-19）
+
+**修正**: 列の ScalarDB の型が INT / BIGINT のとき、`TRUE` / `FALSE` を `1` / `0` にする（INFO `BOOL_LIT`）。列リストの無い `INSERT`（I02）は、表定義の列順で値を列に合わせる。取り直しで I01・I02・S16 は PASS。I10 は型の不一致が消えて実行できるようになり、別の差が見えた: MySQL は `ON DUPLICATE KEY UPDATE` が既存の行を更新したとき影響行数 2 を返し、ScalarDB の `UPSERT` は 1 を返す。データの差ではなくドライバの約束の差で、影響行数を見ているアプリケーションは直す必要がある。照合順序（S10）は未対応のまま。以下は当時の記述。
 
 MySQL の `TINYINT(1)` は ScalarDB では INT になるが、`TRUE` / `FALSE` はそのまま出力され、ScalarDB で型の不一致（DB-SQL-10052）になった（書き込み 3 文と S16）。列の型が INT のときは `1` / `0` に書き換える必要がある。
 

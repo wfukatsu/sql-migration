@@ -26,14 +26,18 @@ container=difftest-$node-1
 restart_node() {
   # a fresh node per compatibility case: the cases create emp with different columns, and a running node keeps using
   # the old table definition ("column job does not exist", "cached plan must not change result type")
-  n=$(docker logs "$container" 2>&1 | grep -c 'main services started')
+  # `|| true`: on a node that has not logged the line yet (just created) grep -c prints 0 and exits 1, and
+  # `set -e` then ended the whole script without a word
+  n=$(docker logs "$container" 2>&1 | grep -c 'main services started' || true)
   # every profile, so that compose accepts the node's dependencies (the Oracle-backed node depends on source-oracle)
   if ! docker compose -f difftest/docker-compose.yml --profile cluster --profile cassandra --profile oracle \
          --profile oracle-backend restart "$node" > /dev/null; then
     echo "backend_compare: could not restart $node" >&2; exit 1
   fi
-  until [ "$(docker logs "$container" 2>&1 | grep -c 'main services started')" -gt "$n" ]; do
-    docker logs --tail 5 "$container" 2>&1 | grep -q 'Shutting down' && { echo "backend_compare: $node stopped" >&2; exit 1; }
+  until [ "$(docker logs "$container" 2>&1 | grep -c 'main services started' || true)" -gt "$n" ]; do
+    # the container's state, not its log: right after a restart the last lines are still the old process saying
+    # 'Shutting down', which read as "the node stopped" while it was coming up
+    [ "$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null)" = true ] || { echo "backend_compare: $node stopped" >&2; exit 1; }
     sleep 3
   done
 }
@@ -43,6 +47,12 @@ for case in oracle oracle-features; do
       --json-out "$out/$backend.$case.json" > "$out/$backend.$case.log" 2>&1 || true   # FAIL rows are results, not errors
   tail -1 "$out/$backend.$case.log"
 done
+# One discarded pass first. The node was restarted for the compatibility cases, and a freshly started node is slow
+# for its first few hundred requests (JIT, connection pools): measured right after, the 5,000-row point read came
+# out slower than the 40,000-row one.
+first=${SIZES%% *}
+$py difftest/bench.py --rows "$first" --iterations 10 --warmup 3 --backend "$backend" \
+    --out "$out/warmup-$backend" > "$out/warmup-$backend.log" 2>&1 || true
 for n in $SIZES; do
   $py difftest/bench.py --rows "$n" --iterations "$ITER" --warmup "$WARMUP" --backend "$backend" \
       --out "$out/bench-$backend-$n" > "$out/bench-$backend-$n.log" 2>&1 || true

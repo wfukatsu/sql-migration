@@ -33,8 +33,12 @@ import java.util.Map;
  * benchmark doubles as a compatibility test at data-set scale. (This comment used to say every iteration was
  * compared; only the last result was kept.)
  *
- * What the numbers do not control for: each query runs its Oracle leg to completion before its ScalarDB leg, so the
- * two are not interleaved, and the plan leg converts every row to JSON where the JDBC legs convert `verify_rows`.
+ * The two legs of a query are interleaved: both warm up, then every measured iteration runs the source leg and the
+ * ScalarDB leg back to back, so that a drift of the host (another container, GC, thermal throttling) falls on both
+ * instead of on whichever ran second. A leg that fails stops, the other one goes on.
+ *
+ * What the numbers do not control for: the plan leg converts every row to JSON where the JDBC legs convert
+ * `verify_rows`.
  */
 public class Bench {
 
@@ -80,40 +84,26 @@ public class Bench {
         Object base = q.get("iterate_base");
         Reset resetSource = resetWith(oracle, (List<String>) q.get("reset_source"));
         Reset resetScalar = resetWith(scalar, (List<String>) q.get("reset_scalardb"));
-        rec.put("oracle", measure(() -> new Exec() {
-          public Map<String, Object> call(int i) throws Exception {
-            return write ? jdbcUpdate(oracle, iterate((String) q.get("oracle_sql"), i, base))
-                         : jdbcQuery(oracle, iterate((String) q.get("oracle_sql"), i, base), verifyRows);
-          }
-        }, iterations, warmup, resetSource));
+        Leg sourceLeg = new Leg(i -> write ? jdbcUpdate(oracle, iterate((String) q.get("oracle_sql"), i, base))
+            : jdbcQuery(oracle, iterate((String) q.get("oracle_sql"), i, base), verifyRows), resetSource);
 
-        Map<String, Object> scalarResult;
+        Leg scalarLeg;
         if ("plan".equals(q.get("path"))) {
           Plan plan = Runner.GSON.fromJson(Files.readString(Path.of((String) q.get("plan_file"))), Plan.class);
           Fetcher fetcher = "core".equals(q.getOrDefault("fetcher", "jdbc")) ? core : sqlFetcher;
-          scalarResult = measure(() -> new Exec() {
-            public Map<String, Object> call(int i) throws Exception {
-              return planRun(fetcher, plan, verifyRows, h2Indexes);
-            }
-          }, iterations, warmup);
+          scalarLeg = new Leg(i -> planRun(fetcher, plan, verifyRows, h2Indexes), null);
         } else if ("appside".equals(q.get("path"))) {
           AppSideQuery impl = (AppSideQuery) Class.forName((String) q.get("appside_class"))
               .getDeclaredConstructor().newInstance();
           List<Map<String, Object>> fetches = (List<Map<String, Object>>) q.get("fetch");
-          scalarResult = measure(() -> new Exec() {
-            public Map<String, Object> call(int i) throws Exception {
-              return appsideRun(scalar, impl, fetches, verifyRows);
-            }
-          }, iterations, warmup);
+          scalarLeg = new Leg(i -> appsideRun(scalar, impl, fetches, verifyRows), null);
         } else {
-          scalarResult = measure(() -> new Exec() {
-            public Map<String, Object> call(int i) throws Exception {
-              return write ? jdbcUpdate(scalar, iterate((String) q.get("scalardb_sql"), i, base))
-                           : jdbcQuery(scalar, iterate((String) q.get("scalardb_sql"), i, base), verifyRows);
-            }
-          }, iterations, warmup, resetScalar);
+          scalarLeg = new Leg(i -> write ? jdbcUpdate(scalar, iterate((String) q.get("scalardb_sql"), i, base))
+              : jdbcQuery(scalar, iterate((String) q.get("scalardb_sql"), i, base), verifyRows), resetScalar);
         }
-        rec.put("scalardb", scalarResult);
+        measure(iterations, warmup, sourceLeg, scalarLeg);
+        rec.put("oracle", sourceLeg.result());
+        rec.put("scalardb", scalarLeg.result());
         out.add(rec);
       }
     }
@@ -124,8 +114,6 @@ public class Bench {
   }
 
   interface Exec { Map<String, Object> call(int iteration) throws Exception; }
-
-  interface ExecFactory { Exec get(); }
 
   /** Restores the data set before an iteration (untimed), so that a write applies to the same state every time. */
   interface Reset { void run() throws Exception; }
@@ -143,43 +131,57 @@ public class Bench {
     };
   }
 
-  static Map<String, Object> measure(ExecFactory factory, int iterations, int warmup) {
-    return measure(factory, iterations, warmup, null);
-  }
+  /** One execution path of a query: its per-iteration wall-clock milliseconds, row counts and last result. */
+  static final class Leg {
+    private final Exec exec;
+    private final Reset reset;
+    private final List<Double> ms = new ArrayList<>();
+    private Map<String, Object> last;
+    private long rowsMin = Long.MAX_VALUE;
+    private long rowsMax = Long.MIN_VALUE;
+    private String error;
 
-  /** Run warmup + measured iterations, collecting per-iteration wall-clock milliseconds and the last result. */
-  static Map<String, Object> measure(ExecFactory factory, int iterations, int warmup, Reset reset) {
-    Exec exec = factory.get();
-    Map<String, Object> res = new LinkedHashMap<>();
-    List<Double> ms = new ArrayList<>();
-    Map<String, Object> last = null;
-    long rowsMin = Long.MAX_VALUE;
-    long rowsMax = Long.MIN_VALUE;
-    try {
-      for (int i = 0; i < warmup; i++) {
-        if (reset != null) reset.run();
-        exec.call(i);
-      }
-      for (int i = 0; i < iterations; i++) {
+    Leg(Exec exec, Reset reset) {
+      this.exec = exec;
+      this.reset = reset;
+    }
+
+    /** Run iteration i; after an error the leg stays stopped, so that its numbers end where it failed. */
+    void step(int i, boolean timed) {
+      if (error != null) return;
+      try {
         if (reset != null) reset.run();
         long t0 = System.nanoTime();
-        last = exec.call(warmup + i);
+        Map<String, Object> r = exec.call(i);
+        if (!timed) return;
         ms.add((System.nanoTime() - t0) / 1_000_000.0);
-        if (last.get("rows") instanceof Number n) {
+        last = r;
+        if (r.get("rows") instanceof Number n) {
           rowsMin = Math.min(rowsMin, n.longValue());
           rowsMax = Math.max(rowsMax, n.longValue());
         }
+      } catch (Exception e) {
+        error = e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage()).split("\n")[0];
       }
-    } catch (Exception e) {
-      res.put("error", e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage()).split("\n")[0]);
     }
-    res.put("ms", ms);
-    if (last != null) res.putAll(last);
-    if (rowsMax >= rowsMin) {
-      res.put("rows_min", rowsMin);
-      res.put("rows_max", rowsMax);
+
+    Map<String, Object> result() {
+      Map<String, Object> res = new LinkedHashMap<>();
+      if (error != null) res.put("error", error);
+      res.put("ms", ms);
+      if (last != null) res.putAll(last);
+      if (rowsMax >= rowsMin) {
+        res.put("rows_min", rowsMin);
+        res.put("rows_max", rowsMax);
+      }
+      return res;
     }
-    return res;
+  }
+
+  /** Warm every leg up, then run the measured iterations leg by leg within each iteration (interleaved). */
+  static void measure(int iterations, int warmup, Leg... legs) {
+    for (int i = 0; i < warmup; i++) for (Leg leg : legs) leg.step(i, false);
+    for (int i = 0; i < iterations; i++) for (Leg leg : legs) leg.step(warmup + i, true);
   }
 
   /** Substitute ${i} by (iterate_base + iteration), so that each iteration touches a different row. */
@@ -203,6 +205,13 @@ public class Bench {
       ResultSetMetaData m = rs.getMetaData();
       List<String> columns = new ArrayList<>();
       for (int i = 1; i <= m.getColumnCount(); i++) columns.add(m.getColumnLabel(i));
+      // the sample travels as JSON, where a date is text. The harness compares text as text unless it is told the
+      // column is a date: Oracle's DATE ('2023-09-29T00:00') and ScalarDB's DATE ('2023-09-29') are the same day
+      List<Integer> temporal = new ArrayList<>();
+      for (int i = 1; i <= m.getColumnCount(); i++) {
+        int t = m.getColumnType(i);
+        if (t == java.sql.Types.DATE || t == java.sql.Types.TIME || t == java.sql.Types.TIMESTAMP) temporal.add(i - 1);
+      }
       List<List<Object>> sample = new ArrayList<>();
       int n = 0;
       while (rs.next()) {
@@ -214,7 +223,9 @@ public class Bench {
         n++;
       }
       c.commit();
-      return map("columns", columns, "rows", n, "sample", sample);
+      Map<String, Object> out = map("columns", columns, "rows", n, "sample", sample);
+      out.put("temporal", temporal);
+      return out;
     }
   }
 

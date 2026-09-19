@@ -1,11 +1,11 @@
-# ｋOracle → ScalarDB + Cassandra 変換検証 報告書
+# Oracle → ScalarDB + Cassandra 変換検証 報告書
 
-作成日: 2026-09-11
+作成日: 2026-09-11（互換性の件数は 2026-09-19 に、レビュー #27 の修正後の `main` で取り直した。4 章。応答時間の取り直しは `docs/scalardb-backend-comparison.md`）
 関連文書: `docs/cassandra-verification-plan.md` (計画書)、`docs/bench-report.md` (Oracle と ScalarDB + PostgreSQL の比較)、`docs/oracle-sql-report.md` (Oracle 固有 SQL の網羅調査)、`docs/app-side-processing-plan.md` (アプリ側処理のパターン)
 
 ## 要約
 
-- **ScalarDB + Cassandra で動くのは、キー (主キー・パーティションキー・セカンダリインデックス) で行を取得できる文である。** クロスパーティション走査は RDBMS バックエンドでのみ使う方針のもと、Cassandra では ScalarDB にキー指定のアクセスだけをさせ、絞り込み・並べ替え・集約はアプリ側 (H2) で行った。この構成で、実行できた文はすべて Oracle と同じ結果を返した (PostgreSQL でも失敗する既知の 2 文を除く)。
+- **ScalarDB + Cassandra で動くのは、キー (主キー・パーティションキー・セカンダリインデックス) で行を取得できる文である。** クロスパーティション走査は RDBMS バックエンドでのみ使う方針のもと、Cassandra では ScalarDB にキー指定のアクセスだけをさせ、絞り込み・並べ替え・集約はアプリ側 (H2) で行った。この構成で、実行できた文はすべて Oracle と同じ結果を返した (2026-09-11 の時点では PostgreSQL でも失敗する 2 文が例外だった。2026-09-19 の取り直しでは例外は無い)。
 - **NoSQL 適性ケース 30 文の判定は、向く 17、条件付き 3、取得不可 10。** 向くのは主キーの読み書き、パーティション内の範囲 (「顧客ごとの最新 N 件」)、キーで駆動する JOIN、キーの `IN` で、40,000 行でも 11〜26 ms と表サイズに依らない。条件付きは低カーディナリティ列のインデックスで、返す行に比例して遅くなる。取得不可は全表の集計・無索引列の検索・全表の上位 N 件・`OFFSET` ページング・非キー条件の一括更新で、キー設計の変更、集計表、ScalarDB Analytics のいずれかが要る。
 - **既存の Oracle SQL のうち、Cassandra でそのまま動くものは少ない。** Oracle 固有機能ケース 62 文では 47 文が取得不可になった。Oracle 固有の関数や構文そのものはアプリ側で処理できるため問題にならず、表全体を読む書き方が障害になる。
 - **Cassandra では ScalarDB の設定に注意が要る。** パーティションをまたぐ並べ替えを有効にするとノードが起動しない (DB-CORE-10128)。走査の取得単位 `scan_fetch_size` の既定値 10 のままでは走査が 10 倍以上遅い。
@@ -139,11 +139,22 @@ Oracle に直接投げた結果を正解とし、ScalarDB 経由の結果を値�
 | `oracle.sql` (17 文) | ScalarDB + PostgreSQL | 17 | 0 | 0 | 0 |
 | | ScalarDB + Cassandra 改修前 (走査あり) | 13 | 4 | 0 | 0 |
 | | ScalarDB + Cassandra 改修後 (走査なし) | 5 | 0 | 12 | 0 |
+| | **2026-09-19 取り直し**: PostgreSQL / Oracle / Cassandra (走査なし) | 17 / 17 / 5 | 0 / 0 / 0 | 0 / 0 / 12 | 0 / 0 / 0 |
 | `oracle-features.sql` (読み取り 62 文) | ScalarDB + PostgreSQL | 51 | 9 | 0 | 2 |
 | | ScalarDB + Cassandra 改修前 (走査あり) | 45 | 15 | 0 | 2 |
 | | ScalarDB + Cassandra 改修後 (走査なし) | 11 | 2 | 47 | 2 |
+| | **2026-09-19 取り直し**: PostgreSQL / Oracle / Cassandra (走査なし) | 52 / 52 / 12 | 0 / 0 / 0 | 0 / 0 / 47 | 10 / 10 / 3 |
 
 `oracle-features.sql` の PostgreSQL と Cassandra 改修後は、ScalarDB Cluster ノードを起動し直してから単独で実行した結果である (9 章の「初回の実行で起きた事象」を参照)。PostgreSQL の 51 / 9 / 2 は前回の報告 (`docs/oracle-sql-report.md`) と一致する。
+
+**2026-09-19 の取り直し (Issue #28) で変わった点。** 比較を厳しくし (#27 の 36)、H2 が実行できない構文を実行前に断るようにした (#27) あとの `main` で、3 つのバックエンドを取り直した。不一致は 0 になった。
+
+- #21 `CAST(sal AS VARCHAR2)`: 不一致 → **一致**。`NUMBER(7,2)` をアプリ側のエンジンでも `NUMERIC(7,2)` として扱うようにした (#29)。Cassandra の一致が 11 → 12 になったのはこの文。
+- JDBC バックエンドで不一致だった残りの 8 文 (#32、#33、#39、#42〜#46: CONNECT BY、KEEP、GROUPING / CUBE / GROUPING SETS、PIVOT / UNPIVOT) は、結果が違うまま実行するのをやめて**変換不可**にした。変換不可 10 文はこの 8 文と #31 (`(+)`)、#64 (`ROWID`)。
+- Cassandra の変換不可 (その他) 3 文は #31、#43、#64。#43 (CUBE) は前回「不一致」だった文で、キーで取得できる (`deptno IN (...)`) ため「キーで取得できない」ではなく H2 の構文の理由で断られる。残りの 7 文はキーで取得できない 47 文の側に入る。
+- `bench.sql` (9 一致 / 6 取得不可) と `nosql-patterns.sql` (20 一致 / 10 取得不可) は 3 規模とも前回と同じ。ベンチマークの比較は、日付の列を日付として突き合わせるよう直した (両側が JSON の文字列で届くため、厳しくした比較では Oracle の DATE `'2023-09-29T00:00'` と ScalarDB の DATE `'2023-09-29'` が文字列どうしの比較になり、日付を返す 3 文が偽の FAIL になっていた)。
+
+以下は 2026-09-11 の記述である。
 
 **改修前 (Cassandra を意識しない変換、クロスパーティション走査あり) に増えた失敗は、すべて DB-CORE-10007 (パーティションをまたぐ `ORDER BY`)** だった。`oracle.sql` の 4 文 (インデックス等値 + `ORDER BY`、無索引条件 + `ORDER BY`、日付条件 + `ORDER BY`、外部結合 + `ORDER BY`) と、`oracle-features.sql` の 6 文 (#20 TO_DATE、#30 `(+)` 外部結合、#59 NULL の既定ソート順、#60 LIKE ESCAPE、#61 JOIN USING、#66 TO_TIMESTAMP) で、いずれも関数や構文ではなく末尾の `ORDER BY` が原因である。
 
