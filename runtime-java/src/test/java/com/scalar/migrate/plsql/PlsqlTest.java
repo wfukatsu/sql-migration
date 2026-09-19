@@ -84,11 +84,13 @@ class PlsqlTest {
   }
 
   @Test
-  void bindLeavesAMomentAloneForAColumnThatKeepsTheZone() {
-    // TIMESTAMPTZ はタイムゾーンを保てるので、落とすと情報が減る
+  void bindHandsATimestamptzColumnTheSameInstant() {
+    // 以前は「TIMESTAMPTZ はタイムゾーンを保てるので素通し」としていたが、ScalarDB SQL のドライバは
+    // OffsetDateTime を型ごと拒否する（DB-SQL-10016。`record_payment` で実測、2026-09-19）。瞬間として
+    // 渡す。元の offset は失われるが、瞬間は同じである（AuditBindIT が実クラスタで往復を確かめている）
     java.time.OffsetDateTime moment =
         java.time.OffsetDateTime.parse("2026-01-15T09:30:00-05:00");
-    assertEquals(moment, Plsql.bind(moment, "TIMESTAMPTZ", 0));
+    assertEquals(moment.toInstant(), Plsql.bind(moment, "TIMESTAMPTZ", 0));
   }
 
   @Test
@@ -180,5 +182,21 @@ class PlsqlTest {
   void numbersAreUnchanged() {
     assertEquals(0, new BigDecimal("3").compareTo((BigDecimal) Plsql.sub(5, 2)));
     assertNull(Plsql.add(null, 1));
+  }
+  // --- TIMESTAMPTZ を読む（2026-09-19 / last_paid_at）------------------------------------------------
+
+  @Test
+  void anInstantReadBackIsTheSameMomentAtUtc() {
+    // ScalarDB の TIMESTAMPTZ は Instant で返る。cast すると ClassCastException で落ちていた
+    java.time.Instant instant = java.time.Instant.parse("2026-01-15T00:30:00Z");
+    assertEquals(java.time.OffsetDateTime.parse("2026-01-15T00:30:00Z"), Plsql.zoned(instant));
+    assertEquals(instant, Plsql.zoned(instant).toInstant());
+  }
+
+  @Test
+  void anOffsetDateTimeIsKeptAsItIs() {
+    var moment = java.time.OffsetDateTime.parse("2026-01-15T09:30:00+09:00");
+    assertEquals(moment, Plsql.zoned(moment));
+    assertNull(Plsql.zoned(null));
   }
 }

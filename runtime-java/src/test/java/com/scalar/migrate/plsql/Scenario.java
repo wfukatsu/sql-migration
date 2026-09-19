@@ -29,6 +29,17 @@ public record Scenario(String name, String unit, String routine, Map<String, Obj
   private static final java.util.regex.Pattern PROJECTION =
       java.util.regex.Pattern.compile(":(\\w+)\\s*:=\\s*(\\w+)\\.(\\w+)\\s*;");
 
+  /**
+   * `:o_is_null := CASE WHEN v IS NULL THEN 1 ELSE 0 END;` -- 返った値が NULL かどうかだけを観る射影。
+   * 値そのものを固定できない（時計の値）ときに、シナリオが観るのはこれだけである（2026-09-19）。
+   */
+  private static final java.util.regex.Pattern IS_NULL = java.util.regex.Pattern.compile(
+      ":(\\w+)\\s*:=\\s*CASE\\s+WHEN\\s+\\w+\\s+IS\\s+NULL\\s+THEN\\s+1\\s+ELSE\\s+0\\s+END\\s*;",
+      java.util.regex.Pattern.CASE_INSENSITIVE);
+
+  /** 射影の印: 返った値そのものが NULL なら 1、そうでなければ 0。 */
+  public static final String IS_NULL_OF_RESULT = "#is_null";
+
   public static Scenario read(Path file) throws Exception {
     try (Reader reader = Files.newBufferedReader(file)) {
       return of(new Yaml().load(reader));
@@ -94,13 +105,17 @@ public record Scenario(String name, String unit, String routine, Map<String, Obj
     while (matcher.find()) {
       out.put(matcher.group(1), matcher.group(3));
     }
+    java.util.regex.Matcher isNull = IS_NULL.matcher(body);
+    while (isNull.find()) {
+      out.put(isNull.group(1), IS_NULL_OF_RESULT);
+    }
     return out;
   }
 
   /** True when the block does something beyond calling the routine and projecting fields out of the result. */
   public boolean blockIsMoreThanAProjection() {
     if (!"block".equals(kind) || body == null) return false;
-    String stripped = PROJECTION.matcher(body).replaceAll("");
+    String stripped = IS_NULL.matcher(PROJECTION.matcher(body).replaceAll("")).replaceAll("");
     // what is left should be the DECLARE of the record, the call assigning into it, and BEGIN / END
     return !stripped.replaceAll("(?s)DECLARE.*?BEGIN", "").replaceAll("\\s+", "")
         .matches("(?i)\\w+:=[\\w.]+\\([^)]*\\);END;");

@@ -294,8 +294,28 @@ def compare_variant(variant: str, scales: dict) -> dict:
         report["scenarios"][name] = {
             "routine": routine, "verdict": verdicts.get(routine, "REVIEW"),
             "differences": [d for d in found if not _scale_only(d)],
-            "scale_only": [d for d in found if _scale_only(d)]}
+            "scale_only": [d for d in found if _scale_only(d)],
+            "direct": _is_direct_dml(name)}
     return report
+
+
+def _is_direct_dml(name: str) -> bool:
+    """シナリオが routine を呼ばず、**素の DML だけ**を流すものか（trigger のシナリオ）。
+
+    その経路は PL/SQL の外から表へ直接書くもので、移行先の trigger は掛からない（#12 §0）。差が出るのは
+    **決めたとおり**であって、生成器の不具合ではない。見分けて書かないと、読む人が不具合として追う。
+    """
+    import yaml
+
+    from difftest.plsql_setup import BLOCK, DML
+
+    path = ROOT / "fixtures" / "plsql" / "scenarios" / f"{name}.yaml"
+    if not path.exists():
+        return False
+    call = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("call") or {}
+    matched = BLOCK.match(call.get("body") or "") if call.get("kind") == "block" else None
+    parts = [p.strip() for p in matched.group("body").split(";") if p.strip()] if matched else []
+    return bool(parts) and all(DML.match(p) for p in parts)
 
 
 # `column: expected=... actual=... (kind)` -- the kind this comparison assigned to one difference
@@ -332,7 +352,9 @@ def render(report: dict) -> int:
 
     for name, scenario in sorted(differing.items()):
         marker = "!!" if scenario["verdict"] == "AUTO" else "  "
-        print(f"{marker} {name}  [{scenario['verdict']}] {scenario['routine']}")
+        note = "  -- 直接の DML: 移行先の trigger は掛からない（#12 §0 で決めた穴）" \
+            if scenario.get("direct") else ""
+        print(f"{marker} {name}  [{scenario['verdict']}] {scenario['routine']}{note}")
         for line in scenario["differences"]:
             print(f"     {line}")
 

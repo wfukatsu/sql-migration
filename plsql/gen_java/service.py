@@ -1093,6 +1093,10 @@ def _into(file: JavaFile, value: str, target_type: str) -> str:
     if target_type == "BigDecimal":
         file.add_import("com.scalar.migrate.plsql.Plsql")
         return f"Plsql.dec({value})"
+    if target_type == "OffsetDateTime":
+        # ScalarDB の TIMESTAMPTZ 列は Instant で返る。cast すると落ちる（`last_paid_at` / 2026-09-19）
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        return f"Plsql.zoned({value})"
     return f"({target_type}) {value}"
 
 

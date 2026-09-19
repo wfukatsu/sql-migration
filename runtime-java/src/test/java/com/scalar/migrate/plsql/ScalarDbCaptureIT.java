@@ -78,7 +78,9 @@ class ScalarDbCaptureIT {
 
     for (Scenario scenario : Scenario.readAll(SCENARIOS)) {
       try {
-        ScalarDbRunner.Invocation invoker = Invoker.forScenario(scenario, runner.connection());
+        ScalarDbRunner.Invocation direct = setup.direct(scenario, runner, scenario.args());
+        ScalarDbRunner.Invocation invoker =
+            direct != null ? direct : Invoker.forScenario(scenario, runner.connection());
         runner.reset();
         for (String statement : setup.forScenario(scenario)) {
           try {
@@ -119,7 +121,8 @@ class ScalarDbCaptureIT {
    * <p>Read rather than rewritten here: the converter under migration is the one that has to produce these rows,
    * and a setup it cannot convert is a finding, not something for the harness to route around.
    */
-  record ConvertedSetup(Map<String, List<String>> converted, Map<String, String> unconvertible) {
+  record ConvertedSetup(Map<String, List<String>> converted, Map<String, String> unconvertible,
+                        Map<String, Map<String, Object>> directs) {
     @SuppressWarnings("unchecked")
     static ConvertedSetup read(Path file) throws Exception {
       if (!Files.exists(file)) {
@@ -128,9 +131,54 @@ class ScalarDbCaptureIT {
       }
       Map<String, Object> root = GSON.fromJson(Files.readString(file), Map.class);
       Map<String, List<String>> converted = new TreeMap<>();
-      ((Map<String, Map<String, Object>>) root.get("scenarios")).forEach(
-          (name, body) -> converted.put(name, (List<String>) body.get("setup")));
-      return new ConvertedSetup(converted, new TreeMap<>((Map<String, String>) root.get("unconvertible")));
+      Map<String, Map<String, Object>> directs = new TreeMap<>();
+      ((Map<String, Map<String, Object>>) root.get("scenarios")).forEach((name, body) -> {
+        converted.put(name, (List<String>) body.get("setup"));
+        if (body.get("direct") != null) directs.put(name, (Map<String, Object>) body.get("direct"));
+      });
+      return new ConvertedSetup(converted, new TreeMap<>((Map<String, String>) root.get("unconvertible")),
+          directs);
+    }
+
+    /**
+     * ブロックが素の DML だけのシナリオ（trigger のシナリオ）を、**同じ DML を ScalarDB へ直接流す**
+     * 呼び出しにする（2026-09-19）。PL/SQL の外から表へ直接書く経路であり、移行先の trigger は
+     * 掛からない（#12 §0）——それを比べて、数字に出す。
+     *
+     * <p>DML が ScalarDB SQL に変換できなかった場合は、それを**結果として**返す（投げる）。
+     * 「このクライアントの文は、移行後はそのままでは通らない」というのが、その経路の答えだからである。
+     */
+    @SuppressWarnings("unchecked")
+    ScalarDbRunner.Invocation direct(Scenario scenario, ScalarDbRunner runner, Map<String, Object> args) {
+      Map<String, Object> spec = directs.get(scenario.name());
+      if (spec == null) return null;
+      if (spec.get("refused") != null) {
+        String reason = (String) spec.get("refused");
+        return () -> {
+          throw new IllegalStateException("直接の DML が ScalarDB SQL に変換できない: " + reason);
+        };
+      }
+      List<Map<String, Object>> statements = (List<Map<String, Object>>) spec.get("statements");
+      return () -> {
+        for (Map<String, Object> statement : statements) {
+          Map<String, Object> params = new LinkedHashMap<>();
+          for (Map<String, Object> bind : (List<Map<String, Object>>) statement.get("binds")) {
+            String name = (String) bind.get("name");
+            Object value = args.get(name);
+            if (value instanceof Number n && !(value instanceof BigDecimal)) value = new BigDecimal(n.toString());
+            params.put(name, Plsql.bind(value, (String) bind.get("type"),
+                ((Number) bind.get("scale")).intValue()));
+          }
+          List<Object> values = new ArrayList<>();
+          String bound = com.scalar.migrate.runtime.Residual.bindNamed(
+              (String) statement.get("sql"), params, values);
+          try (java.sql.PreparedStatement prepared = runner.connection().prepareStatement(bound)) {
+            for (int i = 0; i < values.size(); i++) prepared.setObject(i + 1, values.get(i));
+            prepared.executeUpdate();
+          }
+        }
+        return null;
+      };
     }
 
     List<String> forScenario(Scenario scenario) throws Unrunnable {
