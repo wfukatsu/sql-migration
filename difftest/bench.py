@@ -15,6 +15,7 @@ Only the harness talks to Oracle. Everything on the ScalarDB side goes through S
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import re
 import statistics

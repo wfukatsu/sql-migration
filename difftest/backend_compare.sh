@@ -35,7 +35,9 @@ restart_node() {
     echo "backend_compare: could not restart $node" >&2; exit 1
   fi
   until [ "$(docker logs "$container" 2>&1 | grep -c 'main services started' || true)" -gt "$n" ]; do
-    docker logs --tail 5 "$container" 2>&1 | grep -q 'Shutting down' && { echo "backend_compare: $node stopped" >&2; exit 1; }
+    # the container's state, not its log: right after a restart the last lines are still the old process saying
+    # 'Shutting down', which read as "the node stopped" while it was coming up
+    [ "$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null)" = true ] || { echo "backend_compare: $node stopped" >&2; exit 1; }
     sleep 3
   done
 }
