@@ -11,61 +11,115 @@
 
 items:
   OPS-1:
-    状態: 未決
+    状態: 決定
     出た:
     - '`application/TriggerChecks.java` / `TriggerCheckJob.java` — TriggerCheckJob.java; TriggerChecks.java'
+    決定: a. アプリの外の定期ジョブ（Kubernetes CronJob など）から TriggerCheckJob.daily / hourly を呼ぶ。全件読みを業務と同じプロセスで動かさないため
+    決めた人: 移行担当（PoC 実施者）
+    日付: '2026-09-19'
+    記録先: 運用設計書
   OPS-2:
-    状態: 未決
+    状態: 決定
     出た:
     - '`application/TriggerChecks.java` / `TriggerCheckJob.java` — TriggerCheckJob.java; TriggerChecks.java'
+    決定: 日次の照合（監査 A 型・採番 C 型）は毎日 01:00。間隔は daily / hourly の既定のまま
+    決めた人: 移行担当（PoC 実施者）
+    日付: '2026-09-19'
+    記録先: 運用設計書（ジョブの定義）
+    残り: hourly の照合（payments / products の全件）が本番の件数で 1 時間に収まるかの測定
   OPS-3:
-    状態: 未決
+    状態: 決定
     出た:
     - '`application/TriggerChecks.java` / `TriggerCheckJob.java` — TriggerCheckJob.java; TriggerChecks.java'
+    決定: A（監査漏れ）は TriggerCheckJob.daily が BACKFILL の印つきで自動で補う。B / D / C は運用担当に通知し、人が判断して記録する
+    決めた人: 移行担当（PoC 実施者）
+    日付: '2026-09-19'
+    記録先: 運用設計書（障害対応の手順）
+    残り: 通知先と対応期限、対応済みの印をどこに持つか（同じずれが毎回報告されるため）
   OPS-4:
-    状態: 未決
+    状態: 決定
     出た:
     - '`application/TriggerChecks.java` / `TriggerCheckJob.java` — TriggerCheckJob.java; TriggerChecks.java'
     - '`db/trigger-check-baseline.sql` — db/trigger-check-baseline.sql'
+    決定: prc_purge_audit は日次照合の成功後にだけ走るようジョブの依存を定義する。控えの表は db/trigger-check-baseline.sql で先に作る
+    決めた人: 移行担当（PoC 実施者）
+    日付: '2026-09-19'
+    記録先: 運用設計書（ジョブの依存関係）
   OPS-5:
-    状態: 未決
+    状態: 決定
     出た:
     - '`application/TriggerChecks.java` / `TriggerCheckJob.java` — TriggerCheckJob.java; TriggerChecks.java'
+    決定: ジョブ全体が失敗したら運用担当に通知し、即時に 1 回だけ再実行する。それも失敗したら次の回を待つ。daily が失敗した日は prc_purge_audit も走らない（OPS-4 の依存）
+    決めた人: 移行担当（PoC 実施者）
+    日付: '2026-09-19'
+    記録先: 運用設計書
   OPS-6:
-    状態: 未決
+    状態: 決定
     出た:
     - '`db/restrict-direct-writes.sql` — db/restrict-direct-writes.sql（plsqlpoc.payments, plsqlpoc.products）'
     - '診断 `TRIGGER_APPLIED` / `TRIGGER_CALL`（書き込む側が trigger を呼ぶ） — pkg_order_lock.cancel: TRIGGER_APPLIED, TRIGGER_CALL;
       pkg_payment.record_payment: TRIGGER_APPLIED, TRIGGER_CALL; pkg_shipment.mark_shipped: TRIGGER_APPLIED, TRIGGER_CALL;
       pkg_stock_reserve.claim_batch: TRIGGER_APPLIED, TRIGGER_CALL; prc_nightly_close: TRIGGER_APPLIED, TRIGGER_CALL'
+    決定: payments / products に書き込めるのはアプリの利用者だけ。それ以外（他システム・手作業の保守・バッチ / ETL）は読み取りだけにする
+    決めた人: 移行担当（PoC 実施者）
+    日付: '2026-09-19'
+    記録先: 権限設計書
+    残り: いま両表に書いている利用者の洗い出し（<other_user> の具体名）
   OPS-7:
-    状態: 未決
+    状態: 決定
     出た:
     - '`db/restrict-direct-writes.sql` — db/restrict-direct-writes.sql（plsqlpoc.payments, plsqlpoc.products）'
+    決定: ScalarDB Cluster の認証・認可を有効にする（OPS-6 の REVOKE を効かせるため）
+    決めた人: 移行担当（PoC 実施者）
+    日付: '2026-09-19'
+    記録先: 権限設計書、各クライアントの接続設定
+    残り: 資格情報が要るクライアント（アプリ・照合ジョブ・運用ツール）の接続設定の変更の洗い出し
   OPS-8:
-    状態: 未決
+    状態: 決定
     出た:
     - '`db/restrict-direct-writes.sql` — db/restrict-direct-writes.sql（plsqlpoc.payments, plsqlpoc.products）'
+    決定: payments / products の別の列を直接書いている他システムの書き込みも、アプリの API を通す（スキーマは分けない）
+    決めた人: 移行担当（PoC 実施者）
+    日付: '2026-09-19'
+    記録先: 権限設計書、他システムとの接続仕様
+    残り: 該当する他システムと列の洗い出し、API の用意
   OPS-9:
-    状態: 未決
+    状態: 決定
     出た:
     - '`db/restrict-direct-writes.sql` — db/restrict-direct-writes.sql（plsqlpoc.payments, plsqlpoc.products）'
+    決定: ScalarDB の下の RDBMS は、ScalarDB Cluster のサービス用アカウント以外を読み取りだけにする
+    決めた人: 移行担当（PoC 実施者）
+    日付: '2026-09-19'
+    記録先: 権限設計書
   OPS-10:
-    状態: 未決
+    状態: 決定
     出た:
     - '`db/restrict-direct-writes.sql` — db/restrict-direct-writes.sql（plsqlpoc.payments, plsqlpoc.products）'
+    決定: a. アプリに保守用の操作を用意し、trigger と同じ検証・監査を通して直す
+    決めた人: 移行担当（PoC 実施者）
+    日付: '2026-09-19'
+    記録先: 運用設計書（障害対応の手順）
   CALL-1:
-    状態: 未決
+    状態: 決定
     出た:
     - '`<routine>Targets` / `One` / `Failed` / `Start` / `Done` / `FailedBatch`（割った routine） — markReviewed; prcNightlyClose;
       prcPurgeAudit; prcRepriceAll; restock'
+    決定: 衝突で弾かれた 1 反復は 3 回まで再試行し、直列で回す。途中で落ちたら最後に処理したキー（pAfterKey）から再開する
+    決めた人: 移行担当（PoC 実施者）
+    日付: '2026-09-19'
+    記録先: 呼び出し側の設計書
+    残り: restock は Targets を持たない（対象は呼び出し側が渡す）ので、キーでの再開は呼び出し側で持つ。各 One が冪等か（再試行・再開で二重に処理しないか）の確認
   CALL-2:
-    状態: 未決
+    状態: 決定
     出た:
     - '`<routine>Targets` / `One` / `Failed` / `Start` / `Done` / `FailedBatch`（割った routine） — markReviewed; prcNightlyClose;
       prcPurgeAudit; prcRepriceAll; restock'
+    決定: 1 反復が再試行を使い切ったとき、または対象の読み取り（Targets）が失敗したときに prcNightlyCloseFailedBatch を呼び、処理を止める
+    決めた人: 移行担当（PoC 実施者）
+    日付: '2026-09-19'
+    記録先: 呼び出し側の設計書
   CALL-3:
-    状態: 未決
+    状態: 決定
     出た:
     - '`<routine>Targets` / `One` / `Failed` / `Start` / `Done` / `FailedBatch`（割った routine） — markReviewed; prcNightlyClose;
       prcPurgeAudit; prcRepriceAll; restock'
@@ -74,24 +128,43 @@ items:
       pAfterKey / pBatch; PrcPurgeAuditRepository.java: pAfterKey / pBatch; PrcPurgeAuditService.java: pAfterKey
       / pBatch; PrcRepriceAllRepository.java: pAfterKey / pBatch; PrcRepriceAllService.java: pAfterKey / pBatch;
       ほか 4 件'
+    決定: pBatch は 100 を既定とし、設定で変えられるようにする。Oracle の中間コミットの単位（nightly_close の 100 件）に合わせた
+    決めた人: 移行担当（PoC 実施者）
+    日付: '2026-09-19'
+    記録先: 呼び出し側の設定
+    残り: 本番の件数で往復回数とメモリを測り、調整する
   CALL-4:
-    状態: 未決
+    状態: 決定
     出た:
     - '生成コードのコメント `tx.runSeparately(...)`（自律トランザクション） — PrcAuditAutonomousService.java:23: tx.runSeparately(() ->
       service.prcAuditAutonomous(...));   // 親とは別の境界'
+    決定: prc_audit_autonomous は、すべての呼び出し元が呼び出し側のトランザクションとは別の境界（tx.runSeparately）で呼ぶ
+    決めた人: 移行担当（PoC 実施者）
+    日付: '2026-09-19'
+    記録先: 呼び出し側の設計書
+    残り: corpus の PL/SQL に呼び出し元が無いため、外部の呼び出し元の洗い出し（BIZ-3 と同じ）
   CALL-5:
-    状態: 未決
+    状態: 決定
     出た:
     - '診断 `OPTIMISTIC` / `RMW_SPLIT` / `MERGE_SPLIT`（楽観制御へ移したもの） — pkg_bulk_load.restock: RMW_SPLIT; pkg_customer_import.import:
       MERGE_SPLIT; pkg_order_lock.cancel: OPTIMISTIC, RMW_SPLIT; pkg_stock_reserve.claim_batch: OPTIMISTIC; pkg_stock_reserve.next_payment_id:
       OPTIMISTIC; pkg_stock_reserve.reserve: OPTIMISTIC; pkg_stock_reserve.reserve_nowait: OPTIMISTIC; pkg_tier_admin.promote:
       OPTIMISTIC'
+    決定: 楽観制御に移した routine は、衝突（commit の失敗）だけを 3 回まで再試行し、待ちを 50→100→200 ms と増やす。業務例外（在庫不足 -20030 など）は再試行しない。採番や外部通知を同じトランザクションに入れない
+    決めた人: 移行担当（PoC 実施者）
+    日付: '2026-09-19'
+    記録先: limits.yaml の rowLocks.optimistic の理由欄、呼び出し側の設計書
+    残り: 各 routine が再試行で二重に実行されないか（冪等か）の確認
   CALL-6:
-    状態: 未決
+    状態: 決定
     出た:
     - '`AuditContext audit` 引数 — PkgBulkLoadRepository.java; PkgBulkLoadService.java; PkgOrderLockService.java;
       PkgPaymentRepository.java; PkgPaymentService.java; PkgShipmentService.java; PkgStockReserveService.java; PrcAuditAutonomousRepository.java;
       ほか 11 件'
+    決定: AuditContext.user() にはログインした利用者（バッチならジョブ名）、now() にはアプリの時計（UTC）を渡す
+    決めた人: 移行担当（PoC 実施者）
+    日付: '2026-09-19'
+    記録先: 呼び出し側の設計書
   BIZ-1:
     状態: 未決
     出た:
