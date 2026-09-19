@@ -226,6 +226,44 @@ def test_a_scan_after_a_write_is_found_through_calls_and_loops(tmp_path, body):
     assert "SCAN-001" in rules_of(checked(tmp_path, **{"pkg_s.pkb": package})["pkg_s.run"])
 
 
+@pytest.mark.parametrize("declare,body", [
+    # the write is a function's, and the function is called from an assignment, not from a Call statement
+    ("", "v_n := pkg_f.bump(p_id); SELECT COUNT(*) INTO v_n FROM orders WHERE status = 'NEW';"),
+    # ... from a condition
+    ("", "IF pkg_f.bump(p_id) > 0 THEN SELECT COUNT(*) INTO v_n FROM orders WHERE status = 'NEW'; END IF;"),
+    # ... from a declaration, which runs before the first statement
+    ("    v_m NUMBER := pkg_f.bump(p_id);\n", "SELECT COUNT(*) INTO v_n FROM orders WHERE status = 'NEW';"),
+    # ... two levels down
+    ("", "v_n := pkg_f.outer_bump(p_id); SELECT COUNT(*) INTO v_n FROM orders WHERE status = 'NEW';"),
+    # the back edge, where the write at the bottom of the loop is a callee's
+    ("", "FOR i IN 1..2 LOOP SELECT COUNT(*) INTO v_n FROM orders WHERE status = 'NEW'; "
+         "v_n := pkg_f.bump(p_id); END LOOP;"),
+    # the scan is the function's, the write is the caller's
+    ("", "UPDATE orders SET note = 'x' WHERE order_id = p_id; v_n := pkg_f.count_new;"),
+])
+def test_a_scan_after_a_write_is_found_through_a_function_in_an_expression(tmp_path, declare, body):
+    """Issue #29 (26c): only Call statements were followed, so a function called from an expression hid its write."""
+    package = ("CREATE OR REPLACE PACKAGE BODY pkg_f AS\n"
+               "  FUNCTION bump(p_id NUMBER) RETURN NUMBER IS\n  BEGIN\n"
+               "    UPDATE orders SET note = 'x' WHERE order_id = p_id;\n    RETURN 1;\n  END;\n"
+               "  FUNCTION outer_bump(p_id NUMBER) RETURN NUMBER IS\n  BEGIN\n    RETURN bump(p_id) + 1;\n  END;\n"
+               "  FUNCTION count_new RETURN NUMBER IS\n    v_c NUMBER;\n  BEGIN\n"
+               "    SELECT COUNT(*) INTO v_c FROM orders WHERE status = 'NEW';\n    RETURN v_c;\n  END;\n"
+               f"  PROCEDURE run(p_id NUMBER) IS\n    v_n NUMBER;\n{declare}  BEGIN\n    {body}\n  END;\n"
+               "END pkg_f;\n/\n")
+    assert "SCAN-001" in rules_of(checked(tmp_path, **{"pkg_f.pkb": package})["pkg_f.run"])
+
+
+def test_a_function_that_only_reads_by_key_does_not_make_a_scan_after_write(tmp_path):
+    package = ("CREATE OR REPLACE PACKAGE BODY pkg_g AS\n"
+               "  FUNCTION note_of(p_id NUMBER) RETURN VARCHAR2 IS\n    v_s VARCHAR2(100);\n  BEGIN\n"
+               "    SELECT note INTO v_s FROM orders WHERE order_id = p_id;\n    RETURN v_s;\n  END;\n"
+               "  PROCEDURE run(p_id NUMBER) IS\n    v_s VARCHAR2(100);\n  BEGIN\n"
+               "    UPDATE orders SET note = 'x' WHERE order_id = p_id;\n    v_s := note_of(p_id);\n  END;\n"
+               "END pkg_g;\n/\n")
+    assert "SCAN-001" not in rules_of(checked(tmp_path, **{"pkg_g.pkb": package})["pkg_g.run"])
+
+
 def test_a_scan_in_a_handler_after_the_body_wrote_is_found(tmp_path):
     source = ("CREATE OR REPLACE PROCEDURE p(p_id NUMBER) IS\n  v_n NUMBER;\nBEGIN\n"
               "  UPDATE orders SET note = 'x' WHERE order_id = p_id;\nEXCEPTION\n  WHEN NO_DATA_FOUND THEN\n"
