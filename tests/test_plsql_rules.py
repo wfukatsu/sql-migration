@@ -256,7 +256,9 @@ def test_the_one_known_gap_is_the_one_p2_4_owns(decisions):
     job (P2-4). Pinning it here keeps the gap visible instead of letting it blend into the agreement rate.
     """
     assert decisions["pkg_order_status.status_for_customer"].rule_verdict == "AUTO"
-    assert expected_verdicts()["status_for_customer"] == "REVIEW"
+    # #4 (2026-09-20): the manifest agrees now. The unkeyed SELECT INTO keeps Oracle's meaning in the generated code,
+    # and the capability check leaves a note about the data model instead of a REVIEW (SELECT-OPT-001)
+    assert expected_verdicts()["status_for_customer"] == "AUTO"
 
 
 def test_the_verdict_distribution_is_not_degenerate(decisions):

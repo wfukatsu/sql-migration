@@ -47,7 +47,9 @@ units:
     holdout: false
     routines:
       - {name: status_of,            expected: AUTO,   reason: "主キーの SELECT INTO。NO_DATA_FOUND を業務例外へ写す"}
-      - {name: status_for_customer,  expected: REVIEW, reason: "非キー列の SELECT INTO。TOO_MANY_ROWS の発火条件を再現できるか要確認"}
+      # 2026-09-20 / #4: 以前の期待値は REVIEW。0 件 / 1 件 / 複数件の意味論は生成コードが保ち、3 つの場合とも実 DB で
+      # 一致している。一意性をデータモデルに明示するかは設計の改善で、判定を下げない注記（SELECT-OPT-001）になった
+      - {name: status_for_customer,  expected: AUTO,   reason: "非キー列の SELECT INTO。最大 2 件を読んで NO_DATA_FOUND / TOO_MANY_ROWS を再現する"}
       - {name: assert_open,          expected: AUTO,   reason: "package 内呼び出しと PRAGMA EXCEPTION_INIT のローカル例外"}
 
   - name: pkg_order_pricing

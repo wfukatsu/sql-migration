@@ -187,8 +187,31 @@ def agreement(decisions, only_holdout: bool | None = None) -> tuple[int, int, li
 def test_the_capability_check_closes_the_gap_p2_2_left(checked):
     analysis, program_analysis = checked
     decisions = decide(analysis.program, program_analysis, RuleSet.load(), Evidence())
-    assert decisions["pkg_order_status.status_for_customer"].rule_verdict == "REVIEW"
-    assert "SELECT-001" in {m.rule.id for m in decisions["pkg_order_status.status_for_customer"].matches}
+    # #4 (decided 2026-09-20): the unkeyed SELECT INTO is still *seen* here -- that is the gap P2-2 left -- but what
+    # it gets is a note, not a REVIEW: the generated code keeps Oracle's 0 / 1 / many meaning, and whether uniqueness
+    # belongs in the data model is a design improvement, not a question of whether the routine can move
+    found = decisions["pkg_order_status.status_for_customer"]
+    assert found.rule_verdict == "AUTO"
+    assert {m.rule.id for m in found.matches} == {"SELECT-OPT-001"}
+    note = next(m.rule for m in found.matches)
+    assert note.decision == "AUTO" and "一意制約" in note.message
+
+
+def test_an_unkeyed_select_into_is_reviewed_where_its_meaning_is_not_guaranteed(tmp_path):
+    """SELECT-001 stays a REVIEW where ScalarDB does not run the statement as it stands: the plan path (and a refused
+    statement, and no ScalarDB schema at all) is not the code that reads two rows and raises."""
+    source = """CREATE OR REPLACE PROCEDURE p(p_customer_id NUMBER, p_out OUT VARCHAR2) IS
+BEGIN
+  SELECT UPPER(status) INTO p_out FROM orders WHERE customer_id = p_customer_id;
+END;
+/
+"""
+    (tmp_path / "p.prc").write_text(source, encoding="utf-8")
+    analysis = build_analysis(tmp_path, SRC / "schema.sql", scalardb_schema=FIXTURES / "scalardb-schema.json")
+    decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), Evidence())
+    statement = next(s for s in _walk(analysis.program.modules[0].routines[0].body) if s.kind == "SqlOperation")
+    assert statement.target_status == "PLANNED"
+    assert "SELECT-001" in {m.rule.id for m in decisions["p"].matches} and decisions["p"].rule_verdict == "REVIEW"
 
 
 def test_agreement_with_the_manifest(checked):

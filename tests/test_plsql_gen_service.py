@@ -451,3 +451,17 @@ def test_two_plsql_names_that_are_one_java_name_are_refused(declarations, clash)
     generated = generate_module(module, APP, INFRA, DOMAIN)
     assert clash in generated.file.render()
     assert generated.untranslated == ["q"], "refused, so it is not counted as clean"
+
+
+def test_an_unkeyed_select_into_reads_two_rows_and_no_further(tmp_path):
+    """#4 (decided 2026-09-19): Oracle's meaning is kept -- 0 rows NO_DATA_FOUND, 2+ rows TOO_MANY_ROWS -- and two
+    rows are enough to tell. A key lookup needs no limit, and nothing ever adds LIMIT 1 or an ORDER BY."""
+    from plsql.generate import main as generate
+
+    generate(["fixtures/plsql/src", "--scalardb-schema", "fixtures/plsql/scalardb-schema.json",
+              "--out-dir", str(tmp_path), "--quiet"])
+    text = next(tmp_path.rglob("PkgOrderStatusRepository.java")).read_text(encoding="utf-8")
+    assert 'SELECT status FROM orders WHERE customer_id = :p_customer_id LIMIT 2"' in text
+    assert 'SELECT status FROM orders WHERE order_id = :p_order_id"' in text, "the key lookup is left alone"
+    assert "LIMIT 1" not in text
+    assert text.count("TooManyRowsException(") >= 2, "the second row still raises"
