@@ -186,10 +186,22 @@ def test_every_trace_row_points_at_a_plsql_line(analysis, rules):
         assert row["javaFile"].endswith(".java") and row["javaMember"]
 
 
-def test_a_trace_row_is_checked_against_the_generated_source(analysis, rules):
+@pytest.fixture(scope="module")
+def generated_tree(tmp_path_factory):
+    """A tree generated for this test. It used to read `generated/` in the working copy, which is ignored: the test
+    passed on the machine that happened to have one and failed on a clean checkout."""
+    from plsql.generate import main as generate
+
+    out = tmp_path_factory.mktemp("generated")
+    generate([SRC, "--scalardb-schema", SCALARDB, "--limits", "fixtures/plsql/limits.yaml", "--out-dir", str(out)])
+    return out
+
+
+def test_a_trace_row_is_checked_against_the_generated_source(analysis, rules, generated_tree):
     """Otherwise the file would restate the naming convention and agree with itself."""
     rows = list(csv.DictReader(io.StringIO(
-        review.traceability_csv(analysis.program, decisions_for(analysis, rules), generated_root="generated"))))
+        review.traceability_csv(analysis.program, decisions_for(analysis, rules),
+                                generated_root=str(generated_tree)))))
     states = {row["generated"] for row in rows}
     assert states <= {"yes", "not-generated", "not-translated"}
     assert "yes" in states, "no generated member was found; the trace is not checking anything"

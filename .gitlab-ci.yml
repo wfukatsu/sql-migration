@@ -1,0 +1,45 @@
+# The same two jobs as .github/workflows/ci.yml (the repository is mirrored to both). No database is needed:
+# everything that needs Oracle, PostgreSQL, MySQL or a ScalarDB Cluster lives in difftest/ and is run by hand.
+stages: [test]
+
+python:
+  stage: test
+  image: python:3.14
+  cache:
+    paths: [.cache/pip]
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  script:
+    - pip install -r requirements.txt
+    # the skill carries a copy of scalardb_migrate/; a change to one without the other is a different converter
+    - python skills/sql-transpile/scripts/vendor_sync.py --check
+    - python -m pytest -q
+
+# The Java tests compile against the generated sources, and generated/ is not committed: without this job the
+# module does not compile on a clean checkout. Same arguments as difftest/plsql_capture.py.
+generate:
+  stage: test
+  image: python:3.14
+  cache:
+    paths: [.cache/pip]
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  script:
+    - pip install -r requirements.txt
+    - python -m plsql.generate fixtures/plsql/src --scalardb-schema fixtures/plsql/scalardb-schema.json
+        --limits fixtures/plsql/limits.yaml --out-dir generated
+  artifacts:
+    paths: [generated/]
+    expire_in: 1 day
+
+java:
+  stage: test
+  needs: [generate]
+  image: gradle:9.2.1-jdk17   # the project has no wrapper; this is the version it is developed with
+  variables:
+    GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle-home"
+  cache:
+    paths: [.gradle-home/caches]
+  script:
+    # integration tests (*IT) skip themselves without SCALARDB_IT / -Dplsql.generated
+    - cd runtime-java && gradle test
