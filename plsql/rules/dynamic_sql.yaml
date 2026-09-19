@@ -23,7 +23,7 @@ rules:
       - bind_restoration
 
   - id: DYN-003
-    match: {statementKind: [Call, SqlOperation, Assignment], textMatches: '\bDBMS_SQL\b'}
+    match: {statementKind: [SqlOperation, Expression], textMatches: '\bDBMS_SQL\b'}
     decision: REDESIGN
     severity: critical
     message: DBMS_SQL は静的解析だけでは追えません。実行ログも使って query family を洗い出す必要があります
