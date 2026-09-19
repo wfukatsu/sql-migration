@@ -45,7 +45,7 @@ def rendered(program, name: str) -> str:
     ("n > 1", "Plsql.gt(n, 1)"),
     ("'a' || n", 'Plsql.concat("a", n)'),
     ("v IN ('A','B')", 'Plsql.in(v, "A", "B")'),
-    ("v NOT IN ('A')", '!(Plsql.in(v, "A"))'),
+    ("v NOT IN ('A')", 'Plsql.notIn(v, "A")'),   # `!` は NULL を TRUE にしてしまう
     ("n BETWEEN 1 AND 10", "Plsql.between(n, 1, 10)"),
     ("v LIKE 'A%'", 'Plsql.like(v, "A%")'),
     ("NVL(n, 0)", "Plsql.nvl(n, 0)"),
@@ -96,7 +96,103 @@ def test_precedence_is_parsed_not_pattern_matched():
 
 
 def test_a_parenthesised_group_is_parsed_again():
-    assert translate("NOT (v = 'x')", {"v": "v"}).java == '!((Plsql.eq(v, "x")))'
+    assert translate("NOT (v = 'x')", {"v": "v"}).java == '(Plsql.ne(v, "x"))'
+
+
+@pytest.mark.parametrize("plsql,java", [
+    ("a + b * c", "Plsql.add(a, Plsql.mul(b, c))"),
+    ("a - b / c - d", "Plsql.sub(Plsql.sub(a, Plsql.div(b, c)), d)"),
+    ("a * b + c * d", "Plsql.add(Plsql.mul(a, b), Plsql.mul(c, d))"),
+    ("(a + b) * c", "Plsql.mul((Plsql.add(a, b)), c)"),
+    ("a - -b * c", "Plsql.sub(a, Plsql.mul(Plsql.neg(b), c))"),
+])
+def test_multiplication_binds_tighter_than_addition(plsql: str, java: str):
+    """Regression (#27-10): one left-to-right loop over `+ - * /` read `a + b * c` as `(a + b) * c`. It compiled,
+    ran, and wrote the wrong number -- in a lifted SQL bind, into the database."""
+    assert translate(plsql, {n: n for n in "abcd"}).java == java
+
+
+def test_exponentiation_is_refused_not_read_as_two_multiplications():
+    assert translate("a ** 2", {"a": "a"}).unknown == ["**"]
+
+
+@pytest.mark.parametrize("plsql,java", [
+    ("NOT (a = b)", "(Plsql.ne(a, b))"),
+    ("NOT a < b", "Plsql.ge(a, b)"),
+    ("a NOT IN (1, 2)", "Plsql.notIn(a, 1, 2)"),
+    ("NOT a IN (1, 2)", "Plsql.notIn(a, 1, 2)"),
+    ("a NOT BETWEEN 1 AND b", "Plsql.notBetween(a, 1, b)"),
+    ("v NOT LIKE 'A%'", 'Plsql.notLike(v, "A%")'),
+    ("NOT (a = 1 AND (b <> 2 OR v IS NULL))", "((Plsql.ne(a, 1) || (Plsql.eq(b, 2) && Plsql.isNotNull(v))))"),
+    ("NOT (a = 1 OR b = 2) AND v = 'x'", '(Plsql.ne(a, 1) && Plsql.ne(b, 2)) && Plsql.eq(v, "x")'),
+    ("NOT NOT a = b", "Plsql.eq(a, b)"),
+    ("NOT ok", "Plsql.isFalse(ok)"),
+    ("NOT (a + b) > 3", "Plsql.le((Plsql.add(a, b)), 3)"),
+])
+def test_not_is_pushed_into_the_operator_never_emitted_as_a_bang(plsql: str, java: str):
+    """Regression (#27-11): the helper's comparisons answer "is it TRUE", so `!(eq(a, b))` is true for a NULL `a`
+    -- where Oracle's `NOT (a = b)` is UNKNOWN and the IF does not fire. De Morgan holds in three-valued logic,
+    so the negation goes down to the operator, whose opposite is again "TRUE only"."""
+    rendered = translate(plsql, {"a": "a", "b": "b", "v": "v", "ok": "ok"}).java
+    assert rendered == java
+    assert "!" not in rendered
+
+
+@pytest.mark.parametrize("plsql,java", [
+    ("a > 1", "Plsql.bool3(Plsql.gt(a, 1), Plsql.le(a, 1))"),
+    ("NOT ok", "Plsql.bool3(Plsql.isFalse(ok), Plsql.isTrue(ok))"),
+    ("a = b OR v IS NOT NULL", "Plsql.bool3(Plsql.eq(a, b) || Plsql.isNotNull(v), Plsql.ne(a, b) && Plsql.isNull(v))"),
+    ("v IN ('NEW', 'CONFIRMED')", 'Plsql.bool3(Plsql.in(v, "NEW", "CONFIRMED"), Plsql.notIn(v, "NEW", "CONFIRMED"))'),
+    ("ok", "ok"),
+    ("TRUE", "true"),
+])
+def test_a_condition_stored_in_a_boolean_keeps_unknown_as_null(plsql: str, java: str):
+    """`v_ok := a > 1` with a NULL `a` leaves `v_ok` NULL. Collapsing it to false would make a later `NOT v_ok`
+    fire where Oracle's does not."""
+    assert translate(plsql, {"a": "a", "b": "b", "v": "v", "ok": "ok"}, boolean_value=True).java == java
+
+
+def _service_of(source: str) -> str:
+    from plsql.frontend import parse_text
+    from plsql.lower import lower_file
+    from plsql.symbols import build
+    parsed = parse_text(source, "p.prc")
+    module = lower_file(parsed, build(parsed, None), None)[0]
+    return generate_module(module, APP, INFRA, DOMAIN).file.render()
+
+
+NESTED_LOOPS = """CREATE OR REPLACE PROCEDURE p(p_n NUMBER) IS
+  i NUMBER := 0; j NUMBER := 0;
+BEGIN
+  <<outer_loop>>
+  LOOP
+    i := i + 1;
+    LOOP
+      j := j + 1;
+      CONTINUE outer_loop WHEN j = 2;
+      EXIT outer_loop WHEN j > p_n;
+      EXIT WHEN j > 100;
+    END LOOP;
+  END LOOP;
+END;
+/
+"""
+
+
+def test_a_labelled_exit_leaves_the_loop_it_names():
+    """Regression (#27-12): the label was dropped, `break;` left the inner loop only, and the outer
+    `while (true)` never ended."""
+    java = _service_of(NESTED_LOOPS)
+    assert "outerLoop: while (true)" in java
+    assert "if (Plsql.gt(j, pN)) break outerLoop;" in java
+    assert "if (Plsql.eq(j, 2)) continue outerLoop;" in java
+    assert "if (Plsql.gt(j, 100)) break;" in java
+
+
+def test_an_exit_to_a_label_no_emitted_loop_carries_is_refused():
+    java = _service_of(NESTED_LOOPS.replace("<<outer_loop>>", ""))
+    assert "break outerLoop" not in java
+    assert "UnsupportedOperationException" in java
 
 
 def test_an_unknown_function_is_reported_not_invented():

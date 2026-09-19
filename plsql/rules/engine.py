@@ -137,6 +137,11 @@ class Evidence:
         passed, total = self.captures.get(routine_id, (0, 0))
         return 0.0 if total == 0 else passed / total
 
+    def failed(self, routine_id: str) -> int:
+        """Scenarios that ran and did not match Oracle. One is a known difference, however many others passed."""
+        passed, total = self.captures.get(routine_id, (0, 0))
+        return max(total - passed, 0)
+
 
 class RuleSet:
     def __init__(self, rules: list[Rule]) -> None:
@@ -356,7 +361,7 @@ def decide(program: M.Program, analysis: ProgramAnalysis, ruleset: RuleSet,
         for routine in module.routines:
             matches = ruleset.evaluate(module, routine, analysis)
             confidence = confidence_of(module, routine, analysis, matches, evidence)
-            decisions[routine.id] = _verdict(routine, matches, confidence)
+            decisions[routine.id] = _verdict(routine, matches, confidence, evidence)
     _propagate(decisions, analysis)
     return decisions
 
@@ -381,7 +386,8 @@ def _propagate(decisions: dict[str, Decision], analysis: ProgramAnalysis) -> Non
                 f"calls {callee_id}, which is {callee.rule_verdict}")
 
 
-def _verdict(routine: M.Routine, matches: list[Match], confidence: Confidence) -> Decision:
+def _verdict(routine: M.Routine, matches: list[Match], confidence: Confidence,
+             evidence: Evidence) -> Decision:
     floor = "AUTO"
     for match in matches:
         if RANK[match.rule.decision] > RANK[floor]:
@@ -397,9 +403,15 @@ def _verdict(routine: M.Routine, matches: list[Match], confidence: Confidence) -
 
     # no rule objected: confidence decides between AUTO and REVIEW
     zeros = confidence.zeros()
+    failed = evidence.failed(routine.id)
     if zeros:
         decision.verdict = "REVIEW"
         decision.reasons = [f"confidence factor {name} is 0" for name in zeros]
+    elif failed:
+        # AUTO は「Oracle と一致した」という意味である。19/20 は確信度 0.95 でしきい値を越えるが、
+        # 残りの 1 件は「違うと分かっている」であって、割合で薄めてよいものではない
+        decision.verdict = "REVIEW"
+        decision.reasons = [f"{failed} scenario(s) differ from Oracle; AUTO requires every compared scenario to match"]
     elif confidence.value < AUTO_THRESHOLD:
         decision.verdict = "REVIEW"
         decision.reasons = [f"confidence {confidence.value:.3f} is below the AUTO threshold {AUTO_THRESHOLD}"]

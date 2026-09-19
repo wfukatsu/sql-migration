@@ -60,6 +60,10 @@ STATEMENT_CONTEXTS = (
 )
 
 
+# 宣言部に入れ子で書ける subprogram。外側の routine の引数・宣言を集めるときは、ここで止まる
+NESTED_SUBPROGRAMS = {"Procedure_bodyContext", "Function_bodyContext"}
+
+
 @dataclass
 class _Context:
     unit: Unit
@@ -234,7 +238,7 @@ class _Lowerer:
         ids = M.IdFactory(routine_id)
         self.routine_id = routine_id
 
-        for parameter in _descend(context, {"ParameterContext"}, stop={"BodyContext"}):
+        for parameter in _descend(context, {"ParameterContext"}, stop={"BodyContext"} | NESTED_SUBPROGRAMS):
             routine.parameters.append(self._parameter(parameter, ids, routine_id))
         if is_function:
             spec = next(iter(_children(context, "Type_specContext")), None)
@@ -242,7 +246,8 @@ class _Lowerer:
                 routine.return_type = self._type(routine_id, _text(spec), "<return>")
 
         for declaration in _descend(context, {"Declare_specContext"}, stop={"BodyContext"}):
-            routine.declarations.extend(self._declarations(declaration, ids, routine_id))
+            routine.declarations.extend(self._declarations(declaration, ids, routine_id,
+                                                           stop=NESTED_SUBPROGRAMS))
         _bind_exception_codes(routine, _text(context))
 
         text = _text(context)
@@ -255,6 +260,16 @@ class _Lowerer:
         body = _child(context, "BodyContext")
         if body is not None:
             routine.body = self._statements(_child(body, "Seq_of_statementsContext") or body, ids)
+            # 宣言部に書かれた入れ子の procedure / function は、まだ routine として下ろしていない。以前は
+            # 黙って消えていて、中の COMMIT も見えず、引数は外側の引数に混ざっていた。下ろせないものは
+            # Unsupported として残す——LOWER-001 が AUTO を止め、生成側は本体ごと拒む
+            for nested in _descend(context, NESTED_SUBPROGRAMS, stop={"BodyContext"}):
+                node = M.Unsupported(id=ids.next("stmt"), kind="Unsupported", source_range=self._range(nested),
+                                     text=_text(nested), construct="NestedSubprogram")
+                node.add("WARN", "UNSUPPORTED_CONSTRUCT",
+                         "a nested subprogram is not lowered yet; whatever it does (COMMIT included) is "
+                         "invisible to the rules, so the routine cannot be AUTO while it is present")
+                routine.body.insert(0, node)
             # the routine's own handlers, not every handler inside it: a nested block keeps its own (#18)
             for handler in _descend(body, {"Exception_handlerContext"},
                                     stop={"BodyContext", "BlockContext"}):
@@ -420,8 +435,10 @@ class _Lowerer:
             condition = _text(_child(context, "ConditionContext"))
         elif cursor_param is not None:
             inner = _text(cursor_param)
-            kind = "cursor-for" if re.search(r"\b(IN\s*\(|IN\s+[\w$#.]+\s*(\(|$))", inner) and \
-                not re.search(r"\.\.", inner) else "for"
+            # 構文木で決める。以前は本文への正規表現で、`re.IGNORECASE` が無かった——小文字で書かれた
+            # `for r in (select ... for update)` が数値の FOR になり、中の SELECT はどのルールにも
+            # 見えないまま AUTO になっていた。数値の FOR だけが下限（`lower_bound`）を持つ
+            kind = "for" if _child(cursor_param, "Lower_boundContext") is not None else "cursor-for"
             cursor = inner
         loop = M.Loop(id=ids.next("stmt"), kind="Loop", source_range=source, loop_kind=kind,
                       label=_first(re.match(r"^\s*<<\s*([\w$#]+)\s*>>", text)), condition=condition,

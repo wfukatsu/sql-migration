@@ -233,31 +233,69 @@ def _fix_join_marks(node: exp.Expression, issues: list[Issue]) -> exp.Expression
     return rewritten
 
 
+def _limits_output_not_input(sel: exp.Select) -> str | None:
+    """LIMIT に置き換えると意味が変わる SELECT の形。変わらなければ None。
+
+    ROWNUM は**入力の行**を数える。LIMIT は**出力の行**を数える。集約や DISTINCT を挟むと両者は別物になる:
+    ``SELECT COUNT(*) FROM emp WHERE ROWNUM <= 5`` は 5 を返すが、``... LIMIT 5`` は全件を数える。
+    """
+    if sel.args.get("distinct"):
+        return "DISTINCT"
+    if sel.args.get("group"):
+        return "GROUP BY"
+    if sel.args.get("having"):
+        return "HAVING"
+    for e in sel.expressions:
+        if e.find(exp.AggFunc):
+            return "集約関数"
+        if e.find(exp.Window):
+            return "ウィンドウ関数"
+    return None
+
+
 def _rownum_to_limit(node: exp.Expression, issues: list[Issue]) -> exp.Expression:
     """WHERE の ``ROWNUM <= n`` を LIMIT n にする。
 
     Oracle は ORDER BY より前に ROWNUM を適用するため、同じ SELECT に ORDER BY があると意味が変わりうる。
+    集約・DISTINCT・GROUP BY・ウィンドウ関数のある SELECT では書き換えない（件数を数える対象が変わる）。
     """
-    for sel in node.find_all(exp.Select):
+    for sel in list(node.find_all(exp.Select)):
         where = sel.args.get("where")
         if where is None:
             continue
         keep = []
         for leaf in _flatten(where.this, exp.And):
             u = _unparen(leaf)
-            if (isinstance(u, (exp.LTE, exp.LT)) and isinstance(u.this, exp.Column)
+            if not (isinstance(u, (exp.LTE, exp.LT)) and isinstance(u.this, exp.Column)
                     and u.this.name.upper() == "ROWNUM" and isinstance(u.expression, exp.Literal)
                     and not sel.args.get("limit")):
-                n = int(u.expression.name) - (1 if isinstance(u, exp.LT) else 0)
-                sel.set("limit", exp.Limit(expression=exp.Literal.number(n)))
-                if sel.args.get("order"):
-                    _add(issues, "WARN", "ROWNUM", f"ROWNUM <= {n} を LIMIT {n} に書き換えた。"
-                                                   "Oracle は ORDER BY より前に ROWNUM を適用するため件数が変わりうる")
-                else:
-                    _add(issues, "INFO", "ROWNUM", f"ROWNUM <= {n} を LIMIT {n} に書き換えた")
-            else:
                 keep.append(leaf)
+                continue
+            if not u.expression.is_int:
+                _add(issues, "ERROR", "ROWNUM", f"ROWNUM の上限 {u.expression.sql()} が整数でない。LIMIT に書き換えられない")
+                keep.append(leaf)
+                continue
+            shape = _limits_output_not_input(sel)
+            if shape is not None:
+                _add(issues, "ERROR", "ROWNUM",
+                     f"{shape} のある SELECT の ROWNUM は LIMIT に書き換えられない。ROWNUM は入力の行を、LIMIT は"
+                     "出力の行を数える。先に絞る副問い合わせ（FROM (SELECT ... LIMIT n)）に書き直す")
+                keep.append(leaf)
+                continue
+            n = int(u.expression.name) - (1 if isinstance(u, exp.LT) else 0)
+            sel.set("limit", exp.Limit(expression=exp.Literal.number(n)))
+            if sel.args.get("order"):
+                _add(issues, "WARN", "ROWNUM", f"ROWNUM <= {n} を LIMIT {n} に書き換えた。"
+                                               "Oracle は ORDER BY より前に ROWNUM を適用するため件数が変わりうる")
+            elif sel.args.get("locks"):
+                _add(issues, "WARN", "ROWNUM", f"ROWNUM <= {n} を LIMIT {n} に書き換えた。FOR UPDATE と LIMIT の"
+                                               "組み合わせは、ロックされる行が方言によって異なる")
+            else:
+                _add(issues, "INFO", "ROWNUM", f"ROWNUM <= {n} を LIMIT {n} に書き換えた")
         sel.set("where", exp.Where(this=exp.and_(*keep)) if keep else None)
+        if sel.args.get("limit") and isinstance(sel.parent, exp.SetOperation):
+            # UNION の枝に付く LIMIT は括弧が要る。括弧が無いと PostgreSQL は構文エラー、MySQL は全体の LIMIT と読む
+            sel.replace(exp.Subquery(this=sel.copy()))
     return node
 
 

@@ -70,14 +70,24 @@ class Expression:
         return not self.unknown
 
 
-def translate(text: str | None, names: dict[str, str] | None = None) -> Expression:
-    """Render one PL/SQL expression as Java. `names` maps PL/SQL identifiers to the Java ones in scope."""
+def translate(text: str | None, names: dict[str, str] | None = None, boolean_value: bool = False) -> Expression:
+    """Render one PL/SQL expression as Java. `names` maps PL/SQL identifiers to the Java ones in scope.
+
+    `boolean_value`: the result lands in a PL/SQL BOOLEAN (an assignment, a RETURN, an initialiser) rather than
+    in an IF. There UNKNOWN has to survive as `null` -- `v_ok := a > 1` with a NULL `a` leaves `v_ok` NULL, and a
+    later `NOT v_ok` must not fire. The helper's comparisons only say "is TRUE", so the expression is rendered
+    twice, once as "is TRUE" and once as "is FALSE", and `Plsql.bool3` puts the three values back together.
+    """
     if text is None or not text.strip():
         return Expression("")
     scope = {k.lower(): v for k, v in (names or {}).items()}
     tokens = _tokens(text.strip())
     result = Expression("")
-    rendered = _render(tokens, scope, result)
+    rendered, logical = _render(tokens, scope, result)
+    if boolean_value and logical:
+        is_true, _ = _render(tokens, scope, Expression(""), strict=True)
+        is_false, _ = _render(tokens, scope, Expression(""), negate=True, strict=True)
+        rendered = f"{HELPER}.bool3({is_true}, {is_false})"
     result.java = rendered
     if HELPER + "." in rendered:
         result.imports.add(HELPER_IMPORT)
@@ -100,7 +110,8 @@ def _tokens(text: str) -> list[tuple[str, str]]:
     return out
 
 
-def _render(tokens: list[tuple[str, str]], scope: dict[str, str], result: Expression) -> str:
+def _render(tokens: list[tuple[str, str]], scope: dict[str, str], result: Expression,
+            negate: bool = False, strict: bool = False) -> tuple[str, bool]:
     """Recursive descent over PL/SQL's precedence.
 
     A first attempt rewrote operators by marker substitution on the rendered string; it mis-split
@@ -108,9 +119,10 @@ def _render(tokens: list[tuple[str, str]], scope: dict[str, str], result: Expres
     shorter and correct.
     """
     parser = _Parser(tokens, scope, result)
-    rendered = parser.parse_or()
+    parser.strict = strict
+    rendered = parser.parse_or(negate)
     rest = parser.rest()
-    return (rendered + " " + rest).strip() if rest else rendered
+    return ((rendered + " " + rest).strip() if rest else rendered), parser.logical
 
 
 class _Parser:
@@ -119,6 +131,8 @@ class _Parser:
         self.scope = scope
         self.result = result
         self.position = 0
+        self.strict = False    # 素の BOOLEAN も isTrue / isFalse で包む（bool3 の引数にするとき）
+        self.logical = False   # 比較か論理演算を通ったか（BOOLEAN の値として出すときに要る）
 
     # -- helpers ---------------------------------------------------------------------------------------
     def peek(self) -> tuple[str, str] | None:
@@ -139,37 +153,79 @@ class _Parser:
         return remaining
 
     # -- grammar ---------------------------------------------------------------------------------------
-    def parse_or(self) -> str:
-        left = self.parse_and()
+    # PL/SQL の条件は 3 値で、Java の boolean は 2 値である。ヘルパの比較は「TRUE のときだけ true」を返すので、
+    # AND / OR はそのまま && / || に落とせる（TRUE になる条件が同じ）。落とせないのは NOT だけ: `!(eq(a, b))` は
+    # a が NULL のとき true になるが、Oracle の `NOT (a = b)` は UNKNOWN で、IF はその枝に入らない。
+    # だから NOT は `!` にせず、否定を演算子まで押し込む（De Morgan は 3 値でも成り立つ）。`negate` が
+    # 立っているあいだ、各段は「元の式が FALSE のときだけ true」になる Java を返す。
+    NEGATED = {"eq": "ne", "ne": "eq", "lt": "ge", "ge": "lt", "gt": "le", "le": "gt"}
+    GROUP_END = {"AND", "OR", "THEN", "WHEN", "ELSE", "END", "LOOP"}
+
+    def parse_or(self, negate: bool = False) -> str:
+        terms = [self.parse_and(negate)]
         while self.at_word("OR"):
             self.take()
-            left = f"{left} || {self.parse_and()}"
-        return left
+            self.logical = True
+            terms.append(self.parse_and(negate))
+        if len(terms) == 1:
+            return terms[0]
+        return " && ".join(terms) if negate else " || ".join(terms)
 
-    def parse_and(self) -> str:
-        left = self.parse_not()
+    def parse_and(self, negate: bool = False) -> str:
+        terms = [self.parse_not(negate)]
         while self.at_word("AND"):
             self.take()
-            left = f"{left} && {self.parse_not()}"
-        return left
+            self.logical = True
+            terms.append(self.parse_not(negate))
+        if len(terms) == 1:
+            return terms[0]
+        # 否定された AND は OR になる。外側の && より弱いので括弧が要る
+        return "(" + " || ".join(terms) + ")" if negate else " && ".join(terms)
 
-    def parse_not(self) -> str:
+    def parse_not(self, negate: bool = False) -> str:
         if self.at_word("NOT"):
             self.take()
-            return f"!({self.parse_not()})"
-        return self.parse_comparison()
+            self.logical = True
+            return self.parse_not(not negate)
+        if (negate or self.strict) and self._at_boolean_group():
+            self.take()
+            inner = self.parse_or(negate)
+            if self.peek() is not None and self.peek()[1] == ")":
+                self.take()
+            return f"({inner})"
+        return self.parse_comparison(negate)
 
-    def parse_comparison(self) -> str:
+    def _at_boolean_group(self) -> bool:
+        """`( ... )` がそのまま 1 つの条件か。`NOT (a + b) > c` の括弧は比較の左辺で、条件ではない。"""
+        token = self.peek()
+        if token is None or token[1] != "(":
+            return False
+        depth = 0
+        for index in range(self.position, len(self.tokens)):
+            value = self.tokens[index][1]
+            if value == "(":
+                depth += 1
+            elif value == ")":
+                depth -= 1
+                if depth == 0:
+                    following = self.tokens[index + 1] if index + 1 < len(self.tokens) else None
+                    return following is None or following[1] in (")", ",") \
+                        or (following[0] == "name" and following[1].upper() in self.GROUP_END)
+        return False
+
+    def parse_comparison(self, negate: bool = False) -> str:
         left = self.parse_concat()
         if self.at_word("IS"):
             self.take()
+            self.logical = True
             negated = self.at_word("NOT")
             if negated:
                 self.take()
             if self.at_word("NULL"):
                 self.take()
                 self.result.imports.add(HELPER_IMPORT)
-                return f"{HELPER}.{'isNotNull' if negated else 'isNull'}({left})"
+                # IS NULL は 2 値なので、否定はそのまま反対の述語になる
+                return f"{HELPER}.{'isNotNull' if negated != negate else 'isNull'}({left})"
             return f"{left} is{'Not' if negated else ''}"
         negated = False
         if self.at_word("NOT"):
@@ -178,17 +234,17 @@ class _Parser:
             negated = True
         if self.at_word("IN"):
             self.take()
-            return self._wrap(negated, f"{HELPER}.in({left}, {', '.join(self._arguments())})")
+            return self._predicate(negated != negate, "in", "notIn", f"{left}, {', '.join(self._arguments())}")
         if self.at_word("BETWEEN"):
             self.take()
             low = self.parse_concat()
             if self.at_word("AND"):
                 self.take()
             high = self.parse_concat()
-            return self._wrap(negated, f"{HELPER}.between({left}, {low}, {high})")
+            return self._predicate(negated != negate, "between", "notBetween", f"{left}, {low}, {high}")
         if self.at_word("LIKE"):
             self.take()
-            return self._wrap(negated, f"{HELPER}.like({left}, {self.parse_concat()})")
+            return self._predicate(negated != negate, "like", "notLike", f"{left}, {self.parse_concat()}")
         if negated:
             self.result.unknown.append("NOT")
             return f"!({left})"
@@ -196,13 +252,25 @@ class _Parser:
         if token is not None and token[0] == "op" and token[1] in COMPARISONS:
             operator = self.take()[1]
             right = self.parse_concat()
+            self.logical = True
             self.result.imports.add(HELPER_IMPORT)
-            return f"{HELPER}.{COMPARISONS[operator]}({left}, {right})"
+            method = COMPARISONS[operator]
+            return f"{HELPER}.{self.NEGATED[method] if negate else method}({left}, {right})"
+        if negate:
+            # BOOLEAN の変数や関数の値。NULL のとき `NOT x` は UNKNOWN なので、FALSE のときだけ true にする
+            self.result.imports.add(HELPER_IMPORT)
+            return f"{HELPER}.isFalse({left})"
+        if self.strict:
+            # bool3 の引数は boolean。BOOLEAN の変数をそのまま渡すと、NULL のとき unboxing で落ちる
+            self.result.imports.add(HELPER_IMPORT)
+            return f"{HELPER}.isTrue({left})"
         return left
 
-    def _wrap(self, negated: bool, call: str) -> str:
+    def _predicate(self, negated: bool, plain: str, opposite: str, arguments: str) -> str:
+        """`NOT IN` / `NOT BETWEEN` / `NOT LIKE` は、NULL が絡むと TRUE にならない。`!` では表せない。"""
+        self.logical = True
         self.result.imports.add(HELPER_IMPORT)
-        return f"!({call})" if negated else call
+        return f"{HELPER}.{opposite if negated else plain}({arguments})"
 
     def _arguments(self) -> list[str]:
         """The parenthesised list of an IN."""
@@ -210,25 +278,43 @@ class _Parser:
             return [self.parse_concat()]
         self.take()
         out: list[str] = []
+        strict, self.strict = self.strict, False   # 候補は値であって、条件の背骨ではない
         while self.peek() is not None and self.peek()[1] != ")":
             out.append(self.parse_or())
             if self.peek() is not None and self.peek()[1] == ",":
                 self.take()
         if self.peek() is not None and self.peek()[1] == ")":
             self.take()
+        self.strict = strict
         return out
 
     ARITHMETIC = {"+": "add", "-": "sub", "*": "mul", "/": "div"}
+    ADDITIVE = ("+", "-")
+    MULTIPLICATIVE = ("*", "/")
 
     def parse_arithmetic(self) -> str:
-        """`a + b` on a BigDecimal does not compile in Java, and on a boxed null it throws."""
-        left = self.parse_unary()
+        """`a + b` on a BigDecimal does not compile in Java, and on a boxed null it throws.
+
+        Two levels, because `a + b * c` is `a + (b * c)`. A single left-to-right loop over all four operators
+        read it as `(a + b) * c` -- and the result compiled, ran, and wrote the wrong number.
+        """
+        return self._binary(self.ADDITIVE, self.parse_term)
+
+    def parse_term(self) -> str:
+        return self._binary(self.MULTIPLICATIVE, self.parse_unary)
+
+    def _binary(self, operators: tuple[str, ...], operand) -> str:
+        left = operand()
         while True:
             token = self.peek()
-            if token is None or token[0] != "op" or token[1] not in self.ARITHMETIC:
+            if token is None or token[0] != "op" or token[1] not in operators:
                 return left
             operator = self.take()[1]
-            right = self.parse_unary()
+            if operator == "*" and self.peek() is not None and self.peek()[1] == "*":
+                # `**` はべき乗。ヘルパに無いので、掛け算 2 つとして読まずに拒む
+                self.take()
+                self.result.unknown.append("**")
+            right = operand()
             self.result.imports.add(HELPER_IMPORT)
             left = f"{HELPER}.{self.ARITHMETIC[operator]}({left}, {right})"
 
@@ -264,6 +350,7 @@ class _Parser:
         holding one is refused, which is how `tier_discount` -- a three-line pure function -- failed to generate.
         """
         self.take()  # CASE
+        strict, self.strict = self.strict, False   # CASE の中は、それ自身の条件と値である
         selector = None
         if not self.at_word("WHEN"):
             selector = self.parse_or()
@@ -287,6 +374,7 @@ class _Parser:
                 self.result.imports.add(HELPER_IMPORT)
                 condition = f"{HELPER}.eq({selector}, {condition})"
             rendered = f"({condition} ? {value} : {rendered})"
+        self.strict = strict
         return rendered
 
     def parse_primary(self) -> str:
@@ -316,7 +404,9 @@ class _Parser:
                 continue
             if kind == "op" and value == "(":
                 self.take()
+                strict, self.strict = self.strict, False   # ここから先は値の括弧で、条件の背骨ではない
                 inner = self.parse_or()
+                self.strict = strict
                 if self.peek() is not None and self.peek()[1] == ")":
                     self.take()
                 out.append(f"({inner})")

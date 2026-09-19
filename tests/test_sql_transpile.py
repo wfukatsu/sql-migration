@@ -54,6 +54,25 @@ def test_rownum_strict_less_than_is_one_fewer():
     assert "LIMIT 4" in convert("SELECT ename FROM emp WHERE ROWNUM < 5")["sql"]
 
 
+@pytest.mark.parametrize("sql", [
+    "SELECT COUNT(*) FROM emp WHERE ROWNUM <= 5",
+    "SELECT DISTINCT deptno FROM emp WHERE ROWNUM <= 5",
+    "SELECT deptno, COUNT(*) FROM emp WHERE ROWNUM <= 10 GROUP BY deptno",
+    "SELECT ename, ROW_NUMBER() OVER (ORDER BY sal) FROM emp WHERE ROWNUM <= 5",
+    "SELECT ename FROM emp WHERE ROWNUM <= 2.5",
+])
+def test_rownum_is_not_a_limit_where_it_counts_something_else(sql):
+    # ROWNUM は入力の行を、LIMIT は出力の行を数える。COUNT(*) ... LIMIT 5 は全件を数えてしまう
+    r = convert(sql)
+    assert r["status"] == "ERROR" and r["sev"]["ROWNUM"] == "ERROR"
+
+
+def test_rownum_in_a_union_branch_gets_parentheses():
+    r = convert("SELECT * FROM emp WHERE ROWNUM <= 5 UNION ALL SELECT * FROM emp2 WHERE ROWNUM <= 5")
+    assert r["status"] == "OK"
+    assert r["sql"] == "(SELECT * FROM emp LIMIT 5) UNION ALL (SELECT * FROM emp2 LIMIT 5)"
+
+
 def test_rownum_with_order_by_warns():
     # Oracle は ORDER BY より前に ROWNUM を適用するので、件数の意味が変わりうる
     r = convert("SELECT ename FROM emp WHERE ROWNUM <= 3 ORDER BY sal")

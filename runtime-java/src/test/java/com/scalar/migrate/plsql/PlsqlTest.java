@@ -199,4 +199,34 @@ class PlsqlTest {
     assertEquals(moment, Plsql.zoned(moment));
     assertNull(Plsql.zoned(null));
   }
+
+  @Test
+  void negatedPredicatesAreNotTrueWhenTheAnswerIsUnknown() {
+    // `!in(x, ...)` is true for a null x; Oracle's `x NOT IN (...)` is unknown, and an IF does not take it.
+    assertTrue(Plsql.notIn(3, 1, 2));
+    assertFalse(Plsql.notIn(1, 1, 2));
+    assertFalse(Plsql.notIn(null, 1, 2));
+    assertFalse(Plsql.notIn(3, 1, null), "x NOT IN (1, NULL) is never true");
+    assertTrue(Plsql.notBetween(5, 1, 3));
+    assertFalse(Plsql.notBetween(2, 1, 3));
+    assertFalse(Plsql.notBetween(null, 1, 3));
+    assertTrue(Plsql.notBetween(0, 1, null), "0 < 1 already decides it");
+    assertFalse(Plsql.notBetween(2, 1, null));
+    assertTrue(Plsql.notLike("BCD", "A%"));
+    assertFalse(Plsql.notLike("ABC", "A%"));
+    assertFalse(Plsql.notLike(null, "A%"));
+  }
+
+  @Test
+  void aBooleanKeepsItsThirdValue() {
+    assertTrue(Plsql.isTrue(true));
+    assertFalse(Plsql.isTrue(null));
+    assertTrue(Plsql.isFalse(false));
+    assertFalse(Plsql.isFalse(null), "NOT NULL is unknown, not true");
+    assertEquals(Boolean.TRUE, Plsql.bool3(true, false));
+    assertEquals(Boolean.FALSE, Plsql.bool3(false, true));
+    assertNull(Plsql.bool3(false, false));
+    // v_ok := a > 1, with a NULL a
+    assertNull(Plsql.bool3(Plsql.gt(null, 1), Plsql.le(null, 1)));
+  }
 }
