@@ -26,13 +26,15 @@ container=difftest-$node-1
 restart_node() {
   # a fresh node per compatibility case: the cases create emp with different columns, and a running node keeps using
   # the old table definition ("column job does not exist", "cached plan must not change result type")
-  n=$(docker logs "$container" 2>&1 | grep -c 'main services started')
+  # `|| true`: on a node that has not logged the line yet (just created) grep -c prints 0 and exits 1, and
+  # `set -e` then ended the whole script without a word
+  n=$(docker logs "$container" 2>&1 | grep -c 'main services started' || true)
   # every profile, so that compose accepts the node's dependencies (the Oracle-backed node depends on source-oracle)
   if ! docker compose -f difftest/docker-compose.yml --profile cluster --profile cassandra --profile oracle \
          --profile oracle-backend restart "$node" > /dev/null; then
     echo "backend_compare: could not restart $node" >&2; exit 1
   fi
-  until [ "$(docker logs "$container" 2>&1 | grep -c 'main services started')" -gt "$n" ]; do
+  until [ "$(docker logs "$container" 2>&1 | grep -c 'main services started' || true)" -gt "$n" ]; do
     docker logs --tail 5 "$container" 2>&1 | grep -q 'Shutting down' && { echo "backend_compare: $node stopped" >&2; exit 1; }
     sleep 3
   done
