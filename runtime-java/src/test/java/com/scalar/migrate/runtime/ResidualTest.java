@@ -139,6 +139,34 @@ class ResidualTest {
 
   @Test
   @SuppressWarnings("unchecked")
+  void aScaledDecimalColumnKeepsItsSourceTypeInTheResidualEngine() throws Exception {
+    // Issue #29: NUMBER(7,2) is a ScalarDB DOUBLE, and as an H2 DOUBLE `CAST(sal AS VARCHAR2(10))` was '2450.0'
+    // where Oracle answers '2450' (oracle-features.sql #21, the last FAIL of the real-database comparison)
+    try (Residual residual = new Residual("Oracle")) {
+      Plan.Fetch f = fetch("emp", null);
+      f.residual_types = Map.of("sal", "NUMERIC(7,2)");
+      residual.load(f, rows(List.of("ename", "sal"), Map.of("ename", "TEXT", "sal", "DOUBLE"),
+          new Object[] {"CLARK", 2450.0d}, new Object[] {"WARD", 1250.5d}));
+      List<List<Object>> got = (List<List<Object>>) residual.query(
+          "SELECT CAST(sal AS VARCHAR2(10)), sal + 12.5 FROM emp ORDER BY ename", Map.of()).get("rows");
+      assertEquals("2450", got.get(0).get(0));
+      assertEquals("1250.5", got.get(1).get(0));
+      assertEquals(0, new java.math.BigDecimal("2462.5").compareTo(new java.math.BigDecimal(got.get(0).get(1).toString())));
+    }
+  }
+
+  @Test
+  void aResidualTypeFromThePlanThatIsNotADecimalTypeIsRefused() throws Exception {
+    try (Residual residual = new Residual("Oracle")) {
+      Plan.Fetch f = fetch("emp", null);
+      f.residual_types = Map.of("sal", "INT); CREATE ALIAS x AS '...'; --");
+      org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+          () -> residual.load(f, rows(List.of("sal"), Map.of("sal", "DOUBLE"), new Object[] {1.0d})));
+    }
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
   void anUndeclaredColumnIsTypedFromAllItsValuesNotTheFirst() throws Exception {
     // typed from the first row, a leading NULL made the column VARCHAR: MAX answered 9 over 10
     try (Residual residual = new Residual("PostgreSQL")) {

@@ -214,6 +214,7 @@ DB の要らないテストは CI でも回ります（`.github/workflows/ci.yml
 | `--isolation` | 見積もりの前提にする分離レベル（既定 `SERIALIZABLE`） |
 | `--row-limit N` | 実行計画が 1 表から取得する行数の上限（既定 10,000） |
 | `--h2-indexes` | 実行計画に「H2 に索引を作る」指定を入れる（既定オフ。大きな表を結合するバッチ処理向け） |
+| `--session-time-zone ZONE` | 移行元のセッションのタイムゾーン（`Asia/Tokyo`、`+09:00`）。ゾーンの無いリテラルを TIMESTAMPTZ 列に書くとき、そのゾーンの時刻として読んで UTC に直す（指定しないと UTC と仮定し、`TZ_ASSUMED_UTC` を出す） |
 
 出力（`--out-dir`）:
 

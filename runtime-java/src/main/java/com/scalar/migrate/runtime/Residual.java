@@ -93,6 +93,45 @@ public class Residual implements AutoCloseable {
     return Values.h2Type(scalardbType);
   }
 
+  private static final java.util.regex.Pattern EXACT_DECIMAL = java.util.regex.Pattern.compile("NUMERIC\\(\\d{1,2},\\d{1,2}\\)");
+
+  /**
+   * The source's own type of a column ScalarDB stores as DOUBLE ({@code NUMBER(7,2)}). As an H2 DOUBLE the value
+   * turns into text as {@code 2450.0} where Oracle answers {@code 2450}, and sums in binary. The type goes into DDL,
+   * so nothing but {@code NUMERIC(p,s)} is accepted from a plan file.
+   */
+  private static String residualType(Plan.Fetch spec, String column) {
+    if (spec.residual_types == null) return null;
+    for (Map.Entry<String, String> e : spec.residual_types.entrySet()) {
+      if (!e.getKey().equalsIgnoreCase(column)) continue;
+      if (!EXACT_DECIMAL.matcher(e.getValue()).matches()) {
+        throw new IllegalArgumentException("residual type of " + column + " is not NUMERIC(p,s): " + e.getValue());
+      }
+      return e.getValue();
+    }
+    return null;
+  }
+
+  /** The plan's exact type of a column, and only of a DOUBLE one: a column stored as a scaled BIGINT stays whole. */
+  private static String exactType(Plan.Fetch spec, Rows rows, String column) {
+    String declared = rows.types.containsKey(column) ? rows.types.get(column)
+        : spec.column_types != null ? spec.column_types.get(column) : null;
+    return "DOUBLE".equals(declared) ? residualType(spec, column) : null;
+  }
+
+  /**
+   * A DOUBLE as the source database would hold it in a {@code NUMERIC(p,s)} column. H2 keeps the scale a value comes
+   * with, and the scale is what shows when the value becomes text: Oracle writes a NUMBER without trailing zeros
+   * (2450), PostgreSQL and MySQL write every declared place (2450.00).
+   */
+  java.math.BigDecimal decimal(Number value, String type) {
+    int scale = Integer.parseInt(type.substring(type.indexOf(',') + 1, type.length() - 1));
+    java.math.BigDecimal d = new java.math.BigDecimal(value.toString()).setScale(scale, java.math.RoundingMode.HALF_UP);
+    if (!"Oracle".equals(mode)) return d;
+    d = d.stripTrailingZeros();
+    return d.scale() < 0 ? d.setScale(0) : d;
+  }
+
   /** Create the table on first use (typed from ScalarDB types when known, else from the Java values) and load rows. */
   public void load(Plan.Fetch spec, Rows rows) throws Exception {
     String table = identifier("table", spec.table);
@@ -119,6 +158,7 @@ public class Residual implements AutoCloseable {
             : Values.typeOfValues(rows.rows, i);
         // every value NULL and no declared type: any type gives the same answers, since NULLs compare alike
         String type = declared == null ? "VARCHAR" : columnType(declared);
+        if (exactType(spec, rows, c) != null) type = exactType(spec, rows, c);
         ddl.append(i > 0 ? ", " : "").append(c).append(' ').append(type);
       }
       ddl.append(')');
@@ -147,8 +187,12 @@ public class Residual implements AutoCloseable {
       }
     }
     try (PreparedStatement ps = h2.prepareStatement("INSERT INTO " + target + " (" + cols + ") VALUES (" + marks + ")")) {
+      String[] exact = new String[rows.columns.size()];
+      for (int i = 0; i < exact.length; i++) exact[i] = exactType(spec, rows, rows.columns.get(i));
       for (Object[] r : rows.rows) {
-        for (int i = 0; i < r.length; i++) ps.setObject(i + 1, Values.toH2(r[i]));
+        for (int i = 0; i < r.length; i++) {
+          ps.setObject(i + 1, exact[i] != null && r[i] instanceof Number n ? decimal(n, exact[i]) : Values.toH2(r[i]));
+        }
         ps.addBatch();
       }
       ps.executeBatch();
