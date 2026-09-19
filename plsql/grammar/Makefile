@@ -50,9 +50,15 @@ fetch:
 	curl -fsSL -o $(GRAMMAR_DIR)python3/transformGrammar.py $(UPSTREAM)/Python3/transformGrammar.py
 	@echo "re-vendored from $(GRAMMARS_V4_SHA)"
 
+# The jar is downloaded, not committed (build/ is ignored), so what arrives is checked: this is the digest of the
+# jar that generated the committed generated/*.py. A different jar is a different generator.
+ANTLR_SHA256 := eae2dfa119a64327444672aff63e9ec35a20180dc5b8090b7a6ab85125df4d76
+
 $(ANTLR_JAR):
 	@mkdir -p $(JAR_DIR)
-	curl -fsSL -o $@ $(ANTLR_URL)
+	curl -fsSL -o $@.download $(ANTLR_URL)
+	@echo "$(ANTLR_SHA256)  $@.download" | shasum -a 256 -c - || { rm -f $@.download; echo "ANTLR jar digest mismatch"; exit 1; }
+	mv $@.download $@
 
 clean:
 	rm -rf $(BUILD_DIR)
