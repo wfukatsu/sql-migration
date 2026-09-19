@@ -78,8 +78,8 @@ final class Values {
     }
     switch (type) {
       case BOOLEAN: return BooleanColumn.of(name, v instanceof Boolean ? (Boolean) v : Boolean.parseBoolean(v.toString()));
-      case INT: return IntColumn.of(name, ((Number) v).intValue());
-      case BIGINT: return BigIntColumn.of(name, ((Number) v).longValue());
+      case INT: return IntColumn.of(name, Math.toIntExact(whole(name, v)));
+      case BIGINT: return BigIntColumn.of(name, whole(name, v));
       case FLOAT: return FloatColumn.of(name, ((Number) v).floatValue());
       case DOUBLE: return DoubleColumn.of(name, ((Number) v).doubleValue());
       case TEXT: return TextColumn.of(name, v.toString());
@@ -89,6 +89,31 @@ final class Values {
       case TIMESTAMP: return TimestampColumn.of(name, LocalDateTime.parse(v.toString().replace(' ', 'T')));
       case TIMESTAMPTZ: return TimestampTZColumn.of(name, Instant.parse(v.toString()));
       default: throw new IllegalArgumentException("unsupported type " + type);
+    }
+  }
+
+  /** Whether {@code v} can be written as a value of {@code type} without changing it (whole, and in range). */
+  static boolean representable(DataType type, Object v) {
+    if (type != DataType.INT && type != DataType.BIGINT) return true;
+    try {
+      long n = whole("", v);
+      return type == DataType.BIGINT || (n >= Integer.MIN_VALUE && n <= Integer.MAX_VALUE);
+    } catch (IllegalArgumentException e) {
+      return false;
+    }
+  }
+
+  /**
+   * A value for an INT / BIGINT column, exactly. {@code intValue()} wraps a value that does not fit and drops a
+   * fraction, and either way the row that comes back is not the one that was asked for.
+   */
+  static long whole(String name, Object v) {
+    try {
+      return (v instanceof Long || v instanceof Integer || v instanceof Short || v instanceof Byte)
+          ? ((Number) v).longValue()
+          : new java.math.BigDecimal(v.toString()).longValueExact();
+    } catch (ArithmeticException | NumberFormatException e) {
+      throw new IllegalArgumentException("value " + v + " is not a whole number that fits column " + name, e);
     }
   }
 
