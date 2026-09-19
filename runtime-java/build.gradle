@@ -14,12 +14,23 @@ repositories { mavenCentral() }
 
 ext { scalardbVersion = '3.19.1' }
 
+// `-PcoreOnly` leaves out everything that is not needed to build and test against the ScalarDB Core API: the
+// ScalarDB SQL JDBC driver and the Cluster client SDK (commercial licence), the MySQL driver (GPL) and Oracle's
+// (OTN licence). None of them is used at compile time -- the code reaches them through java.sql and the ScalarDB
+// configuration -- so they are runtime dependencies, and a build that may not carry them can drop them:
+//   gradle -PcoreOnly test installDist      # CoreFetcher / Loader / the residual engine; no JdbcFetcher, no Bench
+def coreOnly = providers.gradleProperty('coreOnly').isPresent()
+
+// every configuration resolves to the versions in gradle.lockfile; `gradle dependencies --write-locks` renews it
+dependencyLocking {
+    lockAllConfigurations()
+    // the two builds resolve different sets, and a lock file that names a module the build leaves out is an error
+    lockFile = file(coreOnly ? 'gradle-core.lockfile' : 'gradle.lockfile')
+}
+
 dependencies {
     // ScalarDB Core (Apache 2): transactional CRUD API, used by CoreFetcher / Loader (no license required)
     implementation "com.scalar-labs:scalardb:${scalardbVersion}"
-    // ScalarDB SQL JDBC driver + Cluster client SDK: used by JdbcFetcher (requires ScalarDB Cluster, licensed)
-    implementation "com.scalar-labs:scalardb-sql-jdbc:${scalardbVersion}"
-    implementation "com.scalar-labs:scalardb-cluster-java-client-sdk:${scalardbVersion}"
     // Residual engine: pure-Java in-memory SQL with Oracle / PostgreSQL / MySQL compatibility modes
     implementation 'com.h2database:h2:2.5.250'
     implementation 'com.google.code.gson:gson:2.14.0'
@@ -27,10 +38,15 @@ dependencies {
     // configured in src/main/resources/simplelogger.properties
     runtimeOnly 'org.slf4j:slf4j-simple:2.0.18'
     runtimeOnly 'org.postgresql:postgresql:42.7.4'
-    // MySQL JDBC: used only by the DML benchmark (difftest/bench_dml.py) to time MySQL as the migration source
-    runtimeOnly 'com.mysql:mysql-connector-j:8.4.0'
-    // Oracle JDBC: used ONLY by the benchmark (Bench.java) to time the migration-source database from the same JVM
-    implementation 'com.oracle.database.jdbc:ojdbc11:23.5.0.24.07'
+    if (!coreOnly) {
+        // ScalarDB SQL JDBC driver + Cluster client SDK: used by JdbcFetcher (requires ScalarDB Cluster, licensed)
+        runtimeOnly "com.scalar-labs:scalardb-sql-jdbc:${scalardbVersion}"
+        runtimeOnly "com.scalar-labs:scalardb-cluster-java-client-sdk:${scalardbVersion}"
+        // MySQL JDBC: used only by the DML benchmark (difftest/bench_dml.py) to time MySQL as the migration source
+        runtimeOnly 'com.mysql:mysql-connector-j:8.4.0'
+        // Oracle JDBC: used ONLY by the benchmark (Bench.java) to time the migration-source database from the same JVM
+        runtimeOnly 'com.oracle.database.jdbc:ojdbc11:23.5.0.24.07'
+    }
 
     testImplementation platform('org.junit:junit-bom:5.14.4')
     testImplementation 'org.junit.jupiter:junit-jupiter'
