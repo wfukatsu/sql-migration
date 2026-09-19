@@ -232,8 +232,11 @@ class _Builder:
         for declaration in _descend(context, {"Declare_specContext", "Package_obj_specContext"},
                                     stop=ROUTINE_BODIES):
             self._declaration(scope, declaration)
-        for body in _descend(context, ROUTINE_BODIES):
-            self._routine(body, parent=scope, module=name)
+        from .lower import _routine_name, overload_ordinals
+
+        bodies = list(_descend(context, ROUTINE_BODIES))
+        for body, ordinal in zip(bodies, overload_ordinals([_routine_name(b) for b in bodies])):
+            self._routine(body, parent=scope, module=name, ordinal=ordinal)
 
     def _standalone(self, context: ParserRuleContext) -> None:
         self._routine(context, parent=None, module=None)
@@ -244,11 +247,16 @@ class _Builder:
         for declaration in _descend(context, {"Declare_specContext"}):
             self._declaration(scope, declaration)
 
-    def _routine(self, context: ParserRuleContext, parent: Scope | None, module: str | None) -> None:
+    def _routine(self, context: ParserRuleContext, parent: Scope | None, module: str | None,
+                 ordinal: int | None = None) -> None:
         identifier = _child(context, "IdentifierContext") or _child(context, "Procedure_nameContext") \
             or _child(context, "Function_nameContext")
         name = _text(identifier).split(".")[-1].lower() if identifier is not None else "<anonymous>"
-        scope_id = f"{module}.{name}" if module else name
+        from .lower import routine_id_of
+
+        # the same id the lowering gives the routine: overloads used to share one scope, and the second one's
+        # parameters replaced the first one's
+        scope_id = routine_id_of(module, name, ordinal)
         scope = self._scope(scope_id, "routine", parent)
 
         parameters = []

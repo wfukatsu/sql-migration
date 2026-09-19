@@ -21,6 +21,17 @@ rules:
     requiredTests:
       - control_flow_equivalence
 
+  - id: CALL-002
+    match: {statementKind: [SqlOperation, Expression], hasDiagnostic: OVERLOAD_UNRESOLVED}
+    decision: REVIEW
+    severity: critical
+    message: オーバーロードされた routine を呼んでいますが、引数の数と名前からはどの版かを決められません。版ごとに判定が違いうるので、どれかの判定を借りることはしません
+    remediation:
+      - 名前付き引数（p_x => ...）で呼ぶか、版ごとに別の名前にする
+      - 型だけが違うオーバーロードは、移行先では別名の method にする
+    requiredTests:
+      - equivalent_result
+
   - id: CALL-001
     match: {unresolvedCallee: true}
     decision: REVIEW

@@ -183,3 +183,17 @@ def java_name(identifier: str) -> str:
 def java_class_name(identifier: str) -> str:
     parts = [p for p in re.split(r"[_$#.]+", identifier.strip()) if p]
     return "".join(p[:1].upper() + p[1:].lower() for p in parts) or "Generated"
+
+
+def routine_stem(routine) -> str:
+    """The PL/SQL-side name every Java name of a routine is made from: `put`, and `put1` / `put2` for overloads.
+
+    Every overload gets the number, not only the ones Java could not tell apart: NUMBER and INTEGER parameters are
+    the same Java type, a `<Name>Result` record and the repository's `<name>Stmt<N>` methods have no parameters to
+    differ by, and one rule is easier to find a method by (the evidence harness, `verify._attribute`).
+    """
+    from ..lower import overload_of
+
+    ordinal = overload_of(routine)
+    return routine.name if ordinal is None else f"{routine.name}{ordinal}"
+

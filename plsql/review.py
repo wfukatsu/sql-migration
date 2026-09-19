@@ -28,7 +28,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .gen_java.types import java_class_name, java_name
+from .gen_java.types import java_class_name, java_name, routine_stem
 from .ir import model as M
 from .rules.engine import Evidence
 
@@ -300,7 +300,7 @@ def _generated_names(module: M.Module | None, routine: M.Routine) -> dict | None
     """The Java the generator would have produced for this routine, by its own naming rules."""
     if module is None:
         return None
-    return {"class": java_class_name(module.name) + "Service", "method": java_name(routine.name)}
+    return {"class": java_class_name(module.name) + "Service", "method": java_name(routine_stem(routine))}
 
 
 # --------------------------------------------------------------------------------------------------
@@ -370,7 +370,7 @@ def traceability_rows(program: M.Program, decisions: dict, generated_root: str |
         for routine in module.routines:
             decision = decisions.get(routine.id)
             verdict = decision.verdict if decision else ""
-            method = java_name(routine.name)
+            method = java_name(routine_stem(routine))
             rows.append(_row(java_file, method, routine, "routine", verdict, text, method))
             for statement in _statements(routine):
                 # a statement's anchor in the generated code is the `file:line` comment the generator writes

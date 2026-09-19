@@ -27,7 +27,7 @@ from ..limits import Limits
 from ..lower import _walk
 from .emit import JavaFile
 from .expr import translate
-from .types import java_class_name, java_name, java_type
+from .types import java_class_name, java_name, java_type, routine_stem
 
 RUNNER_IMPORT = "com.scalar.migrate.runtime.PlanRunner"
 CONNECTION_IMPORT = "java.sql.Connection"
@@ -246,7 +246,7 @@ def sql_suffix(statement: M.SqlOperation) -> str:
 
 def loop_method(routine: M.Routine, loop: M.Loop) -> str:
     """The repository method a cursor FOR loop reads its rows from. The service calls the same name."""
-    return f"{java_name(routine.name)}Loop{loop.id.rsplit('-', 1)[-1]}"
+    return f"{java_name(routine_stem(routine))}Loop{loop.id.rsplit('-', 1)[-1]}"
 
 
 def _record_for(method: str) -> str:
@@ -264,7 +264,7 @@ def loop_record(routine: M.Routine, loop: M.Loop) -> str:
 
 def _method(file: JavaFile, routine: M.Routine, statement: M.SqlOperation,
             result: RepositoryFile) -> None:
-    name = f"{java_name(routine.name)}{sql_suffix(statement)}"
+    name = f"{java_name(routine_stem(routine))}{sql_suffix(statement)}"
     if statement.source_range is not None:
         file.comment(f"{statement.source_range.file}:{statement.source_range.start_line}")
     file.comment(_one_line(statement.original_sql))
