@@ -20,7 +20,7 @@ from pathlib import Path
 
 from .frontend import ParsedFile, coverage, parse_file
 from .ir import model as M, serde
-from . import rmw, triggers
+from . import merge, rmw, triggers
 from .limits import RowLocks
 from .lower import _walk, lower_file
 from .source import Issue
@@ -116,6 +116,9 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
 
     # #12: 移行先に trigger は無いので、**書き込む側が呼ぶ**。移行先のスキーマが渡っているかに
     # 関わらず行う——「その更新が 1 行に絞れるか」は Oracle の主キーの話である
+    # #26 の続き: 記録された routine の MERGE を「読んでから UPDATE か INSERT を選ぶ」へ割る。
+    # trigger より前に行う——Oracle の MERGE は UPDATE / INSERT の trigger を行ごとに発火させる
+    merge.rewrite(program, row_locks, schema, analysis.symbol_table())
     triggers.rewrite(program, schema, analysis.symbol_table())
 
     if scalardb_schema is not None:
