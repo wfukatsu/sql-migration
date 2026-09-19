@@ -182,7 +182,7 @@ def test_value_error_from_a_size_error_reaches_its_handler():
     text = java(CONSTRAINED)
     assert "throw new ValueErrorException(size.getMessage());" in text
     assert text.index("catch (Plsql.ValueError size)") < text.index("catch (ValueErrorException e)")
-    assert "only the size errors of a constrained declaration" in text
+    assert "size errors of a constrained declaration" in text and "text that is not a number" in text
 
 
 def test_select_into_sets_rowcount_when_the_routine_reads_it(tmp_path):
@@ -223,3 +223,26 @@ def test_a_predefined_code_raised_by_number_is_the_predefined_class():
     files, registry = generate(M.Program(id="p", kind="Program", modules=[lowered(source)]), DOMAIN)
     assert registry.codes[-6502].class_name == "ValueErrorException" and not registry.conflicts
     assert "ValueErrorException" in {f.name for f in files}
+
+
+CONVERSION = """
+CREATE OR REPLACE PACKAGE BODY pkg_n AS
+  FUNCTION parse(p_text VARCHAR2) RETURN NUMBER IS
+    v_n NUMBER;
+  BEGIN
+    v_n := TO_NUMBER(p_text);
+    RETURN v_n;
+  EXCEPTION
+    WHEN VALUE_ERROR THEN
+      RETURN -1;
+  END parse;
+END pkg_n;
+"""
+
+
+def test_to_number_is_translated_and_its_failure_reaches_the_value_error_handler():
+    """Issue #29 (14, 17a): TO_NUMBER was an unknown function, and text that is not a number left the helper as
+    Java's NumberFormatException, which no migrated handler names."""
+    text = java(CONVERSION)
+    assert "Plsql.toNumber(pText)" in text
+    assert "catch (Plsql.ValueError" in text and "catch (ValueErrorException" in text
