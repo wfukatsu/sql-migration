@@ -757,6 +757,9 @@ def test_mysql_string_comparisons_mention_the_collation_without_changing_the_sta
     r = run("SELECT customer_id FROM orders WHERE customer_id = 1 AND order_no = 2 AND status = 'open'", "mysql")
     note = next(i for i in r.issues if i.code == "SEMANTICS")
     assert note.severity == "INFO" and "collation" in note.message
+    # LIKE too (dml-benchmark-report S10), and not for a value that is only written
+    assert "collation" in messages(run("SELECT order_no FROM orders WHERE customer_id = 1 AND status LIKE 'OP%'", "mysql"), "SEMANTICS")
+    assert "SEMANTICS" not in codes(run("UPDATE orders SET status = 'open' WHERE customer_id = 1 AND order_no = 2", "mysql"))
 
 
 # ---------------------------------------------------------------- #27-41: one statement must not end the file

@@ -278,8 +278,11 @@ def converted_notes(node: exp.Expression, dialect: str) -> list[tuple[str, str]]
     if dialect == "oracle" and any(n.name == "" for n in strings):
         notes.append(("WARN", "'' is NULL in Oracle: it is stored as NULL, and `= ''` is never true. ScalarDB keeps "
                               "an empty string as an empty string -- write NULL / IS NULL if that is what was meant"))
+    # `SET status = 'SHIPPED'` writes the value; nothing is compared
+    assignments = {id(eq) for eq in node.expressions} if isinstance(node, exp.Update) else set()
     compared = [n for n in node.find_all(exp.EQ, exp.NEQ, exp.Like, exp.In)
-                if any(isinstance(x, exp.Literal) and x.is_string for x in n.iter_expressions())]
+                if id(n) not in assignments
+                and any(isinstance(x, exp.Literal) and x.is_string for x in n.iter_expressions())]
     if dialect == "mysql" and compared:
         notes.append(("INFO", "MySQL compares strings by the column's collation, case-insensitively by default "
                               "('abc' = 'ABC'); ScalarDB compares exactly. Check the collation of the compared columns"))
