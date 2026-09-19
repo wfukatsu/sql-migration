@@ -1351,9 +1351,16 @@ def _constrain(file: JavaFile, value: str, type_ref: "M.TypeRef | None") -> str:
     text = _TEXT_CONSTRAINT.fullmatch(declared.strip())
     if value == "null" or not (number or text):
         return value
-    file.add_import("com.scalar.migrate.plsql.Plsql")
     if number:
-        return f"Plsql.fit({value}, {int(number.group(1))}, {int(number.group(2) or 0)})"
+        # NUMBER(9) is an Integer and NUMBER(18) a Long in the generated code (types.java_type), and the helper
+        # has to hand back that type: `Long v = Plsql.fit(...)` with a BigDecimal result did not compile
+        helper = {"BigDecimal": "fit", "Long": "fitLong", "Integer": "fitInt"}.get(java_type(declared).name)
+        if helper is None:
+            return value
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        scale = f", {int(number.group(2) or 0)}" if helper == "fit" else ""
+        return f"Plsql.{helper}({value}, {int(number.group(1))}{scale})"
+    file.add_import("com.scalar.migrate.plsql.Plsql")
     return f"Plsql.fit({value}, {int(text.group(1))}, {'true' if (text.group(2) or '').upper() == 'CHAR' else 'false'})"
 
 

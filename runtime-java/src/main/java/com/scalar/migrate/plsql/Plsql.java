@@ -278,6 +278,18 @@ public final class Plsql {
     return rounded;
   }
 
+  /** {@link #fit(Object, int, int)} for a NUMBER(p) the generated code holds as a Long (p up to 18). */
+  public static Long fitLong(Object value, int precision) {
+    BigDecimal fitted = fit(value, precision, 0);
+    return fitted == null ? null : fitted.longValueExact();
+  }
+
+  /** {@link #fit(Object, int, int)} for a NUMBER(p) the generated code holds as an Integer (p up to 9). */
+  public static Integer fitInt(Object value, int precision) {
+    BigDecimal fitted = fit(value, precision, 0);
+    return fitted == null ? null : fitted.intValueExact();
+  }
+
   /** A value going into VARCHAR2(size): refused when longer. {@code chars} is VARCHAR2(n CHAR); else bytes. */
   public static String fit(Object value, int size, boolean chars) {
     if (isNull(value)) return null;

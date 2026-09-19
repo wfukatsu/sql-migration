@@ -128,6 +128,11 @@ def user_class(name: str) -> str:
 
 def _class_for(statement: M.Raise, module: M.Module) -> str:
     """One class per business code, named after the module that raises it."""
+    predefined = next((c for c, code, _ in PREDEFINED.values() if code == statement.error_code), None)
+    if predefined is not None:
+        # a code Oracle already names (-6502 is VALUE_ERROR) is that exception, not a business error of the
+        # module: a second class for the code would keep the predefined one from being written at all
+        return predefined
     return f"{java_class_name(module.name)}Error{abs(statement.error_code or 0)}Exception"
 
 
