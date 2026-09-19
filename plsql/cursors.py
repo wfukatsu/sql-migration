@@ -42,6 +42,7 @@ def rewrite(routine: M.Routine, symbols: SymbolTable | None, module: str | None 
     if symbols is None:
         return
     _named_cursor_loops(routine, symbols, module, schema)
+    _drop_order_nobody_reads(routine, schema)
     rewritten: set[str] = set()
     routine.body = _sequence(routine.body, routine, symbols, module, schema, rewritten)
     for handler in routine.exception_handlers:
@@ -131,6 +132,91 @@ def _current_of(loop: M.Loop, cursor: str, query: str, schema: OracleSchema | No
         statement.add("INFO", "CURRENT_OF",
                       f"WHERE CURRENT OF {cursor} を主キー（{', '.join(key)}）で指す形にした。指している行は"
                       f"変わらない。行ロックを落とすかどうかは別に決める（#9）")
+
+
+def _drop_order_nobody_reads(routine: M.Routine, schema: OracleSchema | None) -> None:
+    """結果に効かない `ORDER BY` を落とす（2026-09-19 / #20 の決定 A: `mark_reviewed`）。
+
+    `FOR r IN (... ORDER BY ordered_at) LOOP UPDATE t SET note = 'reviewed' WHERE <主キー> = r.<主キー>`
+    は全行に同じことをするだけで、どの順で回しても残る行は同じである。Oracle で順序が効くのは
+    **ロックを取る順**だけで、移行先に行ロックは無い。落とすと、パーティションをまたぐ並べ替えが
+    要らなくなる（`status` の索引で読める）。
+
+    落としてよいと言えるのは、次が**全部**成り立つときだけである——1 つでも欠けたら順序は残す:
+
+    * 件数の上限（`FETCH FIRST` / `ROWNUM` / `LIMIT`）が無い——あればどの行が選ばれるかが順序で決まる
+    * 本体が、読んだ行を**主キーで指す** UPDATE / DELETE だけである——他の行に触れない
+    * 書く値が、定数・その行の値・routine の引数だけである——前の反復が残した値を読まない
+    * 途中で抜けない（EXIT / RETURN が無い）
+    """
+    for loop in _loops(routine.body):
+        query = loop.query
+        if (loop.loop_kind or "") != "cursor-for" or query is None or loop.chunk:
+            continue
+        try:
+            tree = sqlglot.parse_one(query.original_sql or "", dialect="oracle")
+        except Exception:
+            continue
+        select = tree if isinstance(tree, exp.Select) else None
+        if select is None or not select.args.get("order") or row_cap(select)[0] is not None \
+                or select.args.get("limit") or query.locking_mode:
+            continue
+        source = select.args.get("from_") or select.args.get("from")
+        if source is None or not isinstance(source.this, exp.Table) or select.args.get("joins"):
+            continue
+        table = source.this.name.lower()
+        key = schema.primary_key(table) if schema is not None else []
+        if not key or not _order_free(loop, table, key, routine):
+            continue
+        select.set("order", None)
+        query.original_sql = select.sql(dialect="oracle")
+        loop.cursor = f"{loop.variable or 'r'} IN ({query.original_sql})"
+        query.add("INFO", "ORDER_DROPPED",
+                  "ORDER BY は結果に効かない（各行を主キーで指して同じことをするだけ）ので落とした。"
+                  "Oracle で順序が効くのはロックを取る順だけで、移行先に行ロックは無い（#20）")
+
+
+def _order_free(loop: M.Loop, table: str, key: list[str], routine: M.Routine) -> bool:
+    row = (loop.variable or "r").lower()
+    parameters = {p.name.lower() for p in routine.parameters}
+    for statement in loop.body:
+        if statement.kind != "SqlOperation" or (statement.sql_kind or "").upper() not in ("UPDATE", "DELETE"):
+            return False
+        try:
+            tree = sqlglot.parse_one(statement.original_sql or "", dialect="oracle")
+        except Exception:
+            return False
+        target = tree.this if isinstance(tree, (exp.Update, exp.Delete)) else None
+        if not isinstance(target, exp.Table) or target.name.lower() != table:
+            return False
+        where = tree.args.get("where")
+        pinned = {}
+        for condition in (list(_conjuncts(where.this)) if where is not None else []):
+            if not isinstance(condition, exp.EQ) or not isinstance(condition.this, exp.Column):
+                return False
+            value = condition.expression
+            if isinstance(value, exp.Column) and (value.table or "").lower() == row:
+                pinned[condition.this.name.lower()] = value.name.lower()
+            else:
+                return False
+        if any(pinned.get(column) != column for column in key):
+            return False   # 読んだ行を主キーで指していない
+        for assignment in (tree.expressions or []) if isinstance(tree, exp.Update) else []:
+            for column in assignment.expression.find_all(exp.Column):
+                qualifier = (column.table or "").lower()
+                if qualifier != row and column.name.lower() not in parameters:
+                    return False   # 表の列か、前の反復が残した局所変数を読んでいる
+    return True
+
+
+def _conjuncts(condition):
+    while isinstance(condition, exp.Paren):
+        condition = condition.this
+    if isinstance(condition, exp.And):
+        yield from _conjuncts(condition.this)
+        yield from _conjuncts(condition.expression)
+    else:
+        yield condition
 
 
 def _arguments(written: str | None) -> list[str]:
