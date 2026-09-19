@@ -8,7 +8,8 @@
 
 rules:
   - id: SCAN-001
-    match: {statementKind: SqlOperation, hasDiagnostic: SCAN_AFTER_WRITE}
+    # Call: 呼び出し先が、この routine の書いた表を走査する（同じトランザクションの中で走る）
+    match: {statementKind: [SqlOperation, Call], hasDiagnostic: SCAN_AFTER_WRITE}
     decision: REDESIGN
     severity: critical
     message: 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します

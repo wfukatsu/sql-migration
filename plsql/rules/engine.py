@@ -33,7 +33,7 @@ import yaml
 
 from ..analysis import ProgramAnalysis
 from ..ir import model as M
-from ..lower import _walk
+from ..lower import _walk, dynamic_texts
 from ..source import Issue
 
 RULES_DIR = Path(__file__).parent
@@ -205,6 +205,28 @@ def _declarations(routine: M.Routine) -> list:
         + [p for p in routine.parameters if p.default]
 
 
+def _visible_declarations(module: M.Module, routine: M.Routine) -> list:
+    """Everything declared where the routine can see it: its own declarations, those of the blocks nested in it,
+    and the package's. The last two used to be left out, so a `DECLARE v unknown_pkg.t%TYPE` inside a block cost
+    no confidence, and a `CURSOR c IS ... FOR UPDATE` declared on the package never reached LOCK-002."""
+    nested = [d for s in _statements(routine) for d in getattr(s, "declarations", []) or []]
+    return list(routine.declarations) + nested + list(module.declarations)
+
+
+def _locking_cursor(module: M.Module, routine: M.Routine) -> bool:
+    body = None
+    for d in _visible_declarations(module, routine):
+        if d.declaration_kind != "cursor" or not d.initial or not re.search(r"\bFOR\s+UPDATE\b", d.initial, re.I):
+            continue
+        if d not in module.declarations:
+            return True
+        # a package's cursor counts for the routines that use it, not for every routine of the package
+        body = body if body is not None else repr([routine.body, routine.exception_handlers])
+        if re.search(rf"\b{re.escape(d.name)}\b", body, re.IGNORECASE):
+            return True
+    return False
+
+
 def _match(rule: Rule, module: M.Module, routine: M.Routine, analysis: ProgramAnalysis) -> list[Match]:
     criteria = rule.match
     hits: list[Match] = []
@@ -236,7 +258,7 @@ def _extra(criteria: dict, statement: M.Statement, module: M.Module, routine: M.
     if criteria.get("constantSql") is False and getattr(statement, "constant_sql", None) is not None:
         return False
     if "identifierInterpolation" in criteria:
-        if _interpolates_identifier(statement) is not criteria["identifierInterpolation"]:
+        if _interpolates_identifier(statement, routine) is not criteria["identifierInterpolation"]:
             return False
     if "targetStatus" in criteria and getattr(statement, "target_status", None) not in \
             _as_set(criteria["targetStatus"]):
@@ -294,14 +316,16 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
         # a handler for one of these names, anywhere in the routine (nested blocks included)
         "handlesException": lambda v: bool(_handled(routine) & {n.upper() for n in _as_set(v)}),
         "unresolvedCallee": lambda v: bool(_unresolved_callees(routine, analysis)) is v,
+        # `WHEN OTHERS THEN NULL`, anywhere in the routine
+        "swallowsOthers": lambda v: _swallows_others(routine) is v,
+        # SQL%ROWCOUNT read in a routine where something other than a static statement sets it
+        "rowCountUntracked": lambda v: bool(_untracked_row_count(routine)) is v,
         # P4-3: how many times the routine reads the database clock. Two reads can return two values, and
         # nothing in the recorded Oracle evidence pins that -- a scenario pins the clock to one value, so a
         # routine that reads it twice is compared against something the comparison cannot distinguish.
         "clockReadsAtLeast": lambda v: _clock_reads(routine) >= v,
         # row locking hides in a cursor declaration as well as in a statement (found in P1-7)
-        "cursorLocking": lambda v: any(
-            d.declaration_kind == "cursor" and d.initial and "FOR UPDATE" in d.initial.upper()
-            for d in routine.declarations) is v,
+        "cursorLocking": lambda v: _locking_cursor(module, routine) is v,
         "saveExceptions": lambda v: any(
             s.kind == "Loop" and s.loop_kind == "forall"
             and any(d.code == "FORALL_SAVE_EXCEPTIONS" for d in s.diagnostics)
@@ -328,6 +352,32 @@ def _handled(routine: M.Routine) -> set[str]:
     return {name.upper() for h in handlers for name in h.exceptions}
 
 
+def _swallows_others(routine: M.Routine) -> bool:
+    handlers = list(routine.exception_handlers) + [
+        h for s in _statements(routine) for h in getattr(s, "exception_handlers", []) or []]
+    return any("OTHERS" in {e.upper() for e in h.exceptions} and all(s.kind == "Null" for s in h.body)
+               for h in handlers)
+
+
+def _untracked_row_count(routine: M.Routine) -> list[str]:
+    """What else, besides a static INSERT / UPDATE / DELETE / SELECT INTO, sets SQL%ROWCOUNT in a routine that
+    reads it. The generated `rowCount` follows the static statements only."""
+    if not re.search(r"SQL%ROWCOUNT", repr([routine.body, routine.exception_handlers, routine.declarations]),
+                     re.IGNORECASE):
+        return []
+    found = []
+    for statement in _statements(routine):
+        if statement.kind == "Loop" and statement.loop_kind == "forall":
+            found.append("FORALL")
+        elif statement.kind == "DynamicSql":
+            found.append("EXECUTE IMMEDIATE")
+        elif statement.kind == "SqlOperation" and (statement.sql_kind or "").upper() == "MERGE":
+            found.append("MERGE")
+        elif statement.kind == "Call" and getattr(statement, "resolved_to", None):
+            found.append(f"call to {statement.resolved_to}")
+    return sorted(set(found))
+
+
 def _unresolved_callees(routine: M.Routine, analysis: ProgramAnalysis) -> list[str]:
     from ..analysis import HARMLESS_CALLEES
 
@@ -335,7 +385,7 @@ def _unresolved_callees(routine: M.Routine, analysis: ProgramAnalysis) -> list[s
                   if not HARMLESS_CALLEES.match(c))
 
 
-def _interpolates_identifier(statement: M.Statement) -> bool:
+def _interpolates_identifier(statement: M.Statement, routine: M.Routine | None = None) -> bool:
     """Does the dynamic SQL splice a value into an identifier position?
 
     This is the line between the two dynamic-SQL cases the design document separates. A statement that only
@@ -343,8 +393,8 @@ def _interpolates_identifier(statement: M.Statement) -> bool:
     static queries (REVIEW). One that builds a table name cannot: the target has to be an allowlist or a
     dedicated repository (REDESIGN).
     """
-    expression = getattr(statement, "expression", "") or ""
-    return bool(_INTERPOLATED_IDENTIFIER.search(expression))
+    texts = dynamic_texts(routine, statement) if routine is not None else [getattr(statement, "expression", "") or ""]
+    return any(_INTERPOLATED_IDENTIFIER.search(text) for text in texts)
 
 
 def _as_set(value) -> set:
@@ -363,6 +413,8 @@ def _routine_detail(criteria: dict, module: M.Module, routine: M.Routine, analys
     effects = analysis.effective.get(routine.id)
     if criteria.get("dbLink") and effects:
         return ", ".join(effects.external.db_links)
+    if criteria.get("rowCountUntracked"):
+        return ", ".join(_untracked_row_count(routine))
     if criteria.get("handlesException"):
         return ", ".join(sorted(_handled(routine) & {n.upper() for n in _as_set(criteria["handlesException"])}))
     if criteria.get("unresolvedCallee"):
@@ -382,7 +434,8 @@ def confidence_of(module: M.Module, routine: M.Routine, analysis: ProgramAnalysi
     unknown = sum(1 for s in statements if s.kind == "Unsupported")
     rule_coverage = 0.0 if unknown else 1.0
 
-    typed = [d.type for d in list(routine.declarations) + list(routine.parameters) if d.type is not None]
+    typed = [d.type for d in _visible_declarations(module, routine) + list(routine.parameters)
+             if d.type is not None]
     if routine.return_type is not None:
         typed.append(routine.return_type)
     resolved = [t for t in typed if t.is_resolved()]
