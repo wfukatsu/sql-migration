@@ -1,0 +1,2 @@
+{"roles": [{"key": 1, "type": "a", "data": "x", "deptno": 10}, {"key": 2, "type": "b", "data": "y", "deptno": 20},
+           {"key": 3, "type": "a", "data": null, "deptno": 10}]}

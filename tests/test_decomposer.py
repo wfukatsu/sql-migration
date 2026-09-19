@@ -212,3 +212,23 @@ def test_jdbc_plans_are_not_split():
     plan = _plan("postgres", "SELECT UPPER(ename) FROM emp WHERE empno IN (1, 3)", storage="cassandra")
     assert [f["scalardb_sql"] for f in plan["fetch"]] == ["SELECT empno, ename FROM emp WHERE empno = 1",
                                                           "SELECT empno, ename FROM emp WHERE empno = 3"]
+
+
+def test_a_plan_fetch_quotes_the_names_scalardb_reserves():
+    """Issue #29 (6): `SELECT type FROM order WHERE key = 1` is a syntax error in ScalarDB SQL."""
+    ddl = 'CREATE TABLE "order" ("key" NUMBER(9) PRIMARY KEY, type VARCHAR2(10), note VARCHAR2(10));\n'
+    results, _ = convert_script(ddl + 'SELECT UPPER(type) AS t, note FROM "order" WHERE "key" = 1', "oracle")
+    assert results[-1].status == "PLANNED"
+    assert results[-1].plan["fetch"][0]["scalardb_sql"] == 'SELECT "key", "type", note FROM "order" WHERE "key" = 1'
+
+
+def test_a_scaled_decimal_column_carries_its_source_type_to_the_residual_engine():
+    """Issue #29: NUMBER(7,2) is a DOUBLE in ScalarDB. Typed DOUBLE in H2 too, `CAST(sal AS VARCHAR2(10))` was
+    '2450.0' where Oracle answers '2450'. The plan names the exact type, and only for columns that have one."""
+    ddl = ("CREATE TABLE emp2 (empno NUMBER(4) PRIMARY KEY, ename VARCHAR2(10), sal NUMBER(7,2), ratio BINARY_DOUBLE, "
+           "anything NUMBER);\n")
+    results, _ = convert_script(ddl + "SELECT ename, CAST(sal AS VARCHAR2(10)) AS s FROM emp2 WHERE empno = 1", "oracle")
+    plan = results[-1].plan
+    assert results[-1].status == "PLANNED"
+    assert plan["fetch"][0]["residual_types"] == {"sal": "NUMERIC(7,2)"}
+    assert plan["fetch"][0]["column_types"]["sal"] == "DOUBLE"
