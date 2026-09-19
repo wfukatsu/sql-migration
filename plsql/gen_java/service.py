@@ -29,7 +29,7 @@ from ..lower import _walk
 from . import split
 from .dto import loop_component_type
 from .emit import JavaFile
-from .expr import translate
+from .expr import SEQUENCES_IMPORT, translate
 from .types import java_class_name, java_name, java_type, record_columns, routine_stem
 
 # the module being generated, so an expression can resolve a sibling routine without threading it through
@@ -1460,5 +1460,12 @@ def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "Service
             result.unknown_names.append(name)
     if rendered.unknown:
         raise Untranslatable(rendered.unknown, text or "")
+    if rendered.sequences:
+        # `v_id := seq.NEXTVAL` outside any SQL. Numbering belongs to the repository -- it is the one that is
+        # given a `Sequences` (plan §9) -- so the service asks it, instead of reaching for a field it never had
+        # (found 2026-09-20 on the first routine that came from outside the corpus: the corpus only ever took
+        # a number inside an INSERT)
+        file.add_import(*(i for i in rendered.imports if i != SEQUENCES_IMPORT))
+        return rendered.java.replace('sequences.next("', 'repository.nextSequenceValue("')
     file.add_import(*rendered.imports)
     return rendered.java

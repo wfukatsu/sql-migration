@@ -140,3 +140,28 @@ def test_each_create_sequence_is_read_on_its_own(tmp_path):
                      "seq_c": ("counter", 1, 7, 1),
                      "seq_d": ("counter", 1, -5, -1)}
     assert "既定" in Policies.from_ddl(ddl)["seq_a"].reason, "a default is not a stated intent, and the reason says so"
+
+
+def test_a_number_taken_outside_any_sql_goes_through_the_repository(tmp_path):
+    """`v_id := seq.NEXTVAL` as a PL/SQL assignment. The corpus only ever numbered inside an INSERT, so the
+    service rendered `sequences.next(...)` against a field it never had and the tree did not compile -- found on
+    the first routine that came from outside the corpus (2026-09-20)."""
+    from plsql.generate import main as generate
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "schema.sql").write_text(
+        "CREATE TABLE t (id NUMBER(12) PRIMARY KEY, note VARCHAR2(10));\nCREATE SEQUENCE t_seq START WITH 1;\n",
+        encoding="utf-8")
+    (src / "prc_take.prc").write_text(
+        "CREATE OR REPLACE PROCEDURE prc_take(p_id OUT t.id%TYPE) IS\nBEGIN\n"
+        "  p_id := t_seq.NEXTVAL;\n  INSERT INTO t (id, note) VALUES (p_id, 'x');\nEND prc_take;\n/\n",
+        encoding="utf-8")
+    out = tmp_path / "generated"
+    generate([str(src), "--out-dir", str(out), "--quiet"])
+    java = {p.name: p.read_text(encoding="utf-8") for p in out.rglob("*.java")}
+
+    service, repository = java["PrcTakeService.java"], java["PrcTakeRepository.java"]
+    assert 'repository.nextSequenceValue("t_seq")' in service
+    assert "sequences.next(" not in service, "the service has no `sequences` to call"
+    assert "Sequences sequences" in repository and "public long nextSequenceValue(String sequence)" in repository
