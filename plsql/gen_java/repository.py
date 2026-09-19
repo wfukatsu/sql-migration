@@ -200,6 +200,12 @@ def generate_module(module: M.Module, package: str, domain_package: str) -> Repo
             g.line("this.connection = connection;")
             if takes_sequences:
                 g.line("this.sequences = sequences;")
+        if _numbers_outside_sql(module):
+            f.line()
+            f.comment("`seq.NEXTVAL` in a PL/SQL expression rather than in a statement: the service asks here, so "
+                      "that numbering stays behind the one `Sequences` this class was given")
+            with f.block("public long nextSequenceValue(String sequence)") as g:
+                g.line("return sequences.next(sequence);")
         for routine in module.routines:
             statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
             loop_queries = {loop.query.id: loop for loop in statements
@@ -226,8 +232,31 @@ def generate_module(module: M.Module, package: str, domain_package: str) -> Repo
     return result
 
 
+NEXTVAL = re.compile(r"\.NEXTVAL\b", re.IGNORECASE)
+
+
+def _numbers_outside_sql(module: M.Module) -> bool:
+    """`v_id := seq_x.NEXTVAL` -- a number taken by a PL/SQL expression, not inside a statement's SQL."""
+    from .service import _expression_texts
+
+    for routine in module.routines:
+        statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
+        for statement in statements:
+            if statement.kind == "SqlOperation":
+                continue
+            # `:NEW.id := seq.NEXTVAL` is not rendered at all: the service refuses it, and the writer's INSERT
+            # takes the number instead (`triggers._inline_sequence`). A dependency for it would be one nobody calls
+            if (getattr(statement, "target", None) or "").lstrip(":").upper().startswith(("NEW.", "OLD.")):
+                continue
+            if any(NEXTVAL.search(t) for t in _expression_texts(statement)):
+                return True
+    return False
+
+
 def _uses_sequences(module: M.Module) -> bool:
     """この module のどこかが採番するか。`seq_x.NEXTVAL` は式として持ち上げられている（P4-4 の仕組み）。"""
+    if _numbers_outside_sql(module):
+        return True
     for routine in module.routines:
         statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
         for statement in statements:
