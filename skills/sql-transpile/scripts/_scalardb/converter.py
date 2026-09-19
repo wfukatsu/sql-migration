@@ -526,9 +526,19 @@ class StatementConverter:
         time and ScalarDB TIMESTAMP requires one, so midnight is supplied. Neither changes the instant.
         """
         kind = self._column_type_by_name(column, qualifier)
-        lit = value.this if isinstance(value, exp.Cast) and isinstance(value.this, exp.Literal) else value
+        if isinstance(value, exp.Boolean) and kind in ("INT", "BIGINT"):
+            # MySQL's TINYINT(1) and Oracle's NUMBER(1) are INT here, and ScalarDB refuses TRUE for an INT column
+            # (DB-SQL-10052) where the source reads it as 1
+            number = "1" if value.this else "0"
+            self.info("BOOL_LIT", f"{ctx}: {'TRUE' if value.this else 'FALSE'} written as {number} for {kind} column {column}")
+            return exp.Literal.number(number)
+        typed = isinstance(value, exp.Cast) and isinstance(value.this, exp.Literal)
+        lit = value.this if typed else value
         if not isinstance(lit, exp.Literal) or not lit.is_string:
             return value
+        # PostgreSQL's `DATE '2024-09-01'` / `'2024-09-01'::date` reach here as a CAST. ScalarDB SQL has no typed
+        # literal (DB-SQL-10026), and the column already says the type: the text goes as it stands
+        typed = typed and kind in ("DATE", "TIME", "TIMESTAMP", "TIMESTAMPTZ")
         fitted, change = fit_temporal_literal(kind, lit.name, self._session_zone)
         if change == "midnight":
             self.info("DATE_LIT", f"{ctx}: midnight time part dropped from '{lit.name}' for DATE column {column}")
@@ -553,7 +563,9 @@ class StatementConverter:
         elif change == "zone_dropped":
             self.warn("DATE_LIT", f"{ctx}: '{lit.name}' names a time zone but {column} is a ScalarDB {kind}; "
                                   f"the zone is dropped, as the source database does for a column without one")
-        return exp.Literal.string(fitted) if change else value
+        if typed and not change:
+            self.info("DATE_LIT", f"{ctx}: {value.sql(dialect=self.dialect)} written as the plain literal '{fitted}'")
+        return exp.Literal.string(fitted) if change or typed else value
 
     def _fit_date_literal(self, col: exp.Column, value: exp.Expression, ctx: str) -> exp.Expression:
         return self._fit_temporal_literal(col.name, value, ctx, col.table)
@@ -1121,6 +1133,10 @@ class StatementConverter:
         vals = ins.expression
         if not isinstance(vals, exp.Values):
             self.fail("INSERT_SELECT", "INSERT ... SELECT is not supported; read rows in the application then insert")
+        if not cols and self._meta(target) is not None:
+            # without a column list the values land in the table's own column order, in the source and here alike:
+            # the registry knows it, so the literals can still be fitted to the column each one goes into
+            cols = list(self._meta(target).columns)
         for tup in vals.expressions:
             for i, v in enumerate(tup.expressions):
                 name = cols[i] if i < len(cols) else ""
@@ -1331,7 +1347,10 @@ class StatementConverter:
             if isinstance(v, exp.Column) and v.name.lower() == eq.this.name.lower() or v.find(exp.Column):
                 self.fail("RMW", f"SET {eq.sql(dialect=self.dialect)}: expressions referencing columns are not allowed; "
                                  f"do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction")
-            eq.set("expression", self._value(v, f"SET {eq.this.name}"))
+            # fitted to the column like a VALUES entry or a predicate: a date-only literal for a TIMESTAMP column, a
+            # typed literal and TRUE for an INT column were all written as they stood here
+            eq.set("expression", self._fit_temporal_literal(eq.this.name, self._value(v, f"SET {eq.this.name}"),
+                                                            f"SET {eq.this.name}", eq.this.table))
             eq.this.set("table", None)
         where = u.args.get("where")
         cond = self._build_condition(where.this, "WHERE") if where else None
