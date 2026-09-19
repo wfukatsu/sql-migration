@@ -116,3 +116,64 @@ def test_hosts_are_patterns_and_the_label_shows_where_it_writes(tmp_path, env, m
     monkeypatch.setenv("T_HOST", "ora7.prod.example.internal")
     with pytest.raises(ProfileError, match="not in the profile's hosts list"):
         source_config("oracle", profile(tmp_path, environment="ci", hosts=["*.ci.example.internal"]))
+
+
+# ---- review #27, 40 ------------------------------------------------------------------------------------------
+
+def test_the_privileged_account_is_only_handed_out_for_a_disposable_database(tmp_path, env, monkeypatch):
+    """ALTER SYSTEM SET FIXED_DATE moves the clock of the whole instance. It used to run under writes=False."""
+    from sources import sys_config
+
+    monkeypatch.setenv("SRC_ORACLE_SYS_PASSWORD", "sys-s3cret")
+    production = source_config("oracle", profile(tmp_path, environment="production"), writes=False,
+                               allow_production=True)
+    with pytest.raises(ProfileError, match="whole instance"):
+        sys_config(production, "system")
+    test = sys_config(source_config("oracle", profile(tmp_path, environment="test")), "system")
+    assert test.oracle_kwargs()["user"] == "system" and test.oracle_kwargs()["password"] == "sys-s3cret"
+    assert "sys-s3cret" not in repr(test)
+
+
+def test_the_privileged_password_comes_from_the_environment_not_from_argv(tmp_path, env, monkeypatch):
+    from sources import sys_config
+
+    monkeypatch.delenv("SRC_ORACLE_SYS_PASSWORD", raising=False)
+    with pytest.raises(ProfileError, match="SRC_ORACLE_SYS_PASSWORD"):
+        sys_config(source_config("oracle", profile(tmp_path, environment="test")), "system")
+    for script in ("plsql_run.py", "plsql_semantics.py"):
+        assert '"--sys-password"' not in (ROOT / "difftest" / script).read_text(encoding="utf-8")
+
+
+def test_the_semantics_capture_does_not_touch_fixed_date_unless_asked():
+    sys.path.insert(0, str(ROOT))
+    from difftest.plsql_semantics import _probe_fixed_date
+
+    assert _probe_fixed_date(cur=None, sys_cfg=None) is True, "not measured: the conservative answer, no connection"
+
+
+@pytest.mark.parametrize("query,accepted", [
+    ("SELECT id FROM t WHERE id = 1", True),
+    ("SELECT id FROM t UNION ALL SELECT id FROM u", True),
+    ("SELECT id FROM t FOR UPDATE", False),
+    ("DELETE FROM t", False),
+    ("TRUNCATE TABLE t", False),
+    ("BEGIN DELETE FROM t; COMMIT; END;", False),
+    ("SELECT 1 FROM dual; DROP TABLE t", False),
+])
+def test_a_read_only_golden_capture_accepts_one_select_only(query, accepted):
+    """`SET TRANSACTION READ ONLY` is a mode: DDL commits out of it and a PL/SQL block can too."""
+    from golden import _require_plain_select
+
+    if accepted:
+        _require_plain_select(query)
+    else:
+        with pytest.raises(SystemExit):
+            _require_plain_select(query)
+
+
+def test_the_compose_file_publishes_its_ports_on_localhost_only():
+    import re
+
+    text = (ROOT / "difftest" / "docker-compose.yml").read_text(encoding="utf-8")
+    published = re.findall(r'ports:\s*\[([^\]]*)\]', text)
+    assert published and all(p.strip().startswith('"127.0.0.1:') for p in published), published

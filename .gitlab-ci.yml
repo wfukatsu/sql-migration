@@ -35,11 +35,13 @@ generate:
 java:
   stage: test
   needs: [generate]
-  image: gradle:9.2.1-jdk17   # the project has no wrapper; this is the version it is developed with
+  image: eclipse-temurin:17-jdk   # Gradle comes from the wrapper (runtime-java/gradlew), at the version it pins
   variables:
     GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle-home"
   cache:
-    paths: [.gradle-home/caches]
+    paths: [.gradle-home/caches, .gradle-home/wrapper]
   script:
     # integration tests (*IT) skip themselves without SCALARDB_IT / -Dplsql.generated
-    - cd runtime-java && gradle test
+    - cd runtime-java && ./gradlew test
+    # the build that carries no commercial SDK, no GPL and no OTN driver has to keep compiling and passing
+    - ./gradlew -PcoreOnly test

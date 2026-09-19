@@ -77,6 +77,24 @@ def encode(v):
     raise TypeError(f"cannot encode {type(v).__name__} value {v!r}")
 
 
+def _require_plain_select(query: str) -> None:
+    """`SET TRANSACTION READ ONLY` is a transaction mode, not a guarantee: DDL commits and leaves it, a PL/SQL
+    block can do the same, and FOR UPDATE takes locks. A read-only capture therefore accepts one SELECT only.
+    What remains -- a function the SELECT calls, with an autonomous transaction -- is the account's business:
+    capture from production with an account that holds SELECT privileges and nothing else."""
+    import sqlglot
+    from sqlglot import exp
+
+    try:
+        statements = [s for s in sqlglot.parse(query, read="oracle") if s is not None]
+    except Exception as e:  # noqa: BLE001
+        raise SystemExit(f"--no-setup: the query could not be parsed, so it cannot be shown to be a SELECT ({e})")
+    if len(statements) != 1 or not isinstance(statements[0], (exp.Select, exp.SetOperation)):
+        raise SystemExit("--no-setup: the query must be one SELECT (no DML, DDL or PL/SQL block)")
+    if any(s.args.get("locks") for s in statements[0].find_all(exp.Select)) or statements[0].find(exp.Into):
+        raise SystemExit("--no-setup: SELECT ... FOR UPDATE / INTO is not a read-only query")
+
+
 def capture(args) -> int:
     import oracledb
 
@@ -86,6 +104,11 @@ def capture(args) -> int:
     oracledb.defaults.fetch_decimals = True  # NUMBER as Decimal, not float
     query = Path(args.query).read_text().strip().rstrip(";").rstrip()
     tables = [t.strip().lower() for t in args.tables.split(",") if t.strip()]
+    for t in tables:
+        if not re.fullmatch(r"[a-z_][\w$#]*(\.[a-z_][\w$#]*)?", t):
+            raise SystemExit(f"--tables: {t!r} is not a table name")   # it is spliced into SELECT * FROM ...
+    if args.no_setup:
+        _require_plain_select(query)
     print(f"capture from {cfg.label()}{' (read-only, no setup)' if args.no_setup else ''}")
     con = oracledb.connect(**cfg.oracle_kwargs())
     try:

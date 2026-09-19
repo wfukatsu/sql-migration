@@ -498,3 +498,23 @@ def test_an_oracle_date_column_is_reported_because_it_carries_a_time():
 def test_plain_arithmetic_and_oracle_targets_are_left_alone():
     assert convert("SELECT id + 1 FROM emp", ddl=ORA_EMP_DDL)["status"] == "OK"
     assert convert("SELECT SYSDATE - hired FROM emp", target="oracle", ddl=ORA_EMP_DDL)["status"] == "OK"
+
+
+def test_vendor_check_outside_the_repository_is_not_an_error(tmp_path):
+    """レビュー #27 の 46: コピーしたスキルで SKILL.md の手順どおりに動かすと、終了コード 2 になっていた。"""
+    import shutil
+
+    copied = tmp_path / "elsewhere" / ".claude" / "skills" / "sql-transpile"
+    shutil.copytree(SCRIPTS.parent, copied, ignore=shutil.ignore_patterns("__pycache__"))
+    script = copied / "scripts" / "vendor_sync.py"
+    check = subprocess.run([sys.executable, str(script), "--check"], capture_output=True, text=True, cwd=tmp_path)
+    assert check.returncode == 0 and check.stdout.strip().splitlines()[-1] == "VENDOR_DRIFT=n/a"
+    update = subprocess.run([sys.executable, str(script), "--update"], capture_output=True, text=True, cwd=tmp_path)
+    assert update.returncode == 2, "there is nothing to copy from, and saying so is right"
+    # the copy converts on its own: nothing in it imports scalardb_migrate/
+    sql = tmp_path / "in.sql"
+    sql.write_text("CREATE TABLE t (id INT PRIMARY KEY, v VARCHAR(5)); SELECT v FROM t WHERE id = 1;", encoding="utf-8")
+    run = subprocess.run([sys.executable, str(copied / "scripts" / "transpile.py"), str(sql), "--source", "oracle",
+                          "--target", "scalardb", "--out-dir", str(tmp_path / "out")],
+                         capture_output=True, text=True, cwd=tmp_path)
+    assert run.returncode == 0, run.stderr[-800:]

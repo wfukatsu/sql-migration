@@ -59,7 +59,8 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sources import DISPOSABLE, ProfileError, parse_profile_args, source_config  # noqa: E402
+from sources import (DISPOSABLE, SYS_PASSWORD_ENV, ProfileError, parse_profile_args,  # noqa: E402
+                     source_config, sys_config)
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "fixtures" / "plsql"
@@ -347,7 +348,7 @@ def run(args) -> int:
         raise ProfileError(f"run needs a disposable database; profile environment is {cfg.environment!r}")
     sys_cfg = None
     if not args.no_pin_sysdate:
-        sys_cfg = cfg.__class__(**{**cfg.__dict__, "user": args.sys_user, "password": args.sys_password})
+        sys_cfg = sys_config(cfg, args.sys_user, args.sys_password_env)
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -424,7 +425,8 @@ def main(argv=None) -> int:
     p.add_argument("--out", default=str(FIXTURES / "golden"))
     p.add_argument("--scenario", help="run only this scenario")
     p.add_argument("--sys-user", default="system", help="privileged user for ALTER SYSTEM SET FIXED_DATE")
-    p.add_argument("--sys-password", default="oracle")
+    p.add_argument("--sys-password-env", default=SYS_PASSWORD_ENV,
+                   help="特権ユーザのパスワードを持つ環境変数の名前（引数では渡さない: ps から読める）")
     p.add_argument("--no-pin-sysdate", action="store_true",
                    help="skip FIXED_DATE; captures then differ between runs wherever SYSDATE is stored")
     p.set_defaults(func=run)

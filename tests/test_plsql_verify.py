@@ -132,8 +132,9 @@ def test_a_build_that_failed_without_a_javac_error_is_not_a_verdict_on_the_routi
 
 def test_not_being_able_to_run_is_not_a_pass(monkeypatch):
     monkeypatch.setattr("plsql.verify.shutil.which", lambda _: None)
+    monkeypatch.setattr("plsql.verify._wrapper", lambda _: None)
     report = verify("out")
-    assert not report.ran and not report.ok and report.unavailable == "gradle is not on PATH"
+    assert not report.ran and not report.ok and report.unavailable == "no gradlew in the project and gradle is not on PATH"
 
 
 def test_the_check_tells_the_build_it_is_a_check(monkeypatch):
@@ -252,6 +253,7 @@ def test_the_exceptions_the_generator_raises_say_so_in_the_report(tmp_path):
 
 def test_the_run_fails_when_the_check_was_asked_for_and_could_not_run(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr("plsql.verify.shutil.which", lambda _: None)
+    monkeypatch.setattr("plsql.verify._wrapper", lambda _: None)
     assert main([str(SRC), "--out-dir", str(tmp_path), "--verify-compile"]) == 1
     assert "compile check did not run" in capsys.readouterr().out
 
@@ -260,6 +262,7 @@ def test_quiet_still_says_why_the_run_failed(tmp_path, monkeypatch, capsys):
     """`--quiet` means 'say nothing when it goes well'. Returning 1 in silence is a failure nobody can act
     on, so the reason goes to stderr."""
     monkeypatch.setattr("plsql.verify.shutil.which", lambda _: None)
+    monkeypatch.setattr("plsql.verify._wrapper", lambda _: None)
     assert main([str(SRC), "--out-dir", str(tmp_path), "--verify-compile", "--quiet"]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -280,6 +283,7 @@ def test_the_environment_variable_asks_for_the_same_check(tmp_path, monkeypatch,
     """So CI can turn it on without every command in the docs growing a flag."""
     monkeypatch.setenv("PLSQL_VERIFY_COMPILE", "1")
     monkeypatch.setattr("plsql.verify.shutil.which", lambda _: None)
+    monkeypatch.setattr("plsql.verify._wrapper", lambda _: None)
     assert main([str(SRC), "--out-dir", str(tmp_path)]) == 1
     assert "compile check did not run" in capsys.readouterr().out
 

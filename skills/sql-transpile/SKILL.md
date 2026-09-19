@@ -28,6 +28,8 @@ allowed-tools:
 
 # sql-transpile — SQL 方言変換
 
+> **実行場所**: このファイルのコマンドと `allowed-tools` は、sql-migration リポジトリのルートから動かす形（`.venv/bin/python skills/sql-transpile/scripts/...`）で書いてある。スキルのディレクトリは `scalardb_migrate/` を import しない（ScalarDB 変換は `scripts/_scalardb/` の同梱コピーで動く）ので別のプロジェクトへコピーしても変換できるが、そのときは Python（sqlglot 入り）とスクリプトのパスを置いた場所に合わせて読み替え、`allowed-tools` も合わせて直す。
+
 SQL を Source 方言で読んで AST に抽象化し、Target 方言または ScalarDB SQL として生成し直す。
 変換できたかどうかを 1 文ずつ判定し、理由と変換率をレポートにまとめる。
 
@@ -117,7 +119,7 @@ SQL を Source 方言で読んで AST に抽象化し、Target 方言または S
 1 文の変換中に変換器が想定外の失敗をしても、その文が ERROR `INTERNAL` になるだけで、残りの文は変換される（終了コード 1）。
 閉じていない文字列などでスクリプトを文に分けられないときは、全体が 1 件の ERROR `TOKENIZE` になる。
 
-ScalarDB を Target にしたときは、`vendor_sync.py --check` も実行する。終了コード 1 なら同梱コピーが本体と食い違っているので、利用者に伝える（取り込み方は `references/operations.md`）。
+ScalarDB を Target にしたときは、`vendor_sync.py --check` も実行する。終了コード 1 なら同梱コピーが本体と食い違っているので、利用者に伝える（取り込み方は `references/operations.md`）。最終行が `VENDOR_DRIFT=n/a`（終了コード 0）なら、スキルがリポジトリの外に置かれていて比べる本体が無い。変換は同梱コピーで動くので、そのまま進める。
 
 ### Step 4: 利用者に報告する
 
@@ -153,7 +155,7 @@ ERROR の文の書き換えを頼まれたら、書き換え後の SQL をもう
 | `DIVISION` の WARN が大量に出る | 表定義が無い。`CREATE TABLE` を入力に含めるか `--schema` を渡して再変換する |
 | 利用者定義の関数が `FUNC_PORTABILITY` になる | 仕様どおり。Target にも同じ関数を作るか確認する |
 | ScalarDB Target で型の WARN が多い | Source が oracle / postgres / mysql 以外だと型対応表の精度が落ちる。標準エラーの注意書きを伝える |
-| `vendor_sync.py` が「本体が見つかりません」 | スキルがリポジトリの外にコピーされている。リポジトリ内のスキルを使う |
+| `vendor_sync.py --update` が「本体が見つかりません」 | スキルがリポジトリの外にコピーされている。同梱コピーの更新は、リポジトリ内のスキルで行う（`--check` は外でも 0 で終わる） |
 | `RESIDUAL_H2` の ERROR | H2 で実行できない構文。アプリで実装するか、`references/app-side-notes.md` の書き換え（再帰 WITH、UNION ALL など）を案内する |
 | `FULL_SCAN` の ERROR（`--storage cassandra`） | キーで読めない表。メッセージの「read X first, then Y」に従ってキーで読むか、集計表を設ける |
 | `ROW_LIMIT` / `COST_DEADLINE` の WARN | 読む行数が多すぎる。集計表・キー範囲の追加を提案する。行数は `--expected-rows` の値なので、実際の件数を確かめる |

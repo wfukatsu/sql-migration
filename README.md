@@ -44,7 +44,7 @@ flowchart LR
 | 変換ツール | `scalardb_migrate/` | 文ごとの変換、スキーマ変換、アクセスパス分析、実行計画への分解、アプリ側に移す処理の分析 |
 | **PL/SQL 変換** | **`plsql/`** | **PL/SQL の解析・判定・Java 生成（下記）** |
 | 実行基盤 | `runtime-java/` | 実行計画の実行（ScalarDB から取得 → H2 で元の SQL）、生成コードの実行時ヘルパ、ベンチマーク |
-| sql-transpile スキル | `skills/sql-transpile/` | 任意の SQLGlot 方言どうし、または ScalarDB SQL への変換を行う Claude Code スキル（単体で動く） |
+| sql-transpile スキル | `skills/sql-transpile/` | 任意の SQLGlot 方言どうし、または ScalarDB SQL への変換を行う Claude Code スキル（`scalardb_migrate/` を import せず、同梱コピーで動く） |
 | plsql-migrate スキル | `skills/plsql-migrate/` | PL/SQL を Java に変換し、生成コードの外で決めること（運用・呼び出し側・業務ロジックとの整合）を確認して記録する Claude Code スキル |
 | 検証基盤 | `difftest/` | Docker Compose の DB 群と、差分テスト・ベンチマーク・スキルの実行検証のハーネス |
 
@@ -147,7 +147,8 @@ python -m plsql.kpi --evidence difftest/work/plsql-diff.json --generated generat
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt          # sqlglot / pytest / duckdb
-(cd runtime-java && gradle installDist)             # Java 17。実行計画を動かすときだけ
+.venv/bin/pip install -r requirements-difftest.txt # DB ドライバ。difftest/ のハーネスを動かすときだけ
+(cd runtime-java && ./gradlew installDist)          # Java 17。実行計画を動かすときだけ
 ```
 
 ### SQL を変換する（DB 不要）
@@ -185,8 +186,10 @@ DB の要らないテストは CI でも回ります（`.github/workflows/ci.yml
 # 実行基盤。Java のテストは生成した Java を一緒にコンパイルするので、generated/（git 管理外）が先に要る
 .venv/bin/python -m plsql.generate fixtures/plsql/src --scalardb-schema fixtures/plsql/scalardb-schema.json \
     --limits fixtures/plsql/limits.yaml --out-dir generated
-(cd runtime-java && gradle test)
+(cd runtime-java && ./gradlew test)
 ```
+
+`runtime-java/` の依存は `gradle.lockfile` で固定しています（更新は `./gradlew dependencies --write-locks`）。ScalarDB SQL の JDBC ドライバと Cluster のクライアント SDK（商用ライセンス）、MySQL のドライバ（GPL）、Oracle のドライバ（OTN）は実行時にだけ要るので、持ち込めない環境では `./gradlew -PcoreOnly test installDist` で外せます（`gradle-core.lockfile`。Core API の取得・ローダ・残りの SQL の実行は動き、`--fetcher jdbc` と Bench は動きません）。ScalarDB Core 自身が推移的に持つドライバ（ojdbc8 など）は残ります。
 
 ---
 

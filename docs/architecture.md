@@ -597,7 +597,7 @@ flowchart TD
 flowchart LR
     M["scalardb_migrate/<br/>本体"] -- "vendor_sync.py --update" --> C["skills/sql-transpile/scripts/_scalardb/<br/>同梱コピー"]
     C -- "vendor_sync.py --check<br/>差分があれば終了コード 1" --> M
-    C --> S["スキル単体で動く<br/>リポジトリに依存しない"]
+    C --> S["スキルは scalardb_migrate/ を import しない<br/>（コマンドのパスはリポジトリのルート基準）"]
 ```
 
 ---
