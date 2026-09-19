@@ -128,6 +128,11 @@ def user_class(name: str) -> str:
 
 def _class_for(statement: M.Raise, module: M.Module) -> str:
     """One class per business code, named after the module that raises it."""
+    predefined = next((c for c, code, _ in PREDEFINED.values() if code == statement.error_code), None)
+    if predefined is not None:
+        # a code Oracle already names (-6502 is VALUE_ERROR) is that exception, not a business error of the
+        # module: a second class for the code would keep the predefined one from being written at all
+        return predefined
     return f"{java_class_name(module.name)}Error{abs(statement.error_code or 0)}Exception"
 
 
@@ -172,13 +177,14 @@ def exception_class(entry: ErrorCode, package: str) -> JavaFile:
 # them. Emitting them only when the source mentions them left every repository importing classes that were
 # not written -- Java that does not compile, which nothing noticed until the compile check (#21) asked.
 # ZERO_DIVIDE: `Plsql.div` raises the runtime's own `Plsql.ZeroDivide`, and a `try` that has a ZERO_DIVIDE or an
-# OTHERS handler turns it into this class on the way out (service._guarded).
-ALWAYS = ("NO_DATA_FOUND", "TOO_MANY_ROWS", "ZERO_DIVIDE")
+# OTHERS handler turns it into this class on the way out (service._guarded). VALUE_ERROR likewise: a declaration
+# with a precision or a length raises `Plsql.ValueError` from `Plsql.fit`.
+ALWAYS = ("NO_DATA_FOUND", "TOO_MANY_ROWS", "ZERO_DIVIDE", "VALUE_ERROR")
 
 # Predefined exceptions nothing on the target raises by itself: the generated code has no unique-constraint
 # violation to catch (ScalarDB reports a duplicate INSERT through the transaction, which is then unusable), and the
-# helper's conversions throw Java's own exceptions. A handler for one of these runs in Oracle and never here.
-NEVER_RAISED_BY_TARGET = ("DUP_VAL_ON_INDEX", "INVALID_NUMBER", "VALUE_ERROR")
+# helper's conversions throw Java's own exceptions (VALUE_ERROR is raised for size errors only; service notes it). A handler for one of these runs in Oracle and never here.
+NEVER_RAISED_BY_TARGET = ("DUP_VAL_ON_INDEX", "INVALID_NUMBER")
 
 
 def generate(program: M.Program, package: str) -> tuple[list[JavaFile], Registry]:

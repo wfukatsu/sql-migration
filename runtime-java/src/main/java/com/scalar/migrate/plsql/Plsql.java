@@ -88,6 +88,11 @@ public final class Plsql {
       if (plain.startsWith("-0.")) return "-" + plain.substring(2);
       return plain;
     }
+    // a BINARY_DOUBLE / FLOAT value, or a Double a driver handed back: the same rule, not Java's "0.5"
+    if (value instanceof Double || value instanceof Float) {
+      double d = ((Number) value).doubleValue();
+      if (!Double.isNaN(d) && !Double.isInfinite(d)) return text(BigDecimal.valueOf(d));
+    }
     return String.valueOf(value);
   }
 
@@ -248,6 +253,51 @@ public final class Plsql {
 
   public static BigDecimal number(long value) {
     return BigDecimal.valueOf(value);
+  }
+
+  // --- constrained declarations ---------------------------------------------------------------------------
+  //
+  // `v NUMBER(5,2)` and `v VARCHAR2(3)` are part of the behaviour: Oracle rounds 1.005 to 1.01 on the way into the
+  // first and raises VALUE_ERROR for 'abcd' on the way into the second. A BigDecimal and a String hold anything,
+  // so the generated code passes every value assigned to such a variable through here.
+
+  /** ORA-06502. Its own type so that generated code can turn it into the migrated VALUE_ERROR. */
+  public static final class ValueError extends RuntimeException {
+    public ValueError(String detail) {
+      super("ORA-06502: PL/SQL: numeric or value error: " + detail);
+    }
+  }
+
+  /** A value going into NUMBER(precision, scale): rounded half-up to the scale, refused past the precision. */
+  public static BigDecimal fit(Object value, int precision, int scale) {
+    if (isNull(value)) return null;
+    BigDecimal rounded = OracleNumbers.toBigDecimal(value).setScale(scale, java.math.RoundingMode.HALF_UP);
+    if (rounded.signum() != 0 && rounded.precision() - rounded.scale() > precision - scale) {
+      throw new ValueError("number precision too large");
+    }
+    return rounded;
+  }
+
+  /** {@link #fit(Object, int, int)} for a NUMBER(p) the generated code holds as a Long (p up to 18). */
+  public static Long fitLong(Object value, int precision) {
+    BigDecimal fitted = fit(value, precision, 0);
+    return fitted == null ? null : fitted.longValueExact();
+  }
+
+  /** {@link #fit(Object, int, int)} for a NUMBER(p) the generated code holds as an Integer (p up to 9). */
+  public static Integer fitInt(Object value, int precision) {
+    BigDecimal fitted = fit(value, precision, 0);
+    return fitted == null ? null : fitted.intValueExact();
+  }
+
+  /** A value going into VARCHAR2(size): refused when longer. {@code chars} is VARCHAR2(n CHAR); else bytes. */
+  public static String fit(Object value, int size, boolean chars) {
+    if (isNull(value)) return null;
+    String text = text(value);
+    int length = chars ? text.codePointCount(0, text.length())
+        : text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+    if (length > size) throw new ValueError("character string buffer too small");
+    return text;
   }
 
   // --- the bind boundary (P3-1) -------------------------------------------------------------------------
