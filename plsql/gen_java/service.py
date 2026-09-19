@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from ..ir import model as M
 from ..lower import _walk
 from . import split
+from .dto import loop_component_type
 from .emit import JavaFile
 from .expr import translate
 from .types import java_class_name, java_name, java_type, record_columns
@@ -220,15 +221,18 @@ def correlation_row(routine: M.Routine) -> dict[str, "M.BindVariable"]:
     （この method の signature）が別々に数えると、引数が静かにずれる。使われている参照だけを返すのは
     `AuditContext` と同じ理由で、読んでいない列まで呼び出し側に用意させないためである。
     """
-    from ..triggers import correlation_row as correlations
+    from ..triggers import EVENTS, correlation_row as correlations
 
     module = _MODULE.get()
     out: dict[str, M.BindVariable] = {}
     for variable, bind in correlations(routine, getattr(module, "trigger_when", None)).items():
         # 条件や式だけが読む列には型が付いていない。付いていないことを `Object` として出すほうが、
         # 条件ごと拒んで「なぜ読めないのか」を隠すよりよい
+        # `INSERTING` / `UPDATING` / `DELETING`: どのイベントの文のところで呼んでいるかは呼ぶ側が知っている
+        # ので、相関行と同じく引数で受け取る（#29 の 25）
+        event = "BOOLEAN" if variable in EVENTS else None
         out[variable] = bind or M.BindVariable(name=variable.replace(".", "_"), direction="IN",
-                                               plsql_variable=variable)
+                                               oracle_type=event, plsql_variable=variable)
     return out
 
 
@@ -297,7 +301,9 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
         # #12: trigger の行は呼び出し側が渡す。移行先に trigger は無いので、「この表へのすべての
         # 書き込み」に掛かっていたものが、この method を呼ぶ経路にだけ掛かる——網羅性は呼び出し側の
         # 設計（trigger-patterns §0）であって、生成器が保証できることではない
-        mapped = java_type(bind.oracle_type)
+        # 列の幅ではなく PL/SQL の NUMBER として受ける（repository が `:NEW.qty` の bind をそう型付けするのと
+        # 同じ規則）。NUMBER(10) の列を Long にすると、呼ぶ側の NUMBER の引数も repository の引数も合わない
+        mapped = loop_component_type(bind.oracle_type)
         file.add_import(*mapped.imports)
         parameters.append(f"{mapped.name} {java_name(bind.name)}")
 
