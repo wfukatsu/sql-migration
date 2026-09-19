@@ -21,6 +21,9 @@ class TypeMapping:
     scalardb_type: str | None  # None => unsupported
     severity: str  # INFO | WARN | ERROR
     note: str
+    # the exact type the app-side residual engine gives the column, when the ScalarDB type cannot say it: a scaled
+    # decimal is a DOUBLE in ScalarDB, and a DOUBLE turns into text as 2450.0 where NUMBER(7,2) gives 2450
+    residual_type: str | None = None
 
 
 def _t(*names: str) -> set:
@@ -109,7 +112,8 @@ def map_type(dt: exp.DataType, source_dialect: str) -> TypeMapping:
         if scale and scale > 0:
             return TypeMapping("DOUBLE", "WARN",
                                f"{raw}: ScalarDB has no DECIMAL type; mapped to DOUBLE (precision loss). "
-                               f"For money, store a scaled integer (x10^{scale}) in BIGINT instead")
+                               f"For money, store a scaled integer (x10^{scale}) in BIGINT instead",
+                               residual_type=f"NUMERIC({precision},{scale})" if scale <= precision <= 38 else None)
         if precision <= 9:
             return TypeMapping("INT", "INFO", f"{raw} -> INT (exact, fits 32-bit)")
         if precision <= 18:

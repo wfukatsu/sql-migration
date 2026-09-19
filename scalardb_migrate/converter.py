@@ -1436,6 +1436,9 @@ class StatementConverter:
                 self.info("KEYS", f"primary key {pk}: first column '{pkey[0]}' used as partition key, {ckey} as "
                                   f"clustering key(s). Review with --keys if a different split is needed")
         meta = TableMeta(ns or None, bare, pkey, ckey, {}, columns)
+        meta.residual_types = {cd.this.name: exact for cd in c.this.expressions
+                               if isinstance(cd, exp.ColumnDef) and cd.kind is not None
+                               and (exact := map_type(cd.kind, self.dialect).residual_type)}
         for ix in extra_stmts:
             meta.secondary_indexes.append(ix.rsplit("(", 1)[1].rstrip(")"))
         self.registry.add(meta)
