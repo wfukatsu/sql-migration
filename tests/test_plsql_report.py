@@ -158,3 +158,45 @@ def test_the_cli_finds_the_schema_next_to_the_sources(tmp_path, capsys):
         "CREATE OR REPLACE PROCEDURE p IS\n  v t.id%TYPE;\nBEGIN\n  NULL;\nEND;\n/\n", encoding="utf-8")
     assert main([str(tmp_path)]) == 0
     assert "type resolution 100.0%" in capsys.readouterr().out
+
+
+# --- the call graph is a file, not only something the analysis held in memory --------------------------------
+
+@pytest.fixture(scope="module")
+def call_graph(tmp_path_factory):
+    out = tmp_path_factory.mktemp("callgraph")
+    assert main([str(SRC), "--out-dir", str(out), "--quiet"]) == 0
+    document = json.loads((out / "callgraph.json").read_text(encoding="utf-8"))
+    return {record["routine"]: record for record in document["routines"]}, out
+
+
+def test_a_function_called_inside_an_expression_is_an_edge(call_graph):
+    """`v_tier := customer_tier(p_order_id)` is no Call statement in program.ir.json, so a reader of the files
+    alone never saw it. The explorer reads files."""
+    graph, _ = call_graph
+    callers = [r for r, record in graph.items() if "pkg_order_pricing.customer_tier" in record["calls"]]
+    assert callers, "nobody is recorded as calling customer_tier"
+
+
+def test_every_routine_is_listed_even_when_it_calls_nothing(call_graph, analysis):
+    graph, _ = call_graph
+    routines = {r.id for m in analysis.program.modules for r in m.routines}
+    assert set(graph) == routines
+    assert any(not record["calls"] and not record["external"] for record in graph.values())
+
+
+def test_a_callee_nobody_could_resolve_is_kept_by_name(call_graph, analysis):
+    graph, _ = call_graph
+    routines = set(graph)
+    external = {name for record in graph.values() for name in record["external"]}
+    assert external, "the corpus calls nothing outside itself? dbms_output at least"
+    assert not external & routines
+
+
+def test_the_call_graph_is_one_more_file_and_nothing_else(call_graph):
+    """The files a reader already depends on keep their names, and the graph is not folded into one of them."""
+    _, out = call_graph
+    names = {p.name for p in out.iterdir()}
+    assert {"inventory.json", "diagnostics.sarif", "summary.md", "program.ir.json", "decisions.json",
+            "callgraph.json"} <= names
+    assert "calls" not in json.loads((out / "inventory.json").read_text(encoding="utf-8"))
