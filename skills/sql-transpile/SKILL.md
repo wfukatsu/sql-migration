@@ -173,6 +173,8 @@ ERROR の文の書き換えを頼まれたら、書き換え後の SQL をもう
 | `<stem>.report.json` | `{source, target, summary, results}`。`summary` に `total / ok / warn / error / planned / converted / rate` |
 | `<plan-dir>/<stem>.<n>.plan.json` | `--plan-dir` 指定時。取得用 SQL、H2 で実行する SQL、`transaction`、`recommended_config` |
 
+レポートの名前に Target は入らない。同じ入力を別の Target へ変換するときは、`--out-dir` を Target ごとに分ける（同じ場所に出すと、レポートは後の変換のもので上書きされる）。`--plan-dir` の `<stem>.*.plan.json` は実行のたびに作り直す。
+
 | 状態 | 意味 |
 |---|---|
 | OK | Target の SQL を生成でき、指摘なし（INFO は自動で直したことの記録） |

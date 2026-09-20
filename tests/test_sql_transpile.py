@@ -538,3 +538,79 @@ def test_a_returned_avg_or_division_is_rounded_by_mysql():
                   "SELECT ROUND(sal / 7, 2) AS r, FLOOR(sal / 1000) AS f FROM emp"):
         assert "DIV_PRECISION" not in convert(quiet, "oracle", "mysql")["codes"], quiet
     assert "DIV_PRECISION" not in convert("SELECT AVG(sal) FROM emp", "oracle", "postgres")["codes"]
+
+
+# ---- スキルのレビュー（2026-09-20）で見つかったもの ------------------------------------------------
+
+
+def test_a_bom_is_not_part_of_the_first_statement(tmp_path):
+    f = tmp_path / "bom.sql"
+    f.write_bytes(b"\xef\xbb\xbfSELECT 1 FROM dual;\n")
+    p = subprocess.run([sys.executable, str(CLI), str(f), "--source", "oracle", "--target", "postgres"],
+                       capture_output=True, text=True, cwd=ROOT)
+    assert p.returncode == 0 and "CONVERTED=1" in p.stdout, p.stdout
+
+
+def test_a_sqlplus_slash_ends_a_statement_and_a_plsql_block_is_kept_whole(tmp_path):
+    p = _cli(tmp_path, "SELECT 1 FROM dual\n/\nCREATE OR REPLACE PROCEDURE p AS BEGIN UPDATE emp SET sal = 1; COMMIT; END;\n/\n"
+                       "SELECT 2 FROM dual;\n", "--source", "oracle", "--target", "postgres")
+    rows = [line.split("]", 1)[1].split()[:2] for line in p.stdout.splitlines() if line.startswith("[")]
+    assert rows == [["OK", "SELECT"], ["ERROR", "PLSQL_BLOCK"], ["OK", "SELECT"]], p.stdout
+    assert "TOTAL=3" in p.stdout and "CONVERTED=2" in p.stdout
+
+
+def test_an_expression_is_not_a_converted_statement():
+    assert convert("END")["status"] == "ERROR"
+
+
+def test_a_column_that_starts_with_dbms_is_not_a_package_call():
+    assert convert("SELECT dbms_notes FROM t")["status"] == "OK"
+    assert "PLSQL" in convert("SELECT DBMS_LOB.SUBSTR(c, 1, 2) FROM t")["codes"]
+
+
+@pytest.mark.parametrize("args,file_text", [
+    (["--target", "scalardb", "--session-time-zone", "Mars/Base"], None),
+    (["--target", "scalardb", "--schema", "{schema}"], "[1, 2]"),
+    (["--target", "scalardb", "--schema", "{schema}"], '{"ns.emp": "x"}'),
+])
+def test_a_bad_argument_is_exit_2_not_a_traceback(tmp_path, args, file_text):
+    schema = tmp_path / "schema.json"
+    schema.write_text(file_text or "{}", encoding="utf-8")
+    p = _cli(tmp_path, "SELECT 1 FROM dual;", "--source", "oracle", *[a.replace("{schema}", str(schema)) for a in args])
+    assert p.returncode == 2 and "Traceback" not in p.stderr, p.stderr[-500:]
+
+
+def test_nothing_to_convert_writes_no_report(tmp_path):
+    p = _cli(tmp_path, "-- コメントだけ\n", "--source", "oracle", "--target", "postgres", "--out-dir", str(tmp_path / "out"))
+    assert p.returncode == 2
+    assert not list((tmp_path / "out").glob("*")), "SKILL.md: 終了コード 2 のとき、レポートは出ていない"
+
+
+def test_plans_of_an_earlier_run_do_not_stay(tmp_path):
+    stale = tmp_path / "plans" / "in.99.plan.json"
+    stale.parent.mkdir()
+    stale.write_text("{}", encoding="utf-8")
+    other = tmp_path / "plans" / "other.1.plan.json"
+    other.write_text("{}", encoding="utf-8")
+    _run(f"from pathlib import Path; report.write_plans([], Path({str(stale.parent)!r}), 'in'); print('null')")
+    assert not stale.exists() and other.exists(), "only this input's plans are replaced"
+
+
+def test_a_backtick_in_the_sql_does_not_break_the_report_table():
+    text = _run("r = generic.convert_statement('SELECT `ename` FROM `emp`', 'mysql', 'postgres'); r.index = 1\n"
+                "print(json.dumps(report.render_markdown([r], 'mysql', 'postgres', 'in.sql')))")
+    row = next(line for line in text.splitlines() if line.startswith("| 1 |"))
+    assert "`` SELECT `ename` FROM `emp` ``" in row
+
+
+def test_every_code_the_converters_emit_is_explained_somewhere_in_the_skill():
+    """指摘コードの意味は references が正である。コードを足して表に足し忘れると、レポートを読む側が意味を引けない。"""
+    import re
+    docs = "".join(p.read_text(encoding="utf-8") for p in (ROOT / "skills" / "sql-transpile").rglob("*.md"))
+    emitted = set()
+    for source in (*(ROOT / "scalardb_migrate").glob("*.py"), SCRIPTS / "generic.py"):
+        emitted |= set(re.findall(r'(?:\.(?:warn|fail|info)\(|Issue\(\s*"(?:ERROR|WARN|INFO)",\s*|_add\(\s*\w+,\s*"(?:ERROR|WARN|INFO)",\s*)"([A-Z][A-Z0-9_]+)"',
+                                  source.read_text(encoding="utf-8")))
+    missing = sorted(code for code in emitted if not re.search(rf"\b{code}\b", docs))
+    assert len(emitted) > 100 and not missing, missing
+

@@ -304,6 +304,15 @@ SQLGlot の生成器が予期しない例外を出した。メッセージに例
 
 ---
 
+## 上の節に出てこない指摘コード
+
+| コード | 重要度 | 意味 |
+|---|---|---|
+| `PLSQL_BLOCK` | ERROR | Oracle の入力の PL/SQL のブロック（`CREATE … PROCEDURE / FUNCTION / PACKAGE / TRIGGER`、`DECLARE` / `BEGIN` の無名ブロック）。`/` だけの行までを 1 つとして扱い、変換しない。plsql-migrate スキルで移行する。`/` だけの行は SQL*Plus の区切りとして、文の切れ目にする |
+| `WITH_TIES` | ERROR | `FETCH … WITH TIES`。`LIMIT n` にすると n 番目と同順位の行が落ちる。`RANK() OVER (ORDER BY …) <= n` に書き直す |
+| `BOOLEAN_RESULT` | WARN | MySQL 向け: 真偽値の式を射影している。結果は TRUE / FALSE ではなく 1 / 0 で返る |
+| `DIV_PRECISION` | WARN | MySQL 向け: AVG か除算の結果をそのまま返している。MySQL は小数桁を「被演算子の小数桁 + 4」で丸める。桁が要るなら `div_precision_increment` を上げるか DOUBLE に CAST する |
+
 ## 関数一覧の作り直し
 
 一覧はデータベースのバージョンに依存する。Target のバージョンが違うときは `scripts/build_catalogs.py` で作り直す。

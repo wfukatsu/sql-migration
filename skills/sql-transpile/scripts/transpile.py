@@ -44,6 +44,7 @@ import report  # noqa: E402
 from _scalardb.appside import parse_expected_rows  # noqa: E402
 from _scalardb.converter import convert_script as scalardb_convert  # noqa: E402
 from _scalardb.schema import SchemaRegistry  # noqa: E402
+from _scalardb.types import session_zone  # noqa: E402
 
 SCALARDB_ONLY = ("keys", "storage", "plan_dir", "expected_rows", "h2_indexes", "session_time_zone")
 
@@ -109,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ファイルが見つかりません: {path}", file=sys.stderr)
         return 2
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8-sig")   # Windows のツールが付ける BOM は、先頭の文の一部ではない
     except UnicodeDecodeError as e:
         print(f"UTF-8 として読めません: {path}（{e.reason}、{e.start} バイト目）。UTF-8 に変換してから渡してください", file=sys.stderr)
         return 2
@@ -123,7 +124,10 @@ def main(argv: list[str] | None = None) -> int:
         registry = SchemaRegistry.from_schema_loader_json(args.schema) if args.schema else SchemaRegistry()
         keys = _parse_keys(args.keys)
         expected_rows = parse_expected_rows(args.expected_rows)
-    except (OSError, ValueError, KeyError) as e:
+        if args.target == "scalardb":
+            session_zone(args.session_time_zone)   # 変換の途中ではなく、ここで確かめる
+    except (OSError, ValueError, KeyError, AttributeError, TypeError) as e:
+        # AttributeError / TypeError: JSON としては読めるが Schema Loader の形（表 → 定義）ではない --schema
         print(f"引数を読めません: {type(e).__name__}: {e}", file=sys.stderr)
         return 2
     if args.target == "scalardb":
@@ -153,6 +157,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"        {i.severity:<5} {i.code}: {i.message}")
 
     s = report.summarize(results)
+    if not s["total"]:
+        # 空のファイルやコメントだけのファイルは「ERROR 0 件」で 0 を返していた。変換するものが無かったのは
+        # 成功ではなく、たいていは渡すファイルの間違いである。レポートも書かない（2 = レポートは出ていない）
+        print(f"変換する文がありません: {path}", file=sys.stderr)
+        return 2
     planned = f" / PLANNED {s['planned']}" if s["planned"] else ""
     print(f"\n{args.source} → {args.target}: {s['total']} 文 / OK {s['ok']} / WARN {s['warn']}{planned} / ERROR {s['error']}")
     print(f"変換率 {s['rate']}% ({s['converted']}/{s['total']})")
@@ -167,11 +176,6 @@ def main(argv: list[str] | None = None) -> int:
     print(f"TOTAL={s['total']}")
     print(f"CONVERTED={s['converted']}")
     print(f"RATE={s['rate']}")
-    if not s["total"]:
-        # 空のファイルやコメントだけのファイルは「ERROR 0 件」で 0 を返していた。変換するものが無かったのは
-        # 成功ではなく、たいていは渡すファイルの間違いである
-        print(f"変換する文がありません: {path}", file=sys.stderr)
-        return 2
     return 1 if s["error"] else 0
 
 
