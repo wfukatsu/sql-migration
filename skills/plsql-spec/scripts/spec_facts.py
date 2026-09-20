@@ -106,6 +106,14 @@ FROM_SOURCE = re.compile(r"#(?:stmt|handler)-\d+(?:#query)?$")
 AMBIENT = re.compile(r"\b(\w+\.(?:NEXTVAL|CURRVAL)|SYSDATE|SYSTIMESTAMP|CURRENT_TIMESTAMP|CURRENT_DATE|USER|SYS_CONTEXT|DBMS_RANDOM\.\w+)\b", re.I)
 
 
+def _branch_word(node: dict, index: int, branch: dict, width: int) -> str:
+    """分岐の条件を 1 語目つきで返す（`IF x > 0` / `ELSIF …` / `WHEN p_mode = 'A'`）。"""
+    condition = _one_line(branch.get("condition") or "", width)
+    if node.get("kind") == "Case":
+        return f"WHEN {node['selector']} = {condition}" if node.get("selector") else f"WHEN {condition}"
+    return f"{'IF' if index == 0 else 'ELSIF'} {condition}"
+
+
 def _ambient(facts: Facts, node: dict, text: str | None) -> None:
     """引数と表の中身だけでは結果が決まらないもの（採番、現在時刻、実行者）。試験で固定しなければならない。"""
     for name in dict.fromkeys(m.upper() for m in AMBIENT.findall(text or "")):
@@ -132,6 +140,7 @@ def _collect(node, facts: Facts, context: tuple[str, ...], triggers: set[str]) -
             _collect(branch.get("body"), facts, context, triggers)
         return
     _ambient(facts, node, " ".join(str(node.get(k) or "") for k in ("originalSql", "expression", "message")))
+    callee = node.get("resolvedTo") or node.get("callee") or ""
     if kind == "SqlOperation":
         facts.sql.append({"line": _line(node), "kind": node.get("sqlKind") or "SQL",
                           "reads": node.get("readSet") or [], "writes": node.get("writeSet") or [],
@@ -141,7 +150,6 @@ def _collect(node, facts: Facts, context: tuple[str, ...], triggers: set[str]) -
         facts.raises.append({"line": _line(node), "code": node.get("errorCode"), "exception": node.get("exception"),
                              "message": node.get("message"), "when": where})
     elif kind == "Call":
-        callee = node.get("resolvedTo") or node.get("callee")
         # lowering が織り込んだ trigger の呼び出しは原文に無い。trigger は「発火する trigger」に定義から出す
         if callee.split(".")[0] not in triggers:
             facts.calls.append({"line": _line(node), "callee": callee, "resolved": bool(node.get("resolvedTo")),
@@ -152,10 +160,9 @@ def _collect(node, facts: Facts, context: tuple[str, ...], triggers: set[str]) -
         facts.dynamic.append({"line": _line(node), "expression": _one_line(node.get("expression", "")),
                               "variants": [_one_line(v if isinstance(v, str) else json.dumps(v, ensure_ascii=False))
                                            for v in node.get("variants") or []], "when": where})
-    elif kind == "If":
+    elif kind in ("If", "Case"):
         for index, branch in enumerate(node.get("branches") or []):
-            word = "IF" if index == 0 else "ELSIF"
-            _collect(branch.get("body"), facts, context + (f"{word} {_one_line(branch.get('condition', ''), 70)}",), triggers)
+            _collect(branch.get("body"), facts, context + (_branch_word(node, index, branch, 70),), triggers)
         _collect(node.get("elseBody"), facts, context + ("ELSE",), triggers)
         return
     elif kind == "Loop":
@@ -230,6 +237,7 @@ class _Flow:
         self.count = 0
         self.file = file
         self.classes: dict[str, list[str]] = {}
+        self.loops: list[dict] = []   # いま中にいるループ（内側が末尾）。EXIT / CONTINUE の行き先
         start = self.node('(["開始"])')
         exits = self.sequence(routine.get("body") or [], [(start, None)])
         handlers = routine.get("exceptionHandlers") or []
@@ -287,21 +295,40 @@ class _Flow:
             return self.sequence(inner, prev)
         if not prev:          # RAISE / RETURN のあとの文には届かない
             return prev
-        if kind == "If":
+        if kind in ("If", "Case"):
             exits = []
-            for branch in s.get("branches") or []:
-                test = self.node(f'{{"{self.at(s)}{_label(branch.get("condition"), 50)}"}}')
+            for index, branch in enumerate(s.get("branches") or []):
+                test = self.node(f'{{"{self.at(s)}{_label(_branch_word(s, index, branch, 50).split(" ", 1)[1], 50)}"}}')
                 self.join(prev, test)
                 exits += self.sequence(branch.get("body") or [], [(test, "はい")])
                 prev = [(test, "いいえ")]
+            if kind == "Case" and not s.get("elseBody"):
+                # ELSE の無い CASE は、どの WHEN にも当たらなければ CASE_NOT_FOUND（ORA-06592）を上げる
+                missed = self.node(f'(["{self.at(s)}エラー CASE_NOT_FOUND"])', "error")
+                self.join(prev, missed)
+                return exits
             return exits + self.sequence(s.get("elseBody") or [], prev)
         if kind == "Loop":
             over = s.get("cursor") or s.get("loopKind") or "LOOP"
             loop = self.node(f'{{{{"{self.at(s)}繰り返す: {_label(over, 50)}"}}}}', "sql" if s.get("query") else None)
             self.join(prev, loop)
+            self.loops.append({"node": loop, "exits": []})
             for source, label in self.sequence(s.get("body") or [], [(loop, "1 件ずつ")]):
                 self.edge(source, loop, label or "次へ")
-            return [(loop, "終わり")]
+            left = self.loops.pop()["exits"]
+            # 条件の無い LOOP … END LOOP は、EXIT でしか終わらない
+            return left + ([] if s.get("loopKind") == "basic" and left else [(loop, "終わり")])
+        if kind in ("Exit", "Continue") and self.loops:
+            # ラベルつき（EXIT outer WHEN …）は外側のループへ行くが、ラベルとループの対応は IR に無い。内側として描く
+            word, condition = ("抜ける" if kind == "Exit" else "次の反復へ"), s.get("condition")
+            node = self.node(f'{{"{self.at(s)}{kind.upper()} WHEN {_label(condition, 45)}"}}' if condition
+                             else f'["{self.at(s)}{kind.upper()}"]')
+            self.join(prev, node)
+            if kind == "Exit":
+                self.loops[-1]["exits"].append((node, "はい" if condition else word))
+            else:
+                self.edge(node, self.loops[-1]["node"], "はい" if condition else word)
+            return [(node, "いいえ")] if condition else []
         if kind == "Block":
             exits = self.sequence(s.get("body") or [], prev)
             return exits + (self.handlers(s["exceptionHandlers"], "この塊の中で例外が起きたら") if s.get("exceptionHandlers") else [])
