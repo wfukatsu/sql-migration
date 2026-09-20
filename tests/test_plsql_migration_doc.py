@@ -143,6 +143,12 @@ def test_without_a_comparison_the_limits_have_to_say_so(converted, tmp_path, cap
     assert "実 DB で比べていないことが書かれていない" in capsys.readouterr().out
 
 
+def test_a_file_in_the_source_that_is_not_text_is_not_the_source(tmp_path):
+    (tmp_path / ".DS_Store").write_bytes(b"\x00\x00\x00\x01Bud1\xff\xfe")
+    (tmp_path / "p.prc").write_text("BEGIN\n  NULL;\nEND;\n", encoding="utf-8")
+    assert doc._sources(tmp_path) == {"p.prc": ["BEGIN", "  NULL;", "END;"]}
+
+
 def test_missing_input_is_an_input_error(tmp_path, capsys):
     assert doc.main(["facts", "--generated", str(tmp_path), "--analysis", str(tmp_path), "--out-dir", str(tmp_path / "docs")]) == 2
     assert "plsql.generate" in capsys.readouterr().err

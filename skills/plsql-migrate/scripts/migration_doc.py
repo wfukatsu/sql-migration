@@ -150,6 +150,19 @@ def _method_name(routine_id: str) -> str:
     return parts[0].lower() + "".join(p.capitalize() for p in parts[1:])
 
 
+def _sources(src: Path) -> dict[str, list[str]]:
+    """原文のファイル名 → 行。原文のディレクトリには PL/SQL でないもの（`.DS_Store`、画像、別の文字コードの
+    メモ）も居る。読めないものは原文ではないので飛ばす——IR が指すファイルが読めなければ、文は IR のものが出る。"""
+    found = {}
+    for f in sorted(src.rglob("*")):
+        if f.is_file():
+            try:
+                found[f.name] = f.read_text(encoding="utf-8").splitlines()
+            except UnicodeDecodeError:
+                continue
+    return found
+
+
 def load(args) -> Project:
     generated = Path(args.generated)
     report_path = generated / "generation-report.json"
@@ -171,8 +184,7 @@ def load(args) -> Project:
                    if p.is_file() and p.suffix != ".java" and p.relative_to(generated).parts[0] not in ("docs", "analysis")
                    and p.name != "generation-report.json")
 
-    sources = {f.name: f.read_text(encoding="utf-8").splitlines() for f in Path(args.src).rglob("*") if f.is_file()} \
-        if getattr(args, "src", None) else {}
+    sources = _sources(Path(args.src)) if getattr(args, "src", None) else {}
     routines: dict[str, Routine] = {}
     for module in program.get("modules") or []:
         for r in module.get("routines") or []:

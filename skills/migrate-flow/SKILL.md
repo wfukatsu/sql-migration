@@ -6,7 +6,7 @@ description: >-
   (3) 変換後の仕様と「何がどう変わったか」を Markdown と図にまとめ、承認をもらう → (4) 3 つの承認が
   そろってから、テストを実施する。各段階の中身は plsql-spec / plsql-migrate / sql-transpile が受け持ち、
   このスキルは順番、承認の記録（承認した人・日付・承認したときの中身の指紋）、テストの関門を受け持つ。
-  承認のあとで中身が変わると承認は古くなり、テストには進めない。
+  承認のあとで中身（`spec` は原文も含む）が変わると承認は古くなり、テストには進めない。
 when_to_use: >-
   "PL/SQL を移行して", "この SQL を ScalarDB に移行して", "移行を最初から最後までやって", "仕様の調査から
   テストまで", "移行の続きをやって", "いまどこまで進んだ", "承認を記録して", "テストしてよいか",
@@ -52,7 +52,7 @@ flowchart LR
 - **承認するのは利用者であって、あなたではない。** `flow.py approve` を打つのは、利用者がその段階の成果物を
   見て「承認する」と言ってからである。`--by` には承認した人の役割を書く。分からなければ聞く。
   「よさそう」「次へ」は承認である。「あとで見る」は承認ではない
-- **承認は中身に付く。** 承認のあとで仕様書・決定・文書を書き換えると、その承認は「古い」になる。直したら、
+- **承認は中身に付く。** 承認のあとで原文・仕様書・決定・文書を書き換えると、その承認は「古い」になる。直したら、
   何を変えたかを利用者に示して、承認を取り直す。黙って取り直さない
 - **各段階の中身は、その段階のスキルの手順に従う。** このスキルに書いてあるのは、つなぎ方と、置き場所と、
   承認の取り方だけである。段階に入るときに、そのスキルの SKILL.md を読む（Skill ツールで呼んでもよい）
@@ -132,14 +132,19 @@ plsql-migrate の Step 1〜6 に従う。出力先は `<out>/generated`:
 
 ```bash
 .venv/bin/python -m plsql.generate <src> --scalardb-schema <scalardb-schema.json> --limits <limits.yaml> --out-dir <out>/generated --verify-compile --limits-strict
+.venv/bin/python -m plsql.cli <src> --scalardb-schema <scalardb-schema.json> --limits <limits.yaml> --out-dir <out>/generated/analysis --quiet
 .venv/bin/python skills/plsql-migrate/scripts/decision_items.py scan --generated <out>/generated --limits <limits.yaml> --scalardb-schema <scalardb-schema.json> --record <record.yaml> --write --out <out>/generated/decision-items.md
 ```
+
+2 行目（決定を適用した解析）は、**REDESIGN の routine が決まったかどうか**を `flow.py` が読むために要る。判定は決定の
+あとも REDESIGN のままで、`limits.yaml` に答えの無いルールが残っているかは、この解析の `decisions.json` にしか無い。
+`limits.yaml` を変えたら、生成と一緒にこれも回し直す（古いと「決めたかどうかが分からない」と出る）。
 
 判断を問うときは、**承認済みの現行の仕様を根拠に使う**: 「現行は在庫の行をロックして待たせています
 （`spec/create_order.md` の動作 2）。移行先では…」。判断で `limits.yaml` が変わったら生成し直す。
 
 判断が出そろったら、決まったこと（誰が・いつ・何を）と、**決まっていないこと**（未決の項目、REVIEW のままの
-routine）を並べて、承認を求める。未決を残したまま進めるかどうかは利用者が決める。残すなら理由を控える:
+routine、`limits.yaml` に答えの無い REDESIGN）を並べて、承認を求める。未決を残したまま進めるかどうかは利用者が決める。残すなら理由を控える:
 
 ```bash
 .venv/bin/python skills/migrate-flow/scripts/flow.py approve decisions --out <out> --by <役割> --date <YYYY-MM-DD> --with-open "<残したまま進める理由>"
@@ -149,10 +154,9 @@ routine）を並べて、承認を求める。未決を残したまま進める�
 
 ### Step 3: 変換後の仕様と、何がどう変わったか → 承認 `converted`
 
-plsql-migrate の Step 7 に従う。出力先は `<out>/docs`:
+plsql-migrate の Step 7 に従う。出力先は `<out>/docs`。解析（`<out>/generated/analysis`）は Step 2 で作ったものを使う:
 
 ```bash
-.venv/bin/python -m plsql.cli <src> --scalardb-schema <scalardb-schema.json> --limits <limits.yaml> --out-dir <out>/generated/analysis --quiet
 .venv/bin/python skills/plsql-migrate/scripts/migration_doc.py facts --src <src> --generated <out>/generated --analysis <out>/generated/analysis --limits <limits.yaml> --record <record.yaml> --out-dir <out>/docs
 .venv/bin/python skills/plsql-migrate/scripts/migration_doc.py check --src <src> --generated <out>/generated --analysis <out>/generated/analysis --limits <limits.yaml> --record <record.yaml> --out-dir <out>/docs
 ```
@@ -194,9 +198,12 @@ commit で片方が弾かれる」）。
 .venv/bin/python skills/migrate-flow/scripts/flow.py tested --out <out> --result pass --report <plsql-diff.json>
 ```
 
-テストのあと、比較の結果を文書に入れる: Step 3 の `facts` と `check` に `--evidence <plsql-diff.json>` を足して
-回し直し、「制限」と「どのように移行したか」を実際の結果に書き直す。**文書が変わるので `converted` の承認は
-古くなる**。変えたところ（比較の結果が入った）を示して、承認を取り直す。
+`tested` は `--report` のファイルを `flow.yaml` の `inputs.evidence` に控える（`converted` の検査が、文書と同じ比較を
+見るようになる）。テストのあと、比較の結果を文書に入れる: Step 3 の `facts` と `check` に**同じファイルを**
+`--evidence <plsql-diff.json>` で足して回し直し、「制限」と「どのように移行したか」を実際の結果に書き直す。
+**文書が変わるので `converted` の承認は古くなる**。変えたところ（比較の結果が入った）を示して、承認を取り直す。
+`converted` だけを取り直すかぎり、テストの結果は残る（`spec` か `decisions` を取り直すと、テストは消える——
+確かめた相手が変わったからである。テストからやり直す）。
 
 ### Step 5: 報告する
 
