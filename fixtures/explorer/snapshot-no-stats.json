@@ -1,0 +1,1007 @@
+{
+ "formatVersion": 1,
+ "collectedAt": "2026-09-20T19:10:47+09:00",
+ "collector": {
+  "name": "catalog_snapshot.py",
+  "version": "1"
+ },
+ "database": {
+  "name": "FREE",
+  "version": "23.26.3.0.0"
+ },
+ "schema": "EXPLORER",
+ "containsDataValues": false,
+ "skipped": [],
+ "tables": [
+  {
+   "name": "AUDIT_LOG",
+   "temporary": false,
+   "partitioned": false,
+   "comment": null
+  },
+  {
+   "name": "CUSTOMERS",
+   "temporary": false,
+   "partitioned": false,
+   "comment": null
+  },
+  {
+   "name": "ORDERS",
+   "temporary": false,
+   "partitioned": false,
+   "comment": null
+  },
+  {
+   "name": "ORDER_ITEMS",
+   "temporary": false,
+   "partitioned": false,
+   "comment": null
+  },
+  {
+   "name": "PRODUCTS",
+   "temporary": false,
+   "partitioned": false,
+   "comment": null
+  },
+  {
+   "name": "SHIPMENTS",
+   "temporary": false,
+   "partitioned": false,
+   "comment": null
+  }
+ ],
+ "columns": [
+  {
+   "table": "AUDIT_LOG",
+   "name": "LOG_ID",
+   "position": 1,
+   "dataType": "NUMBER",
+   "length": 22,
+   "precision": 12,
+   "scale": 0,
+   "nullable": false
+  },
+  {
+   "table": "AUDIT_LOG",
+   "name": "TABLE_NAME",
+   "position": 2,
+   "dataType": "VARCHAR2",
+   "length": 30,
+   "precision": null,
+   "scale": null,
+   "nullable": false
+  },
+  {
+   "table": "AUDIT_LOG",
+   "name": "DETAIL",
+   "position": 3,
+   "dataType": "VARCHAR2",
+   "length": 400,
+   "precision": null,
+   "scale": null,
+   "nullable": true
+  },
+  {
+   "table": "AUDIT_LOG",
+   "name": "LOGGED_AT",
+   "position": 4,
+   "dataType": "DATE",
+   "length": 7,
+   "precision": null,
+   "scale": null,
+   "nullable": false
+  },
+  {
+   "table": "CUSTOMERS",
+   "name": "CUSTOMER_ID",
+   "position": 1,
+   "dataType": "NUMBER",
+   "length": 22,
+   "precision": 10,
+   "scale": 0,
+   "nullable": false
+  },
+  {
+   "table": "CUSTOMERS",
+   "name": "NAME",
+   "position": 2,
+   "dataType": "VARCHAR2",
+   "length": 100,
+   "precision": null,
+   "scale": null,
+   "nullable": false
+  },
+  {
+   "table": "CUSTOMERS",
+   "name": "EMAIL",
+   "position": 3,
+   "dataType": "VARCHAR2",
+   "length": 200,
+   "precision": null,
+   "scale": null,
+   "nullable": true
+  },
+  {
+   "table": "ORDERS",
+   "name": "ORDER_ID",
+   "position": 1,
+   "dataType": "NUMBER",
+   "length": 22,
+   "precision": 12,
+   "scale": 0,
+   "nullable": false
+  },
+  {
+   "table": "ORDERS",
+   "name": "CUSTOMER_ID",
+   "position": 2,
+   "dataType": "NUMBER",
+   "length": 22,
+   "precision": 10,
+   "scale": 0,
+   "nullable": false
+  },
+  {
+   "table": "ORDERS",
+   "name": "ORDER_DATE",
+   "position": 3,
+   "dataType": "DATE",
+   "length": 7,
+   "precision": null,
+   "scale": null,
+   "nullable": false
+  },
+  {
+   "table": "ORDERS",
+   "name": "STATUS",
+   "position": 4,
+   "dataType": "VARCHAR2",
+   "length": 20,
+   "precision": null,
+   "scale": null,
+   "nullable": false
+  },
+  {
+   "table": "ORDERS",
+   "name": "TOTAL_AMOUNT",
+   "position": 5,
+   "dataType": "NUMBER",
+   "length": 22,
+   "precision": 18,
+   "scale": 2,
+   "nullable": true
+  },
+  {
+   "table": "ORDER_ITEMS",
+   "name": "ORDER_ID",
+   "position": 1,
+   "dataType": "NUMBER",
+   "length": 22,
+   "precision": 12,
+   "scale": 0,
+   "nullable": false
+  },
+  {
+   "table": "ORDER_ITEMS",
+   "name": "LINE_NO",
+   "position": 2,
+   "dataType": "NUMBER",
+   "length": 22,
+   "precision": 4,
+   "scale": 0,
+   "nullable": false
+  },
+  {
+   "table": "ORDER_ITEMS",
+   "name": "PRODUCT_ID",
+   "position": 3,
+   "dataType": "NUMBER",
+   "length": 22,
+   "precision": 10,
+   "scale": 0,
+   "nullable": false
+  },
+  {
+   "table": "ORDER_ITEMS",
+   "name": "QUANTITY",
+   "position": 4,
+   "dataType": "NUMBER",
+   "length": 22,
+   "precision": 10,
+   "scale": 0,
+   "nullable": false
+  },
+  {
+   "table": "ORDER_ITEMS",
+   "name": "UNIT_PRICE",
+   "position": 5,
+   "dataType": "NUMBER",
+   "length": 22,
+   "precision": 12,
+   "scale": 2,
+   "nullable": false
+  },
+  {
+   "table": "PRODUCTS",
+   "name": "PRODUCT_ID",
+   "position": 1,
+   "dataType": "NUMBER",
+   "length": 22,
+   "precision": 10,
+   "scale": 0,
+   "nullable": false
+  },
+  {
+   "table": "PRODUCTS",
+   "name": "STOCK_QUANTITY",
+   "position": 2,
+   "dataType": "NUMBER",
+   "length": 22,
+   "precision": 10,
+   "scale": 0,
+   "nullable": false
+  },
+  {
+   "table": "PRODUCTS",
+   "name": "UNIT_PRICE",
+   "position": 3,
+   "dataType": "NUMBER",
+   "length": 22,
+   "precision": 12,
+   "scale": 2,
+   "nullable": false
+  },
+  {
+   "table": "PRODUCTS",
+   "name": "UPDATED_AT",
+   "position": 4,
+   "dataType": "TIMESTAMP(6)",
+   "length": 11,
+   "precision": null,
+   "scale": 6,
+   "nullable": true
+  },
+  {
+   "table": "SHIPMENTS",
+   "name": "SHIPMENT_ID",
+   "position": 1,
+   "dataType": "NUMBER",
+   "length": 22,
+   "precision": 12,
+   "scale": 0,
+   "nullable": false
+  },
+  {
+   "table": "SHIPMENTS",
+   "name": "ORDER_ID",
+   "position": 2,
+   "dataType": "NUMBER",
+   "length": 22,
+   "precision": 12,
+   "scale": 0,
+   "nullable": false
+  },
+  {
+   "table": "SHIPMENTS",
+   "name": "SHIPPED_AT",
+   "position": 3,
+   "dataType": "DATE",
+   "length": 7,
+   "precision": null,
+   "scale": null,
+   "nullable": true
+  },
+  {
+   "table": "SHIPMENTS",
+   "name": "CARRIER",
+   "position": 4,
+   "dataType": "VARCHAR2",
+   "length": 40,
+   "precision": null,
+   "scale": null,
+   "nullable": true
+  }
+ ],
+ "constraints": [
+  {
+   "name": "PK_E_AUDIT_LOG",
+   "table": "AUDIT_LOG",
+   "type": "PRIMARY KEY",
+   "columns": [
+    "LOG_ID"
+   ],
+   "enabled": true,
+   "generated": false
+  },
+  {
+   "name": "SYS_C009341",
+   "table": "AUDIT_LOG",
+   "type": "CHECK",
+   "columns": [
+    "LOG_ID"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"LOG_ID\" IS NOT NULL"
+  },
+  {
+   "name": "SYS_C009342",
+   "table": "AUDIT_LOG",
+   "type": "CHECK",
+   "columns": [
+    "TABLE_NAME"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"TABLE_NAME\" IS NOT NULL"
+  },
+  {
+   "name": "SYS_C009343",
+   "table": "AUDIT_LOG",
+   "type": "CHECK",
+   "columns": [
+    "LOGGED_AT"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"LOGGED_AT\" IS NOT NULL"
+  },
+  {
+   "name": "PK_E_CUSTOMERS",
+   "table": "CUSTOMERS",
+   "type": "PRIMARY KEY",
+   "columns": [
+    "CUSTOMER_ID"
+   ],
+   "enabled": true,
+   "generated": false
+  },
+  {
+   "name": "SYS_C009313",
+   "table": "CUSTOMERS",
+   "type": "CHECK",
+   "columns": [
+    "CUSTOMER_ID"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"CUSTOMER_ID\" IS NOT NULL"
+  },
+  {
+   "name": "SYS_C009314",
+   "table": "CUSTOMERS",
+   "type": "CHECK",
+   "columns": [
+    "NAME"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"NAME\" IS NOT NULL"
+  },
+  {
+   "name": "UQ_E_CUSTOMERS_EMAIL",
+   "table": "CUSTOMERS",
+   "type": "UNIQUE",
+   "columns": [
+    "EMAIL"
+   ],
+   "enabled": true,
+   "generated": false
+  },
+  {
+   "name": "FK_E_ORDERS_CUSTOMER",
+   "table": "ORDERS",
+   "type": "FOREIGN KEY",
+   "columns": [
+    "CUSTOMER_ID"
+   ],
+   "enabled": true,
+   "generated": false,
+   "refOwner": "EXPLORER",
+   "refConstraint": "PK_E_CUSTOMERS",
+   "refTable": "CUSTOMERS",
+   "refColumns": [
+    "CUSTOMER_ID"
+   ],
+   "deleteRule": "NO ACTION"
+  },
+  {
+   "name": "PK_E_ORDERS",
+   "table": "ORDERS",
+   "type": "PRIMARY KEY",
+   "columns": [
+    "ORDER_ID"
+   ],
+   "enabled": true,
+   "generated": false
+  },
+  {
+   "name": "SYS_C009322",
+   "table": "ORDERS",
+   "type": "CHECK",
+   "columns": [
+    "ORDER_ID"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"ORDER_ID\" IS NOT NULL"
+  },
+  {
+   "name": "SYS_C009323",
+   "table": "ORDERS",
+   "type": "CHECK",
+   "columns": [
+    "CUSTOMER_ID"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"CUSTOMER_ID\" IS NOT NULL"
+  },
+  {
+   "name": "SYS_C009324",
+   "table": "ORDERS",
+   "type": "CHECK",
+   "columns": [
+    "ORDER_DATE"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"ORDER_DATE\" IS NOT NULL"
+  },
+  {
+   "name": "SYS_C009325",
+   "table": "ORDERS",
+   "type": "CHECK",
+   "columns": [
+    "STATUS"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"STATUS\" IS NOT NULL"
+  },
+  {
+   "name": "CK_E_ITEMS_QUANTITY",
+   "table": "ORDER_ITEMS",
+   "type": "CHECK",
+   "columns": [
+    "QUANTITY"
+   ],
+   "enabled": true,
+   "generated": false,
+   "condition": "quantity > 0"
+  },
+  {
+   "name": "FK_E_ITEMS_ORDER",
+   "table": "ORDER_ITEMS",
+   "type": "FOREIGN KEY",
+   "columns": [
+    "ORDER_ID"
+   ],
+   "enabled": true,
+   "generated": false,
+   "refOwner": "EXPLORER",
+   "refConstraint": "PK_E_ORDERS",
+   "refTable": "ORDERS",
+   "refColumns": [
+    "ORDER_ID"
+   ],
+   "deleteRule": "CASCADE"
+  },
+  {
+   "name": "FK_E_ITEMS_PRODUCT",
+   "table": "ORDER_ITEMS",
+   "type": "FOREIGN KEY",
+   "columns": [
+    "PRODUCT_ID"
+   ],
+   "enabled": true,
+   "generated": false,
+   "refOwner": "EXPLORER",
+   "refConstraint": "PK_E_PRODUCTS",
+   "refTable": "PRODUCTS",
+   "refColumns": [
+    "PRODUCT_ID"
+   ],
+   "deleteRule": "NO ACTION"
+  },
+  {
+   "name": "PK_E_ORDER_ITEMS",
+   "table": "ORDER_ITEMS",
+   "type": "PRIMARY KEY",
+   "columns": [
+    "ORDER_ID",
+    "LINE_NO"
+   ],
+   "enabled": true,
+   "generated": false
+  },
+  {
+   "name": "SYS_C009328",
+   "table": "ORDER_ITEMS",
+   "type": "CHECK",
+   "columns": [
+    "ORDER_ID"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"ORDER_ID\" IS NOT NULL"
+  },
+  {
+   "name": "SYS_C009329",
+   "table": "ORDER_ITEMS",
+   "type": "CHECK",
+   "columns": [
+    "LINE_NO"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"LINE_NO\" IS NOT NULL"
+  },
+  {
+   "name": "SYS_C009330",
+   "table": "ORDER_ITEMS",
+   "type": "CHECK",
+   "columns": [
+    "PRODUCT_ID"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"PRODUCT_ID\" IS NOT NULL"
+  },
+  {
+   "name": "SYS_C009331",
+   "table": "ORDER_ITEMS",
+   "type": "CHECK",
+   "columns": [
+    "QUANTITY"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"QUANTITY\" IS NOT NULL"
+  },
+  {
+   "name": "SYS_C009332",
+   "table": "ORDER_ITEMS",
+   "type": "CHECK",
+   "columns": [
+    "UNIT_PRICE"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"UNIT_PRICE\" IS NOT NULL"
+  },
+  {
+   "name": "CK_E_PRODUCTS_STOCK",
+   "table": "PRODUCTS",
+   "type": "CHECK",
+   "columns": [
+    "STOCK_QUANTITY"
+   ],
+   "enabled": true,
+   "generated": false,
+   "condition": "stock_quantity >= 0"
+  },
+  {
+   "name": "PK_E_PRODUCTS",
+   "table": "PRODUCTS",
+   "type": "PRIMARY KEY",
+   "columns": [
+    "PRODUCT_ID"
+   ],
+   "enabled": true,
+   "generated": false
+  },
+  {
+   "name": "SYS_C009317",
+   "table": "PRODUCTS",
+   "type": "CHECK",
+   "columns": [
+    "PRODUCT_ID"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"PRODUCT_ID\" IS NOT NULL"
+  },
+  {
+   "name": "SYS_C009318",
+   "table": "PRODUCTS",
+   "type": "CHECK",
+   "columns": [
+    "STOCK_QUANTITY"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"STOCK_QUANTITY\" IS NOT NULL"
+  },
+  {
+   "name": "SYS_C009319",
+   "table": "PRODUCTS",
+   "type": "CHECK",
+   "columns": [
+    "UNIT_PRICE"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"UNIT_PRICE\" IS NOT NULL"
+  },
+  {
+   "name": "FK_E_SHIPMENTS_ORDER",
+   "table": "SHIPMENTS",
+   "type": "FOREIGN KEY",
+   "columns": [
+    "ORDER_ID"
+   ],
+   "enabled": true,
+   "generated": false,
+   "refOwner": "EXPLORER",
+   "refConstraint": "PK_E_ORDERS",
+   "refTable": "ORDERS",
+   "refColumns": [
+    "ORDER_ID"
+   ],
+   "deleteRule": "NO ACTION"
+  },
+  {
+   "name": "PK_E_SHIPMENTS",
+   "table": "SHIPMENTS",
+   "type": "PRIMARY KEY",
+   "columns": [
+    "SHIPMENT_ID"
+   ],
+   "enabled": true,
+   "generated": false
+  },
+  {
+   "name": "SYS_C009337",
+   "table": "SHIPMENTS",
+   "type": "CHECK",
+   "columns": [
+    "SHIPMENT_ID"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"SHIPMENT_ID\" IS NOT NULL"
+  },
+  {
+   "name": "SYS_C009338",
+   "table": "SHIPMENTS",
+   "type": "CHECK",
+   "columns": [
+    "ORDER_ID"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"ORDER_ID\" IS NOT NULL"
+  }
+ ],
+ "indexes": [
+  {
+   "name": "PK_E_AUDIT_LOG",
+   "table": "AUDIT_LOG",
+   "unique": true,
+   "columns": [
+    "LOG_ID"
+   ]
+  },
+  {
+   "name": "PK_E_CUSTOMERS",
+   "table": "CUSTOMERS",
+   "unique": true,
+   "columns": [
+    "CUSTOMER_ID"
+   ]
+  },
+  {
+   "name": "UQ_E_CUSTOMERS_EMAIL",
+   "table": "CUSTOMERS",
+   "unique": true,
+   "columns": [
+    "EMAIL"
+   ]
+  },
+  {
+   "name": "PK_E_ORDERS",
+   "table": "ORDERS",
+   "unique": true,
+   "columns": [
+    "ORDER_ID"
+   ]
+  },
+  {
+   "name": "PK_E_ORDER_ITEMS",
+   "table": "ORDER_ITEMS",
+   "unique": true,
+   "columns": [
+    "ORDER_ID",
+    "LINE_NO"
+   ]
+  },
+  {
+   "name": "PK_E_PRODUCTS",
+   "table": "PRODUCTS",
+   "unique": true,
+   "columns": [
+    "PRODUCT_ID"
+   ]
+  },
+  {
+   "name": "PK_E_SHIPMENTS",
+   "table": "SHIPMENTS",
+   "unique": true,
+   "columns": [
+    "SHIPMENT_ID"
+   ]
+  }
+ ],
+ "triggers": [
+  {
+   "name": "TRG_ITEMS_STOCK_GUARD",
+   "table": "ORDER_ITEMS",
+   "timing": "BEFORE EACH ROW",
+   "event": "INSERT",
+   "enabled": true,
+   "body": "DECLARE\n    v_stock products.stock_quantity%TYPE;\nBEGIN\n    SELECT stock_quantity INTO v_stock FROM products WHERE product_id = :NEW.product_id;\n    IF v_stock < 0 THEN\n        RAISE_APPLICATION_ERROR(-20020, '在庫が負です');\n    END IF;\nEND trg_items_stock_guard;"
+  },
+  {
+   "name": "TRG_ORDERS_AUDIT",
+   "table": "ORDERS",
+   "timing": "AFTER EACH ROW",
+   "event": "UPDATE",
+   "enabled": true,
+   "body": "BEGIN\n    INSERT INTO audit_log (log_id, table_name, detail, logged_at)\n    VALUES (audit_seq.NEXTVAL, 'ORDERS', :OLD.status || ' -> ' || :NEW.status, SYSDATE);\nEND trg_orders_audit;"
+  }
+ ],
+ "views": [
+  {
+   "name": "V_OPEN_ORDERS",
+   "text": "SELECT o.order_id, o.customer_id, o.order_date, o.status\n  FROM orders o\n WHERE o.status <> 'CANCELLED'"
+  },
+  {
+   "name": "V_ORDER_LINES",
+   "text": "SELECT v.order_id, v.customer_id, i.line_no, i.product_id, i.quantity\n  FROM v_open_orders v\n  JOIN order_items i ON i.order_id = v.order_id"
+  }
+ ],
+ "dependencies": [
+  {
+   "name": "CANCEL_ORDER",
+   "type": "PROCEDURE",
+   "refOwner": "EXPLORER",
+   "refName": "ORDERS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "CANCEL_ORDER",
+   "type": "PROCEDURE",
+   "refOwner": "EXPLORER",
+   "refName": "ORDER_ITEMS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "CANCEL_ORDER",
+   "type": "PROCEDURE",
+   "refOwner": "EXPLORER",
+   "refName": "PRODUCTS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "CREATE_ORDER",
+   "type": "PROCEDURE",
+   "refOwner": "EXPLORER",
+   "refName": "CUSTOMERS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "CREATE_ORDER",
+   "type": "PROCEDURE",
+   "refOwner": "EXPLORER",
+   "refName": "ORDERS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "CREATE_ORDER",
+   "type": "PROCEDURE",
+   "refOwner": "EXPLORER",
+   "refName": "ORDER_ITEMS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "CREATE_ORDER",
+   "type": "PROCEDURE",
+   "refOwner": "EXPLORER",
+   "refName": "ORDER_SEQ",
+   "refType": "SEQUENCE"
+  },
+  {
+   "name": "CREATE_ORDER",
+   "type": "PROCEDURE",
+   "refOwner": "EXPLORER",
+   "refName": "PRODUCTS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "REPORT_OPEN_ORDERS",
+   "type": "PROCEDURE",
+   "refOwner": "EXPLORER",
+   "refName": "CUSTOMERS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "REPORT_OPEN_ORDERS",
+   "type": "PROCEDURE",
+   "refOwner": "EXPLORER",
+   "refName": "ORDERS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "REPORT_OPEN_ORDERS",
+   "type": "PROCEDURE",
+   "refOwner": "EXPLORER",
+   "refName": "V_ORDER_LINES",
+   "refType": "VIEW"
+  },
+  {
+   "name": "TRG_ITEMS_STOCK_GUARD",
+   "type": "TRIGGER",
+   "refOwner": "EXPLORER",
+   "refName": "ORDER_ITEMS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "TRG_ITEMS_STOCK_GUARD",
+   "type": "TRIGGER",
+   "refOwner": "EXPLORER",
+   "refName": "PRODUCTS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "TRG_ORDERS_AUDIT",
+   "type": "TRIGGER",
+   "refOwner": "EXPLORER",
+   "refName": "AUDIT_LOG",
+   "refType": "TABLE"
+  },
+  {
+   "name": "TRG_ORDERS_AUDIT",
+   "type": "TRIGGER",
+   "refOwner": "EXPLORER",
+   "refName": "AUDIT_SEQ",
+   "refType": "SEQUENCE"
+  },
+  {
+   "name": "TRG_ORDERS_AUDIT",
+   "type": "TRIGGER",
+   "refOwner": "EXPLORER",
+   "refName": "ORDERS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "V_OPEN_ORDERS",
+   "type": "VIEW",
+   "refOwner": "EXPLORER",
+   "refName": "ORDERS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "V_ORDER_LINES",
+   "type": "VIEW",
+   "refOwner": "EXPLORER",
+   "refName": "ORDER_ITEMS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "V_ORDER_LINES",
+   "type": "VIEW",
+   "refOwner": "EXPLORER",
+   "refName": "V_OPEN_ORDERS",
+   "refType": "VIEW"
+  }
+ ],
+ "segments": [
+  {
+   "name": "CUSTOMERS",
+   "type": "TABLE",
+   "bytes": 65536
+  },
+  {
+   "name": "ORDERS",
+   "type": "TABLE",
+   "bytes": 65536
+  },
+  {
+   "name": "ORDER_ITEMS",
+   "type": "TABLE",
+   "bytes": 65536
+  },
+  {
+   "name": "PK_E_CUSTOMERS",
+   "type": "INDEX",
+   "bytes": 65536
+  },
+  {
+   "name": "PK_E_ORDERS",
+   "type": "INDEX",
+   "bytes": 65536
+  },
+  {
+   "name": "PK_E_ORDER_ITEMS",
+   "type": "INDEX",
+   "bytes": 65536
+  },
+  {
+   "name": "PK_E_PRODUCTS",
+   "type": "INDEX",
+   "bytes": 65536
+  },
+  {
+   "name": "PK_E_SHIPMENTS",
+   "type": "INDEX",
+   "bytes": 65536
+  },
+  {
+   "name": "PRODUCTS",
+   "type": "TABLE",
+   "bytes": 65536
+  },
+  {
+   "name": "SHIPMENTS",
+   "type": "TABLE",
+   "bytes": 65536
+  },
+  {
+   "name": "UQ_E_CUSTOMERS_EMAIL",
+   "type": "INDEX",
+   "bytes": 65536
+  }
+ ],
+ "tableStatistics": [
+  {
+   "table": "AUDIT_LOG",
+   "numRows": null,
+   "blocks": null,
+   "avgRowLen": null,
+   "lastAnalyzed": null,
+   "stale": null
+  },
+  {
+   "table": "CUSTOMERS",
+   "numRows": null,
+   "blocks": null,
+   "avgRowLen": null,
+   "lastAnalyzed": null,
+   "stale": null
+  },
+  {
+   "table": "ORDERS",
+   "numRows": null,
+   "blocks": null,
+   "avgRowLen": null,
+   "lastAnalyzed": null,
+   "stale": null
+  },
+  {
+   "table": "ORDER_ITEMS",
+   "numRows": null,
+   "blocks": null,
+   "avgRowLen": null,
+   "lastAnalyzed": null,
+   "stale": null
+  },
+  {
+   "table": "PRODUCTS",
+   "numRows": null,
+   "blocks": null,
+   "avgRowLen": null,
+   "lastAnalyzed": null,
+   "stale": null
+  },
+  {
+   "table": "SHIPMENTS",
+   "numRows": null,
+   "blocks": null,
+   "avgRowLen": null,
+   "lastAnalyzed": null,
+   "stale": null
+  }
+ ],
+ "columnStatistics": []
+}
