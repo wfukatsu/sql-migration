@@ -192,7 +192,53 @@ def test_a_failed_connection_says_why_without_the_password_and_names_the_way_rou
     message = C.explain(RuntimeError("DPY-3001: Native Network Encryption and Data Integrity is only supported in "
                                      "python-oracledb thick mode (hunter2)"), "hunter2")
     assert "hunter2" not in message
-    assert "tcps://" in message and "Native Network Encryption" in message
+    assert "tcps://" in message and "Native Network Encryption" in message and "--thick" in message
+
+
+def test_real_data_is_not_collected_on_one_option_alone(capsys):
+    """One mistyped option must not be enough to carry somebody's data out of their database."""
+    def never(*_args, **_kwargs):
+        raise AssertionError("it must refuse before it connects")
+
+    assert C.main(["--out", "x.json", "--include-values"], environ={"SRC_ORACLE_USER": "u", "SRC_ORACLE_SERVICE": "s",
+                                                                   "SRC_ORACLE_PASSWORD": "p"}) == 2
+    message = capsys.readouterr().err
+    assert "--acknowledge-real-data" in message and "most frequent values" in message
+    assert not pathlib_exists("x.json")
+
+
+def pathlib_exists(name: str) -> bool:
+    return Path(name).exists()
+
+
+def test_with_both_options_it_goes_on_to_collect_values(monkeypatch, tmp_path):
+    seen = {}
+
+    def collect(settings, password, include_values, thick=False):
+        seen.update(include_values=include_values, thick=thick)
+        return C.build(lambda section, sql: ROWS[section], include_values=include_values, schema="SHOP",
+                       database={"name": "X", "version": "23"}, collected_at="2026-08-30T02:00:00+09:00")
+
+    monkeypatch.setattr(C, "collect", collect)
+    out = tmp_path / "snap.json"
+    assert C.main(["--out", str(out), "--include-values", "--acknowledge-real-data", "--thick"],
+                  environ={"SRC_ORACLE_USER": "shop", "SRC_ORACLE_SERVICE": "s", "SRC_ORACLE_PASSWORD": "p"}) == 0
+    assert seen == {"include_values": True, "thick": True}
+    assert S.load(out).contains_data_values
+
+
+def test_thin_mode_is_the_default_and_thick_is_asked_for(monkeypatch, tmp_path):
+    seen = {}
+
+    def collect(settings, password, include_values, thick=False):
+        seen["thick"] = thick
+        return C.build(lambda section, sql: ROWS[section], include_values=False, schema="SHOP",
+                       database={"name": "X", "version": "23"}, collected_at="2026-08-30T02:00:00+09:00")
+
+    monkeypatch.setattr(C, "collect", collect)
+    assert C.main(["--out", str(tmp_path / "s.json")],
+                  environ={"SRC_ORACLE_USER": "shop", "SRC_ORACLE_SERVICE": "s", "SRC_ORACLE_PASSWORD": "p"}) == 0
+    assert seen == {"thick": False}
 
 
 def test_the_statements_can_be_printed_for_review_without_connecting(capsys):

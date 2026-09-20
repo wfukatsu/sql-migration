@@ -191,7 +191,7 @@ flowchart LR
 
 ### Key Technical Decisions
 
-- KTD1. **収集は Python の単一ファイルで、リポジトリのほかのコードを import しない。** python-oracledb の thin モードだけに依存し、発行する SELECT はファイルの先頭に名前つきで並べて、読めば SELECT だけだと確かめられるようにする。置き場所は `difftest/` で、`requirements-difftest.txt` の側に属する。Governs R1, R2, R3, R4. (session-settled: user-directed — chosen over SQL*Plus スクリプト / 両方 / Python を先に SQL*Plus は後で: JSON と R3 の既定をコードで守れ、LONG 型と改行で壊れない)
+- KTD1. **収集は Python の単一ファイルで、リポジトリのほかのコードを import しない。** 依存は python-oracledb だけで、既定は thin モード（KTD13 の `--thick` は明示したときだけ）。発行する SELECT はファイルの先頭に名前つきで並べて、読めば SELECT だけだと確かめられるようにする。置き場所は `difftest/` で、`requirements-difftest.txt` の側に属する。Governs R1, R2, R3, R4. (session-settled: user-directed — chosen over SQL*Plus スクリプト / 両方 / Python を先に SQL*Plus は後で: JSON と R3 の既定をコードで守れ、LONG 型と改行で壊れない)
 - KTD2. **接続の情報は環境変数と対話入力から取り、パスワードを引数で受けない。** 変数の名前は `difftest/conf/sources/oracle-local.json` と同じ `SRC_ORACLE_*` にそろえ、既存の検証環境でそのまま動くようにする。接続したら最初にトランザクションを読み取り専用にする。接続記述子や Easy Connect の文字列を丸ごと渡す変数も受け、これがあればホスト、ポート、サービスより優先する（`tcps://` で TLS の接続ができる）。単一ファイルの制約（KTD1）があるので `difftest/sources.py` は import しない。
 - KTD3. **snapshot 1 つは Oracle の 1 スキーマで、読むのは `USER_*` のカタログだけ。** 検証環境の「1 ユーザ = 1 スキーマ」の流儀と同じで、追加の権限が要らない。スキーマをまたぐ外部キーは、相手の持ち主と名前だけを持ち「この snapshot の外」と出す。複数スキーマを 1 つに入れるのは、あとに回す。
 - KTD4. **snapshot の形式は JSON Schema で固定し、読む側が検証する。** `plsql/ir/schema.json` と同じ流儀で、`jsonschema` はすでに依存にある。「項目が無い」と「空」を区別する: 節のキーが無ければ未取得、テーブルの統計が null なら統計なし、空の配列は「0 件と確かめた」。値を含むかどうかは snapshot の先頭のフラグが持つ。Governs R3, R4, R13, R15.
@@ -203,6 +203,9 @@ flowchart LR
 - KTD10. **view は snapshot の依存関係で元のテーブルに結び、trigger は原文が無ければ中身を解析しない。** view を読む SQL は、元のテーブルの側に「view 経由」として出す。原文の無い trigger は「付いているもの」に出し、その中の SQL は「見えていない」とする（R7, R11）。
 - KTD11. **HTML は 1 ファイルで、データを JSON として埋め込み、素の JavaScript で描く。** 外部のライブラリも CDN も使わない（R14）。Python の側は標準ライブラリだけで、テンプレートのファイルに JSON を差し込む。リポジトリに HTML 生成の前例は無いので、これが最初の形になる。画面の切り替えは URL のハッシュで行い、テーブルや routine へのリンクをそのまま人に渡せる。
 - KTD12. **調査用の解析は `--limits` なしで流す。** `--limits` や ScalarDB のスキーマを渡すと、解析が原文の SQL を書き換えた形で出すことがある。画面の生成は、解析結果に書き換えの跡を見つけたら警告を出す。
+
+- KTD13. **`--thick` を明示したときだけ、Oracle Client を使って接続する。** Native Network Encryption が必須で TLS も使えない DB では thin モードでつながらず、収集できないと DB 側の欄がすべて未取得になる。既定は thin のままで、Client が見つからなければ接続する前に説明つきで止まる。Oracle Client を使った実際の接続は、実装した環境に Client が無く、確かめていない。Governs R1, R2. (session-settled: user-approved — chosen over 足さない / 必要になってから: NNE 必須の現場でも収集でき、代償は `--thick` を使う人の Client のインストールだけ)
+- KTD14. **値を取るには `--include-values` と `--acknowledge-real-data` の 2 つが要る。** 片方だけなら、何が入るかを説明して、接続する前に止まる。収集スクリプトは相手が本番かどうかを知りようがないので、環境では分けない。Governs R3. (session-settled: user-approved — chosen over 求めない / 端末で対話して確かめる: 付け間違いで実データが出る事故を防げ、無人でも流せる)
 
 ### High-Level Technical Design
 
@@ -283,13 +286,6 @@ docs/guide/explorer.md
 | 埋め込んだ JSON に `</script>` や不正な文字が入って画面が壊れる、または SQL の本文が HTML として解釈される | 差し込むときに閉じタグを無害化し、画面の側は文字列を必ずテキストとして入れる（U6 のテスト） |
 | Oracle のバージョンでカタログの列が違う | 対象は 12.2 以降とし、無い列は未取得として扱う。取れなかった節は snapshot に理由つきで記録する |
 | 実案件で `USER_*` では足りない（別の持ち主のスキーマを読む） | KTD3 の限界として案内に書く。必要になったら `ALL_*` と持ち主の指定を足す（あとに回す） |
-
-### Open Questions
-
-どちらも実装を止めない。利用者が決めるまで、書いてある既定で進める。
-
-- Native Network Encryption が必須で TLS も使えない DB のために、thick モードに切り替える明示のオプションを足すか。KTD1 の文面が変わるので、利用者の判断が要る。既定: 足さない（KTD2 の接続記述子と、失敗時のメッセージまで）。
-- 値を取るオプションを本番の DB に使うとき、`difftest/golden.py` の `--allow-production` のような明示の確認を求めるか。既定: 求めない。
 
 ---
 
