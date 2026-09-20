@@ -1,6 +1,6 @@
 # SQL の変換と実行計画
 
-[文書の入口](../README.md) ｜ [はじめに](getting-started.md) ｜ [SQL の変換](sql-conversion.md) ｜ [PL/SQL の変換](plsql-conversion.md) ｜ [スキル](skills.md) ｜ [検証環境](verification.md)
+[文書の入口](../README.md) ｜ [はじめに](getting-started.md) ｜ [チュートリアル](tutorial.md) ｜ [SQL の変換](sql-conversion.md) ｜ [PL/SQL の変換](plsql-conversion.md) ｜ [スキル](skills.md) ｜ [検証環境](verification.md)
 
 SQL 文を ScalarDB SQL に変換し、変換できない読み取り文を実行計画（ScalarDB から取得 → H2 で元の SQL）に分解して動かすまでの使い方です。
 仕組みは [アーキテクチャ](../design/architecture.md) の 4〜9 章、変換ルールの一覧は [scalardb-grammar.md](../../skills/sql-transpile/references/scalardb-grammar.md) にあります。

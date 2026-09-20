@@ -121,7 +121,7 @@ python3 -m venv .venv
 
 | 目的 | 文書 |
 |---|---|
-| まず動かす | [はじめに](docs/guide/getting-started.md) |
+| まず動かす | [はじめに](docs/guide/getting-started.md)、[チュートリアル](docs/guide/tutorial.md)（サンプルの SQL と PL/SQL をスキルで移し、実 DB で確かめるまで） |
 | SQL 文を移す | [SQL の変換と実行計画](docs/guide/sql-conversion.md)、[変換ルールと指摘コード](skills/sql-transpile/references/scalardb-grammar.md)、[方言ごとの注意](skills/sql-transpile/references/dialect-notes.md) |
 | PL/SQL を移す | [PL/SQL → Java 変換](docs/guide/plsql-conversion.md)、[人が決めること（cursor / トランザクション / trigger / 生成コードの外）](docs/README.md#plsql-の移行で人が決めることplsql-migration) |
 | Claude Code / Codex から進める | [スキル](docs/guide/skills.md) |
@@ -189,7 +189,7 @@ difftest/                  検証基盤（docker-compose.yml、conf/、cases/、
   plsql_semantics.py         実機 Oracle から式の意味論を記録する
 fixtures/plsql/            PL/SQL の corpus、シナリオ、golden、判定の期待値、記録した意味論
 fixtures/plsql-external/   corpus の外から受け取った routine（KPI には入れない）。実 DB のハーネスを `--project` で向ける
-samples/                   変換の入力例
+samples/                   変換の入力例。tutorial/ はチュートリアルのサンプル（Oracle の SQL と PL/SQL）と、通した結果（result/）
 spikes/                    残りの処理を H2 / SQLite / DuckDB で実行する初期の検証
 tests/                     変換ツールとスキルのテスト
 docs/                      文書。入口は docs/README.md（guide/ 使い方、design/ 設計、plsql-migration/ 人が決めること、
