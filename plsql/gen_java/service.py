@@ -257,6 +257,13 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
         # resolved, so the name is left out and the expression is reported instead of compiled against nothing
         from ..lower import overload_of
         names.update({r.name: java_name(r.name) for r in module.routines if overload_of(r) is None})
+        # the Java types of a sibling's IN parameters, so that a call can hand a NUMBER parameter a BigDecimal.
+        # `rank_of(v_balance)` with `v_balance members.balance%TYPE` (NUMBER(10) -> Long) did not compile: the
+        # method takes BigDecimal (samples/tutorial, 2026-09-20). The key cannot clash with a PL/SQL name
+        for r in module.routines:
+            if overload_of(r) is None and r.id != routine.id:
+                names[f"{r.name.lower()}#parameters"] = ",".join(
+                    java_type(p.type.resolved if p.type else None).name for p in r.parameters)
         # a trigger declares its locals on the module, not on the body, and a package-level cursor is visible
         # to every routine; leaving them out reports real names as unknown
         names.update({d.name: java_name(d.name) for d in module.declarations})

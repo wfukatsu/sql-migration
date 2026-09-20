@@ -461,7 +461,9 @@ class _Parser:
         whole = self._subscript()
         if whole is not None:
             return whole
+        plsql_name = self.peek()[1]
         name = self._name(self.take()[1])
+        expected = (self.scope.get(f"{plsql_name.lower()}#parameters") or "").split(",")
         self.take()  # the '('
         arguments: list[str] = []
         while self.peek() is not None and self.peek()[1] != ")":
@@ -472,7 +474,14 @@ class _Parser:
                 arguments.append(self.take()[1])
         if self.peek() is not None and self.peek()[1] == ")":
             self.take()
-        return f"{name}({', '.join(a for a in arguments if a)})"
+        arguments = [a for a in arguments if a]
+        if expected != [""] and len(expected) == len(arguments) and not any("=>" in a for a in arguments):
+            # a sibling that declares NUMBER takes BigDecimal; the argument may be a Long / Integer local or a literal
+            for i, java in enumerate(expected):
+                if java == "BigDecimal" and arguments[i] != "null" and not arguments[i].startswith(f"{HELPER}.dec("):
+                    self.result.imports.add(HELPER_IMPORT)
+                    arguments[i] = f"{HELPER}.dec({arguments[i]})"
+        return f"{name}({', '.join(arguments)})"
 
     def _subscript(self) -> str | None:
         """`name(index)` が丸ごと scope にあればそれを返し、トークンを読み進める。"""

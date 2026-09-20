@@ -930,6 +930,7 @@ class StatementConverter:
                 self.fail("JOIN", "joined relation must be a base table (no subqueries)")
             alias_of[(t.alias or t.name).lower()] = t
         base = self._swap_inner_join(s, base, joins, where_expr)
+        uncovered: list[str] = []
         for i, j in enumerate(joins):
             kind = (j.args.get("kind") or "").upper()
             side = (j.args.get("side") or "").upper()
@@ -970,8 +971,10 @@ class StatementConverter:
                          for c in _unparen(leaf).find_all(exp.Column) if (c.table or "").lower() == (j.this.alias or j.this.name).lower()}
                 pk = {c.lower() for c in meta.primary_key}
                 if not (pk <= jcols or any(c.lower() in jcols for c in meta.secondary_indexes)):
-                    self.warn("JOIN_KEY", f"join on {meta.name} does not cover its full primary key {meta.primary_key} "
-                                          f"or a secondary index; ScalarDB will reject this join")
+                    # The cluster rejects such a join (DB-SQL-10067), so it is an ERROR and the statement goes to a
+                    # plan (P8). Raised after the JOIN_SCOPE check below: a join refused for both reasons names both
+                    uncovered.append(f"join on {meta.name} does not cover its full primary key {meta.primary_key} "
+                                     f"or a secondary index; ScalarDB rejects this join (DB-SQL-10067)")
             else:
                 self.info("SCHEMA", f"join on {j.this.name}: table definition unknown, key coverage not checked")
         # ScalarDB rule: with INNER/LEFT JOIN, WHERE and ORDER BY may only reference the FROM table's columns;
@@ -987,6 +990,8 @@ class StatementConverter:
             if q and q != allowed:
                 self.fail("JOIN_SCOPE", f"column {c.sql()} belongs to a joined table; with JOIN, WHERE/ORDER BY may only "
                                         f"reference columns of the {'RIGHT JOIN' if first_side == 'RIGHT' else 'FROM'} table ({allowed})")
+        if uncovered:
+            self.fail("JOIN_KEY", "; ".join(uncovered))
         return where_expr
 
     def _owner(self, c: exp.Column, alias_of: dict) -> str:

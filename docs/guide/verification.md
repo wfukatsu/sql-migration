@@ -1,6 +1,6 @@
 # 検証環境（`difftest/`）
 
-[文書の入口](../README.md) ｜ [はじめに](getting-started.md) ｜ [SQL の変換](sql-conversion.md) ｜ [PL/SQL の変換](plsql-conversion.md) ｜ [スキル](skills.md) ｜ [検証環境](verification.md)
+[文書の入口](../README.md) ｜ [はじめに](getting-started.md) ｜ [チュートリアル](tutorial.md) ｜ [SQL の変換](sql-conversion.md) ｜ [PL/SQL の変換](plsql-conversion.md) ｜ [スキル](skills.md) ｜ [検証環境](verification.md)
 
 変換結果が正しいかを、移行元 DB と ScalarDB Cluster で実際に実行して突き合わせ、性能を測るためのハーネスです。Docker が要ります。
 測った結果は [検証レポート](../README.md#検証レポート) にまとめてあります。実 DB を使うときの落とし穴（タイムゾーン、Cluster の再起動など）は各レポートの「制約」の章にあります。

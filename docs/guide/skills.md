@@ -1,6 +1,6 @@
 # スキル（Claude Code / Codex）
 
-[文書の入口](../README.md) ｜ [はじめに](getting-started.md) ｜ [SQL の変換](sql-conversion.md) ｜ [PL/SQL の変換](plsql-conversion.md) ｜ [スキル](skills.md) ｜ [検証環境](verification.md)
+[文書の入口](../README.md) ｜ [はじめに](getting-started.md) ｜ [チュートリアル](tutorial.md) ｜ [SQL の変換](sql-conversion.md) ｜ [PL/SQL の変換](plsql-conversion.md) ｜ [スキル](skills.md) ｜ [検証環境](verification.md)
 
 移行の手順をコーディングエージェントから進めるためのスキルが 4 つあります。どれも `skills/<名前>/` に `SKILL.md`・`scripts/`・`references/`・`examples/` を持ちます。
 Claude Code と Codex（codex-cli 0.154.0 で確認）のどちらからも使えます。

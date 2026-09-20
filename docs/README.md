@@ -16,13 +16,14 @@ docs/
 
 1. [README](../README.md) — 何をするツールか、全体像、前提と制約
 2. [はじめに](guide/getting-started.md) — 準備と、DB なしで試せる最初の変換
-3. 目的に合うガイド
+3. [チュートリアル](guide/tutorial.md) — サンプルの Oracle SQL と PL/SQL を、スキルで ScalarDB に移して実 DB で確かめるまでの、実際に通した記録
+4. 目的に合うガイド
    - SQL 文を移す → [SQL の変換と実行計画](guide/sql-conversion.md)
    - PL/SQL を移す → [PL/SQL → Java 変換](guide/plsql-conversion.md)
    - Claude Code / Codex から手順どおりに進める → [スキル](guide/skills.md)
    - 実 DB で結果を突き合わせる・性能を測る → [検証環境](guide/verification.md)
-4. [アーキテクチャと仕組み](design/architecture.md) — 変換・実行計画・実行基盤・検証基盤・スキルがどう動くか（Mermaid の図つき）
-5. 必要になったら、下の一覧から
+5. [アーキテクチャと仕組み](design/architecture.md) — 変換・実行計画・実行基盤・検証基盤・スキルがどう動くか（Mermaid の図つき）
+6. 必要になったら、下の一覧から
 
 ## 用語
 
@@ -45,6 +46,7 @@ docs/
 | 文書 | 内容 |
 |---|---|
 | [はじめに](guide/getting-started.md) | 準備、最初の SQL 変換、実行計画の確認、最初の PL/SQL 解析、テスト |
+| [チュートリアル](guide/tutorial.md) | サンプル（`samples/tutorial/`）を sql-transpile と migrate-flow で最後まで通した記録。断られた文、人の判断、承認の取り直し、実 DB の比較（SQL 9/10、PL/SQL 13/13）、見つけて直した不具合 |
 | [SQL の変換と実行計画](guide/sql-conversion.md) | `scalardb_migrate.cli` のオプション・出力・判定、`residual-runner` のサブコマンド |
 | [PL/SQL → Java 変換](guide/plsql-conversion.md) | 判定の考え方、コマンド、出力、corpus 上の現在地 |
 | [スキル](guide/skills.md) | migrate-flow / plsql-spec / plsql-migrate / sql-transpile の役割とコマンド、marketplace からのインストール（Claude Code / Codex）と、両者の違い |
