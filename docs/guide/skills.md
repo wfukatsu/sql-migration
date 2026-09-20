@@ -7,13 +7,40 @@ Claude Code と Codex（codex-cli 0.154.0 で確認）のどちらからも使�
 
 ## インストール
 
-**どちらの場合も、エージェントはこのリポジトリのルートで開きます。** スキルのコマンドは `.venv/bin/python skills/...` と `.venv/bin/python -m plsql.cli` の形で
-書いてあり、PL/SQL の 3 つは `plsql/` 本体を使うので、ほかのディレクトリで開いたセッションではスキルは発動してもコマンドが動きません。先に [はじめに](getting-started.md) の準備（`.venv`）を済ませます。
+入れ方は 2 つあります。**ほかのプロジェクトの PL/SQL / SQL を移すなら marketplace から**、このリポジトリ自体を開発するならチェックアウトから使います。
+
+### marketplace から入れる（どのプロジェクトからでも使える）
+
+このリポジトリが、そのまま Claude Code と Codex のプラグイン `sql-migration`（4 つのスキル入り）の marketplace になっています。
 
 | | 手順 |
 |---|---|
-| Claude Code | `for n in migrate-flow plsql-spec plsql-migrate sql-transpile; do ln -s "$PWD/skills/$n" ~/.claude/skills/$n; done` |
-| Codex | 何もしなくてよい。リポジトリの `.agents/skills`（`skills/` へのシンボリックリンク）を Codex が読む。ほかのリポジトリからも見えるようにしたければ `ln -s "$PWD/skills/<名前>" ~/.codex/skills/<名前>`（コマンドが動くのは、このリポジトリで開いたときだけ） |
+| Claude Code | `/plugin marketplace add wfukatsu/sql-migration` → `/plugin install sql-migration@sql-migration`。端末からなら `claude plugin marketplace add wfukatsu/sql-migration` と `claude plugin install sql-migration@sql-migration`。スキルは `/sql-migration:migrate-flow` のようにプラグインの名前つきで呼べる |
+| Codex | `codex plugin marketplace add wfukatsu/sql-migration` → `codex plugin add sql-migration@sql-migration` |
+| 更新 | Claude Code は `/plugin marketplace update sql-migration`、Codex は `codex plugin marketplace upgrade` |
+
+GitLab のほう（非公開）から入れるときは、`wfukatsu/sql-migration` の代わりに HTTPS か SSH の Git URL を渡します（そのリポジトリを読める認証が要ります）。
+
+プラグインとして入れたときの動き方:
+
+- 要るのは **Python 3.10 以上**だけです。スキルは `<プラグインの場所>/bin/python` 経由でスクリプトを動かし、これが初回に仮想環境を作って `requirements.txt` を入れます（1 分ほど。
+  場所は Claude Code のプラグイン用データ領域、無ければ `~/.cache/sql-migration/venv`。`SQL_MIGRATION_VENV` で変えられ、`requirements.txt` が変わると作り直します）
+- 作業ディレクトリは**利用者のプロジェクトのまま**で、入力の PL/SQL / SQL も、出力（`out/migrate/<名前>/` など）も、決定の記録もそちらに置きます。プラグインの場所には書きません（更新で消えます）
+- プラグインはリポジトリ全体（約 18 MB。`plsql/`・`scalardb_migrate/`・`runtime-java/`・`fixtures/` を含む）です。プラグインは自分のディレクトリの外を読めないので、`skills/` だけを配ることはできません
+- Java のコンパイルの確認（`plsql.generate --verify-compile`）には Java 17 とネットワーク（Gradle の依存の取得）が要ります。実 DB での比較（`difftest/`）は Docker と ScalarDB Cluster のライセンスが要り、
+  これはチェックアウトから動かすほうが向いています（[検証環境](verification.md)）
+- Claude Code では、スクリプトのパスが絶対パスになるので `allowed-tools` のパターンに合わず、コマンドごとに許可を聞かれます
+
+### チェックアウトから使う（このリポジトリを開発するとき）
+
+エージェントはこのリポジトリのルートで開きます。スキルのコマンドは `.venv/bin/python skills/...` と `.venv/bin/python -m plsql.cli` の形で書いてあるので、先に [はじめに](getting-started.md) の準備（`.venv`）を済ませます。
+
+| | 手順 |
+|---|---|
+| Claude Code | `for n in migrate-flow plsql-spec plsql-migrate sql-transpile; do ln -s "$PWD/skills/$n" ~/.claude/skills/$n; done`（編集がすぐ反映される）。1 回だけ試すなら `claude --plugin-dir .` |
+| Codex | 何もしなくてよい。リポジトリの `.agents/skills`（`skills/` へのシンボリックリンク）を Codex が読む |
+
+プラグインとリンクの両方を入れると同じスキルが 2 つずつ見えるので、どちらか一方にします。
 
 Claude Code と Codex での違い:
 
@@ -25,8 +52,8 @@ Claude Code と Codex での違い:
 | `model` / `effort`（sql-transpile） | 効く | 無視される |
 | Java のコンパイル（`plsql.generate --verify-compile`）と実 DB の比較 | そのまま動く | Gradle の依存の取得と DB への接続にネットワークが要る。サンドボックスがネットワークを閉じていると止まるので、その段階は承認つきで動かすか、手で回す |
 
-Codex では sql-transpile を最後まで動かして確かめてあります（環境の確認、同梱コピーの確認、変換、レポート）。PL/SQL の 3 つは、読み込まれることまでの確認です。
-スキルが `.agents/skills` から読めること、`description` が共通の形式（64 字以内の名前、1024 字以内の説明、きっかけと対象外）に収まっていることは、
+確かめてあること: Claude Code はプラグインを入れて、ほかのプロジェクトのディレクトリから sql-transpile を最後まで（仮想環境の作成、変換、レポート）。Codex はこのリポジトリで sql-transpile を最後までと、marketplace の追加・プラグインのインストール。PL/SQL の 3 つは、スクリプトがほかのディレクトリから動くことと、スキルとして読み込まれることまでの確認です。
+マニフェスト（`.claude-plugin/`、`.codex-plugin/`、`.agents/plugins/marketplace.json`）がそろっていること、スキルが `.agents/skills` から読めること、`description` が共通の形式（64 字以内の名前、1024 字以内の説明、きっかけと対象外）に収まっていることは、
 `tests/test_skills_portability.py` が確かめます。
 
 ## スキルの一覧

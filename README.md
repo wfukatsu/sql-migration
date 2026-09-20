@@ -92,7 +92,7 @@ flowchart LR
 ### スキル（`skills/`、Claude Code / Codex）
 
 仕様の調査 → 承認 → 変換と人の判断 → 承認 → 変換後の仕様 → 承認 → テストの順に移行を進める `migrate-flow` と、その各段階を受け持つ
-`plsql-spec` / `plsql-migrate` / `sql-transpile` があります。Claude Code と Codex のどちらからも使えます（Codex は `.agents/skills` から読みます）。→ [スキル](docs/guide/skills.md)
+`plsql-spec` / `plsql-migrate` / `sql-transpile` があります。Claude Code と Codex のどちらからも使え、**marketplace から入れられます**（`/plugin marketplace add wfukatsu/sql-migration` → `/plugin install sql-migration@sql-migration`、Codex は `codex plugin marketplace add wfukatsu/sql-migration` → `codex plugin add sql-migration@sql-migration`）。→ [スキル](docs/guide/skills.md)
 
 ---
 
@@ -173,7 +173,9 @@ runtime-java/              実行基盤（Java 17、Gradle）
   .../appside/               アプリ側で Oracle の動きを再現する補助クラス（階層、ウィンドウ関数、数値、並び順、日付）
   .../plsql/                 生成コードの実行時ヘルパ（Oracle の式の意味論）と差分ハーネス
   .../examples/              アプリ側実装の例（エリア別売上分析）
-.agents/skills             skills/ へのシンボリックリンク（Codex がここからスキルを読む）
+.claude-plugin/            Claude Code のプラグインと marketplace のマニフェスト（プラグイン = このリポジトリのルート）
+.codex-plugin/ .agents/    Codex のプラグインのマニフェスト、marketplace（.agents/plugins/）、skills/ へのリンク（.agents/skills）
+bin/python                 スキル用の Python の起動スクリプト（どの作業ディレクトリからでも動く。無ければ仮想環境を作る）
 skills/                    Claude Code / Codex のスキル（どれも SKILL.md、scripts/、references/、examples/ の形）
   migrate-flow/              移行の流れ。scripts/flow.py が段階の状態・承認（人・日付・指紋）・テストの関門を持つ
   plsql-spec/                現行の PL/SQL の仕様。scripts/spec_facts.py が IR から事実の欄と Mermaid の図を出し、check で突き合わせる

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Python for the skills, usable from any working directory (the skills are installed as a plugin, so the user's
+# project is the working directory and this repository sits in the plugin cache).
+#
+#   <root>/bin/python <root>/skills/sql-transpile/scripts/transpile.py in.sql --source oracle --target scalardb ...
+#   <root>/bin/python -m plsql.cli src/ --out-dir out/analysis
+#
+# In a checkout that has .venv/ (the README's setup), that interpreter is used as is. Otherwise a virtualenv is
+# created once, outside the plugin cache (the cache is replaced on every plugin update), and rebuilt when
+# requirements.txt changes. PYTHONPATH carries the repository root so `-m plsql.*` resolves from anywhere.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
+
+if [ -x "$ROOT/.venv/bin/python" ] && [ -z "${SQL_MIGRATION_VENV:-}" ]; then
+  exec "$ROOT/.venv/bin/python" "$@"
+fi
+
+VENV="${SQL_MIGRATION_VENV:-${CLAUDE_PLUGIN_DATA:-${XDG_CACHE_HOME:-$HOME/.cache}/sql-migration}/venv}"
+STAMP="$VENV/.requirements.sha256"
+WANT="$(shasum -a 256 "$ROOT/requirements.txt" 2>/dev/null | cut -d' ' -f1 || sha256sum "$ROOT/requirements.txt" | cut -d' ' -f1)"
+
+if [ ! -x "$VENV/bin/python" ] || [ "$(cat "$STAMP" 2>/dev/null || true)" != "$WANT" ]; then
+  # everything the setup prints goes to stderr: the caller's stdout is the script's output (often JSON)
+  {
+    echo "sql-migration: preparing the Python environment at $VENV (first run, or requirements.txt changed)"
+    PY="${SQL_MIGRATION_PYTHON:-python3}"
+    command -v "$PY" >/dev/null || { echo "sql-migration: $PY not found. Install Python 3.10+ or set SQL_MIGRATION_PYTHON"; exit 127; }
+    "$PY" -m venv "$VENV"
+    "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check -r "$ROOT/requirements.txt"
+    echo "$WANT" > "$STAMP"
+  } >&2
+fi
+
+exec "$VENV/bin/python" "$@"
