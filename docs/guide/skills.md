@@ -1,9 +1,35 @@
-# Claude Code スキル
+# スキル（Claude Code / Codex）
 
 [文書の入口](../README.md) ｜ [はじめに](getting-started.md) ｜ [SQL の変換](sql-conversion.md) ｜ [PL/SQL の変換](plsql-conversion.md) ｜ [スキル](skills.md) ｜ [検証環境](verification.md)
 
-移行の手順を Claude Code から進めるためのスキルが 4 つあります。どれも `skills/<名前>/` に `SKILL.md`・`scripts/`・`references/`・`examples/` を持ち、
-`ln -s "$PWD/skills/<名前>" ~/.claude/skills/<名前>` で Claude Code から使えるようになります。
+移行の手順をコーディングエージェントから進めるためのスキルが 4 つあります。どれも `skills/<名前>/` に `SKILL.md`・`scripts/`・`references/`・`examples/` を持ちます。
+Claude Code と Codex（codex-cli 0.154.0 で確認）のどちらからも使えます。
+
+## インストール
+
+**どちらの場合も、エージェントはこのリポジトリのルートで開きます。** スキルのコマンドは `.venv/bin/python skills/...` と `.venv/bin/python -m plsql.cli` の形で
+書いてあり、PL/SQL の 3 つは `plsql/` 本体を使うので、ほかのディレクトリで開いたセッションではスキルは発動してもコマンドが動きません。先に [はじめに](getting-started.md) の準備（`.venv`）を済ませます。
+
+| | 手順 |
+|---|---|
+| Claude Code | `for n in migrate-flow plsql-spec plsql-migrate sql-transpile; do ln -s "$PWD/skills/$n" ~/.claude/skills/$n; done` |
+| Codex | 何もしなくてよい。リポジトリの `.agents/skills`（`skills/` へのシンボリックリンク）を Codex が読む。ほかのリポジトリからも見えるようにしたければ `ln -s "$PWD/skills/<名前>" ~/.codex/skills/<名前>`（コマンドが動くのは、このリポジトリで開いたときだけ） |
+
+Claude Code と Codex での違い:
+
+| | Claude Code | Codex |
+|---|---|---|
+| スキルの選択 | `description` と `when_to_use` | `description` だけ（`when_to_use` は読まれないので、きっかけと対象外は `description` の末尾にも書いてある） |
+| コマンドの許可 | `allowed-tools` の範囲は聞かれずに動く | `allowed-tools` は使われない。Codex のサンドボックスと承認の設定に従う（書き込むので `--sandbox workspace-write` 以上） |
+| 利用者への確認 | AskUserQuestion（推奨を先頭に、選択肢ごとの影響つき） | 同じ内容を本文で聞く |
+| `model` / `effort`（sql-transpile） | 効く | 無視される |
+| Java のコンパイル（`plsql.generate --verify-compile`）と実 DB の比較 | そのまま動く | Gradle の依存の取得と DB への接続にネットワークが要る。サンドボックスがネットワークを閉じていると止まるので、その段階は承認つきで動かすか、手で回す |
+
+Codex では sql-transpile を最後まで動かして確かめてあります（環境の確認、同梱コピーの確認、変換、レポート）。PL/SQL の 3 つは、読み込まれることまでの確認です。
+スキルが `.agents/skills` から読めること、`description` が共通の形式（64 字以内の名前、1024 字以内の説明、きっかけと対象外）に収まっていることは、
+`tests/test_skills_portability.py` が確かめます。
+
+## スキルの一覧
 
 | スキル | 役割 | 手順の本体 |
 |---|---|---|

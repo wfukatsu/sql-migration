@@ -8,6 +8,7 @@ description: >-
   整数除算・日付の引き算・文字列比較のような方言間の意味の差を、直すか検出して報告する。
   ScalarDB を Target にしたときは、アプリ側に移す処理、結果を変えないための注意、設計の提案、
   取得コストの見積もりも出し、実行計画（ScalarDB から取得して H2 で実行）に分解する。
+  使うとき: SQL の方言の変換、ScalarDB 用の SQL への変換、変換率の報告を頼まれたとき。対象外: PL/SQL の変換（plsql-migrate）、実データベースへ接続して結果を比べる検証、性能測定、SQL の整形だけの依頼。
 when_to_use: >-
   "SQL を変換して", "Oracle の SQL を PostgreSQL に変換", "ScalarDB 用に SQL を変換",
   "SQL の変換率を出して", "方言を変換", "transpile SQL", "convert SQL to ScalarDB",
@@ -37,6 +38,7 @@ SQL を Source 方言で読んで AST に抽象化し、Target 方言または S
 ## Important
 
 - **作業ディレクトリは sql-migration リポジトリのルート**。すべてのコマンドはここから `.venv/bin/python` で実行する
+- **Claude Code 以外（Codex など）で動かすとき**: `allowed-tools` と `when_to_use`（sql-transpile では `model` / `effort` も）は Claude Code 用で、ほかでは無視される。Read / Grep / Bash などの道具の名前は、その環境の同じ働きの道具に読み替える。AskUserQuestion が無ければ、同じ内容（推奨を先頭に、選択肢ごとの影響つき）を本文で聞き、答えを待つ
 - **変換はスクリプトに任せ、SQL を自分で変換しない**。このスキルのターンでやるのは、スクリプトの実行、レポートの要約、利用者への確認まで。ERROR の文の書き換えやアプリ側の Java 実装は、利用者が求めたら次の依頼として受ける
 - **素の `sqlglot.transpile()` は信用しない**。Oracle → PostgreSQL で `ROWNUM`・`CONNECT BY`・`NEXTVAL`・`ROWID` はそのまま出力へ通り、`(+)` 外部結合は内部結合に化けて結果が静かに変わる。このスキルは前処理でこれらを直すか、直せないものを ERROR として報告する
 - **レポートは変換の証明ではない**。OK は「Target の文法として生成でき、既知の危険構文と意味の差が見つからなかった」という意味にとどまる。重要な SQL は実データで確かめるよう利用者に伝える
