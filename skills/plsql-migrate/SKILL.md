@@ -9,6 +9,7 @@ description: >-
   分割、行ロックから楽観制御、trigger が掛かる経路、TIMESTAMPTZ、TRUNCATE など）が業務ロジックと
   整合するかを、routine ごとの具体的な問いにして確かめる。最後に、変換後のコードの文書（アーキテクチャ・
   仕様・使い方・制限・どのように移行したか）を Markdown にまとめ、生成物と突き合わせる。
+  使うとき: PL/SQL（package / stored procedure / trigger）を Java / ScalarDB に変換する、生成コードの外で決めることや業務ロジックとの整合を確認・記録する、変換後のコードを文書にする、limits.yaml の決定について聞かれたとき。対象外: SQL 文だけの方言変換（sql-transpile）、現行の仕様の調査だけ（plsql-spec）、実 DB の結果の突き合わせだけ、性能測定。
 when_to_use: >-
   "PL/SQL を変換して", "PL/SQL を Java にして", "stored procedure を ScalarDB に移行",
   "パッケージを移行", "trigger を移行", "生成コードの外で決めること を確認", "OPS-1 を記録",
@@ -45,6 +46,7 @@ PL/SQL を読んで ScalarDB 向けの Java を生成し、生成器が決めず
 ## Important
 
 - **作業ディレクトリは sql-migration リポジトリのルート**。コマンドはここから `.venv/bin/python` で実行する
+- **Claude Code 以外（Codex など）で動かすとき**: `allowed-tools` と `when_to_use`（sql-transpile では `model` / `effort` も）は Claude Code 用で、ほかでは無視される。Read / Grep / Bash などの道具の名前は、その環境の同じ働きの道具に読み替える。AskUserQuestion が無ければ、同じ内容（推奨を先頭に、選択肢ごとの影響つき）を本文で聞き、答えを待つ
 - **変換は `plsql.generate` に任せ、Java を自分で書き起こさない。** 生成器は決めてよいことだけを決め、
   決められないところは REVIEW / REDESIGN と生成物の中の印で残す。手で埋めると、その判断が記録の外に出る。
   REVIEW / REDESIGN の routine の手直しは、利用者が求めたら次の依頼として受ける
