@@ -16,3 +16,4 @@ difftest/.env
 .cache/
 .gradle-home/
 fixtures/plsql-external/*/work/
+samples/tutorial/plsql/work/

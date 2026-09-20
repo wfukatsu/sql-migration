@@ -178,7 +178,12 @@ def open_items(state: dict, out: Path) -> list[str]:
     report = out / "generated" / "generation-report.json"
     if state["inputs"]["kind"] == "plsql" and report.exists():
         verdicts = json.loads(report.read_text(encoding="utf-8")).get("verdicts") or {}
-        found += [f"REVIEW: {routine}" for routine, v in sorted(verdicts.items()) if v.get("verdict") == "REVIEW"]
+        # 生成の報告は証拠を見ない（`plsql.generate` に `--evidence` は無い）ので、当たったルールの無い routine も
+        # 「まだ誰も Oracle と突き合わせていない」だけで REVIEW と出る。テストのあと、証拠つきで作り直した解析
+        # （`plsql.cli --evidence … --out-dir generated/analysis`）が AUTO と言うなら、それは人の判断の未決ではない
+        credited = _analysed_verdicts(out)
+        found += [f"REVIEW: {routine}" for routine, v in sorted(verdicts.items())
+                  if v.get("verdict") == "REVIEW" and credited.get(routine) != "AUTO"]
         redesigns = sorted(routine for routine, v in verdicts.items() if v.get("verdict") == "REDESIGN")
         answered = _redesign_answers(state["inputs"], out) if redesigns else {}
         for routine in redesigns:
@@ -188,6 +193,18 @@ def open_items(state: dict, out: Path) -> list[str]:
                 found.append(f"REDESIGN: {routine}（limits.yaml に答えの無いルール: {'、'.join(answered.get(routine, ['?']))}）")
     found += sorted(k for k, v in _record(state["inputs"]).items() if v.get("状態") == "未決")
     return found
+
+
+def _analysed_verdicts(out: Path) -> dict[str, str]:
+    """routine → 判定。決定（と、渡されていれば証拠）を適用した解析から読む。無ければ空。"""
+    decisions = out / "generated" / "analysis" / "decisions.json"
+    if not decisions.exists():
+        return {}
+    try:
+        routines = json.loads(decisions.read_text(encoding="utf-8")).get("routines") or []
+    except ValueError:
+        return {}
+    return {r.get("routine"): r.get("verdict") for r in routines if isinstance(r, dict)}
 
 
 def _redesign_answers(inputs: dict, out: Path) -> dict[str, list[str]] | None:

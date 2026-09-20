@@ -1,0 +1,64 @@
+{
+  "pattern": "P5",
+  "source_dialect": "oracle",
+  "source_sql": "SELECT member_id, name, balance FROM members WHERE balance > (SELECT AVG(balance) FROM members)",
+  "fetch": [
+    {
+      "table": "members",
+      "namespace": null,
+      "alias": "members",
+      "columns": [
+        "member_id",
+        "name",
+        "balance"
+      ],
+      "column_types": {
+        "member_id": "BIGINT",
+        "name": "TEXT",
+        "rank": "TEXT",
+        "balance": "BIGINT",
+        "last_seq": "INT",
+        "updated_at": "DATE"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT member_id, name, balance FROM members",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "member_id"
+        ]
+      ],
+      "residual_types": {}
+    }
+  ],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "SELECT member_id, name, balance FROM members WHERE balance > (SELECT AVG(balance) FROM members)",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "SELECT member_id, name, balance FROM members WHERE balance > (SELECT AVG(balance) FROM members)"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": true,
+    "row_limit": 10000
+  },
+  "unresolved": [],
+  "notes": [],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+    "scalar.db.scan_fetch_size": 1000,
+    "scalar.db.cluster.client.scan_fetch_size": 1000,
+    "scalar.db.cross_partition_scan.enabled": true,
+    "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+  }
+}

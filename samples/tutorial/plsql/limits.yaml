@@ -1,0 +1,9 @@
+# チュートリアルのプロジェクトの決定（docs/guide/tutorial.md）。「決めた」と書けるのは、決めた人がいるときだけである。
+#
+# 行ロックを落として、楽観制御 + 呼び出し側の再試行へ移すと決めた routine（2026-09-20、移行責任者）。
+# 決めていない routine の書き込みは、生成器が拒否したままにする（docs/plsql-migration/plsql-transaction-patterns.md §A）。
+rowLocks:
+  optimistic:
+    pkg_points.use_points: >-
+      残高は同じトランザクションの中で読んだ値から計算して書く。同時の利用は commit で衝突として弾かれるので、
+      残高はマイナスにならない。呼び出し側は衝突だけを再試行する（-20103 ポイント不足は再試行しても変わらない）

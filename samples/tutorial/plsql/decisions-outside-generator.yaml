@@ -1,0 +1,52 @@
+# 生成コードの外で決めること — 記録（docs/plsql-migration/plsql-decisions-outside-generator.md §0.2）
+#
+# skills/plsql-migrate/scripts/decision_items.py が読み書きする。手で直してもよいが、
+# 「決定」には 決定・決めた人・日付 が要る。答えた人のいない項目を「決定」と書かない。
+# **コメントは保存されない**（書き込みのたびにファイル全体を作り直す）。残したいことは メモ に書く。
+#
+#   状態      未決 / 決定 / 対象外（生成物に出ていない）
+#   出た      スクリプトが生成物から拾った根拠（毎回書き直す）
+#   案        業務文書などから引いた答えの候補。決定ではない（出典を書く）
+#   食い違い  業務文書と生成物（または元の PL/SQL）が食い違うところ。再設計の要否の問題として残す
+#   残り      決定のうち、まだ決まっていない部分（例: 時刻は決めたが、間隔に収まるかの測定は未了）
+#   メモ      自由記述（set --note）
+#   決定時の題 / 決定時の根拠
+#             決めたときの問いと、そのとき生成物から出ていた根拠。いまの文書・生成物と違えば、その決定は
+#             別の問いに対するものかもしれない——scan が「要再確認」として挙げる
+#   履歴      上書きされた、または取り消された以前の決定（決定・決めた人・日付）
+
+items:
+  CALL-5:
+    状態: 決定
+    出た:
+    - '診断 `OPTIMISTIC` / `RMW_SPLIT` / `MERGE_SPLIT`（楽観制御へ移したもの） — pkg_points.use_points: OPTIMISTIC'
+    決定: 衝突だけを最大 3 回、50 ms から倍々の指数バックオフで再試行する。-20103（ポイント不足）と -20102 は再試行しない。use_points に採番も外部通知も無く、履歴の番号は読み直されるので、再試行は二重実行にならない
+    決めた人: 移行責任者
+    日付: '2026-09-20'
+    記録先: limits.yaml の rowLocks.optimistic、呼び出し側の設計書
+    決定時の題: 楽観制御で弾かれたときの再試行
+    決定時の根拠:
+    - '診断 `OPTIMISTIC` / `RMW_SPLIT` / `MERGE_SPLIT`（楽観制御へ移したもの） — pkg_points.use_points: OPTIMISTIC'
+  BIZ-4:
+    状態: 決定
+    出た:
+    - '診断 `OPTIMISTIC` / `RMW_SPLIT` / `MERGE_SPLIT`（楽観制御へ移したもの） — pkg_points.use_points: OPTIMISTIC'
+    決定: 受け入れる。同じ会員の同時利用は、待たされる代わりに、後から commit したほうが弾かれて再試行になる。残高がマイナスにならないことは保たれる。現行は NOWAIT を使っておらず、待たずに諦めることに業務上の意味は無い
+    決めた人: 移行責任者
+    日付: '2026-09-20'
+    記録先: decisions-outside-generator.yaml
+    決定時の題: 行ロックが無くなり、衝突が分かるタイミングが変わる
+    決定時の根拠:
+    - '診断 `OPTIMISTIC` / `RMW_SPLIT` / `MERGE_SPLIT`（楽観制御へ移したもの） — pkg_points.use_points: OPTIMISTIC'
+  BIZ-5:
+    状態: 決定
+    出た:
+    - '診断 `OPTIMISTIC` / `RMW_SPLIT` / `MERGE_SPLIT`（楽観制御へ移したもの） — pkg_points.use_points: OPTIMISTIC'
+    メモ: pkg_points に MERGE は無い。OPTIMISTIC の診断と一緒に出ただけ（2026-09-20、移行責任者）
+    決定: 該当しない。pkg_points に MERGE は無く、この項目は OPTIMISTIC の診断（use_points の楽観制御）と一緒に出ただけである。確かめること無し
+    決めた人: 移行責任者
+    日付: '2026-09-20'
+    記録先: decisions-outside-generator.yaml
+    決定時の題: MERGE を「読んでから選ぶ」に割った
+    決定時の根拠:
+    - '診断 `OPTIMISTIC` / `RMW_SPLIT` / `MERGE_SPLIT`（楽観制御へ移したもの） — pkg_points.use_points: OPTIMISTIC'

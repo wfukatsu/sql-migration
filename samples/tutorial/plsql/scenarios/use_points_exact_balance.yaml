@@ -1,0 +1,18 @@
+name: use_points_exact_balance
+unit: pkg_points
+routine: use_points
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO members (member_id, name, rank, balance, last_seq, updated_at) VALUES (1, 'Sato', 'SILVER', 450, 3, DATE '2026-01-01')
+call:
+  kind: procedure
+  name: pkg_points.use_points
+  args:
+    p_member_id: 1
+    p_points: 450
+    p_reason: coupon
+capture_tables:
+- members
+- point_history
+note: '境界: 残高ちょうどは使える。残高 0'

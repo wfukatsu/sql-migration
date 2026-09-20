@@ -1,0 +1,73 @@
+{
+ "scenario": "add_points_to_gold",
+ "unit": "pkg_points",
+ "routine": "add_points",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "sessionUser": "POINTS",
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "members": {
+   "columns": [
+    "member_id",
+    "name",
+    "rank",
+    "balance",
+    "last_seq",
+    "updated_at"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     "Sato",
+     "GOLD",
+     {
+      "$dec": "1000"
+     },
+     {
+      "$dec": "1"
+     },
+     {
+      "$ts": "2026-01-15T09:30:00"
+     }
+    ]
+   ]
+  },
+  "point_history": {
+   "columns": [
+    "member_id",
+    "seq_no",
+    "points",
+    "reason",
+    "created_at"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     {
+      "$dec": "1"
+     },
+     {
+      "$dec": "550"
+     },
+     null,
+     {
+      "$ts": "2026-01-15T09:30:00"
+     }
+    ]
+   ]
+  }
+ },
+ "masked": {}
+}

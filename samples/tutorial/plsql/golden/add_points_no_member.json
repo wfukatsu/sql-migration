@@ -1,0 +1,43 @@
+{
+ "scenario": "add_points_no_member",
+ "unit": "pkg_points",
+ "routine": "add_points",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "sessionUser": "POINTS",
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": {
+  "code": -20101,
+  "message": "ORA-20101: 会員が見つかりません"
+ },
+ "tables": {
+  "members": {
+   "columns": [
+    "member_id",
+    "name",
+    "rank",
+    "balance",
+    "last_seq",
+    "updated_at"
+   ],
+   "rows": []
+  },
+  "point_history": {
+   "columns": [
+    "member_id",
+    "seq_no",
+    "points",
+    "reason",
+    "created_at"
+   ],
+   "rows": []
+  }
+ },
+ "masked": {}
+}

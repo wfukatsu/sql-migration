@@ -1,0 +1,100 @@
+{
+  "pattern": "P8",
+  "source_dialect": "oracle",
+  "source_sql": "SELECT m.member_id, m.name, h.seq_no, h.points\n  FROM members m, point_history h\n WHERE m.member_id = h.member_id(+)\n   AND m.member_id = 1",
+  "fetch": [
+    {
+      "table": "members",
+      "namespace": null,
+      "alias": "m",
+      "columns": [
+        "member_id",
+        "name"
+      ],
+      "column_types": {
+        "member_id": "BIGINT",
+        "name": "TEXT",
+        "rank": "TEXT",
+        "balance": "BIGINT",
+        "last_seq": "INT",
+        "updated_at": "DATE"
+      },
+      "predicates": [
+        {
+          "column": "member_id",
+          "op": "=",
+          "value": 1
+        }
+      ],
+      "scalardb_sql": "SELECT member_id, name FROM members WHERE member_id = 1",
+      "access_path": "GET",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "member_id"
+        ]
+      ],
+      "residual_types": {}
+    },
+    {
+      "table": "point_history",
+      "namespace": null,
+      "alias": "h",
+      "columns": [
+        "member_id",
+        "seq_no",
+        "points"
+      ],
+      "column_types": {
+        "member_id": "BIGINT",
+        "seq_no": "INT",
+        "points": "BIGINT",
+        "reason": "TEXT",
+        "created_at": "DATE"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT member_id, seq_no, points FROM point_history",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "member_id",
+          "seq_no"
+        ]
+      ],
+      "residual_types": {}
+    }
+  ],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "SELECT m.member_id, m.name, h.seq_no, h.points FROM members m LEFT JOIN point_history h ON m.member_id = h.member_id WHERE m.member_id = 1",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "SELECT m.member_id, m.name, h.seq_no, h.points FROM members AS m LEFT JOIN point_history AS h ON m.member_id = h.member_id WHERE m.member_id = 1"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": true,
+    "row_limit": 10000
+  },
+  "unresolved": [],
+  "notes": [
+    "Oracle (+) outer join rewritten as LEFT/RIGHT OUTER JOIN (H2 does not support (+))",
+    "members: pushdown member_id = 1"
+  ],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+    "scalar.db.scan_fetch_size": 1000,
+    "scalar.db.cluster.client.scan_fetch_size": 1000,
+    "scalar.db.cross_partition_scan.enabled": true,
+    "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+  }
+}

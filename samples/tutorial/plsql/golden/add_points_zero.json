@@ -1,0 +1,60 @@
+{
+ "scenario": "add_points_zero",
+ "unit": "pkg_points",
+ "routine": "add_points",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "sessionUser": "POINTS",
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": {
+  "code": -20102,
+  "message": "ORA-20102: 付与するポイントは1以上で指定してください"
+ },
+ "tables": {
+  "members": {
+   "columns": [
+    "member_id",
+    "name",
+    "rank",
+    "balance",
+    "last_seq",
+    "updated_at"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     "Sato",
+     "REGULAR",
+     {
+      "$dec": "50"
+     },
+     {
+      "$dec": "0"
+     },
+     {
+      "$ts": "2026-01-01T00:00:00"
+     }
+    ]
+   ]
+  },
+  "point_history": {
+   "columns": [
+    "member_id",
+    "seq_no",
+    "points",
+    "reason",
+    "created_at"
+   ],
+   "rows": []
+  }
+ },
+ "masked": {}
+}

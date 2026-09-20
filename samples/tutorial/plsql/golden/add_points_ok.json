@@ -1,0 +1,103 @@
+{
+ "scenario": "add_points_ok",
+ "unit": "pkg_points",
+ "routine": "add_points",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "sessionUser": "POINTS",
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "members": {
+   "columns": [
+    "member_id",
+    "name",
+    "rank",
+    "balance",
+    "last_seq",
+    "updated_at"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     "Sato",
+     "REGULAR",
+     {
+      "$dec": "150"
+     },
+     {
+      "$dec": "3"
+     },
+     {
+      "$ts": "2026-01-15T09:30:00"
+     }
+    ]
+   ]
+  },
+  "point_history": {
+   "columns": [
+    "member_id",
+    "seq_no",
+    "points",
+    "reason",
+    "created_at"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     {
+      "$dec": "1"
+     },
+     {
+      "$dec": "30"
+     },
+     "seed",
+     {
+      "$ts": "2026-01-01T00:00:00"
+     }
+    ],
+    [
+     {
+      "$dec": "1"
+     },
+     {
+      "$dec": "2"
+     },
+     {
+      "$dec": "20"
+     },
+     "seed",
+     {
+      "$ts": "2026-01-01T00:00:00"
+     }
+    ],
+    [
+     {
+      "$dec": "1"
+     },
+     {
+      "$dec": "3"
+     },
+     {
+      "$dec": "100"
+     },
+     "purchase",
+     {
+      "$ts": "2026-01-15T09:30:00"
+     }
+    ]
+   ]
+  }
+ },
+ "masked": {}
+}

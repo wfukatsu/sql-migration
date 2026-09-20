@@ -1,0 +1,17 @@
+name: add_points_no_member
+unit: pkg_points
+routine: add_points
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup: []
+call:
+  kind: procedure
+  name: pkg_points.add_points
+  args:
+    p_member_id: 999
+    p_points: 10
+    p_reason: x
+capture_tables:
+- members
+- point_history
+note: '会員がいない: -20101'

@@ -1,0 +1,17 @@
+name: use_points_no_member
+unit: pkg_points
+routine: use_points
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup: []
+call:
+  kind: procedure
+  name: pkg_points.use_points
+  args:
+    p_member_id: 999
+    p_points: 10
+    p_reason: x
+capture_tables:
+- members
+- point_history
+note: '会員がいない: この routine は言い換えないので NO_DATA_FOUND がそのまま出る'

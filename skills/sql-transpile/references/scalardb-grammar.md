@@ -160,7 +160,7 @@ ScalarDB の型は 11 種（`BOOLEAN` / `INT` / `BIGINT` / `FLOAT` / `DOUBLE` / 
 | `INSERT_SELECT` / `INSERT_IGNORE` / `DO_NOTHING` / `DELETE_JOIN` | ERROR | `INSERT … SELECT`、`INSERT IGNORE`、`ON CONFLICT DO NOTHING`、`DELETE … USING / JOIN`。アプリで読んでから書く |
 | `INSERT_COLS` | WARN | 列リストの無い INSERT。ScalarDB は表の定義の順で受けるので、列リストを書く |
 | `COMMA_JOIN` / `JOIN_ORDER` | WARN / INFO | カンマ結合を INNER JOIN に書き換えた。WHERE が FROM の表を指すように、FROM と JOIN の表を入れ替えた（INNER JOIN なので結果は同じ） |
-| `JOIN_ON` / `JOIN_SCOPE` / `JOIN_KEY` | ERROR / ERROR / WARN | 結合条件が `列 = 列` の AND でない。WHERE / ORDER BY が結合先の表の列を指している。結合が相手の主キー全体も副次索引も覆っていない（ScalarDB が断る） |
+| `JOIN_ON` / `JOIN_SCOPE` / `JOIN_KEY` | ERROR / ERROR / ERROR | 結合条件が `列 = 列` の AND でない。WHERE / ORDER BY が結合先の表の列を指している。結合が相手の主キー全体も副次索引も覆っていない（ScalarDB Cluster が DB-SQL-10067 で断る。読み取りなら実行計画 P8 に回る） |
 | `LOCK` | WARN | `FOR UPDATE` などのロック句を落とした。行ロックに頼っていた処理は、commit 時の衝突と再試行に変わる |
 | `NULLS` / `MODIFIER` | WARN / INFO | ORDER BY の `NULLS FIRST / LAST` を落とした。MySQL の修飾子（`SQL_CALC_FOUND_ROWS` は WARN、サーバーへの助言だけのものは INFO）を落とした |
 | `DATE_LIT` / `DATE_FMT` / `BOOL_LIT` | INFO / WARN / ERROR | 日付・時刻のリテラルと `TO_DATE` などを ScalarDB のリテラルに書き換えた。書式が定数でない・書き換えられないものは ERROR（アプリで変換してバインドする）。TRUE / FALSE を数値の列に 1 / 0 で書いた |

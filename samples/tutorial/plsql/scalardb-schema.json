@@ -1,0 +1,6 @@
+{
+  "points.members": {"transaction": true, "partition-key": ["member_id"], "secondary-index": ["rank"],
+    "columns": {"member_id": "BIGINT", "name": "TEXT", "rank": "TEXT", "balance": "BIGINT", "last_seq": "INT", "updated_at": "TIMESTAMP"}},
+  "points.point_history": {"transaction": true, "partition-key": ["member_id"], "clustering-key": ["seq_no ASC"],
+    "columns": {"member_id": "BIGINT", "seq_no": "INT", "points": "BIGINT", "reason": "TEXT", "created_at": "TIMESTAMP"}}
+}
