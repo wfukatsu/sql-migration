@@ -22,7 +22,18 @@ them -- but only together with `--acknowledge-real-data`, because one mistyped o
 somebody's data out of their database. The snapshot then says `containsDataValues: true`, so everything made from
 it can say so too.
 
-View definitions, trigger bodies and CHECK conditions are collected either way, and may contain literals.
+## Source code is not collected unless you ask
+
+`--include-source` also reads USER_SOURCE: the text of your procedures, functions, packages and types. Without it
+that statement is not sent, and the snapshot says `containsSourceCode: false`. A wrapped (obfuscated) unit is
+never collected: the snapshot records that it is wrapped, and no text.
+
+That flag is about USER_SOURCE only. **View definitions, materialized view queries, trigger bodies and CHECK
+conditions are collected either way** (the explorer needs them to say what touches a table), and they may contain
+literals. A snapshot taken without `--include-source` is therefore not "structure only".
+
+What is never collected, whatever the options: where a DB link points (host, account), and the bounds of
+partitions (they are data).
 
 ## Connection
 
@@ -49,8 +60,8 @@ import sys
 from decimal import Decimal
 from pathlib import Path
 
-VERSION = "1"
-FORMAT_VERSION = 1
+VERSION = "2"
+FORMAT_VERSION = 2
 
 READ_ONLY = "SET TRANSACTION READ ONLY"
 
@@ -124,6 +135,75 @@ STATEMENTS = {
           FROM user_tab_col_statistics s
          WHERE s.table_name NOT LIKE 'BIN$%'
          ORDER BY s.table_name, s.column_name""",
+    "objects": """
+        SELECT o.object_name, o.object_type, o.status, o.created, o.last_ddl_time
+          FROM user_objects o
+         WHERE o.object_type IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW', 'SEQUENCE', 'SYNONYM', 'PROCEDURE',
+                                 'FUNCTION', 'PACKAGE', 'PACKAGE BODY', 'TRIGGER', 'TYPE', 'TYPE BODY')
+           AND o.object_name NOT LIKE 'BIN$%' AND o.generated = 'N'
+         ORDER BY o.object_type, o.object_name""",
+    # the table-level row (no partition name) already is the total of the partitions: adding them would count twice
+    "tableModifications": """
+        SELECT m.table_name, m.inserts, m.updates, m.deletes, m.truncated, m.timestamp
+          FROM user_tab_modifications m
+         WHERE m.partition_name IS NULL AND m.table_name NOT LIKE 'BIN$%'
+         ORDER BY m.table_name""",
+    "indexStatistics": """
+        SELECT i.index_name, i.distinct_keys, i.leaf_blocks, i.clustering_factor, i.num_rows, i.last_analyzed
+          FROM user_indexes i
+         WHERE i.table_name NOT LIKE 'BIN$%' AND i.index_type <> 'LOB'
+         ORDER BY i.index_name""",
+    "sequences": """
+        SELECT q.sequence_name, q.increment_by, q.cache_size, q.last_number, q.cycle_flag
+          FROM user_sequences q
+         ORDER BY q.sequence_name""",
+    # how a table is partitioned and on what. Not the bounds of the partitions: those are data
+    "partitions": """
+        SELECT p.table_name, p.partitioning_type, p.subpartitioning_type, p.partition_count
+          FROM user_part_tables p
+         WHERE p.table_name NOT LIKE 'BIN$%'
+         ORDER BY p.table_name""",
+    "partitionKeys": """
+        SELECT k.name, k.column_name, k.column_position
+          FROM user_part_key_columns k
+         WHERE k.object_type = 'TABLE' AND k.name NOT LIKE 'BIN$%'
+         ORDER BY k.name, k.column_position""",
+    "subpartitionKeys": """
+        SELECT k.name, k.column_name, k.column_position
+          FROM user_subpart_key_columns k
+         WHERE k.object_type = 'TABLE' AND k.name NOT LIKE 'BIN$%'
+         ORDER BY k.name, k.column_position""",
+    "synonyms": """
+        SELECT y.synonym_name, y.table_owner, y.table_name, y.db_link
+          FROM user_synonyms y
+         ORDER BY y.synonym_name""",
+    # the name of a link and nothing about where it points
+    "dbLinks": """
+        SELECT l.db_link
+          FROM user_db_links l
+         ORDER BY l.db_link""",
+    "lobs": """
+        SELECT b.table_name, b.column_name
+          FROM user_lobs b
+         WHERE b.table_name NOT LIKE 'BIN$%'
+         ORDER BY b.table_name, b.column_name""",
+    "materializedViews": """
+        SELECT v.mview_name, v.query, v.refresh_mode, v.refresh_method, v.last_refresh_date
+          FROM user_mviews v
+         ORDER BY v.mview_name""",
+    "columnComments": """
+        SELECT c.table_name, c.column_name, c.comments
+          FROM user_col_comments c
+         WHERE c.comments IS NOT NULL AND c.table_name NOT LIKE 'BIN$%'
+         ORDER BY c.table_name, c.column_name""",
+}
+
+# Sent only with --include-source: the one statement that reads your code.
+SOURCE_STATEMENTS = {
+    "sources": """
+        SELECT u.type, u.name, u.line, u.text
+          FROM user_source u
+         ORDER BY u.type, u.name, u.line""",
 }
 
 # Sent only with --include-values. These two are the only statements that name a column holding real data.
@@ -149,8 +229,9 @@ MOST_FREQUENT = 20  # per column: a histogram can have 2048 endpoints, and the p
 CONSTRAINT_TYPES = {"P": "PRIMARY KEY", "U": "UNIQUE", "C": "CHECK", "R": "FOREIGN KEY"}
 
 
-def statements(include_values: bool) -> dict[str, str]:
-    return {**STATEMENTS, **(VALUE_STATEMENTS if include_values else {})}
+def statements(include_values: bool, include_source: bool = False) -> dict[str, str]:
+    return {**STATEMENTS, **(VALUE_STATEMENTS if include_values else {}),
+            **(SOURCE_STATEMENTS if include_source else {})}
 
 
 # --- decoding Oracle's internal formats ------------------------------------------------------------------
@@ -245,12 +326,13 @@ def _group(rows, key_index: int, value_index: int) -> dict:
     return grouped
 
 
-def build(fetch, *, include_values: bool, schema: str, database: dict, collected_at: str) -> dict:
+def build(fetch, *, include_values: bool, schema: str, database: dict, collected_at: str,
+          include_source: bool = False) -> dict:
     """`fetch(section, sql)` returns rows or raises; a section that raises is recorded and the rest goes on --
     one dictionary view the user may not read must not cost the whole snapshot."""
     skipped: list[dict] = []
     rows: dict[str, list] = {}
-    for section, sql in statements(include_values).items():
+    for section, sql in statements(include_values, include_source).items():
         try:
             rows[section] = list(fetch(section, sql))
         except Exception as exc:  # noqa: BLE001 - whatever the driver raises, the section is what failed
@@ -259,7 +341,7 @@ def build(fetch, *, include_values: bool, schema: str, database: dict, collected
     snapshot: dict = {"formatVersion": FORMAT_VERSION, "collectedAt": collected_at,
                       "collector": {"name": Path(__file__).name, "version": VERSION},
                       "database": database, "schema": schema, "containsDataValues": bool(include_values),
-                      "skipped": skipped}
+                      "containsSourceCode": bool(include_source), "skipped": skipped}
 
     if "tables" in rows:
         snapshot["tables"] = [{"name": n, "temporary": t == "Y", "partitioned": p == "YES", "comment": c}
@@ -324,7 +406,62 @@ def build(fetch, *, include_values: bool, schema: str, database: dict, collected
             snapshot["columnStatistics"].append(record)
     if "histograms" in rows:
         snapshot["histograms"] = _histograms(rows["histograms"])
+    if "objects" in rows:
+        snapshot["objects"] = [{"name": n, "type": t, "status": status, "created": _time(created),
+                                "lastDdl": _time(ddl)} for n, t, status, created, ddl in rows["objects"]]
+    if "tableModifications" in rows:
+        snapshot["tableModifications"] = [
+            {"table": t, "inserts": _int(i) or 0, "updates": _int(u) or 0, "deletes": _int(d) or 0,
+             "truncated": None if truncated is None else truncated == "YES", "timestamp": _time(at)}
+            for t, i, u, d, truncated, at in rows["tableModifications"]]
+    if "indexStatistics" in rows:
+        snapshot["indexStatistics"] = [{"index": n, "distinctKeys": _int(k), "leafBlocks": _int(b),
+                                        "clusteringFactor": _int(f), "numRows": _int(r), "lastAnalyzed": _time(at)}
+                                       for n, k, b, f, r, at in rows["indexStatistics"]]
+    if "sequences" in rows:
+        snapshot["sequences"] = [{"name": n, "incrementBy": _int(i), "cacheSize": _int(c), "lastNumber": _int(last),
+                                  "cycle": None if cycle is None else cycle == "Y"}
+                                 for n, i, c, last, cycle in rows["sequences"]]
+    if "partitions" in rows and "partitionKeys" in rows:
+        keys = _group(rows["partitionKeys"], 0, 1)
+        subkeys = _group(rows.get("subpartitionKeys", []), 0, 1)
+        snapshot["partitions"] = [{"table": t, "type": kind, "subpartitionType": sub, "count": _int(count),
+                                   "keyColumns": keys.get(t, []), "subpartitionKeyColumns": subkeys.get(t, [])}
+                                  for t, kind, sub, count in rows["partitions"]]
+    if "synonyms" in rows:
+        snapshot["synonyms"] = [{"name": n, "tableOwner": o, "tableName": t, "dbLink": link}
+                                for n, o, t, link in rows["synonyms"]]
+    if "dbLinks" in rows:
+        snapshot["dbLinks"] = [{"name": n} for (n,) in rows["dbLinks"]]
+    if "lobs" in rows:
+        snapshot["lobs"] = [{"table": t, "column": c} for t, c in rows["lobs"]]
+    if "materializedViews" in rows:
+        snapshot["materializedViews"] = [{"name": n, "query": None if q is None else str(q), "refreshMode": mode,
+                                          "refreshMethod": method, "lastRefresh": _time(at)}
+                                         for n, q, mode, method, at in rows["materializedViews"]]
+    if "columnComments" in rows:
+        snapshot["columnComments"] = [{"table": t, "column": c, "comment": str(text)}
+                                      for t, c, text in rows["columnComments"]]
+    if "sources" in rows:
+        snapshot["sources"] = _sources(rows["sources"])
     return snapshot
+
+
+def _sources(rows) -> list[dict]:
+    """USER_SOURCE is a row per line. A unit whose first line ends in `wrapped` is obfuscated code -- often a
+    vendor's, and reversible with public tools -- so it is named, and its text is left where it is."""
+    units: dict = {}
+    for kind, name, line, text in rows:
+        units.setdefault((kind, name), []).append((line, "" if text is None else str(text)))
+    out = []
+    for (kind, name), lines in units.items():
+        lines.sort(key=lambda item: item[0])
+        first = next((text for _, text in lines if text.strip()), "")
+        if first.rstrip().lower().endswith(" wrapped"):
+            out.append({"type": kind, "name": name, "wrapped": True})
+        else:
+            out.append({"type": kind, "name": name, "text": "".join(text for _, text in lines)})
+    return out
 
 
 def _histograms(rows) -> list[dict]:
@@ -375,7 +512,8 @@ def explain(error: Exception, password: str | None) -> str:
     return text
 
 
-def collect(settings: dict, password: str, include_values: bool, thick: bool = False) -> dict:
+def collect(settings: dict, password: str, include_values: bool, thick: bool = False,
+            include_source: bool = False) -> dict:
     # imported here and nowhere else: the statements above and `build` are readable, and testable, without a driver
     try:
         import oracledb
@@ -404,7 +542,7 @@ def collect(settings: dict, password: str, include_values: bool, thick: bool = F
                     "version": getattr(connection, "version", None)}
         collected_at = datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat(timespec="seconds")
         return build(fetch, include_values=include_values, schema=settings["user"].upper(), database=database,
-                     collected_at=collected_at)
+                     collected_at=collected_at, include_source=include_source)
 
 
 def main(argv: list[str] | None = None, environ=None) -> int:
@@ -416,6 +554,8 @@ def main(argv: list[str] | None = None, environ=None) -> int:
                         help="also collect real data values (column low/high, most frequent values)")
     parser.add_argument("--acknowledge-real-data", action="store_true",
                         help="required with --include-values: you know the snapshot will then hold rows of real data")
+    parser.add_argument("--include-source", action="store_true",
+                        help="also collect USER_SOURCE: the text of procedures, functions, packages and types")
     parser.add_argument("--thick", action="store_true",
                         help="use an installed Oracle Client instead of thin mode (for Native Network Encryption)")
     parser.add_argument("--print-statements", action="store_true",
@@ -424,7 +564,7 @@ def main(argv: list[str] | None = None, environ=None) -> int:
 
     if args.print_statements:
         print(READ_ONLY + ";")
-        for section, sql in statements(args.include_values).items():
+        for section, sql in statements(args.include_values, args.include_source).items():
             print(f"\n-- {section}{sql};")
         return 0
     if args.include_values and not args.acknowledge_real_data:
@@ -437,7 +577,7 @@ def main(argv: list[str] | None = None, environ=None) -> int:
     try:
         settings = connection_settings(environ)
         password = environ.get("SRC_ORACLE_PASSWORD") or getpass.getpass(f"password for {settings['user']}: ")
-        snapshot = collect(settings, password, args.include_values, args.thick)
+        snapshot = collect(settings, password, args.include_values, args.thick, args.include_source)
     except Refused as exc:
         print(f"catalog_snapshot: {exc}", file=sys.stderr)
         return 2
@@ -446,7 +586,9 @@ def main(argv: list[str] | None = None, environ=None) -> int:
     out.write_text(json.dumps(snapshot, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     tables = len(snapshot.get("tables", []))
     print(f"wrote {out}: schema {snapshot['schema']}, {tables} tables"
-          + (", WITH real data values" if args.include_values else ", no data values"))
+          + (", WITH real data values" if args.include_values else ", no data values")
+          + (", WITH USER_SOURCE code" if args.include_source
+             else ", no USER_SOURCE code (view and trigger definitions are included either way)"))
     for item in snapshot["skipped"]:
         print(f"  not collected: {item['section']} -- {item['reason']}", file=sys.stderr)
     return 1 if snapshot["skipped"] else 0

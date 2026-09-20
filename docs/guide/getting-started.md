@@ -78,7 +78,18 @@ AUTO は実 Oracle と実 ScalarDB で結果が一致した証拠（`--evidence`
 サンプルをスキルで最後まで通した記録は [チュートリアル](tutorial.md)。Java の生成、証拠の取り方、判定の読み方は [PL/SQL → Java 変換](plsql-conversion.md)。Claude Code や Codex から、仕様の調査 → 承認 → 変換 → 承認 → テストの順に
 進めるなら [スキル](skills.md) の migrate-flow を使います。
 
-## 5. テスト
+## 5. 移行の前に、いまの姿を見る
+
+どの PL/SQL と SQL がどのテーブルを触るのか、その行はどこか、判定はなぜそうなったのかを、1 つの HTML で見られます。上の 4 の解析結果をそのまま使います（DB は要りません）。
+
+```bash
+.venv/bin/python -m plsql.explorer out/plsql-first --src fixtures/plsql-external/create_order/src --out out/plsql-first/explorer.html
+open out/plsql-first/explorer.html
+```
+
+DB にしかない情報（制約、外部キー、索引、行数、統計、DB で動いているコード）は、実 DB で 1 回だけ流す SELECT だけの収集スクリプトの snapshot から読みます。渡さなければ、その欄は「未取得」と出ます。snapshot つきの例（合成データの fixture）と、snapshot の取り方は [Migration Explorer](explorer.md)。
+
+## 6. テスト
 
 DB の要らないテストは CI でも回ります（`.github/workflows/ci.yml` と `.gitlab-ci.yml`、同じ内容）: pytest、同梱コピーの
 一致（`vendor_sync.py --check`）、Java の単体テスト。DB の要る検証（`difftest/`）は手で回します。

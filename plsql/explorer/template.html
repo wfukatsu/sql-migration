@@ -59,6 +59,26 @@ details { margin: 0; } summary { cursor: pointer; color: var(--accent); font-siz
 pre { margin: 6px 0 2px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
   font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; max-width: 900px; }
 ul.plain { margin: 0; padding-left: 18px; }
+.meter { display: block; height: 4px; background: var(--accent); opacity: .55; border-radius: 2px; margin-top: 2px; margin-left: auto; }
+.barbox { display: inline-block; min-width: 90px; text-align: right; }
+.hbar { display: inline-block; height: 8px; background: var(--accent); opacity: .55; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.code { width: 100%; font-family: var(--mono); font-size: 12.5px; line-height: 1.5; }
+.code td { padding: 0 8px; border: 0; white-space: pre; vertical-align: top; }
+.code td.ln { text-align: right; color: var(--muted); user-select: none; width: 1%; border-right: 1px solid var(--line); }
+.code td.ln a { color: inherit; }
+.code td.gutter { width: 1%; white-space: nowrap; font-family: inherit; }
+.code tr.in-span td.src { box-shadow: inset 3px 0 0 var(--accent); }
+.code tr.target td { background: var(--warn-bg); }
+.code tr.target td.ln::before { content: "▶ "; color: var(--warn-ink); }
+.code tr.outside td { opacity: .45; }
+.meta-line { color: var(--muted); font-size: 13px; margin: 2px 0 10px; }
+.same { color: var(--muted); } .differs { background: var(--alert-bg); color: var(--alert-ink); padding: 0 8px; border-radius: 10px; }
+svg.fk { width: 100%; max-width: 900px; height: auto; display: block; }
+svg.fk rect { fill: var(--panel); stroke: var(--line); } svg.fk rect.me { stroke: var(--accent); stroke-width: 2; }
+svg.fk text { fill: var(--ink); font-family: var(--mono); font-size: 12px; } svg.fk line { stroke: var(--muted); }
+svg.fk g.node { cursor: pointer; } svg.fk g.node:hover rect, svg.fk g.node:focus rect { stroke: var(--accent); }
+svg.fk text.side { fill: var(--muted); font-family: inherit; font-size: 11px; }
+.toplinks { display: flex; gap: 14px; margin: -4px 0 12px; font-size: 13px; flex-wrap: wrap; }
 .notes { color: var(--muted); font-size: 12px; margin-top: 28px; border-top: 1px solid var(--line); padding-top: 10px; }
 </style>
 </head>
@@ -103,11 +123,35 @@ function measure(m, fmt) { return m.state === "value" ? (fmt || num)(m.value) : 
 const tableLink = name => TABLES.has(name) ? h("a", {href: "#/table/" + encodeURIComponent(name), class: "mono"}, name) : h("span", {class: "mono"}, name);
 const routineLink = id => ROUTINES.has(id) ? h("a", {href: "#/routine/" + encodeURIComponent(id), class: "mono"}, id) : h("span", {class: "mono"}, id);
 const fileLink = file => h("a", {href: "#/file/" + encodeURIComponent(file), class: "mono"}, file);
+const lineHref = s => s.origin === "plsql" ? `#/routine/${encodeURIComponent(s.routine)}/L${s.line}` : `#/file/${encodeURIComponent(s.file)}/L${s.line}`;
+function lineLink(s) { return s.line ? h("a", {href: lineHref(s), class: "mono", title: "コードのこの行へ"}, " :" + s.line) : h("span", {class: "mono"}, " :?"); }
 function whereOf(s) {
-  if (s.origin === "plsql") return [routineLink(s.routine), h("span", {class: "mono"}, " :" + (s.line ?? "?"))];
-  if (s.origin === "app") return [fileLink(s.file), h("span", {class: "mono"}, " :" + s.line)];
+  if (s.origin === "plsql") return [routineLink(s.routine), lineLink(s)];
+  if (s.origin === "app") return [fileLink(s.file), lineLink(s)];
   if (s.origin === "view") return [tableLink(s.object), " ", h("span", {class: "chip"}, "view の定義")];
   return [h("span", {class: "mono"}, s.object), " ", h("span", {class: "chip warn"}, "原文の無い trigger")];
+}
+function bar(value, max) { return h("span", {class: "meter", style: `width:${max > 0 ? Math.max(2, Math.round(100 * value / max)) : 0}%`}); }
+function pct(x) { return x === null || x === undefined ? "" : (x * 100 < 0.1 && x > 0 ? "<0.1" : (x * 100).toFixed(x * 100 < 10 ? 1 : 0)) + "%"; }
+const MARK = {lock: "warn", dynamic: "warn", raise: "alert", diagnostic: "warn"};
+function markChip(m) {
+  if (m.kind === "sql") return [h("span", {class: "chip"}, m.label), (m.writes || []).map(t => [h("span", {class: "chip"}, "書"), tableLink(t), " "]), (m.reads || []).map(t => [h("span", {class: "chip"}, "読"), tableLink(t), " "])];
+  if (m.kind === "call" && m.routine) return [h("span", {class: "chip"}, "CALL"), routineLink(m.routine), " "];
+  return h("span", {class: "chip " + (MARK[m.kind] || ""), title: m.message || null}, m.kind === "diagnostic" ? "診断 " + m.label : m.label);
+}
+// One file's lines from `start` to `end`, each with what the analysis found on it. Text goes in as text.
+function codePane(key, start, end, target) {
+  const file = DATA.files[key];
+  if (!file) return h("div", {class: "panel"}, h("div", {class: "empty", id: "no-source"}, "原文が渡されていない（--src なしで作った画面）"));
+  if (!file.found) return h("div", {class: "panel"}, h("div", {class: "empty"}, "この原文のファイルが、渡されたディレクトリに見つからなかった"));
+  const first = Math.max(1, start || 1), last = Math.min(file.lines.length, end || file.lines.length);
+  const starts = new Map(), spans = new Set();
+  for (const m of file.marks) { if (m.line < first || m.line > last) continue; if (!starts.has(m.line)) starts.set(m.line, []); starts.get(m.line).push(m); for (let i = m.line; i <= m.endLine; i++) if (m.kind === "sql" || m.kind === "dynamic") spans.add(i); }
+  const base = location.hash.split("/").slice(0, 3).join("/");
+  const rows = [];
+  for (let i = first; i <= last; i++) rows.push(h("tr", {id: "L" + i, class: (spans.has(i) ? "in-span " : "") + (i === target ? "target" : "")},
+    h("td", {class: "ln"}, h("a", {href: `${base}/L${i}`}, i)), h("td", {class: "src"}, file.lines[i - 1] || " "), h("td", {class: "gutter"}, (starts.get(i) || []).map(markChip))));
+  return h("div", {class: "panel"}, h("table", {class: "code"}, h("tbody", {}, rows)));
 }
 function sqlText(s) { return s.text ? h("details", {}, h("summary", {}, "SQL を見る"), h("pre", {}, s.text)) : null; }
 function counts(c) { return (c.routines + c.statements) ? `${c.routines} / ${c.statements}` : "0"; }
@@ -128,7 +172,9 @@ function banners() {
     "列統計の値: 含む — このファイルには、列の最小値・最大値・頻出値として実データの値が入っています。渡す相手と置き場所に注意してください。"));
   box.append(h("div", {class: "banner notice", id: "content-notice"},
     "このファイルは原文の SQL と、DB のオブジェクトの定義（view・trigger・CHECK の条件）を含みます。その中にリテラルとして業務の値が書かれていることがあります。"
-    + (snap && !snap.containsDataValues ? " 列統計の値: 取っていない。" : "")));
+    + (snap && !snap.containsDataValues ? " 列統計の値: 取っていない。" : "")
+    + (snap && snap.containsSourceCode ? " DB から取ったコード（USER_SOURCE）を含みます。" : snap ? " USER_SOURCE のコードは取っていない（view・trigger の定義は含む）。" : "")
+    + (Object.keys(DATA.files).length ? " --src で渡された原文を、コメントも含めて全文含みます。" : "")));
   for (const w of DATA.warnings) box.append(h("div", {class: "banner warn"}, "注意: " + w));
   for (const s of (snap ? snap.skipped : [])) box.append(h("div", {class: "banner warn"}, `snapshot で取れなかった節: ${s.section} — ${s.reason}`));
 }
@@ -139,6 +185,7 @@ const COLUMNS = [
   {key: "presence", label: "状態", get: t => t.kind + t.presence},
   {key: "rows", label: "行数", num: true, get: t => t.rows.state === "value" ? t.rows.value : null},
   {key: "size", label: "サイズ", num: true, get: t => t.size.state === "value" ? t.size.value : null},
+  {key: "mods", label: "書き込み（統計以降）", num: true, get: t => t.modifications.state === "value" ? t.modifications.value : null},
   {key: "writers", label: "書く routine / SQL", num: true, get: t => t.writers.routines + t.writers.statements},
   {key: "readers", label: "読む routine / SQL", num: true, get: t => t.readers.routines + t.readers.statements},
   {key: "fkIn", label: "FK 入", num: true, get: t => t.foreignKeysIn ? t.foreignKeysIn.length : null},
@@ -164,12 +211,14 @@ function sorted(tables) {
 }
 function tableList() {
   const rows = sorted(DATA.tables.filter(t => t.name.includes(filterText.toLowerCase())));
+  const maxRows = Math.max(0, ...rows.map(t => t.rows.state === "value" ? t.rows.value : 0)), maxSize = Math.max(0, ...rows.map(t => t.size.state === "value" ? t.size.value : 0));
   const head = h("tr", {}, COLUMNS.map(c => h("th", {class: "sortable" + (c.num ? " num" : ""), "aria-sort": sort.key === c.key ? (sort.dir > 0 ? "ascending" : "descending") : null,
     onclick: () => { sort = {key: c.key, dir: sort.key === c.key ? -sort.dir : (c.num ? -1 : 1)}; render(); }}, c.label + (sort.key === c.key ? (sort.dir > 0 ? " ▲" : " ▼") : ""))));
   const body = rows.map(t => h("tr", {},
     h("td", {}, tableLink(t.name)), h("td", {}, presence(t)),
-    h("td", {class: "num"}, measure(t.rows), t.rows.stale ? h("span", {class: "chip warn", title: "統計を取ったあとで大きく変わっている"}, "古い") : null),
-    h("td", {class: "num"}, measure(t.size, bytes)),
+    h("td", {class: "num"}, h("span", {class: "barbox"}, measure(t.rows), t.rows.stale ? h("span", {class: "chip warn", title: "統計を取ったあとで大きく変わっている"}, "古い") : null, t.rows.state === "value" ? bar(t.rows.value, maxRows) : null)),
+    h("td", {class: "num"}, h("span", {class: "barbox"}, measure(t.size, bytes), t.size.state === "value" ? bar(t.size.value, maxSize) : null)),
+    h("td", {class: "num", title: t.modifications.state === "value" ? `INSERT ${num(t.modifications.inserts)} / UPDATE ${num(t.modifications.updates)} / DELETE ${num(t.modifications.deletes)}` : null}, t.kind === "view" ? absent("—") : measure(t.modifications)),
     h("td", {class: "num"}, counts(t.writers)), h("td", {class: "num"}, counts(t.readers)),
     h("td", {class: "num"}, t.foreignKeysIn ? t.foreignKeysIn.length : absent(t.kind === "view" ? "—" : "未取得")),
     h("td", {class: "num"}, t.foreignKeysOut ? t.foreignKeysOut.length : absent(t.kind === "view" ? "—" : "未取得")),
@@ -178,7 +227,12 @@ function tableList() {
     h("td", {class: "num"}, t.unseen.length + DATA.unattributable.length ? h("span", {class: "chip warn"}, `${t.unseen.length} + ${DATA.unattributable.length}`) : "0")));
   const input = h("input", {type: "search", placeholder: "テーブル名で絞り込む", value: filterText, "aria-label": "テーブル名で絞り込む",
     oninput: e => { filterText = e.target.value; render(); const again = document.querySelector(".filter input"); again.focus(); again.setSelectionRange(filterText.length, filterText.length); }});
+  const db = DATA.dbObjects, seq = DATA.sequences;
   return [h("h2", {}, `テーブル（${DATA.tables.length}）`),
+    h("div", {class: "toplinks"},
+      h("a", {href: "#/dbobjects", id: "link-dbobjects"}, db.state === "collected" ? `DB にあるが原文が渡されていないもの（${db.dbOnly.length}）` : "DB のオブジェクトの一覧（未取得）"),
+      h("a", {href: "#/sequences", id: "link-sequences"}, `採番（${seq.items.length}${seq.state === "collected" ? "" : "・snapshot では未取得"}）`),
+      db.state === "collected" && db.invalid.length ? h("span", {class: "chip alert"}, `INVALID なオブジェクト ${db.invalid.length}`) : null),
     h("div", {class: "filter"}, input, h("span", {class: "source"}, `routine ${DATA.meta.counts.routines}・SQL ${DATA.meta.counts.sql}。「見えていない SQL」は、このテーブルに届きうるもの + どのテーブルにも届きうるもの。`)),
     h("div", {class: "panel"}, h("table", {id: "tables"}, h("thead", {}, head), h("tbody", {}, body)),
       rows.length ? null : h("div", {class: "empty", id: "no-match"}, `「${filterText}」に当たるテーブルはありません（該当なし）`))];
@@ -207,10 +261,10 @@ function columnRows(t) {
   return (t.columns || []).map(c => { const s = stats.get(c.name);
     const type = c.dataType + (c.precision != null ? `(${c.precision}${c.scale ? "," + c.scale : ""})` : /CHAR/.test(c.dataType) && c.length ? `(${c.length})` : "");
     const row = [h("span", {class: "mono"}, c.name), h("span", {class: "mono"}, type), c.nullable ? "NULL 可" : "NOT NULL",
-      s && s.numDistinct != null ? num(s.numDistinct) : absent(t.columnStatistics ? "統計なし" : "未取得"), s && s.numNulls != null ? num(s.numNulls) : "",
-      s && s.avgColLen != null ? s.avgColLen : "", s && s.histogram ? s.histogram : "", s ? (s.skewed === true ? h("span", {class: "chip warn"}, "偏りあり") : s.skewed === false ? "なし" : "") : ""];
+      s && s.numDistinct != null ? num(s.numDistinct) : absent(t.columnStatistics ? "統計なし" : "未取得"), s ? pct(s.selectivity) : "", s && s.numNulls != null ? num(s.numNulls) : "", s ? pct(s.nullRatio) : "",
+      s && s.avgColLen != null ? s.avgColLen : "", s && s.histogram ? s.histogram : "", s ? (s.skewed === true ? h("span", {class: "chip warn"}, "偏りあり") : s.skewed === false ? "なし" : "") : "", c.comment || ""];
     if (values) row.push(valueText(s && s.lowValue), valueText(s && s.highValue),
-      s && s.frequent && s.frequent.length ? h("details", {}, h("summary", {}, `${s.frequent.length} 件`), h("ul", {class: "plain"}, s.frequent.map(e => h("li", {}, valueText(e.value), e.rows != null ? ` × ${num(e.rows)}` : "")))) : "");
+      s && s.frequent && s.frequent.length ? h("details", {}, h("summary", {}, `${s.frequent.length} 件`), h("ul", {class: "plain"}, s.frequent.map(e => h("li", {}, h("span", {class: "hbar", style: `width:${Math.max(2, Math.round(120 * (e.rows || 0) / Math.max(1, ...s.frequent.map(x => x.rows || 0))))}px`}), valueText(e.value), e.rows != null ? ` × ${num(e.rows)}` : "")))) : "");
     return row; });
 }
 function tableDetail(name) {
@@ -221,8 +275,15 @@ function tableDetail(name) {
     h("div", {class: "card"}, h("div", {class: "label"}, "行数（統計の値）"), h("div", {class: "value"}, measure(t.rows)),
       h("div", {class: "sub"}, t.rows.analyzedAt ? `統計: ${t.rows.analyzedAt}${t.rows.stale ? "（古い）" : ""}` : "")),
     h("div", {class: "card"}, h("div", {class: "label"}, "サイズ（テーブルのセグメント）"), h("div", {class: "value"}, measure(t.size, bytes)), h("div", {class: "sub"}, t.rows.avgRowLen ? `平均行長 ${t.rows.avgRowLen} B` : "")),
+    h("div", {class: "card"}, h("div", {class: "label"}, "書き込み（前回の統計以降）"), h("div", {class: "value"}, measure(t.modifications)),
+      h("div", {class: "sub"}, t.modifications.state === "value" ? `I ${num(t.modifications.inserts)} / U ${num(t.modifications.updates)} / D ${num(t.modifications.deletes)}` : "")),
     h("div", {class: "card"}, h("div", {class: "label"}, "書く routine / SQL"), h("div", {class: "value"}, counts(t.writers))),
     h("div", {class: "card"}, h("div", {class: "label"}, "読む routine / SQL"), h("div", {class: "value"}, counts(t.readers)))));
+  const facts = [t.comment ? `コメント: ${t.comment}` : null, t.temporary ? "一時表" : null,
+    t.partitioning ? `パーティション: ${t.partitioning.type}（${t.partitioning.keyColumns.join(", ")}）× ${t.partitioning.count ?? "?"}` + (t.partitioning.subpartitionType && t.partitioning.subpartitionType !== "NONE" ? `、サブ: ${t.partitioning.subpartitionType}（${t.partitioning.subpartitionKeyColumns.join(", ")}）` : "") : t.partitioning === false ? "パーティションなし" : null,
+    t.lobColumns && t.lobColumns.length ? `LOB の列: ${t.lobColumns.join(", ")}` : null].filter(Boolean);
+  if (facts.length) parts.push(h("div", {class: "meta-line", id: "table-facts"}, facts.join(" ・ ")));
+  if (t.modifications.state === "value") parts.push(h("div", {class: "meta-line"}, "書き込みの件数は、Oracle がメモリから書き出した分だけの目安。0 は「書き出された書き込みが無い」で、まだ書き出されていない書き込みはありうる。"));
   if (t.kind === "view") parts.push(...section("元のテーブル", t.baseTables ? h("div", {}, t.baseTables.map(b => [tableLink(b), " "])) : absent("未取得（依存関係が取れていない）")),
     SQL.has("view:" + name) ? sqlText(SQL.get("view:" + name)) : null);
   parts.push(...section("触るもの", grid(["どこ", "種類", "操作", "ロック", {label: "SQL", wrap: true}], touchRows(t), "原文のどの SQL も、このテーブルを名指ししていない")));
@@ -233,14 +294,39 @@ function tableDetail(name) {
     if (t.attached.length) parts.push(...section("付いているもの（原文から分かる範囲）", attachedGrid(t)));
     return parts;
   }
+  if (t.foreignKeysOut && t.foreignKeysIn && t.foreignKeysOut.length + t.foreignKeysIn.length) parts.push(...section("つながるテーブル（図）", fkDiagram(t)));
   parts.push(...section("つながるテーブル（外部キー）", t.foreignKeysOut ? grid(["向き", "相手", "列", "削除時", "制約"], fkRows(t), "外部キーなし") : absent("未取得")));
   parts.push(...section("制約", t.constraints ? grid(["種類", "列", {label: "条件", wrap: true}, "有効", "名前"], t.constraints.filter(c => c.type !== "FOREIGN KEY").map(c =>
     [c.type, h("span", {class: "mono"}, c.columns.join(", ")), c.condition ? h("span", {class: "mono"}, c.condition) : "", c.enabled === false ? h("span", {class: "chip warn"}, "無効") : "有効", h("span", {class: "mono"}, c.name)]), "なし") : absent("未取得")));
+  parts.push(...section("索引", t.indexes ? grid(["名前", "UNIQUE", "列", {label: "サイズ", num: true}, {label: "distinct なキー", num: true}, {label: "リーフブロック", num: true}, {label: "クラスタリングファクタ", num: true}],
+    t.indexes.map(i => { const st = i.statistics; const cell = v => st === null ? absent("未取得") : v === null || v === undefined ? absent("統計なし") : num(v);
+      return [h("span", {class: "mono"}, i.name), i.unique ? "UNIQUE" : "", h("span", {class: "mono"}, i.columns.join(", ")), i.sizeBytes === null ? absent("未取得") : bytes(i.sizeBytes),
+        cell(st && st.distinctKeys), cell(st && st.leafBlocks), cell(st && st.clusteringFactor)]; }), "索引なし") : absent("未取得")));
   parts.push(...section("付いているもの（trigger・view）", attachedGrid(t)));
   const values = DATA.meta.snapshot.containsDataValues;
-  parts.push(...section("列と統計", t.columns ? grid(["列", "型", "NULL", {label: "distinct", num: true}, {label: "NULL 数", num: true}, {label: "平均長", num: true}, "ヒストグラム", "偏りの目安"]
+  parts.push(...section("列と統計", t.columns ? grid(["列", "型", "NULL", {label: "distinct", num: true}, {label: "選択性", num: true}, {label: "NULL 数", num: true}, {label: "NULL の割合", num: true}, {label: "平均長", num: true}, "ヒストグラム", "偏りの目安", {label: "コメント", wrap: true}]
     .concat(values ? ["最小", "最大", "頻出値"] : []), columnRows(t)) : absent("未取得")));
   return parts;
+}
+// The table, its parents on the left, its children on the right. No layout to compute, nothing parsed as markup.
+function fkDiagram(t) {
+  const NS = "http://www.w3.org/2000/svg", W = 900, BW = 230, BH = 30, GAP = 12;
+  const el = (tag, attrs, ...kids) => { const e = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); e.append(...kids); return e; };
+  const parents = t.foreignKeysOut.map(f => ({name: f.outside ? `${f.refOwner}.${f.refTable ?? "?"}` : f.refTable, link: !f.outside, label: f.columns.join(", ")}));
+  const children = t.foreignKeysIn.map(f => ({name: f.table, link: true, label: f.columns.join(", ")}));
+  const rowsN = Math.max(1, parents.length, children.length), H = rowsN * (BH + GAP) + GAP + 16;
+  const svg = el("svg", {class: "fk", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${t.name} と外部キーでつながるテーブル`});
+  const y = (i, count) => 16 + GAP + (H - 16 - GAP - count * (BH + GAP)) / 2 + i * (BH + GAP);
+  const cx = (W - BW) / 2, cy = y(0, 1);
+  const node = (x, yy, item, me) => { const g = el("g", me || !item.link ? {} : {class: "node", tabindex: "0", role: "link"});
+    g.append(el("rect", {x, y: yy, width: BW, height: BH, rx: 6, class: me ? "me" : ""}), el("text", {x: x + 10, y: yy + 19}, document.createTextNode(item.name)));
+    if (!me && item.link && TABLES.has(item.name)) { const go = () => { location.hash = "#/table/" + encodeURIComponent(item.name); }; g.addEventListener("click", go); g.addEventListener("keydown", e => { if (e.key === "Enter") go(); }); }
+    return g; };
+  svg.append(el("text", {x: 0, y: 12, class: "side"}, document.createTextNode("親（このテーブルが参照する）")), el("text", {x: W - BW, y: 12, class: "side"}, document.createTextNode("子（このテーブルを参照する）")));
+  parents.forEach((p, i) => { const yy = y(i, parents.length); svg.append(el("line", {x1: BW, y1: yy + BH / 2, x2: cx, y2: cy + BH / 2}), node(0, yy, p)); });
+  children.forEach((c, i) => { const yy = y(i, children.length); svg.append(el("line", {x1: cx + BW, y1: cy + BH / 2, x2: W - BW, y2: yy + BH / 2}), node(W - BW, yy, c)); });
+  svg.append(node(cx, cy, {name: t.name}, true));
+  return h("div", {class: "panel", id: "fk-diagram", style: "padding:10px"}, svg);
 }
 function attachedGrid(t) {
   return grid(["種類", "名前", "いつ", {label: "原文", wrap: true}], t.attached.map(a => [a.type,
@@ -255,21 +341,53 @@ function tablesOf(s) { return [s.writes.map(t => [h("span", {class: "chip"}, "�
   s.visible ? null : h("span", {class: "chip warn"}, "見えていない: " + s.reason)]; }
 function sqlGrid(list) { return grid([{label: "行", num: true}, "種類", {label: "テーブル", wrap: true}, "ロック", {label: "SQL", wrap: true}],
   list.map(s => [s.line ?? "?", h("span", {class: "chip"}, s.kind), tablesOf(s), s.lock ? h("span", {class: "chip warn"}, s.lock) : "", sqlText(s)]), "SQL なし"); }
-function routineDetail(id) {
+function routineDetail(id, target) {
   const r = ROUTINES.get(id);
   if (!r) return [h("h2", {}, id), h("div", {class: "empty"}, "この routine は解析結果にありません")];
   const verdict = r.verdict ? h("span", {class: "chip" + (r.verdict === "REDESIGN" ? " alert" : r.verdict === "REVIEW" ? " warn" : "")}, r.verdict) : absent("判定なし");
+  const d = r.decision;
+  const typedGrid = list => grid(["名前", "向き", "書かれた型", "解決した型", {label: "行", num: true}], list.map(x => [h("span", {class: "mono"}, x.name), x.mode || "", h("span", {class: "mono"}, x.written || ""), h("span", {class: "mono"}, x.resolved || ""), x.line ?? ""]), "なし");
   return [h("div", {class: "crumbs"}, h("a", {href: "#/"}, "テーブル"), " / routine / ", id), h("h2", {class: "mono"}, id, " ", verdict),
     h("div", {class: "source"}, `${r.kind}・${r.file}:${r.line ?? "?"}–${r.endLine ?? "?"}`, r.spec ? [" ・ ", h("a", {href: r.spec}, "仕様書（plsql-spec）")] : null),
-    r.reasons.length ? h("details", {}, h("summary", {}, "判定の理由"), h("ul", {class: "plain"}, r.reasons.map(x => h("li", {}, typeof x === "string" ? x : JSON.stringify(x))))) : null,
+    ...section("判定の中身", d ? [
+      grid(["ルール", "判定", {label: "内容", wrap: true}], d.rules.map(x => [h("span", {class: "mono"}, x.id), h("span", {class: "chip" + (x.decision === "REDESIGN" ? " alert" : x.decision === "REVIEW" ? " warn" : "")}, x.decision), x.message]), "効いたルールなし"),
+      h("div", {class: "meta-line", id: "confidence"}, "確信度の因子: ", Object.entries(d.confidence).filter(([k]) => k !== "value").map(([k, v]) => h("span", {class: "chip" + (d.zeroFactors.includes(k) ? " alert" : "")}, `${k} ${v}`)), d.zeroFactors.length ? ` — 0 の因子: ${d.zeroFactors.join(", ")}` : ""),
+      d.whyNotAuto.length ? h("details", {}, h("summary", {}, `AUTO にならない理由（${d.whyNotAuto.length}）`), h("ul", {class: "plain"}, d.whyNotAuto.map(x => h("li", {}, x)))) : null,
+      d.remediation.length ? h("details", {}, h("summary", {}, `直し方の候補（${d.remediation.length}）`), h("ul", {class: "plain"}, d.remediation.map(x => h("li", {}, x)))) : null,
+      d.requiredTests.length ? h("div", {class: "meta-line"}, "必要なテスト: ", d.requiredTests.map(x => h("span", {class: "chip"}, x))) : null,
+    ] : absent("判定が解析結果に無い（decisions.json が無い）")),
+    r.diagnostics.length ? section("診断", grid([{label: "行", num: true}, "ルール", "重さ", {label: "内容", wrap: true}], r.diagnostics.map(x => [h("a", {href: `#/routine/${encodeURIComponent(id)}/L${x.line}`}, x.line), h("span", {class: "mono"}, x.rule), x.level || "", x.message]))) : null,
+    ...section("引数", typedGrid(r.parameters)), ...section("ローカル変数", typedGrid(r.declarations)),
+    ...section("DB のコードとの比較", grid(["DB のオブジェクト", "原文", "結果", {label: "違い", wrap: true}], r.dbCode.map(c => [h("span", {class: "mono"}, `${c.type} ${c.name}`), h("span", {class: "mono"}, c.file || ""),
+      c.state === "same" ? h("span", {class: "same"}, "同じ") : c.state === "different" ? h("span", {class: "differs"}, "DB のコードと違う") : c.state === "not_in_database" ? h("span", {class: "chip warn"}, "DB に無い") : absent("比べていない"),
+      c.state === "different" ? h("details", {open: "open"}, h("summary", {}, "違いを見る（- 原文 / + DB）"), h("pre", {}, c.diff)) : (c.reason || "") + (c.status === "INVALID" ? "（DB では INVALID）" : "")]), "比べるものが無い")),
+    ...section(`コード（${r.file}）`, codePane(r.file, r.line, r.endLine, target)),
     ...section("SQL", sqlGrid(r.sql.map(x => SQL.get(x)))),
     ...section("呼び出す routine", r.calls.length || r.external.length ? h("div", {}, r.calls.map(c => [routineLink(c), " "]), r.external.map(c => h("span", {class: "chip"}, c + "（外部）"))) : absent("なし")),
     ...section("呼ばれる routine", r.calledBy.length ? h("div", {}, r.calledBy.map(c => [routineLink(c), " "])) : absent("なし（原文の中では）"))];
 }
-function fileDetail(file) {
+function fileDetail(file, target) {
   const list = FILES.get(file);
   if (!list) return [h("h2", {}, file), h("div", {class: "empty"}, "この SQL ファイルは渡されていません")];
-  return [h("div", {class: "crumbs"}, h("a", {href: "#/"}, "テーブル"), " / SQL ファイル / ", file), h("h2", {class: "mono"}, file), ...section(`SQL（${list.length}）`, sqlGrid(list))];
+  return [h("div", {class: "crumbs"}, h("a", {href: "#/"}, "テーブル"), " / SQL ファイル / ", file), h("h2", {class: "mono"}, file),
+    ...section("コード", codePane("app:" + file, null, null, target)), ...section(`SQL（${list.length}）`, sqlGrid(list))];
+}
+function dbObjectsView() {
+  const db = DATA.dbObjects, head = [h("div", {class: "crumbs"}, h("a", {href: "#/"}, "テーブル"), " / DB のオブジェクト"), h("h2", {}, "DB にあるが原文が渡されていないもの")];
+  if (db.state !== "collected") return head.concat(h("div", {class: "panel"}, h("div", {class: "empty"}, "未取得（snapshot が無いか、オブジェクトの一覧を持たない版 1 の snapshot）")));
+  const code = o => o.wrapped ? absent("wrapped（難読化）されているので取っていない") : o.text ? h("details", {}, h("summary", {}, "DB のコードを見る"), h("pre", {}, o.text)) : absent(db.containsSourceCode ? "コードが無い" : "USER_SOURCE のコードは取っていない");
+  const rows = list => list.map(o => [h("span", {class: "mono"}, o.type), h("span", {class: "mono"}, o.name), o.status === "INVALID" ? h("span", {class: "chip alert"}, "INVALID") : o.status || "", o.lastDdl || "", code(o)]);
+  const cols = ["種類", "名前", "状態", "最終 DDL", {label: "コード", wrap: true}];
+  return head.concat(db.sourceGiven ? null : h("div", {class: "meta-line"}, "--src が渡されていないので、package の仕様部（PACKAGE）が渡されたかどうかは分からない。分からないものは、ここには数えていない。"),
+    grid(cols, rows(db.dbOnly), "DB にだけあるものは無い"), ...section("解析の対象外（TYPE / TYPE BODY）", grid(cols, rows(db.outsideAnalysis), "なし")));
+}
+function sequencesView() {
+  const seq = DATA.sequences;
+  return [h("div", {class: "crumbs"}, h("a", {href: "#/"}, "テーブル"), " / 採番"), h("h2", {}, "採番（sequence）"),
+    h("div", {class: "meta-line"}, "ScalarDB に sequence は無い。使っている routine ごとに、採番の設計が要る。" + (seq.state === "collected" ? "" : " snapshot では未取得なので、原文で使われているものだけを出している。")),
+    grid(["名前", "snapshot", {label: "増分", num: true}, {label: "キャッシュ", num: true}, {label: "いまの値", num: true}, {label: "使うもの", wrap: true}], seq.items.map(q => [h("span", {class: "mono"}, q.name),
+      q.inSnapshot === null ? absent("未取得") : q.inSnapshot ? "あり" : h("span", {class: "chip alert"}, "snapshot に無い"), q.incrementBy ?? "", q.cacheSize ?? "", q.lastNumber != null ? num(q.lastNumber) : "",
+      q.users.length ? q.users.map(u => [ROUTINES.has(u) ? routineLink(u) : h("span", {class: "mono"}, u), " "]) : absent("原文のどこも使っていない")]), "採番なし")];
 }
 
 // --- search, routing ---------------------------------------------------------------------------------------
@@ -285,15 +403,20 @@ function search(text) {
   box.hidden = false;
 }
 function render() {
-  const [, view, arg] = location.hash.split("/"), name = arg ? decodeURIComponent(arg) : "";
-  const body = view === "table" ? tableDetail(name) : view === "routine" ? routineDetail(name) : view === "file" ? fileDetail(name) : tableList();
+  const [, view, arg, at] = location.hash.split("/"), name = arg ? decodeURIComponent(arg) : "";
+  const target = at && /^L\d+$/.test(at) ? Number(at.slice(1)) : null;
+  const body = view === "table" ? tableDetail(name) : view === "routine" ? routineDetail(name, target) : view === "file" ? fileDetail(name, target)
+    : view === "dbobjects" ? dbObjectsView() : view === "sequences" ? sequencesView() : tableList();
   const main = document.getElementById("main");
   main.replaceChildren(...body.flat(Infinity).filter(Boolean), h("div", {class: "notes"}, h("ul", {class: "plain"}, DATA.notes.map(n => h("li", {}, n)))));
   document.title = (name ? name + " — " : "") + "Migration Explorer";
+  const row = target ? document.getElementById("L" + target) : null;
+  if (row) row.scrollIntoView({block: "center"});
+  return Boolean(row);
 }
 document.getElementById("search").addEventListener("input", e => search(e.target.value));
 document.addEventListener("keydown", e => { if (e.key === "Escape") document.getElementById("results").hidden = true; });
-window.addEventListener("hashchange", () => { render(); window.scrollTo(0, 0); });
+window.addEventListener("hashchange", () => { if (!render()) window.scrollTo(0, 0); });
 banners(); render();
 </script>
 </body>

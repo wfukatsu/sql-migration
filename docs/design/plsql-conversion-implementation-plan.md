@@ -900,6 +900,8 @@ rollback で行は戻らない——Oracle と同じ。違うのは、**Oracle �
 
 - 実案件 corpus の追加と、KPI の出自別再計測（合成 corpus 上の値は実案件耐性の証拠ではない）
 - Migration Workbench（Web UI）と API（設計書 §12）
+  - **2026-09-20: 調査の部分を先に切り出した。** 実際に手間がかかったのは REVIEW の消化ではなく、その手前の調査（対象の PL/SQL、SQL の一覧、触るテーブルとそのつながり、制約、データ量）だった。設計書 §12 の `GET /snapshots/{id}/inventory` に当たる部分を、サーバも DB も持たない読むだけの HTML（Migration Explorer、`plsql/explorer/`、[案内](../guide/explorer.md)）として作った。要件と計画は `docs/plans/2026-09-20-1831-feat-migration-explorer-plan.md` と `docs/plans/2026-09-20-1951-feat-explorer-code-and-statistics-plan.md`
+  - **残り**（複数人での REVIEW の消化、承認の画面、課題と差分、再生成、監査ログ、API、PostgreSQL）は、判定者（§9）と、REVIEW の消化を誰がどう回すかが決まってから。承認と記録の一部は、すでに migrate-flow（`flow.yaml` の承認・人・日付・指紋）が持っている
 
 ---
 

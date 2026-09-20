@@ -56,6 +56,10 @@ Claude Code と Codex での違い:
 マニフェスト（`.claude-plugin/`、`.codex-plugin/`、`.agents/plugins/marketplace.json`）がそろっていること、スキルが `.agents/skills` から読めること、`description` が共通の形式（64 字以内の名前、1024 字以内の説明、きっかけと対象外）に収まっていることは、
 `tests/test_skills_portability.py` が確かめます。
 
+## スキルに入る前に: いまの姿を調べる
+
+どの routine から移すか、そのテーブルを動かすと何が巻き込まれるか、パーティションキーの候補は何かは、移行の流れ（migrate-flow の段階 1）に入る前に決めることです。その調査には [Migration Explorer](explorer.md) を使います。スキルではなく、`python -m plsql.explorer` が作る読むだけの HTML です。routine の画面は、plsql-spec が書いた仕様書（`--spec-dir`）があればそこへリンクします。
+
 ## スキルの一覧
 
 | スキル | 役割 | 手順の本体 |
