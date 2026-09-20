@@ -107,6 +107,16 @@ def statements(path: str | Path, dialect: str = "oracle", label: str | None = No
     return out
 
 
+def files(paths: list[str | Path]) -> dict[str, Path]:
+    """Label -> file, labelled the way `collect` labels its statements."""
+    out: dict[str, Path] = {}
+    for given in paths:
+        given = Path(given)
+        for file in (sorted(given.rglob("*.sql")) if given.is_dir() else [given]):
+            out[str(file.relative_to(given)) if given.is_dir() else file.name] = file
+    return out
+
+
 def collect(paths: list[str | Path], dialect: str = "oracle") -> list[AppStatement]:
     """Files, or directories searched for `*.sql`. A file is labelled by its path under what was given, so two
     `queries.sql` in different directories stay two files."""
