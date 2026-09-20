@@ -1,9 +1,9 @@
 {
- "formatVersion": 1,
- "collectedAt": "2026-09-20T19:11:25+09:00",
+ "formatVersion": 2,
+ "collectedAt": "2026-09-20T20:05:36+09:00",
  "collector": {
   "name": "catalog_snapshot.py",
-  "version": "1"
+  "version": "2"
  },
  "database": {
   "name": "FREE",
@@ -11,6 +11,7 @@
  },
  "schema": "EXPLORER",
  "containsDataValues": false,
+ "containsSourceCode": false,
  "skipped": [],
  "tables": [
   {
@@ -29,6 +30,12 @@
    "name": "ORDERS",
    "temporary": false,
    "partitioned": false,
+   "comment": "受注。1 行が 1 件の受注"
+  },
+  {
+   "name": "ORDER_EVENTS",
+   "temporary": false,
+   "partitioned": true,
    "comment": null
   },
   {
@@ -169,6 +176,46 @@
    "length": 22,
    "precision": 18,
    "scale": 2,
+   "nullable": true
+  },
+  {
+   "table": "ORDER_EVENTS",
+   "name": "EVENT_ID",
+   "position": 1,
+   "dataType": "NUMBER",
+   "length": 22,
+   "precision": 12,
+   "scale": 0,
+   "nullable": false
+  },
+  {
+   "table": "ORDER_EVENTS",
+   "name": "ORDER_ID",
+   "position": 2,
+   "dataType": "NUMBER",
+   "length": 22,
+   "precision": 12,
+   "scale": 0,
+   "nullable": false
+  },
+  {
+   "table": "ORDER_EVENTS",
+   "name": "EVENT_DATE",
+   "position": 3,
+   "dataType": "DATE",
+   "length": 7,
+   "precision": null,
+   "scale": null,
+   "nullable": false
+  },
+  {
+   "table": "ORDER_EVENTS",
+   "name": "NOTE",
+   "position": 4,
+   "dataType": "VARCHAR2",
+   "length": 200,
+   "precision": null,
+   "scale": null,
    "nullable": true
   },
   {
@@ -314,7 +361,7 @@
    "generated": false
   },
   {
-   "name": "SYS_C009341",
+   "name": "SYS_C009408",
    "table": "AUDIT_LOG",
    "type": "CHECK",
    "columns": [
@@ -325,7 +372,7 @@
    "condition": "\"LOG_ID\" IS NOT NULL"
   },
   {
-   "name": "SYS_C009342",
+   "name": "SYS_C009409",
    "table": "AUDIT_LOG",
    "type": "CHECK",
    "columns": [
@@ -336,7 +383,7 @@
    "condition": "\"TABLE_NAME\" IS NOT NULL"
   },
   {
-   "name": "SYS_C009343",
+   "name": "SYS_C009410",
    "table": "AUDIT_LOG",
    "type": "CHECK",
    "columns": [
@@ -357,7 +404,7 @@
    "generated": false
   },
   {
-   "name": "SYS_C009313",
+   "name": "SYS_C009380",
    "table": "CUSTOMERS",
    "type": "CHECK",
    "columns": [
@@ -368,7 +415,7 @@
    "condition": "\"CUSTOMER_ID\" IS NOT NULL"
   },
   {
-   "name": "SYS_C009314",
+   "name": "SYS_C009381",
    "table": "CUSTOMERS",
    "type": "CHECK",
    "columns": [
@@ -416,7 +463,7 @@
    "generated": false
   },
   {
-   "name": "SYS_C009322",
+   "name": "SYS_C009389",
    "table": "ORDERS",
    "type": "CHECK",
    "columns": [
@@ -427,7 +474,7 @@
    "condition": "\"ORDER_ID\" IS NOT NULL"
   },
   {
-   "name": "SYS_C009323",
+   "name": "SYS_C009390",
    "table": "ORDERS",
    "type": "CHECK",
    "columns": [
@@ -438,7 +485,7 @@
    "condition": "\"CUSTOMER_ID\" IS NOT NULL"
   },
   {
-   "name": "SYS_C009324",
+   "name": "SYS_C009391",
    "table": "ORDERS",
    "type": "CHECK",
    "columns": [
@@ -449,7 +496,7 @@
    "condition": "\"ORDER_DATE\" IS NOT NULL"
   },
   {
-   "name": "SYS_C009325",
+   "name": "SYS_C009392",
    "table": "ORDERS",
    "type": "CHECK",
    "columns": [
@@ -458,6 +505,39 @@
    "enabled": true,
    "generated": true,
    "condition": "\"STATUS\" IS NOT NULL"
+  },
+  {
+   "name": "SYS_C009412",
+   "table": "ORDER_EVENTS",
+   "type": "CHECK",
+   "columns": [
+    "EVENT_ID"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"EVENT_ID\" IS NOT NULL"
+  },
+  {
+   "name": "SYS_C009413",
+   "table": "ORDER_EVENTS",
+   "type": "CHECK",
+   "columns": [
+    "ORDER_ID"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"ORDER_ID\" IS NOT NULL"
+  },
+  {
+   "name": "SYS_C009414",
+   "table": "ORDER_EVENTS",
+   "type": "CHECK",
+   "columns": [
+    "EVENT_DATE"
+   ],
+   "enabled": true,
+   "generated": true,
+   "condition": "\"EVENT_DATE\" IS NOT NULL"
   },
   {
    "name": "CK_E_ITEMS_QUANTITY",
@@ -516,7 +596,7 @@
    "generated": false
   },
   {
-   "name": "SYS_C009328",
+   "name": "SYS_C009395",
    "table": "ORDER_ITEMS",
    "type": "CHECK",
    "columns": [
@@ -527,7 +607,7 @@
    "condition": "\"ORDER_ID\" IS NOT NULL"
   },
   {
-   "name": "SYS_C009329",
+   "name": "SYS_C009396",
    "table": "ORDER_ITEMS",
    "type": "CHECK",
    "columns": [
@@ -538,7 +618,7 @@
    "condition": "\"LINE_NO\" IS NOT NULL"
   },
   {
-   "name": "SYS_C009330",
+   "name": "SYS_C009397",
    "table": "ORDER_ITEMS",
    "type": "CHECK",
    "columns": [
@@ -549,7 +629,7 @@
    "condition": "\"PRODUCT_ID\" IS NOT NULL"
   },
   {
-   "name": "SYS_C009331",
+   "name": "SYS_C009398",
    "table": "ORDER_ITEMS",
    "type": "CHECK",
    "columns": [
@@ -560,7 +640,7 @@
    "condition": "\"QUANTITY\" IS NOT NULL"
   },
   {
-   "name": "SYS_C009332",
+   "name": "SYS_C009399",
    "table": "ORDER_ITEMS",
    "type": "CHECK",
    "columns": [
@@ -592,7 +672,7 @@
    "generated": false
   },
   {
-   "name": "SYS_C009317",
+   "name": "SYS_C009384",
    "table": "PRODUCTS",
    "type": "CHECK",
    "columns": [
@@ -603,7 +683,7 @@
    "condition": "\"PRODUCT_ID\" IS NOT NULL"
   },
   {
-   "name": "SYS_C009318",
+   "name": "SYS_C009385",
    "table": "PRODUCTS",
    "type": "CHECK",
    "columns": [
@@ -614,7 +694,7 @@
    "condition": "\"STOCK_QUANTITY\" IS NOT NULL"
   },
   {
-   "name": "SYS_C009319",
+   "name": "SYS_C009386",
    "table": "PRODUCTS",
    "type": "CHECK",
    "columns": [
@@ -652,7 +732,7 @@
    "generated": false
   },
   {
-   "name": "SYS_C009337",
+   "name": "SYS_C009404",
    "table": "SHIPMENTS",
    "type": "CHECK",
    "columns": [
@@ -663,7 +743,7 @@
    "condition": "\"SHIPMENT_ID\" IS NOT NULL"
   },
   {
-   "name": "SYS_C009338",
+   "name": "SYS_C009405",
    "table": "SHIPMENTS",
    "type": "CHECK",
    "columns": [
@@ -763,6 +843,13 @@
  ],
  "dependencies": [
   {
+   "name": "ARCHIVE_SHIPMENTS",
+   "type": "PROCEDURE",
+   "refOwner": "EXPLORER",
+   "refName": "SHIPMENTS",
+   "refType": "TABLE"
+  },
+  {
    "name": "CANCEL_ORDER",
    "type": "PROCEDURE",
    "refOwner": "EXPLORER",
@@ -817,6 +904,48 @@
    "refOwner": "EXPLORER",
    "refName": "PRODUCTS",
    "refType": "TABLE"
+  },
+  {
+   "name": "PKG_SHIPPING",
+   "type": "PACKAGE",
+   "refOwner": "EXPLORER",
+   "refName": "ORDERS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "PKG_SHIPPING",
+   "type": "PACKAGE",
+   "refOwner": "EXPLORER",
+   "refName": "SHIPMENTS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "PKG_SHIPPING",
+   "type": "PACKAGE BODY",
+   "refOwner": "EXPLORER",
+   "refName": "ORDERS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "PKG_SHIPPING",
+   "type": "PACKAGE BODY",
+   "refOwner": "EXPLORER",
+   "refName": "PKG_SHIPPING",
+   "refType": "PACKAGE"
+  },
+  {
+   "name": "PKG_SHIPPING",
+   "type": "PACKAGE BODY",
+   "refOwner": "EXPLORER",
+   "refName": "SHIPMENTS",
+   "refType": "TABLE"
+  },
+  {
+   "name": "PKG_SHIPPING",
+   "type": "PACKAGE BODY",
+   "refOwner": "EXPLORER",
+   "refName": "SHIPMENT_SEQ",
+   "refType": "SEQUENCE"
   },
   {
    "name": "REPORT_OPEN_ORDERS",
@@ -898,6 +1027,11 @@
  ],
  "segments": [
   {
+   "name": "AUDIT_LOG",
+   "type": "TABLE",
+   "bytes": 65536
+  },
+  {
    "name": "CUSTOMERS",
    "type": "TABLE",
    "bytes": 65536
@@ -908,8 +1042,18 @@
    "bytes": 65536
   },
   {
+   "name": "ORDER_EVENTS",
+   "type": "TABLE PARTITION",
+   "bytes": 16777216
+  },
+  {
    "name": "ORDER_ITEMS",
    "type": "TABLE",
+   "bytes": 65536
+  },
+  {
+   "name": "PK_E_AUDIT_LOG",
+   "type": "INDEX",
    "bytes": 65536
   },
   {
@@ -967,7 +1111,7 @@
    "numRows": 50,
    "blocks": 5,
    "avgRowLen": 32,
-   "lastAnalyzed": "2026-09-20T10:11:25",
+   "lastAnalyzed": "2026-09-20T11:05:35",
    "stale": false
   },
   {
@@ -975,15 +1119,23 @@
    "numRows": 400,
    "blocks": 5,
    "avgRowLen": 28,
-   "lastAnalyzed": "2026-09-20T10:11:25",
+   "lastAnalyzed": "2026-09-20T11:05:35",
    "stale": false
+  },
+  {
+   "table": "ORDER_EVENTS",
+   "numRows": 0,
+   "blocks": 0,
+   "avgRowLen": 0,
+   "lastAnalyzed": "2026-09-20T11:05:35",
+   "stale": true
   },
   {
    "table": "ORDER_ITEMS",
    "numRows": 1200,
    "blocks": 5,
    "avgRowLen": 17,
-   "lastAnalyzed": "2026-09-20T10:11:25",
+   "lastAnalyzed": "2026-09-20T11:05:35",
    "stale": false
   },
   {
@@ -991,7 +1143,7 @@
    "numRows": 20,
    "blocks": 5,
    "avgRowLen": 21,
-   "lastAnalyzed": "2026-09-20T10:11:25",
+   "lastAnalyzed": "2026-09-20T11:05:35",
    "stale": false
   },
   {
@@ -999,7 +1151,7 @@
    "numRows": 120,
    "blocks": 5,
    "avgRowLen": 21,
-   "lastAnalyzed": "2026-09-20T10:11:25",
+   "lastAnalyzed": "2026-09-20T11:05:35",
    "stale": false
   }
  ],
@@ -1013,7 +1165,7 @@
    "density": 0.02,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "CUSTOMERS",
@@ -1024,7 +1176,7 @@
    "density": 0.02,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "CUSTOMERS",
@@ -1035,7 +1187,7 @@
    "density": 0.02,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDERS",
@@ -1046,7 +1198,7 @@
    "density": 0.02,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDERS",
@@ -1057,7 +1209,7 @@
    "density": 0.005,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDERS",
@@ -1068,7 +1220,7 @@
    "density": 0.0025,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDERS",
@@ -1079,7 +1231,7 @@
    "density": 0.00125,
    "histogram": "FREQUENCY",
    "numBuckets": 3,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDERS",
@@ -1090,7 +1242,51 @@
    "density": 0.0025,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
+  },
+  {
+   "table": "ORDER_EVENTS",
+   "column": "EVENT_DATE",
+   "numDistinct": 0,
+   "numNulls": 0,
+   "avgColLen": 0,
+   "density": 0.0,
+   "histogram": "NONE",
+   "numBuckets": 0,
+   "lastAnalyzed": "2026-09-20T11:05:35"
+  },
+  {
+   "table": "ORDER_EVENTS",
+   "column": "EVENT_ID",
+   "numDistinct": 0,
+   "numNulls": 0,
+   "avgColLen": 0,
+   "density": 0.0,
+   "histogram": "NONE",
+   "numBuckets": 0,
+   "lastAnalyzed": "2026-09-20T11:05:35"
+  },
+  {
+   "table": "ORDER_EVENTS",
+   "column": "NOTE",
+   "numDistinct": 0,
+   "numNulls": 0,
+   "avgColLen": 0,
+   "density": 0.0,
+   "histogram": "NONE",
+   "numBuckets": 0,
+   "lastAnalyzed": "2026-09-20T11:05:35"
+  },
+  {
+   "table": "ORDER_EVENTS",
+   "column": "ORDER_ID",
+   "numDistinct": 0,
+   "numNulls": 0,
+   "avgColLen": 0,
+   "density": 0.0,
+   "histogram": "NONE",
+   "numBuckets": 0,
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDER_ITEMS",
@@ -1101,7 +1297,7 @@
    "density": 0.333333333333333,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDER_ITEMS",
@@ -1112,7 +1308,7 @@
    "density": 0.0025,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDER_ITEMS",
@@ -1123,7 +1319,7 @@
    "density": 0.000416666666666667,
    "histogram": "FREQUENCY",
    "numBuckets": 15,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDER_ITEMS",
@@ -1134,7 +1330,7 @@
    "density": 0.333333333333333,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDER_ITEMS",
@@ -1145,7 +1341,7 @@
    "density": 1.0,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "PRODUCTS",
@@ -1156,7 +1352,7 @@
    "density": 0.05,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "PRODUCTS",
@@ -1167,7 +1363,7 @@
    "density": 1.0,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "PRODUCTS",
@@ -1178,7 +1374,7 @@
    "density": 0.05,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "PRODUCTS",
@@ -1189,7 +1385,7 @@
    "density": 1.0,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "SHIPMENTS",
@@ -1200,7 +1396,7 @@
    "density": 0.00416666666666667,
    "histogram": "FREQUENCY",
    "numBuckets": 2,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "SHIPMENTS",
@@ -1211,7 +1407,7 @@
    "density": 0.00833333333333333,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "SHIPMENTS",
@@ -1222,7 +1418,7 @@
    "density": 0.00833333333333333,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "SHIPMENTS",
@@ -1233,7 +1429,286 @@
    "density": 0.0333333333333333,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T10:11:25"
+   "lastAnalyzed": "2026-09-20T11:05:35"
+  }
+ ],
+ "objects": [
+  {
+   "name": "PKG_SHIPPING",
+   "type": "PACKAGE",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:33",
+   "lastDdl": "2026-09-20T11:05:33"
+  },
+  {
+   "name": "PKG_SHIPPING",
+   "type": "PACKAGE BODY",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:33",
+   "lastDdl": "2026-09-20T11:05:33"
+  },
+  {
+   "name": "ARCHIVE_SHIPMENTS",
+   "type": "PROCEDURE",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:34",
+   "lastDdl": "2026-09-20T11:05:34"
+  },
+  {
+   "name": "CANCEL_ORDER",
+   "type": "PROCEDURE",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:33",
+   "lastDdl": "2026-09-20T11:05:33"
+  },
+  {
+   "name": "CREATE_ORDER",
+   "type": "PROCEDURE",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:33",
+   "lastDdl": "2026-09-20T11:05:33"
+  },
+  {
+   "name": "PURGE_TABLE",
+   "type": "PROCEDURE",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:33",
+   "lastDdl": "2026-09-20T11:05:33"
+  },
+  {
+   "name": "REPORT_OPEN_ORDERS",
+   "type": "PROCEDURE",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:34",
+   "lastDdl": "2026-09-20T11:05:34"
+  },
+  {
+   "name": "AUDIT_SEQ",
+   "type": "SEQUENCE",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:33",
+   "lastDdl": "2026-09-20T11:05:33"
+  },
+  {
+   "name": "ORDER_SEQ",
+   "type": "SEQUENCE",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:33",
+   "lastDdl": "2026-09-20T11:05:33"
+  },
+  {
+   "name": "SHIPMENT_SEQ",
+   "type": "SEQUENCE",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:33",
+   "lastDdl": "2026-09-20T11:05:33"
+  },
+  {
+   "name": "AUDIT_LOG",
+   "type": "TABLE",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:33",
+   "lastDdl": "2026-09-20T11:05:33"
+  },
+  {
+   "name": "CUSTOMERS",
+   "type": "TABLE",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:33",
+   "lastDdl": "2026-09-20T11:05:33"
+  },
+  {
+   "name": "ORDERS",
+   "type": "TABLE",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:33",
+   "lastDdl": "2026-09-20T11:05:34"
+  },
+  {
+   "name": "ORDER_EVENTS",
+   "type": "TABLE",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:34",
+   "lastDdl": "2026-09-20T11:05:34"
+  },
+  {
+   "name": "ORDER_ITEMS",
+   "type": "TABLE",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:33",
+   "lastDdl": "2026-09-20T11:05:34"
+  },
+  {
+   "name": "PRODUCTS",
+   "type": "TABLE",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:33",
+   "lastDdl": "2026-09-20T11:05:33"
+  },
+  {
+   "name": "SHIPMENTS",
+   "type": "TABLE",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:33",
+   "lastDdl": "2026-09-20T11:05:33"
+  },
+  {
+   "name": "TRG_ITEMS_STOCK_GUARD",
+   "type": "TRIGGER",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:34",
+   "lastDdl": "2026-09-20T11:05:34"
+  },
+  {
+   "name": "TRG_ORDERS_AUDIT",
+   "type": "TRIGGER",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:33",
+   "lastDdl": "2026-09-20T11:05:33"
+  },
+  {
+   "name": "V_OPEN_ORDERS",
+   "type": "VIEW",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:34",
+   "lastDdl": "2026-09-20T11:05:34"
+  },
+  {
+   "name": "V_ORDER_LINES",
+   "type": "VIEW",
+   "status": "VALID",
+   "created": "2026-09-20T11:05:34",
+   "lastDdl": "2026-09-20T11:05:34"
+  }
+ ],
+ "tableModifications": [
+  {
+   "table": "AUDIT_LOG",
+   "inserts": 1,
+   "updates": 0,
+   "deletes": 0,
+   "truncated": false,
+   "timestamp": "2026-09-20T11:05:35"
+  },
+  {
+   "table": "ORDER_EVENTS",
+   "inserts": 8,
+   "updates": 0,
+   "deletes": 0,
+   "truncated": false,
+   "timestamp": "2026-09-20T11:05:35"
+  },
+  {
+   "table": "SHIPMENTS",
+   "inserts": 0,
+   "updates": 3,
+   "deletes": 2,
+   "truncated": false,
+   "timestamp": "2026-09-20T11:05:35"
+  }
+ ],
+ "indexStatistics": [
+  {
+   "index": "PK_E_AUDIT_LOG",
+   "distinctKeys": null,
+   "leafBlocks": null,
+   "clusteringFactor": null,
+   "numRows": null,
+   "lastAnalyzed": null
+  },
+  {
+   "index": "PK_E_CUSTOMERS",
+   "distinctKeys": 50,
+   "leafBlocks": 1,
+   "clusteringFactor": 1,
+   "numRows": 50,
+   "lastAnalyzed": "2026-09-20T11:05:35"
+  },
+  {
+   "index": "PK_E_ORDERS",
+   "distinctKeys": 400,
+   "leafBlocks": 1,
+   "clusteringFactor": 2,
+   "numRows": 400,
+   "lastAnalyzed": "2026-09-20T11:05:35"
+  },
+  {
+   "index": "PK_E_ORDER_ITEMS",
+   "distinctKeys": 1200,
+   "leafBlocks": 3,
+   "clusteringFactor": 4,
+   "numRows": 1200,
+   "lastAnalyzed": "2026-09-20T11:05:35"
+  },
+  {
+   "index": "PK_E_PRODUCTS",
+   "distinctKeys": 20,
+   "leafBlocks": 1,
+   "clusteringFactor": 1,
+   "numRows": 20,
+   "lastAnalyzed": "2026-09-20T11:05:35"
+  },
+  {
+   "index": "PK_E_SHIPMENTS",
+   "distinctKeys": 120,
+   "leafBlocks": 1,
+   "clusteringFactor": 1,
+   "numRows": 120,
+   "lastAnalyzed": "2026-09-20T11:05:35"
+  },
+  {
+   "index": "UQ_E_CUSTOMERS_EMAIL",
+   "distinctKeys": 50,
+   "leafBlocks": 1,
+   "clusteringFactor": 1,
+   "numRows": 50,
+   "lastAnalyzed": "2026-09-20T11:05:35"
+  }
+ ],
+ "sequences": [
+  {
+   "name": "AUDIT_SEQ",
+   "incrementBy": 1,
+   "cacheSize": 0,
+   "lastNumber": 2,
+   "cycle": false
+  },
+  {
+   "name": "ORDER_SEQ",
+   "incrementBy": 1,
+   "cacheSize": 0,
+   "lastNumber": 100000,
+   "cycle": false
+  },
+  {
+   "name": "SHIPMENT_SEQ",
+   "incrementBy": 1,
+   "cacheSize": 20,
+   "lastNumber": 1000,
+   "cycle": false
+  }
+ ],
+ "partitions": [
+  {
+   "table": "ORDER_EVENTS",
+   "type": "RANGE",
+   "subpartitionType": "NONE",
+   "count": 2,
+   "keyColumns": [
+    "EVENT_DATE"
+   ],
+   "subpartitionKeyColumns": []
+  }
+ ],
+ "synonyms": [],
+ "dbLinks": [],
+ "lobs": [],
+ "materializedViews": [],
+ "columnComments": [
+  {
+   "table": "ORDERS",
+   "column": "STATUS",
+   "comment": "RECEIVED / SHIPPED / CANCELLED"
   }
  ]
 }

@@ -55,7 +55,7 @@ def data(analysis, app):
 def test_without_a_snapshot_the_source_side_is_there_and_the_database_side_says_not_collected(analysis, app):
     """AE1."""
     orders = table(build(analysis, app, None), "orders")
-    assert orders["writers"] == {"routines": 2, "statements": 1}
+    assert orders["writers"] == {"routines": 3, "statements": 1}, "create_order, cancel_order, mark_shipped + the app"
     for key in ("rows", "size", "triggerCount"):
         assert orders[key]["state"] == "not_collected", key
     assert orders["foreignKeysOut"] is None and orders["foreignKeysIn"] is None
@@ -115,9 +115,9 @@ def test_a_trigger_in_the_source_and_in_the_database_is_one_trigger(data):
 
 def test_a_table_only_the_application_touches_is_not_untouched(data):
     """AE7."""
-    shipments = table(data, "shipments")
-    assert shipments["writers"] == {"routines": 0, "statements": 1}
-    assert shipments["readers"] == {"routines": 0, "statements": 1}
+    customers = table(data, "customers")
+    assert customers["writers"] == {"routines": 0, "statements": 1}
+    assert customers["readers"] == {"routines": 0, "statements": 0}
 
 
 def test_an_into_target_a_cte_and_dual_are_not_tables(data):

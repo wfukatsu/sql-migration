@@ -28,8 +28,8 @@ def test_analysis_snapshot_and_sql_files_make_one_page(analysis, tmp_path, capsy
     assert main([str(analysis), "--snapshot", str(FIXTURE / "snapshot.json"), "--sql", str(FIXTURE / "app"),
                  "--out", str(out)]) == 0
     data = page.extract(out.read_text(encoding="utf-8"))
-    assert data["meta"]["counts"] == {"tables": 8, "routines": 5, "sql": 21}
-    assert "tables=8" in capsys.readouterr().out
+    assert data["meta"]["counts"] == {"tables": 9, "routines": 7, "sql": 25}
+    assert "tables=9" in capsys.readouterr().out
 
 
 def test_without_a_snapshot_there_is_still_a_page_and_it_says_what_is_missing(analysis, tmp_path, capsys):

@@ -14,3 +14,6 @@ SELECT v.order_id, v.customer_id
 
 -- 方言の拡張で、解析できない文
 SELECT order_id FROM orders MATCH_RECOGNIZE oops (;
+
+-- 顧客のメールアドレスを直す。customers は PL/SQL からは誰も触らない
+UPDATE customers SET email = :email WHERE customer_id = :customer_id;
