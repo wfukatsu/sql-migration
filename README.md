@@ -190,7 +190,7 @@ samples/                   変換の入力例
 spikes/                    残りの処理を H2 / SQLite / DuckDB で実行する初期の検証
 tests/                     変換ツールとスキルのテスト
 docs/                      文書。入口は docs/README.md（guide/ 使い方、design/ 設計、plsql-migration/ 人が決めること、
-                           examples/ 移行例、reports/ 検証レポート、slides/ 説明資料の生成元、diagrams/ draw.io の図）
+                           examples/ 移行例、reports/ 検証レポート、slides/ 説明資料の生成元、diagrams/ draw.io の図（SQL 変換と PL/SQL 変換の構成））
 ```
 
 ---

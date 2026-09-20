@@ -108,7 +108,9 @@ corpus の外の routine を流す手順は [fixtures/plsql-external/](../fixtur
 
 ## 図と説明資料
 
-- [diagrams/architecture.drawio](diagrams/architecture.drawio)（`architecture.png`、`flow.png`）— SQL 変換の系統の構成図。最新の図は [アーキテクチャ](design/architecture.md) の Mermaid
+- [diagrams/architecture.drawio](diagrams/architecture.drawio)（[architecture.png](diagrams/architecture.png)、[flow.png](diagrams/flow.png)）— SQL 変換の系統の構成図と、1 文の処理の流れ
+- [diagrams/plsql-conversion.drawio](diagrams/plsql-conversion.drawio)（[plsql-conversion.png](diagrams/plsql-conversion.png)、[plsql-migrate-flow.png](diagrams/plsql-migrate-flow.png)）— PL/SQL 変換の構成（解析 → 判定 → 生成と報告 → 実 DB での検証）と、承認つきの移行の流れ
+- 細部まで追う図は [アーキテクチャ](design/architecture.md) の Mermaid。draw.io の図を直したら `drawio -x -f png -s 2 -b 10 -p <ページ番号（1 始まり）> -o <名前>.png <名前>.drawio` で PNG を出し直す
 - `slides/*.py` — 説明資料（Google スライド）の生成元。全体の概要、DML ベンチマーク、バックエンドの比較、変換ツールの新旧比較
 
 ## 文書を足す・直すとき
