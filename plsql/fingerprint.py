@@ -28,7 +28,7 @@ from .ir import model as M
 ROOT = Path(__file__).resolve().parent.parent
 # modules that read results and produce none: they cannot change what a generated routine does
 REPORTING = {"review.py", "kpi.py", "report.py", "cli.py", "remediate.py", "propose.py", "verify.py",
-             "fingerprint.py"}
+             "fingerprint.py", "corpus.py"}
 TOOLCHAIN = (
     ("plsql", "*.py"), ("plsql/gen_java", "*.py"), ("plsql/ir", "*"), ("scalardb_migrate", "*.py"),
     ("runtime-java/src/main/java/com/scalar/migrate/plsql", "*.java"),
