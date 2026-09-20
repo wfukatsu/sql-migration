@@ -54,6 +54,8 @@ flowchart LR
 ln -s "$PWD/skills/migrate-flow" ~/.claude/skills/migrate-flow        # Claude Code から使う
 ```
 
+![承認つきの移行の流れ](../diagrams/plsql-migrate-flow.png)
+
 ## plsql-spec スキル
 
 移行の前に、既存の PL/SQL が**いま何をしているか**を仕様書にします。引数・読み書きする表・SQL・エラーコード・

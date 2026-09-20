@@ -25,6 +25,10 @@ flowchart LR
     CMP -- "一致した証拠" --> DEC
 ```
 
+全体の構成図（draw.io。元データは [plsql-conversion.drawio](../diagrams/plsql-conversion.drawio)）:
+
+![PL/SQL 変換の構成](../diagrams/plsql-conversion.png)
+
 ## 使い方
 
 Claude Code から、仕様の調査 → 変換と人の判断 → 変換後の仕様 → 承認 → テストの順に進めるなら [migrate-flow スキル](skills.md#migrate-flow-スキル) を使います。下はその中で動いているコマンドです。
