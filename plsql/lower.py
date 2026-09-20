@@ -486,16 +486,21 @@ class _Lowerer:
 
     def _case(self, context, ids, text, source) -> M.Statement:
         node = M.Case(id=ids.next("stmt"), kind="Case", source_range=source)
-        selector = _child(context, "ExpressionContext")
+        # `case_statement` は simple / searched のどちらかを 1 つ包むだけで、selector も WHEN もその中にある
+        inner = _child(context, "Simple_case_statementContext") or _child(context, "Searched_case_statementContext") or context
+        selector = _child(inner, "ExpressionContext")
         node.selector = _text(selector) if selector is not None else None
-        for when in _descend(context, {"Case_when_partContext", "Simple_case_when_partContext",
-                                       "Searched_case_when_partContext"}):
-            condition = _child(when, "ConditionContext") or _child(when, "ExpressionContext")
+        for when in _children(inner, "Case_when_part_statementContext"):
             node.branches.append(M.Branch(
-                condition=_text(condition), body=self._statements(when, ids)))
-        else_part = _child(context, "Case_else_partContext")
+                condition=_text(_child(when, "ExpressionContext")),
+                body=self._statements(_child(when, "Seq_of_statementsContext") or when, ids)))
+        else_part = _child(inner, "Case_else_part_statementContext")
         if else_part is not None:
             node.else_body = self._statements(else_part, ids)
+        if not node.branches:
+            # WHEN の無い CASE は文法上ありえない。ここに来るのは、文法の context 名と食い違って中身を落としたときである
+            node.add("WARN", "UNSUPPORTED_CONSTRUCT",
+                     "CASE statement lowered without any WHEN branch; its body was lost, the routine cannot be AUTO")
         return node
 
     def _loop(self, context, ids, text, source) -> M.Statement:

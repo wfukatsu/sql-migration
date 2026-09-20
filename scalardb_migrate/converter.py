@@ -166,8 +166,34 @@ def _bad_join_mark_rewrite(node: exp.Expression) -> bool:
     return False
 
 
+_LEAD = r"(?:\s|--[^\n]*(?:\n|$)|/\*.*?\*/)*"
+# a stored program or an anonymous block: its semicolons end PL/SQL statements, not the SQL statement
+PLSQL_BLOCK = re.compile(_LEAD + r"(?:CREATE\s+(?:OR\s+REPLACE\s+)?(?:(?:NON)?EDITIONABLE\s+)?"
+                         r"(?:PROCEDURE|FUNCTION|PACKAGE|TRIGGER|TYPE\s+BODY)\b|DECLARE\b|BEGIN\b)", re.I | re.S)
+_SLASH_LINE = re.compile(r"^[ \t]*/[ \t]*\r?$", re.M)
+
+
 def _split_statements(text: str, dialect: str) -> list[str]:
-    """Split a script on top-level semicolons using the dialect tokenizer (comments/strings safe)."""
+    """Split a script on top-level semicolons using the dialect tokenizer (comments/strings safe).
+
+    An Oracle script is a SQL*Plus script: a line holding only `/` runs what is above it. Left alone, that `/`
+    glued itself to the next statement and both became one parse error. And a PL/SQL block ends at its `/`, not at
+    its first semicolon -- split on semicolons, `END` came out as a statement of its own (a column reference, so
+    "converted") and the rest of the script was lost. A block is kept whole; the converters refuse it by name.
+    """
+    text = text.removeprefix("\ufeff")
+    if dialect != "oracle" or not _SLASH_LINE.search(text) and not PLSQL_BLOCK.match(text):
+        return _split_on_semicolons(text, dialect)
+    stmts = []
+    for segment in _SLASH_LINE.split(text):
+        if PLSQL_BLOCK.match(segment):
+            stmts.append(segment.strip())
+        else:
+            stmts.extend(_split_on_semicolons(segment, dialect))
+    return stmts
+
+
+def _split_on_semicolons(text: str, dialect: str) -> list[str]:
     tokens = sqlglot.tokenize(text, read=dialect)
     stmts, start = [], 0
     for tok in tokens:
@@ -229,6 +255,11 @@ class StatementConverter:
         if replace:
             src = replace.group("lead") + "INSERT INTO" + sql[replace.end():]
             upsert = True
+        if self.dialect == "oracle" and PLSQL_BLOCK.match(src):
+            res.kind, res.status = "PLSQL_BLOCK", "ERROR"
+            res.issues.append(Issue("ERROR", "PLSQL_BLOCK", "a PL/SQL block (stored program or anonymous block) is not a SQL "
+                                                            "statement; migrate it with the PL/SQL tooling (python -m plsql.generate)"))
+            return res
         try:
             node = sqlglot.parse_one(src, read=self.dialect)
         except ParseError as e:

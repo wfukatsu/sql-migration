@@ -41,6 +41,11 @@ def _cell(text: str, limit: int = 90) -> str:
     return text[:limit] + ("…" if len(text) > limit else "")
 
 
+def _code(text: str) -> str:
+    """表のセルに入れるコードスパン。MySQL の識別子の引用符（`）が入っていれば、区切りを 2 つにする。"""
+    return f"`` {text} ``" if "`" in text else f"`{text}`"
+
+
 def render_markdown(results, source: str, target: str, source_path: str) -> str:
     s = summarize(results)
     lines = [
@@ -58,7 +63,7 @@ def render_markdown(results, source: str, target: str, source_path: str) -> str:
                           for i in r.issues if i.code not in GROUPED_CODES)
         out = _cell("; ".join(r.converted)) if r.converted else ""
         lines.append(f"| {r.index} | {r.kind} | {ICON.get(r.status, '')} {r.status} "
-                     f"| `{_cell(r.source_sql)}` | {('`' + out + '`') if out else '—'} | {iss} |")
+                     f"| {_code(_cell(r.source_sql))} | {_code(out) if out else '—'} | {iss} |")
 
     codes = Counter((i.severity, i.code) for r in results for i in r.issues)
     if codes:
@@ -99,6 +104,9 @@ def render_sql(results, target: str) -> str:
 
 def write_plans(results, plan_dir: Path, stem: str) -> list[Path]:
     plan_dir.mkdir(parents=True, exist_ok=True)
+    # 前の実行の計画を残さない。文の番号や --storage が変わると計画の数が変わり、残った古い計画は現行のものに見える
+    for stale in plan_dir.glob(f"{stem}.*.plan.json"):
+        stale.unlink()
     written = []
     for r in results:
         if getattr(r, "plan", None):
