@@ -1,0 +1,16 @@
+{
+  "members": [
+    {"member_id": 1, "name": "Sato",   "rank": "GOLD",    "balance": 1200, "last_seq": 12, "updated_at": "2026-02-01"},
+    {"member_id": 2, "name": "Suzuki", "rank": "SILVER",  "balance": 450,  "last_seq": 3,  "updated_at": "2026-01-20"},
+    {"member_id": 3, "name": "Tanaka", "rank": "REGULAR", "balance": 80,   "last_seq": 1,  "updated_at": "2026-01-10"},
+    {"member_id": 4, "name": "Ito",    "rank": "GOLD",    "balance": 3000, "last_seq": 0,  "updated_at": null}
+  ],
+  "point_history": [
+    {"member_id": 1, "seq_no": 9,  "points": 500,  "reason": "purchase", "created_at": "2026-01-05"},
+    {"member_id": 1, "seq_no": 10, "points": 300,  "reason": "purchase", "created_at": "2026-01-12"},
+    {"member_id": 1, "seq_no": 11, "points": -100, "reason": "coupon",   "created_at": "2026-01-20"},
+    {"member_id": 1, "seq_no": 12, "points": 500,  "reason": null,       "created_at": "2026-02-01"},
+    {"member_id": 2, "seq_no": 3,  "points": 450,  "reason": "campaign", "created_at": "2026-01-20"},
+    {"member_id": 3, "seq_no": 1,  "points": 80,   "reason": "signup",   "created_at": "2026-01-10"}
+  ]
+}

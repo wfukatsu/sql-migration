@@ -1,0 +1,73 @@
+{
+ "scenario": "use_points_ok",
+ "unit": "pkg_points",
+ "routine": "use_points",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "sessionUser": "POINTS",
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "members": {
+   "columns": [
+    "member_id",
+    "name",
+    "rank",
+    "balance",
+    "last_seq",
+    "updated_at"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     "Sato",
+     "SILVER",
+     {
+      "$dec": "250"
+     },
+     {
+      "$dec": "4"
+     },
+     {
+      "$ts": "2026-01-15T09:30:00"
+     }
+    ]
+   ]
+  },
+  "point_history": {
+   "columns": [
+    "member_id",
+    "seq_no",
+    "points",
+    "reason",
+    "created_at"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     {
+      "$dec": "4"
+     },
+     {
+      "$dec": "-200"
+     },
+     "coupon",
+     {
+      "$ts": "2026-01-15T09:30:00"
+     }
+    ]
+   ]
+  }
+ },
+ "masked": {}
+}

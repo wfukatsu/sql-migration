@@ -1,0 +1,17 @@
+name: get_balance_ok
+unit: pkg_points
+routine: get_balance
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO members (member_id, name, rank, balance, last_seq, updated_at) VALUES (1, 'Sato', 'SILVER', 450, 3, DATE '2026-01-01')
+call:
+  kind: function
+  name: pkg_points.get_balance
+  args:
+    p_member_id: 1
+  returns: NUMBER
+capture_tables:
+- members
+- point_history
+note: 残高をそのまま返す

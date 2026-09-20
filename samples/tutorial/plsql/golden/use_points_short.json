@@ -1,0 +1,60 @@
+{
+ "scenario": "use_points_short",
+ "unit": "pkg_points",
+ "routine": "use_points",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-01-15 09:30:00",
+  "sequences": {}
+ },
+ "sessionUser": "POINTS",
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": {
+  "code": -20103,
+  "message": "ORA-20103: ポイントが不足しています"
+ },
+ "tables": {
+  "members": {
+   "columns": [
+    "member_id",
+    "name",
+    "rank",
+    "balance",
+    "last_seq",
+    "updated_at"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "1"
+     },
+     "Sato",
+     "SILVER",
+     {
+      "$dec": "450"
+     },
+     {
+      "$dec": "3"
+     },
+     {
+      "$ts": "2026-01-01T00:00:00"
+     }
+    ]
+   ]
+  },
+  "point_history": {
+   "columns": [
+    "member_id",
+    "seq_no",
+    "points",
+    "reason",
+    "created_at"
+   ],
+   "rows": []
+  }
+ },
+ "masked": {}
+}

@@ -1,0 +1,20 @@
+name: add_points_ok
+unit: pkg_points
+routine: add_points
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO members (member_id, name, rank, balance, last_seq, updated_at) VALUES (1, 'Sato', 'REGULAR', 50, 2, DATE '2026-01-01')
+- INSERT INTO point_history (member_id, seq_no, points, reason, created_at) VALUES (1, 1, 30, 'seed', DATE '2026-01-01')
+- INSERT INTO point_history (member_id, seq_no, points, reason, created_at) VALUES (1, 2, 20, 'seed', DATE '2026-01-01')
+call:
+  kind: procedure
+  name: pkg_points.add_points
+  args:
+    p_member_id: 1
+    p_points: 100
+    p_reason: purchase
+capture_tables:
+- members
+- point_history
+note: '付与: 履歴 3 番、残高 150、ランクは REGULAR のまま'

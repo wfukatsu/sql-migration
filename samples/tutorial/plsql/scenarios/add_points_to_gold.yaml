@@ -1,0 +1,18 @@
+name: add_points_to_gold
+unit: pkg_points
+routine: add_points
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup:
+- INSERT INTO members (member_id, name, rank, balance, last_seq, updated_at) VALUES (1, 'Sato', 'SILVER', 450, 0, DATE '2026-01-01')
+call:
+  kind: procedure
+  name: pkg_points.add_points
+  args:
+    p_member_id: 1
+    p_points: 550
+    p_reason: null
+capture_tables:
+- members
+- point_history
+note: '境界: 残高ちょうど 1000 で GOLD。理由は NULL'

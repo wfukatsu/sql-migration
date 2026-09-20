@@ -1,0 +1,16 @@
+name: get_balance_no_member
+unit: pkg_points
+routine: get_balance
+pinned:
+  sysdate: '2026-01-15 09:30:00'
+setup: []
+call:
+  kind: function
+  name: pkg_points.get_balance
+  args:
+    p_member_id: 999
+  returns: NUMBER
+capture_tables:
+- members
+- point_history
+note: '会員がいない: NO_DATA_FOUND を -20101 に言い換える'

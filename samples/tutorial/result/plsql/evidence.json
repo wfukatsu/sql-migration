@@ -1,0 +1,121 @@
+{
+ "double": {
+  "variant": "double",
+  "scenarios": {
+   "add_points_just_below_silver": {
+    "routine": "pkg_points.add_points",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   },
+   "add_points_no_member": {
+    "routine": "pkg_points.add_points",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   },
+   "add_points_ok": {
+    "routine": "pkg_points.add_points",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   },
+   "add_points_to_gold": {
+    "routine": "pkg_points.add_points",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   },
+   "add_points_to_silver": {
+    "routine": "pkg_points.add_points",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   },
+   "add_points_zero": {
+    "routine": "pkg_points.add_points",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   },
+   "get_balance_no_member": {
+    "routine": "pkg_points.get_balance",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   },
+   "get_balance_ok": {
+    "routine": "pkg_points.get_balance",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   },
+   "use_points_exact_balance": {
+    "routine": "pkg_points.use_points",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   },
+   "use_points_negative": {
+    "routine": "pkg_points.use_points",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   },
+   "use_points_no_member": {
+    "routine": "pkg_points.use_points",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   },
+   "use_points_ok": {
+    "routine": "pkg_points.use_points",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   },
+   "use_points_short": {
+    "routine": "pkg_points.use_points",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [],
+    "direct": false
+   }
+  },
+  "not_compared": {},
+  "fingerprints": {
+   "toolchain": "1a42994459bd6b8cb82e646ea740fa2b1329c3f3608f1fb872e4d6cb8eec2caf",
+   "sources": {
+    "pkg_points.rank_of": "5262fb63d1a47cdbbf1760edeeb6ad6ff29e8cb51ac96db025dd4a15e34b30eb",
+    "pkg_points.get_balance": "87a7cf2f76c9c26feb5b468b1441904264c6bf495ae60dc76f802b90786eedfb",
+    "pkg_points.add_points": "005c8d13aa987f5231dc94b54f8f5f948b615235f20a7b86cf063a82a8e330b0",
+    "pkg_points.use_points": "c4cdc0388bae20ecd90256599a83f4936ddfe99806a1e41be34da914c9a04233"
+   }
+  }
+ }
+}

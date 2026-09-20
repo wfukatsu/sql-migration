@@ -1,0 +1,68 @@
+{
+  "pattern": "P1",
+  "source_dialect": "oracle",
+  "source_sql": "SELECT member_id, NVL(name, '(no name)') AS name, balance FROM members WHERE member_id = 1",
+  "fetch": [
+    {
+      "table": "members",
+      "namespace": null,
+      "alias": "members",
+      "columns": [
+        "member_id",
+        "name",
+        "balance"
+      ],
+      "column_types": {
+        "member_id": "BIGINT",
+        "name": "TEXT",
+        "rank": "TEXT",
+        "balance": "BIGINT",
+        "last_seq": "INT",
+        "updated_at": "DATE"
+      },
+      "predicates": [
+        {
+          "column": "member_id",
+          "op": "=",
+          "value": 1
+        }
+      ],
+      "scalardb_sql": "SELECT member_id, name, balance FROM members WHERE member_id = 1",
+      "access_path": "GET",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "member_id"
+        ]
+      ],
+      "residual_types": {}
+    }
+  ],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "SELECT member_id, NVL(name, '(no name)') AS name, balance FROM members WHERE member_id = 1",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "SELECT member_id, COALESCE(name, '(no name)') AS name, balance FROM members WHERE member_id = 1"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": false,
+    "row_limit": 10000
+  },
+  "unresolved": [],
+  "notes": [
+    "members: pushdown member_id = 1"
+  ],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)"
+  }
+}
