@@ -74,9 +74,11 @@ def main(argv: list[str] | None = None) -> int:
         for failed in kpi["failedFiles"]:
             print(f"  PARSE FAILED {failed}")
     if args.out_dir:
+        # before `write`: the analysis gives every SqlOperation its read and write sets from the SQL itself, and
+        # without a ScalarDB schema nothing else does. Written the other way round, program.ir.json named no table
+        program_analysis = analyse_program(analysis.program)
         written = write(analysis, args.out_dir)
         known = review.routine_ids(analysis.program)
-        program_analysis = analyse_program(analysis.program)
         # the report is believed only where it was measured on this source, by this toolchain
         measured = review.evidence_from_diff(args.evidence, args.variant, known,
                                              current=fingerprint.of(analysis.program, args.root))
