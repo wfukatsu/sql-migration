@@ -36,11 +36,11 @@ import yaml
 
 # リポジトリの根からの相対。別のディレクトリから呼んでも同じ文書を読む
 DEFAULT_DOC = str(Path(__file__).resolve().parents[3] / "docs" / "plsql-decisions-outside-generator.md")
-ITEM_ID = re.compile(r"^(OPS|CALL|BIZ)-\d+$")
 
 
 class RecordError(Exception):
     """記録が読めない形をしている。問題（終了コード 1）ではなく、入力の誤り（2）として扱う。"""
+
 
 STATUSES = ("未決", "決定", "対象外")
 ITEM_HEADER = re.compile(r"^####\s+((?:OPS|CALL|BIZ)-\d+)\s+(.+?)\s*$")
@@ -263,7 +263,7 @@ def read_record(path: Path) -> dict[str, dict]:
     if not isinstance(data, dict) or not isinstance(items or {}, dict):
         raise RecordError(f"{path}: 最上位は `items:` の下に 項目 ID → 内容 を並べた形であるべき")
     for item, entry in (items or {}).items():
-        if not ITEM_ID.match(str(item)):
+        if not ITEM_ID.fullmatch(str(item)):   # 文の中から ID を拾う形（先頭一致）なので、全体で当てる
             raise RecordError(f"{path}: 「{item}」は項目 ID（OPS-1 / CALL-2 / BIZ-3 の形）ではない")
         if not isinstance(entry, dict):
             raise RecordError(f"{path}: {item} の内容が 名前: 値 の形になっていない")

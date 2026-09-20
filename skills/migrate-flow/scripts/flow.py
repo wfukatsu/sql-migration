@@ -75,12 +75,34 @@ def _files(state: dict, out: Path, stage: str) -> list[Path]:
     """その段階で承認されるもの。指紋はこのファイルの中身から取る。"""
     inputs = state["inputs"]
     if stage == "spec":
-        return sorted((out / "spec").glob("*.md"))
+        # 原文も入れる。仕様書は原文の写しなので、原文が変われば、承認した仕様はもう現行の仕様ではない
+        return sorted((out / "spec").glob("*.md")) + _sources(inputs)
     if stage == "converted":
         return sorted((out / "docs").glob("*.md"))
     chosen = [inputs.get("limits"), inputs.get("record")]
     reports = [out / "generated" / "generation-report.json"] if inputs["kind"] == "plsql" else sorted((out / "converted").glob("*.report.json"))
     return [Path(f) for f in chosen if f and Path(f).exists()] + [r for r in reports if r.exists()]
+
+
+def _sources(inputs: dict) -> list[Path]:
+    src = Path(inputs.get("src") or "")
+    if src.is_file():
+        return [src]
+    return sorted(f for f in src.rglob("*") if f.is_file() and not any(part.startswith(".") for part in f.relative_to(src).parts))
+
+
+def _record(inputs: dict) -> dict[str, dict]:
+    """記録（項目 ID → 内容）。まだ無ければ空。形が違えば入力の誤り（2）にする。"""
+    path = Path(inputs["record"]) if inputs.get("record") else None
+    if path is None or not path.exists():
+        return {}
+    try:
+        items = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("items") or {}
+    except (yaml.YAMLError, AttributeError) as e:
+        raise FlowError(f"{path}: 記録が読めない: {str(e).splitlines()[0]}") from None
+    if not isinstance(items, dict) or not all(isinstance(entry, dict) for entry in items.values()):
+        raise FlowError(f"{path}: `items:` の下に 項目 ID → 内容（名前: 値）を並べた形であるべき")
+    return items
 
 
 def fingerprint(files: list[Path]) -> str:
@@ -108,9 +130,10 @@ def problems_of(state: dict, out: Path, stage: str) -> list[str]:
     """その段階を承認に出せない理由。空なら出せる。"""
     inputs, files = state["inputs"], _files(state, out, stage)
     if stage == "spec":
-        if not files:
+        pages = [f for f in files if f.parent == out / "spec"]
+        if not pages:
             return ["現行の仕様（spec/*.md）がまだ無い"]
-        found = _mermaid_problems(files, "現行の仕様")
+        found = _mermaid_problems(pages, "現行の仕様")
         if inputs["kind"] == "plsql":
             facts = _script("plsql-spec", "spec_facts")
             modules, routines, inventory = facts.load(out / "spec-analysis")
@@ -119,23 +142,23 @@ def problems_of(state: dict, out: Path, stage: str) -> list[str]:
     if stage == "decisions":
         if not files or not any(f.name.endswith("report.json") for f in files):
             return ["変換がまだ済んでいない（変換の報告が無い）"]
-        found = []
+        found, record = [], _record(inputs)
         if inputs["kind"] == "plsql":
             report = json.loads((out / "generated" / "generation-report.json").read_text(encoding="utf-8"))
             summary = report.get("summary") or {}
             if summary.get("untranslatedStatements"):
                 found.append(f"変換できなかった文が {summary['untranslatedStatements']} 残っている")
-            if inputs.get("record") and Path(inputs["record"]).exists():
-                record = (yaml.safe_load(Path(inputs["record"]).read_text(encoding="utf-8")) or {}).get("items", {})
-                for item, entry in record.items():
-                    if entry.get("状態") == "決定" and not (entry.get("決めた人") and entry.get("日付")):
-                        found.append(f"記録の {item} は「決定」だが、決めた人か日付が無い")
         else:
+            # 記録のファイルを渡してあるだけでは足りない。変換できなかった文の 1 つずつに、どう扱うかの項目が要る
             for report in (f for f in files if f.name.endswith(".report.json")):
                 failed = [s for s in json.loads(report.read_text(encoding="utf-8")).get("results", []) if s.get("status") == "ERROR"]
-                if failed and not inputs.get("record"):
-                    found.append(f"{report.name}: 変換できなかった文が {len(failed)}。どう扱うか（書き直す・アプリへ移す・対象から外す）の"
-                                 "判断を記録（--record）に残してから承認する")
+                missing = [f"SQL-{s.get('index')}" for s in failed if f"SQL-{s.get('index')}" not in record]
+                if missing:
+                    found.append(f"{report.name}: 変換できなかった文のうち {len(missing)} に、どう扱うか（書き直す・アプリへ移す・"
+                                 f"対象から外す）の項目が記録（--record）に無い: {'、'.join(missing)}")
+        for item, entry in record.items():
+            if entry.get("状態") == "決定" and not (entry.get("決めた人") and entry.get("日付")):
+                found.append(f"記録の {item} は「決定」だが、決めた人か日付が無い")
         return found
     if not files:
         return ["変換後の仕様（docs/*.md）がまだ無い"]
@@ -156,11 +179,29 @@ def open_items(state: dict, out: Path) -> list[str]:
     if state["inputs"]["kind"] == "plsql" and report.exists():
         verdicts = json.loads(report.read_text(encoding="utf-8")).get("verdicts") or {}
         found += [f"REVIEW: {routine}" for routine, v in sorted(verdicts.items()) if v.get("verdict") == "REVIEW"]
-    record = state["inputs"].get("record")
-    if record and Path(record).exists():
-        items = (yaml.safe_load(Path(record).read_text(encoding="utf-8")) or {}).get("items", {})
-        found += sorted(k for k, v in items.items() if v.get("状態") == "未決")
+        redesigns = sorted(routine for routine, v in verdicts.items() if v.get("verdict") == "REDESIGN")
+        answered = _redesign_answers(state["inputs"], out) if redesigns else {}
+        for routine in redesigns:
+            if answered is None:
+                found.append(f"REDESIGN: {routine}（決めたかどうかが分からない。generated/analysis を、生成と同じ --limits で作り直す）")
+            elif answered.get(routine, ["?"]):
+                found.append(f"REDESIGN: {routine}（limits.yaml に答えの無いルール: {'、'.join(answered.get(routine, ['?']))}）")
+    found += sorted(k for k, v in _record(state["inputs"]).items() if v.get("状態") == "未決")
     return found
+
+
+def _redesign_answers(inputs: dict, out: Path) -> dict[str, list[str]] | None:
+    """REDESIGN の routine → まだ `limits.yaml` に答えの無いルール。解析が無いか、`limits.yaml` より古ければ None。
+
+    REDESIGN という判定は、決定のあとも REDESIGN のままである（ルールが当たった事実は変わらない）。決まったか
+    どうかは、決定を適用した解析（`plsql.cli --limits … --out-dir generated/analysis`）の `redesign.open` にある。
+    """
+    decisions = out / "generated" / "analysis" / "decisions.json"
+    limits = Path(inputs["limits"]) if inputs.get("limits") else None
+    if not decisions.exists() or (limits and limits.exists() and limits.stat().st_mtime > decisions.stat().st_mtime):
+        return None
+    routines = json.loads(decisions.read_text(encoding="utf-8")).get("routines") or []
+    return {r["routine"]: list((r.get("redesign") or {}).get("open") or []) for r in routines if r.get("redesign")}
 
 
 def stage_state(state: dict, out: Path, stage: str) -> tuple[str, list[str]]:
@@ -176,10 +217,11 @@ def stage_state(state: dict, out: Path, stage: str) -> tuple[str, list[str]]:
 def cmd_init(args) -> int:
     out = Path(args.out)
     existing = yaml.safe_load(_state_path(out).read_text(encoding="utf-8")) if _state_path(out).exists() else {}
-    inputs = {"kind": args.kind, "src": args.src}
+    inputs = {"kind": args.kind, "src": str(Path(args.src).resolve())}
     for key in ("scalardb_schema", "limits", "record", "evidence", "source_dialect", "target_dialect"):
         if getattr(args, key):
-            inputs[key] = getattr(args, key)
+            # どこから呼んでも同じファイルを指すようにする（相対のままだと、別の場所から呼んだときに指紋が変わる）
+            inputs[key] = getattr(args, key) if key.endswith("_dialect") else str(Path(getattr(args, key)).resolve())
     if not Path(args.src).exists():
         raise FlowError(f"{args.src} が無い")
     save(out, {"inputs": inputs, "approvals": (existing or {}).get("approvals") or {}, "test": (existing or {}).get("test")})
@@ -246,10 +288,28 @@ def cmd_approve(args) -> int:
     if args.note:
         approval["メモ"] = args.note
     state.setdefault("approvals", {})[args.stage] = approval
-    state["test"] = None   # 承認が変われば、前のテストは何を確かめたのか分からなくなる
+    state["test"] = _test_after(state, args.stage, approval, args.date)
     save(out, state)
     print(f"`{args.stage}`（{TITLES[args.stage]}）を {args.by} が {args.date} に承認した")
     return 0
+
+
+def _test_after(state: dict, stage: str, approval: dict, date: str) -> dict | None:
+    """承認を取り直したあとに、前のテストの結果が残るか。
+
+    テストが確かめたのは、現行の仕様（`spec`）と、決定を適用して生成したコード（`decisions`）である。どちらかの
+    承認が変われば、前のテストは何を確かめたのか分からなくなるので消す。`converted` は文書で、テストの結果を
+    文書に入れる（`--evidence`）と必ず変わる——そこで消すと、結果を文書に書くたびにテストが無かったことになる。
+    """
+    test = state.get("test")
+    if not test or stage != "converted":
+        return None
+    tested, approvals = test.get("承認の指紋") or {}, state.get("approvals") or {}
+    if any(tested.get(s) != (approvals.get(s) or {}).get("指紋") for s in ("spec", "decisions")):
+        return None
+    test["承認の指紋"] = {**tested, "converted": approval["指紋"]}
+    test["テストのあとで取り直した承認"] = [*test.get("テストのあとで取り直した承認", []), f"converted（{date}）"]
+    return test
 
 
 def cmd_gate(args) -> int:
@@ -273,8 +333,14 @@ def cmd_tested(args) -> int:
                      "承認の指紋": {stage: state["approvals"][stage]["指紋"] for stage in STAGES}}
     if args.note:
         state["test"]["メモ"] = args.note
+    if state["inputs"]["kind"] == "plsql" and args.report and Path(args.report).exists():
+        # 比較の結果を文書に入れる（migration_doc.py の --evidence）と、事実の欄が変わる。`converted` の検査が
+        # 同じ比較を見ていなければ、文書は「古い事実」になり、承認を取り直せない
+        state["inputs"]["evidence"] = args.report = str(Path(args.report).resolve())
     save(out, state)
     print(f"テストの結果（{args.result}）を記録した")
+    if state["inputs"].get("evidence") == args.report and args.report:
+        print(f"比較の結果（{args.report}）を入力に控えた。文書に入れるときは migration_doc.py に --evidence {args.report} を渡す")
     return 0
 
 
@@ -316,6 +382,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except FileNotFoundError as e:
         print(f"ファイルが無い: {e.filename}", file=sys.stderr)
+        return 2
+    except (json.JSONDecodeError, yaml.YAMLError, UnicodeDecodeError) as e:
+        print(f"入力が読めない: {type(e).__name__}: {e}", file=sys.stderr)
         return 2
 
 
