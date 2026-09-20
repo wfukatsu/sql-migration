@@ -19,7 +19,7 @@ from plsql.explorer import snapshot as S
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FIXTURE = ROOT / "fixtures" / "explorer"
 # values that exist only in the rows of the fixture's tables (fixtures/explorer/db/data.sql)
-REAL_VALUES = ("RECEIVED", "GROUND", "99.5", "2026-07-19")
+REAL_VALUES = ("GROUND", "99.5", "2026-07-19", "Customer 50")
 
 
 @pytest.fixture(scope="module")
@@ -39,7 +39,7 @@ def test_a_page_made_without_the_values_option_holds_no_value_from_the_data(anal
     """AE5."""
     html, data = html_for(analysis, "snapshot.json")
     for value in REAL_VALUES:
-        assert value not in html.replace("'RECEIVED'", ""), value  # 'RECEIVED' is a literal in create_order's source
+        assert value not in html, value
     orders = next(t for t in data["tables"] if t["name"] == "orders")
     status = next(c for c in orders["columnStatistics"] if c["column"] == "status")
     assert status["numDistinct"] == 3 and status["skewed"] and status["frequent"] is None

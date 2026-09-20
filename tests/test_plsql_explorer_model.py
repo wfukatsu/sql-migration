@@ -233,3 +233,49 @@ def test_the_source_sql_of_every_routine_in_the_corpus_is_what_the_specification
     assert model.FROM_SOURCE.pattern == spec_facts.FROM_SOURCE.pattern
     for routine, f in facts.items():
         assert len(mine.get(routine, ())) == len(f.sql) + len(f.dynamic), routine
+
+
+# --- statistics and structure (version 2 of the snapshot) ------------------------------------------------------------
+
+def test_an_index_is_there_with_its_columns_its_size_and_its_statistics(data):
+    primary = next(i for i in table(data, "order_items")["indexes"] if i["name"] == "pk_e_order_items")
+    assert primary["unique"] and primary["columns"] == ["order_id", "line_no"]
+    assert primary["sizeBytes"] > 0 and primary["statistics"]["distinctKeys"] == 1200
+
+
+def test_a_version_1_snapshot_shows_the_index_and_says_its_statistics_were_not_collected(analysis, app):
+    """AE7."""
+    old = build(analysis, app, "snapshot-v1.json")
+    orders = table(old, "orders")
+    assert orders["indexes"] and all(i["statistics"] is None for i in orders["indexes"])
+    assert orders["modifications"] == {"state": "not_collected"} and orders["partitioning"] is None
+    assert old["sequences"]["state"] == "not_collected" and old["dbObjects"]["state"] == "not_collected"
+    assert old["meta"]["snapshot"]["formatVersion"] == 1
+
+
+def test_writes_since_the_statistics_are_a_number_zero_or_not_collected(analysis, app, data):
+    """AE8. Five and three rows went into two partitions of ORDER_EVENTS: eight, not sixteen."""
+    assert table(data, "order_events")["modifications"]["inserts"] == 8
+    assert table(data, "shipments")["modifications"]["deletes"] == 2
+    assert table(data, "customers")["modifications"]["value"] == 0, "collected, and nothing was flushed for it"
+    assert table(build(analysis, app, None), "customers")["modifications"] == {"state": "not_collected"}
+
+
+def test_selectivity_and_the_share_of_nulls_are_computed_only_where_there_are_rows(data):
+    status = next(c for c in table(data, "orders")["columnStatistics"] if c["column"] == "status")
+    assert status["selectivity"] == 3 / 400 and status["nullRatio"] == 0
+    assert table(data, "audit_log")["columnStatistics"] == [], "never analysed: nothing to compute from"
+
+
+def test_partitioning_comments_and_the_columns_own_comments_reach_the_table(data):
+    events = table(data, "order_events")
+    assert (events["partitioning"]["type"], events["partitioning"]["keyColumns"]) == ("RANGE", ["event_date"])
+    orders = table(data, "orders")
+    assert orders["partitioning"] is False and orders["comment"].startswith("受注")
+    assert next(c for c in orders["columns"] if c["name"] == "status")["comment"] == "RECEIVED / SHIPPED / CANCELLED"
+
+
+def test_a_sequence_is_listed_with_who_uses_it_in_sql_or_in_an_assignment(data):
+    users = {s["name"]: s["users"] for s in data["sequences"]["items"]}
+    assert users["order_seq"] == ["create_order"], "p_order_id := order_seq.NEXTVAL is an assignment, not SQL"
+    assert users["shipment_seq"] == ["pkg_shipping.mark_shipped"] and users["audit_seq"] == ["trg_orders_audit.body"]
