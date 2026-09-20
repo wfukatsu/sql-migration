@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Catalog snapshot of one Oracle schema",
+  "description": "Written by difftest/catalog_snapshot.py, read by plsql.explorer. A section that is absent was not collected; an empty section was collected and held nothing.",
+  "type": "object",
+  "required": ["formatVersion", "collectedAt", "collector", "database", "schema", "containsDataValues"],
+  "additionalProperties": false,
+  "properties": {
+    "formatVersion": {"const": 1},
+    "collectedAt": {"type": "string"},
+    "collector": {
+      "type": "object",
+      "required": ["name", "version"],
+      "additionalProperties": false,
+      "properties": {"name": {"type": "string"}, "version": {"type": "string"}}
+    },
+    "database": {
+      "type": "object",
+      "required": ["name", "version"],
+      "additionalProperties": false,
+      "properties": {"name": {"type": ["string", "null"]}, "version": {"type": ["string", "null"]}}
+    },
+    "schema": {"type": "string"},
+    "containsDataValues": {"type": "boolean"},
+    "skipped": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["section", "reason"],
+        "additionalProperties": false,
+        "properties": {"section": {"type": "string"}, "reason": {"type": "string"}}
+      }
+    },
+    "tables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "temporary": {"type": "boolean"},
+          "partitioned": {"type": "boolean"},
+          "comment": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "columns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["table", "name", "position", "dataType", "nullable"],
+        "additionalProperties": false,
+        "properties": {
+          "table": {"type": "string"},
+          "name": {"type": "string"},
+          "position": {"type": "integer"},
+          "dataType": {"type": "string"},
+          "length": {"type": ["integer", "null"]},
+          "precision": {"type": ["integer", "null"]},
+          "scale": {"type": ["integer", "null"]},
+          "nullable": {"type": "boolean"}
+        }
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "table", "type", "columns"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "table": {"type": "string"},
+          "type": {"enum": ["PRIMARY KEY", "UNIQUE", "CHECK", "FOREIGN KEY"]},
+          "columns": {"type": "array", "items": {"type": "string"}},
+          "condition": {"type": ["string", "null"]},
+          "refOwner": {"type": ["string", "null"]},
+          "refConstraint": {"type": ["string", "null"]},
+          "refTable": {"type": ["string", "null"]},
+          "refColumns": {"type": "array", "items": {"type": "string"}},
+          "deleteRule": {"type": ["string", "null"]},
+          "enabled": {"type": "boolean"},
+          "generated": {"type": "boolean"}
+        }
+      }
+    },
+    "indexes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "table", "unique", "columns"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "table": {"type": "string"},
+          "unique": {"type": "boolean"},
+          "columns": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "triggers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "table", "timing", "event"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "table": {"type": ["string", "null"]},
+          "timing": {"type": "string"},
+          "event": {"type": "string"},
+          "enabled": {"type": "boolean"},
+          "body": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "views": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "additionalProperties": false,
+        "properties": {"name": {"type": "string"}, "text": {"type": ["string", "null"]}}
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "refName", "refType"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "type": {"type": "string"},
+          "refOwner": {"type": ["string", "null"]},
+          "refName": {"type": "string"},
+          "refType": {"type": "string"}
+        }
+      }
+    },
+    "segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "bytes"],
+        "additionalProperties": false,
+        "properties": {"name": {"type": "string"}, "type": {"type": "string"}, "bytes": {"type": "integer"}}
+      }
+    },
+    "tableStatistics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["table", "numRows"],
+        "additionalProperties": false,
+        "properties": {
+          "table": {"type": "string"},
+          "numRows": {"type": ["integer", "null"]},
+          "blocks": {"type": ["integer", "null"]},
+          "avgRowLen": {"type": ["integer", "null"]},
+          "lastAnalyzed": {"type": ["string", "null"]},
+          "stale": {"type": ["boolean", "null"]}
+        }
+      }
+    },
+    "columnStatistics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["table", "column"],
+        "additionalProperties": false,
+        "properties": {
+          "table": {"type": "string"},
+          "column": {"type": "string"},
+          "numDistinct": {"type": ["integer", "null"]},
+          "numNulls": {"type": ["integer", "null"]},
+          "avgColLen": {"type": ["integer", "null"]},
+          "density": {"type": ["number", "null"]},
+          "histogram": {"type": ["string", "null"]},
+          "numBuckets": {"type": ["integer", "null"]},
+          "lastAnalyzed": {"type": ["string", "null"]},
+          "lowValue": {"$ref": "#/$defs/value"},
+          "highValue": {"$ref": "#/$defs/value"}
+        }
+      }
+    },
+    "histograms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["table", "column", "endpoints"],
+        "additionalProperties": false,
+        "properties": {
+          "table": {"type": "string"},
+          "column": {"type": "string"},
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["value", "rows"],
+              "additionalProperties": false,
+              "properties": {"value": {"$ref": "#/$defs/value"}, "rows": {"type": ["integer", "null"]}}
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "value": {
+      "description": "A real data value, decoded. Never the RAW hex: a value nobody can read is recorded as one.",
+      "type": "object",
+      "required": ["dataType"],
+      "additionalProperties": false,
+      "properties": {
+        "dataType": {"type": "string"},
+        "text": {"type": "string"},
+        "undecodable": {"const": true}
+      },
+      "oneOf": [{"required": ["text"]}, {"required": ["undecodable"]}]
+    }
+  }
+}

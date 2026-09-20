@@ -17,3 +17,5 @@ difftest/.env
 .gradle-home/
 fixtures/plsql-external/*/work/
 samples/tutorial/plsql/work/
+*.snapshot.json
+.playwright-mcp/
