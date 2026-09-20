@@ -89,10 +89,10 @@ flowchart LR
 プロジェクトの決定を適用した判定は AUTO 40 / REVIEW 0 / REDESIGN 27 で、REDESIGN の 27 件はすべて再設計を決定済み・実 DB で一致しています。
 **数値は合成 corpus 上のものであり、実案件耐性の証拠ではありません。** コマンド、出力、現在地の詳細は → [PL/SQL → Java 変換](docs/guide/plsql-conversion.md)
 
-### Claude Code スキル（`skills/`）
+### スキル（`skills/`、Claude Code / Codex）
 
 仕様の調査 → 承認 → 変換と人の判断 → 承認 → 変換後の仕様 → 承認 → テストの順に移行を進める `migrate-flow` と、その各段階を受け持つ
-`plsql-spec` / `plsql-migrate` / `sql-transpile` があります。→ [スキル](docs/guide/skills.md)
+`plsql-spec` / `plsql-migrate` / `sql-transpile` があります。Claude Code と Codex のどちらからも使えます（Codex は `.agents/skills` から読みます）。→ [スキル](docs/guide/skills.md)
 
 ---
 
@@ -124,7 +124,7 @@ python3 -m venv .venv
 | まず動かす | [はじめに](docs/guide/getting-started.md) |
 | SQL 文を移す | [SQL の変換と実行計画](docs/guide/sql-conversion.md)、[変換ルールと指摘コード](skills/sql-transpile/references/scalardb-grammar.md)、[方言ごとの注意](skills/sql-transpile/references/dialect-notes.md) |
 | PL/SQL を移す | [PL/SQL → Java 変換](docs/guide/plsql-conversion.md)、[人が決めること（cursor / トランザクション / trigger / 生成コードの外）](docs/README.md#plsql-の移行で人が決めることplsql-migration) |
-| Claude Code から進める | [スキル](docs/guide/skills.md) |
+| Claude Code / Codex から進める | [スキル](docs/guide/skills.md) |
 | 実 DB で確かめる | [検証環境](docs/guide/verification.md) |
 | 仕組みを知る | [アーキテクチャと仕組み](docs/design/architecture.md)、[KPI・AUTO 禁止条件・確信度](docs/design/plsql-kpi.md)、[設計と決定の記録](docs/README.md#仕組みと設計design) |
 | 移行の例を見る | [個別の SQL の移行例](docs/README.md#個別の-sql-の移行例examples)、[現行の仕様の例](skills/plsql-spec/examples/create_order/README.md)、[変換後の文書の例](skills/plsql-migrate/examples/create_order/README.md) |
@@ -173,7 +173,8 @@ runtime-java/              実行基盤（Java 17、Gradle）
   .../appside/               アプリ側で Oracle の動きを再現する補助クラス（階層、ウィンドウ関数、数値、並び順、日付）
   .../plsql/                 生成コードの実行時ヘルパ（Oracle の式の意味論）と差分ハーネス
   .../examples/              アプリ側実装の例（エリア別売上分析）
-skills/                    Claude Code スキル（どれも SKILL.md、scripts/、references/、examples/ の形）
+.agents/skills             skills/ へのシンボリックリンク（Codex がここからスキルを読む）
+skills/                    Claude Code / Codex のスキル（どれも SKILL.md、scripts/、references/、examples/ の形）
   migrate-flow/              移行の流れ。scripts/flow.py が段階の状態・承認（人・日付・指紋）・テストの関門を持つ
   plsql-spec/                現行の PL/SQL の仕様。scripts/spec_facts.py が IR から事実の欄と Mermaid の図を出し、check で突き合わせる
   plsql-migrate/             PL/SQL の変換。scripts/decision_items.py（生成コードの外で決めることの確認・記録）、

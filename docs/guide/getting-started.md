@@ -75,7 +75,7 @@ routine ごとに **AUTO**（無人で生成してよい）/ **REVIEW**（人が
 AUTO は実 Oracle と実 ScalarDB で結果が一致した証拠（`--evidence`）が無ければ付かないので、DB なしの解析では AUTO は出ません。
 `out/plsql-first/unresolved.md` に、REVIEW / REDESIGN の理由と、受け入れに要るテストが出ます。
 
-Java の生成、証拠の取り方、判定の読み方は [PL/SQL → Java 変換](plsql-conversion.md)。Claude Code から、仕様の調査 → 承認 → 変換 → 承認 → テストの順に
+Java の生成、証拠の取り方、判定の読み方は [PL/SQL → Java 変換](plsql-conversion.md)。Claude Code や Codex から、仕様の調査 → 承認 → 変換 → 承認 → テストの順に
 進めるなら [スキル](skills.md) の migrate-flow を使います。
 
 ## 5. テスト
