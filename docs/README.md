@@ -47,7 +47,7 @@ docs/
 | [はじめに](guide/getting-started.md) | 準備、最初の SQL 変換、実行計画の確認、最初の PL/SQL 解析、テスト |
 | [SQL の変換と実行計画](guide/sql-conversion.md) | `scalardb_migrate.cli` のオプション・出力・判定、`residual-runner` のサブコマンド |
 | [PL/SQL → Java 変換](guide/plsql-conversion.md) | 判定の考え方、コマンド、出力、corpus 上の現在地 |
-| [スキル](guide/skills.md) | migrate-flow / plsql-spec / plsql-migrate / sql-transpile の役割とコマンド、Claude Code / Codex へのインストールと違い |
+| [スキル](guide/skills.md) | migrate-flow / plsql-spec / plsql-migrate / sql-transpile の役割とコマンド、marketplace からのインストール（Claude Code / Codex）と、両者の違い |
 | [検証環境](guide/verification.md) | Docker Compose の DB 群、接続プロファイル、ハーネスの一覧と実行例 |
 
 スキルの手順そのもの（Claude Code が読むもの）は `skills/<名前>/SKILL.md` と `references/` にあります。変換ルールと指摘コードの一覧は

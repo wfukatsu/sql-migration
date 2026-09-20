@@ -35,6 +35,7 @@ PL/SQL を解析して事実を出し、原文を読んで動作を書き、書�
 ## Important
 
 - **作業ディレクトリは sql-migration リポジトリのルート**。コマンドはここから `.venv/bin/python` で実行する
+- **プラグインとして入れたとき（作業ディレクトリが sql-migration のチェックアウトでないとき）**: このスキルの場所は `${CLAUDE_SKILL_DIR}`（置き換わらない環境では、この SKILL.md のあるディレクトリ）で、その 2 つ上が `<root>`。下のコマンドは `.venv/bin/python` を `<root>/bin/python` に、`skills/…` で始まるスクリプトのパスと `fixtures/…`・`samples/…` を `<root>/` からのパスに読み替え、**利用者のプロジェクトを作業ディレクトリにしたまま**動かす（`-m plsql.cli` などはそのままでよい。`bin/python` が `<root>` を import の経路に入れる）。入力と `<out>` は利用者のプロジェクトの側に置き、`<root>` の中には書かない（プラグインの更新で消える）。初回は `bin/python` が仮想環境を作るので 1 分ほどかかる
 - **Claude Code 以外（Codex など）で動かすとき**: `allowed-tools` と `when_to_use`（sql-transpile では `model` / `effort` も）は Claude Code 用で、ほかでは無視される。Read / Grep / Bash などの道具の名前は、その環境の同じ働きの道具に読み替える。AskUserQuestion が無ければ、同じ内容（推奨を先頭に、選択肢ごとの影響つき）を本文で聞き、答えを待つ
 - **書くのは「いま何をしているか」であって、「どうあるべきか」でも「移行後にどうなるか」でもない。**
   おかしく見える処理（使われない引数、コメントと食い違う条件、握りつぶされる例外）も、そのまま仕様として

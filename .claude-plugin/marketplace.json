@@ -1,0 +1,18 @@
+{
+  "name": "sql-migration",
+  "owner": {
+    "name": "Wataru Fukatsu",
+    "url": "https://github.com/wfukatsu"
+  },
+  "metadata": {
+    "description": "SQL と PL/SQL を ScalarDB へ移行するスキル"
+  },
+  "plugins": [
+    {
+      "name": "sql-migration",
+      "source": "./",
+      "description": "SQL と PL/SQL を ScalarDB（SQL + Java）へ移行する: migrate-flow / plsql-spec / plsql-migrate / sql-transpile",
+      "category": "development"
+    }
+  ]
+}
