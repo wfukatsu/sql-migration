@@ -22,6 +22,7 @@ docs/
    - PL/SQL を移す → [PL/SQL → Java 変換](guide/plsql-conversion.md)
    - Claude Code / Codex から手順どおりに進める → [スキル](guide/skills.md)
    - 実 DB で結果を突き合わせる・性能を測る → [検証環境](guide/verification.md)
+   - 移行の前に、いまの姿（どの SQL がどのテーブルを触るか、制約、つながり、量）を調べる → [Migration Explorer](guide/explorer.md)
 5. [アーキテクチャと仕組み](design/architecture.md) — 変換・実行計画・実行基盤・検証基盤・スキルがどう動くか（Mermaid の図つき）
 6. 必要になったら、下の一覧から
 
@@ -39,6 +40,8 @@ docs/
 | `limits.yaml` | 走査行数の上限など、プロジェクトが決めたことを生成器に渡すファイル。決めた人と日付が要る |
 | 証拠（`--evidence`） | 実 Oracle と実 ScalarDB で同じシナリオを走らせて比べた結果（`plsql-diff.json`）。ソースか生成器が変わると古くなる |
 | 事実の欄 / 文章 | スキルが書く文書の 2 つの部分。前者は IR・生成物から機械的に出し、後者はモデルが書いて `check` が事実と突き合わせる |
+| snapshot | Oracle の 1 スキーマのカタログ（制約・外部キー・trigger・view・行数・統計）を、SELECT だけで 1 回書き出したファイル。Migration Explorer が読む。実データの値は、頼まなければ入らない |
+| 未取得 / 統計なし | Migration Explorer の画面の言葉。誰も取っていない / Oracle が統計を取っていない。どちらも 0 ではない |
 | OPS / CALL / BIZ 項目 | 生成コードの外で決めること。運用・呼び出し側・業務ロジックとの整合 |
 
 ## 使い方（`guide/`）
@@ -51,6 +54,7 @@ docs/
 | [PL/SQL → Java 変換](guide/plsql-conversion.md) | 判定の考え方、コマンド、出力、corpus 上の現在地 |
 | [スキル](guide/skills.md) | migrate-flow / plsql-spec / plsql-migrate / sql-transpile の役割とコマンド、marketplace からのインストール（Claude Code / Codex）と、両者の違い |
 | [検証環境](guide/verification.md) | Docker Compose の DB 群、接続プロファイル、ハーネスの一覧と実行例 |
+| [Migration Explorer](guide/explorer.md) | 移行の前の調査のための、読むだけの HTML。snapshot の取り方（DB に何もしないこと、値を取らない既定）、画面の作り方と見方、「分からない」の出し分け、限界 |
 
 スキルの手順そのもの（Claude Code が読むもの）は `skills/<名前>/SKILL.md` と `references/` にあります。変換ルールと指摘コードの一覧は
 [scalardb-grammar.md](../skills/sql-transpile/references/scalardb-grammar.md)、方言ごとの注意は [dialect-notes.md](../skills/sql-transpile/references/dialect-notes.md)、

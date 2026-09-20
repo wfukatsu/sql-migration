@@ -44,6 +44,7 @@ cd difftest && ./make-cluster-conf.sh && docker compose --profile cluster --prof
 | `difftest/transpile_verify.py` | スキルの判定（OK / WARN / ERROR）が実際の DB での動作と合うか | `out/transpile-verify/report.md` |
 | `difftest/backend_compare.sh` | ScalarDB のバックエンドを PostgreSQL / Oracle / Cassandra にしたときの互換性と性能 | `docs/reports/scalardb-backend-comparison.md` |
 | `difftest/golden.py` | アプリ側（Java）で書き直した問合せを、Oracle で一度取った正解と DB なしで比べる | — |
+| `difftest/catalog_snapshot.py` | 検証ではなく**調査**の道具。Oracle の 1 スキーマのカタログ（制約・外部キー・trigger・view・行数・統計）を SELECT だけで書き出す。単一ファイルで、ほかのコードを import しない → [Migration Explorer](explorer.md) | `fixtures/explorer/*.json`（fixture） |
 | `difftest/experiments/run.sh` | 並列取得・H2 の索引・書き込み計画のコスト | `docs/reports/dml-followup-research.md` |
 
 <details>
