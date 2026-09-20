@@ -89,6 +89,12 @@ flowchart LR
 プロジェクトの決定を適用した判定は AUTO 40 / REVIEW 0 / REDESIGN 27 で、REDESIGN の 27 件はすべて再設計を決定済み・実 DB で一致しています。
 **数値は合成 corpus 上のものであり、実案件耐性の証拠ではありません。** コマンド、出力、現在地の詳細は → [PL/SQL → Java 変換](docs/guide/plsql-conversion.md)
 
+### 移行の前の調査（`plsql/explorer/`）
+
+どの PL/SQL と SQL が、どのテーブルを触り、そのテーブルが何とつながっていて、どれくらいの量があるのかを、**読むだけの 1 つの HTML** にまとめます。
+原文から分かることは解析結果から、DB にしかないこと（制約・外部キー・trigger・view・行数・統計）は、実 DB で 1 回だけ流す SELECT だけの収集スクリプトの
+snapshot ファイルから読みます。誰も取っていない値は「未取得」、静的に追えない SQL は「見えていない」と出し、0 や空欄にはしません。→ [Migration Explorer](docs/guide/explorer.md)
+
 ### スキル（`skills/`、Claude Code / Codex）
 
 仕様の調査 → 承認 → 変換と人の判断 → 承認 → 変換後の仕様 → 承認 → テストの順に移行を進める `migrate-flow` と、その各段階を受け持つ
@@ -168,6 +174,7 @@ plsql/                     PL/SQL → Java 変換
   review.py / kpi.py         判定レポート・トレーサビリティ・KPI 計測
   remediate.py / propose.py  モデルの助言とルール候補（どちらも自分では効力を持たない）
   limits.py                  走査行数の上限
+  explorer/                  移行の前の調査の画面（snapshot の読み込み、アプリ側 SQL、データの組み立て、1 つの HTML）
 runtime-java/              実行基盤（Java 17、Gradle）
   .../runtime/               Runner・Fetcher（Core / JDBC）・Residual（H2）・Bench
   .../appside/               アプリ側で Oracle の動きを再現する補助クラス（階層、ウィンドウ関数、数値、並び順、日付）
@@ -187,7 +194,9 @@ difftest/                  検証基盤（docker-compose.yml、conf/、cases/、
   plsql_capture.py           ScalarDB 側の capture（金額の 2 規約）
   plsql_compare.py           2 つの capture の突き合わせ
   plsql_semantics.py         実機 Oracle から式の意味論を記録する
+  catalog_snapshot.py        Oracle の 1 スキーマのカタログを SELECT だけで書き出す（単一ファイル。Migration Explorer が読む）
 fixtures/plsql/            PL/SQL の corpus、シナリオ、golden、判定の期待値、記録した意味論
+fixtures/explorer/         Migration Explorer の fixture（FK・view・trigger を持つ小さなスキーマと、実 DB で取った 3 つの snapshot）
 fixtures/plsql-external/   corpus の外から受け取った routine（KPI には入れない）。実 DB のハーネスを `--project` で向ける
 samples/                   変換の入力例。tutorial/ はチュートリアルのサンプル（Oracle の SQL と PL/SQL）と、通した結果（result/）
 spikes/                    残りの処理を H2 / SQLite / DuckDB で実行する初期の検証
