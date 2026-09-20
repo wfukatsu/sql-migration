@@ -37,6 +37,10 @@ python skills/migrate-flow/scripts/flow.py init --out out/migrate/create_order -
 python skills/migrate-flow/scripts/flow.py status --out out/migrate/create_order
 ```
 
+比較が済んだら `flow.py tested --out out/migrate/create_order --result pass --report difftest/work/plsql-diff.json` で
+結果を控える。同じファイルを `migration_doc.py` の `--evidence` に渡して文書を作り直し、`converted` の承認を取り直す
+（`converted` だけを取り直すかぎり、テストの結果は残る）。承認のあとで `src/` の原文を変えると、`spec` の承認は古くなる。
+
 `create_order` で書き上げた現行の仕様は `skills/plsql-spec/examples/create_order/`、変換後の文書は
 `skills/plsql-migrate/examples/create_order/` にある（後者の `evidence.json` は、下の比較の結果の写しである）。
 
