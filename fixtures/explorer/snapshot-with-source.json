@@ -1,6 +1,6 @@
 {
  "formatVersion": 2,
- "collectedAt": "2026-09-20T20:05:36+09:00",
+ "collectedAt": "2026-09-20T20:05:39+09:00",
  "collector": {
   "name": "catalog_snapshot.py",
   "version": "2"
@@ -10,8 +10,8 @@
   "version": "23.26.3.0.0"
  },
  "schema": "EXPLORER",
- "containsDataValues": true,
- "containsSourceCode": false,
+ "containsDataValues": false,
+ "containsSourceCode": true,
  "skipped": [],
  "tables": [
   {
@@ -1165,15 +1165,7 @@
    "density": 0.02,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "NUMBER",
-    "text": "1"
-   },
-   "highValue": {
-    "dataType": "NUMBER",
-    "text": "50"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "CUSTOMERS",
@@ -1184,15 +1176,7 @@
    "density": 0.02,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "VARCHAR2",
-    "text": "c10@example.test"
-   },
-   "highValue": {
-    "dataType": "VARCHAR2",
-    "text": "c9@example.test"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "CUSTOMERS",
@@ -1203,15 +1187,7 @@
    "density": 0.02,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "VARCHAR2",
-    "text": "Customer 1"
-   },
-   "highValue": {
-    "dataType": "VARCHAR2",
-    "text": "Customer 9"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDERS",
@@ -1222,15 +1198,7 @@
    "density": 0.02,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "NUMBER",
-    "text": "1"
-   },
-   "highValue": {
-    "dataType": "NUMBER",
-    "text": "50"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDERS",
@@ -1241,15 +1209,7 @@
    "density": 0.005,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "DATE",
-    "text": "2026-01-01 00:00:00"
-   },
-   "highValue": {
-    "dataType": "DATE",
-    "text": "2026-07-19 00:00:00"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDERS",
@@ -1260,15 +1220,7 @@
    "density": 0.0025,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "NUMBER",
-    "text": "1"
-   },
-   "highValue": {
-    "dataType": "NUMBER",
-    "text": "400"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDERS",
@@ -1279,15 +1231,7 @@
    "density": 0.00125,
    "histogram": "FREQUENCY",
    "numBuckets": 3,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "VARCHAR2",
-    "text": "CANCELLED"
-   },
-   "highValue": {
-    "dataType": "VARCHAR2",
-    "text": "SHIPPED"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDERS",
@@ -1298,15 +1242,7 @@
    "density": 0.0025,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "NUMBER",
-    "text": "10"
-   },
-   "highValue": {
-    "dataType": "NUMBER",
-    "text": "4000"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDER_EVENTS",
@@ -1361,15 +1297,7 @@
    "density": 0.333333333333333,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "NUMBER",
-    "text": "1"
-   },
-   "highValue": {
-    "dataType": "NUMBER",
-    "text": "3"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDER_ITEMS",
@@ -1380,15 +1308,7 @@
    "density": 0.0025,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "NUMBER",
-    "text": "1"
-   },
-   "highValue": {
-    "dataType": "NUMBER",
-    "text": "400"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDER_ITEMS",
@@ -1399,15 +1319,7 @@
    "density": 0.000416666666666667,
    "histogram": "FREQUENCY",
    "numBuckets": 15,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "NUMBER",
-    "text": "2"
-   },
-   "highValue": {
-    "dataType": "NUMBER",
-    "text": "20"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDER_ITEMS",
@@ -1418,15 +1330,7 @@
    "density": 0.333333333333333,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "NUMBER",
-    "text": "1"
-   },
-   "highValue": {
-    "dataType": "NUMBER",
-    "text": "3"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "ORDER_ITEMS",
@@ -1437,15 +1341,7 @@
    "density": 1.0,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "NUMBER",
-    "text": "99.5"
-   },
-   "highValue": {
-    "dataType": "NUMBER",
-    "text": "99.5"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "PRODUCTS",
@@ -1456,15 +1352,7 @@
    "density": 0.05,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "NUMBER",
-    "text": "1"
-   },
-   "highValue": {
-    "dataType": "NUMBER",
-    "text": "20"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "PRODUCTS",
@@ -1475,15 +1363,7 @@
    "density": 1.0,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "NUMBER",
-    "text": "1000"
-   },
-   "highValue": {
-    "dataType": "NUMBER",
-    "text": "1000"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "PRODUCTS",
@@ -1494,15 +1374,7 @@
    "density": 0.05,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "NUMBER",
-    "text": "112.5"
-   },
-   "highValue": {
-    "dataType": "NUMBER",
-    "text": "350"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "PRODUCTS",
@@ -1513,15 +1385,7 @@
    "density": 1.0,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "TIMESTAMP(6)",
-    "text": "2026-01-01 00:00:00"
-   },
-   "highValue": {
-    "dataType": "TIMESTAMP(6)",
-    "text": "2026-01-01 00:00:00"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "SHIPMENTS",
@@ -1532,15 +1396,7 @@
    "density": 0.00416666666666667,
    "histogram": "FREQUENCY",
    "numBuckets": 2,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "VARCHAR2",
-    "text": "AIR"
-   },
-   "highValue": {
-    "dataType": "VARCHAR2",
-    "text": "GROUND"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "SHIPMENTS",
@@ -1551,15 +1407,7 @@
    "density": 0.00833333333333333,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "NUMBER",
-    "text": "3"
-   },
-   "highValue": {
-    "dataType": "NUMBER",
-    "text": "360"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "SHIPMENTS",
@@ -1570,15 +1418,7 @@
    "density": 0.00833333333333333,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "NUMBER",
-    "text": "1"
-   },
-   "highValue": {
-    "dataType": "NUMBER",
-    "text": "120"
-   }
+   "lastAnalyzed": "2026-09-20T11:05:35"
   },
   {
    "table": "SHIPMENTS",
@@ -1589,175 +1429,7 @@
    "density": 0.0333333333333333,
    "histogram": "NONE",
    "numBuckets": 1,
-   "lastAnalyzed": "2026-09-20T11:05:35",
-   "lowValue": {
-    "dataType": "DATE",
-    "text": "2026-02-01 00:00:00"
-   },
-   "highValue": {
-    "dataType": "DATE",
-    "text": "2026-03-02 00:00:00"
-   }
-  }
- ],
- "histograms": [
-  {
-   "table": "ORDERS",
-   "column": "STATUS",
-   "endpoints": [
-    {
-     "value": {
-      "dataType": "VARCHAR2",
-      "text": "RECEIVED"
-     },
-     "rows": 240
-    },
-    {
-     "value": {
-      "dataType": "VARCHAR2",
-      "text": "SHIPPED"
-     },
-     "rows": 120
-    },
-    {
-     "value": {
-      "dataType": "VARCHAR2",
-      "text": "CANCELLED"
-     },
-     "rows": 40
-    }
-   ]
-  },
-  {
-   "table": "ORDER_ITEMS",
-   "column": "PRODUCT_ID",
-   "endpoints": [
-    {
-     "value": {
-      "dataType": "NUMBER",
-      "text": "7"
-     },
-     "rows": 920
-    },
-    {
-     "value": {
-      "dataType": "NUMBER",
-      "text": "2"
-     },
-     "rows": 20
-    },
-    {
-     "value": {
-      "dataType": "NUMBER",
-      "text": "3"
-     },
-     "rows": 20
-    },
-    {
-     "value": {
-      "dataType": "NUMBER",
-      "text": "4"
-     },
-     "rows": 20
-    },
-    {
-     "value": {
-      "dataType": "NUMBER",
-      "text": "6"
-     },
-     "rows": 20
-    },
-    {
-     "value": {
-      "dataType": "NUMBER",
-      "text": "8"
-     },
-     "rows": 20
-    },
-    {
-     "value": {
-      "dataType": "NUMBER",
-      "text": "10"
-     },
-     "rows": 20
-    },
-    {
-     "value": {
-      "dataType": "NUMBER",
-      "text": "11"
-     },
-     "rows": 20
-    },
-    {
-     "value": {
-      "dataType": "NUMBER",
-      "text": "12"
-     },
-     "rows": 20
-    },
-    {
-     "value": {
-      "dataType": "NUMBER",
-      "text": "14"
-     },
-     "rows": 20
-    },
-    {
-     "value": {
-      "dataType": "NUMBER",
-      "text": "15"
-     },
-     "rows": 20
-    },
-    {
-     "value": {
-      "dataType": "NUMBER",
-      "text": "16"
-     },
-     "rows": 20
-    },
-    {
-     "value": {
-      "dataType": "NUMBER",
-      "text": "18"
-     },
-     "rows": 20
-    },
-    {
-     "value": {
-      "dataType": "NUMBER",
-      "text": "19"
-     },
-     "rows": 20
-    },
-    {
-     "value": {
-      "dataType": "NUMBER",
-      "text": "20"
-     },
-     "rows": 20
-    }
-   ]
-  },
-  {
-   "table": "SHIPMENTS",
-   "column": "CARRIER",
-   "endpoints": [
-    {
-     "value": {
-      "dataType": "VARCHAR2",
-      "text": "GROUND"
-     },
-     "rows": 96
-    },
-    {
-     "value": {
-      "dataType": "VARCHAR2",
-      "text": "AIR"
-     },
-     "rows": 24
-    }
-   ]
+   "lastAnalyzed": "2026-09-20T11:05:35"
   }
  ],
  "objects": [
@@ -2037,6 +1709,53 @@
    "table": "ORDERS",
    "column": "STATUS",
    "comment": "RECEIVED / SHIPPED / CANCELLED"
+  }
+ ],
+ "sources": [
+  {
+   "type": "PACKAGE",
+   "name": "PKG_SHIPPING",
+   "text": "PACKAGE pkg_shipping IS\n    -- 出荷を登録して、受注を出荷済みにする\n    PROCEDURE mark_shipped (\n        p_order_id IN orders.order_id%TYPE,\n        p_carrier  IN shipments.carrier%TYPE\n    );\n\n    FUNCTION shipped_count (\n        p_order_id IN orders.order_id%TYPE\n    ) RETURN NUMBER;\nEND pkg_shipping;"
+  },
+  {
+   "type": "PACKAGE BODY",
+   "name": "PKG_SHIPPING",
+   "text": "PACKAGE BODY pkg_shipping IS\n\n    FUNCTION shipped_count (\n        p_order_id IN orders.order_id%TYPE\n    ) RETURN NUMBER IS\n        v_count NUMBER;\n    BEGIN\n        SELECT COUNT(*)\n          INTO v_count\n          FROM shipments\n         WHERE order_id = p_order_id;\n        RETURN v_count;\n    END shipped_count;\n\n    PROCEDURE mark_shipped (\n        p_order_id IN orders.order_id%TYPE,\n        p_carrier  IN shipments.carrier%TYPE\n    ) IS\n        v_already NUMBER;\n    BEGIN\n        v_already := shipped_count(p_order_id);\n        IF v_already > 0 THEN\n            RAISE_APPLICATION_ERROR(-20030, 'この受注は出荷済みです');\n        END IF;\n\n        INSERT INTO shipments (shipment_id, order_id, shipped_at, carrier)\n        VALUES (shipment_seq.NEXTVAL, p_order_id, SYSDATE, p_carrier);\n\n        UPDATE orders\n           SET status = 'SHIPPED'\n         WHERE order_id = p_order_id;\n    END mark_shipped;\n\nEND pkg_shipping;"
+  },
+  {
+   "type": "PROCEDURE",
+   "name": "ARCHIVE_SHIPMENTS",
+   "text": "PROCEDURE archive_shipments (\n    p_before IN DATE\n) IS\nBEGIN\n    DELETE FROM shipments WHERE shipped_at < p_before;\nEND archive_shipments;"
+  },
+  {
+   "type": "PROCEDURE",
+   "name": "CANCEL_ORDER",
+   "text": "PROCEDURE cancel_order (\n    p_order_id IN orders.order_id%TYPE\n) IS\n    v_status orders.status%TYPE;\nBEGIN\n    SELECT status\n      INTO v_status\n      FROM orders\n     WHERE order_id = p_order_id\n       FOR UPDATE;\n\n    IF v_status = 'SHIPPED' THEN\n        RAISE_APPLICATION_ERROR(-20010, '出荷済みの受注は取り消せません');\n    END IF;\n\n    -- 在庫を戻す\n    FOR r IN (SELECT product_id, quantity FROM order_items WHERE order_id = p_order_id) LOOP\n        UPDATE products\n           SET stock_quantity = stock_quantity + r.quantity\n         WHERE product_id = r.product_id;\n    END LOOP;\n\n    DELETE FROM order_items WHERE order_id = p_order_id;\n\n    UPDATE orders\n       SET status = 'CANCELLED'\n     WHERE order_id = p_order_id;\nEND cancel_order;"
+  },
+  {
+   "type": "PROCEDURE",
+   "name": "CREATE_ORDER",
+   "text": "PROCEDURE create_order (\n    p_customer_id IN  customers.customer_id%TYPE,\n    p_product_id  IN  products.product_id%TYPE,\n    p_quantity    IN  NUMBER,\n    p_order_id    OUT orders.order_id%TYPE\n) IS\n    v_stock_quantity products.stock_quantity%TYPE;\n    v_unit_price     products.unit_price%TYPE;\n    v_total_amount   NUMBER(18, 2);\nBEGIN\n    IF p_quantity <= 0 THEN\n        RAISE_APPLICATION_ERROR(-20001, '数量は1以上で指定してください');\n    END IF;\n\n    -- 同時更新を防ぐため対象商品をロック\n    SELECT stock_quantity,\n           unit_price\n      INTO v_stock_quantity,\n           v_unit_price\n      FROM products\n     WHERE product_id = p_product_id\n       FOR UPDATE;\n\n    IF v_stock_quantity < p_quantity THEN\n        RAISE_APPLICATION_ERROR(-20002, '在庫が不足しています');\n    END IF;\n\n    v_total_amount := ROUND(v_unit_price * p_quantity, 2);\n    p_order_id := order_seq.NEXTVAL;\n\n    INSERT INTO orders (\n        order_id,\n        customer_id,\n        order_date,\n        status,\n        total_amount\n    ) VALUES (\n        p_order_id,\n        p_customer_id,\n        SYSDATE,\n        'RECEIVED',\n        v_total_amount\n    );\n\n    INSERT INTO order_items (\n        order_id,\n        line_no,\n        product_id,\n        quantity,\n        unit_price\n    ) VALUES (\n        p_order_id,\n        1,\n        p_product_id,\n        p_quantity,\n        v_unit_price\n    );\n\n    UPDATE products\n       SET stock_quantity = stock_quantity - p_quantity,\n           updated_at     = SYSTIMESTAMP\n     WHERE product_id = p_product_id;\n\nEXCEPTION\n    WHEN NO_DATA_FOUND THEN\n        RAISE_APPLICATION_ERROR(-20003, '商品が見つかりません');\n    WHEN DUP_VAL_ON_INDEX THEN\n        RAISE_APPLICATION_ERROR(-20004, '受注番号が重複しました');\nEND create_order;"
+  },
+  {
+   "type": "PROCEDURE",
+   "name": "PURGE_TABLE",
+   "text": "PROCEDURE purge_table (\n    p_table_name IN VARCHAR2,\n    p_before     IN DATE\n) IS\nBEGIN\n    -- 表の名前を実行時に組み立てる。静的にはどの表を消すのか分からない\n    EXECUTE IMMEDIATE 'DELETE FROM ' || p_table_name || ' WHERE logged_at < :d' USING p_before;\nEND purge_table;"
+  },
+  {
+   "type": "PROCEDURE",
+   "name": "REPORT_OPEN_ORDERS",
+   "text": "PROCEDURE report_open_orders (\n    p_customer_id IN  customers.customer_id%TYPE,\n    p_lines       OUT NUMBER,\n    p_today       OUT DATE\n) IS\nBEGIN\n    -- view を読む。元の表は orders と order_items\n    SELECT COUNT(*)\n      INTO p_lines\n      FROM v_order_lines\n     WHERE customer_id = p_customer_id;\n\n    WITH recent AS (SELECT order_id FROM orders WHERE customer_id = p_customer_id)\n    SELECT COUNT(*) INTO p_lines FROM recent;\n\n    SELECT SYSDATE INTO p_today FROM dual;\nEND report_open_orders;"
+  },
+  {
+   "type": "TRIGGER",
+   "name": "TRG_ITEMS_STOCK_GUARD",
+   "text": "TRIGGER trg_items_stock_guard\nBEFORE INSERT ON order_items\nFOR EACH ROW\nDECLARE\n    v_stock products.stock_quantity%TYPE;\nBEGIN\n    SELECT stock_quantity INTO v_stock FROM products WHERE product_id = :NEW.product_id;\n    IF v_stock < 0 THEN\n        RAISE_APPLICATION_ERROR(-20020, '在庫が負です');\n    END IF;\nEND trg_items_stock_guard;"
+  },
+  {
+   "type": "TRIGGER",
+   "name": "TRG_ORDERS_AUDIT",
+   "text": "TRIGGER trg_orders_audit\nAFTER UPDATE ON orders\nFOR EACH ROW\nBEGIN\n    INSERT INTO audit_log (log_id, table_name, detail, logged_at)\n    VALUES (audit_seq.NEXTVAL, 'ORDERS', :OLD.status || ' -> ' || :NEW.status, SYSDATE);\nEND trg_orders_audit;"
   }
  ]
 }

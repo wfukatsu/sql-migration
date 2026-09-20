@@ -179,8 +179,8 @@ def test_a_key_nobody_defined_does_not_ride_along(section, key):
 
 
 def test_a_format_this_build_does_not_know_is_refused_before_anything_is_read():
-    with pytest.raises(S.SnapshotError, match="formatVersion 2"):
-        S.parse({"formatVersion": 2, "whatever": True}, "test")
+    with pytest.raises(S.SnapshotError, match="formatVersion 3"):
+        S.parse({"formatVersion": 3, "whatever": True}, "test")
 
 
 def test_a_file_that_is_not_a_snapshot_says_what_is_wrong(tmp_path):
@@ -199,3 +199,99 @@ def test_a_snapshot_is_named_by_its_file_and_its_content(tmp_path):
     assert first.startswith("shop.json@") and len(first) == len("shop.json@") + 8
     path.write_text(json.dumps(dict(FULL, schema="OTHER")), encoding="utf-8")
     assert S.load(path).ident != first
+
+
+# --- version 2 -----------------------------------------------------------------------------------------------
+
+V2 = {
+    "formatVersion": 2, "containsSourceCode": False,
+    "indexes": [{"name": "PK_ORDER_ITEMS", "table": "ORDER_ITEMS", "unique": True, "columns": ["ORDER_ID", "LINE_NO"]},
+                {"name": "IX_ITEMS_PRODUCT", "table": "ORDER_ITEMS", "unique": False, "columns": ["PRODUCT_ID"]}],
+    "indexStatistics": [{"index": "PK_ORDER_ITEMS", "distinctKeys": 1200, "leafBlocks": 4, "clusteringFactor": 9,
+                         "numRows": 1200, "lastAnalyzed": "2026-08-30T02:00:00"}],
+    "objects": [{"name": "CREATE_ORDER", "type": "PROCEDURE", "status": "VALID", "lastDdl": "2026-08-01T10:00:00"},
+                {"name": "OLD_REPORT", "type": "PROCEDURE", "status": "INVALID", "lastDdl": "2019-01-01T00:00:00"},
+                {"name": "ORDERS", "type": "TABLE", "status": "VALID"}],
+    "tableModifications": [{"table": "ORDER_ITEMS", "inserts": 310, "updates": 12, "deletes": 4, "truncated": False,
+                            "timestamp": "2026-09-01T00:00:00"}],
+    "sequences": [{"name": "ORDER_SEQ", "incrementBy": 1, "cacheSize": 0, "lastNumber": 100412, "cycle": False}],
+    "partitions": [{"table": "ORDERS", "type": "RANGE", "subpartitionType": "NONE", "count": 4,
+                    "keyColumns": ["ORDER_DATE"]}],
+    "synonyms": [], "dbLinks": [{"name": "WAREHOUSE_LINK"}], "lobs": [{"table": "CUSTOMERS", "column": "PHOTO"}],
+    "materializedViews": [],
+    "columnComments": [{"table": "ORDERS", "column": "STATUS", "comment": "RECEIVED / SHIPPED / CANCELLED"}],
+}
+
+
+def v2(**changes) -> S.Snapshot:
+    document = {**copy.deepcopy(FULL), **copy.deepcopy(V2)}
+    for key, value in changes.items():
+        if value is ...:
+            document.pop(key, None)
+        else:
+            document[key] = value
+    return S.parse(document, "test")
+
+
+def test_a_version_2_snapshot_gives_up_what_version_2_added():
+    snap = v2()
+    primary, secondary = snap.indexes("order_items")
+    assert primary["statistics"]["distinctKeys"] == 1200 and primary["sizeBytes"] == 4096
+    assert secondary["statistics"]["distinctKeys"] is None, "in the catalog, never analysed"
+    assert snap.modifications("order_items")["inserts"] == 310
+    assert snap.partitioning("orders")["keyColumns"] == ["order_date"] and snap.partitioning("customers") is False
+    assert snap.column_comments("orders") == {"status": "RECEIVED / SHIPPED / CANCELLED"}
+    assert snap.lob_columns("customers") == ["photo"] and snap.lob_columns("orders") == []
+    assert [o["name"] for o in snap.objects("PROCEDURE")] == ["create_order", "old_report"]
+    assert snap.sequences()[0]["name"] == "order_seq"
+
+
+def test_a_version_1_snapshot_is_still_read_and_what_it_never_had_is_not_collected():
+    """AE7."""
+    snap = snapshot()
+    assert snap.format_version == 1 and not snap.contains_source_code
+    assert snap.indexes("order_items") == [], "FULL has an empty index section"
+    with_index = snapshot(indexes=V2["indexes"])
+    assert with_index.indexes("order_items")[0]["statistics"] is None, "the index is known; its statistics were never asked for"
+    for answer in (snap.modifications("orders"), snap.partitioning("orders"), snap.column_comments("orders"),
+                   snap.lob_columns("orders"), snap.objects(), snap.sequences()):
+        assert answer is None
+
+
+def test_no_writes_flushed_is_zero_and_not_collected_is_not():
+    """AE8."""
+    assert v2().modifications("orders") == {"table": "orders", "inserts": 0, "updates": 0, "deletes": 0,
+                                            "truncated": None, "timestamp": None}
+    assert v2(tableModifications=...).modifications("orders") is None
+
+
+def test_source_code_in_a_snapshot_that_says_it_has_none_is_refused_by_object():
+    sources = [{"type": "PROCEDURE", "name": "CREATE_ORDER", "text": "PROCEDURE create_order IS BEGIN NULL; END;"}]
+    with pytest.raises(S.SnapshotError, match="PROCEDURE CREATE_ORDER"):
+        v2(sources=sources)
+    snap = v2(sources=sources, containsSourceCode=True)
+    assert snap.contains_source_code and snap.source_of("PROCEDURE", "create_order")["text"].startswith("PROCEDURE")
+    assert snap.source_of("PROCEDURE", "missing") is None
+
+
+def test_a_wrapped_unit_says_it_is_wrapped_and_carries_no_text():
+    snap = v2(containsSourceCode=True, sources=[{"type": "PACKAGE BODY", "name": "VENDOR_PKG", "wrapped": True}])
+    assert snap.source_of("PACKAGE BODY", "vendor_pkg") == {"type": "PACKAGE BODY", "name": "vendor_pkg", "wrapped": True}
+    with pytest.raises(S.SnapshotError, match="sources"):
+        v2(containsSourceCode=True, sources=[{"type": "PACKAGE BODY", "name": "X", "wrapped": True, "text": "a000000"}])
+
+
+def test_version_2_must_say_whether_it_holds_source_code():
+    with pytest.raises(S.SnapshotError, match="containsSourceCode"):
+        v2(containsSourceCode=...)
+
+
+@pytest.mark.parametrize("section, key", [("dbLinks", "host"), ("dbLinks", "username"), ("sequences", "maxValue"),
+                                          ("partitions", "highValue"), ("objects", "source")])
+def test_the_new_sections_take_no_key_nobody_defined(section, key):
+    """A DB link's host and account, a partition's bounds: what must not ride along has no place to sit."""
+    document = {**copy.deepcopy(FULL), **copy.deepcopy(V2)}
+    document[section] = document[section] or [{"name": "X"}]
+    document[section][0][key] = "db.internal.example"
+    with pytest.raises(S.SnapshotError, match=section):
+        S.parse(document, "test")

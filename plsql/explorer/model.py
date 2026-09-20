@@ -39,10 +39,11 @@ import sqlglot
 from sqlglot import exp
 
 from ..sqlbridge import read_write_sets
+from . import sources
 from .appsql import AppStatement, cte_names, tables_of
 from .snapshot import Snapshot
 
-FROM_SOURCE = re.compile(r"#(?:stmt|handler)-\d+(?:#query)?$")
+FROM_SOURCE = sources.FROM_SOURCE
 NOT_TABLES = {"dual"}
 
 NOT_COLLECTED = {"state": "not_collected"}
@@ -165,12 +166,15 @@ def _spec_link(spec_dir: Path | None, module: str, out_dir: Path | None) -> str 
 
 def build(analysis_dir: str | Path, snapshot: Snapshot | None = None,
           app_statements: list[AppStatement] | None = None, spec_dir: str | Path | None = None,
-          out_dir: str | Path | None = None) -> dict:
+          out_dir: str | Path | None = None, src_root: str | Path | None = None,
+          app_files: dict[str, Path] | None = None) -> dict:
     analysis_dir = Path(analysis_dir)
+    src_root = Path(src_root) if src_root else None
     program = _json(analysis_dir / "program.ir.json")
     decisions = _json(analysis_dir / "decisions.json", required=False) or {}
     call_graph = _json(analysis_dir / "callgraph.json", required=False)
     verdicts = {record["routine"]: record for record in decisions.get("routines", [])}
+    diagnostics = sources.diagnostics_of(_json(analysis_dir / "diagnostics.sarif", required=False))
     spec_dir = Path(spec_dir) if spec_dir else None
     out_dir = Path(out_dir) if out_dir else None
 
@@ -189,10 +193,17 @@ def build(analysis_dir: str | Path, snapshot: Snapshot | None = None,
             statements = _sql_of_routine(routine, file)
             sql += statements
             record = verdicts.get(routine["id"], {})
+            start, end = where.get("startLine"), where.get("endLine")
             routines.append({"id": routine["id"], "module": module["name"],
                              "kind": routine.get("routineKind") or "routine", "file": file,
-                             "line": where.get("startLine"), "endLine": where.get("endLine"),
+                             "line": start, "endLine": end,
                              "verdict": record.get("verdict"), "reasons": record.get("reasons") or [],
+                             "decision": _decision(record),
+                             "parameters": sources.typed(routine.get("parameters")),
+                             "declarations": sources.typed(routine.get("declarations")),
+                             "diagnostics": [d for d in diagnostics if d["file"] == file and start and end
+                                             and start <= d["line"] <= end],
+                             "_node": routine,
                              "sql": [s["id"] for s in statements], "calls": [], "calledBy": [], "external": [],
                              "spec": _spec_link(spec_dir, module["name"], out_dir)})
         if module.get("moduleKind") == "trigger":
@@ -229,6 +240,14 @@ def build(analysis_dir: str | Path, snapshot: Snapshot | None = None,
     sql += _app_sql(app_statements or [])
     sql += _snapshot_sql(snapshot, source_triggers)
 
+    files = _files(modules, routines, sql, source_triggers, diagnostics, src_root, app_files or {}, warnings)
+    database_code = _database_code(modules, snapshot, src_root, files)
+    # a sequence is as often read in an assignment (`p_id := order_seq.NEXTVAL`) as in SQL: the whole routine is searched
+    routine_texts = {routine["id"]: json.dumps(routine["_node"], ensure_ascii=False) for routine in routines}
+    for routine in routines:
+        routine.pop("_node")
+        routine["dbCode"] = database_code["modules"].get(routine["module"], [])
+
     tables = _tables(sql, snapshot, source_triggers)
     unattributable = [s["id"] for s in sql if not s["visible"] and s.get("reaches") is None]
     notes = ["同じ文の中で読みも書きもするテーブルは、「書く」にだけ数えている（解析の制限）。",
@@ -240,13 +259,178 @@ def build(analysis_dir: str | Path, snapshot: Snapshot | None = None,
                      "schemaSnapshot": program.get("schemaSnapshot"),
                      "counts": {"tables": len(tables), "routines": len(routines), "sql": len(sql)}},
             "warnings": warnings, "notes": notes, "unattributable": unattributable,
+            "files": files, "dbObjects": database_code["objects"],
+            "sequences": _sequences(sql, routine_texts, snapshot),
             "tables": tables, "routines": sorted(routines, key=lambda r: r["id"]), "sql": sql}
+
+
+def _decision(record: dict) -> dict | None:
+    """What the verdict rests on. `None` when there is no decisions.json: then nothing is claimed."""
+    if not record:
+        return None
+    confidence = record.get("confidence") or {}
+    return {"ruleVerdict": record.get("ruleVerdict"),
+            "rules": [{"id": r.get("id"), "decision": r.get("decision"), "message": r.get("message"),
+                       "severity": r.get("severity"), "source": r.get("source")} for r in record.get("rules") or []],
+            "whyNotAuto": record.get("whyNotAuto") or [], "remediation": record.get("remediation") or [],
+            "requiredTests": record.get("requiredTests") or [],
+            "confidence": {key: value for key, value in confidence.items() if key != "zeroFactors"},
+            "zeroFactors": confidence.get("zeroFactors") or []}
+
+
+# --- the code -------------------------------------------------------------------------------------------------
+
+def _files(modules: list[dict], routines: list[dict], sql: list[dict], source_triggers: dict[str, dict],
+           diagnostics: list[dict], src_root: Path | None, app_files: dict[str, Path],
+           warnings: list[str]) -> dict:
+    """File -> its lines and what is on them. Each file's text is carried once, however many routines are in it."""
+    if src_root is None and not app_files:
+        return {}
+    by_node: dict[str, list[dict]] = {}
+    for statement in sql:
+        if statement["origin"] == "plsql":
+            by_node.setdefault(statement["id"].split("~")[0], []).append(statement)
+    trigger_routines = {t["routine"] for t in source_triggers.values()}
+    out: dict[str, dict] = {}
+    if src_root is not None:
+        for routine in routines:
+            file = routine["file"]
+            if not file:
+                continue
+            if file not in out:
+                found = sources.find(src_root, file)
+                if found is None:
+                    warnings.append(f"{file} が {src_root} の下に無い。この原文のコードは出ていない")
+                out[file] = {"origin": "plsql", "found": found is not None,
+                             "lines": sources.read_lines(found) if found else [], "marks": []}
+            if out[file]["found"]:
+                out[file]["marks"] += sources.marks_of(routine["_node"], by_node, trigger_routines)
+        for diagnostic in diagnostics:
+            if out.get(diagnostic["file"], {}).get("found"):
+                out[diagnostic["file"]]["marks"].append(
+                    {"line": diagnostic["line"], "endLine": diagnostic["endLine"], "kind": "diagnostic",
+                     "label": diagnostic["rule"], "message": diagnostic["message"], "level": diagnostic["level"]})
+    for label, path in app_files.items():
+        marks = [{"line": s["line"], "endLine": s["line"], "kind": "sql" if s["visible"] else "dynamic",
+                  "label": s["kind"], "reads": s["reads"], "writes": s["writes"], "sql": s["id"],
+                  "visible": s["visible"]} for s in sql if s["origin"] == "app" and s["file"] == label]
+        out[f"app:{label}"] = {"origin": "app", "found": True, "lines": sources.read_lines(path), "marks": marks}
+    for record in out.values():
+        record["marks"].sort(key=lambda m: (m["line"], m["kind"], m["label"] or ""))
+    return out
+
+
+_MODULE_KINDS = {"procedure": "PROCEDURE", "function": "FUNCTION", "trigger": "TRIGGER"}
+
+
+def _units(module: dict, src_root: Path | None, files: dict) -> list[dict]:
+    """The database objects one IR module stands for, each with the source lines to compare (or none)."""
+    span = module.get("sourceRange") or {}
+    file, start, end = span.get("file", ""), span.get("startLine") or 1, span.get("endLine")
+    lines = (files.get(file) or {}).get("lines") or []
+    mine = lines[start - 1:end] if lines else None
+    name, kind = module["name"].lower(), module.get("moduleKind")
+    if kind != "package":
+        return [{"type": _MODULE_KINDS.get(kind, (kind or "").upper()), "name": name, "lines": mine, "start": start,
+                 "file": file}]
+    if mine is not None and sources.object_kind(mine) == "PACKAGE":   # a specification nothing here implements
+        return [{"type": "PACKAGE", "name": name, "lines": mine, "start": start, "file": file}]
+    units = [{"type": "PACKAGE BODY", "name": name, "lines": mine, "start": start, "file": file}]
+    if src_root is None:
+        return units + [{"type": "PACKAGE", "name": name, "lines": None, "start": 1, "file": None, "unknown": True}]
+    # the analysis lowers the body only, so the specification is taken from the sibling file
+    spec = sources.find(src_root, str(Path(file).with_suffix(".pks"))) if file else None
+    spec_lines = sources.read_lines(spec) if spec else None
+    if spec_lines is not None and sources.object_kind(spec_lines) != "PACKAGE":
+        spec_lines = None
+    return units + [{"type": "PACKAGE", "name": name, "lines": spec_lines, "start": 1,
+                     "file": spec.name if spec and spec_lines is not None else None}]
+
+
+def _database_code(modules: list[dict], snapshot: Snapshot | None, src_root: Path | None, files: dict) -> dict:
+    objects = snapshot.objects() if snapshot else None
+    known = {(o["type"], o["name"]): o for o in objects or []}
+    matched: set[tuple[str, str]] = set()
+    by_module: dict[str, list[dict]] = {}
+    for module in modules:
+        results = []
+        for unit in _units(module, src_root, files):
+            key = (unit["type"], unit["name"])
+            present = known.get(key)
+            if unit["lines"] is not None or unit.get("unknown") or src_root is None:
+                matched.add(key)   # without --src nobody can say a source is missing, so nothing is called DB-only
+            result = {"type": unit["type"], "name": unit["name"], "file": unit["file"],
+                      "status": present.get("status") if present else None,
+                      "lastDdl": present.get("lastDdl") if present else None}
+            code = snapshot.source_of(*key) if snapshot else None
+            if snapshot is None:
+                result.update(state="not_compared", reason=sources.NOT_COMPARED_NO_SNAPSHOT)
+            elif objects is not None and present is None:
+                result.update(state="not_in_database", reason=sources.NOT_IN_DATABASE)
+            elif not snapshot.contains_source_code:
+                result.update(state="not_compared", reason=sources.NOT_COMPARED_NO_CODE)
+            elif code is not None and code.get("wrapped"):
+                result.update(state="not_compared", reason=sources.NOT_COMPARED_WRAPPED)
+            elif unit["lines"] is None:
+                result.update(state="not_compared", reason=sources.NOT_COMPARED_NO_SOURCE)
+            elif code is None:
+                result.update(state="not_in_database", reason=sources.NOT_IN_DATABASE)
+            else:
+                result.update(sources.compare(unit["lines"], code["text"], unit["start"], unit["file"] or "原文"))
+            results.append(result)
+        by_module[module["name"]] = results
+
+    if objects is None:
+        return {"modules": by_module, "objects": {"state": "not_collected", "dbOnly": [], "outsideAnalysis": []}}
+
+    def entry(item: dict) -> dict:
+        code = snapshot.source_of(item["type"], item["name"])
+        return {"type": item["type"], "name": item["name"], "status": item.get("status"),
+                "lastDdl": item.get("lastDdl"), "wrapped": bool(code and code.get("wrapped")),
+                "text": code.get("text") if code else None}
+
+    db_only = [entry(o) for o in objects if o["type"] in sources.COMPARABLE and (o["type"], o["name"]) not in matched]
+    outside = [entry(o) for o in objects if o["type"] in sources.OUTSIDE_ANALYSIS]
+    return {"modules": by_module,
+            "objects": {"state": "collected", "containsSourceCode": snapshot.contains_source_code,
+                        "sourceGiven": src_root is not None,
+                        "dbOnly": sorted(db_only, key=lambda o: (o["type"], o["name"])),
+                        "outsideAnalysis": sorted(outside, key=lambda o: (o["type"], o["name"])),
+                        "invalid": sorted(f"{o['type']} {o['name']}" for o in objects if o.get("status") == "INVALID")}}
+
+
+_SEQUENCE_USE = re.compile(r"\b([A-Za-z_][\w$#]*)\.(?:NEXTVAL|CURRVAL)\b", re.I)
+
+
+def _sequences(sql: list[dict], routine_texts: dict[str, str], snapshot: Snapshot | None) -> dict:
+    """Every sequence the database has or the code uses, with who uses it. ScalarDB has no sequence."""
+    used: dict[str, set[str]] = {}
+    for routine, text in routine_texts.items():
+        for name in _SEQUENCE_USE.findall(text):
+            used.setdefault(name.lower(), set()).add(routine)
+    for statement in sql:
+        if statement["routine"]:
+            continue
+        for name in _SEQUENCE_USE.findall(statement["text"] or ""):
+            used.setdefault(name.lower(), set()).add(statement["id"])
+    known = snapshot.sequences() if snapshot else None
+    by_name = {row["name"]: row for row in known or []}
+    items = []
+    for name in sorted(set(by_name) | set(used)):
+        row = by_name.get(name)
+        items.append({"name": name, "inSnapshot": None if known is None else row is not None,
+                      "incrementBy": row.get("incrementBy") if row else None,
+                      "cacheSize": row.get("cacheSize") if row else None,
+                      "lastNumber": row.get("lastNumber") if row else None,
+                      "users": sorted(used.get(name, ()))})
+    return {"state": "not_collected" if known is None else "collected", "items": items}
 
 
 def _snapshot_meta(snapshot: Snapshot | None) -> dict | None:
     if snapshot is None:
         return None
-    return {"ident": snapshot.ident, "collectedAt": snapshot.collected_at, "database": snapshot.database,
+    return {"ident": snapshot.ident, "formatVersion": snapshot.format_version,
+            "containsSourceCode": snapshot.contains_source_code, "collectedAt": snapshot.collected_at, "database": snapshot.database,
             "schema": snapshot.schema_name, "containsDataValues": snapshot.contains_data_values,
             "skipped": snapshot.skipped}
 
@@ -337,6 +521,8 @@ def _from_snapshot(name: str, kind: str, snapshot: Snapshot | None, source_trigg
     nothing = {"presence": "not_collected", "rows": NOT_COLLECTED, "size": NOT_COLLECTED,
                "foreignKeysOut": None, "foreignKeysIn": None, "columns": None, "constraints": None,
                "indexes": None, "columnStatistics": None, "attached": attached,
+               "modifications": NOT_COLLECTED, "partitioning": None, "comment": None, "lobColumns": None,
+               "temporary": None,
                "triggerCount": {"state": "not_collected", "known": len(known_triggers)}, "baseTables": None}
     if snapshot is None:
         return nothing
@@ -380,9 +566,22 @@ def _from_snapshot(name: str, kind: str, snapshot: Snapshot | None, source_trigg
     for view in snapshot.views_on(name) or []:
         attached.append({"type": "view", "name": view, "inSource": False, "inSnapshot": True})
 
+    modifications = snapshot.modifications(name)
+    info = snapshot.table_info(name) or {}
+    comments = snapshot.column_comments(name)
+    columns = snapshot.columns(name)
+    if columns is not None and comments is not None:
+        columns = [dict(column, comment=comments.get(column["name"])) for column in columns]
     return {"presence": "snapshot", "rows": rows, "size": NOT_COLLECTED if size is None else value(size),
+            "modifications": NOT_COLLECTED if modifications is None else
+            {"state": "value", "value": modifications["inserts"] + modifications["updates"] + modifications["deletes"],
+             "inserts": modifications["inserts"], "updates": modifications["updates"],
+             "deletes": modifications["deletes"], "truncated": modifications.get("truncated"),
+             "timestamp": modifications.get("timestamp")},
+            "partitioning": snapshot.partitioning(name), "comment": info.get("comment"),
+            "lobColumns": snapshot.lob_columns(name), "temporary": info.get("temporary"),
             "foreignKeysOut": snapshot.foreign_keys_out(name), "foreignKeysIn": snapshot.foreign_keys_in(name),
-            "columns": snapshot.columns(name), "constraints": snapshot.constraints(name),
+            "columns": columns, "constraints": snapshot.constraints(name),
             "indexes": snapshot.indexes(name), "columnStatistics": _column_statistics(snapshot, name),
             "attached": attached, "triggerCount": trigger_count, "baseTables": None}
 
@@ -391,7 +590,14 @@ def _column_statistics(snapshot: Snapshot, table: str) -> list[dict] | None:
     statistics = snapshot.column_statistics(table)
     if statistics is None:
         return None
+    table_statistics = snapshot.table_statistics(table) or {}
+    rows = table_statistics.get("numRows")
     for record in statistics:
+        # of the rows: how many are NULL here, and how many distinct values the rest hold. Nothing is computed
+        # from a table nobody analysed, or an empty one
+        usable = bool(rows) and record.get("numNulls") is not None and record.get("numDistinct") is not None
+        record["nullRatio"] = record["numNulls"] / rows if usable else None
+        record["selectivity"] = record["numDistinct"] / rows if usable else None
         record["frequent"] = snapshot.histogram(table, record["column"]) if snapshot.contains_data_values else None
     return statistics
 

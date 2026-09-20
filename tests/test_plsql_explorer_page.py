@@ -19,7 +19,7 @@ from plsql.explorer import snapshot as S
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FIXTURE = ROOT / "fixtures" / "explorer"
 # values that exist only in the rows of the fixture's tables (fixtures/explorer/db/data.sql)
-REAL_VALUES = ("RECEIVED", "GROUND", "99.5", "2026-07-19")
+REAL_VALUES = ("GROUND", "99.5", "2026-07-19", "Customer 50")
 
 
 @pytest.fixture(scope="module")
@@ -39,7 +39,7 @@ def test_a_page_made_without_the_values_option_holds_no_value_from_the_data(anal
     """AE5."""
     html, data = html_for(analysis, "snapshot.json")
     for value in REAL_VALUES:
-        assert value not in html.replace("'RECEIVED'", ""), value  # 'RECEIVED' is a literal in create_order's source
+        assert value not in html, value
     orders = next(t for t in data["tables"] if t["name"] == "orders")
     status = next(c for c in orders["columnStatistics"] if c["column"] == "status")
     assert status["numDistinct"] == 3 and status["skewed"] and status["frequent"] is None
@@ -104,4 +104,55 @@ def test_a_routine_links_to_its_specification_only_when_there_is_one(analysis, t
 def test_what_nobody_collected_has_a_word_on_the_page_and_the_word_is_not_zero():
     template = page.TEMPLATE.read_text(encoding="utf-8")
     for word in ("未取得", "統計なし", "snapshot に無い", "該当なし", "見えていない"):
+        assert word in template, word
+
+
+# --- the code on the page ------------------------------------------------------------------------------------------
+
+def with_source(analysis, snapshot_name="snapshot-with-source.json", src=FIXTURE / "src"):
+    data = model.build(analysis, S.load(FIXTURE / snapshot_name), appsql.collect([FIXTURE / "app"]), src_root=src,
+                       app_files=appsql.files([FIXTURE / "app"]))
+    return page.render(data), data
+
+
+def test_the_source_files_and_everything_about_them_are_in_the_page(analysis):
+    html, data = with_source(analysis)
+    back = page.extract(html)
+    assert back == json.loads(json.dumps(data))
+    assert back["files"]["create_order.prc"]["lines"][0] == "CREATE OR REPLACE PROCEDURE create_order ("
+    assert back["routines"][1]["decision"]["rules"] and back["dbObjects"]["dbOnly"]
+
+
+def test_source_code_that_looks_like_markup_is_still_only_text(analysis, tmp_path):
+    import shutil
+    evil = tmp_path / "src"
+    shutil.copytree(FIXTURE / "src", evil)
+    path = evil / "purge_table.prc"
+    path.write_text(path.read_text(encoding="utf-8").replace("-- 表の名前", "-- </script><img src=x onerror=alert(1)> 表の名前"),
+                    encoding="utf-8")
+    html, _ = with_source(analysis, src=evil)
+    assert html.count("</script>") == 2 and "<img" not in html[html.index('<script id="data"'):]
+    assert any("onerror=alert(1)" in line for line in page.extract(html)["files"]["purge_table.prc"]["lines"])
+
+
+def test_the_page_says_which_code_it_holds_and_never_that_it_holds_none(analysis):
+    """R9: a snapshot taken without --include-source still carries view definitions and trigger bodies."""
+    template = page.TEMPLATE.read_text(encoding="utf-8")
+    assert "USER_SOURCE のコードは取っていない（view・trigger の定義は含む）" in template
+    assert "DB から取ったコード（USER_SOURCE）を含みます" in template
+    assert "コメントも含めて全文含みます" in template
+    assert "コードは無い" not in template and "構造だけ" not in template
+    assert with_source(analysis)[1]["meta"]["snapshot"]["containsSourceCode"] is True
+    assert with_source(analysis, "snapshot.json")[1]["meta"]["snapshot"]["containsSourceCode"] is False
+
+
+def test_the_diagram_is_built_from_elements_and_the_same_facts_stay_in_a_table():
+    template = page.TEMPLATE.read_text(encoding="utf-8")
+    assert "createElementNS" in template and "createTextNode" in template
+    assert "つながるテーブル（外部キー）" in template, "the table is still there for whoever cannot use the picture"
+
+
+def test_every_new_word_for_not_knowing_is_on_the_page():
+    template = page.TEMPLATE.read_text(encoding="utf-8")
+    for word in ("原文が渡されていない", "比べていない", "wrapped", "DB のコードと違う", "解析の対象外"):
         assert word in template, word

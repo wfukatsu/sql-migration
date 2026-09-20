@@ -23,7 +23,25 @@ BEGIN
   DBMS_STATS.DELETE_TABLE_STATS(ownname => USER, tabname => 'AUDIT_LOG');
 END;
 /
+-- 統計のあとの書き込み。USER_TAB_MODIFICATIONS に「前回の統計からの件数」として出る
+INSERT INTO audit_log (log_id, table_name, detail, logged_at) VALUES (audit_seq.NEXTVAL, 'SETUP', 'after stats', SYSDATE);
+UPDATE shipments SET carrier = 'SEA' WHERE MOD(shipment_id, 40) = 0;
+DELETE FROM shipments WHERE shipment_id > 118;
+-- パーティション表: 2 つのパーティションに 5 行と 3 行。テーブル単位の件数は 8 で、16 ではない
+INSERT INTO order_events SELECT LEVEL, LEVEL, DATE '2026-03-01', NULL FROM dual CONNECT BY LEVEL <= 5;
+INSERT INTO order_events SELECT 100 + LEVEL, LEVEL, DATE '2026-09-01', NULL FROM dual CONNECT BY LEVEL <= 3;
+COMMIT;
 SELECT 'statistics gathered' AS status FROM dual;
+SQL
+  # Oracle は書き込みの件数をメモリに持ち、ときどき書き出す。fixture では、いま書き出させる。
+  # ANALYZE ANY が要るので SYSTEM で流す（収集スクリプトは SELECT しかしないので、これはできない）
+  sys <<'SQL'
+WHENEVER SQLERROR EXIT FAILURE
+BEGIN
+  DBMS_STATS.FLUSH_DATABASE_MONITORING_INFO;
+END;
+/
+SELECT 'monitoring info flushed' AS status FROM dual;
 SQL
   exit 0
 fi
@@ -38,7 +56,7 @@ SELECT 'user explorer ready' AS status FROM dual;
 SQL
 
 { echo "WHENEVER SQLERROR EXIT FAILURE"; cat "$here/../src/schema.sql"; } | app
-for f in create_order.prc cancel_order.prc purge_table.prc trg_orders_audit.trg; do
+for f in create_order.prc cancel_order.prc purge_table.prc trg_orders_audit.trg pkg_shipping.pks pkg_shipping.pkb; do
   { echo "WHENEVER SQLERROR EXIT FAILURE"; cat "$here/../src/$f"; } | app
 done
 { echo "WHENEVER SQLERROR EXIT FAILURE"; cat "$here/db-only.sql"; } | app

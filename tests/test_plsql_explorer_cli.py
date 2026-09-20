@@ -28,8 +28,8 @@ def test_analysis_snapshot_and_sql_files_make_one_page(analysis, tmp_path, capsy
     assert main([str(analysis), "--snapshot", str(FIXTURE / "snapshot.json"), "--sql", str(FIXTURE / "app"),
                  "--out", str(out)]) == 0
     data = page.extract(out.read_text(encoding="utf-8"))
-    assert data["meta"]["counts"] == {"tables": 8, "routines": 5, "sql": 21}
-    assert "tables=8" in capsys.readouterr().out
+    assert data["meta"]["counts"] == {"tables": 9, "routines": 7, "sql": 25}
+    assert "tables=9" in capsys.readouterr().out
 
 
 def test_without_a_snapshot_there_is_still_a_page_and_it_says_what_is_missing(analysis, tmp_path, capsys):
@@ -91,3 +91,39 @@ def test_the_create_order_sample_makes_a_page_too(tmp_path):
     assert main([str(out), "--out", str(tmp_path / "explorer.html"), "--quiet"]) == 0
     data = page.extract((tmp_path / "explorer.html").read_text(encoding="utf-8"))
     assert {t["name"] for t in data["tables"]} == {"orders", "order_items", "products"}
+
+
+def test_with_the_source_directory_the_page_holds_the_code(analysis, tmp_path, capsys):
+    out = tmp_path / "explorer.html"
+    assert main([str(analysis), "--src", str(FIXTURE / "src"), "--snapshot", str(FIXTURE / "snapshot-with-source.json"),
+                 "--sql", str(FIXTURE / "app"), "--out", str(out)]) == 0
+    data = page.extract(out.read_text(encoding="utf-8"))
+    assert len(data["files"]["create_order.prc"]["lines"]) >= 69 and "app:shipping.sql" in data["files"]
+    said = capsys.readouterr().out
+    assert "whole (comments included)" in said and "USER_SOURCE" in said
+
+
+def test_without_the_source_directory_it_says_what_will_be_missing(analysis, tmp_path, capsys):
+    assert main([str(analysis), "--out", str(tmp_path / "e.html")]) == 0
+    assert "no --src" in capsys.readouterr().out
+
+
+def test_a_source_directory_that_is_not_one_makes_no_page(analysis, tmp_path, capsys):
+    out = tmp_path / "explorer.html"
+    assert main([str(analysis), "--src", str(tmp_path / "nowhere"), "--out", str(out)]) == 2
+    assert not out.exists() and "--src" in capsys.readouterr().err
+
+
+def test_a_version_1_snapshot_still_makes_a_page(analysis, tmp_path):
+    out = tmp_path / "explorer.html"
+    assert main([str(analysis), "--snapshot", str(FIXTURE / "snapshot-v1.json"), "--out", str(out), "--quiet"]) == 0
+    data = page.extract(out.read_text(encoding="utf-8"))
+    assert data["meta"]["snapshot"]["formatVersion"] == 1 and data["dbObjects"]["state"] == "not_collected"
+
+
+def test_with_the_source_the_same_input_still_makes_the_same_bytes(analysis, tmp_path):
+    arguments = [str(analysis), "--src", str(FIXTURE / "src"), "--snapshot", str(FIXTURE / "snapshot-with-source.json"),
+                 "--quiet"]
+    assert main(arguments + ["--out", str(tmp_path / "a.html")]) == 0
+    assert main(arguments + ["--out", str(tmp_path / "b.html")]) == 0
+    assert (tmp_path / "a.html").read_bytes() == (tmp_path / "b.html").read_bytes()
