@@ -2,7 +2,7 @@
 
 ScalarDB SQL でも実行計画（H2）でも動かない読み取り文を、アプリケーション（Java）で書き換えるときの注意。レポートの `APP_SEMANTICS` はこの表の該当行を指している。
 
-Oracle の「部署別の月次受注集計」を書き換えたときに実際に問題になった点をもとにしている（`docs/dept-orders-scalardb-conversion.md`）。
+Oracle の「部署別の月次受注集計」を書き換えたときに実際に問題になった点をもとにしている（`docs/examples/dept-orders-scalardb-conversion.md`）。
 
 ---
 
@@ -30,7 +30,7 @@ Oracle の「部署別の月次受注集計」を書き換えたときに実際�
 
 ## H2 で実行できない構文の書き換え
 
-`RESIDUAL_H2` の文は、アプリで実装する代わりに、H2 が実行できる SQL に書き換えて実行計画にする方法もある（`docs/oracle-sql-report.md`）。
+`RESIDUAL_H2` の文は、アプリで実装する代わりに、H2 が実行できる SQL に書き換えて実行計画にする方法もある（`docs/reports/oracle-sql-report.md`）。
 
 | 構文 | 書き換え |
 |---|---|

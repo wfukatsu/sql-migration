@@ -1,6 +1,6 @@
 """#11: the two explicit-cursor shapes that are not a scan -- "the first row" and "how many rows".
 
-`docs/plsql-cursor-patterns.md` sorts the corpus's cursors into six forms. A (a scan that only reads) and D
+`docs/plsql-migration/plsql-cursor-patterns.md` sorts the corpus's cursors into six forms. A (a scan that only reads) and D
 (a scan that writes its own table, refused) are handled. B and C are handled here, and neither is a loop:
 
 * **B. the first row, with a default.** `OPEN c; FETCH c INTO v; IF c%NOTFOUND THEN v := 0; END IF; CLOSE c;`

@@ -55,4 +55,4 @@ flowchart LR
 ## テスト
 
 `difftest/transpile_verify.py`（スキルの判定が実際の DB での動作と合うか）と、移行元・移行先の両方で文を流して
-結果を比べる `difftest/run.py` がある。どちらもコンテナが要る。手順は README の「検証基盤」にある。
+結果を比べる `difftest/run.py` がある。どちらもコンテナが要る。手順は `docs/guide/verification.md` にある。

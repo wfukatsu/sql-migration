@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""生成コードの外で決めること（docs/plsql-decisions-outside-generator.md）を、生成物から拾って記録する。
+"""生成コードの外で決めること（docs/plsql-migration/plsql-decisions-outside-generator.md）を、生成物から拾って記録する。
 
     # 生成物から「出た」項目を拾い、記録と突き合わせて一覧を出す（記録は書き換えない）
     python skills/plsql-migrate/scripts/decision_items.py scan --generated out/plsql \\
@@ -35,7 +35,7 @@ from pathlib import Path
 import yaml
 
 # リポジトリの根からの相対。別のディレクトリから呼んでも同じ文書を読む
-DEFAULT_DOC = str(Path(__file__).resolve().parents[3] / "docs" / "plsql-decisions-outside-generator.md")
+DEFAULT_DOC = str(Path(__file__).resolve().parents[3] / "docs" / "plsql-migration" / "plsql-decisions-outside-generator.md")
 
 
 class RecordError(Exception):
@@ -48,7 +48,7 @@ ITEM_ID = re.compile(r"(OPS|CALL|BIZ)-(\d+)")
 RANGE = re.compile(r"(OPS|CALL|BIZ)-(\d+)\s*〜\s*(?:(OPS|CALL|BIZ)-)?(\d+)")
 
 RECORD_HEADER = """\
-# 生成コードの外で決めること — 記録（docs/plsql-decisions-outside-generator.md §0.2）
+# 生成コードの外で決めること — 記録（docs/plsql-migration/plsql-decisions-outside-generator.md §0.2）
 #
 # skills/plsql-migrate/scripts/decision_items.py が読み書きする。手で直してもよいが、
 # 「決定」には 決定・決めた人・日付 が要る。答えた人のいない項目を「決定」と書かない。

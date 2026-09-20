@@ -129,7 +129,7 @@ ScalarDB の型は 11 種（`BOOLEAN` / `INT` / `BIGINT` / `FLOAT` / `DOUBLE` / 
   --out-dir out --plan-dir out/plans
 ```
 
-計画の各取得には、H2 に作ると結合が速くなる索引の列（`index_columns`: 主キーと、結合・相関・IN 副問合せの列）が付く。索引を作るかはオプションで、既定はオフ。`--h2-indexes` を付けると計画に `build_indexes: true` が入り、ランタイムが問い合わせの前に索引を作る（`residual-runner run --h2-indexes` でも有効にできる）。数万行以上の表を結合するバッチ処理では数十秒が数秒になる一方、1 表だけの計画や小さな要求では、索引を作る時間（投入と同程度）とメモリ（行の約 1.6 倍）の分だけ遅くなる（`docs/dml-followup-research.md`）。
+計画の各取得には、H2 に作ると結合が速くなる索引の列（`index_columns`: 主キーと、結合・相関・IN 副問合せの列）が付く。索引を作るかはオプションで、既定はオフ。`--h2-indexes` を付けると計画に `build_indexes: true` が入り、ランタイムが問い合わせの前に索引を作る（`residual-runner run --h2-indexes` でも有効にできる）。数万行以上の表を結合するバッチ処理では数十秒が数秒になる一方、1 表だけの計画や小さな要求では、索引を作る時間（投入と同程度）とメモリ（行の約 1.6 倍）の分だけ遅くなる（`docs/reports/dml-followup-research.md`）。
 
 ---
 
@@ -184,7 +184,7 @@ ERROR の読み取り文には、文全体（CTE の本体、サブクエリを�
 | `FULL_SCAN` | ERROR | `--storage cassandra` で、キーでもインデックスでも読めない表。すべての表を列挙し、結合相手のキーで読む方法（CTE の列もたどる）を提案する |
 | `APP_SEMANTICS` | WARN | アプリで書き換えるときに結果を変えないための注意。計画（H2 が元の SQL を実行する）には付かない |
 | `DESIGN` | INFO | 集計表、階層の事前計算、結合列のキー・インデックス、ScalarDB Analytics の提案 |
-| `COST` | INFO | 取得コストの見積もり。スキャン 1 行 約 25 µs、キー指定 約 5 ms（`docs/bench-report.md`）。`SERIALIZABLE` はスキャンを 2 倍にする |
+| `COST` | INFO | 取得コストの見積もり。スキャン 1 行 約 25 µs、キー指定 約 5 ms（`docs/reports/bench-report.md`）。`SERIALIZABLE` はスキャンを 2 倍にする |
 | `ROW_LIMIT` | WARN | 計画の行数上限（既定 1 万行）を超える見込み |
 | `COST_DEADLINE` | WARN | 見積もりが ScalarDB Cluster の gRPC 期限（既定 60 秒）を超える |
 | `CONFIG` | INFO | 読み取り専用トランザクション、`scan_fetch_size`、クロスパーティションスキャン、分離レベルの影響 |

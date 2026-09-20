@@ -45,7 +45,7 @@ class RowLocks:
     """行ロックを落として**楽観制御 + 呼び出し側の再試行**へ移すと決めた routine と、その理由（#9）。
 
     既定は「決めていない」であり、決めていない routine の書き込みは**拒否したままにする**
-    （`docs/plsql-transaction-patterns.md` §A）。ロックこそがその読み書きを安全にしていたので、
+    （`docs/plsql-migration/plsql-transaction-patterns.md` §A）。ロックこそがその読み書きを安全にしていたので、
     落ちた以上、黙って書き換えを進めてはならない。
 
     記録された routine では、読んだ値を使う式の先行計算（P4-4）を行う。安全なのは**同じ
@@ -81,7 +81,7 @@ class RowLocks:
 class Boundaries:
     """トランザクション境界を **1 反復 = 1 トランザクション**に割ると決めた routine と、その理由。
 
-    決定は #3（`docs/plsql-transaction-patterns.md` §E / §F / §G）、実装は #24 / #14 である。
+    決定は #3（`docs/plsql-migration/plsql-transaction-patterns.md` §E / §F / §G）、実装は #24 / #14 である。
     記録された routine は、1 つの method ではなく**トランザクション単位に割った部品**として出る:
 
         <routine>Start / Targets / One / Failed / Done / FailedBatch

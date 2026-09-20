@@ -1,4 +1,4 @@
-"""P3-5: compute every KPI in `docs/plsql-kpi.md` from the artifacts, so the numbers are read and not tallied.
+"""P3-5: compute every KPI in `docs/design/plsql-kpi.md` from the artifacts, so the numbers are read and not tallied.
 
     python -m plsql.kpi --evidence difftest/work/plsql-diff.json --generated generated
 
@@ -7,7 +7,7 @@ numbers were typed by hand is a report nobody can re-check; this one can be re-r
 
 Two of the seven do not come out of an artifact and are reported as such rather than filled in:
 
-* **KPI-6** is not measured in this PoC (decision of 2026-09-17, docs/plsql-kpi.md). It reports as a decision
+* **KPI-6** is not measured in this PoC (decision of 2026-09-17, docs/design/plsql-kpi.md). It reports as a decision
   rather than a shortfall, and the mechanism stays: `--fix-times` still takes a file of measured minutes if
   somebody later wants the number. What the decision costs is stated on every run -- this PoC does not measure
   migration effort, and the other six KPIs are about the tool, not about how long the migration takes.
@@ -215,7 +215,7 @@ def _kpi7(src: Path, analysis) -> dict:
 
 
 def render(result: dict) -> str:
-    lines = ["KPI (docs/plsql-kpi.md)", f"  corpus: {result['corpus']['note']}",
+    lines = ["KPI (docs/design/plsql-kpi.md)", f"  corpus: {result['corpus']['note']}",
              "  KPI-6 は計測しない（2026-09-17 の決定）。したがって本 PoC は移行工数を測っていない", ""]
     for key in ("kpi1", "kpi2", "kpi3", "kpi4", "kpi5", "kpi6", "kpi7"):
         entry = result[key]

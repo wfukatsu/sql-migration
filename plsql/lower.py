@@ -11,7 +11,7 @@ reads IR, and the ANTLR contexts stop here.
 
 A construct the lowering does not model becomes an `Unsupported` node carrying its source text, not an omission.
 That matters twice over: the plan's non-functional requirements say a warning must never be hidden behind a
-success, and `ruleCoverage` (docs/plsql-kpi.md §3) counts nodes the rules can decide -- so a routine holding one
+success, and `ruleCoverage` (docs/design/plsql-kpi.md §3) counts nodes the rules can decide -- so a routine holding one
 cannot reach AUTO by accident.
 
 ## What the IR records that the tree does not

@@ -1,7 +1,7 @@
 """P2-2: the rule engine.
 
 The judgement lives in YAML, not here. This module evaluates rules against the IR and the analysis, computes the
-confidence from `docs/plsql-kpi.md` §3, and applies the threshold. What it must never do is decide anything on its
+confidence from `docs/design/plsql-kpi.md` §3, and applies the threshold. What it must never do is decide anything on its
 own: a verdict that cannot be traced to a rule file is a verdict nobody can review or change.
 
     ruleset = RuleSet.load()                    # plsql/rules/*.yaml
@@ -39,7 +39,7 @@ from ..source import Issue
 RULES_DIR = Path(__file__).parent
 VERDICTS = ("AUTO", "REVIEW", "REDESIGN")
 RANK = {"AUTO": 0, "REVIEW": 1, "REDESIGN": 2}
-AUTO_THRESHOLD = 0.95  # docs/plsql-kpi.md §3; change both together
+AUTO_THRESHOLD = 0.95  # docs/design/plsql-kpi.md §3; change both together
 
 
 @dataclass

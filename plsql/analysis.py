@@ -9,7 +9,7 @@ alone cannot answer:
   calls one that does. Transaction effects therefore have to propagate along the call graph, not stop at the
   routine that happens to contain the statement.
 * **What does it touch?** Read and write sets come from the SQL, and their intersection is what makes
-  write-then-scan (docs/plsql-kpi.md §2, condition 11) detectable before anything runs.
+  write-then-scan (docs/design/plsql-kpi.md §2, condition 11) detectable before anything runs.
 
     result = analyse(program)
     result.effective[routine_id].controls_transaction   # including through calls

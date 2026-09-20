@@ -174,7 +174,7 @@ def parse_directory(root: str | Path, suffixes: set[str] | None = None) -> list[
 
 @dataclass
 class Coverage:
-    """KPI-1 (docs/plsql-kpi.md): parse rate over files, with the failures named."""
+    """KPI-1 (docs/design/plsql-kpi.md): parse rate over files, with the failures named."""
 
     total: int
     parsed: int

@@ -238,7 +238,7 @@ def _diagnostic_codes(program: M.Program | None) -> dict[str, list[str]]:
     """routine ごとの診断コード（2026-09-19、PL/SQL 変換スキル）。
 
     `OPTIMISTIC` / `MERGE_SPLIT` / `TRIGGER_CALL` のような診断は、生成コードの外で決めること
-    （`docs/plsql-decisions-outside-generator.md` §0.1）の目印である。IR の中にしか無いと、生成物だけを
+    （`docs/plsql-migration/plsql-decisions-outside-generator.md` §0.1）の目印である。IR の中にしか無いと、生成物だけを
     見る人やスキルには、どの項目を確かめればよいかが分からない。
     """
     if program is None:
