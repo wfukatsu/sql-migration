@@ -1,0 +1,451 @@
+# 行ロックとトランザクション境界の移行パターン
+
+2026-09-17 / P4-6
+
+このページは推測ではなく**測定から始まる**。P3-4 が実 ScalarDB Cluster で、同じ行を 2 つの
+トランザクションが read-modify-write したときに何が起きるかを測った:
+
+```
+DB-CORE-20013: The record being prepared already exists
+```
+
+**片方が弾かれ、更新は失われず、残った値はちょうど 1 回分だった。** ここから 2 つの事実が出る。
+
+1. **更新消失は起きない。** Consensus Commit の楽観制御が検出する。
+2. **アプリケーションが見るのは「待ち」ではなく「失敗したトランザクション」である。**
+   Oracle の `FOR UPDATE` は待たせた。ScalarDB は弾く。**だから再試行が要る**——PL/SQL 側は
+   それを書く必要がなかった。
+
+**再試行の責務は use case 境界が持つ**（2026-09-17 の決定、計画 §9）。トランザクションを開始・commit する
+層が再試行も持つ——生成コードが境界を持たないという既定と整合し、**再試行してよい操作かを判断できる唯一の
+層**でもある（冪等でない副作用が同じトランザクションにあれば、再試行は二重実行になる）。
+Repository は自動再試行しない。
+
+以下の各型では、その決定を前提に「**それでも決めること**」を書く。
+
+---
+
+## 判定の早見表
+
+| 元の形 | ルール | ScalarDB での置き換え | 再試行の責務 |
+|---|---|---|---|
+| A. `SELECT ... FOR UPDATE` → 判断 → `UPDATE` | `LOCK-001` | 楽観制御に任せ、衝突を再試行 | **呼び出し側**（use case 境界） |
+| B. `FOR UPDATE NOWAIT` + ORA-54 の捕捉 | `LOCK-001` | 「待たない」は既定。ORA-54 相当は衝突失敗 | 呼び出し側。**待つ意味は再現しない** |
+| C. `FOR UPDATE SKIP LOCKED` で取り合う | `LOCK-002` | 取り合いはキュー／担当者列で作り直す | 設計をやり直す |
+| D. 行ロックで直列化する採番 | `LOCK-001` | 順序オブジェクトが無い。採番方式を決める | 方式次第 |
+| E. routine 内 `COMMIT`（中間コミット） | `TX-001` | **1 反復 = 1 トランザクション**（決定済み） | 呼び出し側。弾かれた 1 件だけ |
+| F. `SAVEPOINT` / `ROLLBACK TO` | `TX-003` | 1 件 = 1 トランザクション。**エラー行は別トランザクション**（決定済み） | 同上 |
+| G. 自律トランザクション | `TX-002` | **別トランザクション**（決定済み。outbox は採らない） | 別経路の設計 |
+| H. DB link 越しの確定 | `TX-001` | **未決定**。分割ではなく分散トランザクションの設計 | 別 issue |
+
+---
+
+## A. 読んで、判断して、書く
+
+```sql
+SELECT stock_qty INTO v_stock FROM products WHERE product_id = p_product_id FOR UPDATE;
+IF v_stock < p_qty THEN RAISE_APPLICATION_ERROR(-20030, '...'); END IF;
+UPDATE products SET stock_qty = v_stock - p_qty WHERE product_id = p_product_id;
+```
+
+`FOR UPDATE` は変換で落ちる（`WARN ROW_LOCK`）。**ロックこそがこの形を安全にしていた**ので、落ちた以上
+この書き換えを黙って進めてはならない。生成器は**式の先行計算をここでは行わず、文を拒否したままにする**
+（P4-4）。読んだ値に基づいて動く前に止まる。
+
+### 決定（2026-09-18 / #9）: routine ごとに記録したものだけ進める
+
+**「黙って進めない」を「決めた人がいるときだけ進める」に変えた。** 拒否を続けることは、決めた後も
+止め続けることを意味してしまう。
+
+```yaml
+# fixtures/plsql/limits.yaml
+rowLocks:
+  optimistic:
+    pkg_stock_reserve.reserve: >-
+      在庫は読んだ値から計算する。同じトランザクションの中で読んで書くので、衝突は commit で弾かれる。
+      業務例外（-20030 在庫不足）は再試行しても結果が変わらないので、呼び出し側は衝突だけを再試行する
+```
+
+* 記録された routine では、式の先行計算を行う。**安全なのは同じトランザクションの中で読んで書く
+  から**で、衝突は Consensus Commit が弾く（P3-4 で実測。`DB-CORE-20013`）
+* **行ロックが元から無い routine も、記録が要るのは同じである。** `pkg_bulk_load.restock` の
+  `SET stock_qty = stock_qty + <delta>` には `FOR UPDATE` が無いが、読んで計算して書くことに
+  変わりはない。2026-09-18 に記録した（#14 / cursor-patterns §G）——1 要素 = 1 トランザクション
+  の中で読んで書き、弾かれた要素は何も書いていないので、呼び出し側はその要素だけを安全に
+  再試行できる（差分の再適用にならない）
+* 記録の無い routine は**今までどおり拒否する**。`reserve_nowait`（B 型）はまだ決まっていないので
+  拒否のままで、それを `TransactionIT` が固定している
+* 通した文には `WARN OPTIMISTIC` が残り、**弾かれた衝突を再試行するのは呼び出し側の責務**だと言う
+
+**1 つの旗で全体を切り替えない。** 決めることが routine ごとに違うからである——その呼び出し側が
+再試行するのか、その操作が冪等か、業務例外と衝突を区別できるか。`limits.yaml` の
+`notLimited`（#19）と同じ形で、**「決めた」と書けるのは決めた人がいるときだけ**である。
+
+置き換えの形:
+
+```java
+// 呼び出し側（use case 境界）
+for (int attempt = 0; ; attempt++) {
+    try (var tx = manager.begin()) {
+        service.reserve(productId, qty);   // 読む・判断する・書く
+        tx.commit();
+        break;
+    } catch (TransactionConflictException e) {
+        if (attempt >= MAX_ATTEMPTS) throw e;
+        // 業務例外（在庫不足）は再試行しない。衝突だけを再試行する
+    }
+}
+```
+
+**それでも決めること**: 最大再試行回数、待ち時間、そして**この操作が冪等か**。採番や外部通知が同じ
+トランザクションにあれば、再試行は二重実行になる——**再試行の責務が use case 境界にあるのは、そこでしか
+この判断ができないからである**。
+
+**業務例外と衝突を混ぜないこと。** 在庫不足（-20030）は再試行しても結果が変わらない。
+
+## B. 待たない（`NOWAIT`）
+
+```sql
+SELECT ... FOR UPDATE NOWAIT;
+EXCEPTION WHEN e_locked THEN RAISE_APPLICATION_ERROR(-20031, '... is locked ...');
+```
+
+ScalarDB では**「待たない」が既定**なので、`NOWAIT` という指定そのものは意味を失う。ORA-54 に相当
+するのは「衝突で失敗したトランザクション」で、タイミングが違う——Oracle は読んだ瞬間に分かり、
+ScalarDB は commit で分かる。
+
+**決めること**: `-20031` を呼び出し側に見せ続けるのか、再試行に変えるのか。**呼び出し側が
+「ロックされている」を業務判断に使っている**なら、それは commit 時点では遅い。設計を変える。
+
+### 決定（2026-09-18 / #9）: 衝突として扱う
+
+`NOWAIT` という指定そのものが意味を失う（待たないのが既定）ので、**ORA-54 に相当する出来事は
+起こらない**。衝突は commit で分かり、再試行は呼び出し側の責務である。
+
+`rowLocks.optimistic` に `pkg_stock_reserve.reserve_nowait` を記録した。あわせて、**起こりえない
+誤りを捕まえる handler は出さない**:
+
+```java
+public void reserveNowait(BigDecimal pProductId, BigDecimal pQty) throws Exception {
+    // WHEN E_LOCKED: 捕まえていた Oracle の誤りは移行先では起こらないので、この handler は出さない
+    vStock = (Long) repository.reserveNowaitStmt1(pProductId);
+    rowCount = repository.reserveNowaitStmt2(vStock, pQty, pProductId);
+}
+```
+
+`catch` を出すと `MigratedException` を広く捕まえ、**関係のない業務例外まで `-20031`
+「ロックされている」に付け替える**。Oracle では他の例外は素通りしていたので、出さないほうが
+元に近い。判断は `PRAGMA EXCEPTION_INIT` が結びつけた**番号**（`-54`）で行う——名前で判断すると、
+同じ名前の別の例外に当たる。
+
+**タイミングは変わる。** Oracle は読んだ瞬間に分かり、移行後は commit で分かる。`-20031` を
+業務判断に使っている呼び出し側があれば、そこは設計を変える必要がある。
+
+## C. 取り合う（`SKIP LOCKED`）
+
+```sql
+CURSOR c IS SELECT order_id FROM orders WHERE status = 'NEW' AND ROWNUM <= p_limit
+            FOR UPDATE SKIP LOCKED;
+```
+
+`SKIP LOCKED` は「他が持っていない行を取る」という**ロックを使った作業分配**である。ScalarDB に
+同じものは無く、楽観制御で真似ると全員が同じ行を取って 1 人以外が弾かれる。
+
+置き換えは**ロックではなくデータで表す**:
+
+- 担当者列（`claimed_by` / `claimed_at`）を条件付き更新で立て、取れた行だけ処理する
+- キューを外に出す
+
+**決めること**: 取りこぼしと二重取りのどちらを許すか。担当者列には**期限**が要る（取った側が落ちた
+場合に誰も取れなくなる）。
+
+### 決定（2026-09-18 / #9）: 担当者列 + 期限で表す → **2026-09-19 に改めた: 担当者列は足さない**
+
+最初の決定は「ロックではなくデータで作業分配を表す（`claimed_by` / 期限）」だった。残っていた
+「どこに持つか」を決めようとして調べ直し、**前提が立たない**ことが分かった:
+
+* ScalarDB では担当者列を立てても**「読んでから書く」ことに変わりはない**。同じ行を取った 2 人の
+  片方が commit で弾かれるのは、列があっても無くても同じである——取り合いの挙動は変わらない
+* `claim_batch` は**取ること自体が 1 トランザクションで完結する**（読んで `CLAIMED` に書く）。列が
+  無くても二重取りは起きない
+* 列が生むのは「誰がいつ取ったか」の記録と、期限切れの再取得である。後者は **Oracle 版には無い
+  新しい挙動**になる（Oracle でも、取った側が commit のあとで落ちた行は `CLAIMED` のまま残る）
+
+**決定: 列は足さず、楽観制御で移す。** A 型と同じく `rowLocks.optimistic` に理由つきで記録する。
+違いは「待たずに飛ばす」が「弾かれて再試行」になることだけで、再試行は呼び出し側の責務である。
+
+```sql
+FOR r IN (SELECT order_id FROM orders WHERE status = 'NEW' FETCH FIRST p_limit ROWS ONLY) LOOP
+  UPDATE orders SET status = 'CLAIMED' WHERE order_id = r.order_id;
+END LOOP;
+```
+
+動かすのに要ったのは 3 つで、どれも行の**指し方と数え方**の話である:
+
+1. **`WHERE CURRENT OF c` を主キーで指す。** 「いま FETCH した行」は、cursor が主キーを読んでいれば
+   その値で同じ行を指せる。ScalarDB SQL に `CURRENT OF` は無い
+2. **`ROWNUM <= :n` を `LIMIT :n` にする**（converter）。件数は bind でも件数である。`<` は n-1 が
+   要るので bind では作れず、拒否のまま
+3. **件数の bind を整数として渡す。** 列ではないので型が付かず、PL/SQL の NUMBER が BigDecimal の
+   まま届いてドライバに拒否された（DB-SQL-10016）。ROWNUM は列の形をしているので、先に見ないと
+   「rownum という列」に帰属させてしまう
+
+加えて、cursor パターン D（走査しながら同じ表を更新）の拒否を、**`FOR UPDATE` の cursor で行ロックを
+落とすと記録してあるもの**に限って外した。Oracle も OPEN の時点で行をロックして集合を固定するので、
+先に読む形と読む行が同じであり、読むのは書くより前の 1 回だけなので P2-4 にも当たらない。
+ロックの無い cursor（`mark_reviewed`）にはこの理由が立たないので、拒否のままである（#20）。
+
+**実測（2026-09-19、実 ScalarDB Cluster）**: `stock_claim_batch` が Oracle と一致した——`orders` の
+1 件が `CLAIMED` になり、`trg_orders_audit` の監査行も揃う。**ScalarDB が拒む SQL が 0 件になった。**
+
+## D. 行ロックで直列化する採番
+
+```sql
+SELECT next_value INTO v_next FROM counters WHERE counter_name = 'PAYMENT_ID' FOR UPDATE;
+UPDATE counters SET next_value = v_next + 1 WHERE counter_name = 'PAYMENT_ID';
+```
+
+ScalarDB に順序オブジェクトは無い。`sequence.NEXTVAL` が変換できないのと同じ問題である
+（corpus では 7 文がこれで止まっている）。
+
+**用途ごとに使い分けることを決めた**（2026-09-17、計画 §9）:
+
+| 用途 | 方式 | 代償 |
+|---|---|---|
+| 監査 ID など**代理キー** | **hi/lo**（範囲を先に確保して配る） | **欠番が出る**（プロセス停止時に未使用分が捨てられる） |
+| 注文番号・支払番号など**業務上意味のある番号** | **counters 表 + 再試行** | **高衝突点になる** |
+
+**それでも決めること**: 列ごとにどちらかを選び、**選んだ理由を列の定義に残すこと**。counters 方式の列は
+他の更新と同じトランザクションに入れない——入れると、その更新は採番の衝突に巻き込まれる。
+
+UUID は採らなかった。列型が `BIGINT` から `TEXT` へ変わり、既存の外部連携や帳票の番号体系が壊れるためで
+ある。
+
+## E. routine 内の `COMMIT`
+
+```sql
+FOR r IN (...) LOOP
+  ...
+  IF MOD(v_processed, 100) = 0 THEN COMMIT; END IF;   -- 100 件ごとの中間コミット
+END LOOP;
+```
+
+生成器は拒否する。**1 つの囲むトランザクションの下でこれは意味を持たない**——動いてしまう物を生成する
+のが最悪の結果で、それは移行できたように見えるからである（P3-4 でテストにした）。
+
+中間コミットは「大きすぎるトランザクションを分ける」ための道具なので、置き換えは**分け方を決めること**
+になる:
+
+- **use case 単位に切る。** 1 回の呼び出しが 1 トランザクション。ループは呼び出し側へ出る。
+- **冪等にする。** 途中で落ちた後に同じ入力で再実行できること。`status` の遷移で表すのが素直。
+- **進捗を残す。** どこまで終わったかを表に持つ（`batch_control` はまさにそれ）。
+
+### 決定（2026-09-18 / #3）
+
+**1 反復 = 1 トランザクション。**
+
+保証は下がらない。**元のコードが 100 件ごとに COMMIT している時点で「途中で落ちたら確定分は残る」を
+既に受け入れている**ので、100 → 1 に**細かくなる**だけである。
+
+```java
+for (var id : repository.nightlyCloseTargets(batchDate)) {
+    tx.run(() -> service.nightlyCloseOne(id, audit));   // 失敗した 1 件だけやり直せる
+}
+```
+
+* **冪等性は新設しない。** `SHIPPED` → `CLOSED` の遷移が既にそれで、2 回目は同じ行を選ばない
+* **進捗表も新設しない。** どこまで進んだかは状態列が持っている
+* **`batch_control` は残す**（運用が見ているため）。ただし**更新するたびに全員とぶつかる高衝突点**
+  なので、本体とは別トランザクションにする。`RUNNING` / `DONE` / `FAILED` はバッチの境界であって、
+  1 件の処理単位ではない
+* 1 反復が別 routine の呼び出しであるもの（`prc_reprice_all`）は、**呼ばれる側がトランザクションを
+  開かない**という §9 の既定のまま、この粒度が自動的に成立する
+* `prc_purge_audit` も揃える。DELETE のみで冪等なのでどちらでも壊れないが、**揃えると生成器の形が
+  1 つになる**
+
+この粒度は #9（行ロック）の再試行単位でもある——弾かれた 1 件だけをやり直せる。
+
+### 実装（2026-09-18 / #24）: 部品を生成し、回し方はコメントで出す
+
+`limits.yaml` の `transactions.perIteration` に書いた routine だけを、**トランザクション単位に
+割った部品**として生成する。決めていない routine は 1 つの method のまま出て、`COMMIT` のところで
+止まる——**止まっているのが正しい**。
+
+```java
+// 生成されるもの（prc_nightly_close）
+void prcNightlyCloseStart()                                   // batch_control。別トランザクション
+List<PrcNightlyCloseLoop3Row> prcNightlyCloseTargets(LocalDateTime pBatchDate)
+void prcNightlyCloseOne(PrcNightlyCloseLoop3Row r, AuditContext audit)      // 1 反復 = 1 tx
+void prcNightlyCloseFailed(PrcNightlyCloseLoop3Row r, Exception failed, AuditContext audit)
+void prcNightlyCloseDone() / void prcNightlyCloseFailedBatch()
+```
+
+**生成コードはループを持たない**（計画 §9 の既定と揃える）。推奨の回し方は生成コードの
+コメントとして出る。コメントの呼び出しと signature が食い違うと、読んだ人はコンパイルできない
+コードを書くことになるので、**そこは 1 本のテストで固定してある**（`test_plsql_split.py`）。
+
+割ったことで変わったことが 3 つある:
+
+1. **対象を読むのが別トランザクションになった。** 割る前は「自分が書く表を読んでいる」として
+   生成を拒んでいた（P2-4）。その制限には当たらなくなり、代わりに**読んだ時点と処理する時点が
+   ずれる**——1 反復の側が自分で確かめる必要がある（`SHIPPED` -> `CLOSED` の遷移がそれである）
+2. **中間コミットが消えた。** `IF MOD(v_processed, 100) = 0 THEN COMMIT` は境界そのものに
+   吸収された。`v_processed` は 1 回ごとに 0 から始まるので、**数えるのは呼び出し側**になる
+   ——生成コードにそう書いてある
+3. **判定は REDESIGN のまま。** 生成できることと移してよいことは別である
+
+**実測（2026-09-18、実 ScalarDB Cluster / `nightly_close` シナリオ）**: 例外なしで完走し、
+`SHIPPED` の 2 件が `CLOSED`、`batch_control` が `DONE` になった。Oracle との差は
+`audit_log` の 2 行だけで、それは `trg_orders_audit` が書いていた行である（#12 の trigger の話で、
+境界の話ではない）。割る前は最初の `COMMIT` で `UnsupportedOperationException` だった。
+
+### 処理対象の読み方（2026-09-19 / #19）
+
+割った routine の `Targets` は、処理対象を**キー順に件数つきで**返す。最初は起点を null で呼び、次からは
+前のページの最後の行を `<routine>After(...)` に通した値を渡す。空が返ったら終わりである:
+
+```java
+BigDecimal after = null;
+List<PrcNightlyCloseLoop3Row> page;
+while (!(page = tx.run(() -> service.prcNightlyCloseTargets(batchDate, after, 100))).isEmpty()) {
+    for (var r : page) { ... One / Failed ... }
+    after = PrcNightlyCloseService.prcNightlyCloseAfter(page.get(page.size() - 1));
+}
+```
+
+1 回に取る件数（`pBatch`）は運用の調整値で、業務の数ではない。これで割った routine に行数の上限を
+決める必要が無くなった（cursor-patterns「共通して決めておくこと」1）。`mark_reviewed` もこの形に加えた。
+
+## F. `SAVEPOINT` / `ROLLBACK TO`
+
+```sql
+SAVEPOINT sp_order;
+...
+EXCEPTION WHEN OTHERS THEN ROLLBACK TO sp_order; ...
+```
+
+部分取り消しは無い。**「1 件失敗しても残りは続ける」という要件**がそこにあるので、E と同じく
+1 件 = 1 トランザクションへ分けるのが素直である。分けられないなら、失敗した 1 件のために全体を
+やり直すことを受け入れる。
+
+### 決定（2026-09-18 / #3）: ロールバックのあとに書く行は、別トランザクション
+
+`ROLLBACK TO sp` のあとに書くエラー行は、**自分が説明している作業のロールバックを生き延びる**。
+Oracle 23ai で実測した:
+
+```
+SAVEPOINT sp; INSERT 作業; ROLLBACK TO sp; INSERT エラー行; COMMIT;
+  -> 作業は消える／エラー行は残る
+```
+
+1 件分のトランザクションを rollback すると、その中に書いたエラー行も消える。だから**別に書く**。
+これは G（自律トランザクション）と**同じ決定**である——下の G を見ること。
+
+## G. 自律トランザクション
+
+```sql
+PRAGMA AUTONOMOUS_TRANSACTION;
+...
+INSERT INTO audit_log ...;
+COMMIT;                      -- 親が rollback しても残る
+```
+
+**「親が失敗しても残る」が目的**である。ScalarDB では別経路にする:
+
+- **outbox**: 同じトランザクションで outbox 表へ書き、別プロセスが送る。**親が失敗すれば outbox も
+  消える**ので、「失敗したことを記録する」用途には合わない。
+- **別トランザクション**: 監査だけを独立して書く。親の成否と独立するが、**親が落ちた後に監査だけ
+  残る**のは自律トランザクションと同じ挙動である。
+
+**決めること**: 何のために残すのか。失敗の記録なら別トランザクション、成功したことの通知なら outbox。
+この 2 つを混ぜると、どちらの要件も満たさない。
+
+### 決定（2026-09-18 / #3）: 別トランザクション
+
+corpus の `prc_audit_autonomous` は**失敗の記録**である。親が rollback しても監査は残る、という
+Oracle の挙動を実測で確かめたうえで、同じ挙動になる**別トランザクション**を採る:
+
+```
+親が ROLLBACK -> 親の作業は消える（0 行）／監査は残る（1 行）
+```
+
+outbox は採らない。**失敗した作業と一緒に消える**ので、失敗の記録には使えない。
+
+**F のエラー行と同じ決定である。** 別々に決めると、片方だけ実装されて食い違う——実測するまで
+この 2 つが同じものを要求しているとは気づいていなかった。
+
+### 実装（2026-09-19）: 中身だけを出し、境界は呼び出し側が別に開く
+
+`limits.yaml` の `transactions.separate` に記録した routine は、**中身だけ**の method として出る:
+
+```java
+// **別のトランザクションで呼ぶ**（自律トランザクション / #3 §G）。回し方の出発点:
+//   tx.runSeparately(() -> service.prcAuditAutonomous(...));   // 親とは別の境界
+public void prcAuditAutonomous(String pTableName, ..., AuditContext audit) throws Exception {
+    rowCount = repository.prcAuditAutonomousStmt1(audit, pTableName, pKeyValue, pAction, pNewValue);
+}
+```
+
+* `COMMIT` / `ROLLBACK` は出さない。境界は呼び出し側にある（計画 §9）
+* `WHEN OTHERS THEN ROLLBACK; RAISE;` は **handler ごと出さない**。別の境界で呼ぶ側がまさにそれを
+  する。出すと `RAISE` が別の例外に包み直され、**元の例外が変わる**
+* **同じトランザクションの中で呼ぶ文は拒む。** 呼べば親の rollback で一緒に消える——Oracle では
+  消えなかった。どこで別の境界を開くかは呼び出し側の設計なので、生成器は推測しない
+
+`perIteration`（§E）と並べて別の欄にしたのは、**形が違う**からである——こちらは routine 全体が
+1 つの境界で、ループを割るのではない。両方に書くと読み込みで止まる。
+
+**実測（2026-09-19、実 ScalarDB Cluster）**: `audit_autonomous` が Oracle と一致した。前は #25 の
+規則（完走できない routine は採番の前で止める）で止まっていた——止まっていたのは正しく、止める
+理由（`COMMIT`）が境界の決定で消えたので、動くようになった。
+
+---
+
+## H. `MERGE`（読んで、あれば更新、無ければ挿入）
+
+`MERGE` を `UPSERT` にすると、**既存行に当たったときに `WHEN MATCHED` が設定していない列まで
+上書きする**（#26 で実測: `pkg_customer_import.import` の tier が GOLD→BRONZE、registered_on がずれる）。
+#26 は converter を **WARN のまま**にし、それが許容できない移行では「読んでから UPDATE / INSERT を
+選ぶ形にすること」と決めた。**PL/SQL の移行はそれである**——Oracle と同じ行が残ることが目的だからである。
+
+### 実装（2026-09-19）: 記録された routine の MERGE を割る
+
+```sql
+SELECT COUNT(*) INTO v_merge_1 FROM customers WHERE customer_id = p_ids(i);
+IF v_merge_1 > 0 THEN
+  UPDATE customers SET name = p_names(i) WHERE customer_id = p_ids(i);   -- WHEN MATCHED だけ
+ELSE
+  INSERT INTO customers (customer_id, name, tier, registered_on) VALUES (p_ids(i), p_names(i), 'BRONZE', SYSDATE);
+END IF;
+```
+
+* **converter は変えない。** 単体ツール `sql-transpile` の挙動（I10 とベンチマークの数字）を守るのが
+  #26 で WARN を選んだ理由であり、ここは PL/SQL の移行だけの話である
+* **同じトランザクションの中で読んで書く**ので、同時に「無い」と読んだ 2 つは commit で片方が弾かれる。
+  だから #9 の RMW と同じく `rowLocks.optimistic` に**記録された routine だけ**を割る
+* 割れない形（USING が表を読む、ON が等値の AND でない、WHEN MATCHED が書き込む先の列を読む、
+  DELETE 句や条件つきの枝がある）は触らない。UPSERT と、上書きされる列を名指しする警告が残る
+* **割ると MERGE という語が消え、SEM-006（競合の確認）が外れる。** 競合の問いは消えていないので、
+  割った形には SEM-011 が同じ要求（concurrent_upsert）を当てる
+
+割ろうとして、**lowering が MERGE を SELECT として扱っていた**のが見つかった。`USING (SELECT ...)` の
+SELECT を先に見つけていたためで、包む側（MERGE / INSERT / UPDATE / DELETE）から先に見るよう直した。
+
+**実測（2026-09-19、実 ScalarDB Cluster）**: `import_merge` が Oracle と一致した——既存の customer_id=1 は
+name だけが変わり、tier も registered_on も残る。
+
+---
+
+## 共通して決めること
+
+1. **再試行の責務。** 生成コードはトランザクションを開始も commit もしない（計画 §9）ので、
+   再試行は必ず呼び出し側にある。**どの層か**を決めること。
+2. **再試行してよい操作か。** 冪等でない副作用が同じトランザクションにあれば、再試行は二重実行である。
+3. **業務例外と衝突を分けること。** 再試行して結果が変わるのは後者だけである。
+4. **高衝突点を他と分けること。** 採番・カウンタ・バッチ制御行は、更新するたびに全員とぶつかる。
+
+## テスト
+
+各型には P3-4 形式の並行性テストを添えること。`runtime-java` の `TransactionIT` が雛形で、
+**2 つのトランザクションを実際に交差させ**、片方が弾かれること・更新が失われないことを確かめている。
+「弾かれるはず」を設計の前提にするなら、**それを測ったテストが要る**。

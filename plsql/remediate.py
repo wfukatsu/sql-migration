@@ -13,7 +13,7 @@ prints exactly what they contain.
 **Advice is never evidence.** The verdict engine does not read this module's output, and cannot: advice lives
 in its own file and carries its own verdict, which is always REVIEW. A model that produced perfect code would
 still not move a routine to AUTO, because nothing here has been compared against Oracle. That is what AUTO
-means (docs/plsql-kpi.md §3), and a model's confidence is not a substitute for a measurement.
+means (docs/design/plsql-kpi.md §3), and a model's confidence is not a substitute for a measurement.
 
 **Every answer says where it came from.** Model, timestamp, and a digest of the exact request. Advice whose
 request has since changed is stale, and the tool says so rather than showing it as current.
@@ -39,17 +39,17 @@ ADVICE_VERDICT = "REVIEW"
 # Which recorded pattern document covers which rule. A model that is not pointed at these will invent its own
 # advice, and then the project has two answers to the same question.
 PATTERNS = {
-    "CUR-001": "docs/plsql-cursor-patterns.md",
-    "CUR-002": "docs/plsql-cursor-patterns.md",
-    "LOCK-001": "docs/plsql-transaction-patterns.md",
-    "LOCK-002": "docs/plsql-transaction-patterns.md",
-    "TX-001": "docs/plsql-transaction-patterns.md",
-    "TX-002": "docs/plsql-transaction-patterns.md",
-    "TX-003": "docs/plsql-transaction-patterns.md",
-    "TX-004": "docs/plsql-transaction-patterns.md",
-    "TRG-001": "docs/plsql-trigger-patterns.md",
-    "DYN-002": "docs/plsql-conversion-implementation-plan.md",
-    "DYN-003": "docs/plsql-trigger-patterns.md",
+    "CUR-001": "docs/plsql-migration/plsql-cursor-patterns.md",
+    "CUR-002": "docs/plsql-migration/plsql-cursor-patterns.md",
+    "LOCK-001": "docs/plsql-migration/plsql-transaction-patterns.md",
+    "LOCK-002": "docs/plsql-migration/plsql-transaction-patterns.md",
+    "TX-001": "docs/plsql-migration/plsql-transaction-patterns.md",
+    "TX-002": "docs/plsql-migration/plsql-transaction-patterns.md",
+    "TX-003": "docs/plsql-migration/plsql-transaction-patterns.md",
+    "TX-004": "docs/plsql-migration/plsql-transaction-patterns.md",
+    "TRG-001": "docs/plsql-migration/plsql-trigger-patterns.md",
+    "DYN-002": "docs/design/plsql-conversion-implementation-plan.md",
+    "DYN-003": "docs/plsql-migration/plsql-trigger-patterns.md",
 }
 
 

@@ -348,7 +348,7 @@ class StatementConverter:
         return cfg
 
     def _try_plan(self, res: Result, src: str) -> None:
-        """ERROR statement that is read-only: build a fetch + residual plan (docs/app-side-processing-plan.md)."""
+        """ERROR statement that is read-only: build a fetch + residual plan (docs/design/app-side-processing-plan.md)."""
         codes = {i.code for i in res.issues if i.severity == "ERROR"}
         try:
             fresh = sqlglot.parse_one(src, read=self.dialect)  # the converter mutated the first AST

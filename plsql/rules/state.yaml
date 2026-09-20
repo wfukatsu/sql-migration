@@ -1,4 +1,4 @@
-# Package 状態と権限（設計書 §6.1 / §6.2、docs/plsql-kpi.md §2 の 3・6）
+# Package 状態と権限（設計書 §6.1 / §6.2、docs/design/plsql-kpi.md §2 の 3・6）
 
 rules:
   - id: STATE-001

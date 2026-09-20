@@ -1,7 +1,7 @@
 """#12: 移行先に trigger は無いので、**書き込む側が呼ぶ**。
 
 Oracle の trigger は「その表へのすべての書き込み」に掛かっていた。ScalarDB にその仕組みは無いので、
-掛けるには**書き込む文のところに置く**しかない（`docs/plsql-trigger-patterns.md` の早見表）:
+掛けるには**書き込む文のところに置く**しかない（`docs/plsql-migration/plsql-trigger-patterns.md` の早見表）:
 
     UPDATE orders SET status = 'CLOSED' WHERE order_id = :id;
 

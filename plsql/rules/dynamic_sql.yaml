@@ -1,4 +1,4 @@
-# 動的 SQL（設計書 §6.8、docs/plsql-kpi.md §2 の 4）
+# 動的 SQL（設計書 §6.8、docs/design/plsql-kpi.md §2 の 4）
 #
 # 定数に畳み込めるものと、実行時に組み立てられるものを分ける。前者は解析できるので REVIEW、
 # 後者は allowlist か専用 Repository への再設計になる。

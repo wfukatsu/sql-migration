@@ -1,6 +1,6 @@
 """#24 / #14: 決めた routine を、**トランザクション単位に割った部品**として出す。
 
-決定は #3（`docs/plsql-transaction-patterns.md` §E / §F / §G）、形は #24 / #14 である:
+決定は #3（`docs/plsql-migration/plsql-transaction-patterns.md` §E / §F / §G）、形は #24 / #14 である:
 
 * 分割系は **1 反復 = 1 トランザクション**
 * ロールバックのあとに書く行（エラー行）は**別トランザクション**

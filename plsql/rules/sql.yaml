@@ -1,4 +1,4 @@
-# SQL とデータアクセス（設計書 §6.4 / §6.5、docs/plsql-kpi.md §2 の 8・9・10）
+# SQL とデータアクセス（設計書 §6.4 / §6.5、docs/design/plsql-kpi.md §2 の 8・9・10）
 
 rules:
   - id: LOCK-001

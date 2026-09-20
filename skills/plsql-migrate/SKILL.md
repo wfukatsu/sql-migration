@@ -4,7 +4,7 @@ description: >-
   Oracle の PL/SQL（package / procedure / function / trigger）を ScalarDB 向けの Java（Service /
   Repository / domain）に変換する。変換は plsql.generate が決定的に行い、コンパイルと行数上限の
   決定漏れまで確かめる。そのうえで、生成器が決めてはならない「生成コードの外で決めること」
-  （docs/plsql-decisions-outside-generator.md の OPS / CALL / BIZ 項目）を生成物から拾い、
+  （docs/plsql-migration/plsql-decisions-outside-generator.md の OPS / CALL / BIZ 項目）を生成物から拾い、
   利用者に確認して、決めた人と日付つきで記録する。移行で意味が変わるところ（トランザクションの
   分割、行ロックから楽観制御、trigger が掛かる経路、TIMESTAMPTZ、TRUNCATE など）が業務ロジックと
   整合するかを、routine ごとの具体的な問いにして確かめる。最後に、変換後のコードの文書（アーキテクチャ・
@@ -62,7 +62,7 @@ PL/SQL を読んで ScalarDB 向けの Java を生成し、生成器が決めず
 
   | 資料 | 読むとき |
   |---|---|
-  | `docs/plsql-decisions-outside-generator.md` | 項目を問うとき。**問う前に、その項目の節を必ず読む**（選択肢・推奨・代償が書いてある） |
+  | `docs/plsql-migration/plsql-decisions-outside-generator.md` | 項目を問うとき。**問う前に、その項目の節を必ず読む**（選択肢・推奨・代償が書いてある） |
   | `references/alignment.md` | Step 6 で業務ロジックとの整合を確かめるとき |
   | `references/documenting.md` | Step 7 で変換後のコードの文書を書くとき。**書く前に必ず読む** |
   | `examples/create_order/` | 書き上がった文書の実例が要るとき |
@@ -84,7 +84,7 @@ PL/SQL を読んで ScalarDB 向けの Java を生成し、生成器が決めず
 | 5. 決めないとどうなるか | 未決のまま何が止まるか（`--limits-strict` の失敗、`--handover` の拒否、REVIEW のまま残る routine）。止まらないなら、そう言う |
 | 6. 誰が答える問いか | OPS = 運用担当、CALL = 呼び出し側の設計者、BIZ = 業務担当。利用者がその担当でなければ、決定にせず担当への問いにする |
 
-- **推奨は根拠があるときだけ作る。** 文書（`docs/plsql-decisions-outside-generator.md`）に推奨があれば
+- **推奨は根拠があるときだけ作る。** 文書（`docs/plsql-migration/plsql-decisions-outside-generator.md`）に推奨があれば
   それを使う。その案件の事情で自分の推奨が文書と違うときは、両方と、違う理由を示す
 - **影響は推奨しない選択肢にも書く。** 推奨の代償（文書の「代償」の列）を省かない。利用者が推奨を
   退ける理由は、たいていそこにある
