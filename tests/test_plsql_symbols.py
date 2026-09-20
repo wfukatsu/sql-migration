@@ -1,6 +1,6 @@
 """P1-3: the symbol table and type resolution.
 
-`symbolResolution` and `typeResolution` are factors of the confidence (docs/plsql-kpi.md §3), and a factor of 0
+`symbolResolution` and `typeResolution` are factors of the confidence (docs/design/plsql-kpi.md §3), and a factor of 0
 keeps a routine out of AUTO. So the property that matters is not "resolves a lot" but "never claims to have
 resolved something it did not": these tests push unresolvable types through and check they come back marked.
 """

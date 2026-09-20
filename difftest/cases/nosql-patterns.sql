@@ -1,4 +1,4 @@
--- NoSQL suitability case (Oracle dialect), docs/cassandra-verification-plan.md §4.2.
+-- NoSQL suitability case (Oracle dialect), docs/reports/cassandra-verification-plan.md §4.2.
 -- The same orders are stored twice: orders_rdb is keyed the RDBMS way (surrogate key order_id + secondary indexes),
 -- orders_by_customer the NoSQL way (partition key customer_id, clustering key order_date, order_id). The same questions
 -- are asked against both, on Oracle (baseline) and on ScalarDB with a PostgreSQL or a Cassandra backend.

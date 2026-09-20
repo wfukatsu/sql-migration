@@ -299,6 +299,6 @@ B（拒否）/ D（別表検証）の trigger が掛かる表は、アプリ以�
   `CHANGES` に「意味が変わる / 形が変わる / 情報」の分類を足す。分類が無いと変換後の文書に「未分類」と出て、
   corpus に未分類があるとテストが落ちる
 - 項目の元になった決定は、それぞれの設計文書にある:
-  `docs/plsql-trigger-patterns.md`（§0・trigger）、`docs/plsql-transaction-patterns.md`（境界・行ロック）、
-  `docs/plsql-cursor-patterns.md`（走査・行数の上限）、`docs/scalardb-backend-comparison.md`（JDBC 限定）、
+  `docs/plsql-migration/plsql-trigger-patterns.md`（§0・trigger）、`docs/plsql-migration/plsql-transaction-patterns.md`（境界・行ロック）、
+  `docs/plsql-migration/plsql-cursor-patterns.md`（走査・行数の上限）、`docs/reports/scalardb-backend-comparison.md`（JDBC 限定）、
   `fixtures/plsql/limits.yaml`（routine ごとの決定の記録）

@@ -1,7 +1,7 @@
 # DML テスト SQL の ScalarDB 変換とベンチマーク
 
 作成日: 2026-09-15（3 章の数値は 2026-09-19 に取り直した。レビュー #27 の修正後の `main`、Issue #28。4.5・4.6 はその際に直した）
-関連文書: `skills/sql-transpile/examples/dml/`（テスト用 SQL）、`docs/bench-report.md`（性能測定の基準）、`docs/app-side-benchmark-comparison.md`（変換ツールの新旧比較）
+関連文書: `skills/sql-transpile/examples/dml/`（テスト用 SQL）、`docs/reports/bench-report.md`（性能測定の基準）、`docs/reports/app-side-benchmark-comparison.md`（変換ツールの新旧比較）
 説明資料: [Google スライド 26 枚](https://docs.google.com/presentation/d/1DQJZKhjteIoAxuSTsPqmW4cF15VovnDhT2nL-2TVn-c/edit)（生成元 `docs/slides/dml-benchmark-deck.py`）
 
 ## 結論
@@ -136,7 +136,7 @@ ScalarDB 側だけ、`audit_log` の採番（IDENTITY / AUTO_INCREMENT）を外�
 
 ### 3.4 H2 の索引による改善（実行計画の読み取り）
 
-実行計画に、取得する表ごとの索引の列（主キーと、結合・相関・IN 副問合せの列）を `index_columns` として出力し、`runtime-java` の `Residual` が行を入れた後、問い合わせの前に一度だけ索引を作るようにした。索引を作るかはオプションで、既定はオフ（変換時の `--h2-indexes` で計画に `build_indexes: true` を入れるか、実行時に `residual-runner run --h2-indexes` / `bench_dml.py --h2-indexes` を指定する）。1 表だけの計画や小さな要求では構築の分だけ遅くなるため（`docs/dml-followup-research.md` 3 章）、大きな表を結合するバッチ処理などで使う。本節の「索引あり」はこのオプションを有効にした計測。索引を作る時間は H2 の処理に含む。同じ条件（注文 20,008 行、ウォームアップ 3 回 + 15 回）で読み取りを測り直した。
+実行計画に、取得する表ごとの索引の列（主キーと、結合・相関・IN 副問合せの列）を `index_columns` として出力し、`runtime-java` の `Residual` が行を入れた後、問い合わせの前に一度だけ索引を作るようにした。索引を作るかはオプションで、既定はオフ（変換時の `--h2-indexes` で計画に `build_indexes: true` を入れるか、実行時に `residual-runner run --h2-indexes` / `bench_dml.py --h2-indexes` を指定する）。1 表だけの計画や小さな要求では構築の分だけ遅くなるため（`docs/reports/dml-followup-research.md` 3 章）、大きな表を結合するバッチ処理などで使う。本節の「索引あり」はこのオプションを有効にした計測。索引を作る時間は H2 の処理に含む。同じ条件（注文 20,008 行、ウォームアップ 3 回 + 15 回）で読み取りを測り直した。
 
 | dialect | id | statement | before p50 (ms) | after p50 (ms) | speed-up | before fetch + H2 (ms) | after fetch + H2 (ms) |
 |---|---|---|---|---|---|---|---|

@@ -1,4 +1,4 @@
-"""Render the comparison tables of docs/bench-report.md from the bench.json files of several runs.
+"""Render the comparison tables of docs/reports/bench-report.md from the bench.json files of several runs.
 
   .venv/bin/python difftest/bench_report.py out/bench-5000 out/bench-20000 out/bench-40000
 """

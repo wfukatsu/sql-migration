@@ -19,7 +19,7 @@ import java.util.Map;
 /**
  * Area / shop monthly sales analysis (difftest/golden/area-sales/query.sql) reproduced with the appside helpers:
  * START WITH / CONNECT BY + SYS_CONNECT_BY_PATH, a monthly GROUP BY, LAG, a 3-row moving AVG and DENSE_RANK.
- * Fetching the two tables from ScalarDB is out of scope; see docs/area-sales-analysis-scalardb-conversion.md.
+ * Fetching the two tables from ScalarDB is out of scope; see docs/examples/area-sales-analysis-scalardb-conversion.md.
  */
 public final class AreaSalesReport implements AppSideQuery {
   public record OrgNode(Long nodeId, Long parentId, String nodeName) {}

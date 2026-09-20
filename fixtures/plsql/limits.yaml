@@ -51,7 +51,7 @@ scanRows:
 # 行ロックを落として**楽観制御 + 呼び出し側の再試行**へ移すと決めた routine（#9 / 2026-09-18）。
 #
 # 既定は「決めていない」であり、決めていない routine の書き込みは**拒否したままにする**
-# （docs/plsql-transaction-patterns.md §A）。ロックこそがその読み書きを安全にしていたので、
+# （docs/plsql-migration/plsql-transaction-patterns.md §A）。ロックこそがその読み書きを安全にしていたので、
 # 落ちた以上、黙って書き換えを進めてはならない。
 #
 # 安全なのは**同じトランザクションの中で読んで書く**からで、衝突は Consensus Commit が弾く

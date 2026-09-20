@@ -1,12 +1,12 @@
 # Oracle → ScalarDB + Oracle 検証 計画書
 
 作成日: 2026-09-11
-状態: **実施済み** (2026-09-11。ユーザーの指示により計画・実装・実測を続けて行った。結果は `docs/scalardb-backend-comparison.md`)
-関連文書: `docs/cassandra-verification-plan.md`、`docs/cassandra-verification-report.md`、`docs/bench-report.md`
+状態: **実施済み** (2026-09-11。ユーザーの指示により計画・実装・実測を続けて行った。結果は `docs/reports/scalardb-backend-comparison.md`)
+関連文書: `docs/reports/cassandra-verification-plan.md`、`docs/reports/cassandra-verification-report.md`、`docs/reports/bench-report.md`
 
 ## 1. 目的
 
-移行元の Oracle Database をそのまま ScalarDB のバックエンドにする構成 (データは Oracle に置いたまま、アクセスを ScalarDB 経由に切り替える) で、Oracle SQL がどこまで同じ結果を返し、どれだけ遅くなるかを測る。Oracle → ScalarDB + Cassandra の結果と並べ、2 つの構成の検証結果を 1 つの文書にまとめる (`docs/scalardb-backend-comparison.md`)。
+移行元の Oracle Database をそのまま ScalarDB のバックエンドにする構成 (データは Oracle に置いたまま、アクセスを ScalarDB 経由に切り替える) で、Oracle SQL がどこまで同じ結果を返し、どれだけ遅くなるかを測る。Oracle → ScalarDB + Cassandra の結果と並べ、2 つの構成の検証結果を 1 つの文書にまとめる (`docs/reports/scalardb-backend-comparison.md`)。
 
 ## 2. 構成
 
@@ -47,8 +47,8 @@ Cassandra の検証と同じものを、同じハーネスで実行する (`diff
 
 ## 5. 成果物
 
-- `docs/scalardb-backend-comparison.md`: Oracle → ScalarDB + Oracle と Oracle → ScalarDB + Cassandra の検証結果のまとめ (ScalarDB + PostgreSQL は参考として併記)
-- `docs/cassandra-verification-report.md`: Cassandra 検証の詳細 (作成中のものを完成させる)
+- `docs/reports/scalardb-backend-comparison.md`: Oracle → ScalarDB + Oracle と Oracle → ScalarDB + Cassandra の検証結果のまとめ (ScalarDB + PostgreSQL は参考として併記)
+- `docs/reports/cassandra-verification-report.md`: Cassandra 検証の詳細 (作成中のものを完成させる)
 
 ## 6. 実施中の計画からの変更 (2026-09-11)
 

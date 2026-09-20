@@ -1,7 +1,7 @@
 # Oracle → ScalarDB + Oracle / ScalarDB + Cassandra 検証結果のまとめ
 
 作成日: 2026-09-11（数値は 2026-09-19 に取り直した。レビュー #27 の修正後の `main`、Issue #28）
-関連文書: `docs/oracle-backend-verification-plan.md` (Oracle バックエンドの計画)、`docs/cassandra-verification-plan.md` / `docs/cassandra-verification-report.md` (Cassandra バックエンドの計画と詳細)、`docs/bench-report.md` (前回の ScalarDB + PostgreSQL の比較)
+関連文書: `docs/reports/oracle-backend-verification-plan.md` (Oracle バックエンドの計画)、`docs/reports/cassandra-verification-plan.md` / `docs/reports/cassandra-verification-report.md` (Cassandra バックエンドの計画と詳細)、`docs/reports/bench-report.md` (前回の ScalarDB + PostgreSQL の比較)
 
 ## 要約
 
@@ -95,7 +95,7 @@ Cassandra でクロスパーティション走査を許した場合の参考値 
 
 - **キーで絞る読み書きは、ScalarDB + Oracle が 3〜10 ms、ScalarDB + Cassandra が 13〜40 ms。** どちらも表サイズに依らない。ScalarDB が Oracle 直接に上乗せするのは 2〜4 ms (Consensus Commit のメタデータ、コミット時の検証読み取り、Cluster ノードとの往復) で、Cassandra ではさらに軽量トランザクション (Paxos) の分が乗る。書き込みは Cassandra が ScalarDB + Oracle の約 6 倍 (23 ms 対 3.6 ms) で、差が最も大きい。
 - **無索引列のフィルタ・全表の上位 N 件・非キー条件の一括更新は、JDBC バックエンドでは 16〜36 ms で済む。** ScalarDB が条件と並べ替えを SQL としてバックエンドに渡し、バックエンドが索引や全表走査を自分で速く行うためである。Cassandra では同じ文を実行できない (走査を許しても、絞り込みは全行を読んでから ScalarDB が行うため 721〜871 ms かかる。2026-09-11 の値)。
-- **全表集約・全表 JOIN・`DISTINCT`・`OFFSET` は、どの構成でも 0.8〜1.7 秒 / 40,000 行かかる** (Oracle 直接の 340〜1,100 倍)。ScalarDB SQL の層またはアプリ側処理が全行を読み込んで集計するためで、バックエンドが Oracle でも速くならない。JDBC バックエンドは `scan_fetch_size` を既定値 (10) のまま測っており、1000 にすると 2〜3 倍速くなる (`docs/cassandra-verification-report.md` 3.2)。
+- **全表集約・全表 JOIN・`DISTINCT`・`OFFSET` は、どの構成でも 0.8〜1.7 秒 / 40,000 行かかる** (Oracle 直接の 340〜1,100 倍)。ScalarDB SQL の層またはアプリ側処理が全行を読み込んで集計するためで、バックエンドが Oracle でも速くならない。JDBC バックエンドは `scan_fetch_size` を既定値 (10) のまま測っており、1000 にすると 2〜3 倍速くなる (`docs/reports/cassandra-verification-report.md` 3.2)。
 - **JDBC バックエンド同士 (Oracle と PostgreSQL) の差は小さい。** 前回は ScalarDB + PostgreSQL の点アクセスが 12 ms 前後と遅く出て「計測時のばらつき」と書いたが、今回は 4〜6 ms で ScalarDB + Oracle と並んだ。前回の値は、互換性のケースのためにノードを再起動した直後に測っていたためと考えられる (今回の取り直しでも、温める前は最初の規模の点読みが 10 ms 前後と遅く出た。いまは計測の前に捨てる 1 回を回している)。
 
 ### 4.2 既存ベンチ (`bench.sql`、emp 40,000 行、p50 ms)
@@ -158,7 +158,7 @@ JDBC バックエンドのときだけである。
 - **Cassandra は単一ノード (レプリケーション係数 1)** で、ノード追加時のスループット、レプリケーション、整合性レベルの影響は測っていない。
 - **同時実行・競合時の再試行は測っていない** (単一クライアント)。
 - JDBC バックエンドの走査は `scan_fetch_size` 既定値 (10)、Cassandra は 1000 で測った。
-- 計測中の不具合 (Cluster ノードが古い表定義を使い続けた事象、PostgreSQL 40,000 行での gRPC 切断、Oracle の `ORA-12516`) はいずれも原因を取り除くか測り直し、本書の数値には含めていない。詳細は `docs/cassandra-verification-report.md` 9 章と `docs/oracle-backend-verification-plan.md` 6 章。
+- 計測中の不具合 (Cluster ノードが古い表定義を使い続けた事象、PostgreSQL 40,000 行での gRPC 切断、Oracle の `ORA-12516`) はいずれも原因を取り除くか測り直し、本書の数値には含めていない。詳細は `docs/reports/cassandra-verification-report.md` 9 章と `docs/reports/oracle-backend-verification-plan.md` 6 章。
 
 
 ## 再現手順

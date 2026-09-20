@@ -16,7 +16,7 @@ from plsql.generate import main as generate
 
 SRC = "fixtures/plsql/src"
 LIMITS = "fixtures/plsql/limits.yaml"
-DOCS = Path("docs")
+DOCS = Path("docs") / "plsql-migration"
 
 
 @pytest.fixture(autouse=True)

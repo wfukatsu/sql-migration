@@ -13,7 +13,7 @@ import re
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-DOC = ROOT / "docs" / "plsql-kpi.md"
+DOC = ROOT / "docs" / "design" / "plsql-kpi.md"
 FIXTURES = ROOT / "fixtures" / "plsql"
 SRC = FIXTURES / "src"
 SUFFIXES = {".pks", ".pkb", ".prc", ".trg"}

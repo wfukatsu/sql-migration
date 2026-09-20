@@ -7,7 +7,7 @@
                              (plus a few static rewrites for functions H2 lacks)
                    - python: sqlglot transpile to SQLite (reference implementation / tests)
 
-The result is a JSON-serialisable Plan (see docs/app-side-processing-plan.md §3.1).
+The result is a JSON-serialisable Plan (see docs/design/app-side-processing-plan.md §3.1).
 """
 
 from __future__ import annotations
@@ -103,7 +103,7 @@ FullScanRequired = PlanBlocked
 # Cassandra 5.0 the cluster node refuses to start with ordering enabled, DB-CORE-10128), and on non-JDBC storages a
 # cross-partition scan is not serializable even under SERIALIZABLE. On the other storages ScalarDB does key access only
 # (GET / partition SCAN / index SCAN): rows are fetched by key and filtered, sorted and aggregated in the application,
-# and a statement that has no key or index condition to fetch by cannot be served (docs/cassandra-verification-report.md).
+# and a statement that has no key or index condition to fetch by cannot be served (docs/reports/cassandra-verification-report.md).
 ORDERED_SCAN_STORAGES = {"jdbc"}
 MAX_KEY_SPLIT = 100  # an IN / OR over more keys than this stays one cross-partition fetch
 

@@ -1,7 +1,7 @@
 # Oracle Database と ScalarDB 経由の互換性・性能比較
 
 作成日: 2026-09-10（数値は 2026-09-19 に取り直した。レビュー #27 の修正後の `main`、Issue #28）
-関連文書: `docs/test-report.md` (仕組みとテスト報告)、`docs/oracle-sql-report.md` (Oracle 固有 SQL の網羅調査)、`docs/app-side-processing-plan.md` (実装計画)
+関連文書: `docs/reports/test-report.md` (仕組みとテスト報告)、`docs/reports/oracle-sql-report.md` (Oracle 固有 SQL の網羅調査)、`docs/design/app-side-processing-plan.md` (実装計画)
 
 ## 1. 何を測ったか
 
@@ -139,7 +139,7 @@
 3. **plan 経路では取得行数の上限 (ガードレール) を必ず設定する。** 既定は 1 テーブルあたり 10,000 行。上限を超えると `RowLimitExceededException` で失敗する。全表を H2 に載せる計画は、行数が読めない本番表では危険である。
 4. **plan 経路の fetch は、既定の設定のままだと ScalarDB SQL 経由 (`--fetcher jdbc`) の方が Core API 経由 (`--fetcher core`) より速い。取得単位を上げると逆転する。** 40,000 行の同一データで比較すると、全表取得で 993 ms 対 2,236 ms、索引で 1,000 行取得で 33 ms 対 65 ms と、Core API 経路は約 2 倍かかった。2026-09-10 の計測では差は 26〜38% だった。
 
-**差の原因は走査の取得単位 (`scalar.db.scan_fetch_size`、既定 10) で、コードの退行ではない。** Core API 経路はホストの JVM から Docker のポート転送越しにバックエンドの PostgreSQL を読む。既定値のままだと 40,000 行の取得は 4,000 往復になり、その往復がコンテナの中どうしで話す Cluster ノードより遅い分だけ差が開く。Core API 経路のクライアント設定に `scalar.db.scan_fetch_size=1000` を足して同じデータで測ると、全表取得は 2,236 ms → 309 ms、索引で 1,000 行取得は 65 ms → 25 ms になり、既定値のままの ScalarDB SQL 経路 (993 ms、33 ms) より速くなった。アプリケーションとバックエンドの間に往復の遅延がある構成では、まず `scan_fetch_size` を上げる (Cluster ノード側も同じで、1000 にすると 2〜3 倍速くなる。`docs/cassandra-verification-report.md` 3.2)。下の表は両経路とも既定値 (10) での値。
+**差の原因は走査の取得単位 (`scalar.db.scan_fetch_size`、既定 10) で、コードの退行ではない。** Core API 経路はホストの JVM から Docker のポート転送越しにバックエンドの PostgreSQL を読む。既定値のままだと 40,000 行の取得は 4,000 往復になり、その往復がコンテナの中どうしで話す Cluster ノードより遅い分だけ差が開く。Core API 経路のクライアント設定に `scalar.db.scan_fetch_size=1000` を足して同じデータで測ると、全表取得は 2,236 ms → 309 ms、索引で 1,000 行取得は 65 ms → 25 ms になり、既定値のままの ScalarDB SQL 経路 (993 ms、33 ms) より速くなった。アプリケーションとバックエンドの間に往復の遅延がある構成では、まず `scan_fetch_size` を上げる (Cluster ノード側も同じで、1000 にすると 2〜3 倍速くなる。`docs/reports/cassandra-verification-report.md` 3.2)。下の表は両経路とも既定値 (10) での値。
 
 | # | 取得行 | core、`scan_fetch_size` 10 (ms) | core、1000 (ms) |
 |---|---|---|---|

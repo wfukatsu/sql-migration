@@ -21,7 +21,7 @@ from plsql.generate import main as generate
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "fixtures" / "plsql"
-DOC = ROOT / "docs" / "plsql-decisions-outside-generator.md"
+DOC = ROOT / "docs" / "plsql-migration" / "plsql-decisions-outside-generator.md"
 SCRIPT = ROOT / "skills" / "plsql-migrate" / "scripts" / "decision_items.py"
 
 spec = importlib.util.spec_from_file_location("decision_items", SCRIPT)

@@ -1,5 +1,5 @@
 #!/bin/sh
-# One backend's share of the Oracle -> ScalarDB + Cassandra verification (docs/cassandra-verification-plan.md §6).
+# One backend's share of the Oracle -> ScalarDB + Cassandra verification (docs/reports/cassandra-verification-plan.md §6).
 #
 #   difftest/backend_compare.sh postgres|cassandra|oracle [out-dir]
 #

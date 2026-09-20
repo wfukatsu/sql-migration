@@ -1,7 +1,7 @@
 # Oracle 固有 SQL の検証レポート
 
 作成日: 2026-09-10
-関連文書: `docs/test-report.md` (仕組みとテスト全体)、`docs/app-side-processing-plan.md` (実装計画 v2)
+関連文書: `docs/reports/test-report.md` (仕組みとテスト全体)、`docs/design/app-side-processing-plan.md` (実装計画 v2)
 
 ## 1. 目的と方法
 

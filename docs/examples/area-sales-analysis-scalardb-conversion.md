@@ -113,7 +113,7 @@ SELECT shop_id, sales_date, amount FROM sales_transactions
 WHERE sales_date >= ? AND sales_date < ?;     -- 2026-01-01 00:00:00, 2027-01-01 00:00:00
 ```
 
-どちらもパーティションキーで絞らないため、WARN `CROSS_PARTITION` になる。`scalar.db.cross_partition_scan.enabled=true` の設定が必要。組織マスタは件数が少ないので問題になりにくいが、売上は 1 年分を全店舗まとめて読むため、件数に比例して遅くなる（`docs/bench-report.md` では 4 万行の全件走査で約 1 秒）。
+どちらもパーティションキーで絞らないため、WARN `CROSS_PARTITION` になる。`scalar.db.cross_partition_scan.enabled=true` の設定が必要。組織マスタは件数が少ないので問題になりにくいが、売上は 1 年分を全店舗まとめて読むため、件数に比例して遅くなる（`docs/reports/bench-report.md` では 4 万行の全件走査で約 1 秒）。
 
 **Cassandra バックエンド**: 表全体のスキャンを使わず、キーとインデックスで取得する。
 
@@ -479,7 +479,7 @@ public final class AreaSalesReport {
         ERROR FULL_SCAN: organization_master: no key or index condition to fetch by; ...
 ```
 
-RDBMS 向けの計画は、両表をすべて取得し、元の SQL を H2（Oracle モード）で実行するものだった。しかし H2 は `CONNECT BY` に対応していない（`docs/oracle-sql-report.md`）ため、この計画は実行時に失敗する。期間の絞り込みも ScalarDB 側に渡らない。Cassandra 向けは計画自体が作られない。本書の手作業による分解を使う。
+RDBMS 向けの計画は、両表をすべて取得し、元の SQL を H2（Oracle モード）で実行するものだった。しかし H2 は `CONNECT BY` に対応していない（`docs/reports/oracle-sql-report.md`）ため、この計画は実行時に失敗する。期間の絞り込みも ScalarDB 側に渡らない。Cassandra 向けは計画自体が作られない。本書の手作業による分解を使う。
 
 **2026-09-15 の改修後:** この分析をもとに変換ツールを直した。同じ SQL の結果は次のとおり。
 

@@ -1,6 +1,6 @@
 # アーキテクチャと仕組み
 
-SQL → ScalarDB SQL 移行ツールの構成と、変換・実行計画・実行基盤・検証基盤の仕組みを図でまとめる。使い方は [README](../README.md)、変換ルールの一覧は [scalardb-grammar.md](../skills/sql-transpile/references/scalardb-grammar.md) を参照。
+SQL → ScalarDB SQL 移行ツールの構成と、変換・実行計画・実行基盤・検証基盤の仕組みを図でまとめる。使い方は [ガイド](../guide/getting-started.md)（文書の一覧は [docs/README.md](../README.md)）、変換ルールの一覧は [scalardb-grammar.md](../../skills/sql-transpile/references/scalardb-grammar.md) を参照。
 
 ## 目次
 
@@ -234,7 +234,7 @@ stateDiagram-v2
 | `NUMBER(p)` / `NUMBER(p, s)` / `VARCHAR2(n)` | `INT`・`BIGINT` / `DOUBLE`（精度の WARN） / `TEXT` |
 | 複合主キー | 先頭列がパーティションキー、残りがクラスタリングキー（`--keys` で変更） |
 
-変換できない主な構文: 射影の式・関数、副問合せ、CTE、UNION、ウィンドウ関数、DISTINCT、OFFSET、列を参照する UPDATE、`INSERT ... SELECT`、採番、ビュー・トリガー。全体は [scalardb-grammar.md](../skills/sql-transpile/references/scalardb-grammar.md)。
+変換できない主な構文: 射影の式・関数、副問合せ、CTE、UNION、ウィンドウ関数、DISTINCT、OFFSET、列を参照する UPDATE、`INSERT ... SELECT`、採番、ビュー・トリガー。全体は [scalardb-grammar.md](../../skills/sql-transpile/references/scalardb-grammar.md)。
 
 ---
 
@@ -552,7 +552,7 @@ flowchart TD
     K -- "DO NOTHING / IGNORE / RETURNING" --> EX["ERROR<br/>存在確認と書き込みを 1 トランザクションに"]
 ```
 
-変換できない書き込みの多くは、読み取りの実行計画を書き込みに広げた「書き込み計画」で自動化できる見込み（未実装。[dml-followup-research.md](dml-followup-research.md) 1.3）。
+変換できない書き込みの多くは、読み取りの実行計画を書き込みに広げた「書き込み計画」で自動化できる見込み（未実装。[dml-followup-research.md](../reports/dml-followup-research.md) 1.3）。
 
 ```mermaid
 sequenceDiagram
@@ -758,10 +758,10 @@ flowchart LR
 
 | 経路 | ScalarDB 側の応答時間 | 何で決まるか | 出典 |
 |---|---|---|---|
-| 変換後の書き込み | 3〜6 ms（COMMIT 込み、移行元の 7〜20 倍） | 往復とコミット | [dml-benchmark-report.md](dml-benchmark-report.md) |
+| 変換後の書き込み | 3〜6 ms（COMMIT 込み、移行元の 7〜20 倍） | 往復とコミット | [dml-benchmark-report.md](../reports/dml-benchmark-report.md) |
 | キーで絞る読み取り | 4〜6 ms（6〜13 倍） | 往復 | 同上 |
-| 実行計画の読み取り | 中央値 0.6 秒前後 | **読む行数**（スキャン 1 行 約 25 µs） | 同上、[bench-report.md](bench-report.md) |
-| 3 表結合（取得 約 6.7 万行） | 索引なし 26〜28 秒 / 索引あり 1.7〜1.9 秒 | 索引なしは H2 の総当たり、索引ありは取得 | [dml-benchmark-report.md](dml-benchmark-report.md) 3.4 |
+| 実行計画の読み取り | 中央値 0.6 秒前後 | **読む行数**（スキャン 1 行 約 25 µs） | 同上、[bench-report.md](../reports/bench-report.md) |
+| 3 表結合（取得 約 6.7 万行） | 索引なし 26〜28 秒 / 索引あり 1.7〜1.9 秒 | 索引なしは H2 の総当たり、索引ありは取得 | [dml-benchmark-report.md](../reports/dml-benchmark-report.md) 3.4 |
 
 ```mermaid
 flowchart LR
@@ -775,7 +775,7 @@ flowchart LR
     Q --> Q1["--h2-indexes（バッチ処理）"]
 ```
 
-改善の優先順位と根拠は [dml-followup-research.md](dml-followup-research.md) の 4 章を参照。
+改善の優先順位と根拠は [dml-followup-research.md](../reports/dml-followup-research.md) の 4 章を参照。
 
 ---
 

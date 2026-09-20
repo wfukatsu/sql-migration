@@ -4,7 +4,7 @@ The engine must never decide anything the rule files do not say, and the confide
 rule. Those two properties are what make a verdict reviewable, so most of these tests are about them rather than
 about any individual rule.
 
-KPI-3 (docs/plsql-kpi.md) lives at the end: the rule verdicts against `manifest.yaml`, with the AUTO prohibitions
+KPI-3 (docs/design/plsql-kpi.md) lives at the end: the rule verdicts against `manifest.yaml`, with the AUTO prohibitions
 allowed no false negatives at all.
 """
 
@@ -99,7 +99,7 @@ def test_a_review_rule_is_not_raised_to_auto_by_confidence(corpus, ruleset):
 
 
 def test_the_threshold_sits_where_five_nearly_perfect_factors_land():
-    """docs/plsql-kpi.md picks 0.95 because 0.99^5 is 0.951: every side has to be nearly perfect."""
+    """docs/design/plsql-kpi.md picks 0.95 because 0.99^5 is 0.951: every side has to be nearly perfect."""
     assert Confidence(0.99, 0.99, 0.99, 0.99, 0.99).value == pytest.approx(0.951, abs=0.001)
     assert Confidence(0.99, 0.99, 0.99, 0.99, 0.99).value >= AUTO_THRESHOLD
     assert Confidence(0.95, 0.99, 0.99, 0.99, 0.99).value < AUTO_THRESHOLD, "one weak side is enough to stop AUTO"

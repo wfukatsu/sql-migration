@@ -1,7 +1,7 @@
 # Oracle → ScalarDB + Cassandra 変換検証 報告書
 
-作成日: 2026-09-11（互換性の件数は 2026-09-19 に、レビュー #27 の修正後の `main` で取り直した。4 章。応答時間の取り直しは `docs/scalardb-backend-comparison.md`）
-関連文書: `docs/cassandra-verification-plan.md` (計画書)、`docs/bench-report.md` (Oracle と ScalarDB + PostgreSQL の比較)、`docs/oracle-sql-report.md` (Oracle 固有 SQL の網羅調査)、`docs/app-side-processing-plan.md` (アプリ側処理のパターン)
+作成日: 2026-09-11（互換性の件数は 2026-09-19 に、レビュー #27 の修正後の `main` で取り直した。4 章。応答時間の取り直しは `docs/reports/scalardb-backend-comparison.md`）
+関連文書: `docs/reports/cassandra-verification-plan.md` (計画書)、`docs/reports/bench-report.md` (Oracle と ScalarDB + PostgreSQL の比較)、`docs/reports/oracle-sql-report.md` (Oracle 固有 SQL の網羅調査)、`docs/design/app-side-processing-plan.md` (アプリ側処理のパターン)
 
 ## 要約
 
@@ -145,7 +145,7 @@ Oracle に直接投げた結果を正解とし、ScalarDB 経由の結果を値�
 | | ScalarDB + Cassandra 改修後 (走査なし) | 11 | 2 | 47 | 2 |
 | | **2026-09-19 取り直し**: PostgreSQL / Oracle / Cassandra (走査なし) | 52 / 52 / 12 | 0 / 0 / 0 | 0 / 0 / 47 | 10 / 10 / 3 |
 
-`oracle-features.sql` の PostgreSQL と Cassandra 改修後は、ScalarDB Cluster ノードを起動し直してから単独で実行した結果である (9 章の「初回の実行で起きた事象」を参照)。PostgreSQL の 51 / 9 / 2 は前回の報告 (`docs/oracle-sql-report.md`) と一致する。
+`oracle-features.sql` の PostgreSQL と Cassandra 改修後は、ScalarDB Cluster ノードを起動し直してから単独で実行した結果である (9 章の「初回の実行で起きた事象」を参照)。PostgreSQL の 51 / 9 / 2 は前回の報告 (`docs/reports/oracle-sql-report.md`) と一致する。
 
 **2026-09-19 の取り直し (Issue #28) で変わった点。** 比較を厳しくし (#27 の 36)、H2 が実行できない構文を実行前に断るようにした (#27) あとの `main` で、3 つのバックエンドを取り直した。不一致は 0 になった。
 

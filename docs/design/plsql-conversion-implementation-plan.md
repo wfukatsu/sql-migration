@@ -1,7 +1,7 @@
 # PL/SQL 変換処理 実装計画
 
 作成日: 2026-09-16
-対象設計: [plsql-migration-platform-design.md](../plsql-migration-platform-design.md)
+対象設計: [plsql-migration-platform-design.md](plsql-migration-platform-design.md)
 対象リポジトリ: 本リポジトリ（`plsql/` を新設）
 
 ---
@@ -167,7 +167,7 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 | P0-4 | Oracle characterization ランナー | `difftest/plsql_run.py` | corpus を Oracle 上で fixture 込みで実行し、戻り値・OUT・例外・DB 全行を canonical JSON 化する。順序非仕様の結果は正規化するが重複除去はしない。**採取形式（canonical JSON）と正規化規則をここで確定する** | P0-1 | 3d |
 | P0-5 | Oracle 上で golden を採取 | `fixtures/plsql/golden/*.json`（戻り値・OUT・例外・DB 差分） | P0-4 のランナーで採取する。**非決定要素を固定したうえで** 2 回実行して同一。`SYSDATE` は `ALTER SYSTEM SET FIXED_DATE`、Sequence は実行前に `START WITH` で再作成。**`SYSTIMESTAMP` / `CURRENT_DATE` / `LOCALTIMESTAMP` は固定できない**ため（P0-4 で実測）、それらから書かれる列はシナリオの `mask` で宣言して比較対象から外す。固定した時刻・採番開始値とマスクした列を capture に記録する | P0-4 | 2d |
 | P0-6 | ANTLR grammar と依存の固定 | `plsql/grammar/`（grammars-v4 の commit hash 明記。`PlSqlLexer.g4` / `PlSqlParser.g4` と Python3 ターゲットの `PlSqlLexerBase.py` / `PlSqlParserBase.py` / `transformGrammar.py` を含む）、`requirements.txt` に `antlr4-python3-runtime` 追加、`Makefile` に再生成手順（transformGrammar.py 適用 → antlr4 生成の順） | クリーン環境で `pip install -r requirements.txt` 後に parser が import でき、生成コードを commit 済み | — | 1d |
-| P0-7 | KPI・AUTO 禁止条件・確信度の定義 | `docs/plsql-kpi.md` | §8 の全 KPI の測り方が定義済み。AUTO 禁止条件（COMMIT、Package 変数、動的 SQL、Trigger、AUTHID）が列挙済み。**確信度 5 因子それぞれの算出方法（0〜1 の測り方）と、AUTO とする下限しきい値が数値で決まっている**（P2-2 はこの定義を実装するだけにする） | P0-2 | 1d |
+| P0-7 | KPI・AUTO 禁止条件・確信度の定義 | `docs/design/plsql-kpi.md` | §8 の全 KPI の測り方が定義済み。AUTO 禁止条件（COMMIT、Package 変数、動的 SQL、Trigger、AUTHID）が列挙済み。**確信度 5 因子それぞれの算出方法（0〜1 の測り方）と、AUTO とする下限しきい値が数値で決まっている**（P2-2 はこの定義を実装するだけにする） | P0-2 | 1d |
 
 **Phase 0 完了条件**: corpus・DDL・ScalarDB スキーマ・期待判定・golden・KPI 定義が揃い、以降のフェーズの合否を機械的に判定できる。
 
@@ -224,7 +224,7 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 
 **Phase 3 完了条件**: AUTO 対象の意味的同等性テストが 100%、REVIEW 対象は差分理由を説明できる。
 
-> **達成（2026-09-17）。完了報告は `docs/plsql-phase3-completion.md`。**
+> **達成（2026-09-17）。** 当時の完了報告は git の履歴にある（`docs/plsql-phase3-completion.md`、2026-09-20 の文書整理で削除）。
 > AUTO 14 本が両金額規約で Oracle と完全一致。KPI-1〜5 は目標を満たした。KPI-6（人手修正時間）は
 > 当時「未計測で未達」としたが、**2026-09-17 に計測しないことを決めたため未達ではなくなった**（§9）。
 > 全ての数値は合成 corpus 上のものであり、実案件耐性の証拠ではない。
@@ -488,10 +488,10 @@ Phase 3 が「変換できたものは正しい」を示した。Phase 4 の主�
 | ~~P4-2~~ | ~~KPI-6 のベースライン確定~~ | — | **取り下げ**（2026-09-17）。KPI-6 を計測しないと決めたため（§9）。仕組みは残してあるので、必要になれば `--fix-times` に実測値を渡すだけで復活する | — | — |
 | P4-3 | 日付・時刻の意味論を証拠で閉じる | `rules/semantics.yaml` の `SEM-002` 改訂、`fixtures/plsql/semantics.json` 拡張 | P3-3 が Oracle の DATE / SYSDATE 挙動を 2015 件記録し、`Plsql` が再現することを示した。**その証拠で覆われる範囲に限って** `SEM-002` を AUTO 可能にする。覆われない範囲（TZ 依存、NLS 依存、`SYSDATE` の呼び出し回数に依存する routine）は REVIEW のまま。改訂後に holdout 上で KPI-3 が下がらないことを確認する | P3-3 | 4d |
 | P4-4 | ScalarDB が実行できない SQL を減らす | `scalardb_migrate` 拡張、`decomposer` の適用範囲拡大 | 現在 21 routine を塞ぐ `SQL-001` の内訳を数え、**多い順に**対応する。`SET` の式（`x = x - :n`）は読み出し→計算→書き戻しへ、`NVL()` を含む `VALUES` は事前計算へ。対応できないものは件数と理由を残す。ScalarDB が実行できない文の数が半減する | P3-2 | 8d |
-| P4-5 | cursor の設計テンプレート | `docs/plsql-cursor-patterns.md`、生成器の対応 | `CUR-001` / `CUR-002` が塞ぐ 21 routine を、cursor の使われ方で分類する（全件走査 / ページング / 1 件取得）。分類ごとに ScalarDB での書き方を決め、**逐語変換できるものは生成し、できないものはテンプレートを出す**。N+1 とメモリ上限を各テンプレートに明記する | P3-2 | 6d |
-| P4-6 | 行ロックとトランザクション境界の再設計テンプレート | `docs/plsql-transaction-patterns.md` | P3-4 が測った事実（Consensus Commit は待たずに片方を弾く）を出発点に、`FOR UPDATE` / routine 内 COMMIT / 自律トランザクションそれぞれの置き換え方を書く。**再試行の責務がどこに来るか**を必ず明示する。テンプレートごとに P3-4 形式の並行性テストを添える | P3-4 | 5d |
+| P4-5 | cursor の設計テンプレート | `docs/plsql-migration/plsql-cursor-patterns.md`、生成器の対応 | `CUR-001` / `CUR-002` が塞ぐ 21 routine を、cursor の使われ方で分類する（全件走査 / ページング / 1 件取得）。分類ごとに ScalarDB での書き方を決め、**逐語変換できるものは生成し、できないものはテンプレートを出す**。N+1 とメモリ上限を各テンプレートに明記する | P3-2 | 6d |
+| P4-6 | 行ロックとトランザクション境界の再設計テンプレート | `docs/plsql-migration/plsql-transaction-patterns.md` | P3-4 が測った事実（Consensus Commit は待たずに片方を弾く）を出発点に、`FOR UPDATE` / routine 内 COMMIT / 自律トランザクションそれぞれの置き換え方を書く。**再試行の責務がどこに来るか**を必ず明示する。テンプレートごとに P3-4 形式の並行性テストを添える | P3-4 | 5d |
 | P4-7 | 動的 SQL の部分評価 | `plsql/dynamic.py` | 定数畳み込みと、条件分岐による有限 variant 列挙（**上限つき**）。畳み込めた文は通常の SQL として変換し、bind の復元と権限確認が要ることを診断に残す。上限を超えたものは REVIEW のまま。畳み込み結果が元と等価であることを differential テストで示す | P3-2 | 6d |
-| P4-8 | trigger / scheduler / 外部副作用の設計テンプレート | `docs/plsql-trigger-patterns.md` | trigger を「全書込経路を Service 側で統制する」形に落とすテンプレート。**書込経路の網羅性をどう担保するか**を含む（これが欠けると trigger より悪くなる）。DB link・UTL_* も同様に扱う | P3-2 | 3d |
+| P4-8 | trigger / scheduler / 外部副作用の設計テンプレート | `docs/plsql-migration/plsql-trigger-patterns.md` | trigger を「全書込経路を Service 側で統制する」形に落とすテンプレート。**書込経路の網羅性をどう担保するか**を含む（これが欠けると trigger より悪くなる）。DB link・UTL_* も同様に扱う | P3-2 | 3d |
 | P4-9 | 引き渡し版の生成物 | 生成器の `--handover` | 再生成モデル終了の決定（§9）から出た項目。引き渡し版ではヘッダの「編集するな。変更はルール側へ」を**引き渡し後の正しい文言**に替える。`traceability.csv` と `file:line` コメントは残す（引き渡し後に辿れる必要があるため） | §9 の決定 | 1d |
 | P4-10 | LLM Remediator | `plsql/remediate.py` | REDESIGN の説明文、未対応関数の mapping 候補を出す。**生成されたコードは必ず REVIEW 扱いで、AUTO に昇格させない**。出力には生成元のモデルと日時を残す | P4-5, P4-6 | 別途見積 |
 | P4-11 | 承認された決定からのルール提案 | `plsql/propose.py` | 人が承認した REVIEW の処理からルール候補を出す。**提案はルールにならない**。人がルールファイルへ書いて初めて有効になる | P3-5 | 別途見積 |
@@ -606,7 +606,7 @@ P3-4 が置いた「行ロックを失った routine は、ロック無しで読
 
 #### P4-5 実施結果（2026-09-17）
 
-`docs/plsql-cursor-patterns.md` に 6 つの形（A〜F）と、それぞれの ScalarDB での書き方・生成器の対応・
+`docs/plsql-migration/plsql-cursor-patterns.md` に 6 つの形（A〜F）と、それぞれの ScalarDB での書き方・生成器の対応・
 **人が決めること**を書いた。判定の早見表が入口になる。
 
 **cursor FOR loop を拒否ではなく生成するようにした。** 根本は「ループのクエリが IR に文として載って
@@ -648,7 +648,7 @@ cursor FOR loop whose body writes ['orders'], which its own query reads
 
 #### P4-6 / P4-8 / P4-9 実施結果（2026-09-17）
 
-**P4-6 `docs/plsql-transaction-patterns.md`**（7 つの型）。推測ではなく **P3-4 の測定から始めた**——
+**P4-6 `docs/plsql-migration/plsql-transaction-patterns.md`**（7 つの型）。推測ではなく **P3-4 の測定から始めた**——
 同じ行を 2 つのトランザクションが read-modify-write すると Consensus Commit が片方を弾き
 （`DB-CORE-20013`）、更新は失われない。そこから出る事実は「**アプリケーションが見るのは待ちではなく
 失敗したトランザクションであり、だから再試行が要る**」で、PL/SQL 側はそれを書く必要がなかった。
@@ -659,7 +659,7 @@ cursor FOR loop whose body writes ['orders'], which its own query reads
 高衝突点であること。2 本目はコンパイラの方が強い証明を返した——`MigratedException` は
 `SQLTransactionRollbackException` になり得ず、`instanceof` が**コンパイルを通らない**。
 
-**P4-8 `docs/plsql-trigger-patterns.md`**（5 つの型）。型より先に **§0「書込経路の網羅性」**を置いた。
+**P4-8 `docs/plsql-migration/plsql-trigger-patterns.md`**（5 つの型）。型より先に **§0「書込経路の網羅性」**を置いた。
 trigger は「この表へのすべての書き込み」に掛かっていたが、Service へ移すと**その Service を通らない
 書き込みには掛からない**。担保できなければ、移行後は trigger があったときより悪くなる。担保の方法を
 強い順に 3 つ（書き込み口を 1 つにする／検証で追う／諦めて記録する）書き、3 を選ぶならそれは
@@ -870,7 +870,7 @@ rollback で行は戻らない——Oracle と同じ。違うのは、**Oracle �
 
 #### Phase 4 の現在地（2026-09-17）
 
-> **中間報告は `docs/plsql-phase4-interim.md`。**
+> 当時の中間報告は git の履歴にある（`docs/plsql-phase4-interim.md`、2026-09-20 の文書整理で削除）。いまの数値は [PL/SQL → Java 変換](../guide/plsql-conversion.md) の「現在地」。
 
 | タスク | 状態 |
 |---|---|
@@ -954,7 +954,7 @@ P0-2 の manifest）に集計し直す。
 
 - **差分テストの Oracle: `gvenzl/oracle-free:23-slim-faststart`**（2026-09-17）。実機は Oracle AI Database 26ai Free
   23.26.3.0.0 として応答する。既存 `difftest/docker-compose.yml` の `source-oracle` をそのまま使う。
-  接続プールの知見は `docs/oracle-backend-verification-plan.md` を引き継ぐ。
+  接続プールの知見は `docs/reports/oracle-backend-verification-plan.md` を引き継ぐ。
   P0-4 / P0-5 はこの環境で動かし、59 capture を 2 回実行してバイト一致することを確認済み。
 
 - **空文字と NULL は、移行中は Oracle と同じく同一視する**（2026-09-19 決定、#5）。Java と API の書き込み境界で
@@ -1005,7 +1005,7 @@ P0-2 の manifest）に集計し直す。
     あり（rowLocks.optimistic）、同時実行の挙動を実クラスタで確かめた（`TransactionIT`）ので SEM-011 は注記にした。
 
 - **REDESIGN の判定は動かさず、再設計の状態を分けて見せる**（2026-09-20 決定）。REDESIGN は移行元の分類で、行ロック・
-  routine 内の COMMIT・trigger などは AUTO 禁止条件（`docs/plsql-kpi.md` §2）なので、再設計を決めて生成・検証しても
+  routine 内の COMMIT・trigger などは AUTO 禁止条件（`docs/design/plsql-kpi.md` §2）なので、再設計を決めて生成・検証しても
   AUTO にはしない。ただし報告は「まだ誰も決めていない」と「決定を記録し、そのとおりに生成し、実 DB で一致した」を
   区別する（`plsql/redesign.py`、`decisions.json` の `redesign` / `redesignStates`、`unresolved.md` の冒頭）。
   - 状態は宣言ではなく導出する: routine に当たった REDESIGN のルールすべてに、記録された決定（`limits.yaml` の
@@ -1091,7 +1091,7 @@ P0-2 の manifest）に集計し直す。
 
 - **PoC の合否基準を先に固定し、判定者は後で決める**（2026-09-17）。
   「誰が判定するか」は契約と体制の話なので open のままにし、**何に対して判定するかだけ**を先に確定する。
-  基準は `docs/plsql-kpi.md` の目標値をそのまま使う:
+  基準は `docs/design/plsql-kpi.md` の目標値をそのまま使う:
 
   | KPI | 合格ライン |
   |---|---|
@@ -1147,7 +1147,7 @@ P0-2 の manifest）に集計し直す。
      **counters 表 + 再試行**（厳密な単調増加と欠番なしを保つ）。
      - 帰結: **列ごとに判断が要る。** どちらに寄せたかを列の定義にコメントで残すこと。
        counters 方式の列は高衝突点になるので、**他の更新と同じトランザクションに入れない**
-       （`docs/plsql-transaction-patterns.md` D）。
+       （`docs/plsql-migration/plsql-transaction-patterns.md` D）。
 
   2. **走査行数の上限は routine ごとに指定し、既定を config に置く。**
      `--limits <yaml>` で `scanRows.default` と `scanRows.routines.<routine>` を与える。

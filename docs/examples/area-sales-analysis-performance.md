@@ -1,6 +1,6 @@
 # エリア別・店舗別の月次売上分析: ScalarDB 構成での性能最大化の調査
 
-`docs/area-sales-analysis-scalardb-conversion.md` で分解した構成（ScalarDB SQL で組織マスタと 1 年分の売上明細を取得し、Java で集計する）について、性能を最大化する方法を調べた結果をまとめる。
+`docs/examples/area-sales-analysis-scalardb-conversion.md` で分解した構成（ScalarDB SQL で組織マスタと 1 年分の売上明細を取得し、Java で集計する）について、性能を最大化する方法を調べた結果をまとめる。
 
 **結論:** 性能はほぼ「ScalarDB から読む行数」で決まる。設定の調整では数倍しか縮まらないため、**まず読む行数を減らす設計（月次集計表・組織パスのキャッシュ・締めた月の結果の保存）を入れ、そのうえで fetch size・分離レベル・読み取り専用トランザクション・並列取得を調整する**。
 
@@ -16,7 +16,7 @@
 
 | 処理 | コスト | 根拠 |
 |---|---|---|
-| ScalarDB のスキャン（全件・範囲） | 1 行あたり約 25 µs。4 万行の全件集計で約 1 秒（Oracle 直接の 300〜400 倍） | 実測 `docs/bench-report.md`, `docs/scalardb-backend-comparison.md` |
+| ScalarDB のスキャン（全件・範囲） | 1 行あたり約 25 µs。4 万行の全件集計で約 1 秒（Oracle 直接の 300〜400 倍） | 実測 `docs/reports/bench-report.md`, `docs/reports/scalardb-backend-comparison.md` |
 | ScalarDB のキー指定（GET・パーティション内の範囲） | 3〜17 ms。表の行数によらず一定 | 実測 同上 |
 | アプリ側の集計（`AreaSalesReport.build`） | 10 万行 24 ms、100 万行 150 ms、500 万行 780 ms（1,000 店舗 × 12 か月） | 実測（今回、DB なしで計測） |
 
@@ -38,13 +38,13 @@
 | A2 | 組織の階層（店舗 → 経路・親エリア）を事前に計算して持つ、またはアプリでキャッシュする | 組織マスタの全件スキャン（RDBMS）や、階層ごとのインデックス検索（Cassandra）が消える | 推定 | 組織変更時に作り直す |
 | A3 | 締めた月の分析結果を保存し、当月分だけ計算する | 2 回目以降はほぼ GET だけになる | 推定 | 過去の売上が訂正されたときに作り直す |
 | A4 | 集計を ScalarDB Analytics（Spark）に任せる | 元の SQL に近い形（ウィンドウ関数など）で、トランザクション処理と切り離して実行できる | 公式（[ScalarDB Analytics](https://scalardb.scalar-labs.com/docs/latest/scalardb-analytics/)）。ウィンドウ関数・CTE の対応と読み取りの一貫性は ScalarDB の文書では未確認 | 別の製品・基盤が要る。オンラインでの即時性は下がる |
-| B1 | `scan_fetch_size` を 10 → 1000 程度に上げる（ノードとクライアントの両方） | スキャンが Cassandra で 4〜19 倍、PostgreSQL で 2〜3 倍速くなった | 実測 `docs/cassandra-verification-report.md`（PostgreSQL は 1 回だけの計測） | メモリ使用量が増える |
+| B1 | `scan_fetch_size` を 10 → 1000 程度に上げる（ノードとクライアントの両方） | スキャンが Cassandra で 4〜19 倍、PostgreSQL で 2〜3 倍速くなった | 実測 `docs/reports/cassandra-verification-report.md`（PostgreSQL は 1 回だけの計測） | メモリ使用量が増える |
 | B2 | このレポートは `SERIALIZABLE` 以外（`SNAPSHOT` / `READ_COMMITTED`）で動かす | コミット時の再スキャンが無くなる（最大で約半分になる見込み） | 公式（仕組み）。効果の大きさは推定 | 分離レベルはノードの設定なので、同じノードの更新処理にも効く。更新処理の要件と合わせて決める |
 | B3 | 読み取り専用トランザクションで開始する | Coordinator へのコミット状態の書き込みが省かれる。ただし `SERIALIZABLE` の再スキャンは省かれない | 公式（3.16.0 以降、[API guide](https://scalardb.scalar-labs.com/docs/latest/api-guide/)、[SQL API guide](https://scalardb.scalar-labs.com/docs/latest/scalardb-sql/sql-api-guide/)） | JDBC で指定する方法（`setReadOnly` など）は未確認 |
 | C1 | 店舗ごとの取得を複数スレッドで並列に行う | スレッド数に応じて短くなる見込み | 推定（並列時の性能は未計測） | トランザクションはスレッドをまたいで使えない（公式）ので、スレッドごとに別のトランザクションになり、全体が 1 つの時点の読み取りではなくなる。接続プールと DB の接続上限の設計が要る |
 | C2 | Cassandra ではパーティションキーを `(shop_id, sales_month)` にする | パーティションの大きさに上限ができ、月単位で並列に読める | 推定。Cassandra 公式は大きすぎるパーティションを分割するよう推奨（[Data modeling](https://cassandra.apache.org/doc/latest/cassandra/developing/data-modeling/data-modeling_refining.html)） | 期間指定の取得が月の数だけの SQL になる |
 | D1 | 明細を読み込みながら月次合計に足し込み、明細のリストを持たない | 速度はほぼ変わらない。メモリが「明細の件数」から「店舗×月」に減る | 推定 | コードが少し複雑になる |
-| D2 | ScalarDB SQL の JDBC を使い続ける（Core API に替えない） | 全件取得で Core API より 26〜38% 速かった | 実測 `docs/bench-report.md` | なし |
+| D2 | ScalarDB SQL の JDBC を使い続ける（Core API に替えない） | 全件取得で Core API より 26〜38% 速かった | 実測 `docs/reports/bench-report.md` | なし |
 | D3 | Kubernetes 上では `direct-kubernetes` モードで接続する | ロードバランサーを経由する分の往復が減る | 公式（[Java API ガイド](https://scalardb.scalar-labs.com/docs/latest/scalardb-cluster/developer-guide-for-scalardb-cluster-with-java-api/)）。効果の大きさは未計測 | アプリが同じ Kubernetes クラスタにいる必要がある |
 
 ---
@@ -114,7 +114,7 @@ CREATE TABLE shop_hierarchy (
 
 - ScalarDB のトランザクションと `SqlSession` はスレッドセーフではない（公式、[SQL API guide](https://scalardb.scalar-labs.com/docs/latest/scalardb-sql/sql-api-guide/)）。並列にするなら、スレッドごとに JDBC 接続とトランザクションを分ける
 - 並列にすると、店舗ごとに読み取り時点が変わる。締めた月の分析なら問題になりにくいが、当月分を含むなら許容できるか確認する
-- 上限を決める要素: Cluster ノードの `scalar.db.consensus_commit.parallel_executor_count`（既定 128、ノード内の全トランザクションで共有）、ノードから DB への接続プール、DB の接続上限。Oracle Free では既定のプール（最大 200）で `ORA-12516` が出たため、検証環境では最大 50 に絞っている（`docs/oracle-backend-verification-plan.md`）
+- 上限を決める要素: Cluster ノードの `scalar.db.consensus_commit.parallel_executor_count`（既定 128、ノード内の全トランザクションで共有）、ノードから DB への接続プール、DB の接続上限。Oracle Free では既定のプール（最大 200）で `ORA-12516` が出たため、検証環境では最大 50 に絞っている（`docs/reports/oracle-backend-verification-plan.md`）
 
 ### 3.6 大量に読む場合の制限
 

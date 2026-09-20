@@ -1,4 +1,4 @@
-# Trigger と DB Link（設計書 §6.9 / §6.7、docs/plsql-kpi.md §2 の 5・7）
+# Trigger と DB Link（設計書 §6.9 / §6.7、docs/design/plsql-kpi.md §2 の 5・7）
 
 rules:
   - id: TRG-001

@@ -3,7 +3,7 @@
 
 数値は docs/ のレポート（test-report / oracle-sql-report / transpile-fix-research / dml-benchmark-report /
 dml-followup-research / scalardb-backend-comparison）から転記した（2026-09-10〜15 の計測、v0.1.1 時点）。
-仕組みの図つき文書版は docs/architecture.md。
+仕組みの図つき文書版は docs/design/architecture.md。
 
     SF=~/.claude/plugins/cache/slide-forge/slide-forge/1.30.0
     cd $SF && .venv/bin/python scripts/validate_layout.py <このファイル> --template templates/blank-16x9.json
@@ -60,7 +60,7 @@ def s_parts(d):
         ("スキル", "skills/sql-transpile（Claude Code）\n32 方言どうし、または ScalarDB SQL への変換。変換ツールを同梱し単体で動く", d.P.info),
         ("検証基盤", "difftest（Docker Compose・Python）\n移行元 DB と ScalarDB で同じ文を実行し、結果と応答時間を比べる", d.P.warning),
     ], row_h=0.74, gap=0.12, label_w=1.6)
-    foot(d, None, edition="仕組みの図は docs/architecture.md（Mermaid の図 22 枚）")
+    foot(d, None, edition="仕組みの図は docs/design/architecture.md（Mermaid の図 22 枚）")
 
 
 # =====================================================================
@@ -191,7 +191,7 @@ def s_access(d):
         ["クロスパーティション SCAN", "キーを覆う条件が無い", "WARN", "1 行 約 25 µs × 表の行数"],
     ], col_widths=[2.0, 3.6, 1.2, 2.2], row_h=0.5, header_h=0.36, size=9, aligns=["START", "START", "CENTER", "START"])
     banner(d, DY0 + 2.55, "--storage cassandra ではクロスパーティション走査を使わず、「どの表のキーで読むか」を提案する（FULL_SCAN）", size=9, h=0.5)
-    foot(d, None, edition="コストの目安は docs/bench-report.md の実測。SERIALIZABLE ではスキャンを約 2 倍にして見積もる")
+    foot(d, None, edition="コストの目安は docs/reports/bench-report.md の実測。SERIALIZABLE ではスキャンを約 2 倍にして見積もる")
 
 
 @slide("読み取りは絞って取得し、H2 で元の SQL を実行する",
@@ -260,7 +260,7 @@ def s_h2index(d):
                    {"title": "索引あり（--h2-indexes）", "tone": "good", "head": "数万行以上の表を結合する",
                     "items": ["主キーと結合・相関・IN の列に索引", "結合が索引の参照になる", "同じ 3 表結合: 1.7〜1.9 秒"],
                     "note": "1 表の文では構築の分だけ遅くなる"})
-    foot(d, None, edition="出典: docs/dml-benchmark-report.md 3.4、docs/dml-followup-research.md 3 章")
+    foot(d, None, edition="出典: docs/reports/dml-benchmark-report.md 3.4、docs/reports/dml-followup-research.md 3 章")
 
 
 @slide("変換できない読み取り文には、アプリ側に移す処理をすべて挙げる",
@@ -321,7 +321,7 @@ def s_skill(d):
         ("モデル", "model: sonnet、effort: medium。書き換えや Java 実装の依頼はセッションのモデルで受ける"),
         ("単体で動く", "変換ツールの 7 モジュールを同梱。vendor_sync.py --check で本体との差分を確認"),
     ], key_w=1.5, row_h=0.42, gap=0.1, size=9)
-    foot(d, None, edition="skills/sql-transpile/SKILL.md。判定の正しさは docs/transpile-fix-research.md 8 章")
+    foot(d, None, edition="skills/sql-transpile/SKILL.md。判定の正しさは docs/reports/transpile-fix-research.md 8 章")
 
 
 @slide("移行元 DB と ScalarDB で同じ文を実行し、結果を突き合わせる",
@@ -381,7 +381,7 @@ def s_compat(d):
         ["Oracle 固有 SQL", "読み取り 62 文・書き込み 17 文", "読み取り 51 文が一致。書き込みは分類のみ"],
         ["スキルの実行検証", "3 方言 × 変換先 3 = 321 件", "見逃し 48 → 0、変換率 85.7%"],
     ], col_widths=[1.8, 3.0, 4.2], row_h=0.44, header_h=0.34, size=9, aligns=["START", "START", "START"])
-    foot(d, None, edition="出典: docs/test-report.md、oracle-sql-report.md、transpile-fix-research.md")
+    foot(d, None, edition="出典: docs/reports/test-report.md、oracle-sql-report.md、transpile-fix-research.md")
 
 
 @slide("DML 51 文のうち、ScalarDB で実行できるのは 31〜33 文",
@@ -393,7 +393,7 @@ def s_dml_conv(d):
     d.metric(6.55, DY0 + 0.05, 2.95, 1.05, "17〜18 / 33", "変換できない書き込み", color=d.P.danger)
     d.metric(6.55, DY0 + 1.3, 2.95, 1.05, "17 / 17", "実行できる SELECT", color=d.P.success)
     d.label(6.55, DY0 + 2.55, 2.95, 0.8, "変換できない書き込みは\n現在の値・別の表・採番に頼る文", size=9, color=d.P.muted)
-    foot(d, None, edition="出典: docs/dml-benchmark-report.md 2 章（skills/sql-transpile/examples/dml/）")
+    foot(d, None, edition="出典: docs/reports/dml-benchmark-report.md 2 章（skills/sql-transpile/examples/dml/）")
 
 
 @slide("時間は経路で決まり、実行計画は読む行数に比例する",
@@ -419,7 +419,7 @@ def s_h2_effect(d):
     d.metric(6.7, DY0 + 0.05, 2.8, 1.1, "26–27→1.7–1.9 秒", "S04 の p50（3 方言の範囲）", color=d.P.success, value_size=13)
     d.label(6.7, DY0 + 1.4, 2.8, 1.9, "索引ありの内訳（取得 + H2）\nOracle: 1,520 + 153 ms\nPostgreSQL: 1,514 + 181 ms\n"
             "MySQL: 1,558 + 239 ms\n\n残る時間のほとんどは\nScalarDB からの取得", size=9, color=d.P.text)
-    foot(d, None, edition="出典: docs/dml-benchmark-report.md 3.4。S05（反結合）は 16〜17 倍、1 表だけ読む文は変わらない")
+    foot(d, None, edition="出典: docs/reports/dml-benchmark-report.md 3.4。S05（反結合）は 16〜17 倍、1 表だけ読む文は変わらない")
 
 
 @slide("並列取得は 1.2〜1.3 倍、scan_fetch_size の変更は 1.5〜2.4 倍",
@@ -431,7 +431,7 @@ def s_parallel(d):
             "キーごとの取得（100 キー）\n順に 108 ms → 8 並列 49 ms\n（2.2 倍）\n\n"
             "表の並列取得は伸びない\n1 ノードの Cluster が律速\n\n"
             "推奨: まず scan_fetch_size を\n1000 にする（整合性は変わらない）", size=9, color=d.P.text)
-    foot(d, None, edition="出典: docs/dml-followup-research.md 2 章（注文 1.5 万・明細 5 万行、1 ノード）")
+    foot(d, None, edition="出典: docs/reports/dml-followup-research.md 2 章（注文 1.5 万・明細 5 万行、1 ノード）")
 
 
 @slide("H2 の索引は、1 表の文では構築時間とメモリの分だけ遅くなる",
@@ -444,7 +444,7 @@ def s_h2_cost(d):
         ["500,000 / 1,000,842", "893 → 1,064 ms（+19%）", "5,426 ms（構築が 1/3）", "208 MB + 118 MB"],
     ], col_widths=[2.0, 2.6, 2.3, 2.1], row_h=0.5, header_h=0.36, size=9, aligns=["START", "CENTER", "CENTER", "CENTER"])
     banner(d, DY0 + 2.65, "対策: 結合の無い計画では作らない、小さな表には作らない、作れなかった索引を stats に出す（索引は v0.1.1 で既定オフ）", size=9, h=0.5)
-    foot(d, None, edition="出典: docs/dml-followup-research.md 3 章（difftest/experiments/H2Index.java）")
+    foot(d, None, edition="出典: docs/reports/dml-followup-research.md 3 章（difftest/experiments/H2Index.java）")
 
 
 @slide("Oracle なら移行は小さく、Cassandra ではキー設計が要る",
@@ -456,7 +456,7 @@ def s_backend(d):
         ["表全体を読む処理", "実行できる。全行を読む集計は 1.0〜1.6 秒", "実行できない（設計変更が必要）"],
         ["移行の手間", "小さい。実行計画で吸収、キー設計はそのまま", "大きい。キー設計・集計表・Analytics が要る"],
     ], col_widths=[1.7, 3.65, 3.65], row_h=0.56, header_h=0.36, size=8.5, aligns=["START", "START", "START"])
-    foot(d, None, edition="出典: docs/scalardb-backend-comparison.md（40,000 行、単一クライアント・単一ノード）")
+    foot(d, None, edition="出典: docs/reports/scalardb-backend-comparison.md（40,000 行、単一クライアント・単一ノード）")
 
 
 # =====================================================================
@@ -480,7 +480,7 @@ def s_write_plan(d):
         ("406 ms", "100 行を読んでキーで更新", "warn"),
         ("1.7 s", "約 1,000 行（分割が要る）", "bad"),
     ], h=0.95, value_size=18)
-    foot(d, None, edition="出典: docs/dml-followup-research.md 1 章（ScalarDB Cluster で実測）")
+    foot(d, None, edition="出典: docs/reports/dml-followup-research.md 1 章（ScalarDB Cluster で実測）")
 
 
 @slide("残る既知の問題は、変換ツールで直せるものが多い",
@@ -494,11 +494,11 @@ def s_known(d):
         ["MySQL の照合順序", "大文字小文字の違いで 0 行になる", "警告し、LOWER() で比べる"],
         ["PostgreSQL の INTERVAL '1 day'", "H2 が解析できない", "H2 向けに書き換える"],
     ], col_widths=[3.1, 3.1, 2.8], row_h=0.44, header_h=0.34, size=8.5, aligns=["START", "START", "START"])
-    foot(d, None, edition="出典: docs/dml-benchmark-report.md 4 章、issue #3 の検証（H2 の更新前後で同じ）")
+    foot(d, None, edition="出典: docs/reports/dml-benchmark-report.md 4 章、issue #3 の検証（H2 の更新前後で同じ）")
 
 
 @slide("次は scan_fetch_size の再計測と、書き込み計画の試作",
-       note="優先順位は docs/dml-followup-research.md 4 章に基づきます。計測の限界も合わせて示します。")
+       note="優先順位は docs/reports/dml-followup-research.md 4 章に基づきます。計測の限界も合わせて示します。")
 def s_next(d):
     pw = (W - 0.3) / 2
     zone(d, X0, DY0, pw, 3.38, "次にやること", fill="#F8FAFC", stroke=lighten(d.P.primary, 0.6))

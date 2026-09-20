@@ -2,7 +2,7 @@
 
 作成日: 2026-09-11
 状態: **承認済み** (2026-09-11)
-関連文書: `docs/bench-report.md` (Oracle と ScalarDB + PostgreSQL の互換性・性能比較)、`docs/oracle-sql-report.md` (Oracle 固有 SQL の網羅調査)、`docs/test-report.md` (仕組みとテスト)
+関連文書: `docs/reports/bench-report.md` (Oracle と ScalarDB + PostgreSQL の互換性・性能比較)、`docs/reports/oracle-sql-report.md` (Oracle 固有 SQL の網羅調査)、`docs/reports/test-report.md` (仕組みとテスト)
 
 ## 1. 目的
 
@@ -123,14 +123,14 @@ Cassandra 5.0 は ScalarDB 3.19 が対応するバージョン (3.0 / 3.11 / 4.1
 | 2. 既存ベンチ | `bench.sql` を 5,000 / 20,000 / 40,000 行で、PostgreSQL と Cassandra の両方で測る | 3 系統の表と伸び方の表ができる |
 | 3. NoSQL 適性ケース | 4.2 のケースとデータ生成を作り、3 系統で測る | 15 パターンすべてに判定が付く |
 | 4. 変換ツールの改修 (条件付き) | フェーズ 1〜3 で Cassandra 固有の失敗が出た場合、変換ツールにバックエンド指定 (`--backend cassandra`) を加え、Cassandra で実行できない形 (複数パーティションの `ORDER BY` など) を plan 経路 (H2 で並べ替え) に回す。単体テストを足し、該当ケースを測り直す | 改修前後の結果を両方記録する |
-| 5. 報告 | `docs/cassandra-verification-report.md` を作る。README に再現手順を追記する | 報告書に適性表・数値・再現手順が揃う |
+| 5. 報告 | `docs/reports/cassandra-verification-report.md` を作る。README に再現手順を追記する | 報告書に適性表・数値・再現手順が揃う |
 
 ## 7. 成果物
 
 | ファイル | 内容 |
 |---|---|
-| `docs/cassandra-verification-plan.md` | 本書 |
-| `docs/cassandra-verification-report.md` | 検証結果。適性表、互換性の差分、応答時間 (3 系統)、表サイズに対する伸び、移行時の判断基準 |
+| `docs/reports/cassandra-verification-plan.md` | 本書 |
+| `docs/reports/cassandra-verification-report.md` | 検証結果。適性表、互換性の差分、応答時間 (3 系統)、表サイズに対する伸び、移行時の判断基準 |
 | `difftest/cases/nosql-patterns.sql` とデータ生成 | NoSQL 適性ケース |
 | `difftest/docker-compose.yml`、`difftest/conf/*`、`difftest/run.py`、`difftest/bench.py` | Cassandra バックエンドへの対応 |
 | (フェーズ 4 を行う場合) `scalardb_migrate/`、`tests/` | バックエンドを考慮した判定と単体テスト |

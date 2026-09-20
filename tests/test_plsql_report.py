@@ -78,7 +78,7 @@ def test_a_plain_routine_has_no_blockers(analysis):
 
 
 def test_blocker_names_match_the_kpi_document():
-    document = (pathlib.Path(__file__).resolve().parent.parent / "docs" / "plsql-kpi.md").read_text(
+    document = (pathlib.Path(__file__).resolve().parent.parent / "docs" / "design" / "plsql-kpi.md").read_text(
         encoding="utf-8")
     for keyword in ["COMMIT", "AUTONOMOUS_TRANSACTION", "Package 変数", "EXECUTE IMMEDIATE",
                     "Trigger", "AUTHID CURRENT_USER", "DB Link", "FOR UPDATE"]:

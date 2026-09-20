@@ -1,5 +1,5 @@
 -- Benchmark case file (Oracle dialect): the area / shop monthly sales analysis
--- (docs/area-sales-analysis-scalardb-conversion.md). Data: difftest/bench.py --dataset bench-area-sales.
+-- (docs/examples/area-sales-analysis-scalardb-conversion.md). Data: difftest/bench.py --dataset bench-area-sales.
 -- ScalarDB SQL cannot run it and H2 cannot run CONNECT BY, so the new implementation runs it in the application:
 --   "at"appside <class>        AppSideQuery implementation (runtime-java) run on the fetched rows
 --   "at"fetch <table>=<SQL>    ScalarDB SQL fetching one input table; all fetches share one transaction

@@ -48,7 +48,7 @@ private routine は**公開 routine 経由でしか観測できない**。`order
 `tier_discount` / `line_amount` / `customer_tier` の振る舞いを間接的に覆っている。
 
 これは KPI-5（意味的同等性テスト合格率）と確信度の `testEvidence` に直接効く。
-`testEvidence` の定義から **capture が 1 つも無い routine は AUTO にならない**（`docs/plsql-kpi.md` §3）。
+`testEvidence` の定義から **capture が 1 つも無い routine は AUTO にならない**（`docs/design/plsql-kpi.md` §3）。
 上の 5 つは、期待判定が AUTO であっても AUTO には昇格しない。
 private routine を AUTO にしたければ、呼び出し元の capture を根拠にできるよう
 `testEvidence` の算出を「自分の capture ∪ 自分を呼ぶ公開 routine の capture」へ広げる必要がある。
