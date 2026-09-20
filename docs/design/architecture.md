@@ -18,6 +18,7 @@ SQL → ScalarDB SQL 移行ツールの構成と、変換・実行計画・実�
 12. [トランザクションと整合性](#12-トランザクションと整合性)
 13. [性能の特性](#13-性能の特性)
 14. [移行の流れのスキル（migrate-flow / plsql-spec / plsql-migrate）](#14-移行の流れのスキルmigrate-flow--plsql-spec--plsql-migrate)
+15. [移行の前の調査（Migration Explorer）](#15-移行の前の調査migration-explorer)
 
 ---
 
@@ -146,6 +147,7 @@ flowchart TB
     subgraph DT["difftest（検証基盤）"]
         DC["docker-compose.yml"]
         HAR["run.py / bench.py / bench_dml.py<br/>transpile_verify.py / golden.py"]
+        SNAP["catalog_snapshot.py<br/>（調査用。カタログを SELECT だけで書き出す）"]
         EXP["experiments/"]
     end
 
@@ -850,3 +852,81 @@ flowchart TD
 どのスキルも同じ形をとる: **何を決めるか / 推奨 / 理由 / 選択肢ごとの影響 / 決めないとどうなるか / 誰が答える問いか**。
 記録に「決定」と書けるのは、決めた人と日付があるときだけで（`decision_items.py`）、承認も同じ（`flow.py`）。
 
+---
+
+## 15. 移行の前の調査（Migration Explorer）
+
+変換の前に要るのは、いまの姿である: どの PL/SQL と SQL が、どのテーブルを触り、そのテーブルが何とつながっていて、どれくらいの量があるのか。`plsql/explorer/` は、それを**読むだけの 1 つの HTML** にまとめる。サーバも DB も API も持たない。使い方は [Migration Explorer](../guide/explorer.md)。
+
+### 15.1 入力は 3 つのファイル群で、DB にはつながない
+
+```mermaid
+flowchart LR
+    O[("Oracle<br/>USER_* カタログ")] -->|"SELECT だけ・1 回"| C["difftest/catalog_snapshot.py<br/>単一ファイル"] --> S["snapshot.json<br/>JSON Schema 固定・版 1 / 2"]
+    P["PL/SQL の原文"] --> A["plsql.cli（--limits なし）"] --> D["解析結果<br/>program.ir.json / decisions.json<br/>callgraph.json / diagnostics.sarif"]
+    P -->|"--src"| M
+    Q["アプリ側の SQL ファイル"] -->|"appsql.py: 文・開始行・read/write"| M
+    D --> M["model.py<br/>テーブル・routine・SQL を両側から引ける 1 つのデータ"]
+    S -->|"snapshot.py: 検証して読む"| M
+    M --> H["page.py + template.html<br/>データを埋め込んだ 1 つの HTML"]
+```
+
+| 部品 | 受け持つこと |
+|---|---|
+| `difftest/catalog_snapshot.py` | 接続したユーザの `USER_*` だけを SELECT で読む。リポジトリのほかのコードを import しない単一ファイルで、送る文はファイルの先頭に並ぶ。`oracledb` は接続する関数の中でだけ import するので、送る文の静的な検査は CI（DB もドライバも無い）で走る |
+| `snapshot.py` | snapshot を JSON Schema で検証して読む。版 1 も読める |
+| `appsql.py` | アプリ側の SQL ファイルを文に分け、開始行とテーブルを得る。分割は `scalardb_migrate/converter.py` のものを**変えずに**使う（各文は原文の切り出しなので、原文の中で順に探せば行が出る）。変換器を触ると toolchain の指紋が変わり、実 DB で取った証拠が古くなるため |
+| `sources.py` | 原文を探して読む（`plsql/fingerprint.py` と同じ探し方）。行の印、DB のコードとの比較 |
+| `model.py` | 3 つの入力を 1 つのデータにまとめる |
+| `page.py` / `template.html` | データを JSON として埋め込み、素の JavaScript で描く。外部の何も読まない |
+
+### 15.2 「分からない」を 0 にしない
+
+この画面がいちばん守っていることは、**誰も確かめていないことを「無い」と言わない**ことである。
+
+| 画面の言葉 | データの上での区別 |
+|---|---|
+| 未取得 | snapshot が無い、または snapshot にその節のキーが無い |
+| 統計なし | 節はあり、そのテーブルの統計が null（Oracle が一度も統計を取っていない） |
+| 0 | 節があり、空の配列か 0（確かめて、無かった） |
+| snapshot に無い | 原文の SQL が名指しするテーブルが、このスキーマに無い |
+| 見えていない SQL | 動的 SQL で変種を列挙できない、解析できない、原文の無い trigger。**どのテーブルの詳細にも**出す。「このテーブルを書く routine は無い」は、隠れているものが無いときだけ本当だからである |
+| 比べていない | DB のコードと比べられなかった（コードを取っていない、wrapped、snapshot が無い）。理由を並べて出す |
+
+並べ替えでも、未取得と統計なしは数値と混ざらず末尾にまとまる。
+
+### 15.3 原文にあるものだけを、原文として出す
+
+IR には、解析が足したものが入っている: trigger を書き込む側へ織り込んだ SELECT と呼び出しと変数、paging のループ、MERGE の分解。これらは変換の説明であって、調べている対象の姿ではない。
+
+- 文は、id が `#stmt-<数字>` / `#handler-<数字>`（とカーソルの `#query`）で終わるものだけが原文のもの。`skills/plsql-spec/scripts/spec_facts.py` の `FROM_SOURCE` と同じ基準で、2 か所にあるので、corpus の全 routine で SQL の件数が一致することをテストが押さえる
+- 宣言は `#decl-<数字>`、引数は `#param-<数字>` が原文のもの。解析が足した宣言は `#decl-<名前>`
+- IR の `readSet` は sqlglot の `Table` ノードを全部拾うので、`INTO` の変数、CTE の別名、`dual` が混ざる。Explorer は文を解析し直して除く
+- テーブル名は、スキーマ名を除いた小文字の名前で突き合わせる（解析がスキーマ名を落とすため）。1 つの snapshot は 1 つのスキーマである。`orders@link` はリモートのテーブルとして別に持つ
+- 式の中の関数呼び出し（`v := f(x)`）は IR に文として出ない。呼び出し関係は `callgraph.json`（`plsql.cli` が書く）から取る。行の印にはならない
+
+### 15.4 DB から持ち出すものを、頼まれた分だけにする
+
+| | 既定 | 明示したとき |
+|---|---|---|
+| カタログの構造、統計の件数、view の定義、trigger の本体、CHECK の条件、コメント | 取る | |
+| 列の最小値・最大値・頻出値（実データの行） | **文を送らない** | `--include-values` と `--acknowledge-real-data` の両方。snapshot は `containsDataValues: true` を持ち、画面はどこでも帯を出す |
+| procedure・function・package・type のコード（`USER_SOURCE`） | **文を送らない** | `--include-source`。snapshot は `containsSourceCode: true` を持つ。wrapped（難読化）の本文は、このときも取らない |
+| DB リンクの接続先（ホスト、アカウント）、パーティションの境界の値 | **どのオプションでも取らない** | |
+
+- 既定の snapshot は「構造だけ」ではない。view の定義と trigger の本体は入っている（画面が「何がこのテーブルを触るか」を言うのに要る）。フラグが約束するのは、それぞれ「列統計の値」と「`USER_SOURCE`」についてだけで、説明・実行時の表示・画面はそう言う
+- フラグが偽なのに値やコードを持つ snapshot は、読む側が列やオブジェクトの名前つきで拒む。知らないキーも拒む（値を持つ列が別の名前で紛れ込むのを止める）
+- 送る文は、すべて SELECT で、`USER_*` だけを読み、`SELECT *` を使わず、禁じた列（値の列、`HOST` / `USERNAME` / `PASSWORD`）を名指ししないことを、静的な検査が確かめる。SELECT でない文は、最初の `SET TRANSACTION READ ONLY` の 1 つだけ
+- 値の列は Oracle の内部形式の RAW である。DB の復号（`DBMS_STATS.CONVERT_RAW_VALUE`）は PL/SQL の手続きで、SELECT しかしないプログラムからは呼べないので、Python の側で型ごとに復号する。復号できない型は 16 進のままにせず「復号できない」と記録する
+- `USER_TAB_MODIFICATIONS`（前回の統計からの書き込みの件数）は、テーブル単位の行だけを読む。パーティションの行を足すと二重になる。値は Oracle がメモリから書き出した分だけの目安である
+- 画面に入るデータは、必ずテキストとして入る。埋め込む JSON は `<` `>` `&` をエスケープし（SQL の中の `</script>` で埋め込みが閉じない）、画面は DOM の API だけで組み立てる。外部キーの図も、素の SVG を要素として作る
+
+### 15.5 DB で動いているコードと、渡された原文
+
+実案件でいちばん起こりやすい事故は、「渡された原文が、DB で動いているものと違う」と「渡されていない routine が DB にある」である。
+
+- 比べる単位は **DB のオブジェクト 1 つ = IR の module 1 つ**。原文の側は module の行の範囲、DB の側はその（種類、名前）の `USER_SOURCE`
+- package は 2 つのオブジェクトである。解析は body があれば body しか module にしないので、仕様部は同じ名前の `.pks` から取る
+- `CREATE OR REPLACE` の前置き、末尾の `/`、行末の空白、空行の違いは、違いに数えない。この正規化は「同じか違うか」の判定にだけ使い、人が読む diff は行を保ったテキストから作る（原文の側の行番号は、ファイルの行番号）
+- wrapped のコードは比べない。TYPE と TYPE BODY は解析の対象外なので、「原文が渡されていない」には数えず、別に出す
+- `--src` を渡していないときは、package の仕様部が渡されたかどうかが分からない。分からないものを「DB にだけある」とは言わない
