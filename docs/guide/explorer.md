@@ -18,7 +18,7 @@ flowchart LR
 
 ## 1. snapshot を取る（DB に入れる人がやること）
 
-`difftest/catalog_snapshot.py` の **1 ファイルだけ**を渡せば済みます。リポジトリのほかのコードは要りません。必要なのは Python 3.9 以上と `pip install oracledb`（thin モードなので Oracle クライアントは不要）です。
+`difftest/catalog_snapshot.py` の **1 ファイルだけ**を渡せば済みます。リポジトリのほかのコードは要りません。必要なのは Python 3.9 以上と `pip install oracledb` です。既定の thin モードでは Oracle クライアントは要りません。
 
 ```bash
 export SRC_ORACLE_HOST=db.example SRC_ORACLE_PORT=1521 SRC_ORACLE_SERVICE=ORCLPDB1
@@ -34,11 +34,13 @@ python catalog_snapshot.py --out /secure/dir/shop.snapshot.json      # パスワ
 
 **実データの値は、頼まなければ取りません。** 列の統計には、その列の最小値・最大値と、ヒストグラムの頻出値が入っています。これは実データの行そのものです。
 
-| | 既定 | `--include-values` |
+| | 既定 | `--include-values --acknowledge-real-data` |
 |---|---|---|
 | distinct 数、NULL 数、平均長、ヒストグラムの種類 | 取る | 取る |
 | 最小値、最大値、頻出値（上位 20） | **文を送らない** | 取る（Oracle の内部形式を、型ごとに復号して持つ。復号できない型は「復号できない」と持つ） |
 | snapshot の `containsDataValues` | `false` | `true`。ここから作った画面は、どの画面にも帯が出る |
+
+`--include-values` だけでは取りません。何が入るかを説明して、接続する前に終了コード 2 で止まります。**`--acknowledge-real-data` も付けたときだけ**取ります。オプションを 1 つ付け間違えただけで、誰かの実データが DB の外に出ることがないようにするためです。
 
 どちらの場合も、view の定義、trigger の本体、CHECK の条件は取ります。**その中にリテラルとして業務の値が書かれていることはありえます**（`WHERE status <> 'CANCELLED'` のように）。画面は、値を含むかどうかに関わらず、そのことを先頭に出します。
 
@@ -51,7 +53,10 @@ python catalog_snapshot.py --out /secure/dir/shop.snapshot.json      # パスワ
 | `SRC_ORACLE_USER` | snapshot を取るスキーマのユーザ |
 | `SRC_ORACLE_PASSWORD` | 無ければ端末で聞く。**引数では受けません**（`ps` とシェルの履歴に残るため） |
 
-DB が Native Network Encryption を必須にしていると、thin モードではつながりません（`DPY-3001`）。そのときは TLS の接続記述子を `SRC_ORACLE_DSN` に渡します。
+DB が Native Network Encryption を必須にしていると、thin モードではつながりません（`DPY-3001`）。道は 2 つあります。
+
+- TLS が使えるなら、接続記述子を `SRC_ORACLE_DSN` に渡す（`tcps://…`）。thin モードのままで済みます
+- 使えないなら、Oracle Client（Instant Client で足ります）が入っている端末で `--thick` を付ける。python-oracledb が Oracle Client を使って接続します。Client が見つからなければ、接続する前に説明つきで止まります
 
 終了コードは、0 = 書けた、1 = 書けたが取れなかった節がある（ファイルの `skipped` に理由）、2 = 書けなかった、です。
 
@@ -131,7 +136,7 @@ export SRC_ORACLE_SERVICE=FREEPDB1 SRC_ORACLE_USER=explorer SRC_ORACLE_PASSWORD=
 .venv/bin/python difftest/catalog_snapshot.py --out fixtures/explorer/snapshot-no-stats.json
 sh fixtures/explorer/db/setup.sh stats           # 統計を取る（準備の側で取る。収集スクリプトは SELECT しかしない）
 .venv/bin/python difftest/catalog_snapshot.py --out fixtures/explorer/snapshot.json
-.venv/bin/python difftest/catalog_snapshot.py --include-values --out fixtures/explorer/snapshot-with-values.json
+.venv/bin/python difftest/catalog_snapshot.py --include-values --acknowledge-real-data --out fixtures/explorer/snapshot-with-values.json
 .venv/bin/python -m pytest -q tests/test_catalog_snapshot.py tests/test_plsql_explorer_*.py
 ```
 

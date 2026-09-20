@@ -5,7 +5,8 @@
         python catalog_snapshot.py --out /secure/dir/shop.snapshot.json
 
 This one file is the whole tool: it imports nothing from the repository, so it can be handed to the person who has
-access to the database. It needs Python 3.9+ and `pip install oracledb` (thin mode: no Oracle client).
+access to the database. It needs Python 3.9+ and `pip install oracledb`. The default is thin mode, which needs no
+Oracle client; `--thick` uses an installed Oracle Client, for a database that demands Native Network Encryption.
 
 ## What it does to the database: nothing
 
@@ -17,8 +18,11 @@ statistics, and reads no table of yours: the row counts are the optimizer's, as 
 
 Column statistics hold the lowest and highest value of each column, and histograms hold its most frequent values:
 rows of real data. By default the statements that would fetch them are not sent at all. `--include-values` sends
-them, and the snapshot then says `containsDataValues: true` so everything made from it can say so too. View
-definitions, trigger bodies and CHECK conditions are collected either way, and may contain literals.
+them -- but only together with `--acknowledge-real-data`, because one mistyped option must not be enough to carry
+somebody's data out of their database. The snapshot then says `containsDataValues: true`, so everything made from
+it can say so too.
+
+View definitions, trigger bodies and CHECK conditions are collected either way, and may contain literals.
 
 ## Connection
 
@@ -366,16 +370,23 @@ def explain(error: Exception, password: str | None) -> str:
         text = text.replace(password, "***")
     if "DPY-3001" in text or "DPY-4011" in text or "ORA-12660" in text:
         text += ("\n  this database requires Native Network Encryption, which python-oracledb's thin mode does not "
-                 "speak.\n  Connect over TLS instead: SRC_ORACLE_DSN=tcps://host:port/service")
+                 "speak.\n  Connect over TLS instead (SRC_ORACLE_DSN=tcps://host:port/service), or run with --thick "
+                 "on a machine that has an Oracle Client installed")
     return text
 
 
-def collect(settings: dict, password: str, include_values: bool) -> dict:
+def collect(settings: dict, password: str, include_values: bool, thick: bool = False) -> dict:
     # imported here and nowhere else: the statements above and `build` are readable, and testable, without a driver
     try:
         import oracledb
     except ImportError as exc:
         raise Refused("python-oracledb is not installed: pip install oracledb") from exc
+    if thick:
+        try:
+            oracledb.init_oracle_client()
+        except oracledb.Error as exc:
+            raise Refused(f"--thick needs an Oracle Client (Instant Client is enough) that python-oracledb can find: "
+                          f"{explain(exc, None)}") from exc
     try:
         connection = oracledb.connect(user=settings["user"], password=password, dsn=settings["dsn"])
     except oracledb.Error as exc:
@@ -403,6 +414,10 @@ def main(argv: list[str] | None = None, environ=None) -> int:
                                                      "repository: it describes somebody's database")
     parser.add_argument("--include-values", action="store_true",
                         help="also collect real data values (column low/high, most frequent values)")
+    parser.add_argument("--acknowledge-real-data", action="store_true",
+                        help="required with --include-values: you know the snapshot will then hold rows of real data")
+    parser.add_argument("--thick", action="store_true",
+                        help="use an installed Oracle Client instead of thin mode (for Native Network Encryption)")
     parser.add_argument("--print-statements", action="store_true",
                         help="print every statement that would be sent, and send none")
     args = parser.parse_args(argv)
@@ -412,10 +427,17 @@ def main(argv: list[str] | None = None, environ=None) -> int:
         for section, sql in statements(args.include_values).items():
             print(f"\n-- {section}{sql};")
         return 0
+    if args.include_values and not args.acknowledge_real_data:
+        print("catalog_snapshot: --include-values collects rows of real data: the lowest and highest value of every "
+              "column, and the most frequent values of the columns that have a histogram. The snapshot, and every "
+              "page made from it, will hold them.\n  If that is what you want, and you may take it out of this "
+              "database, add --acknowledge-real-data. Without --include-values none of it is collected.",
+              file=sys.stderr)
+        return 2
     try:
         settings = connection_settings(environ)
         password = environ.get("SRC_ORACLE_PASSWORD") or getpass.getpass(f"password for {settings['user']}: ")
-        snapshot = collect(settings, password, args.include_values)
+        snapshot = collect(settings, password, args.include_values, args.thick)
     except Refused as exc:
         print(f"catalog_snapshot: {exc}", file=sys.stderr)
         return 2
