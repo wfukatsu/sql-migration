@@ -280,9 +280,17 @@ flowchart LR
 
 - **承認には、承認した人と日付が要り**、その段階の検査（未記入が無い、図が入っている、事実の欄が古くない、
   決めた人のいない「決定」が無い）が通っていなければ受け付けません。順番も飛ばせません
-- 未決の判断（記録の未決の項目、判定が REVIEW のままの routine）を残して進めるなら、利用者が決めた理由を承認に控えます
-- **承認したときのファイルの指紋を控える**ので、承認のあとで仕様書・決定・文書が変わると承認は「古い」になり、
-  テストの関門（`flow.py gate`）が閉じます。テストの結果も、そのとき有効だった承認の指紋と一緒に残ります
+- 未決の判断（記録の未決の項目、判定が REVIEW のままの routine、`limits.yaml` に答えの無いルールが残る REDESIGN の
+  routine）を残して進めるなら、利用者が決めた理由を承認に控えます。REDESIGN が決まったかどうかは、決定を適用した
+  解析（`<out>/generated/analysis/decisions.json`）から読みます
+- SQL 文だけの移行では、変換できなかった文（ERROR）の 1 つずつに、どう扱うかの項目（`SQL-<文の番号>`）が記録に
+  無ければ `decisions` を承認できません。記録のファイルを渡してあるだけでは通りません
+- **承認したときのファイルの指紋を控える**ので、承認のあとで原文・仕様書・決定・文書が変わると承認は「古い」になり、
+  テストの関門（`flow.py gate`）が閉じます（`spec` の指紋には PL/SQL / SQL の原文も入ります）。テストの結果も、
+  そのとき有効だった承認の指紋と一緒に残ります
+- `flow.py tested --report <plsql-diff.json>` は、その比較を入力（`inputs.evidence`）に控えます。比較の結果を文書に
+  入れると（`migration_doc.py --evidence`）`converted` の承認は古くなりますが、**`converted` だけを取り直すかぎり、
+  テストの結果は残ります**。`spec` か `decisions` を取り直すと、確かめた相手が変わるので、テストの結果は消えます
 - 図は IR と生成物から決定的に描きます: routine ごとの処理の流れ、routine と表、呼び出しと trigger、変換後の全体の形、
   1 回の呼び出し、**変換前の文 → 変換後の method**（赤 = 意味が変わる、黄 = 形が変わるが結果は同じ）。
   文ごとの診断は「意味が変わる / 形が変わる / 情報」に分類してあり、分類の無い診断は「未分類」と出ます
@@ -301,8 +309,10 @@ ln -s "$PWD/skills/migrate-flow" ~/.claude/skills/migrate-flow        # Claude C
 
 移行の前に、既存の PL/SQL が**いま何をしているか**を仕様書にします。引数・読み書きする表・SQL・エラーコード・
 例外ハンドラ・トランザクション制御・呼び出しの関係・発火する trigger は `plsql.cli` の IR から機械的に出し
-（事実の欄。lowering が足した文は除く）、動作・業務ルール・エラー時の振る舞い・確かめたいことは原文を読んで、
-原文の位置（`ファイル:行`）つきで書きます。事実の欄は作り直しても文章に触れません。`check` は、未記入、古い事実、
+（事実の欄。lowering が足した文は除く。IF / ELSIF / CASE の分岐とループの中も、そこへ至る条件つきで拾う。
+読み書きする表は SQL そのものから出すので、ScalarDB の schema を渡さない解析でも入る）、動作・業務ルール・エラー時の振る舞い・確かめたいことは原文を読んで、
+原文の位置（`ファイル:行`）つきで書きます。処理の流れの図は、CASE の分岐（ELSE が無ければ `CASE_NOT_FOUND`）と、
+ループを抜ける `EXIT` / 先頭へ戻る `CONTINUE` も線で描きます。事実の欄は作り直しても文章に触れません。`check` は、未記入、古い事実、
 文章に出てこないエラーコードと表、routine の範囲の外を指す引用を問題として返します。
 書き上がった例は [`skills/plsql-spec/examples/create_order/`](skills/plsql-spec/examples/create_order/README.md) にあります。
 
@@ -345,6 +355,11 @@ Java の入口と constructor、引数の対応、例外、**原文の文 → Re
 ### sql-transpile スキル
 
 任意の方言どうし（SQLGlot の 32 方言）または ScalarDB SQL に変換します。素の `sqlglot.transpile()` が黙って通してしまう構文（`ROWNUM`、Oracle の外部結合 `(+)`、`CONNECT BY`、`NEXTVAL` など）を直すか、理由付きで報告します。
+
+- Oracle の入力は SQL*Plus のスクリプトとして読みます: `/` だけの行は文の切れ目で、PL/SQL のブロック（`CREATE … PROCEDURE / FUNCTION / PACKAGE / TRIGGER`、無名ブロック）は `/` までを 1 つにまとめて ERROR `PLSQL_BLOCK` にします（変換しません。plsql-migrate の仕事です）。`END` のように式として解析できてしまう断片は OK にしません
+- 終了コードは 0 = ERROR の文なし / 1 = ERROR の文あり / 2 = 入力の誤り（無いファイル、UTF-8 でない、形の違う `--schema`、不正な `--session-time-zone`、変換する文が無い）。**2 のときレポートは書きません**。UTF-8 の BOM は読み飛ばします
+- レポートの名前に Target は入らないので、同じ入力を別の Target へ変換するときは `--out-dir` を分けます。`--plan-dir` の計画は、実行のたびにその入力のものを作り直します（前の実行の計画を残しません）
+- 指摘コードの意味は `references/scalardb-grammar.md` と `references/dialect-notes.md` にあります。変換器が出すコードがすべてどこかに載っていることを、テストが確かめます（コードを足したら表にも足すことになります）
 
 ```bash
 .venv/bin/python skills/sql-transpile/scripts/transpile.py samples/oracle.sql --source oracle --target postgres --out-dir out/transpile
