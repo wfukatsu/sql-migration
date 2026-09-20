@@ -65,6 +65,7 @@ docs/
 | 文書 | 内容 | 位置づけ |
 |---|---|---|
 | [アーキテクチャと仕組み](design/architecture.md) | 設計方針、変換パイプライン、アクセスパス分析、実行計画、実行基盤、書き込み文、検証基盤、トランザクション、性能の特性、スキル、移行の前の調査（Migration Explorer） | **いまの実装の説明** |
+| [実案件の PL/SQL を corpus に入れるときの匿名化の方針](design/plsql-corpus-anonymization.md) | 何を置き換えて何を残すか、元のコードと対応表の置き場所、匿名化の前後で解析の結論が変わらないことの確認、人が読むこと、出自別・証拠の独立性別の KPI | 2026-09-20 の決定（#15）。実案件の数字を出すのは判定者（#6）が決まってから |
 | [PL/SQL 移行の KPI・AUTO 禁止条件・確信度](design/plsql-kpi.md) | 7 指標の定義、AUTO を付けてはいけない条件、確信度の 5 因子、計測コマンド | いまの定義（ルールとテストが参照する） |
 | [PL/SQL 変換の実装計画](design/plsql-conversion-implementation-plan.md) | フェーズとタスク、**決定事項と未決事項（§9）** | 計画と決定の記録。コードのコメントが §番号で参照する |
 | [PL/SQL 変換基盤の設計](design/plsql-migration-platform-design.md) | ANTLR + SQLGlot + IR の構成を選んだ当初の設計 | 出発点の設計。実装との差は実装計画 §1 |
