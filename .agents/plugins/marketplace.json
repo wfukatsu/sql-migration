@@ -1,0 +1,20 @@
+{
+  "name": "sql-migration",
+  "interface": {
+    "displayName": "SQL → ScalarDB Migration"
+  },
+  "plugins": [
+    {
+      "name": "sql-migration",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coding"
+    }
+  ]
+}
