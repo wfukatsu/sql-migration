@@ -1,7 +1,7 @@
 # 変換ツールの新旧比較ベンチマーク（アプリ側分析の導入前後）
 
 作成日: 2026-09-15
-関連文書: `docs/bench-report.md`（性能測定の方法と基準値）、`docs/area-sales-analysis-scalardb-conversion.md`（エリア別月次売上分析の書き換え）
+関連文書: `docs/reports/bench-report.md`（性能測定の方法と基準値）、`docs/examples/area-sales-analysis-scalardb-conversion.md`（エリア別月次売上分析の書き換え）
 説明資料: [Google スライド 21 枚](https://docs.google.com/presentation/d/1mAlk25_U5rL5ql61EcUFMYEp_UXx5gOQPjIkpRyARKE/edit)（生成元 `docs/slides/app-side-benchmark-deck.py`）
 
 ## 結論
@@ -29,7 +29,7 @@
 
 | ケース | データ | 内容 |
 |---|---|---|
-| `difftest/cases/bench.sql` | emp 20,000 行、dept 40 行、bonus 4,000 行 | 既存の 15 文（`docs/bench-report.md` と同じ） |
+| `difftest/cases/bench.sql` | emp 20,000 行、dept 40 行、bonus 4,000 行 | 既存の 15 文（`docs/reports/bench-report.md` と同じ） |
 | `difftest/cases/bench-appside.sql`（新規） | 同上 | 新方式で扱いが変わる文: WITH の中の日付範囲 2 文、`GROUP BY ROLLUP` 1 文 |
 | `difftest/cases/bench-area-sales.sql`（新規） | 組織 214 行（本部 2・エリア 10・店舗 200 ほか）、売上 40,000 行（2026 年分は 29,426 行） | エリア別月次売上分析。新方式ではアプリ側 Java（`com.scalar.migrate.examples.AreaSalesReport`）で実行する |
 
@@ -78,7 +78,7 @@
 | 日付範囲 + ウィンドウ関数 | core | 20,018 | 641.9 ms | 1,409 | 62.4 ms | 0.10 | 4.4 ms |
 | 日付範囲 + 月次集計 | core | 20,018 | 625.3 ms | 2,430 | 98.1 ms | 0.16 | 2.2 ms |
 
-4 つとも Oracle と結果が一致した（PASS）。時間はほぼ取得の時間で、H2 での残りの処理は 2〜15 ms だった。取得する行数に比例して短くなっており、`docs/bench-report.md` の「コストは読む行数で決まる」という結果と合う。
+4 つとも Oracle と結果が一致した（PASS）。時間はほぼ取得の時間で、H2 での残りの処理は 2〜15 ms だった。取得する行数に比例して短くなっており、`docs/reports/bench-report.md` の「コストは読む行数で決まる」という結果と合う。
 
 ### 3.2 H2 で実行できない文
 
@@ -99,7 +99,7 @@
 
 - 時間の 95 % 以上は ScalarDB からの取得で、階層の展開・月次集計・分析関数・並べ替えは 40 ms 未満だった
 - 変換ツールのコスト見積もり（`appside.estimate_cost`: 1 行 25 µs、SERIALIZABLE で 2 倍）で計算すると 29,426 行で約 1.5 秒になる。実測は取得とコミットを合わせて約 0.8 秒で、見積もりは約 2 倍多めだった。見積もりは上限側の目安として扱う
-- 性能を上げるには、`docs/area-sales-analysis-performance.md` のとおり、読む行数を減らす設計（月次集計表など）が要る
+- 性能を上げるには、`docs/examples/area-sales-analysis-performance.md` のとおり、読む行数を減らす設計（月次集計表など）が要る
 
 ### 3.4 既存の 15 文（変換結果が同じもの）
 

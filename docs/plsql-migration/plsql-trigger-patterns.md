@@ -292,7 +292,7 @@ BEGIN :NEW.order_id := seq_order_id.NEXTVAL; END;
 ```
 
 ScalarDB に順序オブジェクトは無い。**採番方式は決まっている**（2026-09-17、計画 §9）——代理キーは
-hi/lo、業務上意味のある番号は counters 表 + 再試行。`docs/plsql-transaction-patterns.md` の D を見ること。
+hi/lo、業務上意味のある番号は counters 表 + 再試行。`docs/plsql-migration/plsql-transaction-patterns.md` の D を見ること。
 `orders.order_id` は注文番号なので**後者**である。
 
 trigger 固有の論点は **`WHEN (NEW.order_id IS NULL)`** で、「呼び出し側が指定したならそれを使う」
@@ -311,7 +311,7 @@ END;
 
 Service で先に読むだけだが、**読んだ後に相手が変わりうる**。Oracle でも trigger は
 その行をロックしていないので同じだが、ScalarDB では**衝突として現れる**——
-`docs/plsql-transaction-patterns.md` の A と同じ再試行の話になる。
+`docs/plsql-migration/plsql-transaction-patterns.md` の A と同じ再試行の話になる。
 
 `SELECT INTO` の 0 件（`NO_DATA_FOUND`）を落とさないこと。参照先が無い支払いは、
 **検証を通ったのではなく検証できなかった**のであり、意味が違う。

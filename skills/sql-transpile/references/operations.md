@@ -77,4 +77,4 @@ Target によって 2 つのバックエンドを使い分ける。どちらも�
 5. **変換先の検査** — Target が持っていない構文（`MERGE`、`ON CONFLICT`、`RETURNING` など）と、Target の組み込み関数一覧に無い関数を拾う
 6. **往復検証** — 生成した SQL が Target 方言としてパースできることを確かめる
 
-図つきの説明はリポジトリの `docs/architecture.md` の 10 章。
+図つきの説明はリポジトリの `docs/design/architecture.md` の 10 章。

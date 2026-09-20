@@ -7,7 +7,7 @@ did not, and why. Three outputs, one run:
 * `diagnostics.sarif` -- every diagnostic, positioned, so an editor can show it on the line it belongs to
 * a Markdown summary -- the same thing for a person, with the unresolved items first
 
-The numbers here are the ones `docs/plsql-kpi.md` defines, computed the way it says. They are measured on a
+The numbers here are the ones `docs/design/plsql-kpi.md` defines, computed the way it says. They are measured on a
 synthetic corpus (§9 of the plan), so the report repeats that caveat rather than letting a reader infer otherwise.
 """
 
@@ -264,7 +264,7 @@ def inventory(analysis: Analysis) -> dict:
 
 
 def auto_blockers(module: M.Module, routine: M.Routine) -> list[str]:
-    """The AUTO prohibitions of docs/plsql-kpi.md §2 that this routine already trips.
+    """The AUTO prohibitions of docs/design/plsql-kpi.md §2 that this routine already trips.
 
     Phase 1 does not decide anything -- the rule engine (P2-2) does -- but the evidence is in the IR now, and a
     reader of the inventory should not have to re-derive it. The names match the document so the two can be
@@ -336,7 +336,7 @@ def markdown(analysis: Analysis) -> str:
         f"- DDL スナップショット: `{data['schemaSnapshot'] or '(なし)'}`",
         f"- 診断: {totals['issues']} 件（うち ERROR {totals['errors']} 件）", "",
         "> この数値は**合成 corpus 上の値**であり、実案件の PL/SQL に対する耐性を示すものではない"
-        "（実装計画 §9、docs/plsql-kpi.md §0）。", "",
+        "（実装計画 §9、docs/design/plsql-kpi.md §0）。", "",
         "## KPI", "", "| KPI | 値 | 目標 |", "|---|---|---|",
         f"| parse 率 | {kpi['parseRate']:.1%}（{kpi['parsedFiles']}/{kpi['totalFiles']}） | Phase 1 で 90% 以上 |",
         f"| 型解決率 | {kpi['typeResolutionRate']:.1%}"

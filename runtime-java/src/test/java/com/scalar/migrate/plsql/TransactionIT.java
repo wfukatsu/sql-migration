@@ -353,7 +353,7 @@ class TransactionIT {
     assertEquals(100L, unchanged, "the refused routine changed the stock anyway");
   }
 
-  // --- the patterns in docs/plsql-transaction-patterns.md, measured rather than assumed ------------------
+  // --- the patterns in docs/plsql-migration/plsql-transaction-patterns.md, measured rather than assumed ------------------
 
   /**
    * Pattern A: a conflict is retryable, and retrying it succeeds.

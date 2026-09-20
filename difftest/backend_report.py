@@ -1,4 +1,4 @@
-"""Tables for docs/cassandra-verification-report.md and docs/scalardb-backend-comparison.md, from the runs of
+"""Tables for docs/reports/cassandra-verification-report.md and docs/reports/scalardb-backend-comparison.md, from the runs of
 difftest/backend_compare.sh (one directory per ScalarDB backend).
 
   .venv/bin/python difftest/backend_report.py \
@@ -15,7 +15,7 @@ difftest/backend_compare.sh (one directory per ScalarDB backend).
 
 Where a fresh-node rerun of a compatibility case exists (<backend>.<case>.fresh.json), it is used.
 
-Suitability (docs/cassandra-verification-plan.md §5):
+Suitability (docs/reports/cassandra-verification-plan.md §5):
   取得不可  the converter finds no key or index to fetch by (FULL_SCAN / NO_CROSS_PARTITION): needs a design change
   動かない  error or result mismatch at any size
   向く      p50 grows by at most 30 % from the smallest to the largest table (key-bounded access)

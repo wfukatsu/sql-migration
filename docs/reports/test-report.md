@@ -2,7 +2,7 @@
 
 作成日: 2026-09-10
 対象リポジトリ: `/Users/wfukatsu/work/sql-migration/`
-関連文書: `docs/app-side-processing-plan.md` (実装計画 v2)、`docs/oracle-sql-report.md` (Oracle 固有 SQL の検証)、`docs/bench-report.md` (Oracle 直接実行との互換性・性能比較)、`README.md` (使い方)
+関連文書: `docs/design/app-side-processing-plan.md` (実装計画 v2)、`docs/reports/oracle-sql-report.md` (Oracle 固有 SQL の検証)、`docs/reports/bench-report.md` (Oracle 直接実行との互換性・性能比較)、`docs/guide/getting-started.md` (使い方)
 
 ## 1. 仕組みの概要
 
@@ -190,8 +190,8 @@ Oracle 方言の追加で見つけて修正した点は 2 件。`(+)` 外部結�
 | 同じテーブルを複数スコープ (UNION の両側など) で参照する計画が、H2 側で 2 回目の CREATE TABLE に失敗した | テーブルごとに fetch を 1 つに統合 |
 | ScalarDB Core の LIKE 条件が汎用の条件ビルダで生成できず `ClassCastException` | `LikeExpression` 専用ビルダに変更 |
 | JDBC 経路で名前空間未指定エラー | JDBC クライアント設定にデフォルト名前空間を追加 |
-| 残余処理で `ORDER BY` の NULL 位置が Oracle と食い違う (性能比較で検出) | 残余 SQL にソース方言の NULL 順序を明示 (`NULLS FIRST` / `NULLS LAST`)。詳細は `docs/bench-report.md` §2 |
-| 取得行の H2 投入が行数の二乗で悪化 (性能比較で検出) | 初回投入を `INSERT` にし、同一テーブルの 2 回目以降だけ `MERGE`。詳細は `docs/bench-report.md` §3.4 |
+| 残余処理で `ORDER BY` の NULL 位置が Oracle と食い違う (性能比較で検出) | 残余 SQL にソース方言の NULL 順序を明示 (`NULLS FIRST` / `NULLS LAST`)。詳細は `docs/reports/bench-report.md` §2 |
+| 取得行の H2 投入が行数の二乗で悪化 (性能比較で検出) | 初回投入を `INSERT` にし、同一テーブルの 2 回目以降だけ `MERGE`。詳細は `docs/reports/bench-report.md` §3.4 |
 
 ### 3.5 取り直し（2026-09-19、レビュー #27 の修正後）
 
@@ -226,7 +226,7 @@ PL/SQL の evidence（`difftest/plsql_capture.py` → `plsql_diff.py --full`）�
 ## 4. 制約と未実施事項
 
 - ScalarDB SQL は Enterprise Premium 機能で、実行には ScalarDB Cluster とライセンスが必要。今回はドキュメント掲載のトライアルライセンス (2026-10-31 まで、評価目的限定、要インターネット接続、再配布禁止) を使い、キーは git 管理外の `difftest/license.properties` にのみ置いた。
-- 差分テストは PostgreSQL 方言 15 文と Oracle 方言 17 文 (データ 10 行) での確認である。MySQL 方言のケースファイルと並行性テストは未実施。データ量を増やした性能・互換性の比較は `docs/bench-report.md` (emp 5,000 / 20,000 / 40,000 行、15 文) で別途実施した。
+- 差分テストは PostgreSQL 方言 15 文と Oracle 方言 17 文 (データ 10 行) での確認である。MySQL 方言のケースファイルと並行性テストは未実施。データ量を増やした性能・互換性の比較は `docs/reports/bench-report.md` (emp 5,000 / 20,000 / 40,000 行、15 文) で別途実施した。
 - 書き込み系パターン (読み書き更新、結合条件付き UPDATE/DELETE、`INSERT ... SELECT`、`DO NOTHING`、採番) は計画のフェーズ 3 で、未着手。
 - H2 互換モードの関数対応表は MySQL `DATE_FORMAT` のみ。実案件の SQL で拡充が必要。
 - クロスパーティション走査は JDBC バックエンド前提で有効化している。非 JDBC バックエンドでは一貫性上の注意があり、既定では禁止する方針。

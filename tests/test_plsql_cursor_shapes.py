@@ -1,6 +1,6 @@
 """#11: the explicit-cursor shapes that are not a scan -- B (the first row) and C (counting).
 
-`docs/plsql-cursor-patterns.md` B and C are not loops over rows; they are a query each. The tests here fix
+`docs/plsql-migration/plsql-cursor-patterns.md` B and C are not loops over rows; they are a query each. The tests here fix
 what the rewrite has to keep, which is more than the SQL: the value the original wrote for "no row", the fact
 that a failed FETCH leaves its targets alone, and that `COUNT` returning a row at zero matches is the same
 answer the loop gave. They also fix what must *not* be rewritten, because a shape recognised too eagerly is a

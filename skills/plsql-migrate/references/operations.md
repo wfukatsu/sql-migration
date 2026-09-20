@@ -38,7 +38,7 @@
 
 ## 記録ファイル
 
-`decision_items.py` が読み書きする YAML。項目 ID ごとに次を持つ（`docs/plsql-decisions-outside-generator.md` §0.2）。
+`decision_items.py` が読み書きする YAML。項目 ID ごとに次を持つ（`docs/plsql-migration/plsql-decisions-outside-generator.md` §0.2）。
 
 ```yaml
 items:

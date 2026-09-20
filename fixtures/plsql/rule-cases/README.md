@@ -4,7 +4,7 @@
 実際、corpus には Package 変数も `AUTHID CURRENT_USER` も `DBMS_SQL` も GOTO も write-then-scan も無く、
 それらのルールは一度も発火していなかった。
 
-ここに置くのは、**`docs/plsql-kpi.md` §2 の禁止条件それぞれについて、ルールが実際に発火することを
+ここに置くのは、**`docs/design/plsql-kpi.md` §2 の禁止条件それぞれについて、ルールが実際に発火することを
 確かめるための最小ファイル**である。`tests/test_plsql_safety.py` だけが読む。
 
 ## corpus に入れない理由

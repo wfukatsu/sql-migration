@@ -1,4 +1,4 @@
-"""Differential test harness (docs/app-side-processing-plan.md §5).
+"""Differential test harness (docs/design/app-side-processing-plan.md §5).
 
   1. convert the case file with scalardb_migrate  -> ScalarDB SQL / app-side plans / Schema Loader JSON
   2. source database  : apply the DDL verbatim, load the dataset          (harness only; expected results)

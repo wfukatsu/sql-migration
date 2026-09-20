@@ -1,6 +1,6 @@
 #!/bin/bash
 # Benchmark an older commit of the converter + runtime against the working tree, on the same ScalarDB Cluster + Oracle
-# (docs/app-side-benchmark-comparison.md).
+# (docs/reports/app-side-benchmark-comparison.md).
 #
 #   difftest/bench_compare_versions.sh [old-commit] [out-dir]
 #

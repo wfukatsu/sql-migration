@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """変換ツールの新旧比較（アプリ側分析の導入前後、21 枚）— slide-forge の code-first デッキ。
 
-数値の出典は docs/app-side-benchmark-comparison.md（計測データ: out/bench-compare/*/bench.json、2026-09-15）。
+数値の出典は docs/reports/app-side-benchmark-comparison.md（計測データ: out/bench-compare/*/bench.json、2026-09-15）。
 
     SF=~/.claude/plugins/cache/slide-forge/slide-forge/1.30.0
     cd $SF && .venv/bin/python scripts/validate_layout.py <このファイル> --template templates/blank-16x9.json
@@ -142,7 +142,7 @@ def s_pushdown(d):
 
 
 @slide("H2 で動かない構文の文は、計画を作らずアプリ側に回す",
-       note="いずれも以前の調査（docs/oracle-sql-report.md）で H2 に無いと確認した構文です。新方式はアプリ側での対応も併せて報告します。")
+       note="いずれも以前の調査（docs/reports/oracle-sql-report.md）で H2 に無いと確認した構文です。新方式はアプリ側での対応も併せて報告します。")
 def s_h2(d):
     b = d.table(X0, DY0, W, ["構文", "旧方式", "新方式の判定", "アプリ側での対応"], [
         ["CONNECT BY / SYS_CONNECT_BY_PATH", "計画 → 実行時に失敗", "RESIDUAL_H2・HIERARCHICAL", "木をたどる（Hierarchy）"],

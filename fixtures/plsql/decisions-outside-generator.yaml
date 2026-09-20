@@ -1,4 +1,4 @@
-# 生成コードの外で決めること — 記録（docs/plsql-decisions-outside-generator.md §0.2）
+# 生成コードの外で決めること — 記録（docs/plsql-migration/plsql-decisions-outside-generator.md §0.2）
 #
 # skills/plsql-migrate/scripts/decision_items.py が読み書きする。手で直してもよいが、
 # 「決定」には 決定・決めた人・日付 が要る。答えた人のいない項目を「決定」と書かない。

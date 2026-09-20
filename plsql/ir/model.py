@@ -25,7 +25,7 @@ from ..source import Issue, SourceRange
 # type) and whether the SELECT asked for a star. All optional, so a 1.0.0 reader still reads a 1.1.0 document.
 SCHEMA_VERSION = "1.1.0"
 
-# --- verdict / capability vocabularies (shared with docs/plsql-kpi.md) -------------------------------
+# --- verdict / capability vocabularies (shared with docs/design/plsql-kpi.md) -------------------------------
 VERDICTS = ("AUTO", "REVIEW", "REDESIGN")
 CARDINALITIES = ("EXACTLY_ONE", "AT_MOST_ONE", "MANY", "NONE", "UNKNOWN")
 SQL_KINDS = ("SELECT", "INSERT", "UPDATE", "DELETE", "MERGE", "DDL", "UNKNOWN")

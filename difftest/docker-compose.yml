@@ -1,4 +1,4 @@
-# Differential-test environment (docs/app-side-processing-plan.md §5).
+# Differential-test environment (docs/design/app-side-processing-plan.md §5).
 #
 #   source-postgres : the "migration source" database. ONLY the test harness talks to it (to compute expected results).
 #   backend-postgres: the storage behind ScalarDB. NOTHING but ScalarDB connects to it (the harness never does).
@@ -7,7 +7,7 @@
 #                     `docker compose --profile cluster up -d`. Without it, the runtime uses the ScalarDB Core path
 #                     (fetcher=core), which needs no license.
 #   backend-cassandra / scalardb-cluster-cassandra (profile cassandra): the same, with Apache Cassandra as the ScalarDB
-#                     backend (docs/cassandra-verification-plan.md). The node listens on host port 60054. Do not run both
+#                     backend (docs/reports/cassandra-verification-plan.md). The node listens on host port 60054. Do not run both
 #                     cluster nodes at once on an 8 GiB Docker VM: `docker compose stop scalardb-cluster` first.
 # The published ports bind to 127.0.0.1: the passwords below are well-known defaults, and a bare "1521:1521" listens
 # on every interface of the host. To reach a container from another machine, tunnel (ssh -L) rather than widen this.
@@ -73,7 +73,7 @@ services:
       CASSANDRA_CLUSTER_NAME: difftest
       # Paxos implementation behind the lightweight transactions and SERIAL reads that Consensus Commit relies on.
       # Kept at the image default v1: a quick check with v2 (fewer round trips on paper) did not lower point-operation
-      # latency here (docs/cassandra-verification-report.md). `PAXOS_VARIANT=v2 docker compose ...` to try it.
+      # latency here (docs/reports/cassandra-verification-report.md). `PAXOS_VARIANT=v2 docker compose ...` to try it.
       PAXOS_VARIANT: ${PAXOS_VARIANT:-v1}
     entrypoint: ["sh", "-c", "sed -i \"s/^#\\?paxos_variant:.*/paxos_variant: $$PAXOS_VARIANT/\" /etc/cassandra/cassandra.yaml && exec docker-entrypoint.sh cassandra -f"]
     ports: ["127.0.0.1:9042:9042"]   # for the ScalarDB Core client on the host (loader, --fetcher core); the harness never connects here
@@ -109,7 +109,7 @@ services:
     command: ["--config", "/conf/scalardb-in-docker-oracle.properties", "--schema-file", "/work/schema.json", "--coordinator"]
 
   scalardb-cluster-oracle:
-    # Oracle Database as the ScalarDB backend (docs/oracle-backend-verification-plan.md): the same Oracle Free instance as
+    # Oracle Database as the ScalarDB backend (docs/reports/oracle-backend-verification-plan.md): the same Oracle Free instance as
     # the migration source, but ScalarDB's own user (./oracle-backend-init.sh) and schemas. Host port 60055. Run one
     # cluster node at a time on an 8 GiB Docker VM.
     # Start with both profiles (it depends on source-oracle): docker compose --profile oracle --profile oracle-backend up -d

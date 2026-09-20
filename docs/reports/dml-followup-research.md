@@ -1,7 +1,7 @@
 # 変換できない文の対応案・SELECT の並列取得・H2 の索引のデメリット
 
 作成日: 2026-09-15
-関連文書: `docs/dml-benchmark-report.md`（DML テスト SQL の変換とベンチマーク）、`skills/sql-transpile/references/scalardb-grammar.md`（変換ルール）
+関連文書: `docs/reports/dml-benchmark-report.md`（DML テスト SQL の変換とベンチマーク）、`skills/sql-transpile/references/scalardb-grammar.md`（変換ルール）
 
 ## 結論
 
@@ -72,7 +72,7 @@ ScalarDB Cluster で実際に拒否されることも確かめた（`DB-SQL-1002
 
 - 1 行の更新は、読み取りが加わって約 2.3 倍になる
 - 行数が増えると 1 行あたり 1.7〜10 ms で、数百行を超える一括更新（D05・D07 のように条件に合う行をすべて消す文）は 1 回の要求としては重い。キーの範囲ごとにトランザクションを分けるバッチ処理にするか、`ROW_LIMIT` を超えたら ERROR にする
-- この計測は ScalarDB Cluster の再起動直後で、`docs/dml-benchmark-report.md` の書き込み（3〜6 ms）より遅い。比べられるのは同じ回の値どうし
+- この計測は ScalarDB Cluster の再起動直後で、`docs/reports/dml-benchmark-report.md` の書き込み（3〜6 ms）より遅い。比べられるのは同じ回の値どうし
 
 **実装箇所。** `decomposer.py` に DML 用の分解（対象表の主キーと SET の式を射影する SELECT を作る）を加え、`runtime-java` に書き込み用の実行（H2 の結果を主キー指定の書き込みにする）を加える。読み取りの実行計画の取得・H2・索引の仕組みはそのまま使える。
 
@@ -86,7 +86,7 @@ ScalarDB Cluster で実際に拒否されることも確かめた（`DB-SQL-1002
 
 ### 1.5 変換はできたが ScalarDB で失敗した文
 
-変換ツールの判定が OK / WARN / PLANNED なのに失敗した文は、`docs/dml-benchmark-report.md` 4.2〜4.6 のとおりで、いずれも変換ツールで直せる: H2 の予約語の別名を引用符で囲む（S11）、`NULLS LAST` を含む `ORDER BY` を実行計画に回す（S12）、PostgreSQL の `DATE '...'` / `TIMESTAMP '...'` を文字列にする（I01・U02）、MySQL の `TRUE` / `FALSE` を INT 列では `1` / `0` にする（I01・I02・I10・S16）、MySQL の照合順序の差を警告する（S10）。
+変換ツールの判定が OK / WARN / PLANNED なのに失敗した文は、`docs/reports/dml-benchmark-report.md` 4.2〜4.6 のとおりで、いずれも変換ツールで直せる: H2 の予約語の別名を引用符で囲む（S11）、`NULLS LAST` を含む `ORDER BY` を実行計画に回す（S12）、PostgreSQL の `DATE '...'` / `TIMESTAMP '...'` を文字列にする（I01・U02）、MySQL の `TRUE` / `FALSE` を INT 列では `1` / `0` にする（I01・I02・I10・S16）、MySQL の照合順序の差を警告する（S10）。
 
 ---
 
@@ -162,7 +162,7 @@ S04 の 3 表（顧客 2,006、注文 14,974、明細 50,009 行）を、ScalarD
 | | S04 | — | 1,580 + 1,801 + 2,045 = 5,426 ms | 構築が 1/3 |
 | | S05 | — | 1,422 + 1,755 + 378 = 3,555 ms | 構築が半分 |
 
-— = 索引なしの結合は総当たりで時間がかかりすぎるため測っていない（2 万注文で 23〜28 秒、`docs/dml-benchmark-report.md`）。
+— = 索引なしの結合は総当たりで時間がかかりすぎるため測っていない（2 万注文で 23〜28 秒、`docs/reports/dml-benchmark-report.md`）。
 
 H2 のヒープ（3 表を投入した状態）:
 

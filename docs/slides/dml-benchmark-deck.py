@@ -2,7 +2,7 @@
 """DML テスト SQL の ScalarDB 変換とベンチマーク（26 枚）— slide-forge の code-first デッキ。
 
 数値は out/dml-bench/<dialect>/bench.json と difftest/work/dml-bench/result.<dialect>-reads.json を生成時に読む
-（difftest/bench_dml.py の出力、2026-09-15）。文書版は docs/dml-benchmark-report.md。
+（difftest/bench_dml.py の出力、2026-09-15）。文書版は docs/reports/dml-benchmark-report.md。
 
     SF=~/.claude/plugins/cache/slide-forge/slide-forge/1.30.0
     cd $SF && .venv/bin/python scripts/validate_layout.py <このファイル> --template templates/blank-16x9.json

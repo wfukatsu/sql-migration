@@ -1,4 +1,4 @@
-# ScalarDB の能力（設計書 §7.3、docs/plsql-kpi.md §2 の 9・10・11）
+# ScalarDB の能力（設計書 §7.3、docs/design/plsql-kpi.md §2 の 9・10・11）
 #
 # ここは「ターゲットが何を実行できるか」だけを見る。判定の材料は P2-4 が IR に書き込んだ
 # target_status と診断であり、このファイルはその意味を決める。
@@ -30,7 +30,7 @@ rules:
     message: パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります
     remediation:
       - キーで届く読み取りに変える
-      - 全行を取得してアプリ側で絞る・並べる（docs/app-side-processing-plan.md）
+      - 全行を取得してアプリ側で絞る・並べる（docs/design/app-side-processing-plan.md）
     requiredTests:
       - cross_partition_scan
 

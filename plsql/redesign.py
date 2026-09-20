@@ -2,7 +2,7 @@
 
 REDESIGN says what the *source* is -- a row lock, a COMMIT inside a routine, a trigger -- and that does not change
 when somebody decides how to redesign it: those are the conditions that must never be judged AUTO
-(docs/plsql-kpi.md §2). But the report showed every REDESIGN the same way ("a design is needed; alternatives: ..."),
+(docs/design/plsql-kpi.md §2). But the report showed every REDESIGN the same way ("a design is needed; alternatives: ..."),
 whether the redesign was still open or had been decided, written down with its reason, generated, and compared
 with Oracle on the real databases. A reviewer could not tell the two routines that still need a decision from the
 twenty-four that do not (decided 2026-09-20: keep the verdict, show the state).
@@ -26,9 +26,9 @@ LABELS = {"undecided": "未決定", "decided": "決定済み（実 DB では未�
           "verified": "決定済み・実 DB で一致"}
 
 # project-wide decisions, not per routine. #12 §0: a trigger is called by the routines that write the table, and
-# coverage of other write paths is followed by reconciliation (docs/plsql-trigger-patterns.md)
+# coverage of other write paths is followed by reconciliation (docs/plsql-migration/plsql-trigger-patterns.md)
 TRIGGER_DECISION = ("#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う",
-                    "docs/plsql-trigger-patterns.md")
+                    "docs/plsql-migration/plsql-trigger-patterns.md")
 
 
 SEQUENCE_DECISION = ("計画 §9: 採番は移行先の方式（counters 表 / hi-lo）で取り、書き込む側の INSERT に織り込む",

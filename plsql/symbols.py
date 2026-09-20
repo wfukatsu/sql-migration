@@ -3,7 +3,7 @@
 Nothing downstream can decide anything without knowing what a name refers to and what type it has. Two properties
 matter more than completeness:
 
-* **An unresolved name is recorded, never guessed.** `docs/plsql-kpi.md` makes `symbolResolution` and
+* **An unresolved name is recorded, never guessed.** `docs/design/plsql-kpi.md` makes `symbolResolution` and
   `typeResolution` factors of the confidence, and a factor of 0 keeps a routine out of AUTO. Silently inventing a
   type would convert an unknown into a wrong answer.
 * **A resolved `%TYPE` remembers where it came from.** The design document (§5.3) asks for the DDL snapshot id to

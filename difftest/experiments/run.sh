@@ -1,5 +1,5 @@
 #!/bin/bash
-# Experiments behind docs/dml-followup-research.md: parallel fetch (backend scan_fetch_size 10 and 1000), H2 index cost,
+# Experiments behind docs/reports/dml-followup-research.md: parallel fetch (backend scan_fetch_size 10 and 1000), H2 index cost,
 # read-compute-write cost and key-feed fetch.
 #
 # Needs the ScalarDB Cluster of difftest/docker-compose.yml (profile cluster) with the read data of

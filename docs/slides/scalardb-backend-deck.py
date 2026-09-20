@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Oracle → ScalarDB + Oracle / ScalarDB + Cassandra 検証結果（27 枚）— slide-forge の code-first デッキ。
 
-数値の出典は docs/scalardb-backend-comparison.md と docs/cassandra-verification-report.md
+数値の出典は docs/reports/scalardb-backend-comparison.md と docs/reports/cassandra-verification-report.md
 （計測データ: out/cassandra-verify/*/bench.json、2026-09-11）。
 
     SF=~/.claude/plugins/cache/slide-forge/slide-forge/1.30.0

@@ -2,12 +2,12 @@
 
   * inventory()       every construct that has to be evaluated outside ScalarDB SQL, over the whole statement (CTE
                       bodies and subqueries included) -- the converter stops at the first one it trips over
-  * h2_unsupported()  constructs the H2 residual engine cannot run (docs/oracle-sql-report.md), so a fetch + H2 plan
+  * h2_unsupported()  constructs the H2 residual engine cannot run (docs/reports/oracle-sql-report.md), so a fetch + H2 plan
                       would fail at run time
   * semantic_notes()  source-engine behaviour an application-side rewrite must reproduce (verified against Oracle while
-                      rewriting the area sales report, docs/area-sales-analysis-scalardb-conversion.md)
+                      rewriting the area sales report, docs/examples/area-sales-analysis-scalardb-conversion.md)
   * design_advice()   tables and keys that would let ScalarDB serve the statement by key
-  * estimate_cost()   read-cost estimate from the measured per-row scan cost (docs/bench-report.md)
+  * estimate_cost()   read-cost estimate from the measured per-row scan cost (docs/reports/bench-report.md)
 
 The Java helpers named in the messages live in runtime-java, package com.scalar.migrate.appside.
 """
@@ -28,7 +28,7 @@ OPERATORS = {exp.Div: "/", exp.Mul: "*", exp.Add: "+", exp.Sub: "-", exp.DPipe: 
 QUERY_TYPES = (exp.Select, exp.Union, exp.Except, exp.Intersect)
 
 # Measured on ScalarDB Cluster 3.19.1 + PostgreSQL 16, SERIALIZABLE, scan_fetch_size 10, single client
-# (docs/bench-report.md): scans cost ~25 us per row, key access 3-6 ms regardless of table size.
+# (docs/reports/bench-report.md): scans cost ~25 us per row, key access 3-6 ms regardless of table size.
 SCAN_US_PER_ROW = 25
 KEY_ACCESS_MS = 5
 GRPC_DEADLINE_MS = 60_000  # scalar.db.cluster.grpc.deadline_duration_millis default
@@ -184,7 +184,7 @@ def inventory(node: exp.Expression, dialect: str) -> list[tuple[str, str]]:
 
 
 def h2_unsupported(node: exp.Expression) -> list[str]:
-    """Constructs the H2 compatibility modes do not implement (docs/oracle-sql-report.md §3)."""
+    """Constructs the H2 compatibility modes do not implement (docs/reports/oracle-sql-report.md §3)."""
     found = []
     if any(s.args.get("connect") for s in node.find_all(exp.Select)):
         found.append("CONNECT BY (rewrite as recursive WITH, or walk the tree in the application)")
@@ -400,7 +400,7 @@ def estimate_cost(fetches: list[tuple[str, str]], expected: dict[str, tuple[int,
                                              f"({GRPC_DEADLINE_MS // 1000} s, scalar.db.cluster.grpc.deadline_duration_millis)"))
     if out:
         out.append(("INFO", "COST", f"estimate basis: ~{SCAN_US_PER_ROW} us per scanned row and ~{KEY_ACCESS_MS} ms per key "
-                                    f"access, measured single-client with scan_fetch_size 10 (docs/bench-report.md)"))
+                                    f"access, measured single-client with scan_fetch_size 10 (docs/reports/bench-report.md)"))
     return out
 
 

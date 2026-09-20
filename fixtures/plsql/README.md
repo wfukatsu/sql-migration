@@ -1,6 +1,6 @@
 # PL/SQL corpus（P0-1）
 
-実装計画 [docs/plsql-conversion-implementation-plan.md](../../docs/plsql-conversion-implementation-plan.md) の
+実装計画 [docs/design/plsql-conversion-implementation-plan.md](../../docs/design/plsql-conversion-implementation-plan.md) の
 P0-1「PL/SQL corpus と元表 DDL の作成」の成果物。
 
 ## 出自: 合成（2026-09-17 の決定）

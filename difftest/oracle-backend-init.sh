@@ -1,6 +1,6 @@
 #!/bin/sh
 # Create the Oracle user ScalarDB connects as when Oracle Database is the ScalarDB backend
-# (docs/oracle-backend-verification-plan.md). Idempotent. This is database provisioning, run once as SYSTEM; the
+# (docs/reports/oracle-backend-verification-plan.md). Idempotent. This is database provisioning, run once as SYSTEM; the
 # harness itself never connects to ScalarDB's schemas. Privileges are exactly those listed in the ScalarDB 3.19
 # Requirements for Oracle Database.
 set -e

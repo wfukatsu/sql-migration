@@ -1,4 +1,4 @@
-"""ScalarDB backends the harness can target (docs/cassandra-verification-plan.md §3.1).
+"""ScalarDB backends the harness can target (docs/reports/cassandra-verification-plan.md §3.1).
 
 Each backend is one ScalarDB Cluster node + its storage. The harness only picks the matching client configuration and
 Schema Loader service; it never connects to the storage itself.
