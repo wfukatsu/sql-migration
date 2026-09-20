@@ -391,6 +391,25 @@ def write(analysis: Analysis, out_dir: str | Path) -> dict[str, Path]:
     return written
 
 
+def call_graph_document(program_analysis) -> dict:
+    """Who calls whom, by routine id. `program.ir.json` carries a call only where it is a statement of its own: a
+    function called inside an expression (`v := f(x)`) is an edge of the call graph and nothing in the IR, so a
+    reader of the files alone saw half the graph. Every routine is listed, a caller of nothing included -- an
+    absent routine would read as "not analysed"."""
+    graph = program_analysis.call_graph
+    routines = sorted(r.id for m in program_analysis.program.modules for r in m.routines)
+    return {"schemaVersion": 1,
+            "routines": [{"routine": rid, "calls": sorted(graph.calls.get(rid, ())),
+                          "external": sorted(graph.external.get(rid, ()))} for rid in routines]}
+
+
+def write_call_graph(program_analysis, out_dir: str | Path) -> Path:
+    path = Path(out_dir) / "callgraph.json"
+    path.write_text(json.dumps(call_graph_document(program_analysis), ensure_ascii=False, indent=1) + "\n",
+                    encoding="utf-8")
+    return path
+
+
 def _range(node: M.Node) -> dict | None:
     if node.source_range is None:
         return None
