@@ -1,0 +1,28 @@
+{
+  "name": "sql-migration",
+  "version": "0.1.0",
+  "description": "Oracle / PostgreSQL / MySQL の SQL と PL/SQL を ScalarDB（SQL + Java）へ移行するスキル: migrate-flow / plsql-spec / plsql-migrate / sql-transpile",
+  "author": {
+    "name": "Wataru Fukatsu",
+    "url": "https://github.com/wfukatsu"
+  },
+  "homepage": "https://github.com/wfukatsu/sql-migration/blob/main/docs/guide/skills.md",
+  "repository": "https://github.com/wfukatsu/sql-migration",
+  "license": "MIT",
+  "keywords": ["scalardb", "sql", "plsql", "oracle", "migration", "sqlglot"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "SQL → ScalarDB Migration",
+    "shortDescription": "SQL と PL/SQL を ScalarDB へ移行する（仕様 → 承認 → 変換 → 承認 → テスト）",
+    "longDescription": "SQLGlot で SQL を ScalarDB SQL に変換し、PL/SQL を Java + ScalarDB に変換する。変換してよいかを routine ごとに判定し、人が決めることを記録し、承認がそろうまでテストに進まない。",
+    "developerName": "Wataru Fukatsu",
+    "category": "Coding",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://github.com/wfukatsu/sql-migration",
+    "defaultPrompt": [
+      "この PL/SQL を ScalarDB に移行して",
+      "この Oracle の SQL を ScalarDB 用に変換して",
+      "この package の現行の仕様をまとめて"
+    ]
+  }
+}

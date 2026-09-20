@@ -47,6 +47,7 @@ flowchart LR
 
 - **作業ディレクトリは sql-migration リポジトリのルート**。1 つの移行につき作業ディレクトリ `<out>`
   （既定 `out/migrate/<名前>/`）を 1 つ持ち、状態は `<out>/flow.yaml` にある
+- **プラグインとして入れたとき（作業ディレクトリが sql-migration のチェックアウトでないとき）**: このスキルの場所は `${CLAUDE_SKILL_DIR}`（置き換わらない環境では、この SKILL.md のあるディレクトリ）で、その 2 つ上が `<root>`。下のコマンドは `.venv/bin/python` を `<root>/bin/python` に、`skills/…` で始まるスクリプトのパスと `fixtures/…`・`samples/…` を `<root>/` からのパスに読み替え、**利用者のプロジェクトを作業ディレクトリにしたまま**動かす（`-m plsql.cli` などはそのままでよい。`bin/python` が `<root>` を import の経路に入れる）。入力と `<out>` は利用者のプロジェクトの側に置き、`<root>` の中には書かない（プラグインの更新で消える）。初回は `bin/python` が仮想環境を作るので 1 分ほどかかる
 - **Claude Code 以外（Codex など）で動かすとき**: `allowed-tools` と `when_to_use`（sql-transpile では `model` / `effort` も）は Claude Code 用で、ほかでは無視される。Read / Grep / Bash などの道具の名前は、その環境の同じ働きの道具に読み替える。AskUserQuestion が無ければ、同じ内容（推奨を先頭に、選択肢ごとの影響つき）を本文で聞き、答えを待つ
 - **順番を飛ばさない。** 現行の仕様が承認される前に変換の判断を問わない（何が正しい動作かが決まっていない）。
   3 つの承認がそろう前にテストしない（`flow.py gate` が 0 を返してから）。利用者が「先にテストして」と
