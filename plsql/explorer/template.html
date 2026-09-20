@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Migration Explorer</title>
+<style>
+:root {
+  --bg: #fafaf8; --panel: #ffffff; --ink: #1c1c1a; --muted: #6a6a64; --line: #deded8; --accent: #1f5fa8;
+  --warn-bg: #fff4d6; --warn-ink: #6b4e00; --alert-bg: #fde3e0; --alert-ink: #8a1f14; --chip: #eeeee8;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #18181a; --panel: #212124; --ink: #ececea; --muted: #a0a09a; --line: #38383c; --accent: #7fb4f0;
+    --warn-bg: #3d3316; --warn-ink: #f2d98a; --alert-bg: #47201c; --alert-ink: #ffb4aa; --chip: #2e2e32; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.55 -apple-system, "Hiragino Sans", "Yu Gothic UI", "Noto Sans JP", sans-serif; }
+a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+header.top { background: var(--panel); border-bottom: 1px solid var(--line); padding: 10px 16px; position: sticky; top: 0; z-index: 5; }
+.bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.bar h1 { font-size: 16px; margin: 0; } .bar h1 a { color: inherit; }
+.source { color: var(--muted); font-size: 12px; }
+.search { position: relative; margin-left: auto; min-width: 260px; flex: 0 1 360px; }
+input[type=search] { width: 100%; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); color: var(--ink); font: inherit; }
+.results { position: absolute; left: 0; right: 0; top: 100%; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; max-height: 60vh; overflow: auto; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+.results a, .results div { display: block; padding: 5px 10px; color: var(--ink); }
+.results a:hover, .results a:focus { background: var(--chip); text-decoration: none; }
+.results .kind { color: var(--muted); font-size: 12px; margin-left: 6px; }
+.banner { padding: 6px 16px; font-size: 13px; border-bottom: 1px solid var(--line); }
+.banner.values { background: var(--alert-bg); color: var(--alert-ink); font-weight: 600; }
+.banner.notice { background: var(--chip); color: var(--ink); }
+.banner.warn { background: var(--warn-bg); color: var(--warn-ink); }
+main { padding: 16px; max-width: 1400px; margin: 0 auto; }
+h2 { font-size: 18px; margin: 4px 0 12px; } h3 { font-size: 14px; margin: 22px 0 8px; }
+.crumbs { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { padding: 6px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; white-space: nowrap; }
+td.wrap { white-space: normal; } tr:last-child td { border-bottom: 0; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; background: var(--panel); position: sticky; top: 0; }
+th.sortable { cursor: pointer; user-select: none; } th.sortable:hover { color: var(--ink); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.absent { color: var(--muted); font-style: italic; }
+.chip { display: inline-block; background: var(--chip); border-radius: 10px; padding: 0 8px; font-size: 12px; margin-right: 4px; }
+.chip.alert { background: var(--alert-bg); color: var(--alert-ink); } .chip.warn { background: var(--warn-bg); color: var(--warn-ink); }
+.cards { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; min-width: 130px; }
+.card .label { font-size: 12px; color: var(--muted); } .card .value { font-size: 18px; font-variant-numeric: tabular-nums; }
+.card .sub { font-size: 12px; color: var(--muted); }
+.filter { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.filter input { max-width: 320px; }
+.empty { padding: 18px; color: var(--muted); text-align: center; }
+details { margin: 0; } summary { cursor: pointer; color: var(--accent); font-size: 12px; }
+pre { margin: 6px 0 2px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+  font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; max-width: 900px; }
+ul.plain { margin: 0; padding-left: 18px; }
+.notes { color: var(--muted); font-size: 12px; margin-top: 28px; border-top: 1px solid var(--line); padding-top: 10px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="bar">
+    <h1><a href="#/">Migration Explorer</a></h1>
+    <span class="source" id="source"></span>
+    <div class="search">
+      <input type="search" id="search" placeholder="テーブル・routine・SQL ファイルを名前で探す" autocomplete="off" aria-label="名前で探す">
+      <div class="results" id="results" hidden></div>
+    </div>
+  </div>
+</header>
+<div id="banners"></div>
+<main id="main"></main>
+<script id="data" type="application/json">/*__DATA__*/</script>
+<script>
+"use strict";
+const DATA = JSON.parse(document.getElementById("data").textContent);
+const TABLES = new Map(DATA.tables.map(t => [t.name, t]));
+const ROUTINES = new Map(DATA.routines.map(r => [r.id, r]));
+const SQL = new Map(DATA.sql.map(s => [s.id, s]));
+const FILES = new Map();
+for (const s of DATA.sql) if (s.origin === "app") { if (!FILES.has(s.file)) FILES.set(s.file, []); FILES.get(s.file).push(s); }
+
+// Everything that comes from the data goes in as text, never as markup.
+function h(tag, attrs, ...children) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === "class") el.className = v; else if (k.startsWith("on")) el.addEventListener(k.slice(2), v); else el.setAttribute(k, v);
+  }
+  for (const c of children.flat(Infinity)) if (c !== null && c !== undefined && c !== false) el.append(c.nodeType ? c : document.createTextNode(String(c)));
+  return el;
+}
+const num = n => Number(n).toLocaleString("ja-JP");
+function bytes(n) { const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return (i ? n.toFixed(1) : n) + " " + u[i]; }
+const absent = text => h("span", {class: "absent"}, text);
+const STATE = {not_collected: "未取得", no_statistics: "統計なし", not_applicable: "—"};
+function measure(m, fmt) { return m.state === "value" ? (fmt || num)(m.value) : absent(STATE[m.state]); }
+const tableLink = name => TABLES.has(name) ? h("a", {href: "#/table/" + encodeURIComponent(name), class: "mono"}, name) : h("span", {class: "mono"}, name);
+const routineLink = id => ROUTINES.has(id) ? h("a", {href: "#/routine/" + encodeURIComponent(id), class: "mono"}, id) : h("span", {class: "mono"}, id);
+const fileLink = file => h("a", {href: "#/file/" + encodeURIComponent(file), class: "mono"}, file);
+function whereOf(s) {
+  if (s.origin === "plsql") return [routineLink(s.routine), h("span", {class: "mono"}, " :" + (s.line ?? "?"))];
+  if (s.origin === "app") return [fileLink(s.file), h("span", {class: "mono"}, " :" + s.line)];
+  if (s.origin === "view") return [tableLink(s.object), " ", h("span", {class: "chip"}, "view の定義")];
+  return [h("span", {class: "mono"}, s.object), " ", h("span", {class: "chip warn"}, "原文の無い trigger")];
+}
+function sqlText(s) { return s.text ? h("details", {}, h("summary", {}, "SQL を見る"), h("pre", {}, s.text)) : null; }
+function counts(c) { return (c.routines + c.statements) ? `${c.routines} / ${c.statements}` : "0"; }
+function section(title, body) { return [h("h3", {}, title), body]; }
+function grid(headers, rows, emptyText) {
+  if (!rows.length) return h("div", {class: "panel"}, h("div", {class: "empty"}, emptyText || "なし"));
+  return h("div", {class: "panel"}, h("table", {}, h("thead", {}, h("tr", {}, headers.map(x => h("th", {class: x.num ? "num" : null}, x.label || x)))),
+    h("tbody", {}, rows.map(cells => h("tr", {}, cells.map((c, i) => h("td", {class: (headers[i].num ? "num " : "") + (headers[i].wrap ? "wrap" : "")}, c)))))));
+}
+
+// --- banners -----------------------------------------------------------------------------------------------
+function banners() {
+  const box = document.getElementById("banners"), snap = DATA.meta.snapshot;
+  document.getElementById("source").textContent = snap
+    ? `snapshot: ${snap.schema}@${snap.database.name ?? "?"}（${snap.collectedAt} / ${snap.ident}）・解析: ${DATA.meta.analysis}`
+    : `snapshot なし（DB の情報は未取得）・解析: ${DATA.meta.analysis}`;
+  if (snap && snap.containsDataValues) box.append(h("div", {class: "banner values", id: "values-banner"},
+    "列統計の値: 含む — このファイルには、列の最小値・最大値・頻出値として実データの値が入っています。渡す相手と置き場所に注意してください。"));
+  box.append(h("div", {class: "banner notice", id: "content-notice"},
+    "このファイルは原文の SQL と、DB のオブジェクトの定義（view・trigger・CHECK の条件）を含みます。その中にリテラルとして業務の値が書かれていることがあります。"
+    + (snap && !snap.containsDataValues ? " 列統計の値: 取っていない。" : "")));
+  for (const w of DATA.warnings) box.append(h("div", {class: "banner warn"}, "注意: " + w));
+  for (const s of (snap ? snap.skipped : [])) box.append(h("div", {class: "banner warn"}, `snapshot で取れなかった節: ${s.section} — ${s.reason}`));
+}
+
+// --- table list --------------------------------------------------------------------------------------------
+const COLUMNS = [
+  {key: "name", label: "テーブル", get: t => t.name},
+  {key: "presence", label: "状態", get: t => t.kind + t.presence},
+  {key: "rows", label: "行数", num: true, get: t => t.rows.state === "value" ? t.rows.value : null},
+  {key: "size", label: "サイズ", num: true, get: t => t.size.state === "value" ? t.size.value : null},
+  {key: "writers", label: "書く routine / SQL", num: true, get: t => t.writers.routines + t.writers.statements},
+  {key: "readers", label: "読む routine / SQL", num: true, get: t => t.readers.routines + t.readers.statements},
+  {key: "fkIn", label: "FK 入", num: true, get: t => t.foreignKeysIn ? t.foreignKeysIn.length : null},
+  {key: "fkOut", label: "FK 出", num: true, get: t => t.foreignKeysOut ? t.foreignKeysOut.length : null},
+  {key: "triggers", label: "trigger", num: true, get: t => t.triggerCount.state === "value" ? t.triggerCount.value : null},
+  {key: "unseen", label: "見えていない SQL", num: true, get: t => t.unseen.length + DATA.unattributable.length},
+];
+let sort = {key: "rows", dir: -1}, filterText = "";
+function presence(t) {
+  if (t.kind === "view") return h("span", {class: "chip"}, "view");
+  if (t.presence === "remote") return h("span", {class: "chip warn"}, "リモート（DB リンク）");
+  if (t.presence === "missing") return h("span", {class: "chip alert"}, "snapshot に無い");
+  if (t.presence === "not_collected") return absent("未取得");
+  return h("span", {class: "chip"}, "table");
+}
+function sorted(tables) {
+  const col = COLUMNS.find(c => c.key === sort.key);
+  return tables.slice().sort((a, b) => {
+    const x = col.get(a), y = col.get(b);
+    if (x === null || y === null) return (x === null) - (y === null) || a.name.localeCompare(b.name);  // nothing collected goes last, whichever way the rest is sorted
+    return (typeof x === "string" ? x.localeCompare(y) : x - y) * sort.dir || a.name.localeCompare(b.name);
+  });
+}
+function tableList() {
+  const rows = sorted(DATA.tables.filter(t => t.name.includes(filterText.toLowerCase())));
+  const head = h("tr", {}, COLUMNS.map(c => h("th", {class: "sortable" + (c.num ? " num" : ""), "aria-sort": sort.key === c.key ? (sort.dir > 0 ? "ascending" : "descending") : null,
+    onclick: () => { sort = {key: c.key, dir: sort.key === c.key ? -sort.dir : (c.num ? -1 : 1)}; render(); }}, c.label + (sort.key === c.key ? (sort.dir > 0 ? " ▲" : " ▼") : ""))));
+  const body = rows.map(t => h("tr", {},
+    h("td", {}, tableLink(t.name)), h("td", {}, presence(t)),
+    h("td", {class: "num"}, measure(t.rows), t.rows.stale ? h("span", {class: "chip warn", title: "統計を取ったあとで大きく変わっている"}, "古い") : null),
+    h("td", {class: "num"}, measure(t.size, bytes)),
+    h("td", {class: "num"}, counts(t.writers)), h("td", {class: "num"}, counts(t.readers)),
+    h("td", {class: "num"}, t.foreignKeysIn ? t.foreignKeysIn.length : absent(t.kind === "view" ? "—" : "未取得")),
+    h("td", {class: "num"}, t.foreignKeysOut ? t.foreignKeysOut.length : absent(t.kind === "view" ? "—" : "未取得")),
+    h("td", {class: "num"}, t.triggerCount.state === "value" ? t.triggerCount.value
+      : t.triggerCount.state === "not_applicable" ? absent("—") : absent("未取得" + (t.triggerCount.known ? `（原文に ${t.triggerCount.known}）` : ""))),
+    h("td", {class: "num"}, t.unseen.length + DATA.unattributable.length ? h("span", {class: "chip warn"}, `${t.unseen.length} + ${DATA.unattributable.length}`) : "0")));
+  const input = h("input", {type: "search", placeholder: "テーブル名で絞り込む", value: filterText, "aria-label": "テーブル名で絞り込む",
+    oninput: e => { filterText = e.target.value; render(); const again = document.querySelector(".filter input"); again.focus(); again.setSelectionRange(filterText.length, filterText.length); }});
+  return [h("h2", {}, `テーブル（${DATA.tables.length}）`),
+    h("div", {class: "filter"}, input, h("span", {class: "source"}, `routine ${DATA.meta.counts.routines}・SQL ${DATA.meta.counts.sql}。「見えていない SQL」は、このテーブルに届きうるもの + どのテーブルにも届きうるもの。`)),
+    h("div", {class: "panel"}, h("table", {id: "tables"}, h("thead", {}, head), h("tbody", {}, body)),
+      rows.length ? null : h("div", {class: "empty", id: "no-match"}, `「${filterText}」に当たるテーブルはありません（該当なし）`))];
+}
+
+// --- table detail ------------------------------------------------------------------------------------------
+const HOW = {write: "書く", read: "読む", unseen: "届きうる（中身は見えていない）"};
+function touchRows(t) {
+  return t.touches.filter(x => x.how !== "unseen").map(x => { const s = SQL.get(x.sql); return [whereOf(s), h("span", {class: "chip"}, s.kind),
+    HOW[x.how] + (x.via ? `（view ${x.via} 経由）` : ""), s.lock ? h("span", {class: "chip warn"}, s.lock) : "", sqlText(s)]; });
+}
+function unseenRows(t) {
+  return t.unseen.map(id => [SQL.get(id), "このテーブルの名前が依存関係にある"]).concat(DATA.unattributable.map(id => [SQL.get(id), "テーブルを特定できない（どのテーブルにも届きうる）"]))
+    .map(([s, why]) => [whereOf(s), s.reason, why, sqlText(s)]);
+}
+function fkRows(t) {
+  const out = (t.foreignKeysOut || []).map(fk => ["親", fk.outside ? [h("span", {class: "mono"}, `${fk.refOwner}.${fk.refTable ?? "?"}`), " ", h("span", {class: "chip warn"}, "この snapshot の外")] : tableLink(fk.refTable),
+    h("span", {class: "mono"}, `${fk.columns.join(", ")} → ${fk.refColumns.join(", ")}`), fk.deleteRule || "", h("span", {class: "mono"}, fk.name)]);
+  const inn = (t.foreignKeysIn || []).map(fk => ["子", tableLink(fk.table), h("span", {class: "mono"}, `${fk.columns.join(", ")} → ${fk.refColumns.join(", ")}`), fk.deleteRule || "", h("span", {class: "mono"}, fk.name)]);
+  return out.concat(inn);
+}
+function valueText(v) { return !v ? "" : v.undecodable ? absent(`復号できない（${v.dataType}）`) : h("span", {class: "mono"}, v.text); }
+function columnRows(t) {
+  const stats = new Map((t.columnStatistics || []).map(s => [s.column, s]));
+  const values = DATA.meta.snapshot && DATA.meta.snapshot.containsDataValues;
+  return (t.columns || []).map(c => { const s = stats.get(c.name);
+    const type = c.dataType + (c.precision != null ? `(${c.precision}${c.scale ? "," + c.scale : ""})` : /CHAR/.test(c.dataType) && c.length ? `(${c.length})` : "");
+    const row = [h("span", {class: "mono"}, c.name), h("span", {class: "mono"}, type), c.nullable ? "NULL 可" : "NOT NULL",
+      s && s.numDistinct != null ? num(s.numDistinct) : absent(t.columnStatistics ? "統計なし" : "未取得"), s && s.numNulls != null ? num(s.numNulls) : "",
+      s && s.avgColLen != null ? s.avgColLen : "", s && s.histogram ? s.histogram : "", s ? (s.skewed === true ? h("span", {class: "chip warn"}, "偏りあり") : s.skewed === false ? "なし" : "") : ""];
+    if (values) row.push(valueText(s && s.lowValue), valueText(s && s.highValue),
+      s && s.frequent && s.frequent.length ? h("details", {}, h("summary", {}, `${s.frequent.length} 件`), h("ul", {class: "plain"}, s.frequent.map(e => h("li", {}, valueText(e.value), e.rows != null ? ` × ${num(e.rows)}` : "")))) : "");
+    return row; });
+}
+function tableDetail(name) {
+  const t = TABLES.get(name);
+  if (!t) return [h("h2", {}, name), h("div", {class: "empty"}, "このテーブルは、解析結果にも snapshot にもありません")];
+  const parts = [h("div", {class: "crumbs"}, h("a", {href: "#/"}, "テーブル"), " / ", name), h("h2", {class: "mono"}, name, " ", presence(t))];
+  parts.push(h("div", {class: "cards"},
+    h("div", {class: "card"}, h("div", {class: "label"}, "行数（統計の値）"), h("div", {class: "value"}, measure(t.rows)),
+      h("div", {class: "sub"}, t.rows.analyzedAt ? `統計: ${t.rows.analyzedAt}${t.rows.stale ? "（古い）" : ""}` : "")),
+    h("div", {class: "card"}, h("div", {class: "label"}, "サイズ（テーブルのセグメント）"), h("div", {class: "value"}, measure(t.size, bytes)), h("div", {class: "sub"}, t.rows.avgRowLen ? `平均行長 ${t.rows.avgRowLen} B` : "")),
+    h("div", {class: "card"}, h("div", {class: "label"}, "書く routine / SQL"), h("div", {class: "value"}, counts(t.writers))),
+    h("div", {class: "card"}, h("div", {class: "label"}, "読む routine / SQL"), h("div", {class: "value"}, counts(t.readers)))));
+  if (t.kind === "view") parts.push(...section("元のテーブル", t.baseTables ? h("div", {}, t.baseTables.map(b => [tableLink(b), " "])) : absent("未取得（依存関係が取れていない）")),
+    SQL.has("view:" + name) ? sqlText(SQL.get("view:" + name)) : null);
+  parts.push(...section("触るもの", grid(["どこ", "種類", "操作", "ロック", {label: "SQL", wrap: true}], touchRows(t), "原文のどの SQL も、このテーブルを名指ししていない")));
+  parts.push(...section("見えていない SQL（このテーブルに届きうる）", grid(["どこ", {label: "なぜ見えないか", wrap: true}, {label: "なぜここに出るか", wrap: true}, {label: "原文", wrap: true}], unseenRows(t), "なし")));
+  if (t.kind !== "table" || t.presence !== "snapshot") {
+    if (t.kind === "table") parts.push(h("p", {class: "absent"}, t.presence === "missing" ? "このテーブルは snapshot にありません（別のスキーマ、消された表、または名前の取り違え）。制約・つながり・量は分かりません。"
+      : t.presence === "remote" ? "DB リンクの先のテーブルです。この snapshot には入りません。" : "snapshot が渡されていないので、制約・つながり・量は未取得です。"));
+    if (t.attached.length) parts.push(...section("付いているもの（原文から分かる範囲）", attachedGrid(t)));
+    return parts;
+  }
+  parts.push(...section("つながるテーブル（外部キー）", t.foreignKeysOut ? grid(["向き", "相手", "列", "削除時", "制約"], fkRows(t), "外部キーなし") : absent("未取得")));
+  parts.push(...section("制約", t.constraints ? grid(["種類", "列", {label: "条件", wrap: true}, "有効", "名前"], t.constraints.filter(c => c.type !== "FOREIGN KEY").map(c =>
+    [c.type, h("span", {class: "mono"}, c.columns.join(", ")), c.condition ? h("span", {class: "mono"}, c.condition) : "", c.enabled === false ? h("span", {class: "chip warn"}, "無効") : "有効", h("span", {class: "mono"}, c.name)]), "なし") : absent("未取得")));
+  parts.push(...section("付いているもの（trigger・view）", attachedGrid(t)));
+  const values = DATA.meta.snapshot.containsDataValues;
+  parts.push(...section("列と統計", t.columns ? grid(["列", "型", "NULL", {label: "distinct", num: true}, {label: "NULL 数", num: true}, {label: "平均長", num: true}, "ヒストグラム", "偏りの目安"]
+    .concat(values ? ["最小", "最大", "頻出値"] : []), columnRows(t)) : absent("未取得")));
+  return parts;
+}
+function attachedGrid(t) {
+  return grid(["種類", "名前", "いつ", {label: "原文", wrap: true}], t.attached.map(a => [a.type,
+    a.type === "view" ? tableLink(a.name) : a.routine ? routineLink(a.routine) : h("span", {class: "mono"}, a.name),
+    a.type === "trigger" ? `${a.timing || ""} ${a.event || ""}` + (a.enabled === false ? "（無効）" : "") : "",
+    a.type === "view" ? "" : a.inSource ? (a.inSnapshot === false ? h("span", {class: "chip warn"}, "原文にあるが snapshot に無い") : "原文あり")
+      : [h("span", {class: "chip warn"}, "原文なし（DB にだけある）"), a.sql && SQL.has(a.sql) ? sqlText(SQL.get(a.sql)) : null]]), "なし");
+}
+
+// --- routine / SQL file detail -----------------------------------------------------------------------------
+function tablesOf(s) { return [s.writes.map(t => [h("span", {class: "chip"}, "書"), tableLink(t), " "]), s.reads.map(t => [h("span", {class: "chip"}, "読"), tableLink(t), " "]),
+  s.visible ? null : h("span", {class: "chip warn"}, "見えていない: " + s.reason)]; }
+function sqlGrid(list) { return grid([{label: "行", num: true}, "種類", {label: "テーブル", wrap: true}, "ロック", {label: "SQL", wrap: true}],
+  list.map(s => [s.line ?? "?", h("span", {class: "chip"}, s.kind), tablesOf(s), s.lock ? h("span", {class: "chip warn"}, s.lock) : "", sqlText(s)]), "SQL なし"); }
+function routineDetail(id) {
+  const r = ROUTINES.get(id);
+  if (!r) return [h("h2", {}, id), h("div", {class: "empty"}, "この routine は解析結果にありません")];
+  const verdict = r.verdict ? h("span", {class: "chip" + (r.verdict === "REDESIGN" ? " alert" : r.verdict === "REVIEW" ? " warn" : "")}, r.verdict) : absent("判定なし");
+  return [h("div", {class: "crumbs"}, h("a", {href: "#/"}, "テーブル"), " / routine / ", id), h("h2", {class: "mono"}, id, " ", verdict),
+    h("div", {class: "source"}, `${r.kind}・${r.file}:${r.line ?? "?"}–${r.endLine ?? "?"}`, r.spec ? [" ・ ", h("a", {href: r.spec}, "仕様書（plsql-spec）")] : null),
+    r.reasons.length ? h("details", {}, h("summary", {}, "判定の理由"), h("ul", {class: "plain"}, r.reasons.map(x => h("li", {}, typeof x === "string" ? x : JSON.stringify(x))))) : null,
+    ...section("SQL", sqlGrid(r.sql.map(x => SQL.get(x)))),
+    ...section("呼び出す routine", r.calls.length || r.external.length ? h("div", {}, r.calls.map(c => [routineLink(c), " "]), r.external.map(c => h("span", {class: "chip"}, c + "（外部）"))) : absent("なし")),
+    ...section("呼ばれる routine", r.calledBy.length ? h("div", {}, r.calledBy.map(c => [routineLink(c), " "])) : absent("なし（原文の中では）"))];
+}
+function fileDetail(file) {
+  const list = FILES.get(file);
+  if (!list) return [h("h2", {}, file), h("div", {class: "empty"}, "この SQL ファイルは渡されていません")];
+  return [h("div", {class: "crumbs"}, h("a", {href: "#/"}, "テーブル"), " / SQL ファイル / ", file), h("h2", {class: "mono"}, file), ...section(`SQL（${list.length}）`, sqlGrid(list))];
+}
+
+// --- search, routing ---------------------------------------------------------------------------------------
+const INDEX = DATA.tables.map(t => ({name: t.name, kind: t.kind === "view" ? "view" : "テーブル", href: "#/table/" + encodeURIComponent(t.name)}))
+  .concat(DATA.routines.map(r => ({name: r.id, kind: "routine" + (r.verdict ? " " + r.verdict : ""), href: "#/routine/" + encodeURIComponent(r.id)})))
+  .concat([...FILES.keys()].map(f => ({name: f, kind: "SQL ファイル", href: "#/file/" + encodeURIComponent(f)})));
+function search(text) {
+  const box = document.getElementById("results"); box.replaceChildren();
+  if (!text.trim()) { box.hidden = true; return; }
+  const hits = INDEX.filter(x => x.name.toLowerCase().includes(text.trim().toLowerCase())).slice(0, 40);
+  box.append(...(hits.length ? hits.map(x => h("a", {href: x.href, onclick: () => { box.hidden = true; document.getElementById("search").value = ""; }}, h("span", {class: "mono"}, x.name), h("span", {class: "kind"}, x.kind)))
+    : [h("div", {class: "absent", id: "search-empty"}, "該当なし")]));
+  box.hidden = false;
+}
+function render() {
+  const [, view, arg] = location.hash.split("/"), name = arg ? decodeURIComponent(arg) : "";
+  const body = view === "table" ? tableDetail(name) : view === "routine" ? routineDetail(name) : view === "file" ? fileDetail(name) : tableList();
+  const main = document.getElementById("main");
+  main.replaceChildren(...body.flat(Infinity).filter(Boolean), h("div", {class: "notes"}, h("ul", {class: "plain"}, DATA.notes.map(n => h("li", {}, n)))));
+  document.title = (name ? name + " — " : "") + "Migration Explorer";
+}
+document.getElementById("search").addEventListener("input", e => search(e.target.value));
+document.addEventListener("keydown", e => { if (e.key === "Escape") document.getElementById("results").hidden = true; });
+window.addEventListener("hashchange", () => { render(); window.scrollTo(0, 0); });
+banners(); render();
+</script>
+</body>
+</html>
