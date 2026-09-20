@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import pathlib
 import re
 import shutil
@@ -177,6 +178,67 @@ def test_a_change_after_the_approval_closes_the_gate(work, capsys):
     assert run("gate", work) == 0
 
 
+def test_the_source_is_part_of_what_was_approved(work, tmp_path):
+    src = tmp_path / "src"
+    shutil.copytree(PROJECT / "src", src)
+    assert run("init", work, "--kind", "plsql", "--src", str(src), "--limits", str(tmp_path / "limits.yaml"),
+               "--evidence", str(DOCS_EXAMPLE / "evidence.json")) == 0
+    for stage in flow.STAGES:
+        finish(work, stage)
+        assert approve(work, stage) == 0
+    assert run("gate", work) == 0
+    with (src / "create_order.prc").open("a", encoding="utf-8") as f:
+        f.write("-- 承認のあとで原文が変わった\n")
+    assert run("gate", work) == 1
+    assert flow.stage_state(flow.load(work), work, "spec")[0] == "承認が古い"
+
+
+def test_the_test_result_survives_putting_it_into_the_documents(tmp_path):
+    """SKILL.md Step 4 の順: evidence なしで承認 → テスト → 比較の結果を文書に入れる → `converted` を取り直す。"""
+    out, limits = tmp_path / "shop", tmp_path / "limits.yaml"
+    shutil.copy(PROJECT / "limits.yaml", limits)
+    common = [str(PROJECT / "src"), "--scalardb-schema", str(PROJECT / "scalardb-schema.json"), "--limits", str(limits)]
+    assert analyse([str(PROJECT / "src"), "--out-dir", str(out / "spec-analysis"), "--quiet"]) in (0, 1)
+    assert generate([*common, "--out-dir", str(out / "generated"), "--quiet", "--no-verify-compile"]) == 0
+    assert analyse([*common, "--out-dir", str(out / "generated" / "analysis"), "--quiet"]) in (0, 1)
+    assert run("init", out, "--kind", "plsql", "--src", str(PROJECT / "src"), "--limits", str(limits)) == 0
+    finish(out, "spec")
+    finish(out, "converted")
+    doc = ["--src", str(PROJECT / "src"), "--generated", str(out / "generated"), "--analysis", str(out / "generated" / "analysis"),
+           "--limits", str(limits), "--out-dir", str(out / "docs")]
+    assert migration_doc.main(["facts", *doc]) == 0   # the example was written with evidence; this is the page before the test
+    for stage in flow.STAGES:
+        assert approve(out, stage) == 0
+    evidence = DOCS_EXAMPLE / "evidence.json"
+    assert run("tested", out, "--result", "pass", "--report", str(evidence)) == 0
+    assert flow.load(out)["inputs"]["evidence"] == str(evidence.resolve())
+
+    assert migration_doc.main(["facts", *doc, "--evidence", str(evidence)]) == 0
+    assert flow.stage_state(flow.load(out), out, "converted")[0] == "承認が古い"
+    assert approve(out, "converted") == 0, "the check reads the same evidence the pages were made from"
+    test = flow.load(out)["test"]
+    assert test["結果"] == "pass" and test["テストのあとで取り直した承認"] == ["converted（2026-09-20）"]
+    assert test["承認の指紋"]["converted"] == flow.load(out)["approvals"]["converted"]["指紋"]
+    assert run("gate", out) == 0
+
+    assert approve(out, "decisions") == 0
+    assert flow.load(out)["test"] is None, "what was tested is what `decisions` approves; approving it again is a new subject"
+
+
+def test_a_redesign_is_open_until_limits_answer_it(work, tmp_path):
+    state = flow.load(work)
+    assert flow.open_items(state, work) == [], "create_order is REDESIGN, and rowLocks.optimistic answers LOCK-001"
+
+    decisions = work / "generated" / "analysis" / "decisions.json"
+    data = json.loads(decisions.read_text(encoding="utf-8"))
+    data["routines"][0]["redesign"]["open"] = ["LOCK-001"]
+    decisions.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    assert flow.open_items(state, work) == ["REDESIGN: create_order（limits.yaml に答えの無いルール: LOCK-001）"]
+
+    decisions.unlink()
+    assert "決めたかどうかが分からない" in flow.open_items(state, work)[0]
+
+
 def test_init_again_keeps_the_approvals(work):
     finish(work, "spec")
     approve(work, "spec")
@@ -201,7 +263,27 @@ def test_a_sql_migration_needs_pictures_and_a_record_of_what_did_not_convert(tmp
     (out / "converted").mkdir()
     (out / "converted" / "in.report.json").write_text('{"results": [{"index": 1, "status": "ERROR"}]}', encoding="utf-8")
     assert approve(out, "decisions") == 1
-    assert "変換できなかった文が 1" in capsys.readouterr().out
+    assert "SQL-1" in capsys.readouterr().out
+
+
+def test_naming_a_record_is_not_a_record_of_what_did_not_convert(tmp_path, capsys):
+    # SKILL.md は「まだ無いファイルも渡しておく」と言う。渡してあるだけで通ると、ERROR の文は誰も決めないまま承認される
+    out, sql, record = tmp_path / "sql", tmp_path / "in.sql", tmp_path / "record.yaml"
+    sql.write_text("SELECT 1 FROM dual;\n", encoding="utf-8")
+    assert run("init", out, "--kind", "sql", "--src", str(sql), "--record", str(record)) == 0
+    (out / "spec").mkdir()
+    (out / "spec" / "README.md").write_text("# 現行の仕様\n\n```mermaid\nflowchart LR\n  a --> b\n```\n", encoding="utf-8")
+    assert approve(out, "spec") == 0
+    (out / "converted").mkdir()
+    (out / "converted" / "in.report.json").write_text(
+        '{"results": [{"index": 1, "status": "OK"}, {"index": 2, "status": "ERROR"}]}', encoding="utf-8")
+    assert approve(out, "decisions") == 1 and "SQL-2" in capsys.readouterr().out
+
+    record.write_text("items:\n  SQL-2:\n    状態: 決定\n    決定: アプリへ移す\n    決めた人: 開発\n    日付: 2026-09-20\n", encoding="utf-8")
+    assert approve(out, "decisions") == 0
+
+    record.write_text("items:\n  SQL-2: アプリへ移す\n", encoding="utf-8")
+    assert run("status", out) == 2, "a record that is not item -> fields is an input error, not a traceback"
 
 
 # --- the pictures ------------------------------------------------------------------------------------------------

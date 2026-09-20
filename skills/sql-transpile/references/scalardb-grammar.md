@@ -133,6 +133,41 @@ ScalarDB の型は 11 種（`BOOLEAN` / `INT` / `BIGINT` / `FLOAT` / `DOUBLE` / 
 
 ---
 
+## 変換の指摘コード
+
+レポートの「指摘」に出るコードのうち、上の節で名前を挙げていないもの。重要度が 2 つあるコードは、場合で変わる。
+
+| コード | 重要度 | 意味 |
+|---|---|---|
+| `ACCESS` | INFO | アクセスパスの判定の結果（主キーがそろえば GET、パーティションキーがそろえばパーティション SCAN） |
+| `CROSS_PARTITION` / `NO_CROSS_PARTITION` | WARN / ERROR | パーティションをまたぐ走査になる。JDBC のバックエンドでは設定を有効にすれば動く（WARN）。`--storage cassandra` などでは使わないので ERROR——キーで取得してアプリで処理する |
+| `OR_KEYS` / `ORDER_STORAGE` | ERROR | JDBC 以外のバックエンドで、キー列の OR / IN が全パーティションの走査になる、または ORDER BY が順序つきのクロスパーティション走査を要る。キーごとに取得する / アプリで並べる |
+| `NO_WHERE` | WARN | WHERE の無い UPDATE / DELETE。全パーティションに及ぶ |
+| `SCHEMA` | INFO | 表の定義が分からず（`--schema` も `CREATE TABLE` も無い）、アクセスパスと結合のキーを調べていない |
+| `KEYS` | INFO / ERROR | 主キーの先頭列をパーティションキーに、残りをクラスタリングキーにした（INFO。変えるなら `--keys`）。`--keys` が無い列を指している（ERROR） |
+| `PK` / `PK_UPDATE` | ERROR | 主キーの無い表、主キーをすべて指定していない INSERT。主キーの列は UPDATE できない（DELETE して INSERT する） |
+| `RESERVED_COLUMN` | ERROR | ScalarDB がトランザクションのメタデータに使う列名（`tx_id`、`before_` で始まる列など）。移行元で改名する |
+| `TYPE` / `ALTER_TYPE` | INFO / WARN / ERROR | 型の対応の結果（「型の対応」の節）。`ALTER_TYPE` は、型の変更が下のデータベース次第であること |
+| `NOT_NULL` / `COL_OPT` / `CONSTRAINT` / `FK` / `TABLE_OPTS` | INFO / WARN | 落とした列の制約・表の制約・外部キー・表のオプション（「制約と主キー」の節）。アプリで守る |
+| `NAMESPACE` | WARN | `catalog.schema.table` の catalog を落とし、schema を namespace にした |
+| `ALTER` / `DROP_INDEX` | INFO / ERROR | 複数の操作の ALTER TABLE を 1 操作ずつに割った（INFO。原子的でなくなる）。対応しない操作、表と列を名指ししない DROP INDEX（ERROR） |
+| `TEMP` / `SAVEPOINT` / `STATEMENT` / `UNPARSED` | ERROR | 一時表、SAVEPOINT、ScalarDB SQL に無い文、SQLGlot が文として解析しなかったもの（ビュー、トリガー、シーケンス、GRANT、セッションの設定） |
+| `PLSQL_BLOCK` | ERROR | PL/SQL のブロック（ストアドプログラムか無名ブロック）。SQL 文ではない。plsql-migrate スキルで移行する |
+| `RMW` | ERROR | `SET col = col + 1` のように列を参照する SET。1 つのトランザクションの中で SELECT → 計算 → リテラルで UPDATE |
+| `EXPR` / `COL_COL` | ERROR | 値にリテラルとバインド変数以外の式がある / 列どうしの比較 |
+| `NORMAL_FORM` | INFO / ERROR | WHERE を DNF / CNF に書き換えた（INFO）。書き換えられなかった（ERROR） |
+| `AGG_DISTINCT` / `CLAUSE` | ERROR | `COUNT(DISTINCT …)`、`TABLESAMPLE` や表に付く対応外の句 |
+| `INSERT_SELECT` / `INSERT_IGNORE` / `DO_NOTHING` / `DELETE_JOIN` | ERROR | `INSERT … SELECT`、`INSERT IGNORE`、`ON CONFLICT DO NOTHING`、`DELETE … USING / JOIN`。アプリで読んでから書く |
+| `INSERT_COLS` | WARN | 列リストの無い INSERT。ScalarDB は表の定義の順で受けるので、列リストを書く |
+| `COMMA_JOIN` / `JOIN_ORDER` | WARN / INFO | カンマ結合を INNER JOIN に書き換えた。WHERE が FROM の表を指すように、FROM と JOIN の表を入れ替えた（INNER JOIN なので結果は同じ） |
+| `JOIN_ON` / `JOIN_SCOPE` / `JOIN_KEY` | ERROR / ERROR / WARN | 結合条件が `列 = 列` の AND でない。WHERE / ORDER BY が結合先の表の列を指している。結合が相手の主キー全体も副次索引も覆っていない（ScalarDB が断る） |
+| `LOCK` | WARN | `FOR UPDATE` などのロック句を落とした。行ロックに頼っていた処理は、commit 時の衝突と再試行に変わる |
+| `NULLS` / `MODIFIER` | WARN / INFO | ORDER BY の `NULLS FIRST / LAST` を落とした。MySQL の修飾子（`SQL_CALC_FOUND_ROWS` は WARN、サーバーへの助言だけのものは INFO）を落とした |
+| `DATE_LIT` / `DATE_FMT` / `BOOL_LIT` | INFO / WARN / ERROR | 日付・時刻のリテラルと `TO_DATE` などを ScalarDB のリテラルに書き換えた。書式が定数でない・書き換えられないものは ERROR（アプリで変換してバインドする）。TRUE / FALSE を数値の列に 1 / 0 で書いた |
+| `BIND_ORDER` | WARN | 書き換えで位置バインド `?` の順か数が変わった。メッセージの対応どおりにバインドし直す |
+| `PLAN_FETCH` / `PLAN_RESIDUAL` | INFO | 実行計画（`--plan-dir`）: ScalarDB からの取得 1 つずつと、H2 で元の SQL を実行すること |
+| `PLAN_CROSS_PARTITION` / `PLAN_UNRESOLVED` | WARN | 計画の取得にクロスパーティション走査が要る。計画の中に、表か列を解決できなかった所がある |
+
 ## アプリ側に移す処理の指摘コード
 
 ERROR の読み取り文には、文全体（CTE の本体、サブクエリを含む）を調べた結果が付く。

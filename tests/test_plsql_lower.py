@@ -58,6 +58,31 @@ def test_an_if_keeps_its_branches_and_else():
     assert node.else_body and node.else_body[0].kind == "Assignment"
 
 
+def test_a_case_statement_keeps_its_selector_branches_and_else():
+    # the grammar names these `case_when_part_statement` / `case_else_part_statement`, inside a simple or a
+    # searched case. Looking for any other name found nothing, and the whole body of the CASE was dropped
+    routine = lower_text(
+        "CREATE OR REPLACE PROCEDURE p(m VARCHAR2) IS\n  v NUMBER;\nBEGIN\n"
+        "  CASE m\n    WHEN 'A' THEN v := 1;\n    WHEN 'B' THEN v := 2; v := 3;\n"
+        "    ELSE RAISE_APPLICATION_ERROR(-20077, 'bad');\n  END CASE;\nEND;\n/\n")
+    node = routine.body[0]
+    assert node.kind == "Case" and node.selector == "m"
+    assert [b.condition for b in node.branches] == ["'A'", "'B'"]
+    assert [len(b.body) for b in node.branches] == [1, 2]
+    assert node.else_body[0].kind == "Raise" and node.else_body[0].error_code == -20077
+    assert not node.diagnostics
+
+
+def test_a_searched_case_has_conditions_and_no_selector():
+    routine = lower_text(
+        "CREATE OR REPLACE PROCEDURE p(n NUMBER) IS\n  v NUMBER;\nBEGIN\n"
+        "  CASE\n    WHEN n > 10 THEN v := 1;\n    WHEN n > 0 THEN v := 2;\n  END CASE;\nEND;\n/\n")
+    node = routine.body[0]
+    assert node.kind == "Case" and node.selector is None
+    assert [b.condition for b in node.branches] == ["n > 10", "n > 0"]
+    assert kinds(routine) == ["Case", "Assignment", "Assignment"] and not node.else_body
+
+
 def test_raise_application_error_keeps_its_code_and_message():
     routine = lower_text(
         "CREATE OR REPLACE PROCEDURE p IS\nBEGIN\n  RAISE_APPLICATION_ERROR(-20010, 'nope');\nEND;\n/\n")

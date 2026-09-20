@@ -85,6 +85,49 @@ def test_only_what_the_source_says_is_a_fact(corpus):
     assert not facts["pkg_bulk_load.collect_open_orders"].raises, "the row-limit check belongs to the migration"
 
 
+CASE_SOURCE = """CREATE OR REPLACE PROCEDURE p_case(p_id IN NUMBER, p_mode IN VARCHAR2) AS
+BEGIN
+  CASE p_mode
+    WHEN 'A' THEN
+      UPDATE orders SET status = 'DONE' WHERE order_id = p_id;
+    ELSE
+      RAISE_APPLICATION_ERROR(-20077, 'bad mode');
+  END CASE;
+END;
+/
+"""
+
+
+def test_what_sits_inside_a_case_statement_is_a_fact_without_a_scalardb_schema(tmp_path):
+    # 2 つのことを留める: CASE の分岐の中も辿ること。ScalarDB の schema を渡さない解析（このスキルの使い方）でも、
+    # 読み書きする表が IR に入っていること
+    src = tmp_path / "case" / "src"
+    src.mkdir(parents=True)
+    (src / "p_case.prc").write_text(CASE_SOURCE, encoding="utf-8")
+    assert analyse([str(src), "--out-dir", str(tmp_path / "analysis"), "--quiet"]) in (0, 1)
+    _, facts, _ = facts_script.load(tmp_path / "analysis")
+    f = facts["p_case"]
+    assert [(op["kind"], op["writes"], op["when"]) for op in f.sql] == [("UPDATE", ["orders"], "WHEN p_mode = 'A'")]
+    assert f.error_codes == [-20077] and f.raises[0]["when"] == "ELSE"
+    picture = "\n".join(facts_script.flow_diagram(f.node, f.file))
+    assert "UPDATE orders" in picture and "エラー -20077" in picture and "p_mode = 'A'" in picture
+
+
+def test_an_exit_leaves_the_loop_in_the_picture(tmp_path):
+    src = tmp_path / "loop" / "src"
+    src.mkdir(parents=True)
+    (src / "p_loop.prc").write_text(
+        "CREATE OR REPLACE PROCEDURE p_loop(p_max IN NUMBER) AS\n  v NUMBER := 0;\nBEGIN\n  LOOP\n    v := v + 1;\n"
+        "    EXIT WHEN v > p_max;\n  END LOOP;\n  v := 0;\nEND;\n/\n", encoding="utf-8")
+    assert analyse([str(src), "--out-dir", str(tmp_path / "analysis"), "--quiet"]) in (0, 1)
+    _, facts, _ = facts_script.load(tmp_path / "analysis")
+    lines = facts_script.flow_diagram(facts["p_loop"].node, "p_loop.prc")
+    leave = next(line.split("{")[0].strip() for line in lines if "EXIT WHEN v #gt; p_max" in line)
+    after = next(line.split("[")[0].strip() for line in lines if "L8: v := 0" in line)
+    assert f'  {leave} -->|"はい"| {after}' in lines, "the EXIT is the way out of a LOOP that has no condition of its own"
+    assert not any("終わり" in line for line in lines)
+
+
 def test_what_a_test_has_to_pin_is_listed(external):
     _, facts, _ = facts_script.load(external)
     assert [a["name"] for a in facts["create_order"].ambient] == ["ORDER_SEQ.NEXTVAL", "SYSDATE", "SYSTIMESTAMP"]

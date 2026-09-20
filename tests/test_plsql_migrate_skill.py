@@ -233,6 +233,7 @@ def test_set_records_what_the_decision_was_about(generated, tmp_path):
 
 @pytest.mark.parametrize("text,said", [
     ("items:\n  FOO-1: {状態: 未決}\n", "項目 ID"),
+    ("items:\n  OPS-1x: {状態: 未決}\n", "項目 ID"),   # 先頭だけ ID の形。以前は通って、書き込みの並べ替えで落ちた
     ("- just\n- a list\n", "最上位"),
     ("items:\n  OPS-1: 決定\n", "名前: 値"),
     ("items: [unclosed\n", "YAML として読めない"),
