@@ -54,23 +54,20 @@ export SRC_ORACLE_USER=shop SRC_ORACLE_PASSWORD=shop        # 先に SYSTEM で�
 python difftest/plsql_run.py deploy --project $P
 python difftest/plsql_run.py run --project $P               # -> $P/golden
 
-# ScalarDB 側: namespace を読み込み、setup を変換し、生成して、capture を取る
+# ScalarDB 側: namespace を読み込み、生成して、setup を変換し、capture を取る
 cp $P/scalardb-schema.json difftest/work/shop-schema.json   # loader のコンテナから見える場所
-(cd difftest && docker compose --profile cluster --profile tools run --rm schema-loader \
+(cd difftest && docker compose --profile tools --profile oracle --profile cassandra --profile cluster run --rm schema-loader \
     --config /conf/scalardb-in-docker.properties --schema-file /work/shop-schema.json --coordinator)
-python difftest/plsql_setup.py --project $P --variant double
-python -m plsql.generate $P/src --schema $P/src/schema.sql --scalardb-schema $P/scalardb-schema.json \
-    --limits $P/limits.yaml --out-dir $P/work/generated
-(cd runtime-java && SCALARDB_IT=1 ./gradlew test --rerun -Dplsql.generated=1 -Dplsql.variant=double \
-    -Dplsql.project=$PWD/../$P -Dplsql.namespace=shop \
-    -Pplsql.generatedDir=$PWD/../$P/work/generated -Pplsql.buildDir=$PWD/../$P/work/build \
-    --tests '*ScalarDbCaptureIT*')
+python difftest/plsql_capture.py --project $P --namespace shop --variant double
 
 python difftest/plsql_compare.py --project $P --variant double --json $P/work/plsql-diff.json
 ```
 
-`SCALARDB_IT=1` を忘れると capture のテストは**黙って skip され、build は成功する**。`-Dplsql.project` を渡すと、
-corpus のクラスを名指ししているテスト（`TransactionIT` など）は compile から外れる。
+`plsql_capture.py --project` は、プロジェクトの `limits.yaml` で生成し（`work/generated`）、setup を変換し、生成した Java を Cluster で流し
+（`SCALARDB_IT=1`、`-Dplsql.project`・`-Dplsql.namespace`・`-Pplsql.generatedDir`・`-Pplsql.buildDir` つきの `ScalarDbCaptureIT`）、最後に
+**何を測ったかの指紋**（`work/plsql-scalardb-<variant>/fingerprint.json`）を書く。指紋が無い比較は `plsql.cli --evidence` が「古い証拠」として
+数えないので、Gradle を手で回しただけでは routine は AUTO にならない（2026-09-20 に `samples/tutorial` で見つけて直した）。
+Schema Loader は、compose のすべての backend の profile を付けないと `invalid compose project` で止まる。
 
 ## create_order（2026-09-20）
 

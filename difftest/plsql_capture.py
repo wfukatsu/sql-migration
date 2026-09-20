@@ -50,7 +50,13 @@ def main(argv=None) -> int:
     ap.add_argument("--variant", choices=["scaled", "double"], required=True)
     ap.add_argument("--print-schema-command", action="store_true",
                     help="print the Schema Loader command for this variant and stop")
+    ap.add_argument("--project", help="a project outside the corpus (fixtures/plsql-external/README.md): its src/, "
+                                      "scalardb-schema.json, limits.yaml and scenarios/ are used, and everything "
+                                      "is written under <project>/work/")
+    ap.add_argument("--namespace", help="with --project: the ScalarDB namespace of its scalardb-schema.json")
     args = ap.parse_args(argv)
+    if args.project:
+        return capture_project(Path(args.project).resolve(), args.variant, args.namespace)
 
     schema = schema_for(args.variant)
     if args.print_schema_command:
@@ -89,7 +95,34 @@ def main(argv=None) -> int:
     return 0
 
 
-def _record_fingerprint(variant: str) -> None:
+def capture_project(project: Path, variant: str, namespace: str | None) -> int:
+    """The corpus's capture, pointed at a project: generate with the project's decisions, convert its setups, run
+    the generated Java on the cluster, and say what the captures are captures of. Without the last step the
+    comparison carries no fingerprint and `plsql.cli --evidence` reads it as stale -- a routine from outside the
+    corpus could be compared but never credited (samples/tutorial, 2026-09-20)."""
+    if not namespace:
+        raise SystemExit("--project needs --namespace (the namespace in the project's scalardb-schema.json)")
+    work = project / "work"
+    generate = [sys.executable, "-m", "plsql.generate", str(project / "src"), "--schema", str(project / "src" / "schema.sql"),
+                "--scalardb-schema", str(project / "scalardb-schema.json"), "--out-dir", str(work / "generated")]
+    if (project / "limits.yaml").is_file():
+        generate += ["--limits", str(project / "limits.yaml")]
+    run(generate, allow_failure=True)
+    run([sys.executable, str(ROOT / "difftest" / "plsql_setup.py"), "--project", str(project), "--variant", variant])
+    captures = work / f"plsql-scalardb-{variant}"
+    for stale in captures.glob("*.json") if captures.is_dir() else []:
+        stale.unlink()
+    wrapper = ROOT / "runtime-java" / "gradlew"
+    run([str(wrapper) if wrapper.exists() else "gradle", "test", "--rerun", "-Dplsql.generated=1",
+         f"-Dplsql.variant={variant}", f"-Dplsql.project={project}", f"-Dplsql.namespace={namespace}",
+         f"-Pplsql.generatedDir={work / 'generated'}", f"-Pplsql.buildDir={work / 'build'}",
+         "--tests", "*ScalarDbCaptureIT*"], cwd=ROOT / "runtime-java",
+        env={**__import__("os").environ, "SCALARDB_IT": "1"})
+    _record_fingerprint(variant, source=project / "src", captures=captures)
+    return 0
+
+
+def _record_fingerprint(variant: str, source: Path | None = None, captures: Path | None = None) -> None:
     """Say what these captures are captures *of* (plsql/fingerprint.py): the source of each routine and the
     toolchain that generated and ran it. `plsql_compare.py` carries it into the report, and `plsql.cli` only
     believes a report whose fingerprint matches what it is judging. Written after the run, so a capture that
@@ -101,11 +134,12 @@ def _record_fingerprint(variant: str) -> None:
     from plsql import fingerprint
     from plsql.report import analyse
 
-    captures = WORK / f"plsql-scalardb-{variant}"
+    source = source or FIXTURES / "src"
+    captures = captures or WORK / f"plsql-scalardb-{variant}"
     captures.mkdir(parents=True, exist_ok=True)
-    program = analyse(FIXTURES / "src").program
+    program = analyse(source).program
     (captures / "fingerprint.json").write_text(
-        json.dumps(fingerprint.of(program, FIXTURES / "src"), indent=1) + "\n", encoding="utf-8")
+        json.dumps(fingerprint.of(program, source), indent=1) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

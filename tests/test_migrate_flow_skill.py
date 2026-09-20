@@ -156,6 +156,21 @@ def test_a_routine_left_in_review_is_an_open_judgment():
     assert flow.open_items(state, out) == []
 
 
+def test_a_review_that_only_waited_for_evidence_closes_once_the_analysis_credits_it(tmp_path):
+    """`plsql.generate` does not see the evidence, so its report keeps saying REVIEW ("nobody compared it with Oracle").
+    After the test, the analysis rebuilt with `--evidence` says AUTO; that routine is no longer somebody's open
+    judgment. One the analysis still calls REVIEW stays open (samples/tutorial, 2026-09-20)."""
+    generated = tmp_path / "generated"
+    (generated / "analysis").mkdir(parents=True)
+    (generated / "generation-report.json").write_text(json.dumps({"verdicts": {
+        "pkg.a": {"verdict": "REVIEW"}, "pkg.b": {"verdict": "REVIEW"}, "pkg.c": {"verdict": "AUTO"}}}), encoding="utf-8")
+    state = {"inputs": {"kind": "plsql"}}
+    assert flow.open_items(state, tmp_path) == ["REVIEW: pkg.a", "REVIEW: pkg.b"]
+    (generated / "analysis" / "decisions.json").write_text(json.dumps({"routines": [
+        {"routine": "pkg.a", "verdict": "AUTO"}, {"routine": "pkg.b", "verdict": "REVIEW"}]}), encoding="utf-8")
+    assert flow.open_items(state, tmp_path) == ["REVIEW: pkg.b"]
+
+
 # --- an approval is of the content ---------------------------------------------------------------------------
 
 

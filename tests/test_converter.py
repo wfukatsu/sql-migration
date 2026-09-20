@@ -166,9 +166,14 @@ def test_comma_join_rewritten():
 
 
 def test_join_using_rewritten_and_key_coverage_checked():
+    r = run("SELECT o.order_no FROM orders o JOIN customers c USING (customer_id)")
+    assert "ON o.customer_id = c.customer_id" in r.converted[0]
+    assert "JOIN_KEY" not in codes(r)  # customers PK is (customer_id): covered
+
+    # orders PK is (customer_id, order_no): not covered. The cluster rejects such a join (DB-SQL-10067, seen with
+    # samples/tutorial/sql/points-check.sql), so it is an ERROR -- which sends the statement to a plan (P8) -- not a WARN
     r = run("SELECT c.name FROM customers c JOIN orders o USING (customer_id)")
-    assert "ON c.customer_id = o.customer_id" in r.converted[0]
-    assert "JOIN_KEY" in codes(r)  # orders PK is (customer_id, order_no): not covered
+    assert r.status == "ERROR" and "JOIN_KEY" in codes(r)
 
 
 # --- #13: an inner join written the other way round ----------------------------------------------------
@@ -230,7 +235,8 @@ def test_a_join_that_already_names_the_from_table_is_left_alone():
     r = join_run("SELECT c.tier FROM customers c JOIN orders2 o ON o.customer_id = c.customer_id "
                  "WHERE c.customer_id = 1")
     assert "JOIN_ORDER" not in codes(r)
-    assert r.converted[0].startswith("SELECT c.tier FROM customers AS c")
+    # not swapped -- and as written the join does not reach orders2 by its key, which the cluster refuses
+    assert r.status == "ERROR" and "JOIN_KEY" in codes(r) and "JOIN_SCOPE" not in codes(r)
 
 
 def test_to_date_literal():
@@ -332,8 +338,8 @@ def test_rollup_grouping_sets_and_rowid_are_errors():
 
 
 def test_using_column_is_qualified_with_from_table():
-    r = run("SELECT name FROM customers c JOIN orders o USING (customer_id) WHERE customer_id = 1")
-    assert "WHERE c.customer_id = 1" in r.converted[0]
+    r = run("SELECT order_no FROM orders o JOIN customers c USING (customer_id) WHERE customer_id = 1")
+    assert "WHERE o.customer_id = 1" in r.converted[0]
 
 
 def test_timestamp_literal_against_date_column_is_trimmed():

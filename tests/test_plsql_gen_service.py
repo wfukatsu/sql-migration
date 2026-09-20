@@ -465,3 +465,28 @@ def test_an_unkeyed_select_into_reads_two_rows_and_no_further(tmp_path):
     assert 'SELECT status FROM orders WHERE order_id = :p_order_id"' in text, "the key lookup is left alone"
     assert "LIMIT 1" not in text
     assert text.count("TooManyRowsException(") >= 2, "the second row still raises"
+
+
+# --- a call to a sibling hands its NUMBER parameters a BigDecimal (samples/tutorial, 2026-09-20) --------
+
+SIBLING_CALL = """CREATE OR REPLACE PACKAGE BODY pkg_s AS
+  FUNCTION label_of(p_amount IN NUMBER, p_name IN VARCHAR2) RETURN VARCHAR2 IS
+  BEGIN
+    RETURN p_name;
+  END label_of;
+
+  PROCEDURE run(p_name IN VARCHAR2) IS
+    v_count PLS_INTEGER := 3;
+    v_label VARCHAR2(10);
+  BEGIN
+    v_label := label_of(v_count, p_name);
+  END run;
+END pkg_s;
+"""
+
+
+def test_a_sibling_call_converts_the_argument_of_a_number_parameter():
+    """`label_of` takes BigDecimal; the local is an Integer. Passing it as is was Java that does not compile, in a
+    routine the rules had judged AUTO. The String argument is left alone."""
+    java = _service_of(SIBLING_CALL)
+    assert "labelOf(Plsql.dec(vCount), pName)" in java
