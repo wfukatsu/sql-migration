@@ -38,7 +38,7 @@ from sqlglot.optimizer.annotate_types import annotate_types
 from sqlglot.optimizer.qualify import qualify
 from sqlglot.transforms import eliminate_distinct_on, eliminate_join_marks
 
-from _scalardb.converter import Issue, Result, _bad_join_mark_rewrite, _flatten, _split_statements, _unparen
+from _scalardb.converter import PLSQL_BLOCK, Issue, Result, _bad_join_mark_rewrite, _flatten, _split_statements, _unparen
 
 CATALOG_DIR = Path(__file__).resolve().parent / "catalogs"
 FROM_KEY = "from_" if "from_" in exp.Select.arg_types else "from"
@@ -178,8 +178,10 @@ def _check_source(node: exp.Expression, source: str, target: str, issues: list[I
         for w in node.find_all(exp.Window):
             if str(w.args.get("over") or "").upper() == "KEEP":
                 _add(issues, "ERROR", "KEEP", "Oracle 固有の集約修飾 KEEP。ウィンドウ関数に書き換える")
-        for ident in node.find_all(exp.Identifier):
-            if ident.name.upper().startswith("DBMS_"):
+        # パッケージ名として使われているものだけ（`DBMS_LOB.SUBSTR(…)` の修飾子）。`dbms_notes` という列は呼び出しではない
+        packages = [d.this for d in node.find_all(exp.Dot)] + [c.args.get("table") for c in node.find_all(exp.Column)]
+        for ident in packages:
+            if isinstance(ident, (exp.Identifier, exp.Column)) and ident.name.upper().startswith("DBMS_"):
                 _add(issues, "ERROR", "PLSQL", "PL/SQL パッケージの呼び出し。アプリケーション側の実装に置き換える")
 
     if source == "postgres" and target != "postgres":
@@ -922,6 +924,10 @@ def convert_statement(stmt: str, source: str, target: str, schema: dict | None =
     """1 文を変換する。schema は {表名: {列名: 型}}。型に依存する書き換えに使う。"""
     issues: list[Issue] = []
     src = stmt.strip()
+    if source == "oracle" and PLSQL_BLOCK.match(src):
+        return Result(index=0, source_sql=src, kind="PLSQL_BLOCK", status="ERROR",
+                      issues=[Issue("ERROR", "PLSQL_BLOCK", "PL/SQL のブロック（ストアドプログラムか無名ブロック）。SQL 文ではないので、"
+                                                            "このスキルでは変換しない。plsql-migrate スキルで移行する")])
     try:
         node = sqlglot.parse_one(src, read=source)
     except ParseError as e:
@@ -930,6 +936,10 @@ def convert_statement(stmt: str, source: str, target: str, schema: dict | None =
     if node is None:
         return Result(index=0, source_sql=src, kind="UNKNOWN", status="ERROR",
                       issues=[Issue("ERROR", "PARSE", "空の文として解析された")])
+    if isinstance(node, (exp.Column, exp.Identifier, exp.Literal, exp.Binary, exp.Unary, exp.Func)):
+        # `END` や `x + 1` は式として解析できてしまう。文ではないものを OK にすると、壊れた入力が変換率を上げる
+        return Result(index=0, source_sql=src, kind=type(node).__name__.upper(), status="ERROR",
+                      issues=[Issue("ERROR", "PARSE", "SQL の文ではなく、式として解析された（文の切れ目がずれているか、PL/SQL の断片）")])
     kind = type(node).__name__.upper()
 
     converted: list[str] = []
