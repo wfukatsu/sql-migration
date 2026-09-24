@@ -7,6 +7,9 @@
 # origin   : real-anonymized | synthetic   -- 現時点は全件 synthetic（計画 §9 の決定、2026-09-17）
 # holdout  : true のユニットは、grammar のパッチ作成とルール作成では参照しない。
 #            判定適合率はまず holdout 上の値を根拠にする
+# independent : holdout のユニットが、いまも独立した証拠か。省略すると holdout と同じ値。
+#            ルール作成中に開いてしまった holdout は false にする（経緯は README.md）。期待判定は変えない。
+#            `python -m plsql.kpi` は、判定一致を「独立した holdout / 参照済みの holdout / 開発用」に分けて出す
 # expected : AUTO | REVIEW | REDESIGN      -- 設計書 §6 の移行方針に対応する
 # reason   : なぜその判定なのかを 1 行で。ルールを書く側が根拠を読めるようにするためのもの
 
@@ -190,6 +193,7 @@ units:
     categories: [select-into-exception, datatype-edge]
     origin: synthetic
     holdout: true
+    independent: false   # P2-2 / P2-4 でルール作成中に参照した（README.md）
     routines:
       # 2026-09-20: 以前の期待値は REVIEW（集約は 0 件でも 1 行返る。NO_DATA_FOUND にならず NULL になる差を保つ）。REVIEW は移行の可否が未解決のときだけ、と決めた
       - {name: paid_total,   expected: AUTO,   reason: "集約の SELECT INTO。ScalarDB がそのまま実行し、0 件でも 1 行返ることを実 DB で確かめてある"}
@@ -204,6 +208,7 @@ units:
     categories: [cursor-loop, commit-in-routine]
     origin: synthetic
     holdout: true
+    independent: false   # P2-2 / P2-4 でルール作成中に参照した（README.md）
     routines:
       - {name: prc_reprice_all, expected: REDESIGN, reason: "明示 cursor で回しながら 50 件ごとに COMMIT する。Tx 境界の再設計が要る"}
 
@@ -212,6 +217,7 @@ units:
     categories: [bulk, dynamic-sql]
     origin: synthetic
     holdout: true
+    independent: false   # P2-2 / P2-4 でルール作成中に参照した（README.md）
     routines:
       - {name: import,            expected: REVIEW,   reason: "FORALL の中の MERGE。upsert の原子性と競合条件を確認する"}
       - {name: truncate_staging,  expected: REDESIGN, reason: "表名が実行時に決まる TRUNCATE。ScalarDB に TRUNCATE が無い点も含めて再設計"}
@@ -221,6 +227,7 @@ units:
     categories: [trigger-dblink]
     origin: synthetic
     holdout: true
+    independent: false   # P2-2 / P2-4 でルール作成中に参照した（README.md）
     routines:
       - {name: trg_products_audit, expected: REDESIGN, reason: "検証と監査を兼ねる trigger。全書込経路を Service 側で統制する必要がある"}
 
@@ -229,6 +236,7 @@ units:
     categories: [concurrency-lock, private-call, type-rowtype]
     origin: synthetic
     holdout: true
+    independent: false   # P2-2 / P2-4 でルール作成中に参照した（README.md）
     routines:
       - {name: is_cancellable, expected: AUTO,     reason: "純粋関数。BOOLEAN は PL/SQL 専用型なので Java boolean へ"}
       - {name: snapshot,       expected: AUTO,     reason: "%ROWTYPE の主キーアクセス"}

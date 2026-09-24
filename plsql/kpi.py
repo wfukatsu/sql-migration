@@ -14,8 +14,14 @@ Two of the seven do not come out of an artifact and are reported as such rather 
 * **KPI-4** needs a compiler. This reports whether every AUTO routine was generated cleanly, which is the part
   that can be read off the artifacts, and says plainly that `gradle compileJava` is the other half.
 
-Every number here is measured on the synthetic corpus (plan §9). None of it is evidence about real customer
-code, and the report says so on every run rather than in a footnote somebody can drop.
+Every number is also reported **by where the code came from** (`origin` in the manifest: synthetic, or real code
+that was anonymised) and **by how far its expected verdicts can be trusted** (an independent holdout, a holdout
+somebody has since opened, or the units the rules were developed against). Today every unit is synthetic, and the
+report says "real code: none measured" rather than leaving the row out -- the day real code is added, its numbers
+must not be averaged into the synthetic ones (#15).
+
+None of the synthetic numbers is evidence about real customer code (plan §9), and the report says so on every run
+rather than in a footnote somebody can drop.
 """
 
 from __future__ import annotations
@@ -27,6 +33,7 @@ from pathlib import Path
 
 import yaml
 
+from . import corpus as corpora
 from . import fingerprint, review
 from .analysis import analyse as analyse_program
 from .report import analyse, inventory
@@ -58,17 +65,105 @@ def measure(src: Path, ddl: Path | None, scalardb: Path | None, evidence_path: s
     decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), evidence)
     document = review.decisions_document(analysis.program, decisions, review.FixTimes.load(fix_times))
 
+    kpi4 = _kpi4(analysis, decisions, generated)
+    manifest = _manifest_for(src)
+    real = [u.name for u in manifest.groups("origin")["real-anonymized"]] if manifest else []
     return {
-        "corpus": {"source": str(src), "origin": "synthetic",
-                   "note": "合成 corpus。実案件コードでの達成の証拠ではない（計画 §9）"},
+        "corpus": {"source": str(src), "origin": "mixed" if real else "synthetic",
+                   "note": ("合成と実案件（匿名化）が混ざっている。全体の値は出自別の値の代わりにならない" if real else
+                            "合成 corpus。実案件コードでの達成の証拠ではない（計画 §9）")},
+        "breakdown": _breakdown(manifest, src, analysis, decisions, kpi4, evidence_path, variant, evidence.stale),
         "kpi1": _kpi1(data),
         "kpi2": _kpi2(data),
         "kpi3": _kpi3(decisions),
-        "kpi4": _kpi4(analysis, decisions, generated),
+        "kpi4": kpi4,
         "kpi5": _kpi5(evidence_path, variant, decisions, evidence.stale),
         "kpi6": _kpi6(document),
         "kpi7": _kpi7(src, analysis),
     }
+
+
+def _manifest_for(src: Path) -> "corpora.Corpus | None":
+    """The manifest that describes `src`, if there is one: `<src>/../manifest.yaml`. A project that has none (a
+    customer's tree handed to `--src`) is measured as one group of unknown origin, and the report says so."""
+    path = src.resolve().parent / "manifest.yaml"
+    return corpora.Corpus.load(path) if path.exists() else None
+
+
+def _breakdown(manifest, src: Path, analysis, decisions: dict, kpi4: dict, evidence_path: str | None,
+               variant: str | None, stale: dict) -> dict | None:
+    """The same KPIs, per group. A rate over nothing is `None`, and the group is still listed."""
+    if manifest is None:
+        return None
+    expected = expected_verdicts()
+    routine_file = {routine.id: (routine.source_range.file if routine.source_range else None)
+                    for module in analysis.program.modules for routine in module.routines}
+    failed = {Path(f).name for f in inventory(analysis)["kpi"]["failedFiles"]}
+    errors_by_file: dict[str, int] = {}
+    for issue in analysis.issues():
+        if issue.severity == "ERROR" and issue.range is not None:
+            name = Path(issue.range.file).name
+            errors_by_file[name] = errors_by_file.get(name, 0) + 1
+    dirty = set(kpi4["notCleanlyGenerated"])
+    scenarios = _auto_scenarios(evidence_path, variant, decisions, stale)
+
+    def numbers(units: list) -> dict:
+        names = {Path(f).name for unit in units for f in unit.files}
+        routines = sorted(r for r, file in routine_file.items() if file and Path(file).name in names)
+        rated = [(r, _wanted(r, expected), decisions[r].rule_verdict) for r in routines
+                 if r in decisions and _wanted(r, expected) is not None]
+        agree = [r for r, want, got in rated if want == got]
+        auto = [r for r in routines if r in decisions and decisions[r].rule_verdict == "AUTO"]
+        clean = [r for r in auto if r not in dirty]
+        lines = 0
+        for unit in units:
+            for file in unit.files:
+                path = src / file
+                if path.is_file():
+                    lines += len(path.read_text(encoding="utf-8", errors="replace").splitlines())
+        errors = sum(count for name, count in errors_by_file.items() if name in names)
+        compared = [s for s in scenarios if s["routine"] in routines]
+
+        def rate(part: int, whole: int) -> float | None:
+            return part / whole if whole else None
+
+        return {
+            "units": len(units), "files": len(names), "routines": len(routines), "lines": lines,
+            "kpi1": {"parsed": len(names - failed), "total": len(names), "value": rate(len(names - failed), len(names))},
+            "kpi3": {"agree": len(agree), "total": len(rated), "value": rate(len(agree), len(rated)),
+                     "mismatches": [{"routine": r, "expected": want, "got": got}
+                                    for r, want, got in rated if want != got]},
+            "kpi4": {"clean": len(clean), "auto": len(auto), "value": rate(len(clean), len(auto))},
+            "kpi5": {"agreed": sum(1 for s in compared if s["agreed"]), "compared": len(compared),
+                     "value": rate(sum(1 for s in compared if s["agreed"]), len(compared))},
+            "kpi7": {"errors": errors, "value": (errors / (lines / 1000)) if lines else None},
+        }
+
+    return {
+        "origin": {key: {"label": corpora.ORIGIN_LABELS[key], **numbers(units)}
+                   for key, units in manifest.groups("origin").items()},
+        "evidence": {key: {"label": corpora.EVIDENCE_LABELS[key], **numbers(units)}
+                     for key, units in manifest.groups("evidence").items()},
+    }
+
+
+def _auto_scenarios(evidence_path: str | None, variant: str | None, decisions: dict, stale: dict) -> list[dict]:
+    """AUTO scenarios that were compared, one entry per scenario and money convention. A scenario agrees only if it
+    agrees under every convention reported -- the same rule `_kpi5` uses for the overall number."""
+    if evidence_path is None or not Path(evidence_path).exists():
+        return []
+    report = json.loads(Path(evidence_path).read_text(encoding="utf-8"))
+    known = set(decisions)
+    by_name: dict[str, dict] = {}
+    for name in ([variant] if variant else sorted(report)):
+        for scenario_name, scenario in ((report.get(name) or {}).get("scenarios") or {}).items():
+            routine = review._resolve(scenario["routine"], known)
+            current = decisions.get(routine)
+            if routine in stale or current is None or current.rule_verdict != "AUTO":
+                continue
+            entry = by_name.setdefault(scenario_name, {"routine": routine, "agreed": True})
+            entry["agreed"] = entry["agreed"] and not scenario["differences"]
+    return list(by_name.values())
 
 
 def _kpi1(data: dict) -> dict:
@@ -236,6 +331,7 @@ def render(result: dict) -> str:
             verdict = "  合格" if value >= entry["target"] else "  未達"
         lines.append(f"  {key.upper():<6} {entry['name']:<20} {shown:<16}{target}{verdict}")
         lines.append(f"         {json.dumps(entry['detail'], ensure_ascii=False)}")
+    lines += _render_breakdown(result.get("breakdown"))
     missed = result["kpi3"]["autoProhibitionsMissed"]
     if missed:
         lines += ["", f"  AUTO 禁止条件の取りこぼし: {missed}"]
@@ -243,6 +339,31 @@ def render(result: dict) -> str:
     if dirty:
         lines += ["", f"  AUTO だが生成が完結しなかった: {dirty}"]
     return "\n".join(lines) + "\n"
+
+
+def _render_breakdown(breakdown: dict | None) -> list[str]:
+    if breakdown is None:
+        return ["", "  出自別・証拠の独立性別: manifest.yaml が無いので分けていない（出自の分からないコードとして 1 つに数えた）"]
+
+    def shown(entry: dict, unit: str = "rate") -> str:
+        if entry["value"] is None:
+            return "—"
+        return f"{entry['value']:.1%}" if unit == "rate" else f"{entry['value']:.1f}"
+
+    lines = []
+    for key, title in (("origin", "出自別"), ("evidence", "証拠の独立性別（判定一致は、上の行ほど信用できる）")):
+        lines += ["", f"  {title}"]
+        for group in breakdown[key].values():
+            if not group["units"]:
+                lines.append(f"    {group['label']}: 0 unit — まだ測っていない")
+                continue
+            lines.append(f"    {group['label']}: {group['units']} unit / {group['routines']} routine / {group['lines']} 行")
+            lines.append(f"      parse {shown(group['kpi1'])}（{group['kpi1']['parsed']}/{group['kpi1']['total']}）"
+                         f"  判定一致 {shown(group['kpi3'])}（{group['kpi3']['agree']}/{group['kpi3']['total']}）"
+                         f"  compile {shown(group['kpi4'])}（{group['kpi4']['clean']}/{group['kpi4']['auto']}）"
+                         f"  同等性 {shown(group['kpi5'])}（{group['kpi5']['agreed']}/{group['kpi5']['compared']}）"
+                         f"  リスク密度 {shown(group['kpi7'], 'per1000')}")
+    return lines
 
 
 def main(argv=None) -> int:

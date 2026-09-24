@@ -158,3 +158,44 @@ def test_kpi5_names_what_its_rate_leaves_out(tmp_path):
     assert scaled["staleScenarios"] == ["s3"]
     assert "比較の無い AUTO routine 3" in entry["detail"]["scaled"]
     assert "実行できなかった AUTO シナリオ 1" in entry["detail"]["scaled"]
+
+
+# --- by where the code came from, and by how far its expectations can be trusted (#15) -------------------------
+
+def test_the_numbers_are_also_given_by_origin_and_real_code_is_listed_while_there_is_none(measured):
+    """The day real code is added its numbers must not be averaged into the synthetic ones. Until then the report
+    says "none measured" -- a row left out is a thing nobody notices is missing."""
+    origin = measured["breakdown"]["origin"]
+    assert list(origin) == ["synthetic", "real-anonymized"]
+    assert origin["synthetic"]["units"] == 29 and origin["synthetic"]["routines"] == 67
+    real = origin["real-anonymized"]
+    assert real["units"] == 0 and real["kpi1"]["value"] is None and real["kpi3"]["value"] is None
+    assert "実案件（匿名化したもの）: 0 unit — まだ測っていない" in kpi.render(measured)
+
+
+def test_the_groups_of_a_split_add_up_to_the_whole(measured):
+    for split in ("origin", "evidence"):
+        groups = measured["breakdown"][split].values()
+        assert sum(g["routines"] for g in groups) == 67 and sum(g["units"] for g in groups) == 29
+        assert sum(g["kpi3"]["agree"] for g in groups) == int(measured["kpi3"]["detail"].split("/")[0])
+        assert sum(g["kpi4"]["auto"] for g in groups) == int(measured["kpi4"]["detail"].split("/")[1].split()[0])
+
+
+def test_agreement_is_given_separately_for_the_holdout_nobody_has_opened(measured):
+    """The rules and the expected verdicts share an author. Only the independent holdout is not self-scored, and
+    its rate is its own number instead of 8 routines lost among 67."""
+    evidence = measured["breakdown"]["evidence"]
+    assert list(evidence) == ["independent-holdout", "referenced-holdout", "development"]
+    independent = evidence["independent-holdout"]
+    assert (independent["units"], independent["routines"]) == (4, 8), "fixtures/plsql/src/holdout2"
+    assert independent["kpi3"]["total"] == 8
+    assert len(independent["kpi3"]["mismatches"]) == 8 - independent["kpi3"]["agree"]
+    assert evidence["referenced-holdout"]["units"] == 5, "fixtures/plsql/src/holdout, opened during P2-2 / P2-4"
+    assert "独立した holdout" in kpi.render(measured)
+
+
+def test_a_tree_with_no_manifest_is_one_group_of_unknown_origin_and_says_so(tmp_path):
+    src = Path("fixtures/plsql-external/create_order/src")
+    result = kpi.measure(src, src / "schema.sql", None, None, str(tmp_path / "generated"), None, None)
+    assert result["breakdown"] is None
+    assert "manifest.yaml が無いので分けていない" in kpi.render(result)

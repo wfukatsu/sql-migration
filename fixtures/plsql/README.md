@@ -13,7 +13,10 @@ P0-1「PL/SQL corpus と元表 DDL の作成」の成果物。
   レポートには必ずその旨を併記する。
 - 期待判定を書く人間とルールを書く人間が同じになるため、数値は自己採点になりやすい。
   これを部分的に抑えるのが下記の holdout である。
-- 実案件のコードが入手できた時点で、ここへ追加し、KPI を出自別に出し直す。
+- 実案件のコードが入手できた時点で、ここへ追加し、KPI を出自別に出し直す。**そのための仕組みはできている**（2026-09-20、#15）:
+  匿名化の方針と手順は [plsql-corpus-anonymization.md](../../docs/design/plsql-corpus-anonymization.md)、道具は `python -m plsql.anonymize`。
+  `python -m plsql.kpi` は、全体に加えて**出自別**（合成 / 実案件）と**証拠の独立性別**（独立した holdout / 参照済みの holdout / 開発用）に数字を出す。
+  実案件の数字を出すのは、判定者（#6）が決まってからである。
 
 ## holdout
 
@@ -53,7 +56,7 @@ holdout を使ってよいのは、受入判定の計測時だけである。実
 
 ```text
 fixtures/plsql/
-  manifest.yaml        期待判定・出自・holdout フラグ（P0-2）
+  manifest.yaml        期待判定・出自（origin）・holdout フラグ・独立した証拠か（independent）（P0-2）
   scalardb-schema.json ScalarDB の Schema Loader JSON（P0-3）
   KEY-DESIGN.md        キー設計の根拠とアクセスパスの洗い出し（P0-3）
   scenarios/           Oracle 実行シナリオ（P0-4）。形式は scenarios/README.md

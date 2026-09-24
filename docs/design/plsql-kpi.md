@@ -22,6 +22,10 @@ corpus は全件が合成である（計画 §9 の決定、2026-09-17）。し�
   測定前に確定させた。**独立した証拠として読めるのは現時点で `holdout2/` の値だけ**である。
 - 実案件由来のコードが入手できた時点で corpus に追加し、出自別（`real-anonymized` / `synthetic`）に
   集計し直す。
+  **集計の仕組みはできている**（2026-09-20、#15）: `python -m plsql.kpi` は、全体の値に加えて、出自別（合成 / 実案件）と、
+  証拠の独立性別（独立した holdout / 参照済みの holdout / 開発用）に、parse 率・判定一致・compile 率・意味的同等性・リスク密度を出す。
+  実案件が無いうちは、その行を「0 unit — まだ測っていない」と出す。グループ分けは `manifest.yaml` の `origin`・`holdout`・`independent` から読む
+  （`plsql/corpus.py`）。実案件のコードの入れ方は [匿名化の方針](plsql-corpus-anonymization.md)。
 
 ---
 

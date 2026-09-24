@@ -1,7 +1,8 @@
 # corpus の外から来た PL/SQL
 
 `fixtures/plsql/` の corpus は合成で、ルールと一緒に育ってきた。ここには**外から受け取った routine** を、corpus とは
-別のプロジェクトとして置く。KPI の分母には入れない（期待判定が無く、出自の扱いも決めていない。#15）。
+別のプロジェクトとして置く。KPI の分母には入れない（期待判定が無い）。実案件のコードを KPI の分母に入れるときは、ここではなく
+corpus に `origin: real-anonymized` として入れる。匿名化の方針と手順は [plsql-corpus-anonymization.md](../../docs/design/plsql-corpus-anonymization.md)（#15）。
 
 置く理由は 2 つある。
 
