@@ -174,6 +174,8 @@ plsql/                     PL/SQL → Java 変換
   review.py / kpi.py         判定レポート・トレーサビリティ・KPI 計測
   remediate.py / propose.py  モデルの助言とルール候補（どちらも自分では効力を持たない）
   limits.py                  走査行数の上限
+  corpus.py                  corpus の manifest をグループとして読む（出自、証拠の独立性）。KPI がこれで数字を分ける
+  anonymize/                 実案件の PL/SQL を corpus に入れるための匿名化と、匿名化の前後で解析の結論が変わらないことの確認
   explorer/                  移行の前の調査の画面（snapshot の読み込み、アプリ側 SQL、データの組み立て、1 つの HTML）
 runtime-java/              実行基盤（Java 17、Gradle）
   .../runtime/               Runner・Fetcher（Core / JDBC）・Residual（H2）・Bench
