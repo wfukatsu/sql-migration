@@ -117,6 +117,7 @@ corpus の外の routine を流す手順は [fixtures/plsql-external/](../fixtur
 
 - [diagrams/architecture.drawio](diagrams/architecture.drawio)（[architecture.png](diagrams/architecture.png)、[flow.png](diagrams/flow.png)）— SQL 変換の系統の構成図と、1 文の処理の流れ
 - [diagrams/plsql-conversion.drawio](diagrams/plsql-conversion.drawio)（[plsql-conversion.png](diagrams/plsql-conversion.png)、[plsql-migrate-flow.png](diagrams/plsql-migrate-flow.png)）— PL/SQL 変換の構成（解析 → 判定 → 生成と報告 → 実 DB での検証）と、承認つきの移行の流れ
+- [diagrams/architecture-transformation.drawio](diagrams/architecture-transformation.drawio)（[1 構成](diagrams/transformation-1.png)、[2 呼び出し](diagrams/transformation-2.png)、[3 要素の対応](diagrams/transformation-3.png)、[4 データ構造](diagrams/transformation-4.png)）— 移行で構造とアプリケーションのアーキテクチャがどう変わるか。`diagrams/src/transformation.py` が書き出す（座標を手で持つので、直すのはそちら）。`placeholders/` は説明資料の表紙と章扉に入れる絵
 - 細部まで追う図は [アーキテクチャ](design/architecture.md) の Mermaid。draw.io の図を直したら `drawio -x -f png -s 2 -b 10 -p <ページ番号（1 始まり）> -o <名前>.png <名前>.drawio` で PNG を出し直す
 - `slides/*.py` — 説明資料（Google スライド）の生成元。全体の概要、DML ベンチマーク、バックエンドの比較、変換ツールの新旧比較
 
