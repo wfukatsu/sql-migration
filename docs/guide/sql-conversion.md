@@ -44,6 +44,48 @@ SQL 文を ScalarDB SQL に変換し、変換できない読み取り文を実�
 | **PLANNED** | ScalarDB SQL にはできないが、実行計画（取得 → H2）で動かせる | 行数と応答時間を確認する |
 | **ERROR** | 自動では移行できない | レポートの対応案に沿ってアプリ側で実装する |
 
+## データ型の対応
+
+`CREATE TABLE` と `ALTER TABLE ... ADD / MODIFY COLUMN` の列の型は、`scalardb_migrate/types.py` の `map_type()` が ScalarDB の 11 型
+（BOOLEAN / INT / BIGINT / FLOAT / DOUBLE / TEXT / BLOB / DATE / TIME / TIMESTAMP / TIMESTAMPTZ）に対応させます。
+対応のたびに重要度（INFO / WARN / ERROR）と指摘文（コード `TYPE`）が付き、ERROR は文全体を ERROR にします。
+
+| 移行元の型 | ScalarDB の型 | 重要度 | 理由・注意 |
+|---|---|---|---|
+| TINYINT / SMALLINT / INT（MySQL, PostgreSQL） | INT | INFO | MySQL の `TINYINT(1)` は真偽値に使われることが多いので WARN（BOOLEAN を検討） |
+| INTEGER / INT / SMALLINT（Oracle） | BIGINT | WARN | Oracle の整数型は `NUMBER(38)` の別名。64 ビットを超える値はあふれる。`NUMBER(p)` で宣言すると正確に対応する |
+| BIGINT | BIGINT | INFO | 符号なし 32 ビット（`INT UNSIGNED`）も BIGINT に収まる |
+| BIGINT UNSIGNED | BIGINT | WARN | 符号なし 64 ビットの範囲は ScalarDB の BIGINT（符号あり）を超える |
+| DECIMAL / NUMBER / NUMERIC(p, 0) | p ≤ 9: INT、p ≤ 18: BIGINT | INFO | 桁数だけで決める。正確に収まる |
+| DECIMAL / NUMBER / NUMERIC(p, 0)、p > 18 | BIGINT | WARN | 64 ビットを超える値はあふれる |
+| DECIMAL / NUMBER / NUMERIC(p, s)、s > 0 | DOUBLE | WARN | ScalarDB に DECIMAL が無い。精度が落ちるので、金額は 10^s 倍した整数を BIGINT に入れることを提案する。実行計画（H2）ではこの列を `NUMERIC(p, s)` として扱い、`2450` が `2450.0` になるのを防ぐ |
+| 精度なしの NUMBER（Oracle）/ NUMERIC（PostgreSQL） | DOUBLE | WARN | 桁数も小数も無制限なので、正確な 10 進精度は保てない。MySQL の `DECIMAL` だけは既定の (10, 0) として読む |
+| FLOAT（Oracle） | DOUBLE | WARN | Oracle の FLOAT は最大 38 桁の 10 進 NUMBER。DOUBLE では約 15 桁 |
+| FLOAT（PostgreSQL、精度なしか 25 以上） | DOUBLE | INFO | PostgreSQL では倍精度 |
+| FLOAT / REAL（その他） | FLOAT | INFO | |
+| DOUBLE / DOUBLE PRECISION / BINARY_DOUBLE | DOUBLE | INFO | |
+| CHAR(n) / NCHAR(n)、n > 1 | TEXT | WARN | CHAR は空白詰めで、比較は空白を無視する。TEXT は厳密に比較するので、移行時にデータを trim しないと同じ比較が一致しなくなる |
+| VARCHAR / VARCHAR2 / NVARCHAR / TEXT 系 | TEXT | INFO | 長さの上限は ScalarDB では強制されない |
+| BINARY / VARBINARY / BLOB / RAW / BYTEA | BLOB | INFO | |
+| DATE（Oracle） | DATE | WARN | Oracle の DATE は時刻を持つ。時刻を使うなら TIMESTAMP にする |
+| DATE（その他） | DATE | INFO | |
+| TIME | TIME | INFO | マイクロ秒（6 桁）まで |
+| TIME WITH TIME ZONE | TIME | WARN | ScalarDB の TIME にタイムゾーンは無く、オフセットが落ちる |
+| TIMESTAMP / DATETIME、精度 3 以下 | TIMESTAMP | INFO | |
+| TIMESTAMP / DATETIME、精度 4 以上（Oracle・PostgreSQL の既定は 6） | TIMESTAMP | WARN | ScalarDB はミリ秒まで。MySQL だけは精度なしを 0 として読む |
+| TIMESTAMP WITH (LOCAL) TIME ZONE / TIMESTAMPTZ | TIMESTAMPTZ | INFO（精度 4 以上は WARN） | UTC で保存し、ミリ秒まで |
+| BOOLEAN / BIT(1) | BOOLEAN | INFO | |
+| BIT(n)、n > 1 | BLOB | WARN | 対応する型が無い |
+| JSON / JSONB / UUID / ENUM / SET / INET / XML | TEXT | WARN | 文字列として入る。JSON の演算子や列挙の検査は使えない |
+| SERIAL / BIGSERIAL / SMALLSERIAL | INT / BIGINT | **ERROR** | 自動採番は無い。ID はアプリで生成する |
+| そのほか（INTERVAL、配列、ユーザ定義型など） | なし | **ERROR** | 対応する型が無い |
+
+型のほかに、日付時刻のリテラルも列の型に合わせて直します。Oracle の DATE リテラルの時刻部分は DATE 列では落とし、日付だけのリテラルは TIMESTAMP 列では `00:00:00` を補い、
+TIMESTAMPTZ 列のリテラルは ScalarDB が受け付ける唯一の形 `'YYYY-MM-DD HH:MM:SS Z'` に UTC 変換して書きます（ゾーンの無いリテラルの読み方は `--session-time-zone`）。
+
+PL/SQL から生成する Java の型（`NUMBER(p, s)` を `BigDecimal` と 10^s 倍した BIGINT にするなど）は別の対応表 `plsql/gen_java/types.py` で決めます。
+小数の扱いが SQL 変換（DOUBLE）と違うのは意図的で、考え方は [PL/SQL 移行基盤の設計](../design/plsql-migration-platform-design.md) の 5.3「型表現」にあります。
+
 ## 実行計画を動かす（`residual-runner`）
 
 ```bash
