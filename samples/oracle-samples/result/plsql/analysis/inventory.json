@@ -9,44 +9,44 @@
   "parsedFiles": 37,
   "totalFiles": 37,
   "failedFiles": [],
-  "typeResolutionRate": 0.9904,
-  "typedSymbols": 104,
-  "resolvedSymbols": 103
+  "typeResolutionRate": 0.9905,
+  "typedSymbols": 105,
+  "resolvedSymbols": 104
  },
  "totals": {
   "modules": 36,
   "routines": 41,
-  "statements": 243,
-  "issues": 151,
+  "statements": 244,
+  "issues": 161,
   "errors": 15
  },
  "statementKinds": {
-  "Call": 77,
-  "SqlOperation": 41,
-  "Assignment": 25,
-  "Loop": 24,
+  "Call": 81,
+  "SqlOperation": 44,
+  "Assignment": 27,
+  "Loop": 26,
   "If": 20,
   "Rollback": 8,
-  "Unsupported": 8,
-  "Return": 7,
   "DynamicSql": 7,
+  "Return": 6,
   "Block": 6,
   "Raise": 6,
-  "Exit": 5,
+  "Exit": 4,
   "Commit": 3,
-  "Fetch": 2,
-  "CloseCursor": 2,
+  "Unsupported": 2,
   "Case": 1,
-  "Continue": 1
+  "Continue": 1,
+  "Fetch": 1,
+  "CloseCursor": 1
  },
  "targetCapability": {
   "statuses": {
    "OK": 22,
    "ERROR": 14,
-   "WARN": 5,
+   "WARN": 8,
    "PLANNED": 4
   },
-  "runnableRate": 0.6
+  "runnableRate": 0.625
  },
  "modules": [
   {
@@ -345,7 +345,7 @@
      "name": "b04_4_4_ref_cursor",
      "kind": "procedure",
      "visibility": "public",
-     "statements": 8,
+     "statements": 9,
      "parameters": 0,
      "declarations": 3,
      "handlers": 0,
@@ -360,9 +360,7 @@
       "packages": [],
       "dynamicSql": false
      },
-     "autoBlockers": [
-      "unmodelled-construct"
-     ],
+     "autoBlockers": [],
      "sourceRange": {
       "file": "b04_4_4_ref_cursor.prc",
       "startLine": 2,
@@ -402,9 +400,7 @@
       "packages": [],
       "dynamicSql": false
      },
-     "autoBlockers": [
-      "unmodelled-construct"
-     ],
+     "autoBlockers": [],
      "sourceRange": {
       "file": "b04_5_records_collections.prc",
       "startLine": 2,
@@ -1301,8 +1297,7 @@
       "dynamicSql": false
      },
      "autoBlockers": [
-      "package-state",
-      "unmodelled-construct"
+      "package-state"
      ],
      "sourceRange": {
       "file": "emp_api.pkb",

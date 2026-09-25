@@ -511,6 +511,162 @@ public final class Plsql {
     return out.length() == 0 ? null : out.toString();
   }
 
+  // ---- PL/SQL collections (#45). A nested table / VARRAY is a 1-based List; an associative array (INDEX BY
+  // VARCHAR2) is a TreeMap, which walks its keys in order the way FIRST / NEXT do. `DELETE(i)` leaves a gap in
+  // a nested table (COUNT drops, EXISTS(i) is false, NEXT skips it): the gap is the GAP marker in the List.
+  private static final Object GAP = new Object() {
+    @Override public String toString() { return "<deleted element>"; }
+  };
+  @SafeVarargs
+  public static <E> java.util.List<E> table(E... elements) {
+    return new java.util.ArrayList<>(java.util.Arrays.asList(elements));
+  }
+
+  public static <K, E> java.util.Map<K, E> indexBy() {
+    return new java.util.TreeMap<>();
+  }
+
+  private static RuntimeException collectionIsNull() {
+    return new IllegalStateException("COLLECTION_IS_NULL (ORA-06531): the collection was never initialised");
+  }
+
+  private static Object key(Object collection, Object key) {
+    // PLS_INTEGER keys arrive as Integer, Long or BigDecimal depending on the arithmetic that produced them
+    if (collection instanceof java.util.List || key instanceof Number) return key == null ? null : num(key).intValueExact();
+    return key;
+  }
+
+  public static int count(Object collection) {
+    if (collection == null) throw collectionIsNull();
+    if (collection instanceof java.util.List<?> list) {
+      int n = 0;
+      for (Object e : list) if (e != GAP) n++;
+      return n;
+    }
+    return ((java.util.Map<?, ?>) collection).size();
+  }
+
+  public static Object first(Object collection) {
+    if (collection == null) throw collectionIsNull();
+    if (collection instanceof java.util.List<?> list) return next(list, 0);
+    java.util.TreeMap<?, ?> map = (java.util.TreeMap<?, ?>) collection;
+    return map.isEmpty() ? null : map.firstKey();
+  }
+
+  public static Object last(Object collection) {
+    if (collection == null) throw collectionIsNull();
+    if (collection instanceof java.util.List<?> list) return prior(list, list.size() + 1);
+    java.util.TreeMap<?, ?> map = (java.util.TreeMap<?, ?>) collection;
+    return map.isEmpty() ? null : map.lastKey();
+  }
+
+  @SuppressWarnings("unchecked")
+  public static Object next(Object collection, Object at) {
+    if (collection == null) throw collectionIsNull();
+    if (at == null) return null;
+    if (collection instanceof java.util.List<?> list) {
+      for (int i = num(at).intValueExact() + 1; i <= list.size(); i++) if (list.get(i - 1) != GAP) return i;
+      return null;
+    }
+    return ((java.util.TreeMap<Object, ?>) collection).higherKey(key(collection, at));
+  }
+
+  @SuppressWarnings("unchecked")
+  public static Object prior(Object collection, Object at) {
+    if (collection == null) throw collectionIsNull();
+    if (at == null) return null;
+    if (collection instanceof java.util.List<?> list) {
+      for (int i = Math.min(num(at).intValueExact(), list.size() + 1) - 1; i >= 1; i--) if (list.get(i - 1) != GAP) return i;
+      return null;
+    }
+    return ((java.util.TreeMap<Object, ?>) collection).lowerKey(key(collection, at));
+  }
+
+  public static boolean exists(Object collection, Object at) {
+    if (collection == null) return false;   // Oracle: EXISTS on a null collection is FALSE, not an error
+    if (at == null) return false;
+    if (collection instanceof java.util.List<?> list) {
+      int i = num(at).intValueExact();
+      return i >= 1 && i <= list.size() && list.get(i - 1) != GAP;
+    }
+    return ((java.util.Map<?, ?>) collection).containsKey(key(collection, at));
+  }
+
+  @SuppressWarnings("unchecked")
+  public static Object at(Object collection, Object at) {
+    if (collection == null) throw collectionIsNull();
+    if (collection instanceof java.util.List<?> list) {
+      int i = num(at).intValueExact();
+      if (i < 1 || i > list.size()) {
+        throw new IndexOutOfBoundsException("SUBSCRIPT_BEYOND_COUNT (ORA-06533): element " + i + " of " + list.size());
+      }
+      Object element = list.get(i - 1);
+      if (element == GAP) throw new IllegalStateException("NO_DATA_FOUND (ORA-01403): element " + i + " was deleted");
+      return element;
+    }
+    java.util.Map<Object, ?> map = (java.util.Map<Object, ?>) collection;
+    Object k = key(collection, at);
+    if (!map.containsKey(k)) throw new IllegalStateException("NO_DATA_FOUND (ORA-01403): no element at " + k);
+    return map.get(k);
+  }
+
+  @SuppressWarnings("unchecked")
+  public static void set(Object collection, Object at, Object value) {
+    if (collection == null) throw collectionIsNull();
+    if (collection instanceof java.util.List<?> raw) {
+      java.util.List<Object> list = (java.util.List<Object>) raw;
+      int i = num(at).intValueExact();
+      if (i < 1 || i > list.size()) {
+        throw new IndexOutOfBoundsException("SUBSCRIPT_BEYOND_COUNT (ORA-06533): element " + i + " of " + list.size()
+            + " (EXTEND first)");
+      }
+      list.set(i - 1, value);
+      return;
+    }
+    ((java.util.Map<Object, Object>) collection).put(key(collection, at), value);
+  }
+
+  @SuppressWarnings("unchecked")
+  public static void extend(Object collection) {
+    extend(collection, 1);
+  }
+
+  @SuppressWarnings("unchecked")
+  public static void extend(Object collection, Object n) {
+    if (collection == null) throw collectionIsNull();
+    if (!(collection instanceof java.util.List<?>)) throw new IllegalStateException("EXTEND on an associative array");
+    java.util.List<Object> list = (java.util.List<Object>) collection;
+    for (int i = num(n).intValueExact(); i > 0; i--) list.add(null);
+  }
+
+  public static void delete(Object collection) {
+    if (collection == null) throw collectionIsNull();
+    if (collection instanceof java.util.List<?> list) list.clear(); else ((java.util.Map<?, ?>) collection).clear();
+  }
+
+  @SuppressWarnings("unchecked")
+  public static void delete(Object collection, Object at) {
+    if (collection == null) throw collectionIsNull();
+    if (collection instanceof java.util.List<?> list) {
+      int i = num(at).intValueExact();
+      if (i < 1 || i > list.size()) return;   // Oracle: deleting a missing element does nothing
+      ((java.util.List<Object>) list).set(i - 1, GAP);
+      return;
+    }
+    ((java.util.Map<?, ?>) collection).remove(key(collection, at));
+  }
+
+  /** `v.TRIM` / `v.TRIM(n)` on a nested table (`trim` itself is the string function). */
+  public static void trimTable(Object collection) {
+    trimTable(collection, 1);
+  }
+
+  public static void trimTable(Object collection, Object n) {
+    if (collection == null) throw collectionIsNull();
+    java.util.List<?> list = (java.util.List<?>) collection;
+    for (int i = num(n).intValueExact(); i > 0 && !list.isEmpty(); i--) list.remove(list.size() - 1);
+  }
+
   // DBMS_OUTPUT: the session's output buffer. Per thread here; nothing is written to a table, so a comparison
   // of table state never sees it. `output()` hands the lines back and clears the buffer.
   private static final ThreadLocal<java.util.List<String>> OUTPUT = ThreadLocal.withInitial(java.util.ArrayList::new);

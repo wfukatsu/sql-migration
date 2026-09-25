@@ -133,6 +133,7 @@
        ],
        "loopKind": "forall",
        "cursor": "1 .. p_product_ids.COUNT",
+       "returns_rows": false,
        "body": [
         {
          "id": "pkg_bulk_load.restock#stmt-2",
@@ -194,6 +195,7 @@
              },
              "loopKind": "for",
              "cursor": "i IN 1 .. SQL%BULK_EXCEPTIONS.COUNT",
+             "returns_rows": false,
              "body": [
               {
                "id": "pkg_bulk_load.restock#stmt-5",
@@ -625,6 +627,7 @@
         "atMostOneRow": false
        },
        "variable": "r",
+       "returns_rows": false,
        "body": [
         {
          "id": "pkg_bulk_load.archive_lines#stmt-3",

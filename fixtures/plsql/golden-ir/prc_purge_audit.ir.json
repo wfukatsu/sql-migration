@@ -147,6 +147,7 @@
         "atMostOneRow": false
        },
        "variable": "r",
+       "returns_rows": false,
        "body": [
         {
          "id": "prc_purge_audit#stmt-3row1",

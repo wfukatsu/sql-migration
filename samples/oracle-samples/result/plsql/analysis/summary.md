@@ -1,8 +1,8 @@
 # PL/SQL 移行 インベントリ（Phase 1）
 
-- 解析対象: 36 モジュール / 41 routine / 243 文
+- 解析対象: 36 モジュール / 41 routine / 244 文
 - DDL スナップショット: `schema.sql@d6f64025`
-- 診断: 151 件（うち ERROR 15 件）
+- 診断: 161 件（うち ERROR 15 件）
 
 > この数値は**合成 corpus 上の値**であり、実案件の PL/SQL に対する耐性を示すものではない（実装計画 §9、docs/design/plsql-kpi.md §0）。
 
@@ -11,18 +11,16 @@
 | KPI | 値 | 目標 |
 |---|---|---|
 | parse 率 | 100.0%（37/37） | Phase 1 で 90% 以上 |
-| 型解決率 | 99.0%（103/104） | Phase 1 で 95% 以上 |
+| 型解決率 | 99.1%（104/105） | Phase 1 で 95% 以上 |
 
 ## AUTO を妨げる条件が既に見えている routine
 
-24 / 41 routine。判定そのものは P2-2 のルールが行う。ここは IR に既にある証拠を並べただけである。
+22 / 41 routine。判定そのものは P2-2 のルールが行う。ここは IR に既にある証拠を並べただけである。
 
 | routine | 条件 |
 |---|---|
 | `b04_3_implicit_cursor_attrs` | transaction-control-in-routine |
 | `b04_4_3_for_update_current_of` | transaction-control-in-routine, row-lock |
-| `b04_4_4_ref_cursor` | unmodelled-construct |
-| `b04_5_records_collections` | unmodelled-construct |
 | `b04_6_2_user_exceptions` | transaction-control-in-routine |
 | `b05_1_call_raise_salary` | transaction-control-in-routine |
 | `b05_3_call_emp_api` | transaction-control-in-routine |
@@ -35,7 +33,7 @@
 | `emp_api.hire` | package-state |
 | `emp_api.give_raise~1` | package-state |
 | `emp_api.give_raise~2` | package-state |
-| `emp_api.get_by_dept` | package-state, unmodelled-construct |
+| `emp_api.get_by_dept` | package-state |
 | `emp_api.call_count` | package-state |
 | `emp_biu_trg.body` | trigger |
 | `emp_dept_cap_trg.body` | trigger |
@@ -78,7 +76,7 @@
 | `b04_4_1_explicit_cursor` | procedure | 1 | 4 | — |
 | `b04_4_2_cursor_for_loop` | procedure | 1 | 6 | — |
 | `b04_4_3_for_update_current_of` | procedure | 1 | 10 | — |
-| `b04_4_4_ref_cursor` | procedure | 1 | 8 | — |
+| `b04_4_4_ref_cursor` | procedure | 1 | 9 | — |
 | `b04_5_records_collections` | procedure | 1 | 19 | — |
 | `b04_6_1_predefined_exceptions` | procedure | 1 | 9 | — |
 | `b04_6_2_user_exceptions` | procedure | 1 | 11 | — |
@@ -112,20 +110,20 @@
 
 | 種別 | 件数 |
 |---|---|
-| Call | 77 |
-| SqlOperation | 41 |
-| Assignment | 25 |
-| Loop | 24 |
+| Call | 81 |
+| SqlOperation | 44 |
+| Assignment | 27 |
+| Loop | 26 |
 | If | 20 |
 | Rollback | 8 |
-| Unsupported | 8 |
-| Return | 7 |
 | DynamicSql | 7 |
+| Return | 6 |
 | Block | 6 |
 | Raise | 6 |
-| Exit | 5 |
+| Exit | 4 |
 | Commit | 3 |
-| Fetch | 2 |
-| CloseCursor | 2 |
+| Unsupported | 2 |
 | Case | 1 |
 | Continue | 1 |
+| Fetch | 1 |
+| CloseCursor | 1 |

@@ -130,9 +130,9 @@
        }
       },
       {
-       "id": "UNSUPPORTED_CONSTRUCT",
+       "id": "CUR_BRANCHED",
        "shortDescription": {
-        "text": "UNSUPPORTED_CONSTRUCT"
+        "text": "CUR_BRANCHED"
        }
       },
       {
@@ -190,6 +190,12 @@
        }
       },
       {
+       "id": "UNSUPPORTED_CONSTRUCT",
+       "shortDescription": {
+        "text": "UNSUPPORTED_CONSTRUCT"
+       }
+      },
+      {
        "id": "PROJECTION",
        "shortDescription": {
         "text": "PROJECTION"
@@ -223,6 +229,12 @@
        "id": "RETURNING",
        "shortDescription": {
         "text": "RETURNING"
+       }
+      },
+      {
+       "id": "CUR_RETURNED",
+       "shortDescription": {
+        "text": "CUR_RETURNED"
        }
       },
       {
@@ -1103,10 +1115,10 @@
      ]
     },
     {
-     "ruleId": "UNSUPPORTED_CONSTRUCT",
-     "level": "warning",
+     "ruleId": "CUR_BRANCHED",
+     "level": "note",
      "message": {
-      "text": "Open_for_statement is not lowered yet; the routine cannot be AUTO while it is present"
+      "text": "cursor 変数 rc は分岐ごとに別の問合せで開かれていた。分岐ごとに、その問合せの行を先に読んで回す形にした"
      },
      "locations": [
       {
@@ -1115,19 +1127,19 @@
          "uri": "b04_4_4_ref_cursor.prc"
         },
         "region": {
-         "startLine": 8,
-         "endLine": 8,
-         "startColumn": 5
+         "startLine": 7,
+         "endLine": 11,
+         "startColumn": 3
         }
        }
       }
      ]
     },
     {
-     "ruleId": "UNSUPPORTED_CONSTRUCT",
-     "level": "warning",
+     "ruleId": "CUR_SCAN",
+     "level": "note",
      "message": {
-      "text": "Open_for_statement is not lowered yet; the routine cannot be AUTO while it is present"
+      "text": "cursor rc は読むだけのループだった。行を先に読んで回す形にした——移行先に跨トランザクションの cursor は無いので、動く行数はメモリで決まる（上限は --limits）。FETCH の代入先はそのまま残してあるので、ループの後でも Oracle と同じ値が入っている"
      },
      "locations": [
       {
@@ -1136,9 +1148,156 @@
          "uri": "b04_4_4_ref_cursor.prc"
         },
         "region": {
-         "startLine": 10,
-         "endLine": 10,
-         "startColumn": 5
+         "startLine": 12,
+         "endLine": 16,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CROSS_PARTITION",
+     "level": "warning",
+     "message": {
+      "text": "SELECT: predicates do not cover the partition key ['department_id'] of departments -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_4_ref_cursor.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 16,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONFIG",
+     "level": "note",
+     "message": {
+      "text": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_4_ref_cursor.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 16,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "COST",
+     "level": "note",
+     "message": {
+      "text": "full scan of departments (~25 us per row); pass --expected-rows table=N for an estimate"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_4_ref_cursor.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 16,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CUR_SCAN",
+     "level": "note",
+     "message": {
+      "text": "cursor rc は読むだけのループだった。行を先に読んで回す形にした——移行先に跨トランザクションの cursor は無いので、動く行数はメモリで決まる（上限は --limits）。FETCH の代入先はそのまま残してあるので、ループの後でも Oracle と同じ値が入っている"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_4_ref_cursor.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 16,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CROSS_PARTITION",
+     "level": "warning",
+     "message": {
+      "text": "SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_4_ref_cursor.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 16,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONFIG",
+     "level": "note",
+     "message": {
+      "text": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_4_ref_cursor.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 16,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "COST",
+     "level": "note",
+     "message": {
+      "text": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_4_ref_cursor.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 16,
+         "startColumn": 3
         }
        }
       }
@@ -2951,10 +3110,73 @@
      ]
     },
     {
-     "ruleId": "UNSUPPORTED_CONSTRUCT",
+     "ruleId": "CUR_RETURNED",
+     "level": "note",
+     "message": {
+      "text": "cursor 変数 rc は呼び出し側へ返されていた。移行先に渡せる cursor は無いので、行を読んで List で返す（呼び出し側は cursor から FETCH する代わりに List を受け取る）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 47,
+         "endLine": 49,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CROSS_PARTITION",
      "level": "warning",
      "message": {
-      "text": "Open_for_statement is not lowered yet; the routine cannot be AUTO while it is present"
+      "text": "SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 47,
+         "endLine": 49,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONFIG",
+     "level": "note",
+     "message": {
+      "text": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 47,
+         "endLine": 49,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "COST",
+     "level": "note",
+     "message": {
+      "text": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
      },
      "locations": [
       {

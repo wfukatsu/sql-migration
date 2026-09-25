@@ -565,6 +565,7 @@
         "lockingMode": "FOR UPDATE SKIP LOCKED"
        },
        "variable": "r",
+       "returns_rows": false,
        "body": [
         {
          "id": "pkg_stock_reserve.claim_batch#stmt-2",
