@@ -109,7 +109,8 @@ class Analysis:
 
 def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: str = "corpus",
             scalardb_schema: str | Path | None = None,
-            row_locks: "RowLocks | None" = None, boundaries=None, limits=None, db_links=None) -> Analysis:
+            row_locks: "RowLocks | None" = None, boundaries=None, limits=None, db_links=None,
+            package_state=None) -> Analysis:
     """Parse, resolve and lower every source file under `root`. Nothing raises; failures become diagnostics.
 
     With `scalardb_schema`, every SQL statement is also checked against the target (P2-4) and the answer lands on
@@ -134,7 +135,16 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
         symbols = build(parsed, schema, public, spec=parsed_spec if spec is not None else None)
         analysis.parsed.append(parsed)
         analysis.symbols.append(symbols)
-        program.modules.extend(lower_file(parsed, symbols, schema, public))
+        modules = lower_file(parsed, symbols, schema, public)
+        if spec is not None:
+            # what the specification declares (a constant, an exception, a type) is the package's too: without
+            # it `c_max_raise_pct` was an unknown name in every body that read it (#46, samples/oracle-samples)
+            for declared in lower_file(parsed_spec, None, schema, set()):
+                for module in modules:
+                    if module.name.lower() == declared.name.lower():
+                        known = {d.name.lower() for d in module.declarations}
+                        module.declarations.extend(d for d in declared.declarations if d.name.lower() not in known)
+        program.modules.extend(modules)
         program.unresolved.extend(symbols.unresolved)
 
     # a specification with no body is still an asset: it declares an interface nothing implements here
@@ -149,6 +159,13 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
     # 関わらず行う——「その更新が 1 行に絞れるか」は Oracle の主キーの話である
     # #26 の続き: 記録された routine の MERGE を「読んでから UPDATE か INSERT を選ぶ」へ割る。
     # trigger より前に行う——Oracle の MERGE は UPDATE / INSERT の trigger を行ごとに発火させる
+    if package_state is not None and package_state.carried:
+        # #46: package variables the caller carries become IN OUT parameters. Calls have to be resolved first
+        from .analysis import build_call_graph
+        from .package_state import carry
+
+        build_call_graph(program)
+        carry(program, package_state)
     merge.rewrite(program, row_locks, schema, analysis.symbol_table())
     # #19: 割った routine の処理対象を、キー順に件数つきで繰り返し読む
     paging.rewrite(program, boundaries, schema, analysis.symbol_table())

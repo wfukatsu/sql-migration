@@ -42,6 +42,7 @@
 | `scanRows` | 先に全部読む routine に行数の上限が付いた。超えると例外で止まる（Oracle では止まらなかった） |
 | `TRIGGER_INLINED` / trigger の織り込み | trigger は、生成コードが書く経路でだけ動く。PL/SQL の外からの書き込みには掛からない（照合で追う） |
 | `dynamicTables` | 動的 SQL の表名は一覧にあるものだけ。それ以外は実行時に拒否する |
+| `packageState.carried` | package 変数（セッション状態）は呼び出し側が運ぶ。その変数を読み書きする routine（呼び先経由も含む）は IN OUT 引数として受け取り、結果で返す（#46） |
 | `dbLinks` | DB link の先の表は、別の namespace として同じトランザクションで書く |
 | `EXC-001` | DB 自身が上げていた例外（一意制約違反など）の handler は走らない。重複は commit 時の衝突になる |
 | 例外で抜けたとき | Oracle の文単位のロールバックは無い。呼び出し側が rollback しなければ、途中までの書き込みが残る |

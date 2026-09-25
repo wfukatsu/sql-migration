@@ -59,7 +59,7 @@ PL/SQL を読んで ScalarDB 向けの Java を生成し、生成器が決めず
 - **比較ハーネスの「一致」は業務ロジックとの整合の証明ではない。** BIZ 項目で変わるのは、シナリオが
   観ていない部分（途中で止まったとき、同時に書いたとき、PL/SQL の外から書いたとき）である
 - **routine ごとの決定は `limits.yaml` に書き、生成し直す。** 行数の上限（`scanRows`）、楽観制御へ移す routine
-  （`rowLocks.optimistic`）、トランザクションの分割（`transactions`）、動的 SQL の表名（`dynamicTables`）は
+  （`rowLocks.optimistic`）、トランザクションの分割（`transactions`）、動的 SQL の表名（`dynamicTables`）、package 変数の置き場（`packageState.carried`）は
   生成器が読む。値には理由をコメントで添える（既存の書き方に合わせる）。書くのは利用者が答えてから
 - 参照資料は必要になったときだけ読む:
 

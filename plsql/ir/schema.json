@@ -551,6 +551,9 @@
         },
         "nocopy": {
           "type": "boolean"
+        },
+        "carried": {
+          "type": "boolean"
         }
       }
     },
