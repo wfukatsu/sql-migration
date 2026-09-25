@@ -1263,18 +1263,18 @@
      "severity": "info"
     },
     {
-     "id": "CUR-002",
-     "decision": "REVIEW",
-     "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+     "id": "CUR-OPT-002",
+     "decision": "AUTO",
+     "message": "Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します",
      "source": "semantics.yaml",
-     "severity": "warning"
+     "severity": "info"
     },
     {
-     "id": "BULK-003",
-     "decision": "REVIEW",
-     "message": "分割読みは行をまとめて読む形になりました。メモリを守るのは LIMIT ではなく走査行数の上限です",
+     "id": "BULK-OPT-003",
+     "decision": "AUTO",
+     "message": "分割読みは行をまとめて読む形になりました。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります",
      "source": "semantics.yaml",
-     "severity": "warning"
+     "severity": "info"
     },
     {
      "id": "TX-001",
@@ -1293,13 +1293,9 @@
    "requiredTests": [
     "cross_partition_scan",
     "partial_failure",
-    "performance",
-    "rollback_boundary",
-    "row_limit"
+    "rollback_boundary"
    ],
    "whyNotAuto": [
-    "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
-    "BULK-003 (REVIEW): 分割読みは行をまとめて読む形になりました。メモリを守るのは LIMIT ではなく走査行数の上限です",
     "TX-001 (REDESIGN): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
@@ -1309,8 +1305,8 @@
     "decisions": [
      {
       "rule": "TX-001",
-      "decidedBy": "limits.yaml: transactions.callerBoundary",
-      "why": "FORALL のあとの COMMIT（成功分の確定）。呼び出し側が commit する（同上）"
+      "decidedBy": "limits.yaml: transactions.perIteration",
+      "why": "FORALL … SAVE EXCEPTIONS は「失敗した要素を飛ばして続け、成功分を確定する」。1 要素 = 1 トランザクション に割る（BULK-002 の形）。3 回目は callerBoundary にしていたが、CHECK の guard（#50）が最初の違反行で止める ようになったので、利用者が perIteration に変えた（2026-09-25）。全体の原子性は無くなる（BIZ-1）"
      }
     ],
     "open": [],

@@ -125,7 +125,7 @@ routine の NUMBER 引数に列由来の Long / Integer を渡すときは `Plsq
 | REDESIGN 27 件の状態（決定の適用後） | **27 件すべて、再設計を決定済みで実 DB でも一致** / 未決定 0。DB Link の `prc_remote_sync` は、失敗時の例外の種類の差 1 点を「受け入れた差」として記録してある（2026-09-20。比較の報告には理由つきで出る）。判定は REDESIGN のまま動かさない（AUTO 禁止条件） |
 
 **構文カタログ上の値**（[samples/oracle-samples](../../samples/oracle-samples/README.md)、Oracle 公式ドキュメントの構成に沿った SQL 4 本 + PL/SQL 3 本、2026-09-24〜25）:
-41 routine が AUTO 候補 7 / REVIEW 10 / REDESIGN 24、41 routine 全部が javac を通り、実 DB の 31 シナリオで一致 25 / 相違 6（2026-09-25 の 5 回目の対応後。相違は値の差ではなく、下の「まだ模していない構文」で止まるものと、`FORALL … SAVE EXCEPTIONS` の境界の決定待ち）。
+41 routine が AUTO 候補 7 / REVIEW 10 / REDESIGN 24、41 routine 全部が javac を通り、実 DB の 31 シナリオで一致 26 / 相違 5（2026-09-25 の 5 回目の対応後。相違は値の差ではなく、下の「まだ模していない構文」で止まるもの）。
 この検証で直した生成器の穴は 22 件（Issue #30〜#45）+ 4 回目の 5 件 + 5 回目の 4 件（#47〜#50）で、記録の「Issue の修正後」以降の節にある。
 
 ### 移行先で模していない構文（2026-09-25 時点）

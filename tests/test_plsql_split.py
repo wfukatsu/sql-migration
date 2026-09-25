@@ -269,3 +269,59 @@ def pathlib_path(*parts):
     import pathlib
 
     return pathlib.Path(*parts)
+
+
+# --- BULK COLLECT + FORALL ... SAVE EXCEPTIONS with `WHEN e_bulk_errors` (samples/oracle-samples b06_2) ----------
+BULK_SAVE = """
+CREATE OR REPLACE PROCEDURE p_bulk AS
+  TYPE t_ids IS TABLE OF products.product_id%TYPE;
+  TYPE t_qty IS TABLE OF products.stock_qty%TYPE;
+  v_ids t_ids;
+  v_qty t_qty;
+  e_bulk_errors EXCEPTION;
+  PRAGMA EXCEPTION_INIT(e_bulk_errors, -24381);
+BEGIN
+  SELECT product_id, stock_qty BULK COLLECT INTO v_ids, v_qty FROM products;
+  FORALL i IN 1 .. v_ids.COUNT SAVE EXCEPTIONS
+    INSERT INTO batch_control (batch_name, status) VALUES (v_ids(i), v_qty(i));
+  COMMIT;
+EXCEPTION
+  WHEN e_bulk_errors THEN
+    DBMS_OUTPUT.PUT_LINE('failed: ' || SQL%BULK_EXCEPTIONS.COUNT);
+    FOR j IN 1 .. SQL%BULK_EXCEPTIONS.COUNT LOOP
+      DBMS_OUTPUT.PUT_LINE('idx=' || SQL%BULK_EXCEPTIONS(j).ERROR_INDEX || ' id=' || v_ids(SQL%BULK_EXCEPTIONS(j).ERROR_INDEX)
+                           || ' ' || SQLERRM(-SQL%BULK_EXCEPTIONS(j).ERROR_CODE));
+    END LOOP;
+    COMMIT;
+END;
+/
+"""
+
+
+def test_a_bulk_save_exceptions_handler_bound_by_name_becomes_the_failed_element_part(tmp_path):
+    """`WHEN e_bulk_errors` (EXCEPTION_INIT -24381) around a loop over SQL%BULK_EXCEPTIONS is the same shape as
+    `WHEN OTHERS THEN IF SQLCODE = -24381`. After the BULK COLLECT + FORALL pair became one scan loop, the
+    failed element is the row: `v_ids(... ERROR_INDEX)` reads the row's column."""
+    from plsql.analysis import analyse as analyse_program
+    from plsql.gen_java.service import generate_module
+    from plsql.report import analyse
+
+    split.set_boundaries(Boundaries(per_iteration={"p_bulk": "SAVE EXCEPTIONS"}))
+    try:
+        source = tmp_path / "src"
+        source.mkdir()
+        (source / "schema.sql").write_text(pathlib_path(SRC, "schema.sql").read_text(encoding="utf-8"), encoding="utf-8")
+        (source / "p_bulk.prc").write_text(BULK_SAVE, encoding="utf-8")
+        analysis = analyse(source, source / "schema.sql", scalardb_schema="fixtures/plsql/scalardb-schema.json",
+                           boundaries=split._BOUNDARIES.get())
+        analyse_program(analysis.program)
+        module = next(m for m in analysis.program.modules if m.name == "p_bulk")
+        java = generate_module(module, "g.app", "g.infra", "g.domain", analysis.program).file.render()
+        assert re.search(r"void pBulkFailed\(PBulkLoop\w*Row r, int j, Exception failed", java), java
+        assert "r.productId()" in java, java
+        code = "\n".join(line for line in java.splitlines() if not line.strip().startswith("//"))
+        assert "BULK_EXCEPTIONS" not in code and "24381" not in code, code
+        assert "handler のまとめの文" in java, "the summary PUT_LINE cannot be per element, and says so"
+        assert "failed.getMessage()" in java
+    finally:
+        split.set_boundaries(Boundaries())

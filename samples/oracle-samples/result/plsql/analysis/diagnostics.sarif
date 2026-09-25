@@ -196,6 +196,18 @@
        }
       },
       {
+       "id": "ROW_LIMIT_DECIDED",
+       "shortDescription": {
+        "text": "ROW_LIMIT_DECIDED"
+       }
+      },
+      {
+       "id": "PAGED",
+       "shortDescription": {
+        "text": "PAGED"
+       }
+      },
+      {
        "id": "INSERT_COLS",
        "shortDescription": {
         "text": "INSERT_COLS"
@@ -2763,6 +2775,69 @@
      "level": "note",
      "message": {
       "text": "BULK COLLECT into v_ids, v_names, v_sals と、それを回す FORALL を 1 つの走査ループに した。FORALL は 1 往復、ループは行ごとに 1 回で、性能は変わるが答えは変わらない。行数上限は cursor FOR ループとして決める（CUR-002）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_forall_save_exceptions.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ROW_LIMIT_DECIDED",
+     "level": "note",
+     "message": {
+      "text": "1 反復 = 1 トランザクションに割り、対象をキー順に件数つきで繰り返し読む形にした（limits.yaml: transactions.perIteration）。一度に持つ行数は読む単位で決まる"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_forall_save_exceptions.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PAGED",
+     "level": "note",
+     "message": {
+      "text": "処理対象を employee_id の順に p_batch 件ずつ読む（#19 の決定）。上限は「何行来うるか」ではなく「1 回に何行ずつ取るか」になる。ページごとに読むので、途中で増えた行も回る"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_forall_save_exceptions.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "LIMIT",
+     "level": "note",
+     "message": {
+      "text": "FETCH FIRST :p_batch ROWS ONLY rewritten to LIMIT :p_batch"
      },
      "locations": [
       {

@@ -9,15 +9,15 @@
   "parsedFiles": 37,
   "totalFiles": 37,
   "failedFiles": [],
-  "typeResolutionRate": 0.9924,
-  "typedSymbols": 131,
-  "resolvedSymbols": 130
+  "typeResolutionRate": 0.9925,
+  "typedSymbols": 133,
+  "resolvedSymbols": 132
  },
  "totals": {
   "modules": 36,
   "routines": 41,
   "statements": 317,
-  "issues": 247,
+  "issues": 250,
   "errors": 7
  },
  "statementKinds": {
@@ -716,7 +716,7 @@
      "kind": "procedure",
      "visibility": "public",
      "statements": 10,
-     "parameters": 0,
+     "parameters": 2,
      "declarations": 7,
      "handlers": 1,
      "transactionEffects": {

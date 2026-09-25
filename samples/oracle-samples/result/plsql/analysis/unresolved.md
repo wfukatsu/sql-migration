@@ -259,7 +259,7 @@
 
 **再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
 
-- `TX-001` は決定済み（limits.yaml: transactions.callerBoundary）: FORALL のあとの COMMIT（成功分の確定）。呼び出し側が commit する（同上）
+- `TX-001` は決定済み（limits.yaml: transactions.perIteration）: FORALL … SAVE EXCEPTIONS は「失敗した要素を飛ばして続け、成功分を確定する」。1 要素 = 1 トランザクション に割る（BULK-002 の形）。3 回目は callerBoundary にしていたが、CHECK の guard（#50）が最初の違反行で止める ようになったので、利用者が perIteration に変えた（2026-09-25）。全体の原子性は無くなる（BIZ-1）
 - 実 DB の比較: まだ無い
 - 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
 
@@ -270,8 +270,8 @@
 **判定したルール**
 
 - `SCAN-002` (AUTO, `scalardb_capability.yaml`): パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります
-- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
-- `BULK-003` (REVIEW, `semantics.yaml`): 分割読みは行をまとめて読む形になりました。メモリを守るのは LIMIT ではなく走査行数の上限です
+- `CUR-OPT-002` (AUTO, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します
+- `BULK-OPT-003` (AUTO, `semantics.yaml`): 分割読みは行をまとめて読む形になりました。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります
 - `TX-001` (REDESIGN, `transaction.yaml`): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
 
 **代替案**
@@ -285,9 +285,7 @@
 
 - cross_partition_scan
 - partial_failure
-- performance
 - rollback_boundary
-- row_limit
 
 **確信度が 0 になっている要因**: testEvidence
 
