@@ -511,9 +511,12 @@ public final class Plsql {
     return out.length() == 0 ? null : out.toString();
   }
 
-  // ---- PL/SQL collections (#45). A nested table / VARRAY is a dense 1-based List; an associative array
-  // (INDEX BY) is a TreeMap, which walks its keys in order the way FIRST / NEXT do. A nested table that
-  // DELETE(i) made sparse is not modelled: only its last element can be deleted.
+  // ---- PL/SQL collections (#45). A nested table / VARRAY is a 1-based List; an associative array (INDEX BY
+  // VARCHAR2) is a TreeMap, which walks its keys in order the way FIRST / NEXT do. `DELETE(i)` leaves a gap in
+  // a nested table (COUNT drops, EXISTS(i) is false, NEXT skips it): the gap is the GAP marker in the List.
+  private static final Object GAP = new Object() {
+    @Override public String toString() { return "<deleted element>"; }
+  };
   @SafeVarargs
   public static <E> java.util.List<E> table(E... elements) {
     return new java.util.ArrayList<>(java.util.Arrays.asList(elements));
@@ -535,19 +538,24 @@ public final class Plsql {
 
   public static int count(Object collection) {
     if (collection == null) throw collectionIsNull();
-    return collection instanceof java.util.List<?> list ? list.size() : ((java.util.Map<?, ?>) collection).size();
+    if (collection instanceof java.util.List<?> list) {
+      int n = 0;
+      for (Object e : list) if (e != GAP) n++;
+      return n;
+    }
+    return ((java.util.Map<?, ?>) collection).size();
   }
 
   public static Object first(Object collection) {
     if (collection == null) throw collectionIsNull();
-    if (collection instanceof java.util.List<?> list) return list.isEmpty() ? null : Integer.valueOf(1);
+    if (collection instanceof java.util.List<?> list) return next(list, 0);
     java.util.TreeMap<?, ?> map = (java.util.TreeMap<?, ?>) collection;
     return map.isEmpty() ? null : map.firstKey();
   }
 
   public static Object last(Object collection) {
     if (collection == null) throw collectionIsNull();
-    if (collection instanceof java.util.List<?> list) return list.isEmpty() ? null : Integer.valueOf(list.size());
+    if (collection instanceof java.util.List<?> list) return prior(list, list.size() + 1);
     java.util.TreeMap<?, ?> map = (java.util.TreeMap<?, ?>) collection;
     return map.isEmpty() ? null : map.lastKey();
   }
@@ -557,8 +565,8 @@ public final class Plsql {
     if (collection == null) throw collectionIsNull();
     if (at == null) return null;
     if (collection instanceof java.util.List<?> list) {
-      int i = num(at).intValueExact();
-      return i < list.size() ? Integer.valueOf(i + 1) : null;
+      for (int i = num(at).intValueExact() + 1; i <= list.size(); i++) if (list.get(i - 1) != GAP) return i;
+      return null;
     }
     return ((java.util.TreeMap<Object, ?>) collection).higherKey(key(collection, at));
   }
@@ -568,8 +576,8 @@ public final class Plsql {
     if (collection == null) throw collectionIsNull();
     if (at == null) return null;
     if (collection instanceof java.util.List<?> list) {
-      int i = num(at).intValueExact();
-      return i > 1 && i - 1 <= list.size() ? Integer.valueOf(i - 1) : null;
+      for (int i = Math.min(num(at).intValueExact(), list.size() + 1) - 1; i >= 1; i--) if (list.get(i - 1) != GAP) return i;
+      return null;
     }
     return ((java.util.TreeMap<Object, ?>) collection).lowerKey(key(collection, at));
   }
@@ -579,7 +587,7 @@ public final class Plsql {
     if (at == null) return false;
     if (collection instanceof java.util.List<?> list) {
       int i = num(at).intValueExact();
-      return i >= 1 && i <= list.size();
+      return i >= 1 && i <= list.size() && list.get(i - 1) != GAP;
     }
     return ((java.util.Map<?, ?>) collection).containsKey(key(collection, at));
   }
@@ -592,7 +600,9 @@ public final class Plsql {
       if (i < 1 || i > list.size()) {
         throw new IndexOutOfBoundsException("SUBSCRIPT_BEYOND_COUNT (ORA-06533): element " + i + " of " + list.size());
       }
-      return list.get(i - 1);
+      Object element = list.get(i - 1);
+      if (element == GAP) throw new IllegalStateException("NO_DATA_FOUND (ORA-01403): element " + i + " was deleted");
+      return element;
     }
     java.util.Map<Object, ?> map = (java.util.Map<Object, ?>) collection;
     Object k = key(collection, at);
@@ -634,16 +644,13 @@ public final class Plsql {
     if (collection instanceof java.util.List<?> list) list.clear(); else ((java.util.Map<?, ?>) collection).clear();
   }
 
+  @SuppressWarnings("unchecked")
   public static void delete(Object collection, Object at) {
     if (collection == null) throw collectionIsNull();
     if (collection instanceof java.util.List<?> list) {
       int i = num(at).intValueExact();
       if (i < 1 || i > list.size()) return;   // Oracle: deleting a missing element does nothing
-      if (i != list.size()) {
-        throw new UnsupportedOperationException("DELETE(" + i + ") would leave the nested table sparse; the generated "
-            + "List is dense (only the last element can be deleted)");
-      }
-      list.remove(i - 1);
+      ((java.util.List<Object>) list).set(i - 1, GAP);
       return;
     }
     ((java.util.Map<?, ?>) collection).remove(key(collection, at));

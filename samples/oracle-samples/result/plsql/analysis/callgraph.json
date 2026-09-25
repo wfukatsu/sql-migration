@@ -62,7 +62,10 @@
    "routine": "b04_5_records_collections",
    "calls": [],
    "external": [
-    "DBMS_OUTPUT.PUT_LINE"
+    "DBMS_OUTPUT.PUT_LINE",
+    "v_names.DELETE",
+    "v_names.EXTEND",
+    "v_top3.EXTEND"
    ]
   },
   {

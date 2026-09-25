@@ -726,6 +726,7 @@
         "endColumn": 7
        },
        "loopKind": "basic",
+       "returns_rows": false,
        "body": [
         {
          "id": "b04_2_control_flow#stmt-11",
@@ -781,6 +782,7 @@
        },
        "loopKind": "while",
        "condition": "i > 0",
+       "returns_rows": false,
        "body": [
         {
          "id": "b04_2_control_flow#stmt-15",
@@ -809,6 +811,7 @@
        },
        "loopKind": "for",
        "cursor": "j IN REVERSE 1 .. 6",
+       "returns_rows": false,
        "body": [
         {
          "id": "b04_2_control_flow#stmt-17",
@@ -852,6 +855,7 @@
        "loopKind": "for",
        "label": "outer_loop",
        "cursor": "a IN 1 .. 3",
+       "returns_rows": false,
        "body": [
         {
          "id": "b04_2_control_flow#stmt-20",
@@ -865,6 +869,7 @@
          },
          "loopKind": "for",
          "cursor": "b IN 1 .. 3",
+         "returns_rows": false,
          "body": [
           {
            "id": "b04_2_control_flow#stmt-21",
@@ -1506,6 +1511,7 @@
         ]
        },
        "variable": "r",
+       "returns_rows": false,
        "body": [
         {
          "id": "b04_4_1_explicit_cursor#stmt-1count",
@@ -1656,6 +1662,7 @@
         ]
        },
        "variable": "r",
+       "returns_rows": false,
        "body": [
         {
          "id": "b04_4_2_cursor_for_loop#stmt-2",
@@ -1794,6 +1801,7 @@
         "planId": "b04_4_2_cursor_for_loop#stmt-3#query.plan.json"
        },
        "variable": "d",
+       "returns_rows": false,
        "body": [
         {
          "id": "b04_4_2_cursor_for_loop#stmt-4",
@@ -2011,6 +2019,7 @@
         ]
        },
        "variable": "r",
+       "returns_rows": false,
        "body": [
         {
          "id": "b04_4_3_for_update_current_of#stmt-2trg1",
@@ -2495,137 +2504,293 @@
         "startColumn": 3,
         "endColumn": 7
        },
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "CUR_BRANCHED",
+         "message": "cursor 変数 rc は分岐ごとに別の問合せで開かれていた。分岐ごとに、その問合せの行を先に読んで回す形にした",
+         "range": {
+          "file": "b04_4_4_ref_cursor.prc",
+          "startLine": 7,
+          "endLine": 11,
+          "startColumn": 3,
+          "endColumn": 7
+         }
+        }
+       ],
        "branches": [
         {
          "condition": "v_mode = 'DEPT'",
          "body": [
           {
-           "id": "b04_4_4_ref_cursor#stmt-2",
-           "kind": "Unsupported",
+           "id": "b04_4_4_ref_cursor#stmt-4b1",
+           "kind": "Loop",
            "sourceRange": {
             "file": "b04_4_4_ref_cursor.prc",
-            "startLine": 8,
-            "endLine": 8,
-            "startColumn": 5,
-            "endColumn": 45
+            "startLine": 12,
+            "endLine": 16,
+            "startColumn": 3,
+            "endColumn": 7
            },
            "diagnostics": [
             {
-             "severity": "WARN",
-             "code": "UNSUPPORTED_CONSTRUCT",
-             "message": "Open_for_statement is not lowered yet; the routine cannot be AUTO while it is present",
+             "severity": "INFO",
+             "code": "CUR_SCAN",
+             "message": "cursor rc は読むだけのループだった。行を先に読んで回す形にした——移行先に跨トランザクションの cursor は無いので、動く行数はメモリで決まる（上限は --limits）。FETCH の代入先はそのまま残してあるので、ループの後でも Oracle と同じ値が入っている",
              "range": {
               "file": "b04_4_4_ref_cursor.prc",
-              "startLine": 8,
-              "endLine": 8,
-              "startColumn": 5,
-              "endColumn": 45
+              "startLine": 12,
+              "endLine": 16,
+              "startColumn": 3,
+              "endColumn": 7
              }
             }
            ],
-           "text": "OPEN rc FOR SELECT department_name FROM departments",
-           "construct": "Open_for_statement"
+           "readSet": [
+            "departments"
+           ],
+           "loopKind": "cursor-for",
+           "cursor": "r IN (SELECT department_name FROM departments)",
+           "query": {
+            "id": "b04_4_4_ref_cursor#stmt-4b1",
+            "kind": "SqlOperation",
+            "sourceRange": {
+             "file": "b04_4_4_ref_cursor.prc",
+             "startLine": 12,
+             "endLine": 16,
+             "startColumn": 3,
+             "endColumn": 7
+            },
+            "diagnostics": [
+             {
+              "severity": "WARN",
+              "code": "CROSS_PARTITION",
+              "message": "SELECT: predicates do not cover the partition key ['department_id'] of departments -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)",
+              "range": {
+               "file": "b04_4_4_ref_cursor.prc",
+               "startLine": 12,
+               "endLine": 16,
+               "startColumn": 3,
+               "endColumn": 7
+              }
+             },
+             {
+              "severity": "INFO",
+              "code": "CONFIG",
+              "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node",
+              "range": {
+               "file": "b04_4_4_ref_cursor.prc",
+               "startLine": 12,
+               "endLine": 16,
+               "startColumn": 3,
+               "endColumn": 7
+              }
+             },
+             {
+              "severity": "INFO",
+              "code": "COST",
+              "message": "full scan of departments (~25 us per row); pass --expected-rows table=N for an estimate",
+              "range": {
+               "file": "b04_4_4_ref_cursor.prc",
+               "startLine": 12,
+               "endLine": 16,
+               "startColumn": 3,
+               "endColumn": 7
+              }
+             }
+            ],
+            "readSet": [
+             "departments"
+            ],
+            "sqlKind": "SELECT",
+            "originalSql": "SELECT department_name FROM departments",
+            "intoColumns": [
+             "department_name"
+            ],
+            "intoTypes": [
+             "TEXT"
+            ],
+            "intoOracleTypes": [
+             "VARCHAR2(30)"
+            ],
+            "selectsStar": false,
+            "cardinality": "MANY",
+            "atMostOneRow": false,
+            "targetStatus": "WARN",
+            "targetSql": [
+             "SELECT department_name FROM departments"
+            ]
+           },
+           "variable": "r",
+           "returns_rows": false,
+           "body": [
+            {
+             "id": "b04_4_4_ref_cursor#stmt-5row1",
+             "kind": "Assignment",
+             "sourceRange": {
+              "file": "b04_4_4_ref_cursor.prc",
+              "startLine": 13,
+              "endLine": 13,
+              "startColumn": 5,
+              "endColumn": 19
+             },
+             "target": "v_name",
+             "expression": "r.department_name"
+            },
+            {
+             "id": "b04_4_4_ref_cursor#stmt-7",
+             "kind": "Call",
+             "sourceRange": {
+              "file": "b04_4_4_ref_cursor.prc",
+              "startLine": 15,
+              "endLine": 15,
+              "startColumn": 5,
+              "endColumn": 32
+             },
+             "callee": "DBMS_OUTPUT.PUT_LINE",
+             "arguments": [
+              "v_name"
+             ]
+            }
+           ]
           }
          ]
         }
        ],
        "elseBody": [
         {
-         "id": "b04_4_4_ref_cursor#stmt-3",
-         "kind": "Unsupported",
+         "id": "b04_4_4_ref_cursor#stmt-4b2",
+         "kind": "Loop",
          "sourceRange": {
           "file": "b04_4_4_ref_cursor.prc",
-          "startLine": 10,
-          "endLine": 10,
-          "startColumn": 5,
-          "endColumn": 39
+          "startLine": 12,
+          "endLine": 16,
+          "startColumn": 3,
+          "endColumn": 7
          },
          "diagnostics": [
           {
-           "severity": "WARN",
-           "code": "UNSUPPORTED_CONSTRUCT",
-           "message": "Open_for_statement is not lowered yet; the routine cannot be AUTO while it is present",
+           "severity": "INFO",
+           "code": "CUR_SCAN",
+           "message": "cursor rc は読むだけのループだった。行を先に読んで回す形にした——移行先に跨トランザクションの cursor は無いので、動く行数はメモリで決まる（上限は --limits）。FETCH の代入先はそのまま残してあるので、ループの後でも Oracle と同じ値が入っている",
            "range": {
             "file": "b04_4_4_ref_cursor.prc",
-            "startLine": 10,
-            "endLine": 10,
-            "startColumn": 5,
-            "endColumn": 39
+            "startLine": 12,
+            "endLine": 16,
+            "startColumn": 3,
+            "endColumn": 7
            }
           }
          ],
-         "text": "OPEN rc FOR SELECT last_name FROM employees",
-         "construct": "Open_for_statement"
+         "readSet": [
+          "employees"
+         ],
+         "loopKind": "cursor-for",
+         "cursor": "r IN (SELECT last_name FROM employees)",
+         "query": {
+          "id": "b04_4_4_ref_cursor#stmt-4b2",
+          "kind": "SqlOperation",
+          "sourceRange": {
+           "file": "b04_4_4_ref_cursor.prc",
+           "startLine": 12,
+           "endLine": 16,
+           "startColumn": 3,
+           "endColumn": 7
+          },
+          "diagnostics": [
+           {
+            "severity": "WARN",
+            "code": "CROSS_PARTITION",
+            "message": "SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)",
+            "range": {
+             "file": "b04_4_4_ref_cursor.prc",
+             "startLine": 12,
+             "endLine": 16,
+             "startColumn": 3,
+             "endColumn": 7
+            }
+           },
+           {
+            "severity": "INFO",
+            "code": "CONFIG",
+            "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node",
+            "range": {
+             "file": "b04_4_4_ref_cursor.prc",
+             "startLine": 12,
+             "endLine": 16,
+             "startColumn": 3,
+             "endColumn": 7
+            }
+           },
+           {
+            "severity": "INFO",
+            "code": "COST",
+            "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate",
+            "range": {
+             "file": "b04_4_4_ref_cursor.prc",
+             "startLine": 12,
+             "endLine": 16,
+             "startColumn": 3,
+             "endColumn": 7
+            }
+           }
+          ],
+          "readSet": [
+           "employees"
+          ],
+          "sqlKind": "SELECT",
+          "originalSql": "SELECT last_name FROM employees",
+          "intoColumns": [
+           "last_name"
+          ],
+          "intoTypes": [
+           "TEXT"
+          ],
+          "intoOracleTypes": [
+           "VARCHAR2(25)"
+          ],
+          "selectsStar": false,
+          "cardinality": "MANY",
+          "atMostOneRow": false,
+          "targetStatus": "WARN",
+          "targetSql": [
+           "SELECT last_name FROM employees"
+          ]
+         },
+         "variable": "r",
+         "returns_rows": false,
+         "body": [
+          {
+           "id": "b04_4_4_ref_cursor#stmt-5row1",
+           "kind": "Assignment",
+           "sourceRange": {
+            "file": "b04_4_4_ref_cursor.prc",
+            "startLine": 13,
+            "endLine": 13,
+            "startColumn": 5,
+            "endColumn": 19
+           },
+           "target": "v_name",
+           "expression": "r.last_name"
+          },
+          {
+           "id": "b04_4_4_ref_cursor#stmt-7",
+           "kind": "Call",
+           "sourceRange": {
+            "file": "b04_4_4_ref_cursor.prc",
+            "startLine": 15,
+            "endLine": 15,
+            "startColumn": 5,
+            "endColumn": 32
+           },
+           "callee": "DBMS_OUTPUT.PUT_LINE",
+           "arguments": [
+            "v_name"
+           ]
+          }
+         ]
         }
        ]
-      },
-      {
-       "id": "b04_4_4_ref_cursor#stmt-4",
-       "kind": "Loop",
-       "sourceRange": {
-        "file": "b04_4_4_ref_cursor.prc",
-        "startLine": 12,
-        "endLine": 16,
-        "startColumn": 3,
-        "endColumn": 7
-       },
-       "loopKind": "basic",
-       "body": [
-        {
-         "id": "b04_4_4_ref_cursor#stmt-5",
-         "kind": "Fetch",
-         "sourceRange": {
-          "file": "b04_4_4_ref_cursor.prc",
-          "startLine": 13,
-          "endLine": 13,
-          "startColumn": 5,
-          "endColumn": 19
-         },
-         "cursor": "rc",
-         "intoTargets": [
-          "v_name"
-         ]
-        },
-        {
-         "id": "b04_4_4_ref_cursor#stmt-6",
-         "kind": "Exit",
-         "sourceRange": {
-          "file": "b04_4_4_ref_cursor.prc",
-          "startLine": 14,
-          "endLine": 14,
-          "startColumn": 5,
-          "endColumn": 17
-         },
-         "condition": "rc%NOTFOUND"
-        },
-        {
-         "id": "b04_4_4_ref_cursor#stmt-7",
-         "kind": "Call",
-         "sourceRange": {
-          "file": "b04_4_4_ref_cursor.prc",
-          "startLine": 15,
-          "endLine": 15,
-          "startColumn": 5,
-          "endColumn": 32
-         },
-         "callee": "DBMS_OUTPUT.PUT_LINE",
-         "arguments": [
-          "v_name"
-         ]
-        }
-       ]
-      },
-      {
-       "id": "b04_4_4_ref_cursor#stmt-8",
-       "kind": "CloseCursor",
-       "sourceRange": {
-        "file": "b04_4_4_ref_cursor.prc",
-        "startLine": 17,
-        "endLine": 17,
-        "startColumn": 3,
-        "endColumn": 9
-       },
-       "cursor": "rc"
       }
      ],
      "deterministic": false,
@@ -2726,7 +2891,7 @@
        },
        "type": {
         "oracle": "t_sal_by_name",
-        "resolved": "TABLE OF NUMBER",
+        "resolved": "TABLE OF NUMBER INDEX BY VARCHAR2(30)",
         "origin": "collection",
         "schemaSnapshot": "schema.sql@d6f64025"
        },
@@ -2809,8 +2974,9 @@
        },
        "type": {
         "oracle": "t_top3",
-        "resolved": "t_top3",
-        "origin": "declared"
+        "resolved": "TABLE OF NUMBER LIMIT 3",
+        "origin": "collection",
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_top3",
        "declarationKind": "variable",
@@ -2924,6 +3090,7 @@
         ]
        },
        "variable": "r",
+       "returns_rows": false,
        "body": [
         {
          "id": "b04_5_records_collections#stmt-5",
@@ -2965,6 +3132,7 @@
        },
        "loopKind": "while",
        "condition": "k IS NOT NULL",
+       "returns_rows": false,
        "body": [
         {
          "id": "b04_5_records_collections#stmt-8",
@@ -2998,7 +3166,7 @@
       },
       {
        "id": "b04_5_records_collections#stmt-10",
-       "kind": "Unsupported",
+       "kind": "Call",
        "sourceRange": {
         "file": "b04_5_records_collections.prc",
         "startLine": 36,
@@ -3006,8 +3174,7 @@
         "startColumn": 3,
         "endColumn": 11
        },
-       "text": "v_names.EXTEND",
-       "construct": "Sql_statement"
+       "callee": "v_names.EXTEND"
       },
       {
        "id": "b04_5_records_collections#stmt-11",
@@ -3024,7 +3191,7 @@
       },
       {
        "id": "b04_5_records_collections#stmt-12",
-       "kind": "Unsupported",
+       "kind": "Call",
        "sourceRange": {
         "file": "b04_5_records_collections.prc",
         "startLine": 37,
@@ -3032,8 +3199,10 @@
         "startColumn": 3,
         "endColumn": 19
        },
-       "text": "v_names.DELETE(2)",
-       "construct": "Sql_statement"
+       "callee": "v_names.DELETE",
+       "arguments": [
+        "2"
+       ]
       },
       {
        "id": "b04_5_records_collections#stmt-13",
@@ -3052,7 +3221,7 @@
       },
       {
        "id": "b04_5_records_collections#stmt-14",
-       "kind": "Unsupported",
+       "kind": "Call",
        "sourceRange": {
         "file": "b04_5_records_collections.prc",
         "startLine": 41,
@@ -3060,8 +3229,10 @@
         "startColumn": 3,
         "endColumn": 18
        },
-       "text": "v_top3.EXTEND(3)",
-       "construct": "Sql_statement"
+       "callee": "v_top3.EXTEND",
+       "arguments": [
+        "3"
+       ]
       },
       {
        "id": "b04_5_records_collections#stmt-15",
@@ -4822,6 +4993,7 @@
        },
        "variable": "v_rows",
        "chunk": "5",
+       "returns_rows": false,
        "body": [
         {
          "id": "b06_1_bulk_collect_limit#stmt-4",
@@ -4987,6 +5159,7 @@
        },
        "loopKind": "forall",
        "cursor": "1 .. v_depts.COUNT",
+       "returns_rows": false,
        "body": [
         {
          "id": "b06_2_2_forall_returning#stmt-2",
@@ -5045,6 +5218,7 @@
        },
        "loopKind": "for",
        "cursor": "i IN 1 .. v_depts.COUNT",
+       "returns_rows": false,
        "body": [
         {
          "id": "b06_2_2_forall_returning#stmt-4",
@@ -5362,6 +5536,7 @@
         ]
        },
        "variable": "r",
+       "returns_rows": false,
        "body": [
         {
          "id": "b06_2_forall_save_exceptions#stmt-3",
@@ -5499,6 +5674,7 @@
          },
          "loopKind": "for",
          "cursor": "j IN 1 .. SQL%BULK_EXCEPTIONS.COUNT",
+         "returns_rows": false,
          "body": [
           {
            "id": "b06_2_forall_save_exceptions#stmt-7",
@@ -5724,6 +5900,7 @@
        },
        "loopKind": "for",
        "cursor": "i IN 1 .. ncols",
+       "returns_rows": false,
        "body": [
         {
          "id": "b06_3_6_dbms_sql#stmt-4",
@@ -5770,6 +5947,7 @@
        },
        "loopKind": "while",
        "condition": "DBMS_SQL.FETCH_ROWS(c) > 0",
+       "returns_rows": false,
        "body": [
         {
          "id": "b06_3_6_dbms_sql#stmt-7",
@@ -5783,6 +5961,7 @@
          },
          "loopKind": "for",
          "cursor": "i IN 1 .. ncols",
+         "returns_rows": false,
          "body": [
           {
            "id": "b06_3_6_dbms_sql#stmt-8",
@@ -6280,6 +6459,7 @@
         "endColumn": 7
        },
        "loopKind": "basic",
+       "returns_rows": false,
        "body": [
         {
          "id": "b06_3_native_dynamic_sql#stmt-9",
@@ -7217,6 +7397,7 @@
         ]
        },
        "variable": "t",
+       "returns_rows": false,
        "body": [
         {
          "id": "setup_drop_objects#stmt-2",
@@ -7317,6 +7498,7 @@
         ]
        },
        "variable": "s",
+       "returns_rows": false,
        "body": [
         {
          "id": "setup_drop_objects#stmt-4",
@@ -8785,7 +8967,7 @@
      "body": [
       {
        "id": "emp_api.get_by_dept#stmt-1",
-       "kind": "Unsupported",
+       "kind": "Loop",
        "sourceRange": {
         "file": "emp_api.pkb",
         "startLine": 47,
@@ -8795,9 +8977,9 @@
        },
        "diagnostics": [
         {
-         "severity": "WARN",
-         "code": "UNSUPPORTED_CONSTRUCT",
-         "message": "Open_for_statement is not lowered yet; the routine cannot be AUTO while it is present",
+         "severity": "INFO",
+         "code": "CUR_RETURNED",
+         "message": "cursor 変数 rc は呼び出し側へ返されていた。移行先に渡せる cursor は無いので、行を読んで List で返す（呼び出し側は cursor から FETCH する代わりに List を受け取る）",
          "range": {
           "file": "emp_api.pkb",
           "startLine": 47,
@@ -8807,20 +8989,100 @@
          }
         }
        ],
-       "text": "OPEN rc FOR\n      SELECT employee_id, last_name, salary FROM employees\n      WHERE  department_id = p_dept_id ORDER BY employee_id",
-       "construct": "Open_for_statement"
-      },
-      {
-       "id": "emp_api.get_by_dept#stmt-2",
-       "kind": "Return",
-       "sourceRange": {
-        "file": "emp_api.pkb",
-        "startLine": 50,
-        "endLine": 50,
-        "startColumn": 5,
-        "endColumn": 12
+       "readSet": [
+        "employees"
+       ],
+       "loopKind": "cursor-for",
+       "cursor": "r IN (SELECT employee_id, last_name, salary FROM employees\n      WHERE  department_id = p_dept_id ORDER BY employee_id)",
+       "query": {
+        "id": "emp_api.get_by_dept#stmt-1",
+        "kind": "SqlOperation",
+        "sourceRange": {
+         "file": "emp_api.pkb",
+         "startLine": 47,
+         "endLine": 49,
+         "startColumn": 5,
+         "endColumn": 49
+        },
+        "diagnostics": [
+         {
+          "severity": "WARN",
+          "code": "CROSS_PARTITION",
+          "message": "SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)",
+          "range": {
+           "file": "emp_api.pkb",
+           "startLine": 47,
+           "endLine": 49,
+           "startColumn": 5,
+           "endColumn": 49
+          }
+         },
+         {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node",
+          "range": {
+           "file": "emp_api.pkb",
+           "startLine": 47,
+           "endLine": 49,
+           "startColumn": 5,
+           "endColumn": 49
+          }
+         },
+         {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate",
+          "range": {
+           "file": "emp_api.pkb",
+           "startLine": 47,
+           "endLine": 49,
+           "startColumn": 5,
+           "endColumn": 49
+          }
+         }
+        ],
+        "readSet": [
+         "employees"
+        ],
+        "sqlKind": "SELECT",
+        "originalSql": "SELECT employee_id, last_name, salary FROM employees\n      WHERE  department_id = p_dept_id ORDER BY employee_id",
+        "binds": [
+         {
+          "name": "p_dept_id",
+          "direction": "IN",
+          "oracleType": "NUMBER",
+          "plsqlVariable": "p_dept_id",
+          "column": "department_id",
+          "scalardbType": "INT",
+          "columnOracleType": "NUMBER(4)"
+         }
+        ],
+        "intoColumns": [
+         "employee_id",
+         "last_name",
+         "salary"
+        ],
+        "intoTypes": [
+         "INT",
+         "TEXT",
+         "DOUBLE"
+        ],
+        "intoOracleTypes": [
+         "NUMBER(6)",
+         "VARCHAR2(25)",
+         "NUMBER(8, 2)"
+        ],
+        "selectsStar": false,
+        "cardinality": "MANY",
+        "atMostOneRow": false,
+        "targetStatus": "WARN",
+        "targetSql": [
+         "SELECT employee_id, last_name, salary FROM employees WHERE department_id = :p_dept_id ORDER BY employee_id"
+        ]
        },
-       "expression": "rc"
+       "variable": "r",
+       "returns_rows": true
       }
      ],
      "deterministic": false,
@@ -9090,7 +9352,7 @@
      },
      "type": {
       "oracle": "t_ids",
-      "resolved": "TABLE OF NUMBER(4)",
+      "resolved": "TABLE OF NUMBER(4) INDEX BY PLS_INTEGER",
       "origin": "collection",
       "schemaSnapshot": "schema.sql@d6f64025"
      },
@@ -9422,6 +9684,7 @@
         "planId": "emp_grades#stmt-1#query.plan.json"
        },
        "variable": "r",
+       "returns_rows": false,
        "body": [
         {
          "id": "emp_grades#stmt-2",

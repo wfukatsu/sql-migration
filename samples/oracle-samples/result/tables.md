@@ -259,8 +259,8 @@
 | `b04_4_1_explicit_cursor` | REVIEW | SCAN-002, CUR-003, CUR-002 | CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります; CUR-002 |
 | `b04_4_2_cursor_for_loop` | REVIEW | CUR-002, SQL-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
 | `b04_4_3_for_update_current_of` | REDESIGN | CUR-002, SQL-004, LOCK-001, LOCK-002, SQL-001, TX-001, TRG-002 | LOCK-001: 行ロックです。ターゲットで同じ保証を別の方法で与える設計が要ります; LOCK-002: cursor の宣言で行ロックしています。文だけを |
-| `b04_4_4_ref_cursor` | REVIEW | LOWER-001, CUR-001 | LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません; LOWER-001: lowering がまだ模していない構 |
-| `b04_5_records_collections` | REVIEW | LOWER-001, CUR-002 | LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません; LOWER-001: lowering がまだ模していない構 |
+| `b04_4_4_ref_cursor` | REVIEW | SCAN-002, CUR-003, CUR-002 | CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります; CUR-003 |
+| `b04_5_records_collections` | REVIEW | CALL-001, CUR-002 | CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません; CUR |
 | `b04_6_1_predefined_exceptions` | REVIEW | SELECT-OPT-001 | confidence factor testEvidence is 0 |
 | `b04_6_2_user_exceptions` | REDESIGN | TX-001, TRG-002 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b05_1_call_raise_salary` | REDESIGN | TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
@@ -278,7 +278,7 @@
 | `dept_name_of` | REVIEW |  | confidence factor testEvidence is 0 |
 | `dml_d_create_error_log` | REVIEW | CALL-001 | CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません |
 | `emp_api.call_count` | REDESIGN | STATE-001 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります |
-| `emp_api.get_by_dept` | REDESIGN | LOWER-001, STATE-001 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります |
+| `emp_api.get_by_dept` | REDESIGN | SCAN-002, CUR-002, STATE-001 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります |
 | `emp_api.give_raise~1` | REDESIGN | SQL-004, SQL-001, STATE-001, TRG-002 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります; TRG-002 |
 | `emp_api.give_raise~2` | REDESIGN | SQL-001, STATE-001, TRG-002 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります; TRG-002 |
 | `emp_api.hire` | REDESIGN | EXC-001, SQL-001, STATE-001, TRG-002 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります; TRG-002 |
@@ -305,15 +305,15 @@
 | `b04_4_1_explicit_cursor` | `b04_4_1_explicit_cursor.b04_4_1_explicit_cursor` | 一致 |  |
 | `b04_4_2_cursor_for_loop` | `b04_4_2_cursor_for_loop.b04_4_2_cursor_for_loop` | 一致 |  |
 | `b04_4_3_for_update_current_of` | `b04_4_3_for_update_current_of.b04_4_3_for_update_current_of` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Loop: cursor FOR loop whose body writes ['employees'], which its own query reads) |
-| `b04_4_4_ref_cursor` | `b04_4_4_ref_cursor.b04_4_4_ref_cursor` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (Unsupported is not translated) |
-| `b04_5_records_collections` | `b04_5_records_collections.b04_5_records_collections` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration v_names: t_names) |
+| `b04_4_4_ref_cursor` | `b04_4_4_ref_cursor.b04_4_4_ref_cursor` | 一致 |  |
+| `b04_5_records_collections` | `b04_5_records_collections.b04_5_records_collections` | 一致 |  |
 | `b04_6_1_predefined_exceptions` | `b04_6_1_predefined_exceptions.b04_6_1_predefined_exceptions` | 一致 |  |
 | `b04_6_2_user_exceptions` | `b04_6_2_user_exceptions.b04_6_2_user_exceptions` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (Rollback is not translated) |
 | `b05_1_call_raise_salary` | `b05_1_call_raise_salary.b05_1_call_raise_salary` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (RETURNING is not supported) |
 | `b05_3_call_emp_api` | `b05_3_call_emp_api.b05_3_call_emp_api` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Assignment: emp_api.hire) |
 | `b05_4_call_log_msg` | `b05_4_call_log_msg.b05_4_call_log_msg` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (SET salary = salary + 1: expressions referencing columns are not allowed; do SELECT -> compute -> |
 | `b06_1_bulk_collect_limit` | `b06_1_bulk_collect_limit.b06_1_bulk_collect_limit` | 一致 |  |
-| `b06_2_2_forall_returning` | `b06_2_2_forall_returning.b06_2_2_forall_returning` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration v_depts: t_num) |
+| `b06_2_2_forall_returning` | `b06_2_2_forall_returning.b06_2_2_forall_returning` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Loop: forall loop) |
 | `b06_2_forall_save_exceptions` | `b06_2_forall_save_exceptions.b06_2_forall_save_exceptions` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (Commit is not translated); table bulk_target row count: expected=11 actual=0; table bulk_target:  |
 | `b06_3_6_dbms_sql` | `b06_3_6_dbms_sql.b06_3_6_dbms_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration c: DBMS_SQL.OPEN_CURSOR) |
 | `b06_3_native_dynamic_sql` | `b06_3_native_dynamic_sql.b06_3_native_dynamic_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in DynamicSql: EXECUTE IMMEDIATE whose statement is not a knowable set) |

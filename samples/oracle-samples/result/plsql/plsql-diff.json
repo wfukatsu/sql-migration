@@ -203,9 +203,7 @@
    "b04_4_4_ref_cursor": {
     "routine": "b04_4_4_ref_cursor.b04_4_4_ref_cursor",
     "verdict": "REVIEW",
-    "differences": [
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (Unsupported is not translated)"
-    ],
+    "differences": [],
     "accepted": [],
     "scale_only": [
      "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
@@ -229,9 +227,7 @@
    "b04_5_records_collections": {
     "routine": "b04_5_records_collections.b04_5_records_collections",
     "verdict": "REVIEW",
-    "differences": [
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration v_names: t_names)"
-    ],
+    "differences": [],
     "accepted": [],
     "scale_only": [
      "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
@@ -410,7 +406,7 @@
     "routine": "b06_2_2_forall_returning.b06_2_2_forall_returning",
     "verdict": "REVIEW",
     "differences": [
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration v_depts: t_num)"
+     "exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Loop: forall loop)"
     ],
     "accepted": [],
     "scale_only": [
@@ -810,7 +806,7 @@
   },
   "not_compared": {},
   "fingerprints": {
-   "toolchain": "00156193779557d6cbb8e790873cea09ea332df2e227f1c43fd76540dc391cec",
+   "toolchain": "85db08a5ddf39a38af74898ef08d1d19768ac0fc2f6a5fff73c8188ffd52926d",
    "sources": {
     "annual_comp": "a43e3576d8b1c2f648b65d5603c0001c0aaec44531a54d9bf47462ce3bb2ac15",
     "b04_1_variables": "22a5f4c43ce7bc93eb38ea67f54f4b00a202f151bf79b7773cc553c6a005fc03",

@@ -388,20 +388,25 @@
 
 **判定したルール**
 
-- `LOWER-001` (REVIEW, `lowering.yaml`): lowering がまだ模していない構文です。意味が保てる保証がありません
+- `SCAN-002` (AUTO, `scalardb_capability.yaml`): パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります
+- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
 - `STATE-001` (REDESIGN, `state.yaml`): Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります
 
 **代替案**
 
+- キーで届く読み取りに変える
+- 全行を取得してアプリ側で絞る・並べる（docs/design/app-side-processing-plan.md）
 - 引数で渡す
 - 明示的な SessionContext か永続化に移す
 
 **受け入れに必要なテスト**
 
-- equivalent_result
+- cross_partition_scan
+- performance
+- row_limit
 - state_isolation_between_calls
 
-**確信度が 0 になっている要因**: ruleCoverage, testEvidence
+**確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `emp_api.give_raise~1` — `emp_api.pkb:30`
 
@@ -794,48 +799,52 @@
 
 **根拠**
 
-- LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません
-- LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません
-- CUR-001: 明示 cursor は寿命がトランザクション境界をまたぎます
-- CUR-001: 明示 cursor は寿命がトランザクション境界をまたぎます
+- CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
+- CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
+- CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
+- CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
 
 **判定したルール**
 
-- `LOWER-001` (REVIEW, `lowering.yaml`): lowering がまだ模していない構文です。意味が保てる保証がありません
-- `LOWER-001` (REVIEW, `lowering.yaml`): lowering がまだ模していない構文です。意味が保てる保証がありません
-- `CUR-001` (REVIEW, `semantics.yaml`): 明示 cursor は寿命がトランザクション境界をまたぎます
-- `CUR-001` (REVIEW, `semantics.yaml`): 明示 cursor は寿命がトランザクション境界をまたぎます
+- `SCAN-002` (AUTO, `scalardb_capability.yaml`): パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります
+- `SCAN-002` (AUTO, `scalardb_capability.yaml`): パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります
+- `CUR-003` (REVIEW, `semantics.yaml`): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
+- `CUR-003` (REVIEW, `semantics.yaml`): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
+- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
+- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
 
 **代替案**
 
-- ルールに代替案が書かれていない。ルール側に足すべき。
+- キーで届く読み取りに変える
+- 全行を取得してアプリ側で絞る・並べる（docs/design/app-side-processing-plan.md）
+- キーで届く読み取りに変える
+- 全行を取得してアプリ側で絞る・並べる（docs/design/app-side-processing-plan.md）
 
 **受け入れに必要なテスト**
 
+- cross_partition_scan
 - cursor_lifetime
-- equivalent_result
+- performance
+- row_limit
 
-**確信度が 0 になっている要因**: ruleCoverage, testEvidence
+**確信度が 0 になっている要因**: testEvidence
 
 ## REVIEW: `b04_5_records_collections` — `b04_5_records_collections.prc:2`
 
 **根拠**
 
-- LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません
-- LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません
-- LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません
+- CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません
 - CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
 
 **判定したルール**
 
-- `LOWER-001` (REVIEW, `lowering.yaml`): lowering がまだ模していない構文です。意味が保てる保証がありません
-- `LOWER-001` (REVIEW, `lowering.yaml`): lowering がまだ模していない構文です。意味が保てる保証がありません
-- `LOWER-001` (REVIEW, `lowering.yaml`): lowering がまだ模していない構文です。意味が保てる保証がありません
+- `CALL-001` (REVIEW, `lowering.yaml`): 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません
 - `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
 
 **代替案**
 
-- ルールに代替案が書かれていない。ルール側に足すべき。
+- 呼び先のソースを解析対象に加える
+- 加えられない（Oracle 提供のパッケージなど）なら、移行先での代替を決める
 
 **受け入れに必要なテスト**
 
@@ -843,7 +852,7 @@
 - performance
 - row_limit
 
-**確信度が 0 になっている要因**: ruleCoverage, testEvidence
+**確信度が 0 になっている要因**: symbolResolution, testEvidence
 
 ## REVIEW: `b04_6_1_predefined_exceptions` — `b04_6_1_predefined_exceptions.prc:2`
 

@@ -66,13 +66,14 @@ com/example/migrated/application/B0443ForUpdateCurrentOfService.java,b0443ForUpd
 com/example/migrated/application/B0443ForUpdateCurrentOfService.java,b0443ForUpdateCurrentOf @ b04_4_3_for_update_current_of.prc:11,b04_4_3_for_update_current_of.prc,11,11,Rollback,REDESIGN,not-generated
 com/example/migrated/application/B0444RefCursorService.java,b0444RefCursor,b04_4_4_ref_cursor.prc,2,18,routine,REVIEW,not-generated
 com/example/migrated/application/B0444RefCursorService.java,b0444RefCursor @ b04_4_4_ref_cursor.prc:7,b04_4_4_ref_cursor.prc,7,11,If,REVIEW,not-generated
-com/example/migrated/application/B0444RefCursorService.java,b0444RefCursor @ b04_4_4_ref_cursor.prc:8,b04_4_4_ref_cursor.prc,8,8,Unsupported,REVIEW,not-generated
-com/example/migrated/application/B0444RefCursorService.java,b0444RefCursor @ b04_4_4_ref_cursor.prc:10,b04_4_4_ref_cursor.prc,10,10,Unsupported,REVIEW,not-generated
 com/example/migrated/application/B0444RefCursorService.java,b0444RefCursor @ b04_4_4_ref_cursor.prc:12,b04_4_4_ref_cursor.prc,12,16,Loop,REVIEW,not-generated
-com/example/migrated/application/B0444RefCursorService.java,b0444RefCursor @ b04_4_4_ref_cursor.prc:13,b04_4_4_ref_cursor.prc,13,13,Fetch,REVIEW,not-generated
-com/example/migrated/application/B0444RefCursorService.java,b0444RefCursor @ b04_4_4_ref_cursor.prc:14,b04_4_4_ref_cursor.prc,14,14,Exit,REVIEW,not-generated
+com/example/migrated/application/B0444RefCursorService.java,b0444RefCursor @ b04_4_4_ref_cursor.prc:12,b04_4_4_ref_cursor.prc,12,16,SqlOperation,REVIEW,not-generated
+com/example/migrated/application/B0444RefCursorService.java,b0444RefCursor @ b04_4_4_ref_cursor.prc:13,b04_4_4_ref_cursor.prc,13,13,Assignment,REVIEW,not-generated
 com/example/migrated/application/B0444RefCursorService.java,b0444RefCursor @ b04_4_4_ref_cursor.prc:15,b04_4_4_ref_cursor.prc,15,15,Call,REVIEW,not-generated
-com/example/migrated/application/B0444RefCursorService.java,b0444RefCursor @ b04_4_4_ref_cursor.prc:17,b04_4_4_ref_cursor.prc,17,17,CloseCursor,REVIEW,not-generated
+com/example/migrated/application/B0444RefCursorService.java,b0444RefCursor @ b04_4_4_ref_cursor.prc:12,b04_4_4_ref_cursor.prc,12,16,Loop,REVIEW,not-generated
+com/example/migrated/application/B0444RefCursorService.java,b0444RefCursor @ b04_4_4_ref_cursor.prc:12,b04_4_4_ref_cursor.prc,12,16,SqlOperation,REVIEW,not-generated
+com/example/migrated/application/B0444RefCursorService.java,b0444RefCursor @ b04_4_4_ref_cursor.prc:13,b04_4_4_ref_cursor.prc,13,13,Assignment,REVIEW,not-generated
+com/example/migrated/application/B0444RefCursorService.java,b0444RefCursor @ b04_4_4_ref_cursor.prc:15,b04_4_4_ref_cursor.prc,15,15,Call,REVIEW,not-generated
 com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsCollections,b04_5_records_collections.prc,2,44,routine,REVIEW,not-generated
 com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsCollections @ b04_5_records_collections.prc:24,b04_5_records_collections.prc,24,24,Assignment,REVIEW,not-generated
 com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsCollections @ b04_5_records_collections.prc:24,b04_5_records_collections.prc,24,24,Assignment,REVIEW,not-generated
@@ -84,11 +85,11 @@ com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsC
 com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsCollections @ b04_5_records_collections.prc:31,b04_5_records_collections.prc,31,34,Loop,REVIEW,not-generated
 com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsCollections @ b04_5_records_collections.prc:32,b04_5_records_collections.prc,32,32,Call,REVIEW,not-generated
 com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsCollections @ b04_5_records_collections.prc:33,b04_5_records_collections.prc,33,33,Assignment,REVIEW,not-generated
-com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsCollections @ b04_5_records_collections.prc:36,b04_5_records_collections.prc,36,36,Unsupported,REVIEW,not-generated
+com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsCollections @ b04_5_records_collections.prc:36,b04_5_records_collections.prc,36,36,Call,REVIEW,not-generated
 com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsCollections @ b04_5_records_collections.prc:36,b04_5_records_collections.prc,36,36,Assignment,REVIEW,not-generated
-com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsCollections @ b04_5_records_collections.prc:37,b04_5_records_collections.prc,37,37,Unsupported,REVIEW,not-generated
+com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsCollections @ b04_5_records_collections.prc:37,b04_5_records_collections.prc,37,37,Call,REVIEW,not-generated
 com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsCollections @ b04_5_records_collections.prc:38,b04_5_records_collections.prc,38,39,Call,REVIEW,not-generated
-com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsCollections @ b04_5_records_collections.prc:41,b04_5_records_collections.prc,41,41,Unsupported,REVIEW,not-generated
+com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsCollections @ b04_5_records_collections.prc:41,b04_5_records_collections.prc,41,41,Call,REVIEW,not-generated
 com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsCollections @ b04_5_records_collections.prc:42,b04_5_records_collections.prc,42,42,Assignment,REVIEW,not-generated
 com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsCollections @ b04_5_records_collections.prc:42,b04_5_records_collections.prc,42,42,Assignment,REVIEW,not-generated
 com/example/migrated/application/B045RecordsCollectionsService.java,b045RecordsCollections @ b04_5_records_collections.prc:42,b04_5_records_collections.prc,42,42,Assignment,REVIEW,not-generated
@@ -245,8 +246,8 @@ com/example/migrated/application/EmpApiService.java,giveRaise2 @ emp_api.pkb:38,
 com/example/migrated/application/EmpApiService.java,giveRaise2 @ emp_api.pkb:39,emp_api.pkb,39,41,If,REDESIGN,not-generated
 com/example/migrated/application/EmpApiService.java,giveRaise2 @ emp_api.pkb:40,emp_api.pkb,40,40,SqlOperation,REDESIGN,not-generated
 com/example/migrated/application/EmpApiService.java,getByDept,emp_api.pkb,44,51,routine,REDESIGN,not-generated
-com/example/migrated/application/EmpApiService.java,getByDept @ emp_api.pkb:47,emp_api.pkb,47,49,Unsupported,REDESIGN,not-generated
-com/example/migrated/application/EmpApiService.java,getByDept @ emp_api.pkb:50,emp_api.pkb,50,50,Return,REDESIGN,not-generated
+com/example/migrated/application/EmpApiService.java,getByDept @ emp_api.pkb:47,emp_api.pkb,47,49,Loop,REDESIGN,not-generated
+com/example/migrated/application/EmpApiService.java,getByDept @ emp_api.pkb:47,emp_api.pkb,47,49,SqlOperation,REDESIGN,not-generated
 com/example/migrated/application/EmpApiService.java,callCount,emp_api.pkb,53,56,routine,REDESIGN,not-generated
 com/example/migrated/application/EmpApiService.java,callCount @ emp_api.pkb:55,emp_api.pkb,55,55,Return,REDESIGN,not-generated
 com/example/migrated/application/EmpBiuTrgService.java,body,emp_biu_trg.trg,2,10,routine,REDESIGN,not-generated

@@ -46,8 +46,12 @@ class PlsqlTest {
     assertNull(Plsql.next(names, 4));
     assertTrue(Plsql.exists(names, 2));
     assertFalse(Plsql.exists(names, 9));
-    Plsql.delete(names, 4);
+    Plsql.delete(names, 2);                              // a gap, as in Oracle: COUNT 3, EXISTS(2) false, NEXT skips it
     assertEquals(3, Plsql.count(names));
+    assertFalse(Plsql.exists(names, 2));
+    assertEquals(Integer.valueOf(3), Plsql.next(names, 1));
+    assertEquals(Integer.valueOf(4), Plsql.last(names));
+    assertEquals(Integer.valueOf(1), Plsql.prior(names, 3));
 
     java.util.Map<String, java.math.BigDecimal> byName = Plsql.indexBy();
     Plsql.set(byName, "Kochhar", new java.math.BigDecimal("17000"));

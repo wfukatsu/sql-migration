@@ -14,7 +14,7 @@ Oracle 公式ドキュメントの構成に沿った **構文カタログ**（SQ
 | SQL の実 DB 比較（02 の読み取り文 + JSON 3 文 + 修正版 1 文） | 40 文 | PASS 19 / FAIL 10 / SKIP 9 / CASE_ERROR 2 | **PASS 19 / FAIL 5 / SKIP 14 / CASE_ERROR 2**。FAIL 5 はすべて同順位・非決定。JSON_OBJECT は PASS に |
 | PL/SQL routine（05・06 の全ユニット + 04 の無名ブロック 10 個） | 41 routine | AUTO 候補 7 / REVIEW 10 / REDESIGN 24 | 同じ（判定のルールは変えていない） |
 | PL/SQL の Java 生成 | 41 routine | javac エラー 15 件（8 routine） | **javac エラー 0**（41 routine 全部がコンパイルできる） |
-| PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 12 / 相違 19**（全 36 ユニット、31 シナリオ）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて） |
+| PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 14 / 相違 17**（全 36 ユニット、31 シナリオ。#44 #45 のあと）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて） |
 
 ## フォルダ
 
@@ -327,9 +327,19 @@ Docker の検証環境（`difftest/`）と ScalarDB Cluster のライセンス�
 （`VALUES` 句の中の `CASE WHEN DELETING …`。trigger 述語は SQL の中では使えない）。この trigger が無効なまま employees を更新すると ORA-04098 になり、
 9 シナリオが Oracle 側で落ちた。`split_sources.py` の `FIXES` で、`DELETING` を先に PL/SQL の変数へ取り出す最小の修正を当てている（意味は同じ、理由つき）。
 
-**修正後の PL/SQL 実 DB 比較（31 シナリオ、一致 12 / 相違 19）**: 相違 19 本はすべて「Oracle は正常終了、Java は解析が断った所で throw」で、値の差は無い。
-止まる理由は、RMW（`SET salary = salary + 1`）、`RETURNING`、`COMMIT` / `ROLLBACK`（TX-001）、IDENTITY 列の採番、行ロック、動的 SQL、
-collection と TYPE コンストラクタ、package 変数（STATE-001）、SYS_REFCURSOR、`DBMS_APPLICATION_INFO` の名前付き引数。
+### 2 回目の修正（2026-09-25、#44 #45 #46）
+
+「まだ無いもの」として残した 3 点を Issue にし、2 つを直した。
+
+| Issue | 何を直したか | 取り直した結果 |
+|---|---|---|
+| #44 | `OPEN rc FOR SELECT …` を下ろし、routine の中で完結する SYS_REFCURSOR は行を先に読むループに（IF の分岐ごとに別の問合せで開く形は分岐ごとのループに）、`OPEN rc FOR q; RETURN rc;` は行の List を返す method に | `b04_4_4_ref_cursor` が **一致**。`emp_api.get_by_dept` は `List<GetByDeptLoop1Row>` を返す形で生成される（package 変数の STATE-001 は残る） |
+| #45 | ネスト表 / VARRAY は List、INDEX BY VARCHAR2 は TreeMap（INDEX BY PLS_INTEGER は corpus の使い方に合わせて List のまま）。コンストラクタ、要素の読み書き、COUNT / FIRST / LAST / NEXT / PRIOR / EXISTS / DELETE / EXTEND / TRIM / LIMIT、途中の DELETE(i) の隙間。record は field ごとに NULL か既定値で作り、field への代入は組み直す | `b04_5_records_collections` が **一致**（連想配列のキー順の走査、EXTEND / DELETE / EXISTS / VARRAY の LIMIT を含む） |
+| #46 | package 変数（セッション状態）の置き場は決定事項として登録（`[決定]`）。生成器は決まるまで拒む | — |
+
+**修正後の PL/SQL 実 DB 比較（31 シナリオ、一致 14 / 相違 17）**: 相違 19 本はすべて「Oracle は正常終了、Java は解析が断った所で throw」で、値の差は無い。
+止まる理由は、RMW（`SET salary = salary + 1`）、`RETURNING`、`COMMIT` / `ROLLBACK`（TX-001）、IDENTITY 列の採番、行ロック、動的 SQL と DBMS_SQL、
+FORALL … RETURNING、オブジェクト型の `TABLE()`、package 変数（STATE-001）、`DBMS_APPLICATION_INFO` の名前付き引数。
 いずれも「人の決定」（`limits.yaml`）か「生成器がまだ模していない構文」で、解析の判定表（付録 C）に出ているとおり。
 trigger を全部配備したので、employees を書くシナリオでは Oracle 側の `emp_audit` に trigger の行が入る一方、Java 側には入らない（TRG-002 が言っていたこと）。
 
@@ -596,8 +606,8 @@ trigger を全部配備したので、employees を書くシナリオでは Orac
 | `b04_4_1_explicit_cursor` | REVIEW | SCAN-002, CUR-003, CUR-002 | CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります; CUR-002 |
 | `b04_4_2_cursor_for_loop` | REVIEW | CUR-002, SQL-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
 | `b04_4_3_for_update_current_of` | REDESIGN | CUR-002, SQL-004, LOCK-001, LOCK-002, SQL-001, TX-001, TRG-002 | LOCK-001: 行ロックです。ターゲットで同じ保証を別の方法で与える設計が要ります; LOCK-002: cursor の宣言で行ロックしています。文だけを |
-| `b04_4_4_ref_cursor` | REVIEW | LOWER-001, CUR-001 | LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません; LOWER-001: lowering がまだ模していない構 |
-| `b04_5_records_collections` | REVIEW | LOWER-001, CUR-002 | LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません; LOWER-001: lowering がまだ模していない構 |
+| `b04_4_4_ref_cursor` | REVIEW | SCAN-002, CUR-003, CUR-002 | CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります; CUR-003 |
+| `b04_5_records_collections` | REVIEW | CALL-001, CUR-002 | CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません; CUR |
 | `b04_6_1_predefined_exceptions` | REVIEW | SELECT-OPT-001 | confidence factor testEvidence is 0 |
 | `b04_6_2_user_exceptions` | REDESIGN | TX-001, TRG-002 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b05_1_call_raise_salary` | REDESIGN | TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
@@ -615,7 +625,7 @@ trigger を全部配備したので、employees を書くシナリオでは Orac
 | `dept_name_of` | REVIEW |  | confidence factor testEvidence is 0 |
 | `dml_d_create_error_log` | REVIEW | CALL-001 | CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません |
 | `emp_api.call_count` | REDESIGN | STATE-001 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります |
-| `emp_api.get_by_dept` | REDESIGN | LOWER-001, STATE-001 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります |
+| `emp_api.get_by_dept` | REDESIGN | SCAN-002, CUR-002, STATE-001 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります |
 | `emp_api.give_raise~1` | REDESIGN | SQL-004, SQL-001, STATE-001, TRG-002 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります; TRG-002 |
 | `emp_api.give_raise~2` | REDESIGN | SQL-001, STATE-001, TRG-002 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります; TRG-002 |
 | `emp_api.hire` | REDESIGN | EXC-001, SQL-001, STATE-001, TRG-002 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります; TRG-002 |
@@ -642,15 +652,15 @@ trigger を全部配備したので、employees を書くシナリオでは Orac
 | `b04_4_1_explicit_cursor` | `b04_4_1_explicit_cursor.b04_4_1_explicit_cursor` | 一致 |  |
 | `b04_4_2_cursor_for_loop` | `b04_4_2_cursor_for_loop.b04_4_2_cursor_for_loop` | 一致 |  |
 | `b04_4_3_for_update_current_of` | `b04_4_3_for_update_current_of.b04_4_3_for_update_current_of` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Loop: cursor FOR loop whose body writes ['employees'], which its own query reads) |
-| `b04_4_4_ref_cursor` | `b04_4_4_ref_cursor.b04_4_4_ref_cursor` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (Unsupported is not translated) |
-| `b04_5_records_collections` | `b04_5_records_collections.b04_5_records_collections` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration v_names: t_names) |
+| `b04_4_4_ref_cursor` | `b04_4_4_ref_cursor.b04_4_4_ref_cursor` | 一致 |  |
+| `b04_5_records_collections` | `b04_5_records_collections.b04_5_records_collections` | 一致 |  |
 | `b04_6_1_predefined_exceptions` | `b04_6_1_predefined_exceptions.b04_6_1_predefined_exceptions` | 一致 |  |
 | `b04_6_2_user_exceptions` | `b04_6_2_user_exceptions.b04_6_2_user_exceptions` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (Rollback is not translated) |
 | `b05_1_call_raise_salary` | `b05_1_call_raise_salary.b05_1_call_raise_salary` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (RETURNING is not supported) |
 | `b05_3_call_emp_api` | `b05_3_call_emp_api.b05_3_call_emp_api` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Assignment: emp_api.hire) |
 | `b05_4_call_log_msg` | `b05_4_call_log_msg.b05_4_call_log_msg` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (SET salary = salary + 1: expressions referencing columns are not allowed; do SELECT -> compute -> |
 | `b06_1_bulk_collect_limit` | `b06_1_bulk_collect_limit.b06_1_bulk_collect_limit` | 一致 |  |
-| `b06_2_2_forall_returning` | `b06_2_2_forall_returning.b06_2_2_forall_returning` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration v_depts: t_num) |
+| `b06_2_2_forall_returning` | `b06_2_2_forall_returning.b06_2_2_forall_returning` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Loop: forall loop) |
 | `b06_2_forall_save_exceptions` | `b06_2_forall_save_exceptions.b06_2_forall_save_exceptions` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (Commit is not translated); table bulk_target row count: expected=11 actual=0; table bulk_target:  |
 | `b06_3_6_dbms_sql` | `b06_3_6_dbms_sql.b06_3_6_dbms_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration c: DBMS_SQL.OPEN_CURSOR) |
 | `b06_3_native_dynamic_sql` | `b06_3_native_dynamic_sql.b06_3_native_dynamic_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in DynamicSql: EXECUTE IMMEDIATE whose statement is not a knowable set) |
