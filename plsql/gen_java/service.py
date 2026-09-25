@@ -96,6 +96,7 @@ def generate_module(module: M.Module, package: str, repository_package: str,
         f.line(f"private final {java_class_name(module.name)}Repository repository;")
         for trigger in injected:
             f.line(f"private final {java_class_name(trigger)}Service {java_name(trigger)};")
+        _constants(f, module)
         f.line()
         parameters = [f"{java_class_name(module.name)}Repository repository"] + \
             [f"{java_class_name(t)}Service {java_name(t)}" for t in injected]
@@ -234,6 +235,32 @@ def correlation_row(routine: M.Routine) -> dict[str, "M.BindVariable"]:
         out[variable] = bind or M.BindVariable(name=variable.replace(".", "_"), direction="IN",
                                                oracle_type=event, plsql_variable=variable)
     return out
+
+
+_LITERAL = re.compile(r"^(?:-?\d+(?:\.\d+)?|'(?:[^']|'')*'|TRUE|FALSE|NULL)$", re.IGNORECASE)
+
+
+def _constants(file: JavaFile, module: M.Module) -> None:
+    """A package's constants (`c_max_raise_pct CONSTANT NUMBER := 20`, in the specification or the body) as
+    fields (#46). A constant is the same for every caller, so a static field keeps its meaning; a constant whose
+    value is an expression is left out and its name stays unknown, which the statement that reads it reports."""
+    if module.module_kind != "package":
+        return
+    for declaration in module.declarations:
+        if declaration.declaration_kind != "constant" or not declaration.initial \
+                or not _LITERAL.match(declaration.initial.strip()):
+            continue
+        mapped = java_type(declaration.type.resolved if declaration.type else None)
+        file.add_import(*mapped.imports)
+        value = declaration.initial.strip()
+        if value.startswith("'"):
+            value = '"' + value[1:-1].replace("''", "'").replace('"', '\\"') + '"'
+        elif mapped.name == "BigDecimal":
+            file.add_import("com.scalar.migrate.plsql.Plsql")
+            value = f"Plsql.dec({value})"
+        elif mapped.name == "Long" and "." not in value:
+            value = f"{value}L"
+        file.line(f"private static final {mapped.name} {java_name(declaration.name)} = {value.lower() if value.upper() in ('TRUE', 'FALSE', 'NULL') else value};")
 
 
 def _collection_kind(holder) -> str | None:
@@ -1275,6 +1302,9 @@ def _positional(statement: M.Call, callee: M.Routine | None) -> list[str]:
     for parameter in taken:
         if parameter.name.lower() in named:
             out.append(named.pop(parameter.name.lower()))
+        elif getattr(parameter, "carried", False):
+            # #46: carried package state. The caller carries it too, under the same name
+            out.append(parameter.name)
         elif parameter.default is not None and LITERAL_DEFAULT.match(parameter.default.strip()):
             out.append(parameter.default.strip())
         else:

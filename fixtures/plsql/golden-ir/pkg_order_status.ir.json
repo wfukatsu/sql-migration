@@ -46,7 +46,8 @@
        },
        "name": "p_order_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "returnType": {
@@ -178,7 +179,8 @@
        },
        "name": "p_customer_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "pkg_order_status.status_for_customer#param-2",
@@ -197,7 +199,8 @@
        },
        "name": "p_status",
        "direction": "OUT",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "body": [
@@ -320,7 +323,8 @@
        },
        "name": "p_order_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "declarations": [

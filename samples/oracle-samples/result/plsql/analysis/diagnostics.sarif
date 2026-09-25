@@ -226,6 +226,12 @@
        }
       },
       {
+       "id": "STATE_CARRIED",
+       "shortDescription": {
+        "text": "STATE_CARRIED"
+       }
+      },
+      {
        "id": "RETURNING",
        "shortDescription": {
         "text": "RETURNING"
@@ -2774,6 +2780,27 @@
      ]
     },
     {
+     "ruleId": "STATE_CARRIED",
+     "level": "note",
+     "message": {
+      "text": "package 変数 g_calls は呼び出し側が運ぶ（limits.yaml packageState.carried: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定））。IN OUT 引数として受け取り、結果で返す"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 7,
+         "endLine": 13,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "TRIGGER_NOT_APPLIED",
      "level": "warning",
      "message": {
@@ -2810,6 +2837,27 @@
          "startLine": 19,
          "endLine": 23,
          "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "STATE_CARRIED",
+     "level": "note",
+     "message": {
+      "text": "package 変数 g_calls は呼び出し側が運ぶ（limits.yaml packageState.carried: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定））。IN OUT 引数として受け取り、結果で返す"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 30,
+         "endLine": 34,
+         "startColumn": 3
         }
        }
       }
@@ -3026,6 +3074,27 @@
      ]
     },
     {
+     "ruleId": "STATE_CARRIED",
+     "level": "note",
+     "message": {
+      "text": "package 変数 g_calls は呼び出し側が運ぶ（limits.yaml packageState.carried: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定））。IN OUT 引数として受け取り、結果で返す"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 36,
+         "endLine": 42,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "TRIGGER_NOT_APPLIED",
      "level": "warning",
      "message": {
@@ -3188,6 +3257,27 @@
          "startLine": 47,
          "endLine": 49,
          "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "STATE_CARRIED",
+     "level": "note",
+     "message": {
+      "text": "package 変数 g_calls は呼び出し側が運ぶ（limits.yaml packageState.carried: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定））。IN OUT 引数として受け取り、結果で返す"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 53,
+         "endLine": 56,
+         "startColumn": 3
         }
        }
       }

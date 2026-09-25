@@ -206,7 +206,9 @@ public final class ScalarDbRunner implements AutoCloseable {
       Map<String, String> projection = scenario.projection();
       boolean carrier = returned != null && returned.getClass().isRecord();
       result.put("returned", carrier || !projection.isEmpty() ? null : encode(returned));
-      result.put("out", projection.isEmpty() ? outOf(returned) : project(returned, projection));
+      // only the OUT arguments the scenario declares: Oracle binds no other, and a carried package variable
+      // (#46) comes back in the record without being an OUT argument of the PL/SQL routine
+      result.put("out", projection.isEmpty() ? outOf(returned, scenario.outs()) : project(returned, projection));
       commit();
     } catch (Exception e) {
       rollback();
@@ -246,7 +248,13 @@ public final class ScalarDbRunner implements AutoCloseable {
    */
   private static Object errorCode(Exception e) {
     try {
-      return e.getClass().getMethod("code").invoke(e);
+      Object code = e.getClass().getMethod("code").invoke(e);
+      // a PL/SQL-declared exception (`e_invalid_raise EXCEPTION`) has no Oracle number: the generator gives its
+      // class a pseudo-code below -900000 so that the registry can tell them apart. What an Oracle client sees
+      // when one escapes is ORA-06510 (unhandled user-defined exception), so that is what the capture records
+      // (#46, samples/oracle-samples emp_api_give_raise_invalid)
+      if (code instanceof Integer n && n <= -900000) return -6510;
+      return code;
     } catch (ReflectiveOperationException notMigrated) {
       return e.getClass().getName();
     }
@@ -256,12 +264,14 @@ public final class ScalarDbRunner implements AutoCloseable {
    * PL/SQL writes through OUT arguments; the generator returns a record instead (P2-5). Unpacking it back into
    * the argument names is what makes the two captures comparable -- the Oracle side never saw a record.
    */
-  private static Map<String, Object> outOf(Object returned) {
+  private static Map<String, Object> outOf(Object returned, List<String> declared) {
     Map<String, Object> out = new LinkedHashMap<>();
     if (returned == null || !returned.getClass().isRecord()) return out;
     for (java.lang.reflect.RecordComponent component : returned.getClass().getRecordComponents()) {
+      String name = snakeCase(component.getName());
+      if (declared.stream().noneMatch(d -> d.equalsIgnoreCase(name))) continue;
       try {
-        out.put(snakeCase(component.getName()), encode(component.getAccessor().invoke(returned)));
+        out.put(name, encode(component.getAccessor().invoke(returned)));
       } catch (ReflectiveOperationException e) {
         throw new IllegalStateException("cannot read " + component.getName(), e);
       }

@@ -46,7 +46,8 @@
        },
        "name": "p_status",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "returnType": {
@@ -110,7 +111,8 @@
        },
        "name": "p_order_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "returnType": {
@@ -212,7 +214,8 @@
        },
        "name": "p_order_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "pkg_order_lock.cancel#param-2",
@@ -231,7 +234,8 @@
        },
        "name": "p_reason",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "declarations": [

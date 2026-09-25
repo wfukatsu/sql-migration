@@ -46,7 +46,8 @@
        },
        "name": "p_order_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "returnType": {
@@ -146,7 +147,8 @@
        },
        "name": "p_payment_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "pkg_payment.record_payment#param-2",
@@ -165,7 +167,8 @@
        },
        "name": "p_order_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "pkg_payment.record_payment#param-3",
@@ -184,7 +187,8 @@
        },
        "name": "p_amount",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "pkg_payment.record_payment#param-4",
@@ -203,7 +207,8 @@
        },
        "name": "p_method",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "declarations": [
@@ -365,7 +370,8 @@
        },
        "name": "p_order_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "returnType": {

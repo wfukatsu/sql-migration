@@ -46,7 +46,8 @@
        },
        "name": "p_status",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "pkg_order_report.count_by_status#param-2",
@@ -65,7 +66,8 @@
        },
        "name": "p_count",
        "direction": "OUT",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "declarations": [
@@ -327,7 +329,8 @@
        },
        "name": "p_status",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "body": [
@@ -437,7 +440,8 @@
        },
        "name": "p_customer_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "returnType": {

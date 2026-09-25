@@ -5,7 +5,11 @@
   "REDESIGN": 24,
   "REVIEW": 10
  },
- "redesignStates": {},
+ "redesignStates": {
+  "undecided": 18,
+  "decided": 6,
+  "verified": 0
+ },
  "scenariosMatchingNoRoutine": [],
  "staleEvidence": {},
  "humanFixMinutes": {
@@ -235,7 +239,27 @@
     "TRG-002 (REDESIGN): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
     "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [
+     {
+      "rule": "calls emp_salary_audit_trg.body",
+      "decidedBy": "#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う",
+      "why": "docs/plsql-migration/plsql-trigger-patterns.md"
+     }
+    ],
+    "open": [
+     "TX-001",
+     "TX-004",
+     "TRG-002"
+    ],
+    "evidence": {
+     "agreed": 0,
+     "compared": 1
+    },
+    "verifiedThrough": []
+   },
    "source": {
     "file": "b04_3_implicit_cursor_attrs.prc",
     "startLine": 2,
@@ -485,7 +509,33 @@
     "TRG-002 (REDESIGN): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
     "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [
+     {
+      "rule": "calls emp_dept_cap_trg.body",
+      "decidedBy": "#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う",
+      "why": "docs/plsql-migration/plsql-trigger-patterns.md"
+     },
+     {
+      "rule": "calls emp_salary_audit_trg.body",
+      "decidedBy": "#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う",
+      "why": "docs/plsql-migration/plsql-trigger-patterns.md"
+     }
+    ],
+    "open": [
+     "LOCK-001",
+     "LOCK-002",
+     "TX-001",
+     "TRG-002"
+    ],
+    "evidence": {
+     "agreed": 0,
+     "compared": 1
+    },
+    "verifiedThrough": []
+   },
    "source": {
     "file": "b04_4_3_for_update_current_of.prc",
     "startLine": 2,
@@ -745,7 +795,20 @@
     "TRG-002 (REDESIGN): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [],
+    "open": [
+     "TX-001",
+     "TRG-002"
+    ],
+    "evidence": {
+     "agreed": 0,
+     "compared": 1
+    },
+    "verifiedThrough": []
+   },
    "source": {
     "file": "b04_6_2_user_exceptions.prc",
     "startLine": 2,
@@ -796,7 +859,20 @@
     "TX-001 (REDESIGN): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [],
+    "open": [
+     "TX-001",
+     "calls raise_salary"
+    ],
+    "evidence": {
+     "agreed": 0,
+     "compared": 1
+    },
+    "verifiedThrough": []
+   },
    "source": {
     "file": "b05_1_call_raise_salary.prc",
     "startLine": 2,
@@ -847,7 +923,28 @@
     "TX-001 (REDESIGN): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [
+     {
+      "rule": "calls emp_api.call_count",
+      "decidedBy": "limits.yaml: packageState.carried",
+      "why": "g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）"
+     }
+    ],
+    "open": [
+     "TX-001",
+     "calls emp_api.give_raise~1",
+     "calls emp_api.give_raise~2",
+     "calls emp_api.hire"
+    ],
+    "evidence": {
+     "agreed": 0,
+     "compared": 1
+    },
+    "verifiedThrough": []
+   },
    "source": {
     "file": "b05_3_call_emp_api.prc",
     "startLine": 2,
@@ -930,7 +1027,32 @@
     "TRG-002 (REDESIGN): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
     "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [
+     {
+      "rule": "calls emp_dept_cap_trg.body",
+      "decidedBy": "#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う",
+      "why": "docs/plsql-migration/plsql-trigger-patterns.md"
+     },
+     {
+      "rule": "calls emp_salary_audit_trg.body",
+      "decidedBy": "#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う",
+      "why": "docs/plsql-migration/plsql-trigger-patterns.md"
+     }
+    ],
+    "open": [
+     "TX-001",
+     "TRG-002",
+     "calls log_msg"
+    ],
+    "evidence": {
+     "agreed": 0,
+     "compared": 1
+    },
+    "verifiedThrough": []
+   },
    "source": {
     "file": "b05_4_call_log_msg.prc",
     "startLine": 2,
@@ -1065,7 +1187,19 @@
     "TX-001 (REDESIGN): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
     "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [],
+    "open": [
+     "TX-001"
+    ],
+    "evidence": {
+     "agreed": 0,
+     "compared": 1
+    },
+    "verifiedThrough": []
+   },
    "source": {
     "file": "b06_2_2_forall_returning.prc",
     "startLine": 2,
@@ -1144,7 +1278,19 @@
     "TX-001 (REDESIGN): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [],
+    "open": [
+     "TX-001"
+    ],
+    "evidence": {
+     "agreed": 0,
+     "compared": 1
+    },
+    "verifiedThrough": []
+   },
    "source": {
     "file": "b06_2_forall_save_exceptions.prc",
     "startLine": 2,
@@ -1283,7 +1429,19 @@
     "CALL-001 (REVIEW): 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません",
     "確信度が 0: symbolResolution, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [],
+    "open": [
+     "DYN-003"
+    ],
+    "evidence": {
+     "agreed": 0,
+     "compared": 1
+    },
+    "verifiedThrough": []
+   },
    "source": {
     "file": "b06_3_6_dbms_sql.prc",
     "startLine": 2,
@@ -1413,7 +1571,20 @@
     "TX-001 (REDESIGN): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
     "確信度が 0: ruleCoverage, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [],
+    "open": [
+     "DYN-001",
+     "TX-001"
+    ],
+    "evidence": {
+     "agreed": 0,
+     "compared": 1
+    },
+    "verifiedThrough": []
+   },
    "source": {
     "file": "b06_3_native_dynamic_sql.prc",
     "startLine": 2,
@@ -1562,7 +1733,16 @@
     "EXT-001 (REDESIGN): UTL_* / DBMS_SCHEDULER / AQ などの外部副作用があります",
     "確信度が 0: symbolResolution, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [],
+    "open": [
+     "EXT-001"
+    ],
+    "evidence": null,
+    "verifiedThrough": []
+   },
    "source": {
     "file": "b06_5_2_scheduler_job.prc",
     "startLine": 2,
@@ -1778,7 +1958,20 @@
     "STATE-001 (REDESIGN): Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "decided",
+    "label": "決定済み（実 DB では未検証、または相違あり）",
+    "decisions": [
+     {
+      "rule": "STATE-001",
+      "decidedBy": "limits.yaml: packageState.carried",
+      "why": "g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）"
+     }
+    ],
+    "open": [],
+    "evidence": null,
+    "verifiedThrough": []
+   },
    "source": {
     "file": "emp_api.pkb",
     "startLine": 53,
@@ -1848,7 +2041,20 @@
     "STATE-001 (REDESIGN): Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "decided",
+    "label": "決定済み（実 DB では未検証、または相違あり）",
+    "decisions": [
+     {
+      "rule": "STATE-001",
+      "decidedBy": "limits.yaml: packageState.carried",
+      "why": "g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）"
+     }
+    ],
+    "open": [],
+    "evidence": null,
+    "verifiedThrough": []
+   },
    "source": {
     "file": "emp_api.pkb",
     "startLine": 44,
@@ -1870,10 +2076,9 @@
     "symbolResolution": 1.0,
     "typeResolution": 1.0,
     "targetCapability": 0.0,
-    "testEvidence": 0.0,
+    "testEvidence": 0.5,
     "zeroFactors": [
-     "targetCapability",
-     "testEvidence"
+     "targetCapability"
     ]
    },
    "reasons": [
@@ -1928,9 +2133,42 @@
     "SQL-001 (REVIEW): ScalarDB SQL で実行できない文があります",
     "STATE-001 (REDESIGN): Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
     "TRG-002 (REDESIGN): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
-    "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+    "確信度が 0: targetCapability"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [
+     {
+      "rule": "STATE-001",
+      "decidedBy": "limits.yaml: packageState.carried",
+      "why": "g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）"
+     },
+     {
+      "rule": "calls emp_api.validate_pct",
+      "decidedBy": "limits.yaml: packageState.carried",
+      "why": "g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）"
+     },
+     {
+      "rule": "calls emp_dept_cap_trg.body",
+      "decidedBy": "#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う",
+      "why": "docs/plsql-migration/plsql-trigger-patterns.md"
+     },
+     {
+      "rule": "calls emp_salary_audit_trg.body",
+      "decidedBy": "#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う",
+      "why": "docs/plsql-migration/plsql-trigger-patterns.md"
+     }
+    ],
+    "open": [
+     "TRG-002"
+    ],
+    "evidence": {
+     "agreed": 1,
+     "compared": 2
+    },
+    "verifiedThrough": []
+   },
    "source": {
     "file": "emp_api.pkb",
     "startLine": 30,
@@ -2002,7 +2240,27 @@
     "TRG-002 (REDESIGN): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
     "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [
+     {
+      "rule": "STATE-001",
+      "decidedBy": "limits.yaml: packageState.carried",
+      "why": "g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）"
+     },
+     {
+      "rule": "calls emp_api.validate_pct",
+      "decidedBy": "limits.yaml: packageState.carried",
+      "why": "g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）"
+     }
+    ],
+    "open": [
+     "TRG-002"
+    ],
+    "evidence": null,
+    "verifiedThrough": []
+   },
    "source": {
     "file": "emp_api.pkb",
     "startLine": 36,
@@ -2085,7 +2343,22 @@
     "TRG-002 (REDESIGN): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
     "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [
+     {
+      "rule": "STATE-001",
+      "decidedBy": "limits.yaml: packageState.carried",
+      "why": "g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）"
+     }
+    ],
+    "open": [
+     "TRG-002"
+    ],
+    "evidence": null,
+    "verifiedThrough": []
+   },
    "source": {
     "file": "emp_api.pkb",
     "startLine": 15,
@@ -2135,7 +2408,20 @@
     "STATE-001 (REDESIGN): Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "decided",
+    "label": "決定済み（実 DB では未検証、または相違あり）",
+    "decisions": [
+     {
+      "rule": "STATE-001",
+      "decidedBy": "limits.yaml: packageState.carried",
+      "why": "g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）"
+     }
+    ],
+    "open": [],
+    "evidence": null,
+    "verifiedThrough": []
+   },
    "source": {
     "file": "emp_api.pkb",
     "startLine": 7,
@@ -2186,7 +2472,16 @@
     "TRG-001 (REDESIGN): Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [],
+    "open": [
+     "TRG-001"
+    ],
+    "evidence": null,
+    "verifiedThrough": []
+   },
    "source": {
     "file": "emp_biu_trg.trg",
     "startLine": 2,
@@ -2237,7 +2532,20 @@
     "TRG-001 (REDESIGN): Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "decided",
+    "label": "決定済み（実 DB では未検証、または相違あり）",
+    "decisions": [
+     {
+      "rule": "TRG-001",
+      "decidedBy": "#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う",
+      "why": "docs/plsql-migration/plsql-trigger-patterns.md"
+     }
+    ],
+    "open": [],
+    "evidence": null,
+    "verifiedThrough": []
+   },
    "source": {
     "file": "emp_dept_cap_trg.trg",
     "startLine": 2,
@@ -2298,7 +2606,20 @@
     "TRG-001 (REDESIGN): Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります",
     "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "decided",
+    "label": "決定済み（実 DB では未検証、または相違あり）",
+    "decisions": [
+     {
+      "rule": "TRG-001",
+      "decidedBy": "#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う",
+      "why": "docs/plsql-migration/plsql-trigger-patterns.md"
+     }
+    ],
+    "open": [],
+    "evidence": null,
+    "verifiedThrough": []
+   },
    "source": {
     "file": "emp_dept_upd_v_trg.trg",
     "startLine": 2,
@@ -2427,7 +2748,20 @@
     "TRG-001 (REDESIGN): Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります",
     "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "decided",
+    "label": "決定済み（実 DB では未検証、または相違あり）",
+    "decisions": [
+     {
+      "rule": "TRG-001",
+      "decidedBy": "#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う",
+      "why": "docs/plsql-migration/plsql-trigger-patterns.md"
+     }
+    ],
+    "open": [],
+    "evidence": null,
+    "verifiedThrough": []
+   },
    "source": {
     "file": "emp_salary_audit_trg.trg",
     "startLine": 2,
@@ -2500,7 +2834,20 @@
     "TX-002 (REDESIGN): Autonomous Transaction は親が失敗しても残るという意味を持ちます",
     "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [],
+    "open": [
+     "TX-001",
+     "TX-002"
+    ],
+    "evidence": {
+     "agreed": 0,
+     "compared": 1
+    },
+    "verifiedThrough": []
+   },
    "source": {
     "file": "log_msg.prc",
     "startLine": 2,
@@ -2602,7 +2949,30 @@
     "TRG-002 (REDESIGN): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
     "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [
+     {
+      "rule": "calls emp_dept_cap_trg.body",
+      "decidedBy": "#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う",
+      "why": "docs/plsql-migration/plsql-trigger-patterns.md"
+     },
+     {
+      "rule": "calls emp_salary_audit_trg.body",
+      "decidedBy": "#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う",
+      "why": "docs/plsql-migration/plsql-trigger-patterns.md"
+     }
+    ],
+    "open": [
+     "TRG-002"
+    ],
+    "evidence": {
+     "agreed": 0,
+     "compared": 2
+    },
+    "verifiedThrough": []
+   },
    "source": {
     "file": "raise_salary.prc",
     "startLine": 2,
@@ -2687,7 +3057,16 @@
     "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
-   "redesign": null,
+   "redesign": {
+    "state": "undecided",
+    "label": "未決定",
+    "decisions": [],
+    "open": [
+     "DYN-001"
+    ],
+    "evidence": null,
+    "verifiedThrough": []
+   },
    "source": {
     "file": "setup_drop_objects.prc",
     "startLine": 2,

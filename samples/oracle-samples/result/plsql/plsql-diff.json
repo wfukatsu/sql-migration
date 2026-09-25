@@ -356,7 +356,7 @@
     "differences": [
      "exception: expected=none actual=java.lang.UnsupportedOperationException (SET salary = salary + 1: expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction)",
      "table emp_audit row count: expected=1 actual=0",
-     "table emp_audit: missing (expected only): audit_id=12"
+     "table emp_audit: missing (expected only): audit_id=35"
     ],
     "accepted": [],
     "scale_only": [
@@ -645,9 +645,7 @@
    "emp_api_give_raise_invalid": {
     "routine": "emp_api.give_raise~1",
     "verdict": "REVIEW",
-    "differences": [
-     "exception code: expected=-6510 actual=java.lang.UnsupportedOperationException (unresolved in Assignment: g_calls)"
-    ],
+    "differences": [],
     "accepted": [],
     "scale_only": [
      "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
@@ -672,9 +670,9 @@
     "routine": "emp_api.give_raise~1",
     "verdict": "REVIEW",
     "differences": [
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Assignment: g_calls)",
+     "exception: expected=none actual=java.lang.UnsupportedOperationException (SET salary = salary * (1 + :p_pct / 100): expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB tra)",
      "table emp_audit row count: expected=1 actual=0",
-     "table emp_audit: missing (expected only): audit_id=21",
+     "table emp_audit: missing (expected only): audit_id=44",
      "table employees row employee_id=104: salary: expected=6600 actual=6000.0 (value)"
     ],
     "accepted": [],
@@ -702,7 +700,7 @@
     "differences": [
      "exception: expected=none actual=java.lang.UnsupportedOperationException (INSERT must specify the full primary key; missing ['audit_id'])",
      "table emp_audit row count: expected=1 actual=0",
-     "table emp_audit: missing (expected only): audit_id=22"
+     "table emp_audit: missing (expected only): audit_id=45"
     ],
     "accepted": [],
     "scale_only": [
@@ -781,7 +779,7 @@
      "out p_new_sal: missing (expected only) = 6600",
      "exception: expected=none actual=java.lang.UnsupportedOperationException (RETURNING is not supported)",
      "table emp_audit row count: expected=1 actual=0",
-     "table emp_audit: missing (expected only): audit_id=23",
+     "table emp_audit: missing (expected only): audit_id=46",
      "table employees row employee_id=104: salary: expected=6600 actual=6000.0 (value)"
     ],
     "accepted": [],
@@ -806,7 +804,7 @@
   },
   "not_compared": {},
   "fingerprints": {
-   "toolchain": "85db08a5ddf39a38af74898ef08d1d19768ac0fc2f6a5fff73c8188ffd52926d",
+   "toolchain": "1e116d219fbf1fba8640ea45f0f8456467b70bee6d883932c85e0f7463b8625e",
    "sources": {
     "annual_comp": "a43e3576d8b1c2f648b65d5603c0001c0aaec44531a54d9bf47462ce3bb2ac15",
     "b04_1_variables": "22a5f4c43ce7bc93eb38ea67f54f4b00a202f151bf79b7773cc553c6a005fc03",

@@ -322,8 +322,8 @@
 | `b06_6_conditional_compilation` | `b06_6_conditional_compilation.b06_6_conditional_compilation` | 一致 |  |
 | `dept_name_of_missing` | `dept_name_of.dept_name_of` | 一致 |  |
 | `dept_name_of_ok` | `dept_name_of.dept_name_of` | 一致 |  |
-| `emp_api_give_raise_invalid` | `emp_api.give_raise~1` | 相違 | exception code: expected=-6510 actual=java.lang.UnsupportedOperationException (unresolved in Assignment: g_calls) |
-| `emp_api_give_raise_ok` | `emp_api.give_raise~1` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Assignment: g_calls); table emp_audit row count: expected=1 actual=0; table emp_aud |
+| `emp_api_give_raise_invalid` | `emp_api.give_raise~1` | 一致 |  |
+| `emp_api_give_raise_ok` | `emp_api.give_raise~1` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (SET salary = salary * (1 + :p_pct / 100): expressions referencing columns are not allowed; do SEL |
 | `log_msg_ok` | `log_msg.log_msg` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (INSERT must specify the full primary key; missing ['audit_id']); table emp_audit row count: expec |
 | `normalize_name_ok` | `normalize_name.normalize_name` | 一致 |  |
 | `raise_salary_missing` | `raise_salary.raise_salary` | 相違 | exception code: expected=-20010 actual=java.lang.UnsupportedOperationException (RETURNING is not supported) |

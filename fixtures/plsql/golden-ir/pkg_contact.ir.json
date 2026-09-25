@@ -46,7 +46,8 @@
        },
        "name": "p_customer_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "pkg_contact.set_email~1#param-2",
@@ -65,7 +66,8 @@
        },
        "name": "p_email",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "body": [
@@ -128,7 +130,8 @@
        },
        "name": "p_customer_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "pkg_contact.set_email~2#param-2",
@@ -147,7 +150,8 @@
        },
        "name": "p_email",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "pkg_contact.set_email~2#param-3",
@@ -166,7 +170,8 @@
        },
        "name": "p_name",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "body": [
@@ -229,7 +234,8 @@
        },
        "name": "p_customer_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "body": [

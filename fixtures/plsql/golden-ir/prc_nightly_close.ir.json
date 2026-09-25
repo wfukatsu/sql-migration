@@ -46,7 +46,8 @@
        },
        "name": "p_batch_date",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "declarations": [

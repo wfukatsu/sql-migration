@@ -207,15 +207,21 @@ _LITERAL_NUMBER = re.compile(r"^[+-]?\d+(?:\.\d+)?$")
 _NOT_LITERAL = object()
 
 
-def routine_parameters(src: Path) -> dict[tuple[str, str], list]:
-    """{(unit, routine): [Parameter, ...]} for every routine under src/, from the same analysis the generator runs."""
+def routine_parameters(src: Path, limits: Path | None = None) -> dict[tuple[str, str], list]:
+    """{(unit, routine): [Parameter, ...]} for every routine under src/, from the same analysis the generator runs.
+
+    With the project's limits.yaml the carried package variables (#46) are parameters too, and their DEFAULT is
+    the variable's initial value, so a scenario that does not mention them starts the package as Oracle does."""
+    from plsql.limits import PackageState
     from plsql.report import analyse
     schema = src / "schema.sql"
-    analysis = analyse(src, schema if schema.exists() else None)
+    state = PackageState.load(limits) if limits is not None and limits.exists() else None
+    analysis = analyse(src, schema if schema.exists() else None, package_state=state)
     out = {}
     for module, routine in analysis.routines():
         out[(module.name.lower(), routine.name.lower())] = list(routine.parameters)
-        out[(module.name.lower(), routine.id.lower())] = list(routine.parameters)   # `pkg.put~2`
+        out[(module.name.lower(), routine.id.lower())] = list(routine.parameters)                   # `pkg.put~2`
+        out[(module.name.lower(), routine.id.rsplit(".", 1)[-1].lower())] = list(routine.parameters)  # `put~2`
     return out
 
 
@@ -287,7 +293,7 @@ def main(argv=None) -> int:
     scales = decimals if args.variant == "scaled" else None
     rounded = decimals if args.variant == "double" else None
     db_links = DbLinks.load(project / "limits.yaml") if (project / "limits.yaml").exists() else None
-    routines = routine_parameters(project / "src")
+    routines = routine_parameters(project / "src", project / "limits.yaml")
     scenarios, unconvertible = {}, {}
     for path in sorted(scenario_dir.glob("*.yaml")):
         spec = yaml.safe_load(path.read_text(encoding="utf-8"))
