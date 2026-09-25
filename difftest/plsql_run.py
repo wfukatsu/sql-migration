@@ -33,6 +33,10 @@ Decimal -> {"$dec": "1.5"}, datetime -> {"$ts": ISO}, date -> {"$date": ISO}, NU
   are: sorting is stable and **never removes a duplicate row**.
 * A scenario may declare `mask:` for columns written from a clock the harness cannot pin (see below). A masked value
   becomes {"$masked": "<reason>"} and the columns are listed in "masked", so nothing is dropped silently.
+* A scenario may declare `boundary: rollback` when the original routine ended its own transaction with ROLLBACK and
+  the migration moved that to the caller (limits.yaml `transactions.callerBoundary`). The ScalarDB harness, being
+  the caller, rolls back after the call; this side runs the original routine, which still does it itself, so the key
+  is ignored here.
 * Everything else is compared exactly, including NULL versus empty string and numeric scale.
 
 ## What can and cannot be pinned (measured on Oracle 26ai Free, 2026-09-17)

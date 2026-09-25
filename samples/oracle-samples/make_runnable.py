@@ -46,7 +46,8 @@ def seeds() -> list[str]:
 
 def scenario(name: str, unit: str, kind: str, note: str, *, routine: str | None = None, args: dict | None = None,
              out: dict | None = None, returns: str | None = None, extra_setup: list[str] = (),
-             mask: dict | None = None, capture: list[str] | None = None, name_override: str | None = None) -> dict:
+             mask: dict | None = None, capture: list[str] | None = None, name_override: str | None = None,
+             boundary: str | None = None) -> dict:
     call = {"kind": kind, "name": name_override or unit}
     if args:
         call["args"] = args
@@ -58,6 +59,10 @@ def scenario(name: str, unit: str, kind: str, note: str, *, routine: str | None 
          "setup": seeds() + list(extra_setup), "call": call, "capture_tables": capture or ["employees", "emp_audit"], "note": note}
     if mask:
         s["mask"] = mask
+    if boundary:
+        # COMMIT / ROLLBACK を呼び出し側の境界に移した routine（limits.yaml transactions.callerBoundary）は、
+        # 元の routine が自分でしていた終わり方をハーネス（＝呼び出し側）が再現する。Oracle 側は原文を動かすので無視する
+        s["boundary"] = boundary
     return s
 
 
@@ -71,8 +76,9 @@ SCENARIOS = [
              args={"p_dept_id": 42}, returns="VARCHAR2"),
     scenario("normalize_name_ok", "normalize_name", "procedure", "IN OUT: '  john SMITH ' → 'John Smith'",
              args={"p_name": "  john SMITH "}, out={"p_name": "VARCHAR2"}),
-    scenario("raise_salary_ok", "raise_salary", "procedure", "社員 104 を 10% 昇給: 6000 → 6600（RETURNING で受け取る）",
-             args={"p_emp_id": 104, "p_pct": 10}, out={"p_new_sal": "NUMBER"}),
+    scenario("raise_salary_ok", "raise_salary", "procedure",
+             "社員 104 を 10% 昇給: 6000 → 6600（RETURNING で受け取る）。trigger が emp_audit に書く changed_at は固定できないので mask",
+             args={"p_emp_id": 104, "p_pct": 10}, out={"p_new_sal": "NUMBER"}, mask={"emp_audit": ["changed_at"]}),
     scenario("raise_salary_missing", "raise_salary", "procedure", "社員なし: SQL%ROWCOUNT = 0 → -20010",
              args={"p_emp_id": 999, "p_pct": 10}, out={"p_new_sal": "NUMBER"}),
     scenario("log_msg_ok", "log_msg", "procedure", "自律型トランザクションで emp_audit に 1 行（changed_at / changed_by は固定できないので mask）",
@@ -80,16 +86,16 @@ SCENARIOS = [
     scenario("b04_1_variables", "b04_1_variables", "procedure", "04-1: %TYPE / %ROWTYPE / 定数。読むだけ"),
     scenario("b04_2_control_flow", "b04_2_control_flow", "procedure", "04-2: IF / CASE / LOOP / WHILE / FOR REVERSE / ラベル。読むだけ"),
     scenario("b04_3_implicit_cursor_attrs", "b04_3_implicit_cursor_attrs", "procedure",
-             "04-3: UPDATE → SQL%ROWCOUNT → DELETE → SQL%NOTFOUND → ROLLBACK。表は元に戻る"),
+             "04-3: UPDATE → SQL%ROWCOUNT → DELETE → SQL%NOTFOUND → ROLLBACK。表は元に戻る。呼び出し側（ハーネス）が ROLLBACK する（callerBoundary の決定）", boundary="rollback"),
     scenario("b04_4_1_explicit_cursor", "b04_4_1_explicit_cursor", "procedure", "04-4-1: OPEN / FETCH / CLOSE。読むだけ"),
     scenario("b04_4_2_cursor_for_loop", "b04_4_2_cursor_for_loop", "procedure", "04-4-2: パラメータ付き cursor FOR ループ。読むだけ"),
     scenario("b04_4_3_for_update_current_of", "b04_4_3_for_update_current_of", "procedure",
-             "04-4-3: FOR UPDATE + WHERE CURRENT OF で更新して ROLLBACK。表は元に戻る"),
+             "04-4-3: FOR UPDATE + WHERE CURRENT OF で更新して ROLLBACK。表は元に戻る。呼び出し側（ハーネス）が ROLLBACK する（callerBoundary の決定）", boundary="rollback"),
     scenario("b04_4_4_ref_cursor", "b04_4_4_ref_cursor", "procedure", "04-4-4: SYS_REFCURSOR。読むだけ"),
     scenario("b04_6_1_predefined_exceptions", "b04_6_1_predefined_exceptions", "procedure",
              "04-6-1: NO_DATA_FOUND / TOO_MANY_ROWS / ZERO_DIVIDE を捕捉。正常終了"),
     scenario("b04_6_2_user_exceptions", "b04_6_2_user_exceptions", "procedure",
-             "04-6-2: ユーザ定義例外・EXCEPTION_INIT(-2291)・RAISE_APPLICATION_ERROR を WHEN OTHERS で捕捉して ROLLBACK。正常終了"),
+             "04-6-2: ユーザ定義例外・EXCEPTION_INIT(-2291)・RAISE_APPLICATION_ERROR を WHEN OTHERS で捕捉して ROLLBACK。正常終了。呼び出し側（ハーネス）が ROLLBACK する（callerBoundary の決定）", boundary="rollback"),
     scenario("b06_1_bulk_collect_limit", "b06_1_bulk_collect_limit", "procedure", "06-1: BULK COLLECT LIMIT 5。読むだけ"),
     scenario("b06_2_forall_save_exceptions", "b06_2_forall_save_exceptions", "procedure",
              "06-2: FORALL SAVE EXCEPTIONS で bulk_target へ。salary >= 15000 の 4 行が CHECK 違反、11 行が入る",
@@ -102,7 +108,7 @@ SCENARIOS = [
     # 2026-09-25（#40 のあと）: 前は生成物がコンパイルできず外していたもの
     scenario("b04_5_records_collections", "b04_5_records_collections", "procedure", "04-5: レコード・連想配列・ネスト表・VARRAY。読むだけ"),
     scenario("b05_1_call_raise_salary", "b05_1_call_raise_salary", "procedure",
-             "05-1: raise_salary を位置指定と名前指定で呼び、ROLLBACK。表は元に戻る（Oracle では trigger が emp_audit に書く）"),
+             "05-1: raise_salary を位置指定と名前指定で呼び、ROLLBACK。表は元に戻る（Oracle では trigger が emp_audit に書く）。呼び出し側（ハーネス）が ROLLBACK する（callerBoundary の決定）", boundary="rollback"),
     scenario("b05_3_call_emp_api", "b05_3_call_emp_api", "procedure", "05-3: emp_api.hire / give_raise（オーバーロード）/ call_count、ROLLBACK"),
     scenario("b05_4_call_log_msg", "b05_4_call_log_msg", "procedure", "05-4: 自律型トランザクションの log_msg を呼んで ROLLBACK。emp_audit の LOG 行だけ残る",
              mask={"emp_audit": ["changed_at", "changed_by"]}),

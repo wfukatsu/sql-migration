@@ -52,4 +52,5 @@ call:
 capture_tables:
 - employees
 - emp_audit
-note: '04-6-2: ユーザ定義例外・EXCEPTION_INIT(-2291)・RAISE_APPLICATION_ERROR を WHEN OTHERS で捕捉して ROLLBACK。正常終了'
+note: '04-6-2: ユーザ定義例外・EXCEPTION_INIT(-2291)・RAISE_APPLICATION_ERROR を WHEN OTHERS で捕捉して ROLLBACK。正常終了。呼び出し側（ハーネス）が ROLLBACK する（callerBoundary の決定）'
+boundary: rollback

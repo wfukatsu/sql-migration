@@ -52,4 +52,5 @@ call:
 capture_tables:
 - employees
 - emp_audit
-note: '04-3: UPDATE → SQL%ROWCOUNT → DELETE → SQL%NOTFOUND → ROLLBACK。表は元に戻る'
+note: '04-3: UPDATE → SQL%ROWCOUNT → DELETE → SQL%NOTFOUND → ROLLBACK。表は元に戻る。呼び出し側（ハーネス）が ROLLBACK する（callerBoundary の決定）'
+boundary: rollback
