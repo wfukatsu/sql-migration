@@ -206,6 +206,8 @@ class SqlOperation(Statement):
     original_sql: str = ""
     binds: list[BindVariable] = field(default_factory=list)
     into_targets: list[str] = field(default_factory=list)
+    # a multi-row RMW split into a loop of single-row UPDATEs (plsql.rmw): SQL%ROWCOUNT is the sum over the loop
+    accumulates_rowcount: bool = False
     # the ScalarDB column and type behind each select item, positionally (P3-1). None where there is not
     # exactly one -- an expression, or a column the schema does not describe.
     into_columns: list[str | None] = field(default_factory=list)

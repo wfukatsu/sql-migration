@@ -104,9 +104,9 @@ def _allowed(routine: M.Routine, expression: str) -> list[Variant] | None:
         return None
     wrapped = ASSERT.match(names[0])
     parameter = wrapped.group("name") if wrapped else names[0]
-    if not re.fullmatch(r"[\w$#]+", parameter) or \
-            parameter.lower() not in {p.name.lower() for p in routine.parameters}:
-        return None
+    holders = {p.name.lower() for p in routine.parameters} | {d.name.lower() for d in routine.declarations}
+    if not re.fullmatch(r"[\w$#]+", parameter) or parameter.lower() not in holders:
+        return None   # a parameter or a local of this routine (samples/oracle-samples b06_3: `v_table`)
     variants = []
     for table in tables:
         sql = "".join(table if part == names[0] else _unquote(part) for part in parts)
