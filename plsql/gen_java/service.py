@@ -861,6 +861,7 @@ def _case(file: JavaFile, statement: M.Case, routine: M.Routine, result: Service
 
 def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: ServiceFile) -> None:
     label = f"{java_name(statement.label)}: " if statement.label else ""
+    index_name = None   # a numeric FOR loop's index: a local of the body only
     if statement.loop_kind == "while":
         opening = f"{label}while ({_expr(file, statement.condition, routine, result)})"
     elif statement.loop_kind == "cursor-for" and statement.query is not None:
@@ -869,22 +870,44 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
     elif statement.loop_kind == "forall" and _forall_collection(statement, routine) is not None:
         _forall(file, statement, routine, result)
         return
+    elif statement.loop_kind == "for" and (numeric := NUMERIC_FOR.match(statement.cursor or "")):
+        # `FOR i IN [REVERSE] low .. high`: PL/SQL evaluates the bounds once, so the end is held in a second
+        # loop variable; the index is a PLS_INTEGER (#37, samples/oracle-samples b04_2_control_flow)
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        index_name = numeric.group("index")
+        index = java_name(index_name)
+        low = _expr(file, numeric.group("low"), routine, result)
+        high = _expr(file, numeric.group("high"), routine, result)
+        if numeric.group("reverse"):
+            opening = (f"{label}for (int {index} = Plsql.toInt({high}), {index}End = Plsql.toInt({low}); "
+                       f"{index} >= {index}End; {index}--)")
+        else:
+            opening = (f"{label}for (int {index} = Plsql.toInt({low}), {index}End = Plsql.toInt({high}); "
+                       f"{index} <= {index}End; {index}++)")
     elif statement.loop_kind in ("cursor-for", "forall", "for"):
-        # A numeric FOR loop's bounds, and a named cursor's query, are still not modelled as statements, so
-        # there is nothing to iterate. Emitting a call to a repository method that does not exist would give
-        # code that cannot compile; refusing keeps the gap where a reviewer sees it.
+        # A named cursor's query is still not modelled as a statement, so there is nothing to iterate. Emitting
+        # a call to a repository method that does not exist would give code that cannot compile; refusing keeps
+        # the gap where a reviewer sees it.
         raise Untranslatable([f"{statement.loop_kind} loop"], statement.cursor or statement.kind)
     else:
         opening = f"{label}while (true)"
     outer = _LOOP_LABELS.get()
+    outer_locals = _BLOCK_LOCALS.get()
     if statement.label:
         _LOOP_LABELS.set(outer | {statement.label.lower()})
+    if index_name:
+        _BLOCK_LOCALS.set({**outer_locals, index_name: java_name(index_name)})
     try:
         with file.block(opening) as f:
             _statements(f, statement.body, routine, result)
     finally:
         _LOOP_LABELS.set(outer)
+        _BLOCK_LOCALS.set(outer_locals)
 
+
+# `j IN REVERSE 1 .. 6`, `a IN 1 .. v_max`: what the lowering keeps of a numeric FOR loop
+NUMERIC_FOR = re.compile(r"^\s*(?P<index>[\w$#]+)\s+IN\s+(?P<reverse>REVERSE\s+)?(?P<low>.+?)\s*\.\.\s*(?P<high>.+?)\s*$",
+                         re.IGNORECASE | re.DOTALL)
 
 FORALL_BOUND = re.compile(r"^\s*1\s*\.\.\s*(?P<collection>[\w$#]+)\s*\.\s*COUNT\s*$", re.IGNORECASE)
 
