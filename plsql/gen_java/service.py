@@ -76,6 +76,10 @@ def generate_module(module: M.Module, package: str, repository_package: str,
     """
     if program is not None:
         _PROGRAM.set(program)
+    elif (current := _PROGRAM.get()) is not None and not any(m is module for m in current.modules):
+        # a program left behind by an earlier call (a ContextVar outlives it): resolving this module's calls
+        # against another program's routines gave different Java depending on what ran before
+        _PROGRAM.set(None)
     name = java_class_name(module.name) + "Service"
     file = JavaFile(package=package, name=name,
                     source=module.source_range.file if module.source_range else module.name)
@@ -497,7 +501,7 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
     would swallow the specific ones. Keeping the PL/SQL order for everything else matters: two handlers can both
     match, and PL/SQL takes the first.
     """
-    from .exception import NEVER_RAISED_BY_TARGET, PREDEFINED, user_class
+    from .exception import NEVER_RAISED_BY_TARGET, PREDEFINED, class_of, user_class
 
     ordered = sorted(handlers,
                      key=lambda h: 1 if any(e.upper() == "OTHERS" for e in h.exceptions) else 0)
@@ -1196,11 +1200,17 @@ def _locked_and_decided(query: M.SqlOperation) -> bool:
 
 
 def _raise(file: JavaFile, statement: M.Raise, routine: M.Routine, result: ServiceFile) -> None:
-    from .exception import PREDEFINED, user_class
+    from .exception import bound_class, class_of
 
     if statement.error_code is not None:
         message = _expr(file, statement.message, routine, result) if statement.message else '""'
-        file.line(f"throw new MigratedException({statement.error_code}, {message or chr(34) * 2});")
+        bound = bound_class(statement.error_code, _PROGRAM.get())
+        if bound and _DOMAIN.get():
+            # a number some routine bound with PRAGMA EXCEPTION_INIT: throw that class, so `WHEN e_x` catches it
+            file.add_import(f"{_DOMAIN.get()}.{bound}")
+            file.line(f"throw new {bound}({message or chr(34) * 2});")
+        else:
+            file.line(f"throw new MigratedException({statement.error_code}, {message or chr(34) * 2});")
     elif not statement.exception:
         # `RAISE;` re-raises what the handler caught. It used to throw a new `MigratedException(0, "RAISE")`: the
         # caller's `WHEN NO_DATA_FOUND` no longer matched, and SQLCODE was 0

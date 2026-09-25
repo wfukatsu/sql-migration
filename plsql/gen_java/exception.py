@@ -11,6 +11,7 @@ preserved: `NO_DATA_FOUND` and `TOO_MANY_ROWS` are what a `SELECT INTO` does, no
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass, field
 
 from ..ir import model as M
@@ -95,7 +96,7 @@ def collect(program: M.Program) -> Registry:
                 if statement.kind != "Raise":
                     continue
                 if statement.error_code is not None:
-                    registry.add(statement.error_code, _class_for(statement, module),
+                    registry.add(statement.error_code, _class_for(statement, module, program),
                                  f"RAISE_APPLICATION_ERROR({statement.error_code})",
                                  statement.message or "", routine.id)
                 elif statement.exception:
@@ -104,8 +105,8 @@ def collect(program: M.Program) -> Registry:
                     if known:
                         registry.add(known[1], known[0], name, known[2], routine.id)
                     else:
-                        registry.add(_user_code(name), user_class(name), name,
-                                     "declared in PL/SQL", routine.id)
+                        code, class_name = class_of(name, routine, module, program=program)
+                        registry.add(code, class_name, name, "declared in PL/SQL", routine.id)
             handlers = list(routine.exception_handlers) + [
                 h for s in statements for h in getattr(s, "exception_handlers", []) or []]
             for handler in handlers:

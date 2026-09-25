@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .ir import model as M
-from .limits import PackageState, Boundaries, DbLinks, DynamicTables, Limits, RowLocks
+from .limits import Constraints, PackageState, Boundaries, DbLinks, DynamicTables, Limits, RowLocks
 
 STATES = ("undecided", "decided", "verified")
 LABELS = {"undecided": "未決定", "decided": "決定済み（実 DB では未検証、または相違あり）",
@@ -45,17 +45,18 @@ class Decided:
     limits: Limits = field(default_factory=Limits)
     db_links: DbLinks = field(default_factory=DbLinks)
     package_state: PackageState = field(default_factory=PackageState)
+    constraints: Constraints = field(default_factory=Constraints)
 
     @classmethod
     def load(cls, path: str | Path | None) -> "Decided":
         if path is None:
             return cls()
         return cls(RowLocks.load(path), Boundaries.load(path), DynamicTables.load(path), Limits.load(path),
-                   DbLinks.load(path), PackageState.load(path))
+                   DbLinks.load(path), PackageState.load(path), Constraints.load(path))
 
     def for_analysis(self) -> dict:
         return {"row_locks": self.row_locks, "boundaries": self.boundaries, "limits": self.limits,
-                "db_links": self.db_links, "package_state": self.package_state}
+                "db_links": self.db_links, "package_state": self.package_state, "constraints": self.constraints}
 
 
 @dataclass
