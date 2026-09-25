@@ -79,8 +79,7 @@ def _answer(rule_id: str, routine: M.Routine, module: M.Module | None, decided: 
     if rule_id in ("LOCK-001", "LOCK-002") and decided.row_locks.decided(name):
         return "limits.yaml: rowLocks.optimistic", decided.row_locks.why(name) or ""
     if rule_id in ("TX-001", "TX-002", "TX-003", "BULK-002") and decided.boundaries.decided(name):
-        where = "perIteration" if name in decided.boundaries.per_iteration else "separate"
-        return f"limits.yaml: transactions.{where}", decided.boundaries.why(name) or ""
+        return f"limits.yaml: transactions.{decided.boundaries.where(name)}", decided.boundaries.why(name) or ""
     if rule_id == "LINK-001":
         # every link the routine reaches has to lead somewhere: one that does not is still a distributed transaction
         # nobody has redesigned
