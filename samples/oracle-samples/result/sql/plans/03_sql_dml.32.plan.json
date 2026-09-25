@@ -1,0 +1,74 @@
+{
+  "pattern": "P8",
+  "source_dialect": "oracle",
+  "source_sql": "-- F-3. JSON_TABLE：JSON を行列に展開\nSELECT p.id, jt.name, jt.tag\nFROM   products_json p,\n       JSON_TABLE(p.doc, '$'\n         COLUMNS (name VARCHAR2(40) PATH '$.name',\n                  NESTED PATH '$.tags[*]' COLUMNS (tag VARCHAR2(20) PATH '$'))) jt",
+  "fetch": [
+    {
+      "table": "products_json",
+      "namespace": "hr",
+      "alias": "p",
+      "columns": [
+        "id",
+        "doc"
+      ],
+      "column_types": {
+        "id": "BIGINT",
+        "doc": "TEXT"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT id, doc FROM hr.products_json",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "id"
+        ]
+      ],
+      "residual_types": {}
+    },
+    {
+      "table": "",
+      "namespace": null,
+      "alias": "jt",
+      "columns": null,
+      "column_types": {},
+      "predicates": [],
+      "scalardb_sql": "SELECT * FROM \"\"",
+      "access_path": "UNKNOWN",
+      "max_rows": 10000,
+      "index_columns": [],
+      "residual_types": {}
+    }
+  ],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "-- F-3. JSON_TABLE：JSON を行列に展開\nSELECT p.id, jt.name, jt.tag\nFROM   products_json p,\n       JSON_TABLE(p.doc, '$'\n         COLUMNS (name VARCHAR2(40) PATH '$.name',\n                  NESTED PATH '$.tags[*]' COLUMNS (tag VARCHAR2(20) PATH '$'))) jt",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "/* F-3. JSON_TABLE：JSON を行列に展開 */ SELECT p.id, jt.name, jt.tag FROM products_json AS p, JSON_TABLE(p.doc, '$' COLUMNS(name TEXT(40) PATH '$.name', NESTED PATH '$.tags[*]' COLUMNS(tag TEXT(20) PATH '$'))) AS jt"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": true,
+    "row_limit": 10000
+  },
+  "unresolved": [],
+  "notes": [
+    ": schema unknown, fetching all columns; runtime must infer types"
+  ],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+    "scalar.db.scan_fetch_size": 1000,
+    "scalar.db.cluster.client.scan_fetch_size": 1000,
+    "scalar.db.cross_partition_scan.enabled": true,
+    "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+  }
+}

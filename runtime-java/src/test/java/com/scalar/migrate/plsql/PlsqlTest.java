@@ -13,6 +13,30 @@ import org.junit.jupiter.api.Test;
 class PlsqlTest {
 
   @Test
+  void initcapTrimAndIntegerTargets() {
+    // samples/oracle-samples (2026-09-24): normalize_name uses INITCAP(TRIM(x)); PLS_INTEGER loops go i := i + 1
+    assertEquals("John Smith", Plsql.initcap(Plsql.trim("  john SMITH ")));
+    assertEquals("De Haan", Plsql.initcap("dE hAAN"));
+    assertNull(Plsql.trim("   "));            // an empty result is NULL, as in Oracle
+    assertNull(Plsql.initcap(null));
+    assertEquals(Integer.valueOf(4), Plsql.toInt(Plsql.add(3, 1)));
+    assertEquals(Long.valueOf(2), Plsql.toLong(Plsql.sub(3, 1)));
+    assertNull(Plsql.toInt(null));
+  }
+
+  @Test
+  void dbmsOutputIsBufferedPerThreadAndReadBack() {
+    Plsql.output();                            // start clean
+    Plsql.put("a");
+    Plsql.put(1);
+    Plsql.newLine();
+    Plsql.putLine("b");
+    Plsql.putLine(null);
+    assertEquals(java.util.List.of("a1", "b", ""), Plsql.output());
+    assertTrue(Plsql.output().isEmpty());     // reading clears the buffer
+  }
+
+  @Test
   void comparingWithNullIsNeverTrue() {
     // In SQL an unknown condition does not run its branch, and `NULL <> x` is unknown too.
     assertFalse(Plsql.eq(null, null));

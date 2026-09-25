@@ -1,0 +1,70 @@
+{
+  "pattern": "P1",
+  "source_dialect": "oracle",
+  "source_sql": "-- A-3. CASE / DECODE [ORA] / NULL 処理関数\nSELECT last_name,\n       salary,\n       CASE\n         WHEN salary >= 15000 THEN 'HIGH'\n         WHEN salary >=  7000 THEN 'MID'\n         ELSE 'LOW'\n       END                                      AS salary_band,\n       DECODE(department_id, 60, 'IT', 80, 'Sales', 'Other') AS dept_label,   -- [ORA]\n       NVL(commission_pct, 0)                   AS comm_nvl,                  -- [ORA]\n       NVL2(commission_pct, 'Y', 'N')           AS has_comm,                  -- [ORA]\n       COALESCE(commission_pct, 0)              AS comm_coalesce               -- 標準SQL\nFROM   employees",
+  "fetch": [
+    {
+      "table": "employees",
+      "namespace": "hr",
+      "alias": "employees",
+      "columns": [
+        "employee_id",
+        "last_name",
+        "salary",
+        "commission_pct",
+        "department_id"
+      ],
+      "column_types": {
+        "employee_id": "INT",
+        "first_name": "TEXT",
+        "last_name": "TEXT",
+        "email": "TEXT",
+        "hire_date": "DATE",
+        "job_id": "TEXT",
+        "salary": "DOUBLE",
+        "commission_pct": "DOUBLE",
+        "manager_id": "INT",
+        "department_id": "INT"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT employee_id, last_name, salary, commission_pct, department_id FROM hr.employees",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "employee_id"
+        ]
+      ],
+      "residual_types": {}
+    }
+  ],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "-- A-3. CASE / DECODE [ORA] / NULL 処理関数\nSELECT last_name,\n       salary,\n       CASE\n         WHEN salary >= 15000 THEN 'HIGH'\n         WHEN salary >=  7000 THEN 'MID'\n         ELSE 'LOW'\n       END                                      AS salary_band,\n       DECODE(department_id, 60, 'IT', 80, 'Sales', 'Other') AS dept_label,   -- [ORA]\n       NVL(commission_pct, 0)                   AS comm_nvl,                  -- [ORA]\n       NVL2(commission_pct, 'Y', 'N')           AS has_comm,                  -- [ORA]\n       COALESCE(commission_pct, 0)              AS comm_coalesce               -- 標準SQL\nFROM   employees",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "/* A-3. CASE / DECODE [ORA] / NULL 処理関数 */ SELECT last_name, salary, CASE WHEN salary >= 15000 THEN 'HIGH' WHEN salary >= 7000 THEN 'MID' ELSE 'LOW' END AS salary_band, CASE WHEN department_id = 60 THEN 'IT' WHEN department_id = 80 THEN 'Sales' ELSE 'Other' END AS dept_label /* [ORA] */, COALESCE(commission_pct, 0) AS comm_nvl /* [ORA] */, CASE WHEN NOT commission_pct IS NULL THEN 'Y' ELSE 'N' END AS has_comm /* [ORA] */, COALESCE(commission_pct, 0) AS comm_coalesce /* 標準SQL */ FROM employees"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": true,
+    "row_limit": 10000
+  },
+  "unresolved": [],
+  "notes": [],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+    "scalar.db.scan_fetch_size": 1000,
+    "scalar.db.cluster.client.scan_fetch_size": 1000,
+    "scalar.db.cross_partition_scan.enabled": true,
+    "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+  }
+}

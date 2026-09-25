@@ -330,6 +330,9 @@ def call_routine(cur, spec: dict) -> tuple[dict, dict | None]:
     out_vars = {}
     for name, oracle_type in out_specs.items():
         out_vars[name] = cur.var(_oracle_type(cur, oracle_type))
+        if name in binds and not isinstance(binds[name], list):
+            # IN OUT: the same name is in `args` (its value going in) and in `out` (its type coming back)
+            out_vars[name].setvalue(0, binds[name])
         binds[name] = out_vars[name]
 
     try:

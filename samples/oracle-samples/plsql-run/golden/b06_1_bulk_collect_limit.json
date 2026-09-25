@@ -1,0 +1,386 @@
+{
+ "scenario": "b06_1_bulk_collect_limit",
+ "unit": "b06_1_bulk_collect_limit",
+ "routine": "b06_1_bulk_collect_limit",
+ "source": "oracle",
+ "pinned": {
+  "sysdate": "2026-09-24 09:30:00",
+  "sequences": {}
+ },
+ "sessionUser": "HRS",
+ "result": {
+  "returned": null,
+  "out": {}
+ },
+ "exception": null,
+ "tables": {
+  "employees": {
+   "columns": [
+    "employee_id",
+    "first_name",
+    "last_name",
+    "email",
+    "hire_date",
+    "job_id",
+    "salary",
+    "commission_pct",
+    "manager_id",
+    "department_id"
+   ],
+   "rows": [
+    [
+     {
+      "$dec": "100"
+     },
+     "Steven",
+     "King",
+     "SKING",
+     {
+      "$ts": "2013-06-17T00:00:00"
+     },
+     "AD_PRES",
+     {
+      "$dec": "24000"
+     },
+     null,
+     null,
+     {
+      "$dec": "90"
+     }
+    ],
+    [
+     {
+      "$dec": "101"
+     },
+     "Neena",
+     "Kochhar",
+     "NKOCHHAR",
+     {
+      "$ts": "2015-09-21T00:00:00"
+     },
+     "AD_VP",
+     {
+      "$dec": "17000"
+     },
+     null,
+     {
+      "$dec": "100"
+     },
+     {
+      "$dec": "90"
+     }
+    ],
+    [
+     {
+      "$dec": "102"
+     },
+     "Lex",
+     "De Haan",
+     "LDEHAAN",
+     {
+      "$ts": "2011-01-13T00:00:00"
+     },
+     "AD_VP",
+     {
+      "$dec": "17000"
+     },
+     null,
+     {
+      "$dec": "100"
+     },
+     {
+      "$dec": "90"
+     }
+    ],
+    [
+     {
+      "$dec": "103"
+     },
+     "Alexander",
+     "Hunold",
+     "AHUNOLD",
+     {
+      "$ts": "2016-01-03T00:00:00"
+     },
+     "IT_PROG",
+     {
+      "$dec": "9000"
+     },
+     null,
+     {
+      "$dec": "102"
+     },
+     {
+      "$dec": "60"
+     }
+    ],
+    [
+     {
+      "$dec": "104"
+     },
+     "Bruce",
+     "Ernst",
+     "BERNST",
+     {
+      "$ts": "2017-05-21T00:00:00"
+     },
+     "IT_PROG",
+     {
+      "$dec": "6000"
+     },
+     null,
+     {
+      "$dec": "103"
+     },
+     {
+      "$dec": "60"
+     }
+    ],
+    [
+     {
+      "$dec": "107"
+     },
+     "Diana",
+     "Lorentz",
+     "DLORENTZ",
+     {
+      "$ts": "2019-02-07T00:00:00"
+     },
+     "IT_PROG",
+     {
+      "$dec": "4200"
+     },
+     null,
+     {
+      "$dec": "103"
+     },
+     {
+      "$dec": "60"
+     }
+    ],
+    [
+     {
+      "$dec": "120"
+     },
+     "Matthew",
+     "Weiss",
+     "MWEISS",
+     {
+      "$ts": "2014-07-18T00:00:00"
+     },
+     "ST_CLERK",
+     {
+      "$dec": "4800"
+     },
+     null,
+     {
+      "$dec": "100"
+     },
+     {
+      "$dec": "50"
+     }
+    ],
+    [
+     {
+      "$dec": "125"
+     },
+     "Julia",
+     "Nayer",
+     "JNAYER",
+     {
+      "$ts": "2015-07-16T00:00:00"
+     },
+     "ST_CLERK",
+     {
+      "$dec": "3200"
+     },
+     null,
+     {
+      "$dec": "120"
+     },
+     {
+      "$dec": "50"
+     }
+    ],
+    [
+     {
+      "$dec": "145"
+     },
+     "John",
+     "Russell",
+     "JRUSSEL",
+     {
+      "$ts": "2014-10-01T00:00:00"
+     },
+     "SA_MAN",
+     {
+      "$dec": "14000"
+     },
+     {
+      "$dec": "0.4"
+     },
+     {
+      "$dec": "100"
+     },
+     {
+      "$dec": "80"
+     }
+    ],
+    [
+     {
+      "$dec": "146"
+     },
+     "Karen",
+     "Partners",
+     "KPARTNER",
+     {
+      "$ts": "2015-01-05T00:00:00"
+     },
+     "SA_MAN",
+     {
+      "$dec": "13500"
+     },
+     {
+      "$dec": "0.3"
+     },
+     {
+      "$dec": "100"
+     },
+     {
+      "$dec": "80"
+     }
+    ],
+    [
+     {
+      "$dec": "150"
+     },
+     "Peter",
+     "Tucker",
+     "PTUCKER",
+     {
+      "$ts": "2015-01-30T00:00:00"
+     },
+     "SA_REP",
+     {
+      "$dec": "10000"
+     },
+     {
+      "$dec": "0.3"
+     },
+     {
+      "$dec": "145"
+     },
+     {
+      "$dec": "80"
+     }
+    ],
+    [
+     {
+      "$dec": "151"
+     },
+     "David",
+     "Bernstein",
+     "DBERNSTE",
+     {
+      "$ts": "2015-03-24T00:00:00"
+     },
+     "SA_REP",
+     {
+      "$dec": "9500"
+     },
+     {
+      "$dec": "0.25"
+     },
+     {
+      "$dec": "145"
+     },
+     {
+      "$dec": "80"
+     }
+    ],
+    [
+     {
+      "$dec": "155"
+     },
+     "Oliver",
+     "Tuvault",
+     "OTUVAULT",
+     {
+      "$ts": "2017-11-23T00:00:00"
+     },
+     "SA_REP",
+     {
+      "$dec": "7000"
+     },
+     {
+      "$dec": "0.15"
+     },
+     {
+      "$dec": "146"
+     },
+     {
+      "$dec": "80"
+     }
+    ],
+    [
+     {
+      "$dec": "178"
+     },
+     "Kimberely",
+     "Grant",
+     "KGRANT",
+     {
+      "$ts": "2017-05-24T00:00:00"
+     },
+     "SA_REP",
+     {
+      "$dec": "7000"
+     },
+     {
+      "$dec": "0.15"
+     },
+     {
+      "$dec": "145"
+     },
+     null
+    ],
+    [
+     {
+      "$dec": "200"
+     },
+     "Jennifer",
+     "Whalen",
+     "JWHALEN",
+     {
+      "$ts": "2013-09-17T00:00:00"
+     },
+     "AD_VP",
+     {
+      "$dec": "15000"
+     },
+     null,
+     {
+      "$dec": "101"
+     },
+     {
+      "$dec": "10"
+     }
+    ]
+   ]
+  },
+  "emp_audit": {
+   "columns": [
+    "audit_id",
+    "employee_id",
+    "action",
+    "old_salary",
+    "new_salary",
+    "changed_by",
+    "changed_at",
+    "message"
+   ],
+   "rows": []
+  }
+ },
+ "masked": {}
+}

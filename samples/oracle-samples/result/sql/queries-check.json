@@ -1,0 +1,748 @@
+[
+  {
+    "index": 10,
+    "feature": "",
+    "sql": "SELECT SYSDATE, SYSTIMESTAMP, USER FROM dual",
+    "convert_status": "PLANNED",
+    "codes": [
+      "PROJECTION"
+    ],
+    "pattern": "P1",
+    "result": "FAIL",
+    "error": "result mismatch (no row of the actual result equals expected (datetime.datetime(2026, 9, 24, 7, 59, 16), datetime.datetime(2026, 9, 24, 7, 59, 16, 77663), 'SOURCE')): expected [(datetime.datetime(2026, 9, 24, 7, 59, 16), datetime.datetime(2026, 9, 24, 7, 59, 16, 77663), 'SOURCE')] actual [['2026-09-24T16:59:16', '2026-09-24T16:59:16.576865+09:00', 'RESIDUAL_READER']]",
+    "fetched": 0,
+    "fetch_sql": [],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 11,
+    "feature": "",
+    "sql": "SELECT employee_id, last_name, salary, commission_pct\nFROM   employees\nWHERE  salary BETWEEN 5000 AND 15000\nAND    last_name LIKE '%er%'\nORDER  BY commission_pct DESC NULLS LAST, salary DESC",
+    "convert_status": "WARN",
+    "codes": [
+      "CROSS_PARTITION",
+      "NULLS"
+    ],
+    "pattern": null,
+    "result": "PASS",
+    "error": null,
+    "fetched": null,
+    "fetch_sql": [],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 12,
+    "feature": "",
+    "sql": "SELECT last_name,\n       salary,\n       CASE\n         WHEN salary >= 15000 THEN 'HIGH'\n         WHEN salary >=  7000 THEN 'MID'\n         ELSE 'LOW'\n       END                                      AS salary_band,\n       DECODE(department_id, 60, 'IT', 80, 'Sales', 'Other') AS dept_label,   -- [ORA]\n       NVL(commission_pct, 0)                   AS comm_nvl,                  -- [ORA]\n       NVL2(commission_pct, 'Y', 'N')           AS has_comm,                  -- [ORA]\n       COALESCE(commission_pct, 0)              AS comm_coalesce               -- 標準SQL\nFROM   employees",
+    "convert_status": "PLANNED",
+    "codes": [
+      "PLAN_CROSS_PARTITION",
+      "PROJECTION"
+    ],
+    "pattern": "P1",
+    "result": "PASS",
+    "error": null,
+    "fetched": 15,
+    "fetch_sql": [
+      "SELECT employee_id, last_name, salary, commission_pct, department_id FROM employees"
+    ],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 13,
+    "feature": "",
+    "sql": "SELECT UPPER(last_name)                         AS upper_name,\n       INITCAP(email)                           AS initcap_email,\n       SUBSTR(last_name, 1, 3)                  AS short_name,\n       INSTR(last_name, 'e')                    AS pos_e,\n       LPAD(employee_id, 6, '0')                AS padded_id,\n       first_name || ' ' || last_name           AS full_name,     -- 連結演算子\n       ROUND(salary / 12, 2)                    AS monthly,\n       TRUNC(hire_date, 'MM')                   AS hire_month,    -- [ORA] 日付のTRUNC\n       ADD_MONTHS(hire_date, 6)                 AS probation_end, -- [ORA]\n       TRUNC(MONTHS_BETWEEN(SYSDATE, hire_date) / 12) AS years,   -- [ORA]\n       TO_CHAR(hire_date, 'YYYY\"年\"MM\"月\"DD\"日\"') AS hire_jp,\n       TO_CHAR(salary, 'FM999,999')             AS salary_fmt\nFROM   employees\nWHERE  ROWNUM <= 5",
+    "convert_status": "PLANNED",
+    "codes": [
+      "PLAN_CROSS_PARTITION",
+      "PROJECTION"
+    ],
+    "pattern": "P1",
+    "result": "FAIL",
+    "error": "result mismatch (no row of the actual result equals expected ('DE HAAN', 'Ldehaan', 'De ', 2, '000102', 'Lex De Haan', 1416.67, datetime.datetime(2011, 1, 1, 0, 0), datetime.datetime(2011, 7, 13, 0, 0), 15, '2011年01月13日', '17,000')): expected [('KING', 'Sking', 'Kin', 0, '000100', 'Steven King', 2000, datetime.datetime(2013, 6, 1, 0, 0), datetime.datetime(2013, 12, 17, 0, 0), 13, '2013年06月17日', '24,000'), ('KOCHHAR', 'Nkochhar', 'Koc', 0, '000101', 'Neena Kochhar', 1416.67, datetime.datetime(2015, 9, 1, 0, 0), datetime.datetime(2016, 3, 21, 0, 0), 11, '2015年09月21日', '17,000'), ('DE HAAN', 'Ldehaan', 'De ', 2, '000102', 'Lex De Haan', 1416.67, datetime.datetime(2011, 1, 1, 0, 0), datetime.datetime(2011, 7, 13, 0, 0), 15, '2011年01月13日', '17,000'), ('HUNOLD', 'Ahunold', 'Hun', 0, '000103', 'Alexander Hunold', 750, datetime.datetime(2016, 1, 1, 0, 0), datetime.datetime(2016, 7, 3, 0, 0), 10, '2016年01月03日', '9,000'), ('ERNST', 'Bernst', 'Ern', 0, '000104', 'Bruce Ernst', 500, datetime.datetime(2017, 5, 1, 0, 0), datetime.datetime(2017, 11, 21, 0, 0), 9, '2017年05月21日', '6,000')] actual [['TUVAULT', 'Otuvault', 'Tuv', 0, '000155', 'Oliver Tuvault', Decimal('583.33'), '2017-11-01T00:00', '2018-05-23T00:00', 8, '2017年11月23日', '7,000'], ['NAYER', 'Jnayer', 'Nay', 4, '000125', 'Julia Nayer', Decimal('266.67'), '2015-07-01T00:00', '2016-01-16T00:00', 11, '2015年07月16日', '3,200'], ['WEISS', 'Mweiss', 'Wei', 2, '000120', 'Matthew Weiss', Decimal('400.00'), '2014-07-01T00:00', '2015-01-18T00:00', 12, '2014年07月18日', '4,800'], ['BERNSTEIN', 'Dbernste', 'Ber', 2, '000151', 'David Bernstein', Decimal('791.67'), '2015-03-01T00:00', '2015-09-24T00:00', 11, '2015年03月24日', '9,500'], ['TUCKER', 'Ptucker', 'Tuc', 5, '000150', 'Peter Tucker', Decimal('833.33'), '2015-01-01T00:00', '2015-07-30T00:00', 11, '2015年01月30日', '10,000']]",
+    "fetched": 15,
+    "fetch_sql": [
+      "SELECT employee_id, first_name, last_name, email, hire_date, salary FROM employees"
+    ],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 14,
+    "feature": "",
+    "sql": "SELECT email,\n       REGEXP_SUBSTR(email, '^[A-Z]')           AS first_char,\n       REGEXP_REPLACE(last_name, '[aeiou]', '*') AS masked\nFROM   employees\nWHERE  REGEXP_LIKE(last_name, '^(K|L)')",
+    "convert_status": "PLANNED",
+    "codes": [
+      "PLAN_CROSS_PARTITION",
+      "PROJECTION"
+    ],
+    "pattern": "P1",
+    "result": "PASS",
+    "error": null,
+    "fetched": 15,
+    "fetch_sql": [
+      "SELECT employee_id, last_name, email FROM employees"
+    ],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 15,
+    "feature": "",
+    "sql": "SELECT e.last_name, d.department_name\nFROM   employees e\nJOIN   departments d ON d.department_id = e.department_id",
+    "convert_status": "WARN",
+    "codes": [
+      "CROSS_PARTITION"
+    ],
+    "pattern": null,
+    "result": "PASS",
+    "error": null,
+    "fetched": null,
+    "fetch_sql": [],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 16,
+    "feature": "",
+    "sql": "SELECT e.last_name, d.department_name\nFROM   employees e\nLEFT   JOIN departments d ON d.department_id = e.department_id",
+    "convert_status": "WARN",
+    "codes": [
+      "CROSS_PARTITION"
+    ],
+    "pattern": null,
+    "result": "PASS",
+    "error": null,
+    "fetched": null,
+    "fetch_sql": [],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 17,
+    "feature": "",
+    "sql": "SELECT e.last_name, d.department_name          -- 上と同じ結果（旧記法）\nFROM   employees e, departments d\nWHERE  e.department_id = d.department_id(+)",
+    "convert_status": "WARN",
+    "codes": [
+      "CROSS_PARTITION",
+      "ORACLE_JOIN_MARK"
+    ],
+    "pattern": null,
+    "result": "PASS",
+    "error": null,
+    "fetched": null,
+    "fetch_sql": [],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 18,
+    "feature": "",
+    "sql": "SELECT e.last_name, d.department_name\nFROM   employees e\nFULL   OUTER JOIN departments d ON d.department_id = e.department_id\nWHERE  e.employee_id IS NULL OR d.department_id IS NULL",
+    "convert_status": "PLANNED",
+    "codes": [
+      "JOIN",
+      "PLAN_CROSS_PARTITION"
+    ],
+    "pattern": "P8",
+    "result": "FAIL",
+    "error": "",
+    "fetched": null,
+    "fetch_sql": [
+      "SELECT employee_id, last_name, department_id FROM employees",
+      "SELECT department_id, department_name FROM departments"
+    ],
+    "unresolved": []
+  },
+  {
+    "index": 19,
+    "feature": "",
+    "sql": "SELECT w.last_name AS employee, m.last_name AS manager\nFROM   employees w\nLEFT   JOIN employees m ON m.employee_id = w.manager_id",
+    "convert_status": "WARN",
+    "codes": [
+      "CROSS_PARTITION"
+    ],
+    "pattern": null,
+    "result": "PASS",
+    "error": null,
+    "fetched": null,
+    "fetch_sql": [],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 20,
+    "feature": "",
+    "sql": "SELECT d.department_name, t.last_name, t.salary\nFROM   departments d\nCROSS  APPLY (SELECT e.last_name, e.salary\n              FROM   employees e\n              WHERE  e.department_id = d.department_id\n              ORDER  BY e.salary DESC\n              FETCH  FIRST 2 ROWS ONLY) t",
+    "convert_status": "PLANNED",
+    "codes": [
+      "JOIN",
+      "PLAN_CROSS_PARTITION"
+    ],
+    "pattern": "P8",
+    "result": "FAIL",
+    "error": "",
+    "fetched": null,
+    "fetch_sql": [
+      "SELECT department_id, department_name FROM departments",
+      "SELECT employee_id, last_name, salary, department_id FROM employees"
+    ],
+    "unresolved": []
+  },
+  {
+    "index": 21,
+    "feature": "",
+    "sql": "SELECT last_name, salary,\n       (SELECT ROUND(AVG(salary)) FROM employees) AS company_avg\nFROM   employees",
+    "convert_status": "PLANNED",
+    "codes": [
+      "PLAN_CROSS_PARTITION",
+      "PROJECTION"
+    ],
+    "pattern": "P1",
+    "result": "PASS",
+    "error": null,
+    "fetched": 15,
+    "fetch_sql": [
+      "SELECT employee_id, last_name, salary FROM employees"
+    ],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 22,
+    "feature": "",
+    "sql": "SELECT e.last_name, e.department_id, e.salary\nFROM   employees e\nWHERE  e.salary > (SELECT AVG(x.salary)\n                   FROM   employees x\n                   WHERE  x.department_id = e.department_id)",
+    "convert_status": "PLANNED",
+    "codes": [
+      "PLAN_CROSS_PARTITION",
+      "SUBQUERY"
+    ],
+    "pattern": "P5",
+    "result": "PASS",
+    "error": null,
+    "fetched": 15,
+    "fetch_sql": [
+      "SELECT employee_id, last_name, salary, department_id FROM employees"
+    ],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 23,
+    "feature": "",
+    "sql": "SELECT d.department_name\nFROM   departments d\nWHERE  NOT EXISTS (SELECT 1 FROM employees e WHERE e.department_id = d.department_id)",
+    "convert_status": "PLANNED",
+    "codes": [
+      "NOT",
+      "PLAN_CROSS_PARTITION",
+      "SUBQUERY"
+    ],
+    "pattern": "P5",
+    "result": "PASS",
+    "error": null,
+    "fetched": 21,
+    "fetch_sql": [
+      "SELECT department_id, department_name FROM departments",
+      "SELECT employee_id, department_id FROM employees"
+    ],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 24,
+    "feature": "",
+    "sql": "SELECT last_name, department_id, salary\nFROM   employees\nWHERE  (department_id, salary) IN (SELECT department_id, MAX(salary)\n                                   FROM   employees\n                                   GROUP  BY department_id)",
+    "convert_status": "PLANNED",
+    "codes": [
+      "PLAN_CROSS_PARTITION",
+      "SUBQUERY"
+    ],
+    "pattern": "P5",
+    "result": "PASS",
+    "error": null,
+    "fetched": 15,
+    "fetch_sql": [
+      "SELECT employee_id, last_name, salary, department_id FROM employees"
+    ],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 25,
+    "feature": "",
+    "sql": "SELECT department_id FROM departments\nMINUS\nSELECT department_id FROM employees",
+    "convert_status": "PLANNED",
+    "codes": [
+      "PLAN_CROSS_PARTITION",
+      "SET_OP"
+    ],
+    "pattern": "P6",
+    "result": "PASS",
+    "error": null,
+    "fetched": 21,
+    "fetch_sql": [
+      "SELECT department_id FROM departments",
+      "SELECT employee_id, department_id FROM employees"
+    ],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 26,
+    "feature": "",
+    "sql": "SELECT job_id FROM employees WHERE department_id = 80\nINTERSECT\nSELECT job_id FROM jobs WHERE min_salary >= 6000",
+    "convert_status": "PLANNED",
+    "codes": [
+      "PLAN_CROSS_PARTITION",
+      "SET_OP"
+    ],
+    "pattern": "P6",
+    "result": "PASS",
+    "error": null,
+    "fetched": 9,
+    "fetch_sql": [
+      "SELECT employee_id, job_id, department_id FROM employees WHERE department_id = 80",
+      "SELECT job_id, min_salary FROM jobs WHERE min_salary >= 6000"
+    ],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 27,
+    "feature": "",
+    "sql": "SELECT department_id, COUNT(*) AS cnt, SUM(salary) AS total, ROUND(AVG(salary)) AS avg_sal\nFROM   employees\nGROUP  BY department_id\nHAVING COUNT(*) >= 2\nORDER  BY total DESC",
+    "convert_status": "PLANNED",
+    "codes": [
+      "PLAN_CROSS_PARTITION",
+      "PLAN_UNRESOLVED",
+      "PROJECTION"
+    ],
+    "pattern": "P1",
+    "result": "PASS",
+    "error": null,
+    "fetched": 15,
+    "fetch_sql": [
+      "SELECT employee_id, salary, department_id FROM employees"
+    ],
+    "unresolved": [
+      "employees: columns ['total'] not in schema"
+    ],
+    "empty": false
+  },
+  {
+    "index": 28,
+    "feature": "",
+    "sql": "SELECT CASE GROUPING(department_id) WHEN 1 THEN '全部門' ELSE TO_CHAR(department_id) END AS dept,\n       CASE GROUPING(job_id)        WHEN 1 THEN '小計'   ELSE job_id END                 AS job,\n       SUM(salary) AS total\nFROM   employees\nGROUP  BY ROLLUP (department_id, job_id)",
+    "convert_status": "ERROR",
+    "codes": [
+      "APP_SEMANTICS",
+      "GROUP",
+      "PROJECTION",
+      "RESIDUAL_H2"
+    ],
+    "pattern": null,
+    "result": "NOT_CONVERTIBLE",
+    "error": "main query: expressions in the select list (CASE GROUPING(department_id) WHEN 1 THEN '全部門' ELSE TO_CHAR(department_id) END; CASE GROUPING(job_id) WHEN 1 THEN '小計' ELSE job_id END) -- compute them in the application; main query: GROUP BY ROLLUP -- aggregate each level in the application; the H2 resid",
+    "fetched": null,
+    "fetch_sql": [],
+    "unresolved": []
+  },
+  {
+    "index": 29,
+    "feature": "",
+    "sql": "SELECT department_id, job_id, SUM(salary)\nFROM   employees\nGROUP  BY GROUPING SETS ((department_id), (job_id), ())",
+    "convert_status": "ERROR",
+    "codes": [
+      "APP_SEMANTICS",
+      "GROUP",
+      "RESIDUAL_H2"
+    ],
+    "pattern": null,
+    "result": "NOT_CONVERTIBLE",
+    "error": "main query: GROUP BY GROUPING SETS -- aggregate each level in the application; the H2 residual engine cannot run ROLLUP / CUBE / GROUPING SETS (UNION ALL one aggregate per level); implement this part in the application",
+    "fetched": null,
+    "fetch_sql": [],
+    "unresolved": []
+  },
+  {
+    "index": 30,
+    "feature": "",
+    "sql": "SELECT department_id,\n       LISTAGG(last_name, ', ') WITHIN GROUP (ORDER BY last_name) AS members\nFROM   employees\nGROUP  BY department_id",
+    "convert_status": "PLANNED",
+    "codes": [
+      "AGG",
+      "PLAN_CROSS_PARTITION",
+      "PROJECTION"
+    ],
+    "pattern": "P1+P7",
+    "result": "PASS",
+    "error": null,
+    "fetched": 15,
+    "fetch_sql": [
+      "SELECT employee_id, last_name, department_id FROM employees"
+    ],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 31,
+    "feature": "",
+    "sql": "SELECT *\nFROM  (SELECT department_id, job_id, salary FROM employees)\nPIVOT (SUM(salary) FOR job_id IN ('IT_PROG' AS it_prog, 'SA_REP' AS sa_rep, 'SA_MAN' AS sa_man))",
+    "convert_status": "ERROR",
+    "codes": [
+      "APP_SEMANTICS",
+      "FROM",
+      "RESIDUAL_H2",
+      "SUBQUERY"
+    ],
+    "pattern": null,
+    "result": "NOT_CONVERTIBLE",
+    "error": "FROM must reference exactly one base table (no subqueries); main query: derived table in FROM -- evaluate it in the application; the H2 residual engine cannot run PIVOT (conditional aggregation); implement this part in the application",
+    "fetched": null,
+    "fetch_sql": [],
+    "unresolved": []
+  },
+  {
+    "index": 32,
+    "feature": "",
+    "sql": "SELECT employee_id, pay_type, amount\nFROM  (SELECT employee_id, salary, NVL(salary * commission_pct, 0) AS commission\n       FROM   employees WHERE department_id = 80)\nUNPIVOT (amount FOR pay_type IN (salary AS 'SALARY', commission AS 'COMMISSION'))",
+    "convert_status": "ERROR",
+    "codes": [
+      "FROM",
+      "PROJECTION",
+      "RESIDUAL_H2",
+      "SUBQUERY"
+    ],
+    "pattern": null,
+    "result": "NOT_CONVERTIBLE",
+    "error": "FROM must reference exactly one base table (no subqueries); main query: derived table in FROM -- evaluate it in the application; subquery: expressions in the select list (NVL(salary * commission_pct, 0)) -- compute them in the application; the H2 residual engine cannot run UNPIVOT (UNION ALL); imple",
+    "fetched": null,
+    "fetch_sql": [],
+    "unresolved": []
+  },
+  {
+    "index": 33,
+    "feature": "",
+    "sql": "SELECT department_id, last_name, salary,\n       ROW_NUMBER() OVER (PARTITION BY department_id ORDER BY salary DESC) AS rn,\n       RANK()       OVER (PARTITION BY department_id ORDER BY salary DESC) AS rnk,\n       DENSE_RANK() OVER (ORDER BY salary DESC)                            AS drnk,\n       SUM(salary)  OVER (PARTITION BY department_id)                      AS dept_total,\n       ROUND(RATIO_TO_REPORT(salary) OVER (PARTITION BY department_id), 3) AS share,  -- [ORA]\n       LAG(salary)  OVER (PARTITION BY department_id ORDER BY hire_date)   AS prev_hire_sal,\n       LEAD(last_name) OVER (ORDER BY hire_date)                           AS next_hired,\n       NTILE(4)     OVER (ORDER BY salary)                                 AS quartile\nFROM   employees\nORDER  BY department_id, rn",
+    "convert_status": "PLANNED",
+    "codes": [
+      "PLAN_CROSS_PARTITION",
+      "PLAN_UNRESOLVED",
+      "PROJECTION",
+      "WINDOW"
+    ],
+    "pattern": "P1",
+    "result": "CASE_ERROR",
+    "error": "source database rejected the statement: ORA-00923: FROM keyword not found where expected",
+    "fetched": null,
+    "fetch_sql": [
+      "SELECT employee_id, last_name, hire_date, salary, department_id FROM employees"
+    ],
+    "unresolved": [
+      "employees: columns ['rn'] not in schema"
+    ]
+  },
+  {
+    "index": 34,
+    "feature": "",
+    "sql": "SELECT department_id, last_name, salary,\n       ROW_NUMBER() OVER (PARTITION BY department_id ORDER BY salary DESC) AS rn,\n       RANK()       OVER (PARTITION BY department_id ORDER BY salary DESC) AS rnk,\n       DENSE_RANK() OVER (ORDER BY salary DESC)                            AS drnk,\n       SUM(salary)  OVER (PARTITION BY department_id)                      AS dept_total,\n       ROUND(RATIO_TO_REPORT(salary) OVER (PARTITION BY department_id), 3) AS share_pct,\n       LAG(salary)  OVER (PARTITION BY department_id ORDER BY hire_date)   AS prev_hire_sal,\n       LEAD(last_name) OVER (ORDER BY hire_date)                           AS next_hired,\n       NTILE(4)     OVER (ORDER BY salary)                                 AS quartile\nFROM   employees\nORDER  BY department_id, rn",
+    "convert_status": "PLANNED",
+    "codes": [
+      "PLAN_CROSS_PARTITION",
+      "PLAN_UNRESOLVED",
+      "PROJECTION",
+      "WINDOW"
+    ],
+    "pattern": "P1",
+    "result": "FAIL",
+    "error": "result mismatch (row 13: expected (90, 'Kochhar', 17000.0, 2, 2, 2, 58000, 0.293, 24000, 'Hunold', 4), actual (90, 'De Haan', 17000, 2, 2, 2, 58000, Decimal('0.293'), None, 'King', 4)): expected [(10, 'Whalen', 15000.0, 1, 1, 3, 15000, 1, None, 'Weiss', 3), (50, 'Weiss', 4800.0, 1, 1, 11, 8000, 0.6, None, 'Russell', 1), (50, 'Nayer', 3200.0, 2, 2, 13, 8000, 0.4, 4800, 'Kochhar', 1), (60, 'Hunold', 9000.0, 1, 1, 8, 19200, 0.469, None, 'Ernst', 2), (60, 'Ernst', 6000.0, 2, 2, 10, 19200, 0.313, 9000, 'Grant', 1)] actual [[10, 'Whalen', 15000, 1, 1, 3, 15000, Decimal('1.0'), None, 'Weiss', 3], [50, 'Weiss', 4800, 1, 1, 11, 8000, Decimal('0.6'), None, 'Russell', 1], [50, 'Nayer', 3200, 2, 2, 13, 8000, Decimal('0.4'), 4800, 'Kochhar', 1], [60, 'Hunold', 9000, 1, 1, 8, 19200, Decimal('0.469'), None, 'Ernst', 2], [60, 'Ernst', 6000, 2, 2, 10, 19200, Decimal('0.313'), 9000, 'Grant', 1]]",
+    "fetched": 15,
+    "fetch_sql": [
+      "SELECT employee_id, last_name, hire_date, salary, department_id FROM employees"
+    ],
+    "unresolved": [
+      "employees: columns ['rn'] not in schema"
+    ],
+    "empty": false
+  },
+  {
+    "index": 35,
+    "feature": "",
+    "sql": "SELECT order_date, total,\n       SUM(total) OVER (ORDER BY order_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total,\n       ROUND(AVG(total) OVER (ORDER BY order_date ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING), 1) AS moving_avg\nFROM   orders\nORDER  BY order_date",
+    "convert_status": "PLANNED",
+    "codes": [
+      "PLAN_CROSS_PARTITION",
+      "PROJECTION",
+      "WINDOW"
+    ],
+    "pattern": "P1",
+    "result": "PASS",
+    "error": null,
+    "fetched": 5,
+    "fetch_sql": [
+      "SELECT order_id, order_date, total FROM orders"
+    ],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 36,
+    "feature": "",
+    "sql": "SELECT department_id,\n       MAX(last_name) KEEP (DENSE_RANK FIRST ORDER BY salary DESC) AS top_earner,\n       MAX(salary) AS max_sal\nFROM   employees\nGROUP  BY department_id",
+    "convert_status": "ERROR",
+    "codes": [
+      "APP_SEMANTICS",
+      "KEEP",
+      "PROJECTION",
+      "RESIDUAL_H2"
+    ],
+    "pattern": null,
+    "result": "NOT_CONVERTIBLE",
+    "error": "projection 'MAX(last_name) KEEP (DENSE_RANK FIRST ORDER BY salary DESC)' is an expression; ScalarDB SQL only selects columns and aggregates. Compute it in the application; main query: MAX(last_name) KEEP (DENSE_RANK FIRST ...) -- pick the first/last row per group in the application; the H2 residual ",
+    "fetched": null,
+    "fetch_sql": [],
+    "unresolved": []
+  },
+  {
+    "index": 37,
+    "feature": "",
+    "sql": "SELECT last_name, salary FROM employees\nORDER  BY salary DESC\nFETCH  FIRST 3 ROWS WITH TIES",
+    "convert_status": "PLANNED",
+    "codes": [
+      "LIMIT",
+      "PLAN_CROSS_PARTITION"
+    ],
+    "pattern": "P1",
+    "result": "FAIL",
+    "error": "result mismatch (row 2: expected ('Kochhar', 17000.0), actual ('De Haan', 17000)): expected [('King', 24000.0), ('Kochhar', 17000.0), ('De Haan', 17000.0)] actual [['King', 24000], ['De Haan', 17000], ['Kochhar', 17000]]",
+    "fetched": 15,
+    "fetch_sql": [
+      "SELECT employee_id, last_name, salary FROM employees"
+    ],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 38,
+    "feature": "",
+    "sql": "SELECT last_name, salary FROM employees\nORDER  BY salary DESC\nOFFSET 5 ROWS FETCH NEXT 5 ROWS ONLY",
+    "convert_status": "PLANNED",
+    "codes": [
+      "OFFSET",
+      "PLAN_CROSS_PARTITION"
+    ],
+    "pattern": "P4",
+    "result": "PASS",
+    "error": null,
+    "fetched": 15,
+    "fetch_sql": [
+      "SELECT employee_id, last_name, salary FROM employees"
+    ],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 39,
+    "feature": "",
+    "sql": "SELECT *\nFROM  (SELECT a.*, ROWNUM rnum\n       FROM  (SELECT last_name, salary FROM employees ORDER BY salary DESC) a\n       WHERE  ROWNUM <= 10)\nWHERE  rnum > 5",
+    "convert_status": "PLANNED",
+    "codes": [
+      "FROM",
+      "PLAN_CROSS_PARTITION",
+      "PLAN_UNRESOLVED",
+      "SUBQUERY"
+    ],
+    "pattern": "P5",
+    "result": "PASS",
+    "error": null,
+    "fetched": 15,
+    "fetch_sql": [
+      "SELECT employee_id, last_name, salary FROM employees"
+    ],
+    "unresolved": [
+      "python: ROWNUM in a form SQLite cannot express"
+    ],
+    "empty": false
+  },
+  {
+    "index": 40,
+    "feature": "",
+    "sql": "WITH dept_stats AS (\n  SELECT department_id, AVG(salary) AS avg_sal\n  FROM   employees GROUP BY department_id\n)\nSELECT e.last_name, e.salary, ROUND(s.avg_sal) AS dept_avg\nFROM   employees e JOIN dept_stats s ON s.department_id = e.department_id\nWHERE  e.salary > s.avg_sal",
+    "convert_status": "PLANNED",
+    "codes": [
+      "CTE",
+      "PLAN_CROSS_PARTITION",
+      "PROJECTION"
+    ],
+    "pattern": "P1+P6",
+    "result": "PASS",
+    "error": null,
+    "fetched": 15,
+    "fetch_sql": [
+      "SELECT employee_id, last_name, salary, department_id FROM employees"
+    ],
+    "unresolved": [],
+    "empty": false
+  },
+  {
+    "index": 41,
+    "feature": "",
+    "sql": "SELECT LEVEL,\n       LPAD(' ', 2 * (LEVEL - 1)) || last_name  AS org_chart,\n       SYS_CONNECT_BY_PATH(last_name, '/')       AS path,      -- [ORA]\n       CONNECT_BY_ISLEAF                         AS is_leaf,   -- [ORA]\n       CONNECT_BY_ROOT last_name                 AS root_name  -- [ORA]\nFROM   employees\nSTART  WITH manager_id IS NULL\nCONNECT BY PRIOR employee_id = manager_id\nORDER  SIBLINGS BY last_name",
+    "convert_status": "ERROR",
+    "codes": [
+      "APP_SEMANTICS",
+      "HIERARCHICAL",
+      "PROJECTION",
+      "RESIDUAL_H2"
+    ],
+    "pattern": null,
+    "result": "NOT_CONVERTIBLE",
+    "error": "main query: START WITH / CONNECT BY with CONNECT_BY_ISLEAF, CONNECT_BY_ROOT, LEVEL, SYS_CONNECT_BY_PATH -- walk the tree in the application (appside.Hierarchy) or precompute it into a table; main query: expressions in the select list (LPAD(' ', 2 * (LEVEL - 1)) || last_name) -- compute them in the a",
+    "fetched": null,
+    "fetch_sql": [],
+    "unresolved": []
+  },
+  {
+    "index": 42,
+    "feature": "",
+    "sql": "WITH org (employee_id, last_name, manager_id, lvl, path) AS (\n  SELECT employee_id, last_name, manager_id, 1, CAST(last_name AS VARCHAR2(4000))\n  FROM   employees WHERE manager_id IS NULL\n  UNION ALL\n  SELECT e.employee_id, e.last_name, e.manager_id, o.lvl + 1, o.path || '/' || e.last_name\n  FROM   employees e JOIN org o ON e.manager_id = o.employee_id\n)\nSEARCH DEPTH FIRST BY last_name SET ord\nSELECT lvl, LPAD(' ', 2 * (lvl - 1)) || last_name AS org_chart, path\nFROM   org\nORDER  BY ord",
+    "convert_status": "PLANNED",
+    "codes": [
+      "CTE",
+      "PLAN_CROSS_PARTITION",
+      "PROJECTION",
+      "SET_OP"
+    ],
+    "pattern": "P1+P6",
+    "result": "FAIL",
+    "error": "",
+    "fetched": null,
+    "fetch_sql": [
+      "SELECT employee_id, last_name, manager_id FROM employees"
+    ],
+    "unresolved": []
+  },
+  {
+    "index": 43,
+    "feature": "",
+    "sql": "SELECT DATE '2026-09-01' + LEVEL - 1 AS cal_date\nFROM   dual\nCONNECT BY LEVEL <= 7",
+    "convert_status": "ERROR",
+    "codes": [
+      "APP_SEMANTICS",
+      "HIERARCHICAL",
+      "PROJECTION",
+      "RESIDUAL_H2"
+    ],
+    "pattern": null,
+    "result": "NOT_CONVERTIBLE",
+    "error": "main query: START WITH / CONNECT BY with LEVEL -- walk the tree in the application (appside.Hierarchy) or precompute it into a table; main query: expressions in the select list (TO_DATE('2026-09-01', 'YYYY-MM-DD') + LEVEL - 1) -- compute them in the application; the H2 residual engine cannot run CON",
+    "fetched": null,
+    "fetch_sql": [],
+    "unresolved": []
+  },
+  {
+    "index": 44,
+    "feature": "",
+    "sql": "SELECT employee_id, salary\nFROM   employees AS OF TIMESTAMP (SYSTIMESTAMP - INTERVAL '1' MINUTE)\nWHERE  department_id = 60",
+    "convert_status": "ERROR",
+    "codes": [
+      "PARSE"
+    ],
+    "pattern": null,
+    "result": "CASE_ERROR",
+    "error": "source database rejected the statement: ORA-01466: unable to read data - table definition has changed",
+    "fetched": null,
+    "fetch_sql": [],
+    "unresolved": []
+  },
+  {
+    "index": 45,
+    "feature": "",
+    "sql": "SELECT COUNT(*) FROM employees SAMPLE (50)",
+    "convert_status": "PLANNED",
+    "codes": [
+      "CLAUSE",
+      "PLAN_CROSS_PARTITION"
+    ],
+    "pattern": "P1",
+    "result": "FAIL",
+    "error": "",
+    "fetched": null,
+    "fetch_sql": [
+      "SELECT employee_id FROM employees"
+    ],
+    "unresolved": []
+  },
+  {
+    "index": 46,
+    "feature": "",
+    "sql": "SELECT ROWID, employee_id FROM employees WHERE ROWNUM <= 3",
+    "convert_status": "ERROR",
+    "codes": [
+      "ROWID"
+    ],
+    "pattern": null,
+    "result": "NOT_CONVERTIBLE",
+    "error": "pseudo-column ROWID does not exist in ScalarDB; use the primary key",
+    "fetched": null,
+    "fetch_sql": [],
+    "unresolved": []
+  },
+  {
+    "index": 47,
+    "feature": "",
+    "sql": "SELECT JSON_VALUE(doc, '$.name')                    AS name,\n       JSON_VALUE(doc, '$.price' RETURNING NUMBER)  AS price,\n       JSON_QUERY(doc, '$.tags')                    AS tags,\n       p.doc.spec.ha                                AS ha            -- ドット記法（表別名必須）\nFROM   products_json p\nWHERE  JSON_EXISTS(doc, '$.tags[*]?(@ == \"db\")')",
+    "convert_status": "ERROR",
+    "codes": [
+      "PARSE"
+    ],
+    "pattern": null,
+    "result": "NOT_CONVERTIBLE",
+    "error": "Expecting ). Line 6, Col: 42.",
+    "fetched": null,
+    "fetch_sql": [],
+    "unresolved": []
+  },
+  {
+    "index": 48,
+    "feature": "",
+    "sql": "SELECT p.id, jt.name, jt.tag\nFROM   products_json p,\n       JSON_TABLE(p.doc, '$'\n         COLUMNS (name VARCHAR2(40) PATH '$.name',\n                  NESTED PATH '$.tags[*]' COLUMNS (tag VARCHAR2(20) PATH '$'))) jt",
+    "convert_status": "PLANNED",
+    "codes": [
+      "JOIN",
+      "PLAN_CROSS_PARTITION"
+    ],
+    "pattern": "P8",
+    "result": "FAIL",
+    "error": "DB-SQL-10026: Syntax error. Line 1:14 no viable alternative at input 'SELECT * FROM \"')",
+    "fetched": null,
+    "fetch_sql": [
+      "SELECT id, doc FROM products_json",
+      "SELECT * FROM \"\""
+    ],
+    "unresolved": []
+  },
+  {
+    "index": 49,
+    "feature": "",
+    "sql": "SELECT JSON_OBJECT('dept' VALUE d.department_name,\n                   'members' VALUE JSON_ARRAYAGG(\n                       JSON_OBJECT('id' VALUE e.employee_id, 'name' VALUE e.last_name)\n                       ORDER BY e.employee_id)\n                   ) AS dept_json\nFROM   departments d JOIN employees e ON e.department_id = d.department_id\nGROUP  BY d.department_name",
+    "convert_status": "PLANNED",
+    "codes": [
+      "PLAN_CROSS_PARTITION",
+      "PROJECTION"
+    ],
+    "pattern": "P1",
+    "result": "FAIL",
+    "error": "result mismatch (no row of the actual result equals expected ('{\"dept\":\"Administration\",\"members\":[{\"id\":200,\"name\":\"Whalen\"}]}',)): expected [('{\"dept\":\"Administration\",\"members\":[{\"id\":200,\"name\":\"Whalen\"}]}',), ('{\"dept\":\"Executive\",\"members\":[{\"id\":100,\"name\":\"King\"},{\"id\":101,\"name\":\"Kochhar\"},{\"id\":102,\"name\":\"De Haan\"}]}',), ('{\"dept\":\"IT\",\"members\":[{\"id\":103,\"name\":\"Hunold\"},{\"id\":104,\"name\":\"Ernst\"},{\"id\":107,\"name\":\"Lorentz\"}]}',), ('{\"dept\":\"Sales\",\"members\":[{\"id\":145,\"name\":\"Russell\"},{\"id\":146,\"name\":\"Partners\"},{\"id\":150,\"name\":\"Tucker\"},{\"id\":151,\"name\":\"Bernstein\"},{\"id\":155,\"name\":\"Tuvault\"}]}',), ('{\"dept\":\"Shipping\",\"members\":[{\"id\":120,\"name\":\"Weiss\"},{\"id\":125,\"name\":\"Nayer\"}]}',)] actual [['eyJkZXB0IjoiQWRtaW5pc3RyYXRpb24iLCJtZW1iZXJzIjpbeyJpZCI6MjAwLCJuYW1lIjoiV2hhbGVuIn1dfQ=='], ['eyJkZXB0IjoiRXhlY3V0aXZlIiwibWVtYmVycyI6W3siaWQiOjEwMCwibmFtZSI6IktpbmcifSx7ImlkIjoxMDEsIm5hbWUiOiJLb2NoaGFyIn0seyJpZCI6MTAyLCJuYW1lIjoiRGUgSGFhbiJ9XX0='], ['eyJkZXB0IjoiSVQiLCJtZW1iZXJzIjpbeyJpZCI6MTAzLCJuYW1lIjoiSHVub2xkIn0seyJpZCI6MTA0LCJuYW1lIjoiRXJuc3QifSx7ImlkIjoxMDcsIm5hbWUiOiJMb3JlbnR6In1dfQ=='], ['eyJkZXB0IjoiU2FsZXMiLCJtZW1iZXJzIjpbeyJpZCI6MTQ1LCJuYW1lIjoiUnVzc2VsbCJ9LHsiaWQiOjE0NiwibmFtZSI6IlBhcnRuZXJzIn0seyJpZCI6MTUwLCJuYW1lIjoiVHVja2VyIn0seyJpZCI6MTUxLCJuYW1lIjoiQmVybnN0ZWluIn0seyJpZCI6MTU1LCJuYW1lIjoiVHV2YXVsdCJ9XX0='], ['eyJkZXB0IjoiU2hpcHBpbmciLCJtZW1iZXJzIjpbeyJpZCI6MTIwLCJuYW1lIjoiV2Vpc3MifSx7ImlkIjoxMjUsIm5hbWUiOiJOYXllciJ9XX0=']]",
+    "fetched": 21,
+    "fetch_sql": [
+      "SELECT department_id, department_name FROM departments",
+      "SELECT employee_id, last_name, department_id FROM employees"
+    ],
+    "unresolved": [],
+    "empty": false
+  }
+]

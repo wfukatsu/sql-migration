@@ -1,0 +1,99 @@
+{
+  "pattern": "P8",
+  "source_dialect": "oracle",
+  "source_sql": "-- B-5. LATERAL / CROSS APPLY（12c+）：部門ごとの高給上位2名\nSELECT d.department_name, t.last_name, t.salary\nFROM   departments d\nCROSS  APPLY (SELECT e.last_name, e.salary\n              FROM   employees e\n              WHERE  e.department_id = d.department_id\n              ORDER  BY e.salary DESC\n              FETCH  FIRST 2 ROWS ONLY) t",
+  "fetch": [
+    {
+      "table": "departments",
+      "namespace": "hr",
+      "alias": "d",
+      "columns": [
+        "department_id",
+        "department_name"
+      ],
+      "column_types": {
+        "department_id": "INT",
+        "department_name": "TEXT",
+        "manager_id": "INT",
+        "location": "TEXT"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT department_id, department_name FROM hr.departments",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "department_id"
+        ]
+      ],
+      "residual_types": {}
+    },
+    {
+      "table": "employees",
+      "namespace": "hr",
+      "alias": "e",
+      "columns": [
+        "employee_id",
+        "last_name",
+        "salary",
+        "department_id"
+      ],
+      "column_types": {
+        "employee_id": "INT",
+        "first_name": "TEXT",
+        "last_name": "TEXT",
+        "email": "TEXT",
+        "hire_date": "DATE",
+        "job_id": "TEXT",
+        "salary": "DOUBLE",
+        "commission_pct": "DOUBLE",
+        "manager_id": "INT",
+        "department_id": "INT"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT employee_id, last_name, salary, department_id FROM hr.employees",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "employee_id"
+        ],
+        [
+          "department_id"
+        ]
+      ],
+      "residual_types": {}
+    }
+  ],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "/* B-5. LATERAL / CROSS APPLY（12c+）：部門ごとの高給上位2名 */ SELECT d.department_name, t.last_name, t.salary FROM departments d INNER JOIN LATERAL (SELECT e.last_name, e.salary FROM employees e WHERE e.department_id = d.department_id ORDER BY e.salary DESC NULLS FIRST FETCH FIRST 2 ROWS ONLY) AS t",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "/* B-5. LATERAL / CROSS APPLY（12c+）：部門ごとの高給上位2名 */ SELECT d.department_name, t.last_name, t.salary FROM departments AS d INNER JOIN LATERAL (SELECT e.last_name, e.salary FROM employees AS e WHERE e.department_id = d.department_id ORDER BY e.salary DESC NULLS FIRST LIMIT 2) AS t"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": true,
+    "row_limit": 10000
+  },
+  "unresolved": [],
+  "notes": [
+    "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+  ],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+    "scalar.db.scan_fetch_size": 1000,
+    "scalar.db.cluster.client.scan_fetch_size": 1000,
+    "scalar.db.cross_partition_scan.enabled": true,
+    "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+  }
+}

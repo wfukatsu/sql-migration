@@ -1,0 +1,98 @@
+{
+  "pattern": "P1",
+  "source_dialect": "oracle",
+  "source_sql": "-- F-4. リレーショナル → JSON 生成\nSELECT JSON_OBJECT('dept' VALUE d.department_name,\n                   'members' VALUE JSON_ARRAYAGG(\n                       JSON_OBJECT('id' VALUE e.employee_id, 'name' VALUE e.last_name)\n                       ORDER BY e.employee_id)\n                   ) AS dept_json\nFROM   departments d JOIN employees e ON e.department_id = d.department_id\nGROUP  BY d.department_name",
+  "fetch": [
+    {
+      "table": "departments",
+      "namespace": "hr",
+      "alias": "d",
+      "columns": [
+        "department_id",
+        "department_name"
+      ],
+      "column_types": {
+        "department_id": "INT",
+        "department_name": "TEXT",
+        "manager_id": "INT",
+        "location": "TEXT"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT department_id, department_name FROM hr.departments",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "department_id"
+        ]
+      ],
+      "residual_types": {}
+    },
+    {
+      "table": "employees",
+      "namespace": "hr",
+      "alias": "e",
+      "columns": [
+        "employee_id",
+        "last_name",
+        "department_id"
+      ],
+      "column_types": {
+        "employee_id": "INT",
+        "first_name": "TEXT",
+        "last_name": "TEXT",
+        "email": "TEXT",
+        "hire_date": "DATE",
+        "job_id": "TEXT",
+        "salary": "DOUBLE",
+        "commission_pct": "DOUBLE",
+        "manager_id": "INT",
+        "department_id": "INT"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT employee_id, last_name, department_id FROM hr.employees",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "employee_id"
+        ],
+        [
+          "department_id"
+        ]
+      ],
+      "residual_types": {}
+    }
+  ],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "/* F-4. リレーショナル → JSON 生成 */ SELECT JSON_OBJECT('dept': d.department_name, 'members': JSON_ARRAYAGG(JSON_OBJECT('id': e.employee_id, 'name': e.last_name) ORDER BY e.employee_id NULLS LAST)) AS dept_json FROM departments d JOIN employees e ON e.department_id = d.department_id GROUP BY d.department_name",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "/* F-4. リレーショナル → JSON 生成 */ SELECT JSON_OBJECT('dept', d.department_name, 'members', JSON_GROUP_ARRAY(JSON_OBJECT('id', e.employee_id, 'name', e.last_name),  ORDER BY e.employee_id NULLS LAST)) AS dept_json FROM departments AS d JOIN employees AS e ON e.department_id = d.department_id GROUP BY d.department_name"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": true,
+    "row_limit": 10000
+  },
+  "unresolved": [],
+  "notes": [
+    "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+  ],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+    "scalar.db.scan_fetch_size": 1000,
+    "scalar.db.cluster.client.scan_fetch_size": 1000,
+    "scalar.db.cross_partition_scan.enabled": true,
+    "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+  }
+}

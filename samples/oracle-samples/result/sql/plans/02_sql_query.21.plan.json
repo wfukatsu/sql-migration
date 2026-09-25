@@ -1,0 +1,70 @@
+{
+  "pattern": "P1+P7",
+  "source_dialect": "oracle",
+  "source_sql": "-- D-3. LISTAGG（文字列集約）\nSELECT department_id,\n       LISTAGG(last_name, ', ') WITHIN GROUP (ORDER BY last_name) AS members\nFROM   employees\nGROUP  BY department_id",
+  "fetch": [
+    {
+      "table": "employees",
+      "namespace": "hr",
+      "alias": "employees",
+      "columns": [
+        "employee_id",
+        "last_name",
+        "department_id"
+      ],
+      "column_types": {
+        "employee_id": "INT",
+        "first_name": "TEXT",
+        "last_name": "TEXT",
+        "email": "TEXT",
+        "hire_date": "DATE",
+        "job_id": "TEXT",
+        "salary": "DOUBLE",
+        "commission_pct": "DOUBLE",
+        "manager_id": "INT",
+        "department_id": "INT"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT employee_id, last_name, department_id FROM hr.employees",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "employee_id"
+        ]
+      ],
+      "residual_types": {}
+    }
+  ],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "/* D-3. LISTAGG（文字列集約） */ SELECT department_id, LISTAGG(last_name, ', ') WITHIN GROUP (ORDER BY last_name NULLS LAST) AS members FROM employees GROUP BY department_id",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "/* D-3. LISTAGG（文字列集約） */ SELECT department_id, GROUP_CONCAT(last_name, ', ') AS members FROM employees GROUP BY department_id"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": true,
+    "row_limit": 10000
+  },
+  "unresolved": [],
+  "notes": [
+    "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+  ],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+    "scalar.db.scan_fetch_size": 1000,
+    "scalar.db.cluster.client.scan_fetch_size": 1000,
+    "scalar.db.cross_partition_scan.enabled": true,
+    "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+  }
+}

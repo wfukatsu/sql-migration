@@ -1,0 +1,3328 @@
+{
+ "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "plsql-migration-analyzer",
+     "version": "1.1.0",
+     "informationUri": "https://github.com/wfukatsu/sql-migration",
+     "rules": [
+      {
+       "id": "UNRESOLVED_TYPE",
+       "shortDescription": {
+        "text": "UNRESOLVED_TYPE"
+       }
+      },
+      {
+       "id": "ACCESS",
+       "shortDescription": {
+        "text": "ACCESS"
+       }
+      },
+      {
+       "id": "TRIGGER_NOT_APPLIED",
+       "shortDescription": {
+        "text": "TRIGGER_NOT_APPLIED"
+       }
+      },
+      {
+       "id": "RMW",
+       "shortDescription": {
+        "text": "RMW"
+       }
+      },
+      {
+       "id": "TRIGGER_OLD",
+       "shortDescription": {
+        "text": "TRIGGER_OLD"
+       }
+      },
+      {
+       "id": "TRIGGER_APPLIED",
+       "shortDescription": {
+        "text": "TRIGGER_APPLIED"
+       }
+      },
+      {
+       "id": "TRIGGER_CALL",
+       "shortDescription": {
+        "text": "TRIGGER_CALL"
+       }
+      },
+      {
+       "id": "TRANSACTION_IN_ROUTINE",
+       "shortDescription": {
+        "text": "TRANSACTION_IN_ROUTINE"
+       }
+      },
+      {
+       "id": "ORDER",
+       "shortDescription": {
+        "text": "ORDER"
+       }
+      },
+      {
+       "id": "PLAN_FETCH",
+       "shortDescription": {
+        "text": "PLAN_FETCH"
+       }
+      },
+      {
+       "id": "PLAN_RESIDUAL",
+       "shortDescription": {
+        "text": "PLAN_RESIDUAL"
+       }
+      },
+      {
+       "id": "PLAN_CROSS_PARTITION",
+       "shortDescription": {
+        "text": "PLAN_CROSS_PARTITION"
+       }
+      },
+      {
+       "id": "CONFIG",
+       "shortDescription": {
+        "text": "CONFIG"
+       }
+      },
+      {
+       "id": "COST",
+       "shortDescription": {
+        "text": "COST"
+       }
+      },
+      {
+       "id": "ROW_LOCK",
+       "shortDescription": {
+        "text": "ROW_LOCK"
+       }
+      },
+      {
+       "id": "LOCK",
+       "shortDescription": {
+        "text": "LOCK"
+       }
+      },
+      {
+       "id": "CURRENT_OF",
+       "shortDescription": {
+        "text": "CURRENT_OF"
+       }
+      },
+      {
+       "id": "EXPR",
+       "shortDescription": {
+        "text": "EXPR"
+       }
+      },
+      {
+       "id": "UNSUPPORTED_CONSTRUCT",
+       "shortDescription": {
+        "text": "UNSUPPORTED_CONSTRUCT"
+       }
+      },
+      {
+       "id": "MULTI_ROW_INTO",
+       "shortDescription": {
+        "text": "MULTI_ROW_INTO"
+       }
+      },
+      {
+       "id": "BULK_CHUNKED",
+       "shortDescription": {
+        "text": "BULK_CHUNKED"
+       }
+      },
+      {
+       "id": "CROSS_PARTITION",
+       "shortDescription": {
+        "text": "CROSS_PARTITION"
+       }
+      },
+      {
+       "id": "BULK_COLLECT",
+       "shortDescription": {
+        "text": "BULK_COLLECT"
+       }
+      },
+      {
+       "id": "SQL_PARSE",
+       "shortDescription": {
+        "text": "SQL_PARSE"
+       }
+      },
+      {
+       "id": "INSERT_COLS",
+       "shortDescription": {
+        "text": "INSERT_COLS"
+       }
+      },
+      {
+       "id": "DYNAMIC_SQL",
+       "shortDescription": {
+        "text": "DYNAMIC_SQL"
+       }
+      },
+      {
+       "id": "DYN_FOLDED",
+       "shortDescription": {
+        "text": "DYN_FOLDED"
+       }
+      },
+      {
+       "id": "DYN_BIND",
+       "shortDescription": {
+        "text": "DYN_BIND"
+       }
+      },
+      {
+       "id": "DYN_PRIVILEGE",
+       "shortDescription": {
+        "text": "DYN_PRIVILEGE"
+       }
+      },
+      {
+       "id": "PROJECTION",
+       "shortDescription": {
+        "text": "PROJECTION"
+       }
+      },
+      {
+       "id": "SCHEMA",
+       "shortDescription": {
+        "text": "SCHEMA"
+       }
+      },
+      {
+       "id": "UNSUPPORTED",
+       "shortDescription": {
+        "text": "UNSUPPORTED"
+       }
+      },
+      {
+       "id": "DESIGN",
+       "shortDescription": {
+        "text": "DESIGN"
+       }
+      },
+      {
+       "id": "IN",
+       "shortDescription": {
+        "text": "IN"
+       }
+      },
+      {
+       "id": "RETURNING",
+       "shortDescription": {
+        "text": "RETURNING"
+       }
+      },
+      {
+       "id": "PRED",
+       "shortDescription": {
+        "text": "PRED"
+       }
+      },
+      {
+       "id": "PK",
+       "shortDescription": {
+        "text": "PK"
+       }
+      }
+     ]
+    }
+   },
+   "results": [
+    {
+     "ruleId": "UNRESOLVED_TYPE",
+     "level": "warning",
+     "message": {
+      "text": "c_emp%ROWTYPE: no table c_emp in the DDL snapshot"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_1_explicit_cursor.prc"
+        },
+        "region": {
+         "startLine": 1,
+         "endLine": 16,
+         "startColumn": 1
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "UNRESOLVED_TYPE",
+     "level": "warning",
+     "message": {
+      "text": "c%ROWTYPE: no table c in the DDL snapshot"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_1_bulk_collect_limit.prc"
+        },
+        "region": {
+         "startLine": 1,
+         "endLine": 18,
+         "startColumn": 1
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_1_variables.prc"
+        },
+        "region": {
+         "startLine": 10,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_1_variables.prc"
+        },
+        "region": {
+         "startLine": 11,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_2_control_flow.prc"
+        },
+        "region": {
+         "startLine": 7,
+         "endLine": 7,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_NOT_APPLIED",
+     "level": "warning",
+     "message": {
+      "text": "emp_biu_trg が掛かる書き込みだが、**掛けていない**。本体が `UPDATING('列')` の形で列ごとのイベントを見ている。それを渡す形をまだ持っていない（#12）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_NOT_APPLIED",
+     "level": "warning",
+     "message": {
+      "text": "emp_dept_cap_trg が掛かる書き込みだが、**掛けていない**。1 行に絞れない更新は Oracle なら行ごとに発火するので、1 回の呼び出しでは同じにならない（#12）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_NOT_APPLIED",
+     "level": "warning",
+     "message": {
+      "text": "emp_salary_audit_trg が掛かる書き込みだが、**掛けていない**。1 行に絞れない更新は Oracle なら行ごとに発火するので、1 回の呼び出しでは同じにならない（#12）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "RMW",
+     "level": "error",
+     "message": {
+      "text": "SET salary = salary + 100: expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 7,
+         "endLine": 7,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 7,
+         "endLine": 7,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg（AFTER UPDATE OR DELETE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 7,
+         "endLine": 7,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "DELETE: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 7,
+         "endLine": 7,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 7,
+         "endLine": 7,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRANSACTION_IN_ROUTINE",
+     "level": "warning",
+     "message": {
+      "text": "Rollback inside a routine cannot be translated literally; the transaction boundary belongs to the application service"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 11,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: equality on secondary index -> index SCAN"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_2_cursor_for_loop.prc"
+        },
+        "region": {
+         "startLine": 7,
+         "endLine": 9,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ORDER",
+     "level": "error",
+     "message": {
+      "text": "main query: ORDER BY expression 1 -- sort in the application"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_2_cursor_for_loop.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PLAN_FETCH",
+     "level": "note",
+     "message": {
+      "text": "CROSS_PARTITION: SELECT department_id, department_name FROM hr.departments"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_2_cursor_for_loop.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PLAN_RESIDUAL",
+     "level": "note",
+     "message": {
+      "text": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_2_cursor_for_loop.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PLAN_CROSS_PARTITION",
+     "level": "warning",
+     "message": {
+      "text": "a fetch needs a cross-partition scan"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_2_cursor_for_loop.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONFIG",
+     "level": "note",
+     "message": {
+      "text": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_2_cursor_for_loop.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "COST",
+     "level": "note",
+     "message": {
+      "text": "full scan of departments (~25 us per row); pass --expected-rows table=N for an estimate"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_2_cursor_for_loop.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ROW_LOCK",
+     "level": "warning",
+     "message": {
+      "text": "FOR UPDATE is row locking; the target has to provide the same guarantee another way"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "LOCK",
+     "level": "warning",
+     "message": {
+      "text": "FOR UPDATE / locking clause dropped (ScalarDB transactions handle isolation)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: equality on secondary index -> index SCAN"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CURRENT_OF",
+     "level": "note",
+     "message": {
+      "text": "WHERE CURRENT OF c_upd を主キー（employee_id）で指す形にした。指している行は変わらない。行ロックを落とすかどうかは別に決める（#9）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_NOT_APPLIED",
+     "level": "warning",
+     "message": {
+      "text": "emp_biu_trg が掛かる書き込みだが、**掛けていない**。本体が `UPDATING('列')` の形で列ごとのイベントを見ている。それを渡す形をまだ持っていない（#12）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg（AFTER UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg（AFTER UPDATE OR DELETE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "EXPR",
+     "level": "error",
+     "message": {
+      "text": "SET salary: only literals and bind markers are allowed, got ':r_salary * 1.1'"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRANSACTION_IN_ROUTINE",
+     "level": "warning",
+     "message": {
+      "text": "Rollback inside a routine cannot be translated literally; the transaction boundary belongs to the application service"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 11,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "UNSUPPORTED_CONSTRUCT",
+     "level": "warning",
+     "message": {
+      "text": "Open_for_statement is not lowered yet; the routine cannot be AUTO while it is present"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_4_ref_cursor.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 8,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "UNSUPPORTED_CONSTRUCT",
+     "level": "warning",
+     "message": {
+      "text": "Open_for_statement is not lowered yet; the routine cannot be AUTO while it is present"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_4_ref_cursor.prc"
+        },
+        "region": {
+         "startLine": 10,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: equality on secondary index -> index SCAN"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_5_records_collections.prc"
+        },
+        "region": {
+         "startLine": 27,
+         "endLine": 29,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_6_1_predefined_exceptions.prc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 6,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: equality on secondary index -> index SCAN"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_6_1_predefined_exceptions.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 12,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "MULTI_ROW_INTO",
+     "level": "warning",
+     "message": {
+      "text": "SELECT INTO does not reach its row by key, so it can match several and raise TOO_MANY_ROWS"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_6_1_predefined_exceptions.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 12,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_NOT_APPLIED",
+     "level": "warning",
+     "message": {
+      "text": "emp_biu_trg が掛かる書き込みだが、**掛けていない**。本体が `UPDATING('列')` の形で列ごとのイベントを見ている。それを渡す形をまだ持っていない（#12）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_6_2_user_exceptions.prc"
+        },
+        "region": {
+         "startLine": 18,
+         "endLine": 19,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRANSACTION_IN_ROUTINE",
+     "level": "warning",
+     "message": {
+      "text": "Rollback inside a routine cannot be translated literally; the transaction boundary belongs to the application service"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_6_2_user_exceptions.prc"
+        },
+        "region": {
+         "startLine": 31,
+         "endLine": 31,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRANSACTION_IN_ROUTINE",
+     "level": "warning",
+     "message": {
+      "text": "Rollback inside a routine cannot be translated literally; the transaction boundary belongs to the application service"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_1_call_raise_salary.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRANSACTION_IN_ROUTINE",
+     "level": "warning",
+     "message": {
+      "text": "Rollback inside a routine cannot be translated literally; the transaction boundary belongs to the application service"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_3_call_emp_api.prc"
+        },
+        "region": {
+         "startLine": 15,
+         "endLine": 15,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_NOT_APPLIED",
+     "level": "warning",
+     "message": {
+      "text": "emp_biu_trg が掛かる書き込みだが、**掛けていない**。本体が `UPDATING('列')` の形で列ごとのイベントを見ている。それを渡す形をまだ持っていない（#12）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg（AFTER UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg（AFTER UPDATE OR DELETE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "RMW",
+     "level": "error",
+     "message": {
+      "text": "SET salary = salary + 1: expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRANSACTION_IN_ROUTINE",
+     "level": "warning",
+     "message": {
+      "text": "Rollback inside a routine cannot be translated literally; the transaction boundary belongs to the application service"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 6,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "BULK_CHUNKED",
+     "level": "note",
+     "message": {
+      "text": "cursor c は 5 件ずつ読んでいた。移行先に跨トランザクションの cursor は無いので行は先にまとめて読み、5 件ずつ**配る**ループにした。読み込む量を決めていた値が、配る量しか決めなくなる——メモリを守るのは走査行数の上限（--limits）である"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_1_bulk_collect_limit.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CROSS_PARTITION",
+     "level": "warning",
+     "message": {
+      "text": "SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_1_bulk_collect_limit.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONFIG",
+     "level": "note",
+     "message": {
+      "text": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_1_bulk_collect_limit.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "COST",
+     "level": "note",
+     "message": {
+      "text": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_1_bulk_collect_limit.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "BULK_COLLECT",
+     "level": "warning",
+     "message": {
+      "text": "BULK COLLECT needs a row limit and a memory bound"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "SQL_PARSE",
+     "level": "error",
+     "message": {
+      "text": "ParseError: Invalid expression / Unexpected token. Line 3, Col: 38.\n  PDATE employees SET salary = salary + 10\n    WHERE  department_id = v_depts(i)\n    RETURNING salary \u001b[4mBULK COLLECT INTO\u001b[0m v_new_sal"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRANSACTION_IN_ROUTINE",
+     "level": "warning",
+     "message": {
+      "text": "Rollback inside a routine cannot be translated literally; the transaction boundary belongs to the application service"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 16,
+         "endLine": 16,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "BULK_CHUNKED",
+     "level": "note",
+     "message": {
+      "text": "BULK COLLECT into v_ids, v_names, v_sals と、それを回す FORALL を 1 つの走査ループに した。FORALL は 1 往復、ループは行ごとに 1 回で、性能は変わるが答えは変わらない。行数上限は cursor FOR ループとして決める（CUR-002）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_forall_save_exceptions.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CROSS_PARTITION",
+     "level": "warning",
+     "message": {
+      "text": "SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_forall_save_exceptions.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONFIG",
+     "level": "note",
+     "message": {
+      "text": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_forall_save_exceptions.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "COST",
+     "level": "note",
+     "message": {
+      "text": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_forall_save_exceptions.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "INSERT_COLS",
+     "level": "warning",
+     "message": {
+      "text": "no column list: ScalarDB uses table definition order; add an explicit column list"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_forall_save_exceptions.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 17,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRANSACTION_IN_ROUTINE",
+     "level": "warning",
+     "message": {
+      "text": "Commit inside a routine cannot be translated literally; the transaction boundary belongs to the application service"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_forall_save_exceptions.prc"
+        },
+        "region": {
+         "startLine": 18,
+         "endLine": 18,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRANSACTION_IN_ROUTINE",
+     "level": "warning",
+     "message": {
+      "text": "Commit inside a routine cannot be translated literally; the transaction boundary belongs to the application service"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_forall_save_exceptions.prc"
+        },
+        "region": {
+         "startLine": 27,
+         "endLine": 27,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYNAMIC_SQL",
+     "level": "warning",
+     "message": {
+      "text": "the statement is built at run time; only a finite set of variants can be converted"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 10,
+         "endLine": 13,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYNAMIC_SQL",
+     "level": "note",
+     "message": {
+      "text": "the statement folds to a constant and can be analysed"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYN_FOLDED",
+     "level": "note",
+     "message": {
+      "text": "dynamic SQL resolved to 1 statement(s); each is converted and checked like static SQL"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYN_BIND",
+     "level": "warning",
+     "message": {
+      "text": "USING binds (100) are restored positionally; confirm each lands on the placeholder it did before"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYN_PRIVILEGE",
+     "level": "warning",
+     "message": {
+      "text": "EXECUTE IMMEDIATE runs with the privileges of the executing user, which a static statement may not have; confirm the caller is allowed to run this"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYNAMIC_SQL",
+     "level": "note",
+     "message": {
+      "text": "the statement folds to a constant and can be analysed"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 23,
+         "endLine": 23,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYN_FOLDED",
+     "level": "note",
+     "message": {
+      "text": "dynamic SQL resolved to 1 statement(s); each is converted and checked like static SQL"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 23,
+         "endLine": 23,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYN_PRIVILEGE",
+     "level": "warning",
+     "message": {
+      "text": "EXECUTE IMMEDIATE runs with the privileges of the executing user, which a static statement may not have; confirm the caller is allowed to run this"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 23,
+         "endLine": 23,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYNAMIC_SQL",
+     "level": "note",
+     "message": {
+      "text": "the statement folds to a constant and can be analysed"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 24,
+         "endLine": 24,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYN_FOLDED",
+     "level": "note",
+     "message": {
+      "text": "dynamic SQL resolved to 1 statement(s); each is converted and checked like static SQL"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 24,
+         "endLine": 24,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYN_PRIVILEGE",
+     "level": "warning",
+     "message": {
+      "text": "EXECUTE IMMEDIATE runs with the privileges of the executing user, which a static statement may not have; confirm the caller is allowed to run this"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 24,
+         "endLine": 24,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "UNSUPPORTED_CONSTRUCT",
+     "level": "warning",
+     "message": {
+      "text": "Open_for_statement is not lowered yet; the routine cannot be AUTO while it is present"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 27,
+         "endLine": 27,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYNAMIC_SQL",
+     "level": "note",
+     "message": {
+      "text": "the statement folds to a constant and can be analysed"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 37,
+         "endLine": 37,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYN_FOLDED",
+     "level": "note",
+     "message": {
+      "text": "dynamic SQL resolved to 1 statement(s); each is converted and checked like static SQL"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 37,
+         "endLine": 37,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYN_BIND",
+     "level": "warning",
+     "message": {
+      "text": "USING binds (v_cnt) are restored positionally; confirm each lands on the placeholder it did before"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 37,
+         "endLine": 37,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYN_PRIVILEGE",
+     "level": "warning",
+     "message": {
+      "text": "EXECUTE IMMEDIATE runs with the privileges of the executing user, which a static statement may not have; confirm the caller is allowed to run this"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 37,
+         "endLine": 37,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRANSACTION_IN_ROUTINE",
+     "level": "warning",
+     "message": {
+      "text": "Rollback inside a routine cannot be translated literally; the transaction boundary belongs to the application service"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 39,
+         "endLine": 39,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "BULK_COLLECT",
+     "level": "warning",
+     "message": {
+      "text": "BULK COLLECT needs a row limit and a memory bound"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_4_collection_in_sql.prc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 8,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PROJECTION",
+     "level": "error",
+     "message": {
+      "text": "main query: expressions in the select list (EMP_GRADE_T(employee_id, last_name, 'X')) -- compute them in the application"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_4_collection_in_sql.prc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 8,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PLAN_FETCH",
+     "level": "note",
+     "message": {
+      "text": "INDEX_SCAN: SELECT employee_id, last_name, department_id FROM hr.employees WHERE department_id = 60"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_4_collection_in_sql.prc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 8,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PLAN_RESIDUAL",
+     "level": "note",
+     "message": {
+      "text": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_4_collection_in_sql.prc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 8,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONFIG",
+     "level": "note",
+     "message": {
+      "text": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_4_collection_in_sql.prc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 8,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "MULTI_ROW_INTO",
+     "level": "warning",
+     "message": {
+      "text": "SELECT INTO does not reach its row by key, so it can match several and raise TOO_MANY_ROWS"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_4_collection_in_sql.prc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 8,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "SCHEMA",
+     "level": "note",
+     "message": {
+      "text": "SELECT: table definition unknown, access path (GET / SCAN / cross-partition) not analysed"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_4_collection_in_sql.prc"
+        },
+        "region": {
+         "startLine": 10,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "UNSUPPORTED",
+     "level": "error",
+     "message": {
+      "text": "function TABLE is not supported by ScalarDB SQL"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_4_collection_in_sql.prc"
+        },
+        "region": {
+         "startLine": 10,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PLAN_FETCH",
+     "level": "note",
+     "message": {
+      "text": "UNKNOWN: SELECT * FROM \"\" WHERE last_name LIKE 'H%'"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_4_collection_in_sql.prc"
+        },
+        "region": {
+         "startLine": 10,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PLAN_RESIDUAL",
+     "level": "note",
+     "message": {
+      "text": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_4_collection_in_sql.prc"
+        },
+        "region": {
+         "startLine": 10,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONFIG",
+     "level": "note",
+     "message": {
+      "text": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_4_collection_in_sql.prc"
+        },
+        "region": {
+         "startLine": 10,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "COST",
+     "level": "note",
+     "message": {
+      "text": "full scan of  (~25 us per row); pass --expected-rows table=N for an estimate"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_4_collection_in_sql.prc"
+        },
+        "region": {
+         "startLine": 10,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DESIGN",
+     "level": "note",
+     "message": {
+      "text": "table definitions unknown for : include CREATE TABLE or pass --schema to get access-path checks and key-design advice"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_4_collection_in_sql.prc"
+        },
+        "region": {
+         "startLine": 10,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "IN",
+     "level": "note",
+     "message": {
+      "text": "IN list on table_name expanded to an OR of 11 equality predicates"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "setup_drop_objects.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "SCHEMA",
+     "level": "note",
+     "message": {
+      "text": "SELECT: table definition unknown, access path (GET / SCAN / cross-partition) not analysed"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "setup_drop_objects.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYNAMIC_SQL",
+     "level": "warning",
+     "message": {
+      "text": "the statement is built at run time; only a finite set of variants can be converted"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "setup_drop_objects.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "IN",
+     "level": "note",
+     "message": {
+      "text": "IN list on sequence_name expanded to an OR of 3 equality predicates"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "setup_drop_objects.prc"
+        },
+        "region": {
+         "startLine": 11,
+         "endLine": 15,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "SCHEMA",
+     "level": "note",
+     "message": {
+      "text": "SELECT: table definition unknown, access path (GET / SCAN / cross-partition) not analysed"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "setup_drop_objects.prc"
+        },
+        "region": {
+         "startLine": 11,
+         "endLine": 15,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYNAMIC_SQL",
+     "level": "warning",
+     "message": {
+      "text": "the statement is built at run time; only a finite set of variants can be converted"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "setup_drop_objects.prc"
+        },
+        "region": {
+         "startLine": 14,
+         "endLine": 14,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "dept_name_of.fnc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 8,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_NOT_APPLIED",
+     "level": "warning",
+     "message": {
+      "text": "emp_biu_trg が掛かる書き込みだが、**掛けていない**。本体が `UPDATING('列')` の形で列ごとのイベントを見ている。それを渡す形をまだ持っていない（#12）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 19,
+         "endLine": 23,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "RETURNING",
+     "level": "error",
+     "message": {
+      "text": "RETURNING is not supported"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 19,
+         "endLine": 23,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_NOT_APPLIED",
+     "level": "warning",
+     "message": {
+      "text": "emp_biu_trg が掛かる書き込みだが、**掛けていない**。本体が `UPDATING('列')` の形で列ごとのイベントを見ている。それを渡す形をまだ持っていない（#12）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg（AFTER UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg（AFTER UPDATE OR DELETE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "RMW",
+     "level": "error",
+     "message": {
+      "text": "SET salary = salary * (1 + :p_pct / 100): expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_NOT_APPLIED",
+     "level": "warning",
+     "message": {
+      "text": "emp_biu_trg が掛かる書き込みだが、**掛けていない**。本体が `UPDATING('列')` の形で列ごとのイベントを見ている。それを渡す形をまだ持っていない（#12）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 40,
+         "endLine": 40,
+         "startColumn": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_NOT_APPLIED",
+     "level": "warning",
+     "message": {
+      "text": "emp_dept_cap_trg が掛かる書き込みだが、**掛けていない**。1 行に絞れない更新は Oracle なら行ごとに発火するので、1 回の呼び出しでは同じにならない（#12）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 40,
+         "endLine": 40,
+         "startColumn": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_NOT_APPLIED",
+     "level": "warning",
+     "message": {
+      "text": "emp_salary_audit_trg が掛かる書き込みだが、**掛けていない**。1 行に絞れない更新は Oracle なら行ごとに発火するので、1 回の呼び出しでは同じにならない（#12）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 40,
+         "endLine": 40,
+         "startColumn": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "RMW",
+     "level": "error",
+     "message": {
+      "text": "SET salary = salary * (1 + :p_pct / 100): expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 40,
+         "endLine": 40,
+         "startColumn": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "UNSUPPORTED_CONSTRUCT",
+     "level": "warning",
+     "message": {
+      "text": "Open_for_statement is not lowered yet; the routine cannot be AUTO while it is present"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 47,
+         "endLine": 49,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "EXPR",
+     "level": "error",
+     "message": {
+      "text": "SET last_name: only literals and bind markers are allowed, got ':NEW.last_name'"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_dept_upd_v_trg.trg"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PRED",
+     "level": "error",
+     "message": {
+      "text": "WHERE: IS is only supported as IS [NOT] NULL on a column"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_grades.fnc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PLAN_FETCH",
+     "level": "note",
+     "message": {
+      "text": "CROSS_PARTITION: SELECT employee_id, last_name, salary, department_id FROM hr.employees"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_grades.fnc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PLAN_RESIDUAL",
+     "level": "note",
+     "message": {
+      "text": "H2 Oracle mode runs the original SQL (pattern P2, H2 indexes off)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_grades.fnc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PLAN_CROSS_PARTITION",
+     "level": "warning",
+     "message": {
+      "text": "a fetch needs a cross-partition scan"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_grades.fnc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONFIG",
+     "level": "note",
+     "message": {
+      "text": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_grades.fnc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "COST",
+     "level": "note",
+     "message": {
+      "text": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_grades.fnc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "UNSUPPORTED_CONSTRUCT",
+     "level": "warning",
+     "message": {
+      "text": "Pipe_row_statement is not lowered yet; the routine cannot be AUTO while it is present"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_grades.fnc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "EXPR",
+     "level": "error",
+     "message": {
+      "text": "VALUES column action: only literals and bind markers are allowed, got 'CASE WHEN DELETING THEN 'DELETE' ELSE 'UPDATE' END'"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_salary_audit_trg.trg"
+        },
+        "region": {
+         "startLine": 7,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PK",
+     "level": "error",
+     "message": {
+      "text": "INSERT must specify the full primary key; missing ['audit_id']"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "log_msg.prc"
+        },
+        "region": {
+         "startLine": 5,
+         "endLine": 5,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRANSACTION_IN_ROUTINE",
+     "level": "warning",
+     "message": {
+      "text": "Commit inside a routine cannot be translated literally; the transaction boundary belongs to the application service"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "log_msg.prc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 6,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_NOT_APPLIED",
+     "level": "warning",
+     "message": {
+      "text": "emp_biu_trg が掛かる書き込みだが、**掛けていない**。本体が `UPDATING('列')` の形で列ごとのイベントを見ている。それを渡す形をまだ持っていない（#12）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg（AFTER UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg（AFTER UPDATE OR DELETE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "RETURNING",
+     "level": "error",
+     "message": {
+      "text": "RETURNING is not supported"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

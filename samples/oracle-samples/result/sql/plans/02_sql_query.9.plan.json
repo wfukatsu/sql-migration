@@ -1,0 +1,96 @@
+{
+  "pattern": "P8",
+  "source_dialect": "oracle",
+  "source_sql": "-- B-3. 完全外部結合：部門なし社員・社員なし部門の両方を出す\nSELECT e.last_name, d.department_name\nFROM   employees e\nFULL   OUTER JOIN departments d ON d.department_id = e.department_id\nWHERE  e.employee_id IS NULL OR d.department_id IS NULL",
+  "fetch": [
+    {
+      "table": "employees",
+      "namespace": "hr",
+      "alias": "e",
+      "columns": [
+        "employee_id",
+        "last_name",
+        "department_id"
+      ],
+      "column_types": {
+        "employee_id": "INT",
+        "first_name": "TEXT",
+        "last_name": "TEXT",
+        "email": "TEXT",
+        "hire_date": "DATE",
+        "job_id": "TEXT",
+        "salary": "DOUBLE",
+        "commission_pct": "DOUBLE",
+        "manager_id": "INT",
+        "department_id": "INT"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT employee_id, last_name, department_id FROM hr.employees",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "employee_id"
+        ],
+        [
+          "department_id"
+        ]
+      ],
+      "residual_types": {}
+    },
+    {
+      "table": "departments",
+      "namespace": "hr",
+      "alias": "d",
+      "columns": [
+        "department_id",
+        "department_name"
+      ],
+      "column_types": {
+        "department_id": "INT",
+        "department_name": "TEXT",
+        "manager_id": "INT",
+        "location": "TEXT"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT department_id, department_name FROM hr.departments",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "department_id"
+        ]
+      ],
+      "residual_types": {}
+    }
+  ],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "-- B-3. 完全外部結合：部門なし社員・社員なし部門の両方を出す\nSELECT e.last_name, d.department_name\nFROM   employees e\nFULL   OUTER JOIN departments d ON d.department_id = e.department_id\nWHERE  e.employee_id IS NULL OR d.department_id IS NULL",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "/* B-3. 完全外部結合：部門なし社員・社員なし部門の両方を出す */ SELECT e.last_name, d.department_name FROM employees AS e FULL OUTER JOIN departments AS d ON d.department_id = e.department_id WHERE e.employee_id IS NULL OR d.department_id IS NULL"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": true,
+    "row_limit": 10000
+  },
+  "unresolved": [],
+  "notes": [],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+    "scalar.db.scan_fetch_size": 1000,
+    "scalar.db.cluster.client.scan_fetch_size": 1000,
+    "scalar.db.cross_partition_scan.enabled": true,
+    "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+  }
+}

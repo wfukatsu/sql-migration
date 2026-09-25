@@ -1,0 +1,3197 @@
+{
+  "source": "oracle",
+  "target": "scalardb",
+  "summary": {
+    "total": 39,
+    "ok": 0,
+    "warn": 5,
+    "error": 11,
+    "planned": 23,
+    "converted": 5,
+    "rate": 12.8
+  },
+  "results": [
+    {
+      "index": 1,
+      "source_sql": "--------------------------------------------------------------------------------\n-- 02_sql_query.sql : 問合せ（SELECT）のサンプル\n--   参照: SQL Language Reference - SELECT / Functions / Analytic Functions /\n--         Hierarchical Queries / Joins\n--   前提: 00_setup.sql 実行済み\n--   [ORA] = Oracle 固有 / 他DBへの移行で要注意の構文\n--------------------------------------------------------------------------------\n\n--==============================================================================\n-- A. 基本\n--==============================================================================\n-- A-1. DUAL 表 [ORA]（23ai 以降は FROM 句省略も可）\nSELECT SYSDATE, SYSTIMESTAMP, USER FROM dual",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "INFO",
+          "code": "IDENT",
+          "message": "identifier USER is a ScalarDB SQL keyword; written as \"USER\" (quoted)"
+        },
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "main query: expressions in the select list (SYSDATE; SYSTIMESTAMP) -- compute them in the application"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)"
+        }
+      ],
+      "plan": {
+        "pattern": "P1",
+        "source_dialect": "oracle",
+        "source_sql": "--------------------------------------------------------------------------------\n-- 02_sql_query.sql : 問合せ（SELECT）のサンプル\n--   参照: SQL Language Reference - SELECT / Functions / Analytic Functions /\n--         Hierarchical Queries / Joins\n--   前提: 00_setup.sql 実行済み\n--   [ORA] = Oracle 固有 / 他DBへの移行で要注意の構文\n--------------------------------------------------------------------------------\n\n--==============================================================================\n-- A. 基本\n--==============================================================================\n-- A-1. DUAL 表 [ORA]（23ai 以降は FROM 句省略も可）\nSELECT SYSDATE, SYSTIMESTAMP, USER FROM dual",
+        "fetch": [],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "--------------------------------------------------------------------------------\n-- 02_sql_query.sql : 問合せ（SELECT）のサンプル\n--   参照: SQL Language Reference - SELECT / Functions / Analytic Functions /\n--         Hierarchical Queries / Joins\n--   前提: 00_setup.sql 実行済み\n--   [ORA] = Oracle 固有 / 他DBへの移行で要注意の構文\n--------------------------------------------------------------------------------\n\n--==============================================================================\n-- A. 基本\n--==============================================================================\n-- A-1. DUAL 表 [ORA]（23ai 以降は FROM 句省略も可）\nSELECT SYSDATE, SYSTIMESTAMP, USER FROM dual",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* ------------------------------------------------------------------------------ */ /* 02_sql_query.sql : 問合せ（SELECT）のサンプル */ /*   参照: SQL Language Reference - SELECT / Functions / Analytic Functions / */ /*         Hierarchical Queries / Joins */ /*   前提: 00_setup.sql 実行済み */ /*   [ORA] = Oracle 固有 / 他DBへの移行で要注意の構文 */ /* ------------------------------------------------------------------------------ */ /* ============================================================================== */ /* A. 基本 */ /* ============================================================================== */ /* A-1. DUAL 表 [ORA]（23ai 以降は FROM 句省略も可） */ SELECT CURRENT_TIMESTAMP, SYSTIMESTAMP(), USER FROM dual"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": false,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)"
+        }
+      }
+    },
+    {
+      "index": 2,
+      "source_sql": "-- A-2. 絞り込み・並べ替え（NULL の並び順指定）\nSELECT employee_id, last_name, salary, commission_pct\nFROM   employees\nWHERE  salary BETWEEN 5000 AND 15000\nAND    last_name LIKE '%er%'\nORDER  BY commission_pct DESC NULLS LAST, salary DESC",
+      "kind": "SELECT",
+      "status": "WARN",
+      "converted": [
+        "/* A-2. 絞り込み・並べ替え（NULL の並び順指定） */ SELECT employee_id, last_name, salary, commission_pct FROM employees WHERE salary BETWEEN 5000 AND 15000 AND last_name LIKE '%er%' ORDER BY commission_pct DESC, salary DESC"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "NULLS",
+          "message": "NULLS FIRST/LAST dropped from ORDER BY"
+        },
+        {
+          "severity": "WARN",
+          "code": "NULLS",
+          "message": "NULLS FIRST/LAST dropped from ORDER BY"
+        },
+        {
+          "severity": "WARN",
+          "code": "CROSS_PARTITION",
+          "message": "SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 3,
+      "source_sql": "-- A-3. CASE / DECODE [ORA] / NULL 処理関数\nSELECT last_name,\n       salary,\n       CASE\n         WHEN salary >= 15000 THEN 'HIGH'\n         WHEN salary >=  7000 THEN 'MID'\n         ELSE 'LOW'\n       END                                      AS salary_band,\n       DECODE(department_id, 60, 'IT', 80, 'Sales', 'Other') AS dept_label,   -- [ORA]\n       NVL(commission_pct, 0)                   AS comm_nvl,                  -- [ORA]\n       NVL2(commission_pct, 'Y', 'N')           AS has_comm,                  -- [ORA]\n       COALESCE(commission_pct, 0)              AS comm_coalesce               -- 標準SQL\nFROM   employees",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "main query: expressions in the select list (CASE WHEN salary >= 15000 THEN 'HIGH' WHEN salary >= 7000 THEN 'MID' ELSE 'LO...; DECODE(department_id, 60, 'IT', 80, 'Sales', 'Other'); NVL(commission_pct, 0); NVL2(commission_pct, 'Y', 'N'); COALESCE(commission_pct, 0)) -- compute them in the application"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, last_name, salary, commission_pct, department_id FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P1",
+        "source_dialect": "oracle",
+        "source_sql": "-- A-3. CASE / DECODE [ORA] / NULL 処理関数\nSELECT last_name,\n       salary,\n       CASE\n         WHEN salary >= 15000 THEN 'HIGH'\n         WHEN salary >=  7000 THEN 'MID'\n         ELSE 'LOW'\n       END                                      AS salary_band,\n       DECODE(department_id, 60, 'IT', 80, 'Sales', 'Other') AS dept_label,   -- [ORA]\n       NVL(commission_pct, 0)                   AS comm_nvl,                  -- [ORA]\n       NVL2(commission_pct, 'Y', 'N')           AS has_comm,                  -- [ORA]\n       COALESCE(commission_pct, 0)              AS comm_coalesce               -- 標準SQL\nFROM   employees",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "employees",
+            "columns": [
+              "employee_id",
+              "last_name",
+              "salary",
+              "commission_pct",
+              "department_id"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, last_name, salary, commission_pct, department_id FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "-- A-3. CASE / DECODE [ORA] / NULL 処理関数\nSELECT last_name,\n       salary,\n       CASE\n         WHEN salary >= 15000 THEN 'HIGH'\n         WHEN salary >=  7000 THEN 'MID'\n         ELSE 'LOW'\n       END                                      AS salary_band,\n       DECODE(department_id, 60, 'IT', 80, 'Sales', 'Other') AS dept_label,   -- [ORA]\n       NVL(commission_pct, 0)                   AS comm_nvl,                  -- [ORA]\n       NVL2(commission_pct, 'Y', 'N')           AS has_comm,                  -- [ORA]\n       COALESCE(commission_pct, 0)              AS comm_coalesce               -- 標準SQL\nFROM   employees",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* A-3. CASE / DECODE [ORA] / NULL 処理関数 */ SELECT last_name, salary, CASE WHEN salary >= 15000 THEN 'HIGH' WHEN salary >= 7000 THEN 'MID' ELSE 'LOW' END AS salary_band, CASE WHEN department_id = 60 THEN 'IT' WHEN department_id = 80 THEN 'Sales' ELSE 'Other' END AS dept_label /* [ORA] */, COALESCE(commission_pct, 0) AS comm_nvl /* [ORA] */, CASE WHEN NOT commission_pct IS NULL THEN 'Y' ELSE 'N' END AS has_comm /* [ORA] */, COALESCE(commission_pct, 0) AS comm_coalesce /* 標準SQL */ FROM employees"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 4,
+      "source_sql": "-- A-4. 文字列・数値・日付関数\nSELECT UPPER(last_name)                         AS upper_name,\n       INITCAP(email)                           AS initcap_email,\n       SUBSTR(last_name, 1, 3)                  AS short_name,\n       INSTR(last_name, 'e')                    AS pos_e,\n       LPAD(employee_id, 6, '0')                AS padded_id,\n       first_name || ' ' || last_name           AS full_name,     -- 連結演算子\n       ROUND(salary / 12, 2)                    AS monthly,\n       TRUNC(hire_date, 'MM')                   AS hire_month,    -- [ORA] 日付のTRUNC\n       ADD_MONTHS(hire_date, 6)                 AS probation_end, -- [ORA]\n       TRUNC(MONTHS_BETWEEN(SYSDATE, hire_date) / 12) AS years,   -- [ORA]\n       TO_CHAR(hire_date, 'YYYY\"年\"MM\"月\"DD\"日\"') AS hire_jp,\n       TO_CHAR(salary, 'FM999,999')             AS salary_fmt\nFROM   employees\nWHERE  ROWNUM <= 5",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "main query: expressions in the select list (UPPER(last_name); INITCAP(email); SUBSTR(last_name, 1, 3); INSTR(last_name, 'e'); LPAD(employee_id, 6, '0'); first_name || ' ' || last_name; ROUND(salary / 12, 2); TRUNC(hire_date, 'MM'); ADD_MONTHS(hire_date, 6); TRUNC(MONTHS_BETWEEN(SYSDATE, hire_date) / 12); TO_CHAR(hire_date, 'YYYY\"年\"MM\"月\"DD\"日\"'); TO_CHAR(salary, 'FM999,999')) -- compute them in the application"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, first_name, last_name, email, hire_date, salary FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P1",
+        "source_dialect": "oracle",
+        "source_sql": "-- A-4. 文字列・数値・日付関数\nSELECT UPPER(last_name)                         AS upper_name,\n       INITCAP(email)                           AS initcap_email,\n       SUBSTR(last_name, 1, 3)                  AS short_name,\n       INSTR(last_name, 'e')                    AS pos_e,\n       LPAD(employee_id, 6, '0')                AS padded_id,\n       first_name || ' ' || last_name           AS full_name,     -- 連結演算子\n       ROUND(salary / 12, 2)                    AS monthly,\n       TRUNC(hire_date, 'MM')                   AS hire_month,    -- [ORA] 日付のTRUNC\n       ADD_MONTHS(hire_date, 6)                 AS probation_end, -- [ORA]\n       TRUNC(MONTHS_BETWEEN(SYSDATE, hire_date) / 12) AS years,   -- [ORA]\n       TO_CHAR(hire_date, 'YYYY\"年\"MM\"月\"DD\"日\"') AS hire_jp,\n       TO_CHAR(salary, 'FM999,999')             AS salary_fmt\nFROM   employees\nWHERE  ROWNUM <= 5",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "employees",
+            "columns": [
+              "employee_id",
+              "first_name",
+              "last_name",
+              "email",
+              "hire_date",
+              "salary"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, first_name, last_name, email, hire_date, salary FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "/* A-4. 文字列・数値・日付関数 */ SELECT UPPER(last_name) AS upper_name, INITCAP(email) AS initcap_email, SUBSTR(last_name, 1, 3) AS short_name, INSTR(last_name, 'e') AS pos_e, LPAD(employee_id, 6, '0') AS padded_id, first_name || ' ' || last_name AS full_name /* 連結演算子 */, ROUND(salary / 12, 2) AS monthly, DATE_TRUNC('MONTH', hire_date) AS hire_month /* [ORA] 日付のTRUNC */, ADD_MONTHS(hire_date, 6) AS probation_end /* [ORA] */, TRUNC(MONTHS_BETWEEN(SYSDATE, hire_date) / 12) AS years /* [ORA] */, TO_CHAR(hire_date, 'YYYY\"年\"MM\"月\"DD\"日\"') AS hire_jp, TO_CHAR(salary, 'FM999,999') AS salary_fmt FROM employees WHERE ROWNUM <= 5",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* A-4. 文字列・数値・日付関数 */ SELECT UPPER(last_name) AS upper_name, INITCAP(email) AS initcap_email, SUBSTRING(last_name, 1, 3) AS short_name, INSTR(last_name, 'e') AS pos_e, LPAD(employee_id, 6, '0') AS padded_id, first_name || ' ' || last_name AS full_name /* 連結演算子 */, ROUND(CAST(salary AS REAL) / 12, 2) AS monthly, DATE_TRUNC('MM', hire_date) AS hire_month /* [ORA] 日付のTRUNC */, ADD_MONTHS(hire_date, 6) AS probation_end /* [ORA] */, TRUNC(CAST(MONTHS_BETWEEN(CURRENT_TIMESTAMP, hire_date) AS REAL) / 12) AS years /* [ORA] */, CAST(hire_date AS TEXT) AS hire_jp, CAST(salary AS TEXT) AS salary_fmt FROM employees LIMIT 5"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [
+          "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+        ],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 5,
+      "source_sql": "-- [ORA]\n\n-- A-5. 正規表現\nSELECT email,\n       REGEXP_SUBSTR(email, '^[A-Z]')           AS first_char,\n       REGEXP_REPLACE(last_name, '[aeiou]', '*') AS masked\nFROM   employees\nWHERE  REGEXP_LIKE(last_name, '^(K|L)')",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "main query: expressions in the select list (REGEXP_SUBSTR(email, '^[A-Z]'); REGEXP_REPLACE(last_name, '[aeiou]', '*')) -- compute them in the application"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, last_name, email FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P1",
+        "source_dialect": "oracle",
+        "source_sql": "-- [ORA]\n\n-- A-5. 正規表現\nSELECT email,\n       REGEXP_SUBSTR(email, '^[A-Z]')           AS first_char,\n       REGEXP_REPLACE(last_name, '[aeiou]', '*') AS masked\nFROM   employees\nWHERE  REGEXP_LIKE(last_name, '^(K|L)')",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "employees",
+            "columns": [
+              "employee_id",
+              "last_name",
+              "email"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, last_name, email FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "-- [ORA]\n\n-- A-5. 正規表現\nSELECT email,\n       REGEXP_SUBSTR(email, '^[A-Z]')           AS first_char,\n       REGEXP_REPLACE(last_name, '[aeiou]', '*') AS masked\nFROM   employees\nWHERE  REGEXP_LIKE(last_name, '^(K|L)')",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* [ORA] */ /* A-5. 正規表現 */ SELECT email, REGEXP_SUBSTR(email, '^[A-Z]') AS first_char, REGEXP_REPLACE(last_name, '[aeiou]', '*') AS masked FROM employees WHERE last_name REGEXP '^(K|L)'"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 6,
+      "source_sql": "--==============================================================================\n-- B. 結合\n--==============================================================================\n-- B-1. 内部結合（ANSI）\nSELECT e.last_name, d.department_name\nFROM   employees e\nJOIN   departments d ON d.department_id = e.department_id",
+      "kind": "SELECT",
+      "status": "WARN",
+      "converted": [
+        "/* ============================================================================== */ /* B. 結合 */ /* ============================================================================== */ /* B-1. 内部結合（ANSI） */ SELECT e.last_name, d.department_name FROM employees AS e JOIN departments AS d ON d.department_id = e.department_id"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "CROSS_PARTITION",
+          "message": "SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 7,
+      "source_sql": "-- B-2. 外部結合（ANSI）と Oracle 独自の (+) 記法 [ORA]\nSELECT e.last_name, d.department_name\nFROM   employees e\nLEFT   JOIN departments d ON d.department_id = e.department_id",
+      "kind": "SELECT",
+      "status": "WARN",
+      "converted": [
+        "/* B-2. 外部結合（ANSI）と Oracle 独自の (+) 記法 [ORA] */ SELECT e.last_name, d.department_name FROM employees AS e LEFT JOIN departments AS d ON d.department_id = e.department_id"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "CROSS_PARTITION",
+          "message": "SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 8,
+      "source_sql": "SELECT e.last_name, d.department_name          -- 上と同じ結果（旧記法）\nFROM   employees e, departments d\nWHERE  e.department_id = d.department_id(+)",
+      "kind": "SELECT",
+      "status": "WARN",
+      "converted": [
+        "SELECT e.last_name, d.department_name /* 上と同じ結果（旧記法） */ FROM employees AS e LEFT JOIN departments AS d ON e.department_id = d.department_id"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "ORACLE_JOIN_MARK",
+          "message": "Oracle (+) outer join rewritten as LEFT/RIGHT OUTER JOIN"
+        },
+        {
+          "severity": "WARN",
+          "code": "CROSS_PARTITION",
+          "message": "SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 9,
+      "source_sql": "-- B-3. 完全外部結合：部門なし社員・社員なし部門の両方を出す\nSELECT e.last_name, d.department_name\nFROM   employees e\nFULL   OUTER JOIN departments d ON d.department_id = e.department_id\nWHERE  e.employee_id IS NULL OR d.department_id IS NULL",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "JOIN",
+          "message": "OUTER JOIN is not supported"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, last_name, department_id FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT department_id, department_name FROM hr.departments"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P8, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees, departments (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P8",
+        "source_dialect": "oracle",
+        "source_sql": "-- B-3. 完全外部結合：部門なし社員・社員なし部門の両方を出す\nSELECT e.last_name, d.department_name\nFROM   employees e\nFULL   OUTER JOIN departments d ON d.department_id = e.department_id\nWHERE  e.employee_id IS NULL OR d.department_id IS NULL",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "e",
+            "columns": [
+              "employee_id",
+              "last_name",
+              "department_id"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, last_name, department_id FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ],
+              [
+                "department_id"
+              ]
+            ],
+            "residual_types": {}
+          },
+          {
+            "table": "departments",
+            "namespace": "hr",
+            "alias": "d",
+            "columns": [
+              "department_id",
+              "department_name"
+            ],
+            "column_types": {
+              "department_id": "INT",
+              "department_name": "TEXT",
+              "manager_id": "INT",
+              "location": "TEXT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT department_id, department_name FROM hr.departments",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "department_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "-- B-3. 完全外部結合：部門なし社員・社員なし部門の両方を出す\nSELECT e.last_name, d.department_name\nFROM   employees e\nFULL   OUTER JOIN departments d ON d.department_id = e.department_id\nWHERE  e.employee_id IS NULL OR d.department_id IS NULL",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* B-3. 完全外部結合：部門なし社員・社員なし部門の両方を出す */ SELECT e.last_name, d.department_name FROM employees AS e FULL OUTER JOIN departments AS d ON d.department_id = e.department_id WHERE e.employee_id IS NULL OR d.department_id IS NULL"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 10,
+      "source_sql": "-- B-4. 自己結合（上司名の取得）\nSELECT w.last_name AS employee, m.last_name AS manager\nFROM   employees w\nLEFT   JOIN employees m ON m.employee_id = w.manager_id",
+      "kind": "SELECT",
+      "status": "WARN",
+      "converted": [
+        "/* B-4. 自己結合（上司名の取得） */ SELECT w.last_name AS employee, m.last_name AS manager FROM employees AS w LEFT JOIN employees AS m ON m.employee_id = w.manager_id"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "CROSS_PARTITION",
+          "message": "SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 11,
+      "source_sql": "-- B-5. LATERAL / CROSS APPLY（12c+）：部門ごとの高給上位2名\nSELECT d.department_name, t.last_name, t.salary\nFROM   departments d\nCROSS  APPLY (SELECT e.last_name, e.salary\n              FROM   employees e\n              WHERE  e.department_id = d.department_id\n              ORDER  BY e.salary DESC\n              FETCH  FIRST 2 ROWS ONLY) t",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "JOIN",
+          "message": "joined relation must be a base table (no subqueries)"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT department_id, department_name FROM hr.departments"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, last_name, salary, department_id FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P8, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of departments, employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P8",
+        "source_dialect": "oracle",
+        "source_sql": "-- B-5. LATERAL / CROSS APPLY（12c+）：部門ごとの高給上位2名\nSELECT d.department_name, t.last_name, t.salary\nFROM   departments d\nCROSS  APPLY (SELECT e.last_name, e.salary\n              FROM   employees e\n              WHERE  e.department_id = d.department_id\n              ORDER  BY e.salary DESC\n              FETCH  FIRST 2 ROWS ONLY) t",
+        "fetch": [
+          {
+            "table": "departments",
+            "namespace": "hr",
+            "alias": "d",
+            "columns": [
+              "department_id",
+              "department_name"
+            ],
+            "column_types": {
+              "department_id": "INT",
+              "department_name": "TEXT",
+              "manager_id": "INT",
+              "location": "TEXT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT department_id, department_name FROM hr.departments",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "department_id"
+              ]
+            ],
+            "residual_types": {}
+          },
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "e",
+            "columns": [
+              "employee_id",
+              "last_name",
+              "salary",
+              "department_id"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, last_name, salary, department_id FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ],
+              [
+                "department_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "/* B-5. LATERAL / CROSS APPLY（12c+）：部門ごとの高給上位2名 */ SELECT d.department_name, t.last_name, t.salary FROM departments d INNER JOIN LATERAL (SELECT e.last_name, e.salary FROM employees e WHERE e.department_id = d.department_id ORDER BY e.salary DESC NULLS FIRST FETCH FIRST 2 ROWS ONLY) AS t",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* B-5. LATERAL / CROSS APPLY（12c+）：部門ごとの高給上位2名 */ SELECT d.department_name, t.last_name, t.salary FROM departments AS d INNER JOIN LATERAL (SELECT e.last_name, e.salary FROM employees AS e WHERE e.department_id = d.department_id ORDER BY e.salary DESC NULLS FIRST LIMIT 2) AS t"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [
+          "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+        ],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 12,
+      "source_sql": "--==============================================================================\n-- C. 副問合せ・集合演算\n--==============================================================================\n-- C-1. スカラー副問合せ\nSELECT last_name, salary,\n       (SELECT ROUND(AVG(salary)) FROM employees) AS company_avg\nFROM   employees",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "subquery: expressions in the select list (ROUND(AVG(salary))) -- compute them in the application"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, last_name, salary FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P1",
+        "source_dialect": "oracle",
+        "source_sql": "--==============================================================================\n-- C. 副問合せ・集合演算\n--==============================================================================\n-- C-1. スカラー副問合せ\nSELECT last_name, salary,\n       (SELECT ROUND(AVG(salary)) FROM employees) AS company_avg\nFROM   employees",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "employees",
+            "columns": [
+              "employee_id",
+              "last_name",
+              "salary"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, last_name, salary FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "--==============================================================================\n-- C. 副問合せ・集合演算\n--==============================================================================\n-- C-1. スカラー副問合せ\nSELECT last_name, salary,\n       (SELECT ROUND(AVG(salary)) FROM employees) AS company_avg\nFROM   employees",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* ============================================================================== */ /* C. 副問合せ・集合演算 */ /* ============================================================================== */ /* C-1. スカラー副問合せ */ SELECT last_name, salary, (SELECT ROUND(AVG(salary)) FROM employees) AS company_avg FROM employees"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 13,
+      "source_sql": "-- C-2. 相関副問合せ：部門平均より高い社員\nSELECT e.last_name, e.department_id, e.salary\nFROM   employees e\nWHERE  e.salary > (SELECT AVG(x.salary)\n                   FROM   employees x\n                   WHERE  x.department_id = e.department_id)",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "SUBQUERY",
+          "message": "main query: subquery in WHERE -- fetch the inner result first and bind its values"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, last_name, salary, department_id FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P5, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P5",
+        "source_dialect": "oracle",
+        "source_sql": "-- C-2. 相関副問合せ：部門平均より高い社員\nSELECT e.last_name, e.department_id, e.salary\nFROM   employees e\nWHERE  e.salary > (SELECT AVG(x.salary)\n                   FROM   employees x\n                   WHERE  x.department_id = e.department_id)",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "e",
+            "columns": [
+              "employee_id",
+              "last_name",
+              "salary",
+              "department_id"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, last_name, salary, department_id FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ],
+              [
+                "department_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "-- C-2. 相関副問合せ：部門平均より高い社員\nSELECT e.last_name, e.department_id, e.salary\nFROM   employees e\nWHERE  e.salary > (SELECT AVG(x.salary)\n                   FROM   employees x\n                   WHERE  x.department_id = e.department_id)",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* C-2. 相関副問合せ：部門平均より高い社員 */ SELECT e.last_name, e.department_id, e.salary FROM employees AS e WHERE e.salary > (SELECT AVG(x.salary) FROM employees AS x WHERE x.department_id = e.department_id)"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 14,
+      "source_sql": "-- C-3. EXISTS / NOT EXISTS\nSELECT d.department_name\nFROM   departments d\nWHERE  NOT EXISTS (SELECT 1 FROM employees e WHERE e.department_id = d.department_id)",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "NOT",
+          "message": "cannot negate 'EXISTS(SELECT 1 FROM employees e WHERE e.department_id = d.department_id)'"
+        },
+        {
+          "severity": "ERROR",
+          "code": "SUBQUERY",
+          "message": "main query: subquery in WHERE -- fetch the inner result first and bind its values"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT department_id, department_name FROM hr.departments"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, department_id FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P5, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of departments, employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P5",
+        "source_dialect": "oracle",
+        "source_sql": "-- C-3. EXISTS / NOT EXISTS\nSELECT d.department_name\nFROM   departments d\nWHERE  NOT EXISTS (SELECT 1 FROM employees e WHERE e.department_id = d.department_id)",
+        "fetch": [
+          {
+            "table": "departments",
+            "namespace": "hr",
+            "alias": "d",
+            "columns": [
+              "department_id",
+              "department_name"
+            ],
+            "column_types": {
+              "department_id": "INT",
+              "department_name": "TEXT",
+              "manager_id": "INT",
+              "location": "TEXT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT department_id, department_name FROM hr.departments",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "department_id"
+              ]
+            ],
+            "residual_types": {}
+          },
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "e",
+            "columns": [
+              "employee_id",
+              "department_id"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, department_id FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ],
+              [
+                "department_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "-- C-3. EXISTS / NOT EXISTS\nSELECT d.department_name\nFROM   departments d\nWHERE  NOT EXISTS (SELECT 1 FROM employees e WHERE e.department_id = d.department_id)",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* C-3. EXISTS / NOT EXISTS */ SELECT d.department_name FROM departments AS d WHERE NOT EXISTS(SELECT 1 FROM employees AS e WHERE e.department_id = d.department_id)"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 15,
+      "source_sql": "-- C-4. 多列 IN\nSELECT last_name, department_id, salary\nFROM   employees\nWHERE  (department_id, salary) IN (SELECT department_id, MAX(salary)\n                                   FROM   employees\n                                   GROUP  BY department_id)",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "SUBQUERY",
+          "message": "main query: subquery in WHERE -- fetch the inner result first and bind its values"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, last_name, salary, department_id FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P5, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        },
+        {
+          "severity": "INFO",
+          "code": "DESIGN",
+          "message": "employees: keep a summary table keyed by (department_id) -- partition key department_id -- updated with each write or by a batch, so the query reads one row per group instead of every employees row; store the count of non-NULL values too so SUM's NULL result can be reproduced"
+        }
+      ],
+      "plan": {
+        "pattern": "P5",
+        "source_dialect": "oracle",
+        "source_sql": "-- C-4. 多列 IN\nSELECT last_name, department_id, salary\nFROM   employees\nWHERE  (department_id, salary) IN (SELECT department_id, MAX(salary)\n                                   FROM   employees\n                                   GROUP  BY department_id)",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "employees",
+            "columns": [
+              "employee_id",
+              "last_name",
+              "salary",
+              "department_id"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, last_name, salary, department_id FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "-- C-4. 多列 IN\nSELECT last_name, department_id, salary\nFROM   employees\nWHERE  (department_id, salary) IN (SELECT department_id, MAX(salary)\n                                   FROM   employees\n                                   GROUP  BY department_id)",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* C-4. 多列 IN */ SELECT last_name, department_id, salary FROM employees WHERE (department_id, salary) IN (SELECT department_id, MAX(salary) FROM employees GROUP BY department_id)"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 16,
+      "source_sql": "-- C-5. 集合演算（MINUS は Oracle 固有 [ORA]、標準は EXCEPT。21c+ は EXCEPT も可）\nSELECT department_id FROM departments\nMINUS\nSELECT department_id FROM employees",
+      "kind": "EXCEPT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "SET_OP",
+          "message": "main query: EXCEPT -- run each branch and combine the rows in the application"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT department_id FROM hr.departments"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, department_id FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P6, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of departments, employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P6",
+        "source_dialect": "oracle",
+        "source_sql": "-- C-5. 集合演算（MINUS は Oracle 固有 [ORA]、標準は EXCEPT。21c+ は EXCEPT も可）\nSELECT department_id FROM departments\nMINUS\nSELECT department_id FROM employees",
+        "fetch": [
+          {
+            "table": "departments",
+            "namespace": "hr",
+            "alias": "departments",
+            "columns": [
+              "department_id"
+            ],
+            "column_types": {
+              "department_id": "INT",
+              "department_name": "TEXT",
+              "manager_id": "INT",
+              "location": "TEXT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT department_id FROM hr.departments",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "department_id"
+              ]
+            ],
+            "residual_types": {}
+          },
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "employees",
+            "columns": [
+              "employee_id",
+              "department_id"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, department_id FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "-- C-5. 集合演算（MINUS は Oracle 固有 [ORA]、標準は EXCEPT。21c+ は EXCEPT も可）\nSELECT department_id FROM departments\nMINUS\nSELECT department_id FROM employees",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* C-5. 集合演算（MINUS は Oracle 固有 [ORA]、標準は EXCEPT。21c+ は EXCEPT も可） */ SELECT department_id FROM departments EXCEPT SELECT department_id FROM employees"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 17,
+      "source_sql": "SELECT job_id FROM employees WHERE department_id = 80\nINTERSECT\nSELECT job_id FROM jobs WHERE min_salary >= 6000",
+      "kind": "INTERSECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "SET_OP",
+          "message": "main query: INTERSECT -- run each branch and combine the rows in the application"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "INDEX_SCAN: SELECT employee_id, job_id, department_id FROM hr.employees WHERE department_id = 80"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT job_id, min_salary FROM hr.jobs WHERE min_salary >= 6000"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P6, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of jobs (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P6",
+        "source_dialect": "oracle",
+        "source_sql": "SELECT job_id FROM employees WHERE department_id = 80\nINTERSECT\nSELECT job_id FROM jobs WHERE min_salary >= 6000",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "employees",
+            "columns": [
+              "employee_id",
+              "job_id",
+              "department_id"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [
+              {
+                "column": "department_id",
+                "op": "=",
+                "value": 80
+              }
+            ],
+            "scalardb_sql": "SELECT employee_id, job_id, department_id FROM hr.employees WHERE department_id = 80",
+            "access_path": "INDEX_SCAN",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ]
+            ],
+            "residual_types": {}
+          },
+          {
+            "table": "jobs",
+            "namespace": "hr",
+            "alias": "jobs",
+            "columns": [
+              "job_id",
+              "min_salary"
+            ],
+            "column_types": {
+              "job_id": "TEXT",
+              "job_title": "TEXT",
+              "min_salary": "DOUBLE",
+              "max_salary": "DOUBLE"
+            },
+            "predicates": [
+              {
+                "column": "min_salary",
+                "op": ">=",
+                "value": 6000
+              }
+            ],
+            "scalardb_sql": "SELECT job_id, min_salary FROM hr.jobs WHERE min_salary >= 6000",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "job_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "SELECT job_id FROM employees WHERE department_id = 80\nINTERSECT\nSELECT job_id FROM jobs WHERE min_salary >= 6000",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "SELECT job_id FROM employees WHERE department_id = 80 INTERSECT SELECT job_id FROM jobs WHERE min_salary >= 6000"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [
+          "employees: pushdown department_id = 80",
+          "jobs: pushdown min_salary >= 6000"
+        ],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 18,
+      "source_sql": "--==============================================================================\n-- D. 集計\n--==============================================================================\n-- D-1. GROUP BY / HAVING\nSELECT department_id, COUNT(*) AS cnt, SUM(salary) AS total, ROUND(AVG(salary)) AS avg_sal\nFROM   employees\nGROUP  BY department_id\nHAVING COUNT(*) >= 2\nORDER  BY total DESC",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "main query: expressions in the select list (ROUND(AVG(salary))) -- compute them in the application"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, salary, department_id FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_UNRESOLVED",
+          "message": "employees: columns ['total'] not in schema"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        },
+        {
+          "severity": "INFO",
+          "code": "DESIGN",
+          "message": "employees: keep a summary table keyed by (department_id) -- partition key department_id -- updated with each write or by a batch, so the query reads one row per group instead of every employees row; store the count of non-NULL values too so SUM's NULL result can be reproduced"
+        }
+      ],
+      "plan": {
+        "pattern": "P1",
+        "source_dialect": "oracle",
+        "source_sql": "--==============================================================================\n-- D. 集計\n--==============================================================================\n-- D-1. GROUP BY / HAVING\nSELECT department_id, COUNT(*) AS cnt, SUM(salary) AS total, ROUND(AVG(salary)) AS avg_sal\nFROM   employees\nGROUP  BY department_id\nHAVING COUNT(*) >= 2\nORDER  BY total DESC",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "employees",
+            "columns": [
+              "employee_id",
+              "salary",
+              "department_id"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, salary, department_id FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "/* ============================================================================== */ /* D. 集計 */ /* ============================================================================== */ /* D-1. GROUP BY / HAVING */ SELECT department_id, COUNT(*) AS cnt, SUM(salary) AS total, ROUND(AVG(salary)) AS avg_sal FROM employees GROUP BY department_id HAVING COUNT(*) >= 2 ORDER BY total DESC NULLS FIRST",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* ============================================================================== */ /* D. 集計 */ /* ============================================================================== */ /* D-1. GROUP BY / HAVING */ SELECT department_id, COUNT(*) AS cnt, SUM(salary) AS total, ROUND(AVG(salary)) AS avg_sal FROM employees GROUP BY department_id HAVING COUNT(*) >= 2 ORDER BY total DESC NULLS FIRST"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [
+          "employees: columns ['total'] not in schema"
+        ],
+        "notes": [
+          "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+        ],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 19,
+      "source_sql": "-- D-2. ROLLUP / CUBE / GROUPING SETS と GROUPING 関数\nSELECT CASE GROUPING(department_id) WHEN 1 THEN '全部門' ELSE TO_CHAR(department_id) END AS dept,\n       CASE GROUPING(job_id)        WHEN 1 THEN '小計'   ELSE job_id END                 AS job,\n       SUM(salary) AS total\nFROM   employees\nGROUP  BY ROLLUP (department_id, job_id)",
+      "kind": "SELECT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "main query: expressions in the select list (CASE GROUPING(department_id) WHEN 1 THEN '全部門' ELSE TO_CHAR(department_id) END; CASE GROUPING(job_id) WHEN 1 THEN '小計' ELSE job_id END) -- compute them in the application"
+        },
+        {
+          "severity": "ERROR",
+          "code": "GROUP",
+          "message": "main query: GROUP BY ROLLUP -- aggregate each level in the application"
+        },
+        {
+          "severity": "ERROR",
+          "code": "RESIDUAL_H2",
+          "message": "the H2 residual engine cannot run ROLLUP / CUBE / GROUPING SETS (UNION ALL one aggregate per level); implement this part in the application"
+        },
+        {
+          "severity": "WARN",
+          "code": "APP_SEMANTICS",
+          "message": "SUM / AVG / MIN / MAX ignore NULLs and return NULL when every input is NULL; COUNT(col) counts non-NULL values only"
+        },
+        {
+          "severity": "WARN",
+          "code": "APP_SEMANTICS",
+          "message": "date formatting (TO_CHAR / DATE_FORMAT) uses the session time zone and date language; format in the same zone and locale in the application"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 20,
+      "source_sql": "SELECT department_id, job_id, SUM(salary)\nFROM   employees\nGROUP  BY GROUPING SETS ((department_id), (job_id), ())",
+      "kind": "SELECT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "GROUP",
+          "message": "main query: GROUP BY GROUPING SETS -- aggregate each level in the application"
+        },
+        {
+          "severity": "ERROR",
+          "code": "RESIDUAL_H2",
+          "message": "the H2 residual engine cannot run ROLLUP / CUBE / GROUPING SETS (UNION ALL one aggregate per level); implement this part in the application"
+        },
+        {
+          "severity": "WARN",
+          "code": "APP_SEMANTICS",
+          "message": "SUM / AVG / MIN / MAX ignore NULLs and return NULL when every input is NULL; COUNT(col) counts non-NULL values only"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 21,
+      "source_sql": "-- D-3. LISTAGG（文字列集約）\nSELECT department_id,\n       LISTAGG(last_name, ', ') WITHIN GROUP (ORDER BY last_name) AS members\nFROM   employees\nGROUP  BY department_id",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "AGG",
+          "message": "aggregate GROUP_CONCAT is not supported (only COUNT, SUM, AVG, MIN, MAX)"
+        },
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "main query: expressions in the select list (LISTAGG(last_name, ', ') WITHIN GROUP (ORDER BY last_name)) -- compute them in the application"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, last_name, department_id FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P1+P7, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        },
+        {
+          "severity": "INFO",
+          "code": "DESIGN",
+          "message": "employees: keep a summary table keyed by (department_id) -- partition key department_id -- updated with each write or by a batch, so the query reads one row per group instead of every employees row; store the count of non-NULL values too so SUM's NULL result can be reproduced"
+        }
+      ],
+      "plan": {
+        "pattern": "P1+P7",
+        "source_dialect": "oracle",
+        "source_sql": "-- D-3. LISTAGG（文字列集約）\nSELECT department_id,\n       LISTAGG(last_name, ', ') WITHIN GROUP (ORDER BY last_name) AS members\nFROM   employees\nGROUP  BY department_id",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "employees",
+            "columns": [
+              "employee_id",
+              "last_name",
+              "department_id"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, last_name, department_id FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "/* D-3. LISTAGG（文字列集約） */ SELECT department_id, LISTAGG(last_name, ', ') WITHIN GROUP (ORDER BY last_name NULLS LAST) AS members FROM employees GROUP BY department_id",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* D-3. LISTAGG（文字列集約） */ SELECT department_id, GROUP_CONCAT(last_name, ', ') AS members FROM employees GROUP BY department_id"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [
+          "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+        ],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 22,
+      "source_sql": "-- D-4. PIVOT / UNPIVOT（11g+）\nSELECT *\nFROM  (SELECT department_id, job_id, salary FROM employees)\nPIVOT (SUM(salary) FOR job_id IN ('IT_PROG' AS it_prog, 'SA_REP' AS sa_rep, 'SA_MAN' AS sa_man))",
+      "kind": "SELECT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "FROM",
+          "message": "FROM must reference exactly one base table (no subqueries)"
+        },
+        {
+          "severity": "ERROR",
+          "code": "SUBQUERY",
+          "message": "main query: derived table in FROM -- evaluate it in the application"
+        },
+        {
+          "severity": "ERROR",
+          "code": "RESIDUAL_H2",
+          "message": "the H2 residual engine cannot run PIVOT (conditional aggregation); implement this part in the application"
+        },
+        {
+          "severity": "WARN",
+          "code": "APP_SEMANTICS",
+          "message": "SUM / AVG / MIN / MAX ignore NULLs and return NULL when every input is NULL; COUNT(col) counts non-NULL values only"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 23,
+      "source_sql": "SELECT employee_id, pay_type, amount\nFROM  (SELECT employee_id, salary, NVL(salary * commission_pct, 0) AS commission\n       FROM   employees WHERE department_id = 80)\nUNPIVOT (amount FOR pay_type IN (salary AS 'SALARY', commission AS 'COMMISSION'))",
+      "kind": "SELECT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "FROM",
+          "message": "FROM must reference exactly one base table (no subqueries)"
+        },
+        {
+          "severity": "ERROR",
+          "code": "SUBQUERY",
+          "message": "main query: derived table in FROM -- evaluate it in the application"
+        },
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "subquery: expressions in the select list (NVL(salary * commission_pct, 0)) -- compute them in the application"
+        },
+        {
+          "severity": "ERROR",
+          "code": "RESIDUAL_H2",
+          "message": "the H2 residual engine cannot run UNPIVOT (UNION ALL); implement this part in the application"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 24,
+      "source_sql": "--==============================================================================\n-- E. 分析関数（ウィンドウ関数）\n--==============================================================================\nSELECT department_id, last_name, salary,\n       ROW_NUMBER() OVER (PARTITION BY department_id ORDER BY salary DESC) AS rn,\n       RANK()       OVER (PARTITION BY department_id ORDER BY salary DESC) AS rnk,\n       DENSE_RANK() OVER (ORDER BY salary DESC)                            AS drnk,\n       SUM(salary)  OVER (PARTITION BY department_id)                      AS dept_total,\n       ROUND(RATIO_TO_REPORT(salary) OVER (PARTITION BY department_id), 3) AS share,  -- [ORA]\n       LAG(salary)  OVER (PARTITION BY department_id ORDER BY hire_date)   AS prev_hire_sal,\n       LEAD(last_name) OVER (ORDER BY hire_date)                           AS next_hired,\n       NTILE(4)     OVER (ORDER BY salary)                                 AS quartile\nFROM   employees\nORDER  BY department_id, rn",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "WINDOW",
+          "message": "main query: window functions ROW_NUMBER, RANK, DENSE_RANK, SUM OVER, LAG, LEAD, NTILE, RATIO_TO_REPORT -- partition, sort and compute in the application (appside.Windows)"
+        },
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "main query: expressions in the select list (ROUND(RATIO_TO_REPORT(salary) OVER (PARTITION BY department_id), 3)) -- compute them in the application"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, last_name, hire_date, salary, department_id FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_UNRESOLVED",
+          "message": "employees: columns ['rn'] not in schema"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P1",
+        "source_dialect": "oracle",
+        "source_sql": "--==============================================================================\n-- E. 分析関数（ウィンドウ関数）\n--==============================================================================\nSELECT department_id, last_name, salary,\n       ROW_NUMBER() OVER (PARTITION BY department_id ORDER BY salary DESC) AS rn,\n       RANK()       OVER (PARTITION BY department_id ORDER BY salary DESC) AS rnk,\n       DENSE_RANK() OVER (ORDER BY salary DESC)                            AS drnk,\n       SUM(salary)  OVER (PARTITION BY department_id)                      AS dept_total,\n       ROUND(RATIO_TO_REPORT(salary) OVER (PARTITION BY department_id), 3) AS share,  -- [ORA]\n       LAG(salary)  OVER (PARTITION BY department_id ORDER BY hire_date)   AS prev_hire_sal,\n       LEAD(last_name) OVER (ORDER BY hire_date)                           AS next_hired,\n       NTILE(4)     OVER (ORDER BY salary)                                 AS quartile\nFROM   employees\nORDER  BY department_id, rn",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "employees",
+            "columns": [
+              "employee_id",
+              "last_name",
+              "hire_date",
+              "salary",
+              "department_id"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, last_name, hire_date, salary, department_id FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "/* ============================================================================== */ /* E. 分析関数（ウィンドウ関数） */ /* ============================================================================== */ SELECT department_id, last_name, salary, ROW_NUMBER() OVER (PARTITION BY department_id ORDER BY salary DESC NULLS FIRST) AS rn, RANK() OVER (PARTITION BY department_id ORDER BY salary DESC NULLS FIRST) AS rnk, DENSE_RANK() OVER (ORDER BY salary DESC NULLS FIRST) AS drnk, SUM(salary) OVER (PARTITION BY department_id) AS dept_total, ROUND(RATIO_TO_REPORT(salary) OVER (PARTITION BY department_id), 3) AS share /* [ORA] */, LAG(salary) OVER (PARTITION BY department_id ORDER BY hire_date NULLS LAST) AS prev_hire_sal, LEAD(last_name) OVER (ORDER BY hire_date NULLS LAST) AS next_hired, NTILE(4) OVER (ORDER BY salary NULLS LAST) AS quartile FROM employees ORDER BY department_id NULLS LAST, rn NULLS LAST",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* ============================================================================== */ /* E. 分析関数（ウィンドウ関数） */ /* ============================================================================== */ SELECT department_id, last_name, salary, ROW_NUMBER() OVER (PARTITION BY department_id ORDER BY salary DESC NULLS FIRST) AS rn, RANK() OVER (PARTITION BY department_id ORDER BY salary DESC NULLS FIRST) AS rnk, DENSE_RANK() OVER (ORDER BY salary DESC NULLS FIRST) AS drnk, SUM(salary) OVER (PARTITION BY department_id) AS dept_total, ROUND(RATIO_TO_REPORT(salary) OVER (PARTITION BY department_id), 3) AS share /* [ORA] */, LAG(salary) OVER (PARTITION BY department_id ORDER BY hire_date NULLS LAST) AS prev_hire_sal, LEAD(last_name) OVER (ORDER BY hire_date NULLS LAST) AS next_hired, NTILE(4) OVER (ORDER BY salary NULLS LAST) AS quartile FROM employees ORDER BY department_id NULLS LAST, rn NULLS LAST"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [
+          "employees: columns ['rn'] not in schema"
+        ],
+        "notes": [
+          "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+        ],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 25,
+      "source_sql": "-- E-2. 累計・移動平均（ウィンドウ句）\nSELECT order_date, total,\n       SUM(total) OVER (ORDER BY order_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total,\n       ROUND(AVG(total) OVER (ORDER BY order_date ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING), 1) AS moving_avg\nFROM   orders\nORDER  BY order_date",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "WINDOW",
+          "message": "main query: window functions SUM OVER, AVG OVER -- partition, sort and compute in the application (appside.Windows)"
+        },
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "main query: expressions in the select list (ROUND(AVG(total) OVER (ORDER BY order_date ROWS BETWEEN 1 PRECEDING AND 1 FOL...) -- compute them in the application"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT order_id, order_date, total FROM hr.orders"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of orders (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P1",
+        "source_dialect": "oracle",
+        "source_sql": "-- E-2. 累計・移動平均（ウィンドウ句）\nSELECT order_date, total,\n       SUM(total) OVER (ORDER BY order_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total,\n       ROUND(AVG(total) OVER (ORDER BY order_date ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING), 1) AS moving_avg\nFROM   orders\nORDER  BY order_date",
+        "fetch": [
+          {
+            "table": "orders",
+            "namespace": "hr",
+            "alias": "orders",
+            "columns": [
+              "order_id",
+              "order_date",
+              "total"
+            ],
+            "column_types": {
+              "order_id": "BIGINT",
+              "order_date": "DATE",
+              "employee_id": "INT",
+              "customer": "TEXT",
+              "status": "TEXT",
+              "total": "DOUBLE"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT order_id, order_date, total FROM hr.orders",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "order_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "/* E-2. 累計・移動平均（ウィンドウ句） */ SELECT order_date, total, SUM(total) OVER (ORDER BY order_date NULLS LAST ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total, ROUND(AVG(total) OVER (ORDER BY order_date NULLS LAST ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING), 1) AS moving_avg FROM orders ORDER BY order_date NULLS LAST",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* E-2. 累計・移動平均（ウィンドウ句） */ SELECT order_date, total, SUM(total) OVER (ORDER BY order_date NULLS LAST ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total, ROUND(AVG(total) OVER (ORDER BY order_date NULLS LAST ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING), 1) AS moving_avg FROM orders ORDER BY order_date NULLS LAST"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [
+          "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+        ],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 26,
+      "source_sql": "-- E-3. KEEP (DENSE_RANK FIRST/LAST) [ORA]：部門内最高給の社員名\nSELECT department_id,\n       MAX(last_name) KEEP (DENSE_RANK FIRST ORDER BY salary DESC) AS top_earner,\n       MAX(salary) AS max_sal\nFROM   employees\nGROUP  BY department_id",
+      "kind": "SELECT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "projection 'MAX(last_name) KEEP (DENSE_RANK FIRST ORDER BY salary DESC)' is an expression; ScalarDB SQL only selects columns and aggregates. Compute it in the application"
+        },
+        {
+          "severity": "ERROR",
+          "code": "KEEP",
+          "message": "main query: MAX(last_name) KEEP (DENSE_RANK FIRST ...) -- pick the first/last row per group in the application"
+        },
+        {
+          "severity": "ERROR",
+          "code": "RESIDUAL_H2",
+          "message": "the H2 residual engine cannot run KEEP (DENSE_RANK FIRST/LAST) (ROW_NUMBER() ... = 1); implement this part in the application"
+        },
+        {
+          "severity": "WARN",
+          "code": "APP_SEMANTICS",
+          "message": "SUM / AVG / MIN / MAX ignore NULLs and return NULL when every input is NULL; COUNT(col) counts non-NULL values only"
+        },
+        {
+          "severity": "WARN",
+          "code": "APP_SEMANTICS",
+          "message": "NULLs sort last for ASC and first for DESC (also inside OVER (ORDER BY ...)); Java comparators need an explicit nullsFirst / nullsLast (appside.OracleOrdering)"
+        },
+        {
+          "severity": "INFO",
+          "code": "DESIGN",
+          "message": "employees: keep a summary table keyed by (department_id) -- partition key department_id -- updated with each write or by a batch, so the query reads one row per group instead of every employees row; store the count of non-NULL values too so SUM's NULL result can be reproduced"
+        },
+        {
+          "severity": "INFO",
+          "code": "DESIGN",
+          "message": "analytical query (aggregation + window functions): if it runs as a report rather than per request, consider ScalarDB Analytics instead of fetching every row through transactions"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 27,
+      "source_sql": "--==============================================================================\n-- F. Top-N / ページング\n--==============================================================================\n-- F-1. 12c+ 標準構文\nSELECT last_name, salary FROM employees\nORDER  BY salary DESC\nFETCH  FIRST 3 ROWS WITH TIES",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "LIMIT",
+          "message": "FETCH ... WITH TIES is not supported: LIMIT n drops the rows that tie with the n-th; fetch in order and keep reading while the sort key is equal"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, last_name, salary FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P1",
+        "source_dialect": "oracle",
+        "source_sql": "--==============================================================================\n-- F. Top-N / ページング\n--==============================================================================\n-- F-1. 12c+ 標準構文\nSELECT last_name, salary FROM employees\nORDER  BY salary DESC\nFETCH  FIRST 3 ROWS WITH TIES",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "employees",
+            "columns": [
+              "employee_id",
+              "last_name",
+              "salary"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, last_name, salary FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "/* ============================================================================== */ /* F. Top-N / ページング */ /* ============================================================================== */ /* F-1. 12c+ 標準構文 */ SELECT last_name, salary FROM employees ORDER BY salary DESC NULLS FIRST FETCH FIRST 3 ROWS WITH TIES",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* ============================================================================== */ /* F. Top-N / ページング */ /* ============================================================================== */ /* F-1. 12c+ 標準構文 */ SELECT last_name, salary FROM employees ORDER BY salary DESC NULLS FIRST LIMIT 3"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [
+          "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+        ],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 28,
+      "source_sql": "SELECT last_name, salary FROM employees\nORDER  BY salary DESC\nOFFSET 5 ROWS FETCH NEXT 5 ROWS ONLY",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "OFFSET",
+          "message": "main query: OFFSET -- page with a clustering-key range instead"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, last_name, salary FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P4, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P4",
+        "source_dialect": "oracle",
+        "source_sql": "SELECT last_name, salary FROM employees\nORDER  BY salary DESC\nOFFSET 5 ROWS FETCH NEXT 5 ROWS ONLY",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "employees",
+            "columns": [
+              "employee_id",
+              "last_name",
+              "salary"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, last_name, salary FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "SELECT last_name, salary FROM employees ORDER BY salary DESC NULLS FIRST OFFSET 5 ROWS FETCH NEXT 5 ROWS ONLY",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "SELECT last_name, salary FROM employees ORDER BY salary DESC NULLS FIRST LIMIT 5 OFFSET 5"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [
+          "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+        ],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 29,
+      "source_sql": "-- 2ページ目（5件/ページ）\n\n-- F-2. 11g 以前の ROWNUM 方式 [ORA]（移行元コードで頻出）\nSELECT *\nFROM  (SELECT a.*, ROWNUM rnum\n       FROM  (SELECT last_name, salary FROM employees ORDER BY salary DESC) a\n       WHERE  ROWNUM <= 10)\nWHERE  rnum > 5",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "FROM",
+          "message": "FROM must reference exactly one base table (no subqueries)"
+        },
+        {
+          "severity": "ERROR",
+          "code": "SUBQUERY",
+          "message": "main query: derived table in FROM -- evaluate it in the application"
+        },
+        {
+          "severity": "ERROR",
+          "code": "SUBQUERY",
+          "message": "subquery: derived table in FROM -- evaluate it in the application"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, last_name, salary FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P5, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_UNRESOLVED",
+          "message": "python: ROWNUM in a form SQLite cannot express"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P5",
+        "source_dialect": "oracle",
+        "source_sql": "-- 2ページ目（5件/ページ）\n\n-- F-2. 11g 以前の ROWNUM 方式 [ORA]（移行元コードで頻出）\nSELECT *\nFROM  (SELECT a.*, ROWNUM rnum\n       FROM  (SELECT last_name, salary FROM employees ORDER BY salary DESC) a\n       WHERE  ROWNUM <= 10)\nWHERE  rnum > 5",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "employees",
+            "columns": [
+              "employee_id",
+              "last_name",
+              "salary"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, last_name, salary FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "/* 2ページ目（5件/ページ） */ /* F-2. 11g 以前の ROWNUM 方式 [ORA]（移行元コードで頻出） */ SELECT * FROM (SELECT a.*, ROWNUM AS rnum FROM (SELECT last_name, salary FROM employees ORDER BY salary DESC NULLS FIRST) a WHERE ROWNUM <= 10) WHERE rnum > 5",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* 2ページ目（5件/ページ） */ /* F-2. 11g 以前の ROWNUM 方式 [ORA]（移行元コードで頻出） */ SELECT * FROM (SELECT a.*, ROWNUM AS rnum FROM (SELECT last_name, salary FROM employees ORDER BY salary DESC NULLS FIRST) AS a LIMIT 10) WHERE rnum > 5"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [
+          "python: ROWNUM in a form SQLite cannot express"
+        ],
+        "notes": [
+          "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+        ],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 30,
+      "source_sql": "--==============================================================================\n-- G. WITH 句・階層問合せ\n--==============================================================================\n-- G-1. 副問合せのファクタリング\nWITH dept_stats AS (\n  SELECT department_id, AVG(salary) AS avg_sal\n  FROM   employees GROUP BY department_id\n)\nSELECT e.last_name, e.salary, ROUND(s.avg_sal) AS dept_avg\nFROM   employees e JOIN dept_stats s ON s.department_id = e.department_id\nWHERE  e.salary > s.avg_sal",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "CTE",
+          "message": "WITH dept_stats: evaluate each common table expression in the application (fetch its base tables through ScalarDB SQL)"
+        },
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "main query: expressions in the select list (ROUND(s.avg_sal)) -- compute them in the application"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, last_name, salary, department_id FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P1+P6, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        },
+        {
+          "severity": "INFO",
+          "code": "DESIGN",
+          "message": "employees: keep a summary table keyed by (department_id) -- partition key department_id -- updated with each write or by a batch, so the query reads one row per group instead of every employees row; store the count of non-NULL values too so SUM's NULL result can be reproduced"
+        }
+      ],
+      "plan": {
+        "pattern": "P1+P6",
+        "source_dialect": "oracle",
+        "source_sql": "--==============================================================================\n-- G. WITH 句・階層問合せ\n--==============================================================================\n-- G-1. 副問合せのファクタリング\nWITH dept_stats AS (\n  SELECT department_id, AVG(salary) AS avg_sal\n  FROM   employees GROUP BY department_id\n)\nSELECT e.last_name, e.salary, ROUND(s.avg_sal) AS dept_avg\nFROM   employees e JOIN dept_stats s ON s.department_id = e.department_id\nWHERE  e.salary > s.avg_sal",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "e",
+            "columns": [
+              "employee_id",
+              "last_name",
+              "salary",
+              "department_id"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, last_name, salary, department_id FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ],
+              [
+                "department_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "--==============================================================================\n-- G. WITH 句・階層問合せ\n--==============================================================================\n-- G-1. 副問合せのファクタリング\nWITH dept_stats AS (\n  SELECT department_id, AVG(salary) AS avg_sal\n  FROM   employees GROUP BY department_id\n)\nSELECT e.last_name, e.salary, ROUND(s.avg_sal) AS dept_avg\nFROM   employees e JOIN dept_stats s ON s.department_id = e.department_id\nWHERE  e.salary > s.avg_sal",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* ============================================================================== */ /* G. WITH 句・階層問合せ */ /* ============================================================================== */ /* G-1. 副問合せのファクタリング */ WITH dept_stats AS (SELECT department_id, AVG(salary) AS avg_sal FROM employees GROUP BY department_id) SELECT e.last_name, e.salary, ROUND(s.avg_sal) AS dept_avg FROM employees AS e JOIN dept_stats AS s ON s.department_id = e.department_id WHERE e.salary > s.avg_sal"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 31,
+      "source_sql": "-- G-2. CONNECT BY による階層問合せ [ORA]\nSELECT LEVEL,\n       LPAD(' ', 2 * (LEVEL - 1)) || last_name  AS org_chart,\n       SYS_CONNECT_BY_PATH(last_name, '/')       AS path,      -- [ORA]\n       CONNECT_BY_ISLEAF                         AS is_leaf,   -- [ORA]\n       CONNECT_BY_ROOT last_name                 AS root_name  -- [ORA]\nFROM   employees\nSTART  WITH manager_id IS NULL\nCONNECT BY PRIOR employee_id = manager_id\nORDER  SIBLINGS BY last_name",
+      "kind": "SELECT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "HIERARCHICAL",
+          "message": "main query: START WITH / CONNECT BY with CONNECT_BY_ISLEAF, CONNECT_BY_ROOT, LEVEL, SYS_CONNECT_BY_PATH -- walk the tree in the application (appside.Hierarchy) or precompute it into a table"
+        },
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "main query: expressions in the select list (LPAD(' ', 2 * (LEVEL - 1)) || last_name) -- compute them in the application"
+        },
+        {
+          "severity": "ERROR",
+          "code": "RESIDUAL_H2",
+          "message": "the H2 residual engine cannot run CONNECT BY (rewrite as recursive WITH, or walk the tree in the application); implement this part in the application"
+        },
+        {
+          "severity": "WARN",
+          "code": "APP_SEMANTICS",
+          "message": "NULLs sort last for ASC and first for DESC (also inside OVER (ORDER BY ...)); Java comparators need an explicit nullsFirst / nullsLast (appside.OracleOrdering)"
+        },
+        {
+          "severity": "WARN",
+          "code": "APP_SEMANTICS",
+          "message": "string ORDER BY follows NLS_SORT: BINARY is code-point order (AL32UTF8 byte order), which String.compareTo breaks for surrogate pairs (appside.OracleOrdering.BINARY); linguistic sorts such as JAPANESE_M need a Collator"
+        },
+        {
+          "severity": "WARN",
+          "code": "APP_SEMANTICS",
+          "message": "SYS_CONNECT_BY_PATH puts the separator before every value (the path starts with it) and fails with ORA-30004 when a value contains the separator"
+        },
+        {
+          "severity": "WARN",
+          "code": "APP_SEMANTICS",
+          "message": "CONNECT BY: LEVEL starts at 1 for the START WITH rows; a cycle raises ORA-01436 unless NOCYCLE"
+        },
+        {
+          "severity": "INFO",
+          "code": "DESIGN",
+          "message": "employees: precompute the hierarchy (node id -> parent, level, path) into a table keyed by node id and rebuild it when the tree changes, or cache the tree in the application; the tree is then read by key instead of scanning employees"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 32,
+      "source_sql": "-- G-3. 再帰 WITH（標準SQL、他DBへ移行しやすい書き方）\nWITH org (employee_id, last_name, manager_id, lvl, path) AS (\n  SELECT employee_id, last_name, manager_id, 1, CAST(last_name AS VARCHAR2(4000))\n  FROM   employees WHERE manager_id IS NULL\n  UNION ALL\n  SELECT e.employee_id, e.last_name, e.manager_id, o.lvl + 1, o.path || '/' || e.last_name\n  FROM   employees e JOIN org o ON e.manager_id = o.employee_id\n)\nSEARCH DEPTH FIRST BY last_name SET ord\nSELECT lvl, LPAD(' ', 2 * (lvl - 1)) || last_name AS org_chart, path\nFROM   org\nORDER  BY ord",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "CTE",
+          "message": "WITH org: evaluate each common table expression in the application (fetch its base tables through ScalarDB SQL)"
+        },
+        {
+          "severity": "ERROR",
+          "code": "SET_OP",
+          "message": "CTE org: UNION -- run each branch and combine the rows in the application"
+        },
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "main query: expressions in the select list (LPAD(' ', 2 * (lvl - 1)) || last_name) -- compute them in the application"
+        },
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "CTE org: expressions in the select list (CAST(last_name AS VARCHAR2(4000))) -- compute them in the application"
+        },
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "CTE org: expressions in the select list (o.lvl + 1; o.path || '/' || e.last_name) -- compute them in the application"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, last_name, manager_id FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P1+P6, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P1+P6",
+        "source_dialect": "oracle",
+        "source_sql": "-- G-3. 再帰 WITH（標準SQL、他DBへ移行しやすい書き方）\nWITH org (employee_id, last_name, manager_id, lvl, path) AS (\n  SELECT employee_id, last_name, manager_id, 1, CAST(last_name AS VARCHAR2(4000))\n  FROM   employees WHERE manager_id IS NULL\n  UNION ALL\n  SELECT e.employee_id, e.last_name, e.manager_id, o.lvl + 1, o.path || '/' || e.last_name\n  FROM   employees e JOIN org o ON e.manager_id = o.employee_id\n)\nSEARCH DEPTH FIRST BY last_name SET ord\nSELECT lvl, LPAD(' ', 2 * (lvl - 1)) || last_name AS org_chart, path\nFROM   org\nORDER  BY ord",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "employees",
+            "columns": [
+              "employee_id",
+              "last_name",
+              "manager_id"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, last_name, manager_id FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ],
+              [
+                "manager_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "/* G-3. 再帰 WITH（標準SQL、他DBへ移行しやすい書き方） */ WITH RECURSIVE org(employee_id, last_name, manager_id, lvl, path) AS (SELECT employee_id, last_name, manager_id, 1, CAST(last_name AS VARCHAR2(4000)) FROM employees WHERE manager_id IS NULL UNION ALL SELECT e.employee_id, e.last_name, e.manager_id, o.lvl + 1, o.path || '/' || e.last_name FROM employees e JOIN org o ON e.manager_id = o.employee_id) SEARCH DEPTH FIRST BY last_name SET ord SELECT lvl, LPAD(' ', 2 * (lvl - 1)) || last_name AS org_chart, path FROM org ORDER BY ord NULLS LAST",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* G-3. 再帰 WITH（標準SQL、他DBへ移行しやすい書き方） */ WITH org(employee_id, last_name, manager_id, lvl, path) AS (SELECT employee_id, last_name, manager_id, 1, CAST(last_name AS TEXT(4000)) FROM employees WHERE manager_id IS NULL UNION ALL SELECT e.employee_id, e.last_name, e.manager_id, o.lvl + 1, o.path || '/' || e.last_name FROM employees AS e JOIN org AS o ON e.manager_id = o.employee_id) SEARCH DEPTH FIRST BY last_name SET ord SELECT lvl, LPAD(' ', 2 * (lvl - 1)) || last_name AS org_chart, path FROM org ORDER BY ord NULLS LAST"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [
+          "employees: pushdown manager_id IS NULL",
+          "employees: referenced by several scopes with different predicates; fetching without predicate",
+          "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)",
+          "java: WITH RECURSIVE spelled out for H2"
+        ],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 33,
+      "source_sql": "-- G-4. CONNECT BY LEVEL による連番生成 [ORA]（カレンダー表などで頻出）\nSELECT DATE '2026-09-01' + LEVEL - 1 AS cal_date\nFROM   dual\nCONNECT BY LEVEL <= 7",
+      "kind": "SELECT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "HIERARCHICAL",
+          "message": "main query: START WITH / CONNECT BY with LEVEL -- walk the tree in the application (appside.Hierarchy) or precompute it into a table"
+        },
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "main query: expressions in the select list (TO_DATE('2026-09-01', 'YYYY-MM-DD') + LEVEL - 1) -- compute them in the application"
+        },
+        {
+          "severity": "ERROR",
+          "code": "RESIDUAL_H2",
+          "message": "the H2 residual engine cannot run CONNECT BY (rewrite as recursive WITH, or walk the tree in the application); implement this part in the application"
+        },
+        {
+          "severity": "WARN",
+          "code": "APP_SEMANTICS",
+          "message": "CONNECT BY: LEVEL starts at 1 for the START WITH rows; a cycle raises ORA-01436 unless NOCYCLE"
+        },
+        {
+          "severity": "INFO",
+          "code": "DESIGN",
+          "message": "dual: precompute the hierarchy (node id -> parent, level, path) into a table keyed by node id and rebuild it when the tree changes, or cache the tree in the application; the tree is then read by key instead of scanning dual"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 34,
+      "source_sql": "--==============================================================================\n-- H. その他 Oracle 固有の問合せ\n--==============================================================================\n-- H-1. フラッシュバック問合せ [ORA]（UNDO 保持期間内の過去データ参照）\nSELECT employee_id, salary\nFROM   employees AS OF TIMESTAMP (SYSTIMESTAMP - INTERVAL '1' MINUTE)\nWHERE  department_id = 60",
+      "kind": "PARSE_ERROR",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PARSE",
+          "message": "Invalid expression / Unexpected token. Line 6, Col: 32."
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 35,
+      "source_sql": "-- H-2. サンプリング [ORA]\nSELECT COUNT(*) FROM employees SAMPLE (50)",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "CLAUSE",
+          "message": "TABLESAMPLE on employees is not supported; it returns a random subset of the rows"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P1",
+        "source_dialect": "oracle",
+        "source_sql": "-- H-2. サンプリング [ORA]\nSELECT COUNT(*) FROM employees SAMPLE (50)",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "employees",
+            "columns": [
+              "employee_id"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "-- H-2. サンプリング [ORA]\nSELECT COUNT(*) FROM employees SAMPLE (50)",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* H-2. サンプリング [ORA] */ SELECT COUNT(*) FROM employees"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 36,
+      "source_sql": "-- H-3. ROWID [ORA]（重複行削除などで頻出）\nSELECT ROWID, employee_id FROM employees WHERE ROWNUM <= 3",
+      "kind": "SELECT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "ROWID",
+          "message": "pseudo-column ROWID does not exist in ScalarDB; use the primary key"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN",
+          "message": "not decomposable: pseudo-column ROWID cannot be fetched from ScalarDB"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 37,
+      "source_sql": "-- H-4. WITH 句内での PL/SQL 関数定義（12c+）[ORA]\nWITH\n  FUNCTION annual(p_sal NUMBER, p_comm NUMBER) RETURN NUMBER IS\n  BEGIN\n    RETURN p_sal * 12 * (1 + NVL(p_comm, 0))",
+      "kind": "PARSE_ERROR",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PARSE",
+          "message": "Expecting (. Line 3, Col: 17."
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 38,
+      "source_sql": "END",
+      "kind": "COLUMN",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "STATEMENT",
+          "message": "Column statements are not supported by ScalarDB SQL"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 39,
+      "source_sql": "SELECT last_name, annual(salary, commission_pct) AS annual_comp\nFROM   employees\nWHERE  department_id = 80",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "main query: expressions in the select list (ANNUAL(salary, commission_pct)) -- compute them in the application"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "INDEX_SCAN: SELECT employee_id, last_name, salary, commission_pct, department_id FROM hr.employees WHERE department_id = 80"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      ],
+      "plan": {
+        "pattern": "P1",
+        "source_dialect": "oracle",
+        "source_sql": "SELECT last_name, annual(salary, commission_pct) AS annual_comp\nFROM   employees\nWHERE  department_id = 80",
+        "fetch": [
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "employees",
+            "columns": [
+              "employee_id",
+              "last_name",
+              "salary",
+              "commission_pct",
+              "department_id"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "DATE",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [
+              {
+                "column": "department_id",
+                "op": "=",
+                "value": 80
+              }
+            ],
+            "scalardb_sql": "SELECT employee_id, last_name, salary, commission_pct, department_id FROM hr.employees WHERE department_id = 80",
+            "access_path": "INDEX_SCAN",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "SELECT last_name, annual(salary, commission_pct) AS annual_comp\nFROM   employees\nWHERE  department_id = 80",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "SELECT last_name, ANNUAL(salary, commission_pct) AS annual_comp FROM employees WHERE department_id = 80"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": false,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [
+          "employees: pushdown department_id = 80"
+        ],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    }
+  ]
+}

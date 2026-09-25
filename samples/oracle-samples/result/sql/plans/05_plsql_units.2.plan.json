@@ -1,0 +1,74 @@
+{
+  "pattern": "P1",
+  "source_dialect": "oracle",
+  "source_sql": "--==============================================================================\n-- 1. プロシージャ（IN / OUT / IN OUT、既定値）\n--==============================================================================\n\n-- 呼び出し（位置指定・名前指定）\n\n-- IN OUT パラメータ（NOCOPY で参照渡しのヒント）\n\n--==============================================================================\n-- 2. ファンクション（SQL から呼び出し可能）\n--==============================================================================\n\n-- 結果キャッシュ付きファンクション（参照系マスタの繰り返し参照向け）\n\nSELECT last_name, dept_name_of(department_id) AS dept, annual_comp(salary, commission_pct) AS annual\nFROM   employees\nORDER  BY annual DESC",
+  "fetch": [
+    {
+      "table": "employees",
+      "namespace": "hr",
+      "alias": "employees",
+      "columns": [
+        "employee_id",
+        "last_name",
+        "salary",
+        "commission_pct",
+        "department_id"
+      ],
+      "column_types": {
+        "employee_id": "INT",
+        "first_name": "TEXT",
+        "last_name": "TEXT",
+        "email": "TEXT",
+        "hire_date": "DATE",
+        "job_id": "TEXT",
+        "salary": "DOUBLE",
+        "commission_pct": "DOUBLE",
+        "manager_id": "INT",
+        "department_id": "INT"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT employee_id, last_name, salary, commission_pct, department_id FROM hr.employees",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "employee_id"
+        ]
+      ],
+      "residual_types": {}
+    }
+  ],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "/* ============================================================================== */ /* 1. プロシージャ（IN / OUT / IN OUT、既定値） */ /* ============================================================================== */ /* 呼び出し（位置指定・名前指定） */ /* IN OUT パラメータ（NOCOPY で参照渡しのヒント） */ /* ============================================================================== */ /* 2. ファンクション（SQL から呼び出し可能） */ /* ============================================================================== */ /* 結果キャッシュ付きファンクション（参照系マスタの繰り返し参照向け） */ SELECT last_name, DEPT_NAME_OF(department_id) AS dept, ANNUAL_COMP(salary, commission_pct) AS annual FROM employees ORDER BY annual DESC NULLS FIRST",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "/* ============================================================================== */ /* 1. プロシージャ（IN / OUT / IN OUT、既定値） */ /* ============================================================================== */ /* 呼び出し（位置指定・名前指定） */ /* IN OUT パラメータ（NOCOPY で参照渡しのヒント） */ /* ============================================================================== */ /* 2. ファンクション（SQL から呼び出し可能） */ /* ============================================================================== */ /* 結果キャッシュ付きファンクション（参照系マスタの繰り返し参照向け） */ SELECT last_name, DEPT_NAME_OF(department_id) AS dept, ANNUAL_COMP(salary, commission_pct) AS annual FROM employees ORDER BY annual DESC NULLS FIRST"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": true,
+    "row_limit": 10000
+  },
+  "unresolved": [
+    "employees: columns ['annual'] not in schema"
+  ],
+  "notes": [
+    "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+  ],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+    "scalar.db.scan_fetch_size": 1000,
+    "scalar.db.cluster.client.scan_fetch_size": 1000,
+    "scalar.db.cross_partition_scan.enabled": true,
+    "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+  }
+}

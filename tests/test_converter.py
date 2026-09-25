@@ -969,3 +969,16 @@ def test_values_without_a_column_list_are_fitted_by_the_table_definition_order()
     ddl = "CREATE TABLE b2 (id INT PRIMARY KEY, active TINYINT(1), ts DATETIME); "
     results, _ = convert_script(ddl + "INSERT INTO b2 VALUES (1, TRUE, '2024-09-01')", "mysql", decompose=False)
     assert "VALUES (1, 1, '2024-09-01 00:00:00')" in results[-1].converted[0]
+
+
+def test_split_statements_survives_dashed_banner_lines():
+    """A SQL*Plus script opens with lines of 80 dashes. The comments-only filter and the PL/SQL-block lookahead
+    backtracked exponentially over them (2026-09-24, samples/oracle-samples: 02_sql_query.sql never returned)."""
+    import time
+    from scalardb_migrate.converter import _split_statements
+    banner = ("-" * 80 + "\n") * 8
+    text = banner + "-- A. basic\nSELECT 1 FROM dual;\n" + banner + "SELECT 2 FROM dual;\n" + banner
+    t = time.monotonic()
+    stmts = _split_statements(text, "oracle")
+    assert time.monotonic() - t < 2
+    assert [s.splitlines()[-1] for s in stmts] == ["SELECT 1 FROM dual", "SELECT 2 FROM dual"]

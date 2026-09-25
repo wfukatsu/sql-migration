@@ -464,6 +464,59 @@ public final class Plsql {
    * result is the empty string, and an empty string in Oracle is NULL however it was arrived at. {@link
    * #concat} has always had the second rule; these did not.
    */
+  /** `INITCAP`: the first letter of each word upper-cased, the rest lower-cased (words split on non-letters/digits). */
+  public static String initcap(Object value) {
+    if (isNull(value)) return null;
+    StringBuilder out = new StringBuilder();
+    boolean start = true;
+    for (int cp : text(value).codePoints().toArray()) {
+      boolean word = Character.isLetterOrDigit(cp);
+      out.appendCodePoint(word ? (start ? Character.toUpperCase(cp) : Character.toLowerCase(cp)) : cp);
+      start = !word;
+    }
+    return out.toString();
+  }
+
+  /** `TRIM(x)`: both ends, spaces only; an empty result is NULL as in Oracle. */
+  public static String trim(Object value) {
+    return isNull(value) ? null : emptyIsNull(text(value).strip());
+  }
+
+  /** A PLS_INTEGER target: `i := i + 1` goes through {@link #add} (which returns Object) and lands in an Integer. */
+  public static Integer toInt(Object value) {
+    return isNull(value) ? null : num(value).intValueExact();
+  }
+
+  public static Long toLong(Object value) {
+    return isNull(value) ? null : num(value).longValueExact();
+  }
+
+  // DBMS_OUTPUT: the session's output buffer. Per thread here; nothing is written to a table, so a comparison
+  // of table state never sees it. `output()` hands the lines back and clears the buffer.
+  private static final ThreadLocal<java.util.List<String>> OUTPUT = ThreadLocal.withInitial(java.util.ArrayList::new);
+  private static final ThreadLocal<StringBuilder> OUTPUT_LINE = ThreadLocal.withInitial(StringBuilder::new);
+
+  public static void putLine(Object value) {
+    OUTPUT_LINE.get().append(isNull(value) ? "" : text(value));
+    newLine();
+  }
+
+  public static void put(Object value) {
+    OUTPUT_LINE.get().append(isNull(value) ? "" : text(value));
+  }
+
+  public static void newLine() {
+    OUTPUT.get().add(OUTPUT_LINE.get().toString());
+    OUTPUT_LINE.get().setLength(0);
+  }
+
+  public static java.util.List<String> output() {
+    java.util.List<String> lines = java.util.List.copyOf(OUTPUT.get());
+    OUTPUT.get().clear();
+    OUTPUT_LINE.get().setLength(0);
+    return lines;
+  }
+
   public static String rtrim(Object value) {
     return isNull(value) ? null : emptyIsNull(text(value).stripTrailing());
   }

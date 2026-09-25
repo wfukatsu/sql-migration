@@ -1,0 +1,291 @@
+{
+ "schemaVersion": 1,
+ "routines": [
+  {
+   "routine": "annual_comp",
+   "calls": [],
+   "external": []
+  },
+  {
+   "routine": "b04_1_variables",
+   "calls": [],
+   "external": [
+    "DBMS_OUTPUT.PUT_LINE"
+   ]
+  },
+  {
+   "routine": "b04_2_control_flow",
+   "calls": [],
+   "external": [
+    "DBMS_OUTPUT.PUT_LINE"
+   ]
+  },
+  {
+   "routine": "b04_3_implicit_cursor_attrs",
+   "calls": [
+    "emp_salary_audit_trg.body"
+   ],
+   "external": [
+    "DBMS_OUTPUT.PUT_LINE"
+   ]
+  },
+  {
+   "routine": "b04_4_1_explicit_cursor",
+   "calls": [],
+   "external": [
+    "DBMS_OUTPUT.PUT_LINE"
+   ]
+  },
+  {
+   "routine": "b04_4_2_cursor_for_loop",
+   "calls": [],
+   "external": [
+    "DBMS_OUTPUT.PUT_LINE"
+   ]
+  },
+  {
+   "routine": "b04_4_3_for_update_current_of",
+   "calls": [
+    "emp_dept_cap_trg.body",
+    "emp_salary_audit_trg.body"
+   ],
+   "external": []
+  },
+  {
+   "routine": "b04_4_4_ref_cursor",
+   "calls": [],
+   "external": [
+    "DBMS_OUTPUT.PUT_LINE"
+   ]
+  },
+  {
+   "routine": "b04_5_records_collections",
+   "calls": [],
+   "external": [
+    "DBMS_OUTPUT.PUT_LINE"
+   ]
+  },
+  {
+   "routine": "b04_6_1_predefined_exceptions",
+   "calls": [],
+   "external": [
+    "DBMS_OUTPUT.PUT_LINE"
+   ]
+  },
+  {
+   "routine": "b04_6_2_user_exceptions",
+   "calls": [],
+   "external": [
+    "DBMS_OUTPUT.PUT_LINE"
+   ]
+  },
+  {
+   "routine": "b05_1_call_raise_salary",
+   "calls": [
+    "raise_salary"
+   ],
+   "external": [
+    "DBMS_OUTPUT.PUT_LINE"
+   ]
+  },
+  {
+   "routine": "b05_3_call_emp_api",
+   "calls": [
+    "emp_api.call_count",
+    "emp_api.give_raise~1",
+    "emp_api.give_raise~2",
+    "emp_api.hire"
+   ],
+   "external": [
+    "DBMS_OUTPUT.PUT_LINE"
+   ]
+  },
+  {
+   "routine": "b05_4_call_log_msg",
+   "calls": [
+    "emp_dept_cap_trg.body",
+    "emp_salary_audit_trg.body",
+    "log_msg"
+   ],
+   "external": []
+  },
+  {
+   "routine": "b06_1_bulk_collect_limit",
+   "calls": [],
+   "external": [
+    "DBMS_OUTPUT.PUT_LINE"
+   ]
+  },
+  {
+   "routine": "b06_2_2_forall_returning",
+   "calls": [],
+   "external": [
+    "DBMS_OUTPUT.PUT_LINE"
+   ]
+  },
+  {
+   "routine": "b06_2_forall_save_exceptions",
+   "calls": [],
+   "external": [
+    "DBMS_OUTPUT.PUT_LINE"
+   ]
+  },
+  {
+   "routine": "b06_3_6_dbms_sql",
+   "calls": [],
+   "external": [
+    "DBMS_OUTPUT.NEW_LINE",
+    "DBMS_OUTPUT.PUT",
+    "DBMS_SQL.CLOSE_CURSOR",
+    "DBMS_SQL.COLUMN_VALUE",
+    "DBMS_SQL.DEFINE_COLUMN",
+    "DBMS_SQL.DESCRIBE_COLUMNS2",
+    "DBMS_SQL.EXECUTE",
+    "DBMS_SQL.FETCH_ROWS",
+    "DBMS_SQL.PARSE"
+   ]
+  },
+  {
+   "routine": "b06_3_native_dynamic_sql",
+   "calls": [],
+   "external": [
+    "DBMS_ASSERT.SIMPLE_SQL_NAME",
+    "DBMS_OUTPUT.PUT_LINE"
+   ]
+  },
+  {
+   "routine": "b06_4_collection_in_sql",
+   "calls": [],
+   "external": [
+    "DBMS_OUTPUT.PUT_LINE"
+   ]
+  },
+  {
+   "routine": "b06_5_2_scheduler_job",
+   "calls": [],
+   "external": [
+    "DBMS_SCHEDULER.CREATE_JOB"
+   ]
+  },
+  {
+   "routine": "b06_5_builtin_packages",
+   "calls": [],
+   "external": [
+    "DBMS_APPLICATION_INFO.SET_MODULE",
+    "DBMS_OUTPUT.PUT_LINE",
+    "DBMS_RANDOM.VALUE",
+    "DBMS_SESSION.SLEEP"
+   ]
+  },
+  {
+   "routine": "b06_6_conditional_compilation",
+   "calls": [],
+   "external": [
+    "DBMS_OUTPUT.PUT_LINE"
+   ]
+  },
+  {
+   "routine": "dept_name_of",
+   "calls": [],
+   "external": []
+  },
+  {
+   "routine": "dml_d_create_error_log",
+   "calls": [],
+   "external": [
+    "DBMS_ERRLOG.CREATE_ERROR_LOG"
+   ]
+  },
+  {
+   "routine": "emp_api.call_count",
+   "calls": [],
+   "external": []
+  },
+  {
+   "routine": "emp_api.get_by_dept",
+   "calls": [],
+   "external": []
+  },
+  {
+   "routine": "emp_api.give_raise~1",
+   "calls": [
+    "emp_api.validate_pct",
+    "emp_dept_cap_trg.body",
+    "emp_salary_audit_trg.body"
+   ],
+   "external": []
+  },
+  {
+   "routine": "emp_api.give_raise~2",
+   "calls": [
+    "emp_api.validate_pct"
+   ],
+   "external": []
+  },
+  {
+   "routine": "emp_api.hire",
+   "calls": [],
+   "external": []
+  },
+  {
+   "routine": "emp_api.validate_pct",
+   "calls": [],
+   "external": []
+  },
+  {
+   "routine": "emp_biu_trg.body",
+   "calls": [],
+   "external": []
+  },
+  {
+   "routine": "emp_dept_cap_trg.body",
+   "calls": [],
+   "external": []
+  },
+  {
+   "routine": "emp_dept_upd_v_trg.body",
+   "calls": [],
+   "external": []
+  },
+  {
+   "routine": "emp_grades",
+   "calls": [],
+   "external": []
+  },
+  {
+   "routine": "emp_salary_audit_trg.body",
+   "calls": [],
+   "external": []
+  },
+  {
+   "routine": "log_msg",
+   "calls": [],
+   "external": []
+  },
+  {
+   "routine": "normalize_name",
+   "calls": [],
+   "external": []
+  },
+  {
+   "routine": "raise_salary",
+   "calls": [
+    "emp_dept_cap_trg.body",
+    "emp_salary_audit_trg.body"
+   ],
+   "external": []
+  },
+  {
+   "routine": "setup_drop_objects",
+   "calls": [],
+   "external": []
+  },
+  {
+   "routine": "setup_gather_stats",
+   "calls": [],
+   "external": [
+    "DBMS_STATS.GATHER_SCHEMA_STATS"
+   ]
+  }
+ ]
+}
