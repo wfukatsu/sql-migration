@@ -224,3 +224,74 @@ def test_what_cannot_be_decided_statically_is_still_a_redesign(tmp_path):
     _, codes = _insert_after_rewrite(
         tmp_path, "INSERT INTO payments (order_id, amount, method) VALUES (p_order_id, 1, 'card');", body=body)
     assert "TRIGGER_REDESIGN" in codes
+
+
+# --- #47: a BEFORE trigger that rewrites :NEW is folded into the written values ------------------------------
+FOLD_TRIGGER = """CREATE OR REPLACE TRIGGER trg_payments_norm
+BEFORE INSERT OR UPDATE OF amount, method ON payments
+FOR EACH ROW
+BEGIN
+  :NEW.method := UPPER(:NEW.method);
+  IF :NEW.amount < 0 THEN
+    RAISE_APPLICATION_ERROR(-20030, 'negative');
+  END IF;
+END;
+/
+"""
+
+
+def _after_rewrite(tmp_path, statement: str, body: str):
+    from plsql.report import analyse
+
+    (tmp_path / "trg.trg").write_text(body, encoding="utf-8")
+    (tmp_path / "p.prc").write_text(
+        f"CREATE OR REPLACE PROCEDURE p(p_order_id NUMBER, p_id NUMBER, p_method VARCHAR2) IS\nBEGIN\n  {statement}\nEND;\n/\n",
+        encoding="utf-8")
+    analysis = analyse(str(tmp_path), "fixtures/plsql/src/schema.sql")
+    routine = next(r for m in analysis.program.modules for r in m.routines if r.id == "p")
+    return analysis, routine
+
+
+def test_an_assignment_to_new_is_folded_into_an_insert(tmp_path):
+    _, routine = _after_rewrite(
+        tmp_path, "INSERT INTO payments (payment_id, order_id, amount, method) VALUES (p_id, p_order_id, 1, p_method);",
+        FOLD_TRIGGER)
+    insert = next(s for s in _walk(routine.body) if s.kind == "SqlOperation" and s.sql_kind == "INSERT")
+    assert "UPPER(p_method)" in insert.original_sql, insert.original_sql
+    assert {"TRIGGER_FOLDED", "TRIGGER_APPLIED"} <= {d.code for d in insert.diagnostics}
+    assert "TRIGGER_REDESIGN" not in {d.code for d in insert.diagnostics}
+    call = next(s for s in _walk(routine.body) if s.kind == "Call")
+    assert "NEW.method => p_method" in call.arguments, "the body still runs its checks on the values as given"
+
+
+def test_an_assignment_to_a_column_the_update_does_not_set_reads_it_first(tmp_path):
+    _, routine = _after_rewrite(tmp_path, "UPDATE payments SET amount = 1 WHERE payment_id = p_id;", FOLD_TRIGGER)
+    update = next(s for s in _walk(routine.body) if s.kind == "SqlOperation" and s.sql_kind == "UPDATE")
+    read = next(s for s in _walk(routine.body) if s.kind == "SqlOperation" and s.sql_kind == "SELECT")
+    variable = read.into_targets[read.original_sql.upper().index("METHOD") > -1 and
+                                 [c.strip().lower() for c in read.original_sql[7:read.original_sql.upper().index(" FROM")].split(",")].index("method")]
+    assert f"method = UPPER({variable})" in update.original_sql, update.original_sql
+
+
+def test_the_body_reassigns_its_own_argument(tmp_path):
+    from plsql.gen_java.service import generate_module
+
+    analysis, _ = _after_rewrite(
+        tmp_path, "INSERT INTO payments (payment_id, order_id, amount, method) VALUES (p_id, p_order_id, 1, p_method);",
+        FOLD_TRIGGER)
+    trigger = next(m for m in analysis.program.modules if m.module_kind == "trigger")
+    java = generate_module(trigger, "g.app", "g.infra", "g.domain", program=analysis.program).file.render()
+    assert "newMethod = Plsql.upper(newMethod);" in java, java
+    assert "UnsupportedOperationException" not in java
+
+
+@pytest.mark.parametrize("assignment", [
+    "IF :NEW.amount > 0 THEN :NEW.method := UPPER(:NEW.method); END IF;",     # conditional: the writer cannot fold it
+    "v := 'X'; :NEW.method := v;",                                            # reads a local the writer does not have
+])
+def test_an_assignment_the_writer_cannot_fold_stays_a_redesign(tmp_path, assignment):
+    body = FOLD_TRIGGER.replace("BEGIN\n  :NEW.method := UPPER(:NEW.method);", f"DECLARE\n  v VARCHAR2(10);\nBEGIN\n  {assignment}")
+    _, routine = _after_rewrite(
+        tmp_path, "INSERT INTO payments (payment_id, order_id, amount, method) VALUES (p_id, p_order_id, 1, p_method);", body)
+    insert = next(s for s in _walk(routine.body) if s.kind == "SqlOperation" and s.sql_kind == "INSERT")
+    assert "TRIGGER_REDESIGN" in {d.code for d in insert.diagnostics}

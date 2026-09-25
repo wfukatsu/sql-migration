@@ -31,6 +31,10 @@ TRIGGER_DECISION = ("#12: 書き込む側が trigger を呼ぶ。他の書き込
                     "docs/plsql-migration/plsql-trigger-patterns.md")
 
 
+FOLD_DECISION = ("#12 / #47: :NEW を書き換える代入は、書く側が書く値に畳み込む。検査（RAISE）は呼び出しで行う",
+                 "docs/plsql-migration/plsql-trigger-patterns.md C-2")
+
+
 SEQUENCE_DECISION = ("計画 §9: 採番は移行先の方式（counters 表 / hi-lo）で取り、書き込む側の INSERT に織り込む",
                      "キーを書かない INSERT は ScalarDB が拒否するので、この経路を通らない書き込みは黙って通らず、失敗する")
 
@@ -110,7 +114,9 @@ def _answer(rule_id: str, routine: M.Routine, module: M.Module | None, decided: 
 
         shape = Trigger(module=module, routine=routine, table=(module.trigger_table or "").lower(),
                         timing=(module.trigger_timing or "BEFORE").upper(), event=(module.trigger_event or "").upper())
-        return SEQUENCE_DECISION if shape.sequence_key() is not None else None
+        if shape.sequence_key() is not None:
+            return SEQUENCE_DECISION
+        return FOLD_DECISION if shape.foldable_assignments() is not None else None
     return None
 
 
