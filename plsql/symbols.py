@@ -64,6 +64,10 @@ class OracleSchema:
 
     # {table: {column: (start, increment)}} for IDENTITY columns
     identity: dict[str, dict[str, tuple[int, int]]] = field(default_factory=dict)
+    # {table: {column: "<expression>"}} for columns with a DEFAULT clause. Oracle fills them when an INSERT
+    # leaves them out; ScalarDB has no DEFAULT, so the writer has to (`plsql.identity`). Found with
+    # samples/oracle-samples `emp_audit.changed_by DEFAULT USER` / `changed_at DEFAULT SYSTIMESTAMP` (2026-09-25)
+    defaults: dict[str, dict[str, str]] = field(default_factory=dict)
 
     @classmethod
     def from_ddl(cls, path: str | Path) -> "OracleSchema":
@@ -84,6 +88,12 @@ class OracleSchema:
             for column in statement.find_all(exp.ColumnDef):
                 columns[column.name.lower()] = column.args["kind"].sql(dialect="oracle")
                 for constraint in column.constraints:
+                    if isinstance(constraint.kind, exp.DefaultColumnConstraint):
+                        default = constraint.kind.this
+                        if not isinstance(default, exp.Null):   # `DEFAULT NULL` is what an omitted column gets anyway
+                            schema.defaults.setdefault(table.name.lower(), {})[column.name.lower()] = \
+                                default.sql(dialect="oracle")
+                        continue
                     generated = IDENTITY.match(constraint.sql(dialect="oracle"))
                     if generated:
                         # `GENERATED [ALWAYS | BY DEFAULT] AS IDENTITY [(START WITH n INCREMENT BY m)]`: the
