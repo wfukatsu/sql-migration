@@ -19,6 +19,8 @@ Oracle の cursor は**トランザクションをまたいで保持される位
 | D. 走査しながら**同じ表**を更新 | **拒否する** | 拒否 | 再設計（下記） |
 | E. 走査しながら**別の表**を更新 | 全行を読んでから Java で回す | 生成する（上限つき） | routine ごとの上限値、部分失敗 |
 | F. `BULK COLLECT LIMIT` | 明示的な分割読み | n 件ずつ配るループ | 走査行数の上限（LIMIT はもうメモリを守らない） |
+| H. cursor 変数（`OPEN rc FOR q` … FETCH … CLOSE） | A〜C・F と同じ形に、OPEN の問合せで当てる。IF の分岐ごとに別の問合せで開く形は分岐ごとのループ | 生成する（上限つき） | routine ごとの上限値（#44） |
+| I. cursor 変数を呼び出し側へ返す（`OPEN rc FOR q; RETURN rc;`） | 行を読んで `List<行の record>` を返す | 生成する（上限つき） | 呼び出し側の受け取り方が変わる（FETCH → List）。上限値 |
 
 ---
 
@@ -298,6 +300,16 @@ ScalarDB SQL は列を読む式を受け付けない。#9 の RMW 書き換え�
 ScalarDB が拒む SQL は 2 -> **1** になった。
 
 ---
+
+## H / I. cursor 変数（SYS_REFCURSOR）— 2026-09-25 / #44
+
+`OPEN rc FOR SELECT …` は cursor の宣言を持たないので、以前は下ろせなかった（Unsupported）。いまは OPEN 自身の問合せを cursor の問合せとして、
+A〜C・F の形をそのまま当てる。`IF … THEN OPEN rc FOR q1; ELSE OPEN rc FOR q2; END IF; LOOP FETCH rc …; CLOSE rc;` のように**分岐が問合せを選ぶだけ**の形は、
+分岐ごとにその問合せのループにする（本体は同じ、行だけが違う）。ELSE の無い IF は、開かれない経路（Oracle では FETCH で ORA-01001）を模していないので触らない。
+
+`OPEN rc FOR q; RETURN rc;` は cursor を呼び出し側へ渡す形で、移行先に渡せる cursor は無い。行を読んで `List<行の record>` を返す method にし、
+呼び出し側の受け取り方が変わることを signature で見せる（`public List<GetByDeptLoop1Row> getByDept(...)`）。
+実 DB の証拠: samples/oracle-samples の `b04_4_4_ref_cursor` が一致（2026-09-25）。
 
 ## 共通して決めておくこと
 

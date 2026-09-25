@@ -181,7 +181,7 @@ ERROR の読み取り文には、文全体（CTE の本体、サブクエリを�
 | `PROJECTION` / `GROUP` / `PRED` / `ORDER` | ERROR | 射影・GROUP BY・WHERE・ORDER BY の式や関数。どのスコープかと、射影と GROUP BY は式そのもの、WHERE と ORDER BY は関数名を列挙する |
 | `AGG` | ERROR | 集約関数が対応外（COUNT / SUM / AVG / MIN / MAX 以外）か、対応する関数の引数が列でなく式（`SUM(qty * price)`） |
 | `PIVOT` / `DISTINCT` / `OFFSET` / `NOW` | ERROR | それぞれの構文。`NOW` は時刻をアプリで計算してバインドする |
-| `RESIDUAL_H2` | ERROR | 実行計画の H2 が実行できない構文（`CONNECT BY`、`ROLLUP` / `CUBE` / `GROUPING SETS`、`PIVOT` / `UNPIVOT`、`KEEP`）。計画を作らない |
+| `RESIDUAL_H2` | ERROR | 実行計画の H2 が実行できない構文（`CONNECT BY`、`ROLLUP` / `CUBE` / `GROUPING SETS`、`PIVOT` / `UNPIVOT`、`KEEP`、`FULL OUTER JOIN`、`LATERAL` / `CROSS APPLY`、`SAMPLE`、再帰 WITH の `SEARCH` 句、`JSON_TABLE`）。計画を作らない。後ろの 5 つは実 Oracle が受け付けたのに H2 2.5 が拒んだもの（samples/oracle-samples、#31〜#33） |
 | `FULL_SCAN` | ERROR | `--storage cassandra` で、キーでもインデックスでも読めない表。すべての表を列挙し、結合相手のキーで読む方法（CTE の列もたどる）を提案する |
 | `APP_SEMANTICS` | WARN | アプリで書き換えるときに結果を変えないための注意。計画（H2 が元の SQL を実行する）には付かない |
 | `DESIGN` | INFO | 集計表、階層の事前計算、結合列のキー・インデックス、ScalarDB Analytics の提案 |
