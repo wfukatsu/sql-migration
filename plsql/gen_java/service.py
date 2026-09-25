@@ -480,7 +480,16 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
             # handler の中の `SQLCODE` は「いま処理している例外の番号」である。catch が束ねている
             # 例外がそれを持っているので、そこから読む。handler の外では 0 なので、外では置かない
             # ——「いつでも 0」を名前として与えると、handler の外の `SQLCODE` が黙って通る
+            # SQLERRM is the message with its ORA- prefix, and FORMAT_ERROR_BACKTRACE the "ORA-06512: at" lines:
+            # both read from the caught exception (#38, samples/oracle-samples b04_6_2_user_exceptions)
+            f.add_import("com.scalar.migrate.plsql.Plsql")
+            errm = f"Plsql.sqlerrm({variable}.code(), {variable}.getMessage())"
+            backtrace = f"Plsql.errorBacktrace({variable})"
             _HANDLER_ERROR.set({"SQLCODE": f"{variable}.code()", "sqlcode": f"{variable}.code()",
+                                "SQLERRM": errm, "sqlerrm": errm,
+                                "DBMS_UTILITY.FORMAT_ERROR_BACKTRACE": backtrace,
+                                "dbms_utility.format_error_backtrace": backtrace,
+                                "DBMS_UTILITY.FORMAT_ERROR_STACK": errm, "dbms_utility.format_error_stack": errm,
                                 _CAUGHT: variable})
             try:
                 _statements(f, handler.body, routine, result)
