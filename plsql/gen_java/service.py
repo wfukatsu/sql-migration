@@ -539,7 +539,20 @@ def _cannot_happen_on_the_target(names: list[str], routine: M.Routine) -> bool:
 
 
 def _always_throws(statement: M.Statement, result: ServiceFile) -> bool:
-    return statement.id in result.untranslated or statement.kind == "Raise"
+    """Does the Java emitted for this statement always leave by throwing?
+
+    A refused statement and RAISE do. So does an if / else (or CASE, whose missing ELSE throws CASE_NOT_FOUND)
+    every branch of which does: javac then rejects whatever follows as unreachable, which is what happened when
+    both arms of an IF opened a REF CURSOR the generator could not translate (#36, samples/oracle-samples).
+    """
+    if statement.id in result.untranslated or statement.kind == "Raise":
+        return True
+    if statement.kind in ("If", "Case"):
+        branches = all(any(_always_throws(s, result) for s in b.body) for b in statement.branches)
+        if statement.else_body:
+            return branches and any(_always_throws(s, result) for s in statement.else_body)
+        return branches and statement.kind == "Case"
+    return False
 
 
 def _always_exits(routine: M.Routine, result: ServiceFile) -> bool:
