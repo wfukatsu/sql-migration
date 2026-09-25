@@ -32,7 +32,15 @@ com/example/migrated/application/B042ControlFlowService.java,b042ControlFlow @ b
 com/example/migrated/application/B042ControlFlowService.java,b042ControlFlow @ b04_2_control_flow.prc:47,b04_2_control_flow.prc,47,47,Exit,REVIEW,not-generated
 com/example/migrated/application/B042ControlFlowService.java,b042ControlFlow @ b04_2_control_flow.prc:48,b04_2_control_flow.prc,48,48,Call,REVIEW,not-generated
 com/example/migrated/application/B043ImplicitCursorAttrsService.java,b043ImplicitCursorAttrs,b04_3_implicit_cursor_attrs.prc,2,12,routine,REDESIGN,not-generated
+com/example/migrated/application/B043ImplicitCursorAttrsService.java,b043ImplicitCursorAttrs @ b04_3_implicit_cursor_attrs.prc:4,b04_3_implicit_cursor_attrs.prc,4,4,Loop,REDESIGN,not-generated
 com/example/migrated/application/B043ImplicitCursorAttrsService.java,b043ImplicitCursorAttrs @ b04_3_implicit_cursor_attrs.prc:4,b04_3_implicit_cursor_attrs.prc,4,4,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/B043ImplicitCursorAttrsService.java,b043ImplicitCursorAttrs @ b04_3_implicit_cursor_attrs.prc:4,b04_3_implicit_cursor_attrs.prc,4,4,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/B043ImplicitCursorAttrsService.java,b043ImplicitCursorAttrs @ b04_3_implicit_cursor_attrs.prc:4,b04_3_implicit_cursor_attrs.prc,4,4,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/B043ImplicitCursorAttrsService.java,b043ImplicitCursorAttrs @ b04_3_implicit_cursor_attrs.prc:4,b04_3_implicit_cursor_attrs.prc,4,4,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/B043ImplicitCursorAttrsService.java,b043ImplicitCursorAttrs @ b04_3_implicit_cursor_attrs.prc:4,b04_3_implicit_cursor_attrs.prc,4,4,If,REDESIGN,not-generated
+com/example/migrated/application/B043ImplicitCursorAttrsService.java,b043ImplicitCursorAttrs @ b04_3_implicit_cursor_attrs.prc:4,b04_3_implicit_cursor_attrs.prc,4,4,Call,REDESIGN,not-generated
+com/example/migrated/application/B043ImplicitCursorAttrsService.java,b043ImplicitCursorAttrs @ b04_3_implicit_cursor_attrs.prc:4,b04_3_implicit_cursor_attrs.prc,4,4,If,REDESIGN,not-generated
+com/example/migrated/application/B043ImplicitCursorAttrsService.java,b043ImplicitCursorAttrs @ b04_3_implicit_cursor_attrs.prc:4,b04_3_implicit_cursor_attrs.prc,4,4,Call,REDESIGN,not-generated
 com/example/migrated/application/B043ImplicitCursorAttrsService.java,b043ImplicitCursorAttrs @ b04_3_implicit_cursor_attrs.prc:5,b04_3_implicit_cursor_attrs.prc,5,5,Call,REDESIGN,not-generated
 com/example/migrated/application/B043ImplicitCursorAttrsService.java,b043ImplicitCursorAttrs @ b04_3_implicit_cursor_attrs.prc:7,b04_3_implicit_cursor_attrs.prc,7,7,SqlOperation,REDESIGN,not-generated
 com/example/migrated/application/B043ImplicitCursorAttrsService.java,b043ImplicitCursorAttrs @ b04_3_implicit_cursor_attrs.prc:7,b04_3_implicit_cursor_attrs.prc,7,7,SqlOperation,REDESIGN,not-generated
@@ -56,6 +64,7 @@ com/example/migrated/application/B0442CursorForLoopService.java,b0442CursorForLo
 com/example/migrated/application/B0443ForUpdateCurrentOfService.java,b0443ForUpdateCurrentOf,b04_4_3_for_update_current_of.prc,2,12,routine,REDESIGN,not-generated
 com/example/migrated/application/B0443ForUpdateCurrentOfService.java,b0443ForUpdateCurrentOf @ b04_4_3_for_update_current_of.prc:8,b04_4_3_for_update_current_of.prc,8,10,Loop,REDESIGN,not-generated
 com/example/migrated/application/B0443ForUpdateCurrentOfService.java,b0443ForUpdateCurrentOf @ b04_4_3_for_update_current_of.prc:8,b04_4_3_for_update_current_of.prc,8,10,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/B0443ForUpdateCurrentOfService.java,b0443ForUpdateCurrentOf @ b04_4_3_for_update_current_of.prc:9,b04_4_3_for_update_current_of.prc,9,9,SqlOperation,REDESIGN,not-generated
 com/example/migrated/application/B0443ForUpdateCurrentOfService.java,b0443ForUpdateCurrentOf @ b04_4_3_for_update_current_of.prc:9,b04_4_3_for_update_current_of.prc,9,9,SqlOperation,REDESIGN,not-generated
 com/example/migrated/application/B0443ForUpdateCurrentOfService.java,b0443ForUpdateCurrentOf @ b04_4_3_for_update_current_of.prc:9,b04_4_3_for_update_current_of.prc,9,9,SqlOperation,REDESIGN,not-generated
 com/example/migrated/application/B0443ForUpdateCurrentOfService.java,b0443ForUpdateCurrentOf @ b04_4_3_for_update_current_of.prc:9,b04_4_3_for_update_current_of.prc,9,9,SqlOperation,REDESIGN,not-generated
@@ -133,6 +142,7 @@ com/example/migrated/application/B053CallEmpApiService.java,b053CallEmpApi @ b05
 com/example/migrated/application/B053CallEmpApiService.java,b053CallEmpApi @ b05_3_call_emp_api.prc:14,b05_3_call_emp_api.prc,14,14,Call,REDESIGN,not-generated
 com/example/migrated/application/B053CallEmpApiService.java,b053CallEmpApi @ b05_3_call_emp_api.prc:15,b05_3_call_emp_api.prc,15,15,Rollback,REDESIGN,not-generated
 com/example/migrated/application/B054CallLogMsgService.java,b054CallLogMsg,b05_4_call_log_msg.prc,2,7,routine,REDESIGN,not-generated
+com/example/migrated/application/B054CallLogMsgService.java,b054CallLogMsg @ b05_4_call_log_msg.prc:4,b05_4_call_log_msg.prc,4,4,SqlOperation,REDESIGN,not-generated
 com/example/migrated/application/B054CallLogMsgService.java,b054CallLogMsg @ b05_4_call_log_msg.prc:4,b05_4_call_log_msg.prc,4,4,SqlOperation,REDESIGN,not-generated
 com/example/migrated/application/B054CallLogMsgService.java,b054CallLogMsg @ b05_4_call_log_msg.prc:4,b05_4_call_log_msg.prc,4,4,SqlOperation,REDESIGN,not-generated
 com/example/migrated/application/B054CallLogMsgService.java,b054CallLogMsg @ b05_4_call_log_msg.prc:4,b05_4_call_log_msg.prc,4,4,SqlOperation,REDESIGN,not-generated
@@ -237,6 +247,7 @@ com/example/migrated/application/EmpApiService.java,giveRaise1 @ emp_api.pkb:32,
 com/example/migrated/application/EmpApiService.java,giveRaise1 @ emp_api.pkb:33,emp_api.pkb,33,33,SqlOperation,REDESIGN,not-generated
 com/example/migrated/application/EmpApiService.java,giveRaise1 @ emp_api.pkb:33,emp_api.pkb,33,33,SqlOperation,REDESIGN,not-generated
 com/example/migrated/application/EmpApiService.java,giveRaise1 @ emp_api.pkb:33,emp_api.pkb,33,33,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/EmpApiService.java,giveRaise1 @ emp_api.pkb:33,emp_api.pkb,33,33,SqlOperation,REDESIGN,not-generated
 com/example/migrated/application/EmpApiService.java,giveRaise1 @ emp_api.pkb:33,emp_api.pkb,33,33,If,REDESIGN,not-generated
 com/example/migrated/application/EmpApiService.java,giveRaise1 @ emp_api.pkb:33,emp_api.pkb,33,33,Call,REDESIGN,not-generated
 com/example/migrated/application/EmpApiService.java,giveRaise1 @ emp_api.pkb:33,emp_api.pkb,33,33,If,REDESIGN,not-generated
@@ -244,7 +255,15 @@ com/example/migrated/application/EmpApiService.java,giveRaise1 @ emp_api.pkb:33,
 com/example/migrated/application/EmpApiService.java,giveRaise2,emp_api.pkb,36,42,routine,REDESIGN,not-generated
 com/example/migrated/application/EmpApiService.java,giveRaise2 @ emp_api.pkb:38,emp_api.pkb,38,38,Call,REDESIGN,not-generated
 com/example/migrated/application/EmpApiService.java,giveRaise2 @ emp_api.pkb:39,emp_api.pkb,39,41,If,REDESIGN,not-generated
+com/example/migrated/application/EmpApiService.java,giveRaise2 @ emp_api.pkb:40,emp_api.pkb,40,40,Loop,REDESIGN,not-generated
 com/example/migrated/application/EmpApiService.java,giveRaise2 @ emp_api.pkb:40,emp_api.pkb,40,40,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/EmpApiService.java,giveRaise2 @ emp_api.pkb:40,emp_api.pkb,40,40,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/EmpApiService.java,giveRaise2 @ emp_api.pkb:40,emp_api.pkb,40,40,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/EmpApiService.java,giveRaise2 @ emp_api.pkb:40,emp_api.pkb,40,40,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/EmpApiService.java,giveRaise2 @ emp_api.pkb:40,emp_api.pkb,40,40,If,REDESIGN,not-generated
+com/example/migrated/application/EmpApiService.java,giveRaise2 @ emp_api.pkb:40,emp_api.pkb,40,40,Call,REDESIGN,not-generated
+com/example/migrated/application/EmpApiService.java,giveRaise2 @ emp_api.pkb:40,emp_api.pkb,40,40,If,REDESIGN,not-generated
+com/example/migrated/application/EmpApiService.java,giveRaise2 @ emp_api.pkb:40,emp_api.pkb,40,40,Call,REDESIGN,not-generated
 com/example/migrated/application/EmpApiService.java,getByDept,emp_api.pkb,44,51,routine,REDESIGN,not-generated
 com/example/migrated/application/EmpApiService.java,getByDept @ emp_api.pkb:47,emp_api.pkb,47,49,Loop,REDESIGN,not-generated
 com/example/migrated/application/EmpApiService.java,getByDept @ emp_api.pkb:47,emp_api.pkb,47,49,SqlOperation,REDESIGN,not-generated
@@ -278,9 +297,11 @@ com/example/migrated/application/RaiseSalaryService.java,raiseSalary,raise_salar
 com/example/migrated/application/RaiseSalaryService.java,raiseSalary @ raise_salary.prc:8,raise_salary.prc,8,11,SqlOperation,REDESIGN,not-generated
 com/example/migrated/application/RaiseSalaryService.java,raiseSalary @ raise_salary.prc:8,raise_salary.prc,8,11,SqlOperation,REDESIGN,not-generated
 com/example/migrated/application/RaiseSalaryService.java,raiseSalary @ raise_salary.prc:8,raise_salary.prc,8,11,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/RaiseSalaryService.java,raiseSalary @ raise_salary.prc:8,raise_salary.prc,8,11,SqlOperation,REDESIGN,not-generated
 com/example/migrated/application/RaiseSalaryService.java,raiseSalary @ raise_salary.prc:8,raise_salary.prc,8,11,If,REDESIGN,not-generated
 com/example/migrated/application/RaiseSalaryService.java,raiseSalary @ raise_salary.prc:8,raise_salary.prc,8,11,Call,REDESIGN,not-generated
 com/example/migrated/application/RaiseSalaryService.java,raiseSalary @ raise_salary.prc:8,raise_salary.prc,8,11,If,REDESIGN,not-generated
 com/example/migrated/application/RaiseSalaryService.java,raiseSalary @ raise_salary.prc:8,raise_salary.prc,8,11,Call,REDESIGN,not-generated
+com/example/migrated/application/RaiseSalaryService.java,raiseSalary @ raise_salary.prc:8,raise_salary.prc,8,11,Assignment,REDESIGN,not-generated
 com/example/migrated/application/RaiseSalaryService.java,raiseSalary @ raise_salary.prc:13,raise_salary.prc,13,15,If,REDESIGN,not-generated
 com/example/migrated/application/RaiseSalaryService.java,raiseSalary @ raise_salary.prc:14,raise_salary.prc,14,14,Raise,REDESIGN,not-generated

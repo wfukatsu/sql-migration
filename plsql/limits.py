@@ -99,6 +99,10 @@ class Boundaries:
     # 自分だけで 1 つのトランザクションになる routine（自律トランザクション / #3 §G）。
     # 呼び出し側のトランザクションとは**別に**回す——同じ中で呼ぶと、親の rollback で一緒に消える
     separate: dict[str, str] = field(default_factory=dict)
+    # routine の中の COMMIT / ROLLBACK / SAVEPOINT を**呼び出し側の境界に移す**と決めた routine（2026-09-25、
+    # samples/oracle-samples）。生成コードはその文を出さず、commit も rollback も呼び出し側が行う。
+    # 途中の ROLLBACK が戻していた分は、呼び出し側が戻さないかぎり残る——意味が変わる決定である
+    caller: dict[str, str] = field(default_factory=dict)
     source: str | None = None
 
     @classmethod
@@ -112,17 +116,25 @@ class Boundaries:
         transactions = data.get("transactions") or {}
         section = transactions.get("perIteration") or {}
         separate = transactions.get("separate") or {}
-        both = sorted(set(section) & set(separate))
+        caller = transactions.get("callerBoundary") or {}
+        names = [set(section), set(separate), set(caller)]
+        both = sorted((names[0] & names[1]) | (names[0] & names[2]) | (names[1] & names[2]))
         if both:
-            raise ValueError(f"{both} が perIteration と separate の両方にある。境界の形はどちらか一方である")
+            raise ValueError(f"{both} が perIteration / separate / callerBoundary の 2 つ以上にある。境界の形は 1 つである")
         return cls(per_iteration={str(k): str(v).strip() for k, v in section.items()},
-                   separate={str(k): str(v).strip() for k, v in separate.items()}, source=str(file))
+                   separate={str(k): str(v).strip() for k, v in separate.items()},
+                   caller={str(k): str(v).strip() for k, v in caller.items()}, source=str(file))
 
     def decided(self, routine: str) -> bool:
-        return routine in self.per_iteration or routine in self.separate
+        return routine in self.per_iteration or routine in self.separate or routine in self.caller
 
     def why(self, routine: str) -> str | None:
-        return self.per_iteration.get(routine) or self.separate.get(routine)
+        return self.per_iteration.get(routine) or self.separate.get(routine) or self.caller.get(routine)
+
+    def where(self, routine: str) -> str:
+        if routine in self.per_iteration:
+            return "perIteration"
+        return "separate" if routine in self.separate else "callerBoundary"
 
 
 @dataclass

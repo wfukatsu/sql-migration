@@ -123,6 +123,7 @@
        },
        "sqlKind": "INSERT",
        "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, new_value, changed_at, changed_by)\n  VALUES (seq_audit_id.NEXTVAL, p_table_name, p_key_value, p_action, p_new_value, SYSTIMESTAMP, USER)",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false

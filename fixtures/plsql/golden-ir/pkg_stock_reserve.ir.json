@@ -118,6 +118,7 @@
        ],
        "sqlKind": "SELECT",
        "originalSql": "SELECT stock_qty INTO v_stock FROM products WHERE product_id = p_product_id FOR UPDATE",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false,
@@ -166,6 +167,7 @@
        },
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE products SET stock_qty = v_stock - p_qty WHERE product_id = p_product_id",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false
@@ -299,6 +301,7 @@
        ],
        "sqlKind": "SELECT",
        "originalSql": "SELECT stock_qty INTO v_stock FROM products WHERE product_id = p_product_id FOR UPDATE NOWAIT",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false,
@@ -316,6 +319,7 @@
        },
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE products SET stock_qty = v_stock - p_qty WHERE product_id = p_product_id",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false
@@ -429,6 +433,7 @@
        ],
        "sqlKind": "SELECT",
        "originalSql": "SELECT next_value INTO v_next FROM counters WHERE counter_name = 'PAYMENT_ID' FOR UPDATE",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false,
@@ -446,6 +451,7 @@
        },
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE counters SET next_value = v_next + 1 WHERE counter_name = 'PAYMENT_ID'",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false
@@ -564,6 +570,7 @@
         ],
         "sqlKind": "SELECT",
         "originalSql": "SELECT order_id FROM orders WHERE status = 'NEW' AND ROWNUM <= p_limit\n      FOR UPDATE SKIP LOCKED",
+        "accumulates_rowcount": false,
         "selectsStar": false,
         "cardinality": "MANY",
         "atMostOneRow": false,
@@ -598,6 +605,7 @@
          ],
          "sqlKind": "UPDATE",
          "originalSql": "UPDATE orders SET status = 'CLAIMED' WHERE order_id = r.order_id",
+         "accumulates_rowcount": false,
          "selectsStar": false,
          "cardinality": "UNKNOWN",
          "atMostOneRow": false

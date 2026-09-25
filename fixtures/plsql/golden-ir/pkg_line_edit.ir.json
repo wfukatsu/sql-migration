@@ -143,6 +143,7 @@
        },
        "sqlKind": "INSERT",
        "originalSql": "INSERT INTO order_lines (order_id, line_no, product_id, qty, unit_price)\n    VALUES (p_order_id, p_line_no, p_product_id, p_qty, p_unit_price)",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false
@@ -247,6 +248,7 @@
        },
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE order_lines SET qty = p_qty WHERE order_id = p_order_id AND line_no = p_line_no",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false
@@ -331,6 +333,7 @@
        },
        "sqlKind": "DELETE",
        "originalSql": "DELETE FROM order_lines WHERE order_id = p_order_id AND line_no = p_line_no",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false
@@ -395,6 +398,7 @@
        },
        "sqlKind": "DELETE",
        "originalSql": "DELETE FROM inventory_tx WHERE entry_id = p_entry_id",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false

@@ -92,8 +92,8 @@ def emit(file: JavaFile, module: M.Module, routine: M.Routine, result, domain_pa
     いままでどおり 1 つの method として出す。"""
     from .service import _method, _source_comment
 
-    if not _BOUNDARIES.get().decided(routine.id):
-        return False
+    if not _BOUNDARIES.get().decided(routine.id) or routine.id in _BOUNDARIES.get().caller:
+        return False   # callerBoundary: one method, its COMMIT / ROLLBACK left out (service._translate_statement)
     if routine.id in _BOUNDARIES.get().separate:
         return _separate(file, module, routine, result, domain_package)
     shape = _shape(routine)

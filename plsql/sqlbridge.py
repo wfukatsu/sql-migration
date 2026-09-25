@@ -400,6 +400,11 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
             continue
         name = column.name
         symbol = symbols.resolve(scope, name)
+        if symbol is None and "." in scope:
+            # a trigger declares its locals on the trigger (`symbols._trigger`), and its body is the routine
+            # `<trigger>.body`: `v_action` in the body's INSERT was read as a column and refused
+            # (samples/oracle-samples emp_salary_audit_trg, 2026-09-25)
+            symbol = symbols.resolve(scope.rsplit(".", 1)[0], name)
         if symbol is None or symbol.kind not in BIND_KINDS:
             continue
         if name.lower() in columns and not column.find_ancestor(exp.Values):

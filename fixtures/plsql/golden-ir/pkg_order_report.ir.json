@@ -372,6 +372,7 @@
         ],
         "sqlKind": "SELECT",
         "originalSql": "SELECT order_id FROM orders WHERE status = p_status",
+        "accumulates_rowcount": false,
         "selectsStar": false,
         "cardinality": "MANY",
         "atMostOneRow": false
@@ -391,6 +392,7 @@
          },
          "sqlKind": "UPDATE",
          "originalSql": "UPDATE orders SET note = 'reviewed' WHERE order_id = r.order_id",
+         "accumulates_rowcount": false,
          "selectsStar": false,
          "cardinality": "UNKNOWN",
          "atMostOneRow": false
@@ -500,6 +502,7 @@
        "intoTargets": [
         "v_amount"
        ],
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "AT_MOST_ONE",
        "notFoundFlag": "c_amounts",

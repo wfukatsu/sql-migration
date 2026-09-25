@@ -44,6 +44,10 @@ TYPE_ATTRIBUTE = re.compile(r"^\s*(?P<base>[\w$#.]+)\s*%\s*(?P<attr>TYPE|ROWTYPE
 
 # --- the Oracle side of the schema ------------------------------------------------------------------
 
+IDENTITY = re.compile(r"^GENERATED\s+(?:ALWAYS|BY\s+DEFAULT)(?:\s+ON\s+NULL)?\s+AS\s+IDENTITY\s*(?:\((?P<options>[^)]*)\))?\s*$",
+                      re.IGNORECASE)
+
+
 @dataclass
 class OracleSchema:
     """Column types as the Oracle DDL declares them, plus an id for the snapshot they came from.
@@ -57,6 +61,9 @@ class OracleSchema:
     # （#12: trigger を掛けてよい書き込みかどうかがこれで決まる）
     keys: dict[str, list[str]] = field(default_factory=dict)
     snapshot: str | None = None
+
+    # {table: {column: (start, increment)}} for IDENTITY columns
+    identity: dict[str, dict[str, tuple[int, int]]] = field(default_factory=dict)
 
     @classmethod
     def from_ddl(cls, path: str | Path) -> "OracleSchema":
@@ -76,6 +83,17 @@ class OracleSchema:
             columns: dict[str, str] = {}
             for column in statement.find_all(exp.ColumnDef):
                 columns[column.name.lower()] = column.args["kind"].sql(dialect="oracle")
+                for constraint in column.constraints:
+                    generated = IDENTITY.match(constraint.sql(dialect="oracle"))
+                    if generated:
+                        # `GENERATED [ALWAYS | BY DEFAULT] AS IDENTITY [(START WITH n INCREMENT BY m)]`: the
+                        # table numbers the column itself. The target has no IDENTITY, so it is a sequence the
+                        # generated code draws from, named `<table>_<column>_identity` (#46 follow-up)
+                        options = generated.group("options") or ""
+                        start = re.search(r"START\s+WITH\s+(-?\d+)", options, re.IGNORECASE)
+                        increment = re.search(r"INCREMENT\s+BY\s+(-?\d+)", options, re.IGNORECASE)
+                        schema.identity.setdefault(table.name.lower(), {})[column.name.lower()] = (
+                            int(start.group(1)) if start else 1, int(increment.group(1)) if increment else 1)
             schema.tables[table.name.lower()] = columns
             schema.keys[table.name.lower()] = _primary_key(statement)
         return schema

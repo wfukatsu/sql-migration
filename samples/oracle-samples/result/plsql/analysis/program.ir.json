@@ -278,6 +278,7 @@
        "intoTargets": [
         "v_name"
        ],
+       "accumulates_rowcount": false,
        "intoColumns": [
         "last_name"
        ],
@@ -327,6 +328,7 @@
        "intoTargets": [
         "v_emp"
        ],
+       "accumulates_rowcount": false,
        "intoColumns": [
         "employee_id",
         "first_name",
@@ -565,6 +567,7 @@
        "intoTargets": [
         "v_sal"
        ],
+       "accumulates_rowcount": false,
        "intoColumns": [
         "salary"
        ],
@@ -951,10 +954,10 @@
        "kind": "Declaration",
        "sourceRange": {
         "file": "b04_3_implicit_cursor_attrs.prc",
-        "startLine": 7,
-        "endLine": 7,
+        "startLine": 4,
+        "endLine": 4,
         "startColumn": 3,
-        "endColumn": 46
+        "endColumn": 68
        },
        "type": {
         "oracle": "NUMBER",
@@ -969,6 +972,60 @@
        "kind": "Declaration",
        "sourceRange": {
         "file": "b04_3_implicit_cursor_attrs.prc",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 3,
+        "endColumn": 68
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "column-type"
+       },
+       "name": "v_trg_2",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "b04_3_implicit_cursor_attrs#decl-v_trg_3",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "b04_3_implicit_cursor_attrs.prc",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 3,
+        "endColumn": 68
+       },
+       "type": {
+        "oracle": "NUMBER(8, 2)",
+        "resolved": "NUMBER(8, 2)",
+        "origin": "column-type"
+       },
+       "name": "v_trg_3",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "b04_3_implicit_cursor_attrs#decl-v_trg_4",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "b04_3_implicit_cursor_attrs.prc",
+        "startLine": 7,
+        "endLine": 7,
+        "startColumn": 3,
+        "endColumn": 46
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "column-type"
+       },
+       "name": "v_trg_4",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "b04_3_implicit_cursor_attrs#decl-v_trg_5",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "b04_3_implicit_cursor_attrs.prc",
         "startLine": 7,
         "endLine": 7,
         "startColumn": 3,
@@ -979,14 +1036,14 @@
         "resolved": "NUMBER(8, 2)",
         "origin": "column-type"
        },
-       "name": "v_trg_2",
+       "name": "v_trg_5",
        "declarationKind": "variable"
       }
      ],
      "body": [
       {
-       "id": "b04_3_implicit_cursor_attrs#stmt-1",
-       "kind": "SqlOperation",
+       "id": "b04_3_implicit_cursor_attrs#stmt-1rmw",
+       "kind": "Loop",
        "sourceRange": {
         "file": "b04_3_implicit_cursor_attrs.prc",
         "startLine": 4,
@@ -994,65 +1051,427 @@
         "startColumn": 3,
         "endColumn": 68
        },
-       "diagnostics": [
-        {
-         "severity": "WARN",
-         "code": "TRIGGER_NOT_APPLIED",
-         "message": "emp_biu_trg が掛かる書き込みだが、**掛けていない**。本体が `UPDATING('列')` の形で列ごとのイベントを見ている。それを渡す形をまだ持っていない（#12）",
-         "range": {
-          "file": "b04_3_implicit_cursor_attrs.prc",
-          "startLine": 4,
-          "endLine": 4,
-          "startColumn": 3,
-          "endColumn": 68
-         }
-        },
-        {
-         "severity": "WARN",
-         "code": "TRIGGER_NOT_APPLIED",
-         "message": "emp_dept_cap_trg が掛かる書き込みだが、**掛けていない**。1 行に絞れない更新は Oracle なら行ごとに発火するので、1 回の呼び出しでは同じにならない（#12）",
-         "range": {
-          "file": "b04_3_implicit_cursor_attrs.prc",
-          "startLine": 4,
-          "endLine": 4,
-          "startColumn": 3,
-          "endColumn": 68
-         }
-        },
-        {
-         "severity": "WARN",
-         "code": "TRIGGER_NOT_APPLIED",
-         "message": "emp_salary_audit_trg が掛かる書き込みだが、**掛けていない**。1 行に絞れない更新は Oracle なら行ごとに発火するので、1 回の呼び出しでは同じにならない（#12）",
-         "range": {
-          "file": "b04_3_implicit_cursor_attrs.prc",
-          "startLine": 4,
-          "endLine": 4,
-          "startColumn": 3,
-          "endColumn": 68
-         }
-        },
-        {
-         "severity": "ERROR",
-         "code": "RMW",
-         "message": "SET salary = salary + 100: expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction",
-         "range": {
-          "file": "b04_3_implicit_cursor_attrs.prc",
-          "startLine": 4,
-          "endLine": 4,
-          "startColumn": 3,
-          "endColumn": 68
-         }
-        }
-       ],
-       "writeSet": [
+       "readSet": [
         "employees"
        ],
-       "sqlKind": "UPDATE",
-       "originalSql": "UPDATE employees SET salary = salary + 100 WHERE department_id = 50",
-       "selectsStar": false,
-       "cardinality": "UNKNOWN",
-       "atMostOneRow": false,
-       "targetStatus": "ERROR"
+       "loopKind": "cursor-for",
+       "cursor": "r_rmw_1 IN (SELECT employee_id, salary FROM employees WHERE department_id = 50)",
+       "query": {
+        "id": "b04_3_implicit_cursor_attrs#stmt-1read",
+        "kind": "SqlOperation",
+        "sourceRange": {
+         "file": "b04_3_implicit_cursor_attrs.prc",
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3,
+         "endColumn": 68
+        },
+        "diagnostics": [
+         {
+          "severity": "INFO",
+          "code": "ACCESS",
+          "message": "SELECT: equality on secondary index -> index SCAN",
+          "range": {
+           "file": "b04_3_implicit_cursor_attrs.prc",
+           "startLine": 4,
+           "endLine": 4,
+           "startColumn": 3,
+           "endColumn": 68
+          }
+         }
+        ],
+        "readSet": [
+         "employees"
+        ],
+        "sqlKind": "SELECT",
+        "originalSql": "SELECT employee_id, salary FROM employees WHERE department_id = 50",
+        "accumulates_rowcount": false,
+        "intoColumns": [
+         "employee_id",
+         "salary"
+        ],
+        "intoTypes": [
+         "INT",
+         "DOUBLE"
+        ],
+        "intoOracleTypes": [
+         "NUMBER(6)",
+         "NUMBER(8, 2)"
+        ],
+        "selectsStar": false,
+        "cardinality": "MANY",
+        "atMostOneRow": false,
+        "targetStatus": "OK",
+        "targetSql": [
+         "SELECT employee_id, salary FROM employees WHERE department_id = 50"
+        ]
+       },
+       "variable": "r_rmw_1",
+       "returns_rows": false,
+       "body": [
+        {
+         "id": "b04_3_implicit_cursor_attrs#stmt-1trg1",
+         "kind": "SqlOperation",
+         "sourceRange": {
+          "file": "b04_3_implicit_cursor_attrs.prc",
+          "startLine": 4,
+          "endLine": 4,
+          "startColumn": 3,
+          "endColumn": 68
+         },
+         "diagnostics": [
+          {
+           "severity": "INFO",
+           "code": "TRIGGER_OLD",
+           "message": "emp_dept_cap_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである",
+           "range": {
+            "file": "b04_3_implicit_cursor_attrs.prc",
+            "startLine": 4,
+            "endLine": 4,
+            "startColumn": 3,
+            "endColumn": 68
+           }
+          },
+          {
+           "severity": "INFO",
+           "code": "ACCESS",
+           "message": "SELECT: full primary key specified -> GET (single record)",
+           "range": {
+            "file": "b04_3_implicit_cursor_attrs.prc",
+            "startLine": 4,
+            "endLine": 4,
+            "startColumn": 3,
+            "endColumn": 68
+           }
+          }
+         ],
+         "readSet": [
+          "employees"
+         ],
+         "sqlKind": "SELECT",
+         "originalSql": "SELECT department_id FROM employees WHERE employee_id = r_rmw_1.employee_id",
+         "binds": [
+          {
+           "name": "r_rmw_1_employee_id",
+           "direction": "IN",
+           "oracleType": "NUMBER(6)",
+           "plsqlVariable": "r_rmw_1.employee_id",
+           "column": "employee_id",
+           "scalardbType": "INT",
+           "columnOracleType": "NUMBER(6)"
+          }
+         ],
+         "intoTargets": [
+          "v_trg_1"
+         ],
+         "accumulates_rowcount": false,
+         "intoColumns": [
+          "department_id"
+         ],
+         "intoTypes": [
+          "INT"
+         ],
+         "intoOracleTypes": [
+          "NUMBER(4)"
+         ],
+         "selectsStar": false,
+         "cardinality": "AT_MOST_ONE",
+         "notFoundFlag": "trg1",
+         "atMostOneRow": false,
+         "targetStatus": "OK",
+         "targetSql": [
+          "SELECT department_id FROM employees WHERE employee_id = :r_rmw_1_employee_id"
+         ]
+        },
+        {
+         "id": "b04_3_implicit_cursor_attrs#stmt-1trg2",
+         "kind": "SqlOperation",
+         "sourceRange": {
+          "file": "b04_3_implicit_cursor_attrs.prc",
+          "startLine": 4,
+          "endLine": 4,
+          "startColumn": 3,
+          "endColumn": 68
+         },
+         "diagnostics": [
+          {
+           "severity": "INFO",
+           "code": "TRIGGER_OLD",
+           "message": "emp_salary_audit_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである",
+           "range": {
+            "file": "b04_3_implicit_cursor_attrs.prc",
+            "startLine": 4,
+            "endLine": 4,
+            "startColumn": 3,
+            "endColumn": 68
+           }
+          },
+          {
+           "severity": "INFO",
+           "code": "ACCESS",
+           "message": "SELECT: full primary key specified -> GET (single record)",
+           "range": {
+            "file": "b04_3_implicit_cursor_attrs.prc",
+            "startLine": 4,
+            "endLine": 4,
+            "startColumn": 3,
+            "endColumn": 68
+           }
+          }
+         ],
+         "readSet": [
+          "employees"
+         ],
+         "sqlKind": "SELECT",
+         "originalSql": "SELECT employee_id, salary FROM employees WHERE employee_id = r_rmw_1.employee_id",
+         "binds": [
+          {
+           "name": "r_rmw_1_employee_id",
+           "direction": "IN",
+           "oracleType": "NUMBER(6)",
+           "plsqlVariable": "r_rmw_1.employee_id",
+           "column": "employee_id",
+           "scalardbType": "INT",
+           "columnOracleType": "NUMBER(6)"
+          }
+         ],
+         "intoTargets": [
+          "v_trg_2",
+          "v_trg_3"
+         ],
+         "accumulates_rowcount": false,
+         "intoColumns": [
+          "employee_id",
+          "salary"
+         ],
+         "intoTypes": [
+          "INT",
+          "DOUBLE"
+         ],
+         "intoOracleTypes": [
+          "NUMBER(6)",
+          "NUMBER(8, 2)"
+         ],
+         "selectsStar": false,
+         "cardinality": "AT_MOST_ONE",
+         "notFoundFlag": "trg2",
+         "atMostOneRow": false,
+         "targetStatus": "OK",
+         "targetSql": [
+          "SELECT employee_id, salary FROM employees WHERE employee_id = :r_rmw_1_employee_id"
+         ]
+        },
+        {
+         "id": "b04_3_implicit_cursor_attrs#stmt-1",
+         "kind": "SqlOperation",
+         "sourceRange": {
+          "file": "b04_3_implicit_cursor_attrs.prc",
+          "startLine": 4,
+          "endLine": 4,
+          "startColumn": 3,
+          "endColumn": 68
+         },
+         "diagnostics": [
+          {
+           "severity": "INFO",
+           "code": "RMW_SPLIT",
+           "message": "employees.salary を読んでから 1 行ずつ書くループにした（WHERE が主キーを決めていない）。ScalarDB SQL は列を読む式を受け付けないので、値はアプリで計算する。**同じトランザクションの中で読んで書く**ので、衝突は commit で弾かれる（再試行は呼び出し側の責務・#9）",
+           "range": {
+            "file": "b04_3_implicit_cursor_attrs.prc",
+            "startLine": 4,
+            "endLine": 4,
+            "startColumn": 3,
+            "endColumn": 68
+           }
+          },
+          {
+           "severity": "WARN",
+           "code": "TRIGGER_NOT_APPLIED",
+           "message": "emp_biu_trg が掛かる書き込みだが、**掛けていない**。本体が `UPDATING('列')` の形で列ごとのイベントを見ている。それを渡す形をまだ持っていない（#12）",
+           "range": {
+            "file": "b04_3_implicit_cursor_attrs.prc",
+            "startLine": 4,
+            "endLine": 4,
+            "startColumn": 3,
+            "endColumn": 68
+           }
+          },
+          {
+           "severity": "INFO",
+           "code": "TRIGGER_APPLIED",
+           "message": "emp_dept_cap_trg（AFTER UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）",
+           "range": {
+            "file": "b04_3_implicit_cursor_attrs.prc",
+            "startLine": 4,
+            "endLine": 4,
+            "startColumn": 3,
+            "endColumn": 68
+           }
+          },
+          {
+           "severity": "INFO",
+           "code": "TRIGGER_APPLIED",
+           "message": "emp_salary_audit_trg（AFTER UPDATE OR DELETE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）",
+           "range": {
+            "file": "b04_3_implicit_cursor_attrs.prc",
+            "startLine": 4,
+            "endLine": 4,
+            "startColumn": 3,
+            "endColumn": 68
+           }
+          },
+          {
+           "severity": "INFO",
+           "code": "ACCESS",
+           "message": "UPDATE: full primary key specified -> GET (single record)",
+           "range": {
+            "file": "b04_3_implicit_cursor_attrs.prc",
+            "startLine": 4,
+            "endLine": 4,
+            "startColumn": 3,
+            "endColumn": 68
+           }
+          }
+         ],
+         "writeSet": [
+          "employees"
+         ],
+         "sqlKind": "UPDATE",
+         "originalSql": "UPDATE employees SET salary = r_rmw_1.salary + 100 WHERE employee_id = r_rmw_1.employee_id",
+         "binds": [
+          {
+           "name": "r_rmw_1_salary",
+           "direction": "IN",
+           "oracleType": "NUMBER(8, 2)",
+           "plsqlVariable": "r_rmw_1.salary"
+          },
+          {
+           "name": "r_rmw_1_employee_id",
+           "direction": "IN",
+           "oracleType": "NUMBER(6)",
+           "plsqlVariable": "r_rmw_1.employee_id",
+           "column": "employee_id",
+           "scalardbType": "INT",
+           "columnOracleType": "NUMBER(6)"
+          },
+          {
+           "name": "expr3",
+           "direction": "IN",
+           "column": "salary",
+           "scalardbType": "DOUBLE",
+           "columnOracleType": "NUMBER(8, 2)",
+           "expression": "r_rmw_1.salary + 100"
+          }
+         ],
+         "accumulates_rowcount": true,
+         "selectsStar": false,
+         "cardinality": "UNKNOWN",
+         "atMostOneRow": false,
+         "targetStatus": "OK",
+         "targetSql": [
+          "UPDATE employees SET salary = :expr3 WHERE employee_id = :r_rmw_1_employee_id"
+         ]
+        },
+        {
+         "id": "b04_3_implicit_cursor_attrs#stmt-1call1if",
+         "kind": "If",
+         "sourceRange": {
+          "file": "b04_3_implicit_cursor_attrs.prc",
+          "startLine": 4,
+          "endLine": 4,
+          "startColumn": 3,
+          "endColumn": 68
+         },
+         "branches": [
+          {
+           "condition": "SQL%ROWCOUNT > 0",
+           "body": [
+            {
+             "id": "b04_3_implicit_cursor_attrs#stmt-1call1",
+             "kind": "Call",
+             "sourceRange": {
+              "file": "b04_3_implicit_cursor_attrs.prc",
+              "startLine": 4,
+              "endLine": 4,
+              "startColumn": 3,
+              "endColumn": 68
+             },
+             "diagnostics": [
+              {
+               "severity": "INFO",
+               "code": "TRIGGER_CALL",
+               "message": "emp_dept_cap_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）",
+               "range": {
+                "file": "b04_3_implicit_cursor_attrs.prc",
+                "startLine": 4,
+                "endLine": 4,
+                "startColumn": 3,
+                "endColumn": 68
+               }
+              }
+             ],
+             "callee": "emp_dept_cap_trg.body",
+             "arguments": [
+              "NEW.department_id => v_trg_1"
+             ],
+             "resolvedTo": "emp_dept_cap_trg.body"
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "id": "b04_3_implicit_cursor_attrs#stmt-1call2if",
+         "kind": "If",
+         "sourceRange": {
+          "file": "b04_3_implicit_cursor_attrs.prc",
+          "startLine": 4,
+          "endLine": 4,
+          "startColumn": 3,
+          "endColumn": 68
+         },
+         "branches": [
+          {
+           "condition": "SQL%ROWCOUNT > 0",
+           "body": [
+            {
+             "id": "b04_3_implicit_cursor_attrs#stmt-1call2",
+             "kind": "Call",
+             "sourceRange": {
+              "file": "b04_3_implicit_cursor_attrs.prc",
+              "startLine": 4,
+              "endLine": 4,
+              "startColumn": 3,
+              "endColumn": 68
+             },
+             "diagnostics": [
+              {
+               "severity": "INFO",
+               "code": "TRIGGER_CALL",
+               "message": "emp_salary_audit_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）",
+               "range": {
+                "file": "b04_3_implicit_cursor_attrs.prc",
+                "startLine": 4,
+                "endLine": 4,
+                "startColumn": 3,
+                "endColumn": 68
+               }
+              }
+             ],
+             "callee": "emp_salary_audit_trg.body",
+             "arguments": [
+              "NEW.salary => r_rmw_1.salary + 100",
+              "OLD.employee_id => v_trg_2",
+              "OLD.salary => v_trg_3",
+              "DELETING => FALSE"
+             ],
+             "resolvedTo": "emp_salary_audit_trg.body"
+            }
+           ]
+          }
+         ]
+        }
+       ]
       },
       {
        "id": "b04_3_implicit_cursor_attrs#stmt-2",
@@ -1121,9 +1540,10 @@
         }
        ],
        "intoTargets": [
-        "v_trg_1",
-        "v_trg_2"
+        "v_trg_4",
+        "v_trg_5"
        ],
+       "accumulates_rowcount": false,
        "intoColumns": [
         "employee_id",
         "salary"
@@ -1196,6 +1616,7 @@
          "expression": "-1"
         }
        ],
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false,
@@ -1245,8 +1666,8 @@
            "callee": "emp_salary_audit_trg.body",
            "arguments": [
             "NEW.salary => NULL",
-            "OLD.employee_id => v_trg_1",
-            "OLD.salary => v_trg_2",
+            "OLD.employee_id => v_trg_4",
+            "OLD.salary => v_trg_5",
             "DELETING => TRUE"
            ],
            "resolvedTo": "emp_salary_audit_trg.body"
@@ -1489,6 +1910,7 @@
         ],
         "sqlKind": "SELECT",
         "originalSql": "SELECT employee_id, last_name, salary FROM employees\n    WHERE  department_id = 60 ORDER BY salary DESC",
+        "accumulates_rowcount": false,
         "intoColumns": [
          "employee_id",
          "last_name",
@@ -1643,6 +2065,7 @@
         ],
         "sqlKind": "SELECT",
         "originalSql": "SELECT last_name, salary FROM employees WHERE department_id = 80 AND salary >= 9000",
+        "accumulates_rowcount": false,
         "intoColumns": [
          "last_name",
          "salary"
@@ -1787,6 +2210,7 @@
         ],
         "sqlKind": "SELECT",
         "originalSql": "SELECT department_name FROM departments ORDER BY 1",
+        "accumulates_rowcount": false,
         "intoColumns": [
          "department_name"
         ],
@@ -1876,6 +2300,24 @@
        "name": "c_upd",
        "declarationKind": "cursor",
        "initial": "SELECT employee_id, salary FROM employees\n    WHERE  job_id = 'ST_CLERK'\n    FOR UPDATE OF salary"
+      },
+      {
+       "id": "b04_4_3_for_update_current_of#decl-v_rmw_1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "b04_4_3_for_update_current_of.prc",
+        "startLine": 9,
+        "endLine": 9,
+        "startColumn": 5,
+        "endColumn": 67
+       },
+       "type": {
+        "oracle": "NUMBER(8, 2)",
+        "resolved": "NUMBER(8, 2)",
+        "origin": "column-type"
+       },
+       "name": "v_rmw_1",
+       "declarationKind": "variable"
       },
       {
        "id": "b04_4_3_for_update_current_of#decl-v_trg_1",
@@ -1970,6 +2412,18 @@
          },
          {
           "severity": "WARN",
+          "code": "OPTIMISTIC",
+          "message": "行ロックを落として楽観制御へ移すと決めてある（04-4-3 の FOR UPDATE + WHERE CURRENT OF。行を先に読み、楽観制御で書く（同上））。**弾かれた衝突を再試行するのは呼び出し側の責務**である（計画 §9 / #9）",
+          "range": {
+           "file": "b04_4_3_for_update_current_of.prc",
+           "startLine": 8,
+           "endLine": 10,
+           "startColumn": 3,
+           "endColumn": 7
+          }
+         },
+         {
+          "severity": "WARN",
           "code": "LOCK",
           "message": "FOR UPDATE / locking clause dropped (ScalarDB transactions handle isolation)",
           "range": {
@@ -1999,6 +2453,7 @@
         ],
         "sqlKind": "SELECT",
         "originalSql": "SELECT employee_id, salary FROM employees\n    WHERE  job_id = 'ST_CLERK'\n    FOR UPDATE OF salary",
+        "accumulates_rowcount": false,
         "intoColumns": [
          "employee_id",
          "salary"
@@ -2023,6 +2478,79 @@
        "variable": "r",
        "returns_rows": false,
        "body": [
+        {
+         "id": "b04_4_3_for_update_current_of#stmt-2read",
+         "kind": "SqlOperation",
+         "sourceRange": {
+          "file": "b04_4_3_for_update_current_of.prc",
+          "startLine": 9,
+          "endLine": 9,
+          "startColumn": 5,
+          "endColumn": 67
+         },
+         "diagnostics": [
+          {
+           "severity": "INFO",
+           "code": "LIMIT",
+           "message": "FETCH FIRST 1 ROWS ONLY rewritten to LIMIT 1",
+           "range": {
+            "file": "b04_4_3_for_update_current_of.prc",
+            "startLine": 9,
+            "endLine": 9,
+            "startColumn": 5,
+            "endColumn": 67
+           }
+          },
+          {
+           "severity": "INFO",
+           "code": "ACCESS",
+           "message": "SELECT: full primary key specified -> GET (single record)",
+           "range": {
+            "file": "b04_4_3_for_update_current_of.prc",
+            "startLine": 9,
+            "endLine": 9,
+            "startColumn": 5,
+            "endColumn": 67
+           }
+          }
+         ],
+         "readSet": [
+          "employees"
+         ],
+         "sqlKind": "SELECT",
+         "originalSql": "SELECT salary FROM employees WHERE employee_id = r.employee_id FETCH FIRST 1 ROWS ONLY",
+         "binds": [
+          {
+           "name": "r_employee_id",
+           "direction": "IN",
+           "oracleType": "NUMBER(6)",
+           "plsqlVariable": "r.employee_id",
+           "column": "employee_id",
+           "scalardbType": "INT",
+           "columnOracleType": "NUMBER(6)"
+          }
+         ],
+         "intoTargets": [
+          "v_rmw_1"
+         ],
+         "accumulates_rowcount": false,
+         "intoColumns": [
+          "salary"
+         ],
+         "intoTypes": [
+          "DOUBLE"
+         ],
+         "intoOracleTypes": [
+          "NUMBER(8, 2)"
+         ],
+         "selectsStar": false,
+         "cardinality": "AT_MOST_ONE",
+         "atMostOneRow": true,
+         "targetStatus": "OK",
+         "targetSql": [
+          "SELECT salary FROM employees WHERE employee_id = :r_employee_id LIMIT 1"
+         ]
+        },
         {
          "id": "b04_4_3_for_update_current_of#stmt-2trg1",
          "kind": "SqlOperation",
@@ -2078,6 +2606,7 @@
          "intoTargets": [
           "v_trg_1"
          ],
+         "accumulates_rowcount": false,
          "intoColumns": [
           "department_id"
          ],
@@ -2152,6 +2681,7 @@
           "v_trg_2",
           "v_trg_3"
          ],
+         "accumulates_rowcount": false,
          "intoColumns": [
           "employee_id",
           "salary"
@@ -2197,6 +2727,18 @@
            }
           },
           {
+           "severity": "INFO",
+           "code": "RMW_SPLIT",
+           "message": "employees.salary を読んでから書く 2 文に割った。ScalarDB SQL は列を読む式を受け付けないので、値はアプリで計算する。**同じトランザクションの中で読んで書く**ので、衝突は commit で弾かれる（再試行は呼び出し側の責務・#9）",
+           "range": {
+            "file": "b04_4_3_for_update_current_of.prc",
+            "startLine": 9,
+            "endLine": 9,
+            "startColumn": 5,
+            "endColumn": 67
+           }
+          },
+          {
            "severity": "WARN",
            "code": "TRIGGER_NOT_APPLIED",
            "message": "emp_biu_trg が掛かる書き込みだが、**掛けていない**。本体が `UPDATING('列')` の形で列ごとのイベントを見ている。それを渡す形をまだ持っていない（#12）",
@@ -2233,9 +2775,9 @@
            }
           },
           {
-           "severity": "ERROR",
-           "code": "EXPR",
-           "message": "SET salary: only literals and bind markers are allowed, got ':r_salary * 1.1'",
+           "severity": "INFO",
+           "code": "ACCESS",
+           "message": "UPDATE: full primary key specified -> GET (single record)",
            "range": {
             "file": "b04_4_3_for_update_current_of.prc",
             "startLine": 9,
@@ -2249,13 +2791,13 @@
           "employees"
          ],
          "sqlKind": "UPDATE",
-         "originalSql": "UPDATE employees SET salary = r.salary * 1.1 WHERE employee_id = r.employee_id",
+         "originalSql": "UPDATE employees SET salary = v_rmw_1 * 1.1 WHERE employee_id = r.employee_id",
          "binds": [
           {
-           "name": "r_salary",
+           "name": "v_rmw_1",
            "direction": "IN",
            "oracleType": "NUMBER(8, 2)",
-           "plsqlVariable": "r.salary"
+           "plsqlVariable": "v_rmw_1"
           },
           {
            "name": "r_employee_id",
@@ -2265,12 +2807,24 @@
            "column": "employee_id",
            "scalardbType": "INT",
            "columnOracleType": "NUMBER(6)"
+          },
+          {
+           "name": "expr3",
+           "direction": "IN",
+           "column": "salary",
+           "scalardbType": "DOUBLE",
+           "columnOracleType": "NUMBER(8, 2)",
+           "expression": "v_rmw_1 * 1.1"
           }
          ],
+         "accumulates_rowcount": false,
          "selectsStar": false,
          "cardinality": "UNKNOWN",
          "atMostOneRow": false,
-         "targetStatus": "ERROR"
+         "targetStatus": "OK",
+         "targetSql": [
+          "UPDATE employees SET salary = :expr3 WHERE employee_id = :r_employee_id"
+         ]
         },
         {
          "id": "b04_4_3_for_update_current_of#stmt-2call1if",
@@ -2360,7 +2914,7 @@
              ],
              "callee": "emp_salary_audit_trg.body",
              "arguments": [
-              "NEW.salary => r.salary * 1.1",
+              "NEW.salary => v_rmw_1 * 1.1",
               "OLD.employee_id => v_trg_2",
               "OLD.salary => v_trg_3",
               "DELETING => FALSE"
@@ -2606,6 +3160,7 @@
             ],
             "sqlKind": "SELECT",
             "originalSql": "SELECT department_name FROM departments",
+            "accumulates_rowcount": false,
             "intoColumns": [
              "department_name"
             ],
@@ -2742,6 +3297,7 @@
           ],
           "sqlKind": "SELECT",
           "originalSql": "SELECT last_name FROM employees",
+          "accumulates_rowcount": false,
           "intoColumns": [
            "last_name"
           ],
@@ -3071,6 +3627,7 @@
         ],
         "sqlKind": "SELECT",
         "originalSql": "SELECT last_name, salary FROM employees WHERE department_id = 90",
+        "accumulates_rowcount": false,
         "intoColumns": [
          "last_name",
          "salary"
@@ -3405,6 +3962,7 @@
          "intoTargets": [
           "v_name"
          ],
+         "accumulates_rowcount": false,
          "intoColumns": [
           "last_name"
          ],
@@ -3512,6 +4070,7 @@
          "intoTargets": [
           "v_name"
          ],
+         "accumulates_rowcount": false,
          "intoColumns": [
           "last_name"
          ],
@@ -3840,6 +4399,7 @@
            "expression": "SYSDATE"
           }
          ],
+         "accumulates_rowcount": false,
          "selectsStar": false,
          "cardinality": "UNKNOWN",
          "atMostOneRow": false,
@@ -4237,6 +4797,20 @@
         "startColumn": 3,
         "endColumn": 68
        },
+       "diagnostics": [
+        {
+         "severity": "ERROR",
+         "code": "SCAN_AFTER_WRITE",
+         "message": "employees was written earlier in this transaction; ScalarDB refuses to scan it",
+         "range": {
+          "file": "b05_3_call_emp_api.prc",
+          "startLine": 8,
+          "endLine": 8,
+          "startColumn": 3,
+          "endColumn": 68
+         }
+        }
+       ],
        "callee": "emp_api.give_raise",
        "arguments": [
         "p_dept_id => 60",
@@ -4390,6 +4964,24 @@
      "routineKind": "procedure",
      "declarations": [
       {
+       "id": "b05_4_call_log_msg#decl-v_rmw_1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "b05_4_call_log_msg.prc",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 3,
+        "endColumn": 64
+       },
+       "type": {
+        "oracle": "NUMBER(8, 2)",
+        "resolved": "NUMBER(8, 2)",
+        "origin": "column-type"
+       },
+       "name": "v_rmw_1",
+       "declarationKind": "variable"
+      },
+      {
        "id": "b05_4_call_log_msg#decl-v_trg_1",
        "kind": "Declaration",
        "sourceRange": {
@@ -4446,6 +5038,68 @@
      ],
      "body": [
       {
+       "id": "b05_4_call_log_msg#stmt-1read",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "b05_4_call_log_msg.prc",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 3,
+        "endColumn": 64
+       },
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "LIMIT",
+         "message": "FETCH FIRST 1 ROWS ONLY rewritten to LIMIT 1",
+         "range": {
+          "file": "b05_4_call_log_msg.prc",
+          "startLine": 4,
+          "endLine": 4,
+          "startColumn": 3,
+          "endColumn": 64
+         }
+        },
+        {
+         "severity": "INFO",
+         "code": "ACCESS",
+         "message": "SELECT: full primary key specified -> GET (single record)",
+         "range": {
+          "file": "b05_4_call_log_msg.prc",
+          "startLine": 4,
+          "endLine": 4,
+          "startColumn": 3,
+          "endColumn": 64
+         }
+        }
+       ],
+       "readSet": [
+        "employees"
+       ],
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT salary FROM employees WHERE employee_id = 100 FETCH FIRST 1 ROWS ONLY",
+       "intoTargets": [
+        "v_rmw_1"
+       ],
+       "accumulates_rowcount": false,
+       "intoColumns": [
+        "salary"
+       ],
+       "intoTypes": [
+        "DOUBLE"
+       ],
+       "intoOracleTypes": [
+        "NUMBER(8, 2)"
+       ],
+       "selectsStar": false,
+       "cardinality": "AT_MOST_ONE",
+       "atMostOneRow": true,
+       "targetStatus": "OK",
+       "targetSql": [
+        "SELECT salary FROM employees WHERE employee_id = 100 LIMIT 1"
+       ]
+      },
+      {
        "id": "b05_4_call_log_msg#stmt-1trg1",
        "kind": "SqlOperation",
        "sourceRange": {
@@ -4489,6 +5143,7 @@
        "intoTargets": [
         "v_trg_1"
        ],
+       "accumulates_rowcount": false,
        "intoColumns": [
         "department_id"
        ],
@@ -4552,6 +5207,7 @@
         "v_trg_2",
         "v_trg_3"
        ],
+       "accumulates_rowcount": false,
        "intoColumns": [
         "employee_id",
         "salary"
@@ -4584,6 +5240,18 @@
         "endColumn": 64
        },
        "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "RMW_SPLIT",
+         "message": "employees.salary を読んでから書く 2 文に割った。ScalarDB SQL は列を読む式を受け付けないので、値はアプリで計算する。**同じトランザクションの中で読んで書く**ので、衝突は commit で弾かれる（再試行は呼び出し側の責務・#9）",
+         "range": {
+          "file": "b05_4_call_log_msg.prc",
+          "startLine": 4,
+          "endLine": 4,
+          "startColumn": 3,
+          "endColumn": 64
+         }
+        },
         {
          "severity": "WARN",
          "code": "TRIGGER_NOT_APPLIED",
@@ -4621,9 +5289,9 @@
          }
         },
         {
-         "severity": "ERROR",
-         "code": "RMW",
-         "message": "SET salary = salary + 1: expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction",
+         "severity": "INFO",
+         "code": "ACCESS",
+         "message": "UPDATE: full primary key specified -> GET (single record)",
          "range": {
           "file": "b05_4_call_log_msg.prc",
           "startLine": 4,
@@ -4637,11 +5305,31 @@
         "employees"
        ],
        "sqlKind": "UPDATE",
-       "originalSql": "UPDATE employees SET salary = salary + 1 WHERE employee_id = 100",
+       "originalSql": "UPDATE employees SET salary = v_rmw_1 + 1 WHERE employee_id = 100",
+       "binds": [
+        {
+         "name": "v_rmw_1",
+         "direction": "IN",
+         "oracleType": "NUMBER(8, 2)",
+         "plsqlVariable": "v_rmw_1"
+        },
+        {
+         "name": "expr2",
+         "direction": "IN",
+         "column": "salary",
+         "scalardbType": "DOUBLE",
+         "columnOracleType": "NUMBER(8, 2)",
+         "expression": "v_rmw_1 + 1"
+        }
+       ],
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false,
-       "targetStatus": "ERROR"
+       "targetStatus": "OK",
+       "targetSql": [
+        "UPDATE employees SET salary = :expr2 WHERE employee_id = 100"
+       ]
       },
       {
        "id": "b05_4_call_log_msg#stmt-1call1if",
@@ -4731,7 +5419,7 @@
            ],
            "callee": "emp_salary_audit_trg.body",
            "arguments": [
-            "NEW.salary => salary + 1",
+            "NEW.salary => v_rmw_1 + 1",
             "OLD.employee_id => v_trg_2",
             "OLD.salary => v_trg_3",
             "DELETING => FALSE"
@@ -4970,6 +5658,7 @@
         ],
         "sqlKind": "SELECT",
         "originalSql": "SELECT employee_id, last_name, salary FROM employees",
+        "accumulates_rowcount": false,
         "intoColumns": [
          "employee_id",
          "last_name",
@@ -5201,6 +5890,7 @@
          ],
          "sqlKind": "UPDATE",
          "originalSql": "UPDATE employees SET salary = salary + 10\n    WHERE  department_id = v_depts(i)\n    RETURNING salary BULK COLLECT INTO v_new_sal",
+         "accumulates_rowcount": false,
          "selectsStar": false,
          "cardinality": "MANY",
          "atMostOneRow": false,
@@ -5514,6 +6204,7 @@
         ],
         "sqlKind": "SELECT",
         "originalSql": "SELECT employee_id, last_name, salary\n  FROM   employees",
+        "accumulates_rowcount": false,
         "intoColumns": [
          "employee_id",
          "last_name",
@@ -5598,6 +6289,7 @@
            "columnOracleType": "NUMBER(8, 2)"
           }
          ],
+         "accumulates_rowcount": false,
          "selectsStar": false,
          "cardinality": "UNKNOWN",
          "atMostOneRow": false,
@@ -6819,6 +7511,7 @@
        "intoTargets": [
         "v_list"
        ],
+       "accumulates_rowcount": false,
        "intoColumns": [
         null
        ],
@@ -6946,6 +7639,7 @@
        "intoTargets": [
         "v_cnt"
        ],
+       "accumulates_rowcount": false,
        "intoColumns": [
         null
        ],
@@ -7381,6 +8075,7 @@
         ],
         "sqlKind": "SELECT",
         "originalSql": "SELECT table_name FROM user_tables\n            WHERE table_name IN ('EMP_AUDIT','ORDER_ITEMS','ORDERS','EMPLOYEES',\n                                 'DEPARTMENTS','JOBS','EMP_STAGE','PRODUCTS_JSON',\n                                 'EMP_ERR_LOG','SAMPLE_DDL','BULK_TARGET')",
+        "accumulates_rowcount": false,
         "intoColumns": [
          "table_name"
         ],
@@ -7482,6 +8177,7 @@
         ],
         "sqlKind": "SELECT",
         "originalSql": "SELECT sequence_name FROM user_sequences\n            WHERE sequence_name IN ('EMP_SEQ','ORDER_SEQ','AUDIT_SEQ')",
+        "accumulates_rowcount": false,
         "intoColumns": [
          "sequence_name"
         ],
@@ -7718,6 +8414,7 @@
        "intoTargets": [
         "v_name"
        ],
+       "accumulates_rowcount": false,
        "intoColumns": [
         "department_name"
        ],
@@ -8210,6 +8907,7 @@
          "expression": "SYSDATE"
         }
        ],
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false,
@@ -8362,6 +9060,24 @@
      ],
      "declarations": [
       {
+       "id": "emp_api.give_raise~1#decl-v_rmw_1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "emp_api.pkb",
+        "startLine": 33,
+        "endLine": 33,
+        "startColumn": 5,
+        "endColumn": 82
+       },
+       "type": {
+        "oracle": "NUMBER(8, 2)",
+        "resolved": "NUMBER(8, 2)",
+        "origin": "column-type"
+       },
+       "name": "v_rmw_1",
+       "declarationKind": "variable"
+      },
+      {
        "id": "emp_api.give_raise~1#decl-v_trg_1",
        "kind": "Declaration",
        "sourceRange": {
@@ -8434,6 +9150,79 @@
        "resolvedTo": "emp_api.validate_pct"
       },
       {
+       "id": "emp_api.give_raise~1#stmt-2read",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "emp_api.pkb",
+        "startLine": 33,
+        "endLine": 33,
+        "startColumn": 5,
+        "endColumn": 82
+       },
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "LIMIT",
+         "message": "FETCH FIRST 1 ROWS ONLY rewritten to LIMIT 1",
+         "range": {
+          "file": "emp_api.pkb",
+          "startLine": 33,
+          "endLine": 33,
+          "startColumn": 5,
+          "endColumn": 82
+         }
+        },
+        {
+         "severity": "INFO",
+         "code": "ACCESS",
+         "message": "SELECT: full primary key specified -> GET (single record)",
+         "range": {
+          "file": "emp_api.pkb",
+          "startLine": 33,
+          "endLine": 33,
+          "startColumn": 5,
+          "endColumn": 82
+         }
+        }
+       ],
+       "readSet": [
+        "employees"
+       ],
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT salary FROM employees WHERE employee_id = p_emp_id FETCH FIRST 1 ROWS ONLY",
+       "binds": [
+        {
+         "name": "p_emp_id",
+         "direction": "IN",
+         "oracleType": "NUMBER",
+         "plsqlVariable": "p_emp_id",
+         "column": "employee_id",
+         "scalardbType": "INT",
+         "columnOracleType": "NUMBER(6)"
+        }
+       ],
+       "intoTargets": [
+        "v_rmw_1"
+       ],
+       "accumulates_rowcount": false,
+       "intoColumns": [
+        "salary"
+       ],
+       "intoTypes": [
+        "DOUBLE"
+       ],
+       "intoOracleTypes": [
+        "NUMBER(8, 2)"
+       ],
+       "selectsStar": false,
+       "cardinality": "AT_MOST_ONE",
+       "atMostOneRow": true,
+       "targetStatus": "OK",
+       "targetSql": [
+        "SELECT salary FROM employees WHERE employee_id = :p_emp_id LIMIT 1"
+       ]
+      },
+      {
        "id": "emp_api.give_raise~1#stmt-2trg1",
        "kind": "SqlOperation",
        "sourceRange": {
@@ -8488,6 +9277,7 @@
        "intoTargets": [
         "v_trg_1"
        ],
+       "accumulates_rowcount": false,
        "intoColumns": [
         "department_id"
        ],
@@ -8562,6 +9352,7 @@
         "v_trg_2",
         "v_trg_3"
        ],
+       "accumulates_rowcount": false,
        "intoColumns": [
         "employee_id",
         "salary"
@@ -8594,6 +9385,18 @@
         "endColumn": 82
        },
        "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "RMW_SPLIT",
+         "message": "employees.salary を読んでから書く 2 文に割った。ScalarDB SQL は列を読む式を受け付けないので、値はアプリで計算する。**同じトランザクションの中で読んで書く**ので、衝突は commit で弾かれる（再試行は呼び出し側の責務・#9）",
+         "range": {
+          "file": "emp_api.pkb",
+          "startLine": 33,
+          "endLine": 33,
+          "startColumn": 5,
+          "endColumn": 82
+         }
+        },
         {
          "severity": "WARN",
          "code": "TRIGGER_NOT_APPLIED",
@@ -8631,9 +9434,9 @@
          }
         },
         {
-         "severity": "ERROR",
-         "code": "RMW",
-         "message": "SET salary = salary * (1 + :p_pct / 100): expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction",
+         "severity": "INFO",
+         "code": "ACCESS",
+         "message": "UPDATE: full primary key specified -> GET (single record)",
          "range": {
           "file": "emp_api.pkb",
           "startLine": 33,
@@ -8647,8 +9450,14 @@
         "employees"
        ],
        "sqlKind": "UPDATE",
-       "originalSql": "UPDATE employees SET salary = salary * (1 + p_pct / 100) WHERE employee_id = p_emp_id",
+       "originalSql": "UPDATE employees SET salary = v_rmw_1 * (1 + p_pct / 100) WHERE employee_id = p_emp_id",
        "binds": [
+        {
+         "name": "v_rmw_1",
+         "direction": "IN",
+         "oracleType": "NUMBER(8, 2)",
+         "plsqlVariable": "v_rmw_1"
+        },
         {
          "name": "p_emp_id",
          "direction": "IN",
@@ -8663,12 +9472,24 @@
          "direction": "IN",
          "oracleType": "NUMBER",
          "plsqlVariable": "p_pct"
+        },
+        {
+         "name": "expr4",
+         "direction": "IN",
+         "column": "salary",
+         "scalardbType": "DOUBLE",
+         "columnOracleType": "NUMBER(8, 2)",
+         "expression": "v_rmw_1 * (1 + p_pct / 100)"
         }
        ],
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false,
-       "targetStatus": "ERROR"
+       "targetStatus": "OK",
+       "targetSql": [
+        "UPDATE employees SET salary = :expr4 WHERE employee_id = :p_emp_id"
+       ]
       },
       {
        "id": "emp_api.give_raise~1#stmt-2call1if",
@@ -8758,7 +9579,7 @@
            ],
            "callee": "emp_salary_audit_trg.body",
            "arguments": [
-            "NEW.salary => salary * (1 + p_pct / 100)",
+            "NEW.salary => v_rmw_1 * (1 + p_pct / 100)",
             "OLD.employee_id => v_trg_2",
             "OLD.salary => v_trg_3",
             "DELETING => FALSE"
@@ -8891,6 +9712,62 @@
        "carried": true
       }
      ],
+     "declarations": [
+      {
+       "id": "emp_api.give_raise~2#decl-v_trg_1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "emp_api.pkb",
+        "startLine": 40,
+        "endLine": 40,
+        "startColumn": 7,
+        "endColumn": 86
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "column-type"
+       },
+       "name": "v_trg_1",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "emp_api.give_raise~2#decl-v_trg_2",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "emp_api.pkb",
+        "startLine": 40,
+        "endLine": 40,
+        "startColumn": 7,
+        "endColumn": 86
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "column-type"
+       },
+       "name": "v_trg_2",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "emp_api.give_raise~2#decl-v_trg_3",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "emp_api.pkb",
+        "startLine": 40,
+        "endLine": 40,
+        "startColumn": 7,
+        "endColumn": 86
+       },
+       "type": {
+        "oracle": "NUMBER(8, 2)",
+        "resolved": "NUMBER(8, 2)",
+        "origin": "column-type"
+       },
+       "name": "v_trg_3",
+       "declarationKind": "variable"
+      }
+     ],
      "body": [
       {
        "id": "emp_api.give_raise~2#stmt-1",
@@ -8923,8 +9800,8 @@
          "condition": "p_by_dept",
          "body": [
           {
-           "id": "emp_api.give_raise~2#stmt-3",
-           "kind": "SqlOperation",
+           "id": "emp_api.give_raise~2#stmt-3rmw",
+           "kind": "Loop",
            "sourceRange": {
             "file": "emp_api.pkb",
             "startLine": 40,
@@ -8932,82 +9809,444 @@
             "startColumn": 7,
             "endColumn": 86
            },
-           "diagnostics": [
-            {
-             "severity": "WARN",
-             "code": "TRIGGER_NOT_APPLIED",
-             "message": "emp_biu_trg が掛かる書き込みだが、**掛けていない**。本体が `UPDATING('列')` の形で列ごとのイベントを見ている。それを渡す形をまだ持っていない（#12）",
-             "range": {
-              "file": "emp_api.pkb",
-              "startLine": 40,
-              "endLine": 40,
-              "startColumn": 7,
-              "endColumn": 86
-             }
-            },
-            {
-             "severity": "WARN",
-             "code": "TRIGGER_NOT_APPLIED",
-             "message": "emp_dept_cap_trg が掛かる書き込みだが、**掛けていない**。1 行に絞れない更新は Oracle なら行ごとに発火するので、1 回の呼び出しでは同じにならない（#12）",
-             "range": {
-              "file": "emp_api.pkb",
-              "startLine": 40,
-              "endLine": 40,
-              "startColumn": 7,
-              "endColumn": 86
-             }
-            },
-            {
-             "severity": "WARN",
-             "code": "TRIGGER_NOT_APPLIED",
-             "message": "emp_salary_audit_trg が掛かる書き込みだが、**掛けていない**。1 行に絞れない更新は Oracle なら行ごとに発火するので、1 回の呼び出しでは同じにならない（#12）",
-             "range": {
-              "file": "emp_api.pkb",
-              "startLine": 40,
-              "endLine": 40,
-              "startColumn": 7,
-              "endColumn": 86
-             }
-            },
-            {
-             "severity": "ERROR",
-             "code": "RMW",
-             "message": "SET salary = salary * (1 + :p_pct / 100): expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction",
-             "range": {
-              "file": "emp_api.pkb",
-              "startLine": 40,
-              "endLine": 40,
-              "startColumn": 7,
-              "endColumn": 86
-             }
-            }
-           ],
-           "writeSet": [
+           "readSet": [
             "employees"
            ],
-           "sqlKind": "UPDATE",
-           "originalSql": "UPDATE employees SET salary = salary * (1 + p_pct / 100) WHERE department_id = p_dept_id",
-           "binds": [
+           "loopKind": "cursor-for",
+           "cursor": "r_rmw_1 IN (SELECT employee_id, salary FROM employees WHERE department_id = p_dept_id)",
+           "query": {
+            "id": "emp_api.give_raise~2#stmt-3read",
+            "kind": "SqlOperation",
+            "sourceRange": {
+             "file": "emp_api.pkb",
+             "startLine": 40,
+             "endLine": 40,
+             "startColumn": 7,
+             "endColumn": 86
+            },
+            "diagnostics": [
+             {
+              "severity": "INFO",
+              "code": "ACCESS",
+              "message": "SELECT: equality on secondary index -> index SCAN",
+              "range": {
+               "file": "emp_api.pkb",
+               "startLine": 40,
+               "endLine": 40,
+               "startColumn": 7,
+               "endColumn": 86
+              }
+             }
+            ],
+            "readSet": [
+             "employees"
+            ],
+            "sqlKind": "SELECT",
+            "originalSql": "SELECT employee_id, salary FROM employees WHERE department_id = p_dept_id",
+            "binds": [
+             {
+              "name": "p_dept_id",
+              "direction": "IN",
+              "oracleType": "NUMBER",
+              "plsqlVariable": "p_dept_id",
+              "column": "department_id",
+              "scalardbType": "INT",
+              "columnOracleType": "NUMBER(4)"
+             }
+            ],
+            "accumulates_rowcount": false,
+            "intoColumns": [
+             "employee_id",
+             "salary"
+            ],
+            "intoTypes": [
+             "INT",
+             "DOUBLE"
+            ],
+            "intoOracleTypes": [
+             "NUMBER(6)",
+             "NUMBER(8, 2)"
+            ],
+            "selectsStar": false,
+            "cardinality": "MANY",
+            "atMostOneRow": false,
+            "targetStatus": "OK",
+            "targetSql": [
+             "SELECT employee_id, salary FROM employees WHERE department_id = :p_dept_id"
+            ]
+           },
+           "variable": "r_rmw_1",
+           "returns_rows": false,
+           "body": [
             {
-             "name": "p_dept_id",
-             "direction": "IN",
-             "oracleType": "NUMBER",
-             "plsqlVariable": "p_dept_id",
-             "column": "department_id",
-             "scalardbType": "INT",
-             "columnOracleType": "NUMBER(4)"
+             "id": "emp_api.give_raise~2#stmt-3trg1",
+             "kind": "SqlOperation",
+             "sourceRange": {
+              "file": "emp_api.pkb",
+              "startLine": 40,
+              "endLine": 40,
+              "startColumn": 7,
+              "endColumn": 86
+             },
+             "diagnostics": [
+              {
+               "severity": "INFO",
+               "code": "TRIGGER_OLD",
+               "message": "emp_dept_cap_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである",
+               "range": {
+                "file": "emp_api.pkb",
+                "startLine": 40,
+                "endLine": 40,
+                "startColumn": 7,
+                "endColumn": 86
+               }
+              },
+              {
+               "severity": "INFO",
+               "code": "ACCESS",
+               "message": "SELECT: full primary key specified -> GET (single record)",
+               "range": {
+                "file": "emp_api.pkb",
+                "startLine": 40,
+                "endLine": 40,
+                "startColumn": 7,
+                "endColumn": 86
+               }
+              }
+             ],
+             "readSet": [
+              "employees"
+             ],
+             "sqlKind": "SELECT",
+             "originalSql": "SELECT department_id FROM employees WHERE employee_id = r_rmw_1.employee_id",
+             "binds": [
+              {
+               "name": "r_rmw_1_employee_id",
+               "direction": "IN",
+               "oracleType": "NUMBER(6)",
+               "plsqlVariable": "r_rmw_1.employee_id",
+               "column": "employee_id",
+               "scalardbType": "INT",
+               "columnOracleType": "NUMBER(6)"
+              }
+             ],
+             "intoTargets": [
+              "v_trg_1"
+             ],
+             "accumulates_rowcount": false,
+             "intoColumns": [
+              "department_id"
+             ],
+             "intoTypes": [
+              "INT"
+             ],
+             "intoOracleTypes": [
+              "NUMBER(4)"
+             ],
+             "selectsStar": false,
+             "cardinality": "AT_MOST_ONE",
+             "notFoundFlag": "trg1",
+             "atMostOneRow": false,
+             "targetStatus": "OK",
+             "targetSql": [
+              "SELECT department_id FROM employees WHERE employee_id = :r_rmw_1_employee_id"
+             ]
             },
             {
-             "name": "p_pct",
-             "direction": "IN",
-             "oracleType": "NUMBER",
-             "plsqlVariable": "p_pct"
+             "id": "emp_api.give_raise~2#stmt-3trg2",
+             "kind": "SqlOperation",
+             "sourceRange": {
+              "file": "emp_api.pkb",
+              "startLine": 40,
+              "endLine": 40,
+              "startColumn": 7,
+              "endColumn": 86
+             },
+             "diagnostics": [
+              {
+               "severity": "INFO",
+               "code": "TRIGGER_OLD",
+               "message": "emp_salary_audit_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである",
+               "range": {
+                "file": "emp_api.pkb",
+                "startLine": 40,
+                "endLine": 40,
+                "startColumn": 7,
+                "endColumn": 86
+               }
+              },
+              {
+               "severity": "INFO",
+               "code": "ACCESS",
+               "message": "SELECT: full primary key specified -> GET (single record)",
+               "range": {
+                "file": "emp_api.pkb",
+                "startLine": 40,
+                "endLine": 40,
+                "startColumn": 7,
+                "endColumn": 86
+               }
+              }
+             ],
+             "readSet": [
+              "employees"
+             ],
+             "sqlKind": "SELECT",
+             "originalSql": "SELECT employee_id, salary FROM employees WHERE employee_id = r_rmw_1.employee_id",
+             "binds": [
+              {
+               "name": "r_rmw_1_employee_id",
+               "direction": "IN",
+               "oracleType": "NUMBER(6)",
+               "plsqlVariable": "r_rmw_1.employee_id",
+               "column": "employee_id",
+               "scalardbType": "INT",
+               "columnOracleType": "NUMBER(6)"
+              }
+             ],
+             "intoTargets": [
+              "v_trg_2",
+              "v_trg_3"
+             ],
+             "accumulates_rowcount": false,
+             "intoColumns": [
+              "employee_id",
+              "salary"
+             ],
+             "intoTypes": [
+              "INT",
+              "DOUBLE"
+             ],
+             "intoOracleTypes": [
+              "NUMBER(6)",
+              "NUMBER(8, 2)"
+             ],
+             "selectsStar": false,
+             "cardinality": "AT_MOST_ONE",
+             "notFoundFlag": "trg2",
+             "atMostOneRow": false,
+             "targetStatus": "OK",
+             "targetSql": [
+              "SELECT employee_id, salary FROM employees WHERE employee_id = :r_rmw_1_employee_id"
+             ]
+            },
+            {
+             "id": "emp_api.give_raise~2#stmt-3",
+             "kind": "SqlOperation",
+             "sourceRange": {
+              "file": "emp_api.pkb",
+              "startLine": 40,
+              "endLine": 40,
+              "startColumn": 7,
+              "endColumn": 86
+             },
+             "diagnostics": [
+              {
+               "severity": "INFO",
+               "code": "RMW_SPLIT",
+               "message": "employees.salary を読んでから 1 行ずつ書くループにした（WHERE が主キーを決めていない）。ScalarDB SQL は列を読む式を受け付けないので、値はアプリで計算する。**同じトランザクションの中で読んで書く**ので、衝突は commit で弾かれる（再試行は呼び出し側の責務・#9）",
+               "range": {
+                "file": "emp_api.pkb",
+                "startLine": 40,
+                "endLine": 40,
+                "startColumn": 7,
+                "endColumn": 86
+               }
+              },
+              {
+               "severity": "WARN",
+               "code": "TRIGGER_NOT_APPLIED",
+               "message": "emp_biu_trg が掛かる書き込みだが、**掛けていない**。本体が `UPDATING('列')` の形で列ごとのイベントを見ている。それを渡す形をまだ持っていない（#12）",
+               "range": {
+                "file": "emp_api.pkb",
+                "startLine": 40,
+                "endLine": 40,
+                "startColumn": 7,
+                "endColumn": 86
+               }
+              },
+              {
+               "severity": "INFO",
+               "code": "TRIGGER_APPLIED",
+               "message": "emp_dept_cap_trg（AFTER UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）",
+               "range": {
+                "file": "emp_api.pkb",
+                "startLine": 40,
+                "endLine": 40,
+                "startColumn": 7,
+                "endColumn": 86
+               }
+              },
+              {
+               "severity": "INFO",
+               "code": "TRIGGER_APPLIED",
+               "message": "emp_salary_audit_trg（AFTER UPDATE OR DELETE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）",
+               "range": {
+                "file": "emp_api.pkb",
+                "startLine": 40,
+                "endLine": 40,
+                "startColumn": 7,
+                "endColumn": 86
+               }
+              },
+              {
+               "severity": "INFO",
+               "code": "ACCESS",
+               "message": "UPDATE: full primary key specified -> GET (single record)",
+               "range": {
+                "file": "emp_api.pkb",
+                "startLine": 40,
+                "endLine": 40,
+                "startColumn": 7,
+                "endColumn": 86
+               }
+              }
+             ],
+             "writeSet": [
+              "employees"
+             ],
+             "sqlKind": "UPDATE",
+             "originalSql": "UPDATE employees SET salary = r_rmw_1.salary * (1 + p_pct / 100) WHERE employee_id = r_rmw_1.employee_id",
+             "binds": [
+              {
+               "name": "r_rmw_1_salary",
+               "direction": "IN",
+               "oracleType": "NUMBER(8, 2)",
+               "plsqlVariable": "r_rmw_1.salary"
+              },
+              {
+               "name": "r_rmw_1_employee_id",
+               "direction": "IN",
+               "oracleType": "NUMBER(6)",
+               "plsqlVariable": "r_rmw_1.employee_id",
+               "column": "employee_id",
+               "scalardbType": "INT",
+               "columnOracleType": "NUMBER(6)"
+              },
+              {
+               "name": "p_pct",
+               "direction": "IN",
+               "oracleType": "NUMBER",
+               "plsqlVariable": "p_pct"
+              },
+              {
+               "name": "expr4",
+               "direction": "IN",
+               "column": "salary",
+               "scalardbType": "DOUBLE",
+               "columnOracleType": "NUMBER(8, 2)",
+               "expression": "r_rmw_1.salary * (1 + p_pct / 100)"
+              }
+             ],
+             "accumulates_rowcount": true,
+             "selectsStar": false,
+             "cardinality": "UNKNOWN",
+             "atMostOneRow": false,
+             "targetStatus": "OK",
+             "targetSql": [
+              "UPDATE employees SET salary = :expr4 WHERE employee_id = :r_rmw_1_employee_id"
+             ]
+            },
+            {
+             "id": "emp_api.give_raise~2#stmt-3call1if",
+             "kind": "If",
+             "sourceRange": {
+              "file": "emp_api.pkb",
+              "startLine": 40,
+              "endLine": 40,
+              "startColumn": 7,
+              "endColumn": 86
+             },
+             "branches": [
+              {
+               "condition": "SQL%ROWCOUNT > 0",
+               "body": [
+                {
+                 "id": "emp_api.give_raise~2#stmt-3call1",
+                 "kind": "Call",
+                 "sourceRange": {
+                  "file": "emp_api.pkb",
+                  "startLine": 40,
+                  "endLine": 40,
+                  "startColumn": 7,
+                  "endColumn": 86
+                 },
+                 "diagnostics": [
+                  {
+                   "severity": "INFO",
+                   "code": "TRIGGER_CALL",
+                   "message": "emp_dept_cap_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）",
+                   "range": {
+                    "file": "emp_api.pkb",
+                    "startLine": 40,
+                    "endLine": 40,
+                    "startColumn": 7,
+                    "endColumn": 86
+                   }
+                  }
+                 ],
+                 "callee": "emp_dept_cap_trg.body",
+                 "arguments": [
+                  "NEW.department_id => v_trg_1"
+                 ],
+                 "resolvedTo": "emp_dept_cap_trg.body"
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "id": "emp_api.give_raise~2#stmt-3call2if",
+             "kind": "If",
+             "sourceRange": {
+              "file": "emp_api.pkb",
+              "startLine": 40,
+              "endLine": 40,
+              "startColumn": 7,
+              "endColumn": 86
+             },
+             "branches": [
+              {
+               "condition": "SQL%ROWCOUNT > 0",
+               "body": [
+                {
+                 "id": "emp_api.give_raise~2#stmt-3call2",
+                 "kind": "Call",
+                 "sourceRange": {
+                  "file": "emp_api.pkb",
+                  "startLine": 40,
+                  "endLine": 40,
+                  "startColumn": 7,
+                  "endColumn": 86
+                 },
+                 "diagnostics": [
+                  {
+                   "severity": "INFO",
+                   "code": "TRIGGER_CALL",
+                   "message": "emp_salary_audit_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）",
+                   "range": {
+                    "file": "emp_api.pkb",
+                    "startLine": 40,
+                    "endLine": 40,
+                    "startColumn": 7,
+                    "endColumn": 86
+                   }
+                  }
+                 ],
+                 "callee": "emp_salary_audit_trg.body",
+                 "arguments": [
+                  "NEW.salary => r_rmw_1.salary * (1 + p_pct / 100)",
+                  "OLD.employee_id => v_trg_2",
+                  "OLD.salary => v_trg_3",
+                  "DELETING => FALSE"
+                 ],
+                 "resolvedTo": "emp_salary_audit_trg.body"
+                }
+               ]
+              }
+             ]
             }
-           ],
-           "selectsStar": false,
-           "cardinality": "UNKNOWN",
-           "atMostOneRow": false,
-           "targetStatus": "ERROR"
+           ]
           }
          ]
         }
@@ -9179,6 +10418,7 @@
           "columnOracleType": "NUMBER(4)"
          }
         ],
+        "accumulates_rowcount": false,
         "intoColumns": [
          "employee_id",
          "last_name",
@@ -9665,6 +10905,7 @@
        ],
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE employees\n  SET    last_name     = :NEW.last_name,\n         department_id = (SELECT department_id FROM departments\n                          WHERE  department_name = :NEW.department_name)\n  WHERE  employee_id   = :OLD.employee_id",
+       "accumulates_rowcount": false,
        "intoColumns": [
         "department_id"
        ],
@@ -9866,6 +11107,7 @@
           "columnOracleType": "NUMBER(4)"
          }
         ],
+        "accumulates_rowcount": false,
         "intoColumns": [
          "employee_id",
          "last_name",
@@ -10029,9 +11271,9 @@
        },
        "diagnostics": [
         {
-         "severity": "ERROR",
-         "code": "EXPR",
-         "message": "VALUES column action: only literals and bind markers are allowed, got 'v_action'",
+         "severity": "INFO",
+         "code": "IDENTITY_FILLED",
+         "message": "emp_audit の IDENTITY 列 audit_id を INSERT に足した。値は emp_audit_audit_id_identity から取る（移行先に IDENTITY は無い）",
          "range": {
           "file": "emp_salary_audit_trg.trg",
           "startLine": 10,
@@ -10045,7 +11287,7 @@
         "emp_audit"
        ],
        "sqlKind": "INSERT",
-       "originalSql": "INSERT INTO emp_audit (employee_id, action, old_salary, new_salary)\n  VALUES (:OLD.employee_id, v_action, :OLD.salary, :NEW.salary)",
+       "originalSql": "INSERT INTO emp_audit (employee_id, action, old_salary, new_salary, audit_id) VALUES (:OLD.employee_id, v_action, :OLD.salary, :NEW.salary, emp_audit_audit_id_identity.NEXTVAL)",
        "binds": [
         {
          "name": "OLD_employee_id",
@@ -10055,6 +11297,15 @@
          "column": "employee_id",
          "scalardbType": "INT",
          "columnOracleType": "NUMBER(6)"
+        },
+        {
+         "name": "v_action",
+         "direction": "IN",
+         "oracleType": "emp_audit.action%TYPE",
+         "plsqlVariable": "v_action",
+         "column": "action",
+         "scalardbType": "TEXT",
+         "columnOracleType": "VARCHAR2(10)"
         },
         {
          "name": "OLD_salary",
@@ -10073,12 +11324,24 @@
          "column": "new_salary",
          "scalardbType": "DOUBLE",
          "columnOracleType": "NUMBER(8, 2)"
+        },
+        {
+         "name": "expr5",
+         "direction": "IN",
+         "column": "audit_id",
+         "scalardbType": "BIGINT",
+         "columnOracleType": "NUMBER(12)",
+         "expression": "emp_audit_audit_id_identity.NEXTVAL"
         }
        ],
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false,
-       "targetStatus": "ERROR"
+       "targetStatus": "OK",
+       "targetSql": [
+        "INSERT INTO emp_audit (employee_id, action, old_salary, new_salary, audit_id) VALUES (:OLD_employee_id, :v_action, :OLD_salary, :NEW_salary, :expr5)"
+       ]
       }
      ],
      "deterministic": false,
@@ -10182,9 +11445,9 @@
        },
        "diagnostics": [
         {
-         "severity": "ERROR",
-         "code": "PK",
-         "message": "INSERT must specify the full primary key; missing ['audit_id']",
+         "severity": "INFO",
+         "code": "IDENTITY_FILLED",
+         "message": "emp_audit の IDENTITY 列 audit_id を INSERT に足した。値は emp_audit_audit_id_identity から取る（移行先に IDENTITY は無い）",
          "range": {
           "file": "log_msg.prc",
           "startLine": 5,
@@ -10198,7 +11461,7 @@
         "emp_audit"
        ],
        "sqlKind": "INSERT",
-       "originalSql": "INSERT INTO emp_audit (action, message) VALUES ('LOG', p_msg)",
+       "originalSql": "INSERT INTO emp_audit (action, message, audit_id) VALUES ('LOG', p_msg, emp_audit_audit_id_identity.NEXTVAL)",
        "binds": [
         {
          "name": "p_msg",
@@ -10208,12 +11471,24 @@
          "column": "message",
          "scalardbType": "TEXT",
          "columnOracleType": "VARCHAR2(4000)"
+        },
+        {
+         "name": "expr2",
+         "direction": "IN",
+         "column": "audit_id",
+         "scalardbType": "BIGINT",
+         "columnOracleType": "NUMBER(12)",
+         "expression": "emp_audit_audit_id_identity.NEXTVAL"
         }
        ],
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false,
-       "targetStatus": "ERROR"
+       "targetStatus": "OK",
+       "targetSql": [
+        "INSERT INTO emp_audit (action, message, audit_id) VALUES ('LOG', :p_msg, :expr2)"
+       ]
       },
       {
        "id": "log_msg#stmt-2",
@@ -10423,6 +11698,24 @@
      ],
      "declarations": [
       {
+       "id": "raise_salary#decl-v_rmw_1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "raise_salary.prc",
+        "startLine": 8,
+        "endLine": 11,
+        "startColumn": 3,
+        "endColumn": 25
+       },
+       "type": {
+        "oracle": "NUMBER(8, 2)",
+        "resolved": "NUMBER(8, 2)",
+        "origin": "column-type"
+       },
+       "name": "v_rmw_1",
+       "declarationKind": "variable"
+      },
+      {
        "id": "raise_salary#decl-v_trg_1",
        "kind": "Declaration",
        "sourceRange": {
@@ -10479,6 +11772,79 @@
      ],
      "body": [
       {
+       "id": "raise_salary#stmt-1read",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "raise_salary.prc",
+        "startLine": 8,
+        "endLine": 11,
+        "startColumn": 3,
+        "endColumn": 25
+       },
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "LIMIT",
+         "message": "FETCH FIRST 1 ROWS ONLY rewritten to LIMIT 1",
+         "range": {
+          "file": "raise_salary.prc",
+          "startLine": 8,
+          "endLine": 11,
+          "startColumn": 3,
+          "endColumn": 25
+         }
+        },
+        {
+         "severity": "INFO",
+         "code": "ACCESS",
+         "message": "SELECT: full primary key specified -> GET (single record)",
+         "range": {
+          "file": "raise_salary.prc",
+          "startLine": 8,
+          "endLine": 11,
+          "startColumn": 3,
+          "endColumn": 25
+         }
+        }
+       ],
+       "readSet": [
+        "employees"
+       ],
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT salary FROM employees WHERE employee_id = p_emp_id FETCH FIRST 1 ROWS ONLY",
+       "binds": [
+        {
+         "name": "p_emp_id",
+         "direction": "IN",
+         "oracleType": "employees.employee_id%TYPE",
+         "plsqlVariable": "p_emp_id",
+         "column": "employee_id",
+         "scalardbType": "INT",
+         "columnOracleType": "NUMBER(6)"
+        }
+       ],
+       "intoTargets": [
+        "v_rmw_1"
+       ],
+       "accumulates_rowcount": false,
+       "intoColumns": [
+        "salary"
+       ],
+       "intoTypes": [
+        "DOUBLE"
+       ],
+       "intoOracleTypes": [
+        "NUMBER(8, 2)"
+       ],
+       "selectsStar": false,
+       "cardinality": "AT_MOST_ONE",
+       "atMostOneRow": true,
+       "targetStatus": "OK",
+       "targetSql": [
+        "SELECT salary FROM employees WHERE employee_id = :p_emp_id LIMIT 1"
+       ]
+      },
+      {
        "id": "raise_salary#stmt-1trg1",
        "kind": "SqlOperation",
        "sourceRange": {
@@ -10533,6 +11899,7 @@
        "intoTargets": [
         "v_trg_1"
        ],
+       "accumulates_rowcount": false,
        "intoColumns": [
         "department_id"
        ],
@@ -10607,6 +11974,7 @@
         "v_trg_2",
         "v_trg_3"
        ],
+       "accumulates_rowcount": false,
        "intoColumns": [
         "employee_id",
         "salary"
@@ -10639,6 +12007,18 @@
         "endColumn": 25
        },
        "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "RMW_SPLIT",
+         "message": "employees.salary を読んでから書く 2 文に割った。ScalarDB SQL は列を読む式を受け付けないので、値はアプリで計算する。**同じトランザクションの中で読んで書く**ので、衝突は commit で弾かれる（再試行は呼び出し側の責務・#9）",
+         "range": {
+          "file": "raise_salary.prc",
+          "startLine": 8,
+          "endLine": 11,
+          "startColumn": 3,
+          "endColumn": 25
+         }
+        },
         {
          "severity": "WARN",
          "code": "TRIGGER_NOT_APPLIED",
@@ -10676,9 +12056,9 @@
          }
         },
         {
-         "severity": "ERROR",
-         "code": "RETURNING",
-         "message": "RETURNING is not supported",
+         "severity": "INFO",
+         "code": "ACCESS",
+         "message": "UPDATE: full primary key specified -> GET (single record)",
          "range": {
           "file": "raise_salary.prc",
           "startLine": 8,
@@ -10692,7 +12072,7 @@
         "employees"
        ],
        "sqlKind": "UPDATE",
-       "originalSql": "UPDATE employees\n  SET    salary = ROUND(salary * (1 + p_pct / 100), 2)\n  WHERE  employee_id = p_emp_id\n  RETURNING salary INTO p_new_sal",
+       "originalSql": "UPDATE employees SET salary = ROUND(v_rmw_1 * (1 + p_pct / 100), 2) WHERE employee_id = p_emp_id",
        "binds": [
         {
          "name": "p_emp_id",
@@ -10704,16 +12084,34 @@
          "columnOracleType": "NUMBER(6)"
         },
         {
+         "name": "v_rmw_1",
+         "direction": "IN",
+         "oracleType": "NUMBER(8, 2)",
+         "plsqlVariable": "v_rmw_1"
+        },
+        {
          "name": "p_pct",
          "direction": "IN",
          "oracleType": "NUMBER",
          "plsqlVariable": "p_pct"
+        },
+        {
+         "name": "expr4",
+         "direction": "IN",
+         "column": "salary",
+         "scalardbType": "DOUBLE",
+         "columnOracleType": "NUMBER(8, 2)",
+         "expression": "ROUND(v_rmw_1 * (1 + p_pct / 100), 2)"
         }
        ],
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false,
-       "targetStatus": "ERROR"
+       "targetStatus": "OK",
+       "targetSql": [
+        "UPDATE employees SET salary = :expr4 WHERE employee_id = :p_emp_id"
+       ]
       },
       {
        "id": "raise_salary#stmt-1call1if",
@@ -10803,7 +12201,7 @@
            ],
            "callee": "emp_salary_audit_trg.body",
            "arguments": [
-            "NEW.salary => ROUND(salary * (1 + p_pct / 100), 2)",
+            "NEW.salary => ROUND(v_rmw_1 * (1 + p_pct / 100), 2)",
             "OLD.employee_id => v_trg_2",
             "OLD.salary => v_trg_3",
             "DELETING => FALSE"
@@ -10813,6 +12211,19 @@
          ]
         }
        ]
+      },
+      {
+       "id": "raise_salary#stmt-1returned_salary",
+       "kind": "Assignment",
+       "sourceRange": {
+        "file": "raise_salary.prc",
+        "startLine": 8,
+        "endLine": 11,
+        "startColumn": 3,
+        "endColumn": 25
+       },
+       "target": "p_new_sal",
+       "expression": "ROUND(v_rmw_1 * (1 + p_pct / 100), 2)"
       },
       {
        "id": "raise_salary#stmt-2",

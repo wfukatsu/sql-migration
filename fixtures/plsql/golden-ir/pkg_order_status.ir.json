@@ -89,6 +89,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT status INTO v_status FROM orders WHERE order_id = p_order_id",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false
@@ -216,6 +217,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT status INTO p_status FROM orders WHERE customer_id = p_customer_id",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false
