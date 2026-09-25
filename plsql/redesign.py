@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .ir import model as M
-from .limits import Boundaries, DbLinks, DynamicTables, Limits, RowLocks
+from .limits import PackageState, Boundaries, DbLinks, DynamicTables, Limits, RowLocks
 
 STATES = ("undecided", "decided", "verified")
 LABELS = {"undecided": "未決定", "decided": "決定済み（実 DB では未検証、または相違あり）",
@@ -44,17 +44,18 @@ class Decided:
     dynamic_tables: DynamicTables = field(default_factory=DynamicTables)
     limits: Limits = field(default_factory=Limits)
     db_links: DbLinks = field(default_factory=DbLinks)
+    package_state: PackageState = field(default_factory=PackageState)
 
     @classmethod
     def load(cls, path: str | Path | None) -> "Decided":
         if path is None:
             return cls()
         return cls(RowLocks.load(path), Boundaries.load(path), DynamicTables.load(path), Limits.load(path),
-                   DbLinks.load(path))
+                   DbLinks.load(path), PackageState.load(path))
 
     def for_analysis(self) -> dict:
         return {"row_locks": self.row_locks, "boundaries": self.boundaries, "limits": self.limits,
-                "db_links": self.db_links}
+                "db_links": self.db_links, "package_state": self.package_state}
 
 
 @dataclass
@@ -88,6 +89,8 @@ def _answer(rule_id: str, routine: M.Routine, module: M.Module | None, decided: 
             where = ", ".join(f"{link} -> namespace {decided.db_links.namespace(link)}" for link in links)
             return "limits.yaml: dbLinks", f"{where}。{decided.db_links.why(links[0]) or ''}".strip()
         return None
+    if rule_id == "STATE-001" and module is not None and decided.package_state.decided(module.name):
+        return "limits.yaml: packageState.carried", decided.package_state.why(module.name) or ""
     if rule_id == "DYN-001" and decided.dynamic_tables.for_routine(name):
         tables = ", ".join(decided.dynamic_tables.for_routine(name))
         return "limits.yaml: dynamicTables", f"受け付ける表名を決めてある: {tables}。それ以外は実行時に拒否する"

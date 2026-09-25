@@ -97,9 +97,12 @@ def main(argv: list[str] | None = None) -> int:
 
     from .limits import DbLinks
 
+    from .limits import PackageState
+
     analysis = build_analysis(root, schema, scalardb_schema=scalardb, row_locks=row_locks, limits=limits,
                               db_links=DbLinks.load(args.limits) if args.limits else None,
-                              boundaries=Boundaries.load(args.limits) if args.limits else Boundaries())
+                              boundaries=Boundaries.load(args.limits) if args.limits else Boundaries(),
+                              package_state=PackageState.load(args.limits) if args.limits else None)
     decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), Evidence())
     if args.handover and not args.handover_anyway:
         blockers = _handover_blockers(analysis.program, decisions, args.limits)

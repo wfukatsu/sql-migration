@@ -74,6 +74,9 @@ class Parameter(Node):
     direction: str = "IN"        # IN | OUT | IN OUT
     default: str | None = None
     nocopy: bool = False
+    # #46: a package variable the caller carries in and out (limits.yaml packageState.carried). Added by
+    # plsql.package_state.carry, not written in the source: the caller passes its own copy of the same name
+    carried: bool = False
 
 
 @dataclass
@@ -355,8 +358,8 @@ class Module(Node):
 
     @property
     def has_package_state(self) -> bool:
-        return self.module_kind == "package" and any(
-            d.declaration_kind in ("variable", "constant") for d in self.declarations)
+        # a constant is not state: it never changes, so a field holds it for every caller alike (#46)
+        return self.module_kind == "package" and any(d.declaration_kind == "variable" for d in self.declarations)
 
 
 @dataclass
