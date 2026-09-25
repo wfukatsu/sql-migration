@@ -118,8 +118,23 @@ def difference(expected, actual) -> str | None:
     if isinstance(expected, str) and isinstance(actual, str):
         if expected == actual:
             return None
+        if _same_day(expected, actual):
+            return None
         return "whitespace" if expected.strip() == actual.strip() else "value"
     return None if expected == actual else "type"
+
+
+_MIDNIGHT = re.compile(r"^(\d{4}-\d{2}-\d{2})T00:00:00(?:\.0+)?$")
+
+
+def _same_day(a: str, b: str) -> bool:
+    """An Oracle DATE (`2013-06-17T00:00:00`, a timestamp with no time of day) against a ScalarDB DATE column
+    (`2013-06-17`): the same day, written by two different column types (#42). rowcompare has the same rule."""
+    for stamp, day in ((a, b), (b, a)):
+        m = _MIDNIGHT.match(stamp)
+        if m and m.group(1) == day:
+            return True
+    return False
 
 
 # --------------------------------------------------------------------------------------------------
