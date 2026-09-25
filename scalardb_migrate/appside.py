@@ -195,6 +195,17 @@ def h2_unsupported(node: exp.Expression) -> list[str]:
         found.append("UNPIVOT (UNION ALL)" if p.args.get("unpivot") else "PIVOT (conditional aggregation)")
     if any((w.args.get("over") or "").upper() == "KEEP" for w in node.find_all(exp.Window)):
         found.append("KEEP (DENSE_RANK FIRST/LAST) (ROW_NUMBER() ... = 1)")
+    # H2 2.5 refused these as written when a real Oracle accepted them (samples/oracle-samples, 2026-09-24: #31-#33)
+    if any((j.args.get("side") or "").upper() == "FULL" for j in node.find_all(exp.Join)):
+        found.append("FULL OUTER JOIN (H2 has no FULL JOIN: UNION the LEFT and RIGHT joins, or match the two fetches in the application)")
+    if any(True for _ in node.find_all(exp.Lateral)):
+        found.append("LATERAL / CROSS APPLY (H2 has no LATERAL: run the inner query per outer row in the application)")
+    if any(True for _ in node.find_all(exp.TableSample)):
+        found.append("SAMPLE (H2 has no SAMPLE; the result is random on Oracle too)")
+    if any(w.args.get("search") for w in node.find_all(exp.With)):
+        found.append("SEARCH DEPTH / BREADTH FIRST (H2 has no SEARCH clause: order the recursion in the application)")
+    if any(isinstance(t.this, exp.JSONTable) for t in node.find_all(exp.Table)):
+        found.append("JSON_TABLE (H2 has no JSON_TABLE: read the JSON column and unnest it in the application)")
     return list(dict.fromkeys(found))
 
 

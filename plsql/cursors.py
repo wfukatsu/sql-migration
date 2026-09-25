@@ -431,26 +431,79 @@ def _scan(statements: list[M.Statement], index: int, routine: M.Routine, symbols
     if query is None or not targets:
         return None
     columns = _output_names(query)
-    if columns is None or len(columns) != len(targets):
+    whole_row = len(targets) == 1 and _rowtype_of(routine, targets[0]) == cursor
+    if not whole_row and (columns is None or len(columns) != len(targets)):
         return None   # 位置で対応させられない（射影が式で名前を持たないときなど）
-    row = _row_name(routine)
     operation = _operation(run[1], routine, query, [])
     if operation is None:
         return None
     operation.cardinality = "MANY"
-    assignments = [
-        M.Assignment(id=f"{body[0].id}row{position}", kind="Assignment",
-                     source_range=body[0].source_range, target=target,
-                     expression=f"{row}.{column}")
-        for position, (target, column) in enumerate(zip(targets, columns), start=1)]
+    if whole_row:
+        # `FETCH c INTO r` with `r c%ROWTYPE`: the record itself is the loop variable (#39). The generator then
+        # emits no separate local for it, so a read of `r` after the loop does not compile -- visible, not wrong
+        row, assignments = targets[0], []
+    else:
+        row = _row_name(routine)
+        assignments = [
+            M.Assignment(id=f"{body[0].id}row{position}", kind="Assignment",
+                         source_range=body[0].source_range, target=target,
+                         expression=f"{row}.{column}")
+            for position, (target, column) in enumerate(zip(targets, columns), start=1)]
+    # `c%ROWCOUNT` inside the body: the rows read so far, counted in a local of its own (#39)
+    rowcount = re.compile(rf"\b{re.escape(cursor)}\s*%\s*ROWCOUNT\b", re.IGNORECASE)
+    if any(rowcount.search(text) for statement in _walk_all(rest) if dataclasses.is_dataclass(statement)
+           for text in _texts(statement)):
+        counter = _free_name(routine, f"{cursor}_rowcount")
+        routine.declarations.append(M.Declaration(
+            id=f"{run[0].id}rowcount", kind="Declaration", source_range=run[0].source_range, name=counter,
+            type=M.TypeRef(oracle="PLS_INTEGER", resolved="PLS_INTEGER"), initial="0"))
+        _replace_in(rest, rowcount, counter)
+        assignments.append(M.Assignment(id=f"{run[0].id}count", kind="Assignment",
+                                        source_range=run[0].source_range, target=counter,
+                                        expression=f"{counter} + 1"))
     loop = M.Loop(id=run[1].id, kind="Loop", source_range=run[1].source_range,
                   loop_kind="cursor-for", variable=row, query=operation,
                   body=assignments + rest, cursor=f"{row} IN ({query})")
     loop.add("INFO", "CUR_SCAN",
              f"cursor {cursor} は読むだけのループだった。行を先に読んで回す形にした——移行先に"
              f"跨トランザクションの cursor は無いので、動く行数はメモリで決まる（上限は --limits）。"
-             f"FETCH の代入先はそのまま残してあるので、ループの後でも Oracle と同じ値が入っている")
+             + ("FETCH の代入先はそのまま残してあるので、ループの後でも Oracle と同じ値が入っている"
+                if not whole_row else f"%ROWTYPE の {row} がループ変数になる（ループの後の {row} は読めない）"))
     return ([loop], 3, cursor)
+
+
+def _rowtype_of(routine: M.Routine, name: str) -> str | None:
+    """`r c_emp%ROWTYPE` -> `c_emp`: the cursor (or table) whose row the declaration holds."""
+    for declaration in routine.declarations:
+        if declaration.name.lower() == name.lower() and declaration.type is not None:
+            written = (declaration.type.oracle or "").strip()
+            if written.upper().endswith("%ROWTYPE"):
+                return written.split("%")[0].strip().lower()
+    return None
+
+
+def _free_name(routine: M.Routine, wanted: str) -> str:
+    used = {d.name.lower() for d in routine.declarations} | {p.name.lower() for p in routine.parameters}
+    name, index = wanted, 1
+    while name.lower() in used:
+        index += 1
+        name = f"{wanted}_{index}"
+    return name
+
+
+def _replace_in(statements: list[M.Statement], pattern: re.Pattern, replacement: str) -> None:
+    for statement in _walk_all(statements):
+        if not dataclasses.is_dataclass(statement):
+            continue
+        for field in dataclasses.fields(statement):
+            value = getattr(statement, field.name, None)
+            if isinstance(value, str) and field.name not in ("id", "kind"):
+                setattr(statement, field.name, pattern.sub(replacement, value))
+            elif isinstance(value, list) and value and all(isinstance(v, str) for v in value):
+                setattr(statement, field.name, [pattern.sub(replacement, v) for v in value])
+        for branch in getattr(statement, "branches", []) or []:
+            if isinstance(getattr(branch, "condition", None), str):
+                branch.condition = pattern.sub(replacement, branch.condition)
 
 
 def _walk_all(statements: list[M.Statement]) -> list[M.Statement]:

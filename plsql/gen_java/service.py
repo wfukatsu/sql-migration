@@ -133,7 +133,7 @@ def _sibling_owner(statement: M.Statement, module: M.Module) -> str | None:
     """別の module の routine を呼ぶ文なら、その module 名。"""
     if statement.kind != "Call" or not getattr(statement, "resolved_to", None):
         return None
-    owner, _, _ = statement.resolved_to.rpartition(".")
+    owner = _owner_module(statement.resolved_to, module)
     if not owner or owner == module.name or _routine(statement.resolved_to) is None:
         return None
     return owner
@@ -251,7 +251,9 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
         names[variable] = java_name(bind.name)
         names[f":{variable}"] = java_name(bind.name)
     names.update({p.name: java_name(p.name) for p in routine.parameters})
-    names.update({d.name: java_name(d.name) for d in routine.declarations})
+    # a TYPE is not a value: `t_names('a', 'b')` (a collection constructor) rendered as a call to a method that
+    # does not exist. Left out, the constructor is reported instead (#40)
+    names.update({d.name: java_name(d.name) for d in routine.declarations if d.declaration_kind != "type"})
     if module is not None:
         # an overloaded name is several Java methods (`put1`, `put2`); which one an expression means is not
         # resolved, so the name is left out and the expression is reported instead of compiled against nothing
@@ -266,7 +268,11 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
                     java_type(p.type.resolved if p.type else None).name for p in r.parameters)
         # a trigger declares its locals on the module, not on the body, and a package-level cursor is visible
         # to every routine; leaving them out reports real names as unknown
-        names.update({d.name: java_name(d.name) for d in module.declarations})
+        # a package-level variable is session state (STATE-001): there is no field to assign, so a reference
+        # is reported rather than compiled against nothing (#40). Constants and a trigger's locals stay
+        names.update({d.name: java_name(d.name) for d in module.declarations
+                      if d.declaration_kind != "type"
+                      and not (module.module_kind == "package" and d.declaration_kind == "variable")})
     return names
 
 
@@ -366,12 +372,20 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
         for parameter in outs:
             # an OUT argument becomes a local, and comes back in the result record rather than through the
             # signature: a caller must not see a half-updated set when an exception interrupts the routine
+            if parameter.direction == "IN OUT":
+                # the method parameter itself is the local: `String pName = pName;` redeclared it and javac
+                # refused the whole class (2026-09-24, samples/oracle-samples normalize_name)
+                continue
             mapped = java_type(parameter.type.resolved if parameter.type else None)
             file.add_import(*mapped.imports)
-            initial = f" = {java_name(parameter.name)}" if parameter.direction == "IN OUT" else " = null"
-            f.line(f"{mapped.name} {java_name(parameter.name)}{initial};")
+            f.line(f"{mapped.name} {java_name(parameter.name)} = null;")
         chunked = {(loop.variable or "").lower() for loop in _walk(routine.body)
                    if loop.kind == "Loop" and getattr(loop, "chunk", None)}
+        # a `%ROWTYPE` record that a rewritten scan made its loop variable (#39): the for declares it
+        chunked |= {(loop.variable or "").lower() for loop in _walk(routine.body)
+                    if loop.kind == "Loop" and loop.loop_kind == "cursor-for" and loop.variable
+                    and any(d.name.lower() == loop.variable.lower() and d.type is not None
+                            and (d.type.oracle or "").upper().endswith("%ROWTYPE") for d in routine.declarations)}
         for declaration in routine.declarations:
             if declaration.name.lower() in chunked:
                 # 分割読みのループ変数（#14）。PL/SQL では宣言された配列だが、Java では塊そのもの
@@ -477,7 +491,16 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
             # handler の中の `SQLCODE` は「いま処理している例外の番号」である。catch が束ねている
             # 例外がそれを持っているので、そこから読む。handler の外では 0 なので、外では置かない
             # ——「いつでも 0」を名前として与えると、handler の外の `SQLCODE` が黙って通る
+            # SQLERRM is the message with its ORA- prefix, and FORMAT_ERROR_BACKTRACE the "ORA-06512: at" lines:
+            # both read from the caught exception (#38, samples/oracle-samples b04_6_2_user_exceptions)
+            f.add_import("com.scalar.migrate.plsql.Plsql")
+            errm = f"Plsql.sqlerrm({variable}.code(), {variable}.getMessage())"
+            backtrace = f"Plsql.errorBacktrace({variable})"
             _HANDLER_ERROR.set({"SQLCODE": f"{variable}.code()", "sqlcode": f"{variable}.code()",
+                                "SQLERRM": errm, "sqlerrm": errm,
+                                "DBMS_UTILITY.FORMAT_ERROR_BACKTRACE": backtrace,
+                                "dbms_utility.format_error_backtrace": backtrace,
+                                "DBMS_UTILITY.FORMAT_ERROR_STACK": errm, "dbms_utility.format_error_stack": errm,
                                 _CAUGHT: variable})
             try:
                 _statements(f, handler.body, routine, result)
@@ -536,7 +559,20 @@ def _cannot_happen_on_the_target(names: list[str], routine: M.Routine) -> bool:
 
 
 def _always_throws(statement: M.Statement, result: ServiceFile) -> bool:
-    return statement.id in result.untranslated or statement.kind == "Raise"
+    """Does the Java emitted for this statement always leave by throwing?
+
+    A refused statement and RAISE do. So does an if / else (or CASE, whose missing ELSE throws CASE_NOT_FOUND)
+    every branch of which does: javac then rejects whatever follows as unreachable, which is what happened when
+    both arms of an IF opened a REF CURSOR the generator could not translate (#36, samples/oracle-samples).
+    """
+    if statement.id in result.untranslated or statement.kind == "Raise":
+        return True
+    if statement.kind in ("If", "Case"):
+        branches = all(any(_always_throws(s, result) for s in b.body) for b in statement.branches)
+        if statement.else_body:
+            return branches and any(_always_throws(s, result) for s in statement.else_body)
+        return branches and statement.kind == "Case"
+    return False
 
 
 def _always_exits(routine: M.Routine, result: ServiceFile) -> bool:
@@ -598,7 +634,20 @@ def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
     # reads it then fails to compile. Writing the NULL out keeps the two the same.
     initial = " = null" if mapped.name not in ("int", "long", "double", "boolean") else ""
     if declaration.initial:
-        rendered = _expr(file, declaration.initial, routine, result, boolean_value=mapped.name == "Boolean")
+        try:
+            rendered = _expr(file, declaration.initial, routine, result, boolean_value=mapped.name == "Boolean")
+        except Untranslatable as e:
+            # `c INTEGER := DBMS_SQL.OPEN_CURSOR` -- an initialiser the translator has no Java for. Statements
+            # already came out as a comment plus a throw; a declaration crashed the whole run instead
+            # (2026-09-24, samples/oracle-samples). Same treatment: the variable is declared, the routine stops here.
+            file.comment(f"not translated: {declaration.name} := {e.text.strip()[:120]}")
+            file.comment(f"    unresolved: {', '.join(e.names)}")
+            file.line(f"{mapped.name} {java_name(declaration.name)}{initial};")
+            file.line(f'if (true) throw new UnsupportedOperationException("unresolved in declaration '
+                      f'{declaration.name}: {", ".join(e.names)}");')
+            if routine.id not in result.untranslated:
+                result.untranslated.append(routine.id)
+            return
         if mapped.name == "BigDecimal" and rendered.lstrip("-").isdigit():
             file.add_import("com.scalar.migrate.plsql.Plsql")
             rendered = f"Plsql.number({rendered})"
@@ -690,6 +739,15 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
             # （採番 Service）へ移すのは再設計であって翻訳ではない（#12 / trigger-patterns C）。
             # 解決できる名前なので黙って通ってしまう——ここで明示的に拒む。
             raise Untranslatable([f"assignment to {statement.target}"], statement.target or "")
+        written = (statement.target or "").strip()
+        if "(" in written:
+            # `v_sal(r.last_name) := r.salary`: an element of a collection. The generated List has no such
+            # assignment, and `vSal(x) = y` is not Java (#40)
+            raise Untranslatable([f"assignment to collection element {written}"], written)
+        if "." in written and (_holder(routine, written.partition(".")[0]) is not None
+                               or written.partition(".")[0].lower() in {k.lower() for k in _LOOP_ROWS.get()}):
+            # `v_rec.id := 1`: a field of a record. The generated records are immutable (#40)
+            raise Untranslatable([f"assignment to record field {written}"], written)
         # the target goes through the translator too: `:NEW.col` is not a Java name, and rendering it anyway
         # produced code that did not compile
         target = _expr(file, statement.target, routine, result)
@@ -712,6 +770,9 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
             file.line(f"return new {java_class_name(routine_stem(routine))}Result({', '.join(components)});")
         elif value is not None:
             file.line(f"return {value};")
+        elif returns != "void":
+            # `RETURN;` in a function: a PIPELINED function ends its stream this way (#40)
+            file.line("return null;")
         else:
             file.line("return;")
     elif kind == "If":
@@ -832,6 +893,7 @@ def _case(file: JavaFile, statement: M.Case, routine: M.Routine, result: Service
 
 def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: ServiceFile) -> None:
     label = f"{java_name(statement.label)}: " if statement.label else ""
+    index_name = None   # a numeric FOR loop's index: a local of the body only
     if statement.loop_kind == "while":
         opening = f"{label}while ({_expr(file, statement.condition, routine, result)})"
     elif statement.loop_kind == "cursor-for" and statement.query is not None:
@@ -840,22 +902,44 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
     elif statement.loop_kind == "forall" and _forall_collection(statement, routine) is not None:
         _forall(file, statement, routine, result)
         return
+    elif statement.loop_kind == "for" and (numeric := NUMERIC_FOR.match(statement.cursor or "")):
+        # `FOR i IN [REVERSE] low .. high`: PL/SQL evaluates the bounds once, so the end is held in a second
+        # loop variable; the index is a PLS_INTEGER (#37, samples/oracle-samples b04_2_control_flow)
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        index_name = numeric.group("index")
+        index = java_name(index_name)
+        low = _expr(file, numeric.group("low"), routine, result)
+        high = _expr(file, numeric.group("high"), routine, result)
+        if numeric.group("reverse"):
+            opening = (f"{label}for (int {index} = Plsql.toInt({high}), {index}End = Plsql.toInt({low}); "
+                       f"{index} >= {index}End; {index}--)")
+        else:
+            opening = (f"{label}for (int {index} = Plsql.toInt({low}), {index}End = Plsql.toInt({high}); "
+                       f"{index} <= {index}End; {index}++)")
     elif statement.loop_kind in ("cursor-for", "forall", "for"):
-        # A numeric FOR loop's bounds, and a named cursor's query, are still not modelled as statements, so
-        # there is nothing to iterate. Emitting a call to a repository method that does not exist would give
-        # code that cannot compile; refusing keeps the gap where a reviewer sees it.
+        # A named cursor's query is still not modelled as a statement, so there is nothing to iterate. Emitting
+        # a call to a repository method that does not exist would give code that cannot compile; refusing keeps
+        # the gap where a reviewer sees it.
         raise Untranslatable([f"{statement.loop_kind} loop"], statement.cursor or statement.kind)
     else:
         opening = f"{label}while (true)"
     outer = _LOOP_LABELS.get()
+    outer_locals = _BLOCK_LOCALS.get()
     if statement.label:
         _LOOP_LABELS.set(outer | {statement.label.lower()})
+    if index_name:
+        _BLOCK_LOCALS.set({**outer_locals, index_name: java_name(index_name)})
     try:
         with file.block(opening) as f:
             _statements(f, statement.body, routine, result)
     finally:
         _LOOP_LABELS.set(outer)
+        _BLOCK_LOCALS.set(outer_locals)
 
+
+# `j IN REVERSE 1 .. 6`, `a IN 1 .. v_max`: what the lowering keeps of a numeric FOR loop
+NUMERIC_FOR = re.compile(r"^\s*(?P<index>[\w$#]+)\s+IN\s+(?P<reverse>REVERSE\s+)?(?P<low>.+?)\s*\.\.\s*(?P<high>.+?)\s*$",
+                         re.IGNORECASE | re.DOTALL)
 
 FORALL_BOUND = re.compile(r"^\s*1\s*\.\.\s*(?P<collection>[\w$#]+)\s*\.\s*COUNT\s*$", re.IGNORECASE)
 
@@ -1031,52 +1115,122 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
                              statement.callee)
     if statement.resolved_to:
         module = _MODULE.get()
-        owner = statement.resolved_to.rsplit(".", 1)[0] if "." in statement.resolved_to else None
+        owner = _owner_module(statement.resolved_to, module)
         callee = _routine(statement.resolved_to) or \
             next((r for r in (module.routines if module else []) if r.id == statement.resolved_to), None)
     else:
         callee = None
-    arguments = ", ".join(_expr(file, a, routine, result) for a in _positional(statement, callee))
+    ordered = _positional(statement, callee)
+    if callee is not None and any(p.direction in ("OUT", "IN OUT") for p in callee.parameters):
+        # the callee hands its OUT / IN OUT arguments back in its result record (#40): the values go in
+        # by position, the record comes back, and each OUT argument is assigned from the matching field
+        ins = [a for p, a in zip(callee.parameters, ordered) if p.direction != "OUT"]
+        outs = [(p, a) for p, a in zip(callee.parameters, ordered) if p.direction in ("OUT", "IN OUT")]
+        for p, a in outs:
+            if _holder(routine, a) is None and a.lower() not in _BLOCK_LOCALS.get():
+                raise Untranslatable([f"OUT argument {p.name} => {a} is not a local"], statement.callee)
+        arguments = ", ".join(_fit_argument(file, _expr(file, a, routine, result), p)
+                              for p, a in zip([p for p in callee.parameters if p.direction != "OUT"], ins))
+    else:
+        outs = []
+        expected = list(callee.parameters) if callee is not None else []
+        arguments = ", ".join(_fit_argument(file, _expr(file, a, routine, result), expected[i] if i < len(expected) else None)
+                              for i, a in enumerate(ordered))
     if statement.resolved_to:
+        if callee is not None and needs_audit(callee):
+            arguments = ", ".join(a for a in [arguments, "audit"] if a)
         if module is not None and owner is not None and owner != module.name:
             # 別の module の routine を呼ぶ。**PL/SQL がそう書いてある**ので、誰を呼ぶかは決定では
             # ない——注入するのは trigger と同じ形である（#12）。以前はここで拒んでいたが、
             # そのために「呼ばれる側が REVIEW なだけの routine」まで動かせなかった
             if callee is None:
                 raise Untranslatable([statement.resolved_to], f"call into {owner}")
-            if needs_audit(callee):
-                arguments = ", ".join(a for a in [arguments, "audit"] if a)
-            file.line(f"{java_name(owner)}.{java_name(routine_stem(callee))}({arguments});")
+            invocation = f"{java_name(owner)}.{java_name(routine_stem(callee))}({arguments})"
+        else:
+            # the Java name comes from the routine, not from the id: `pkg.put~2` is the method `put2`
+            invocation = f"{java_name(routine_stem(callee) if callee is not None else target.split('.')[-1])}({arguments})"
+        if not outs:
+            file.line(f"{invocation};")
             return
-        if callee is not None and needs_audit(callee):
-            arguments = ", ".join(a for a in [arguments, "audit"] if a)
-        # the Java name comes from the routine, not from the id: `pkg.put~2` is the method `put2`
-        file.line(f"{java_name(routine_stem(callee) if callee is not None else target.split('.')[-1])}({arguments});")
+        record = java_class_name(routine_stem(callee)) + "Result"
+        if _DOMAIN.get():
+            file.add_import(f"{_DOMAIN.get()}.{record}")
+        holder = f"{java_name(routine_stem(callee))}Result"
+        # a block of its own, so that the same routine called twice does not declare the holder twice
+        with file.block("") as f:
+            f.line(f"{record} {holder} = {invocation};")
+            for p, a in outs:
+                target_type = _local_type(routine, a)
+                f.line(f"{_expr(f, a, routine, result)} = {_coerce(f, f'{holder}.{java_name(p.name)}()', target_type)};")
+    elif (statement.callee or "").upper() in ("DBMS_OUTPUT.PUT_LINE", "DBMS_OUTPUT.PUT", "DBMS_OUTPUT.NEW_LINE"):
+        # the session's output buffer: no row is written, so the helper keeps the text per thread and the
+        # caller reads it back (analysis.HARMLESS_CALLEES already treats it as harmless). Throwing here made
+        # every sample block that prints a line unrunnable (2026-09-24, samples/oracle-samples)
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        helper = {"DBMS_OUTPUT.PUT_LINE": "putLine", "DBMS_OUTPUT.PUT": "put", "DBMS_OUTPUT.NEW_LINE": "newLine"}
+        file.line(f"Plsql.{helper[statement.callee.upper()]}({arguments});")
     else:
         file.comment(f"external call: {statement.callee}")
         file.line(f'throw new UnsupportedOperationException("external call: {statement.callee}");')
 
 
 def _positional(statement: M.Call, callee: M.Routine | None) -> list[str]:
-    """The arguments in the callee's parameter order. `put(p_note => 'x', p_id => 1)` was rendered as it stood,
-    which is not Java -- and named notation is what tells two overloads apart."""
-    if not any("=>" in a for a in statement.arguments):
+    """The arguments in the callee's parameter order (OUT parameters included, so that `_call` can pair them).
+    `put(p_note => 'x', p_id => 1)` was rendered as it stood, which is not Java -- and named notation is what
+    tells two overloads apart. A parameter left to its DEFAULT is filled with the default when it is a literal."""
+    if not any("=>" in a for a in statement.arguments) and (
+            callee is None or len(statement.arguments) >= len(callee.parameters)):
         return list(statement.arguments)
     if callee is None:
         raise Untranslatable(["named arguments of a routine that is not in the program"], statement.callee)
     positional = [a for a in statement.arguments if "=>" not in a]
     named = {a.partition("=>")[0].strip().lower(): a.partition("=>")[2].strip()
              for a in statement.arguments if "=>" in a}
-    taken = [p for p in callee.parameters if p.direction == "IN"][len(positional):]
+    taken = list(callee.parameters)[len(positional):]
     out = list(positional)
     for parameter in taken:
-        if parameter.name.lower() not in named:
+        if parameter.name.lower() in named:
+            out.append(named.pop(parameter.name.lower()))
+        elif parameter.default is not None and LITERAL_DEFAULT.match(parameter.default.strip()):
+            out.append(parameter.default.strip())
+        else:
             # a parameter left to its default: the generated method has no default to fall back on
             raise Untranslatable([f"{parameter.name} is left to its default"], statement.callee)
-        out.append(named.pop(parameter.name.lower()))
     if named:
         raise Untranslatable([f"no parameter named {', '.join(named)}"], statement.callee)
     return out
+
+
+def _fit_argument(file: JavaFile, rendered: str, parameter: "M.Parameter | None") -> str:
+    """A rendered argument, shaped for the callee's Java parameter: `raise_salary(104, 10)` handed the literal 10
+    to a `BigDecimal pPct` and javac refused it (#40). The expression translator does this for calls inside
+    expressions; a call statement goes through here."""
+    if parameter is None or parameter.type is None:
+        return rendered
+    expected = java_type(parameter.type.resolved or parameter.type.oracle).name
+    literal = re.fullmatch(r"-?\d+(?:\.\d+)?", rendered)
+    if expected == "BigDecimal" and not rendered.startswith("Plsql.dec("):
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        return f"Plsql.dec({rendered})"
+    if expected == "Long" and literal and "." not in rendered:
+        return f"{rendered}L"
+    return rendered
+
+
+# a DEFAULT the call can spell out itself: NULL, a number, a quoted string, TRUE / FALSE
+LITERAL_DEFAULT = re.compile(r"^(?:NULL|TRUE|FALSE|[+-]?\d+(?:\.\d+)?|'(?:[^']|'')*')$", re.IGNORECASE)
+
+
+def _owner_module(routine_id: str, module: "M.Module | None") -> str | None:
+    """The module a resolved call lands in: `pkg.put` -> `pkg`; a standalone `log_msg` -> its own module
+    `log_msg` (there was no owner for it, so the call was rendered as if it were a sibling: #40)."""
+    if "." in routine_id:
+        return routine_id.rsplit(".", 1)[0]
+    program = _PROGRAM.get()
+    for candidate in (program.modules if program else []):
+        if any(r.id == routine_id for r in candidate.routines):
+            return None if module is not None and candidate.name == module.name else candidate.name
+    return None
 
 
 def _trigger_call(file: JavaFile, statement: M.Call, routine: M.Routine,
@@ -1335,6 +1489,11 @@ def _coerce(file: JavaFile, value: str, target_type: str) -> str:
     if target_type == "BigDecimal" and not value.startswith("Plsql.dec("):
         file.add_import("com.scalar.migrate.plsql.Plsql")
         return f"Plsql.dec({value})"
+    # `i := i + 1` on a PLS_INTEGER: the arithmetic helpers return Object (date arithmetic returns a date), and
+    # `Integer i = Plsql.add(i, 1)` did not compile (2026-09-24, samples/oracle-samples b04_2_control_flow)
+    if target_type in ("Integer", "Long") and value.startswith("Plsql.") and not value.startswith(("Plsql.fit", "Plsql.to")):
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        return f"Plsql.{'toInt' if target_type == 'Integer' else 'toLong'}({value})"
     return value
 
 
