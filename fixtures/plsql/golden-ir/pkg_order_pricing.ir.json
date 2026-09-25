@@ -372,6 +372,7 @@
         "atMostOneRow": false
        },
        "variable": "r",
+       "returns_rows": false,
        "body": [
         {
          "id": "pkg_order_pricing.order_total#stmt-2",

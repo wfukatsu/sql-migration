@@ -167,6 +167,7 @@
         "endColumn": 9
        },
        "loopKind": "basic",
+       "returns_rows": false,
        "body": [
         {
          "id": "pkg_order_report.count_by_status#stmt-4",
@@ -373,6 +374,7 @@
         "atMostOneRow": false
        },
        "variable": "r",
+       "returns_rows": false,
        "body": [
         {
          "id": "pkg_order_report.mark_reviewed#stmt-2",

@@ -159,6 +159,7 @@
         "atMostOneRow": false
        },
        "variable": "r",
+       "returns_rows": false,
        "body": [
         {
          "id": "prc_nightly_close#stmt-4",

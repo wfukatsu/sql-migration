@@ -147,6 +147,7 @@
         "atMostOneRow": false
        },
        "variable": "r",
+       "returns_rows": false,
        "body": [
         {
          "id": "prc_reprice_all#stmt-3row1",

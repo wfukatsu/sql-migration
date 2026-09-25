@@ -81,6 +81,7 @@
        },
        "loopKind": "forall",
        "cursor": "1 .. p_ids.COUNT",
+       "returns_rows": false,
        "body": [
         {
          "id": "pkg_customer_import.import#stmt-2",
