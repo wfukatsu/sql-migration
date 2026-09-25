@@ -493,18 +493,19 @@ def test_a_sibling_call_converts_the_argument_of_a_number_parameter():
 
 
 def test_an_if_whose_every_branch_is_refused_ends_the_block(tmp_path):
-    """Both arms of the IF open a REF CURSOR the generator cannot translate, so both throw; javac then rejects the
-    loop after the IF as unreachable. The block ends at the IF instead (#36, samples/oracle-samples b04_4_4)."""
+    """Both arms of the IF call something the generator cannot translate, so both throw; javac then rejects the
+    loop after the IF as unreachable. The block ends at the IF instead (#36; the original case, a REF CURSOR
+    opened per branch, translates since #44, so an external call stands in for it)."""
     src = tmp_path / "src"
     src.mkdir()
     (src / "schema.sql").write_text("CREATE TABLE departments (department_id NUMBER(4) PRIMARY KEY, department_name VARCHAR2(30));\n")
     (src / "pick.prc").write_text(
         "CREATE OR REPLACE PROCEDURE pick (p_mode VARCHAR2) AS\n"
-        "  rc SYS_REFCURSOR;\n  v_name VARCHAR2(50);\n"
+        "  i PLS_INTEGER := 0;\n"
         "BEGIN\n"
-        "  IF p_mode = 'DEPT' THEN\n    OPEN rc FOR SELECT department_name FROM departments;\n"
-        "  ELSE\n    OPEN rc FOR SELECT department_name FROM departments WHERE department_id = 1;\n  END IF;\n"
-        "  LOOP\n    FETCH rc INTO v_name;\n    EXIT WHEN rc%NOTFOUND;\n  END LOOP;\n  CLOSE rc;\n"
+        "  IF p_mode = 'DEPT' THEN\n    UTL_MAIL.SEND('a');\n"
+        "  ELSE\n    UTL_MAIL.SEND('b');\n  END IF;\n"
+        "  LOOP\n    i := i + 1;\n    EXIT WHEN i > 3;\n  END LOOP;\n"
         "END;\n/\n")
     program = build_analysis(src, src / "schema.sql").program
     java = generate_module(module_named(program, "pick"), APP, INFRA, DOMAIN).file.render()
@@ -572,13 +573,20 @@ def test_an_explicit_cursor_fetched_into_its_rowtype_becomes_a_loop_with_a_row_c
     assert "UnsupportedOperationException" not in java
 
 
-def _project(tmp_path, ddl: str, **units: str):
+def _project(tmp_path, ddl: str, scalardb: dict | None = None, **units: str):
+    """A throwaway project. With `scalardb` (Schema Loader JSON as a dict) the SQL is bridged to ScalarDB too,
+    which is what gives a loop query its binds -- without a registry the bridge says nothing rather than guess."""
+    import json
     src = tmp_path / "src"
     src.mkdir()
     (src / "schema.sql").write_text(ddl)
     for name, text in units.items():
         (src / name).write_text(text)
-    program = build_analysis(src, src / "schema.sql").program
+    schema = None
+    if scalardb is not None:
+        schema = tmp_path / "scalardb-schema.json"
+        schema.write_text(json.dumps(scalardb))
+    program = build_analysis(src, src / "schema.sql", scalardb_schema=schema).program
     from plsql.analysis import build_call_graph
     build_call_graph(program)   # what plsql.generate does before rendering: calls get their resolved_to
     return program
@@ -631,3 +639,35 @@ def test_a_bare_return_in_a_function_returns_null(tmp_path):
     program = _project(tmp_path, "CREATE TABLE t (id NUMBER(4) PRIMARY KEY);\n",
         **{"nothing.fnc": "CREATE OR REPLACE FUNCTION nothing RETURN NUMBER AS\nBEGIN\n  RETURN;\nEND;\n/\n"})
     assert "return null;" in rendered(program, "nothing")
+
+
+def test_a_ref_cursor_opened_per_branch_becomes_one_loop_per_branch(tmp_path):
+    """`IF ... OPEN rc FOR q1 ELSE OPEN rc FOR q2 END IF; LOOP FETCH rc INTO v; EXIT WHEN rc%NOTFOUND; ...; CLOSE rc;`
+    (#44, samples/oracle-samples b04_4_4_ref_cursor)."""
+    program = _project(tmp_path, "CREATE TABLE departments (department_id NUMBER(4) PRIMARY KEY, department_name VARCHAR2(30));\n"
+                                 "CREATE TABLE employees (employee_id NUMBER(6) PRIMARY KEY, last_name VARCHAR2(25));\n",
+        **{"pick.prc": (
+            "CREATE OR REPLACE PROCEDURE pick (p_mode VARCHAR2, p_out OUT VARCHAR2) AS\n"
+            "  rc SYS_REFCURSOR;\n  v_name VARCHAR2(50);\n"
+            "BEGIN\n"
+            "  IF p_mode = 'DEPT' THEN\n    OPEN rc FOR SELECT department_name FROM departments;\n"
+            "  ELSE\n    OPEN rc FOR SELECT last_name FROM employees;\n  END IF;\n"
+            "  LOOP\n    FETCH rc INTO v_name;\n    EXIT WHEN rc%NOTFOUND;\n    p_out := v_name;\n  END LOOP;\n  CLOSE rc;\n"
+            "END;\n/\n")})
+    java = generate_module(module_named(program, "pick"), APP, INFRA, DOMAIN, program).file.render()
+    assert java.count("for (") == 2 and "repository.pickLoop" in java
+    assert "UnsupportedOperationException" not in java
+
+
+def test_a_function_returning_a_ref_cursor_returns_the_rows(tmp_path):
+    """`OPEN rc FOR SELECT ...; RETURN rc;` (#44, samples/oracle-samples emp_api.get_by_dept)."""
+    program = _project(tmp_path, "CREATE TABLE employees (employee_id NUMBER(6) PRIMARY KEY, last_name VARCHAR2(25), department_id NUMBER(4));\n",
+        scalardb={"t.employees": {"transaction": True, "partition-key": ["employee_id"], "secondary-index": ["department_id"],
+                                  "columns": {"employee_id": "INT", "last_name": "TEXT", "department_id": "INT"}}},
+        **{"by_dept.fnc": (
+            "CREATE OR REPLACE FUNCTION by_dept (p_dept_id NUMBER) RETURN SYS_REFCURSOR AS\n  rc SYS_REFCURSOR;\n"
+            "BEGIN\n  OPEN rc FOR SELECT employee_id, last_name FROM employees WHERE department_id = p_dept_id;\n  RETURN rc;\nEND;\n/\n")})
+    java = generate_module(module_named(program, "by_dept"), APP, INFRA, DOMAIN, program).file.render()
+    assert "public List<ByDeptLoop1Row> byDept(BigDecimal pDeptId)" in java
+    assert "return repository.byDeptLoop1(pDeptId);" in java
+    assert "UnsupportedOperationException" not in java

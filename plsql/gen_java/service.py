@@ -296,7 +296,13 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
                  domain_package: str, *, method_name: str | None = None,
                  extra_parameters: "list[tuple[str, str]]" = (), notes: "list[str]" = ()) -> None:
     returns = "void"
-    if routine.return_type is not None:
+    returned_rows = next((s for s in _walk(routine.body) if s.kind == "Loop" and getattr(s, "returns_rows", False)), None)
+    if returned_rows is not None:
+        # `OPEN rc FOR q; RETURN rc;` (#44): the caller gets the rows
+        from .repository import loop_record
+        returns = f"List<{loop_record(routine, returned_rows)}>"
+        file.add_import("java.util.List", f"{domain_package}.{loop_record(routine, returned_rows)}")
+    elif routine.return_type is not None:
         mapped = java_type(routine.return_type.resolved or routine.return_type.oracle)
         file.add_import(*mapped.imports)
         returns = mapped.name
@@ -588,6 +594,8 @@ def _always_exits(routine: M.Routine, result: ServiceFile) -> bool:
             if statement.id in result.untranslated:
                 return True   # the refusal throws, and the rest of the block was dropped
         last = statements[-1]
+        if last.kind == "Loop" and getattr(last, "returns_rows", False):
+            return True   # `OPEN rc FOR q; RETURN rc;` became `return repository...(...)`
         if last.kind == "Block":
             # a block leaves by falling out of it unless its body and every handler leave for good
             return exits(last.body) and all(exits(h.body) for h in last.exception_handlers)
@@ -1041,6 +1049,9 @@ def _cursor_for(file: JavaFile, statement: M.Loop, routine: M.Routine, result: S
     file.add_import(f"{_DOMAIN.get()}.{record}")
     file.comment("the rows are read before the loop runs: ScalarDB has no cursor held across a transaction")
     rows = f"repository.{loop_method(routine, statement)}({arguments})"
+    if statement.returns_rows:
+        file.line(f"return {rows};")
+        return
     if statement.chunk:
         # #14: `FETCH ... BULK COLLECT INTO v LIMIT n` が回していた分割読み。行は先にまとめて読む
         # ので、`n` はもう**読み込む量ではなく配る量**である。メモリを守るのは走査行数の上限である
@@ -1172,6 +1183,8 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
     else:
         file.comment(f"external call: {statement.callee}")
         file.line(f'throw new UnsupportedOperationException("external call: {statement.callee}");')
+        if statement.id not in result.untranslated:
+            result.untranslated.append(statement.id)   # it throws, so what follows in the block is unreachable
 
 
 def _positional(statement: M.Call, callee: M.Routine | None) -> list[str]:

@@ -454,6 +454,12 @@ class _Lowerer:
             return self._transaction(context, ids, text, source)
         if name in ("Open_statementContext", "Fetch_statementContext", "Close_statementContext"):
             return self._cursor(context, ids, text, source)
+        if name == "Open_for_statementContext" and _child(context, "Select_statementContext") is not None:
+            # `OPEN rc FOR SELECT ...` (#44): the cursor variable gets its query here, not in a declaration
+            node = M.CursorStatement(id=ids.next("stmt"), kind="OpenCursor", source_range=source,
+                                     cursor=_text(_child(context, "Variable_nameContext")),
+                                     query_sql=_text(_child(context, "Select_statementContext")))
+            return node
         if name in ("Exit_statementContext", "Continue_statementContext",
                     "Goto_statementContext", "Null_statementContext"):
             return self._control(context, ids, text, source)
