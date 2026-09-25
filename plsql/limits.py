@@ -211,6 +211,38 @@ class Limits:
         return f"既定値（{self.source or '組み込み'}）。この routine 固有の上限は決められていない"
 
 
+@dataclass
+class PackageState:
+    """Package variables the caller carries (#46 / 2026-09-25): `packageState.carried.<package>: <reason>`.
+
+    A package variable is session state. The generated Service is a singleton, so a field would be shared by
+    every caller -- a different meaning. The one mechanical answer that keeps the meaning is to hand the
+    variables to the caller: every routine of the package that reads or writes one (directly, or through a
+    routine that does) takes it as an IN OUT argument and returns it in its result record. The caller keeps
+    the value between calls, which is what the session did. Recorded per package, with the reason.
+    """
+
+    carried: dict[str, str] = field(default_factory=dict)
+    source: str | None = None
+
+    @classmethod
+    def load(cls, path: str | Path | None) -> "PackageState":
+        if path is None:
+            return cls()
+        file = Path(path)
+        if not file.exists():
+            raise FileNotFoundError(f"{file} が無い")
+        data = yaml.safe_load(file.read_text(encoding="utf-8")) or {}
+        section = (data.get("packageState") or {}).get("carried") or {}
+        return cls(carried={str(k).lower(): str(v).strip() for k, v in section.items()}, source=str(file))
+
+    def decided(self, package: str) -> bool:
+        return package.lower() in self.carried
+
+    def why(self, package: str) -> str | None:
+        return self.carried.get(package.lower())
+
+
 def _positive(value, where) -> int:
     number = int(value)
     if number <= 0:

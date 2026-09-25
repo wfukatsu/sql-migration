@@ -46,7 +46,8 @@
        },
        "name": "p_product_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "prc_add_product#param-2",
@@ -65,7 +66,8 @@
        },
        "name": "p_name",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "prc_add_product#param-3",
@@ -84,7 +86,8 @@
        },
        "name": "p_unit_price",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "prc_add_product#param-4",
@@ -104,7 +107,8 @@
        "name": "p_stock_qty",
        "direction": "IN",
        "default": "0",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "body": [

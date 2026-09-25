@@ -46,7 +46,8 @@
        },
        "name": "p_salary",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "annual_comp#param-2",
@@ -66,7 +67,8 @@
        "name": "p_comm",
        "direction": "IN",
        "default": "NULL",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "returnType": {
@@ -7642,7 +7644,8 @@
        },
        "name": "p_dept_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "returnType": {
@@ -7812,6 +7815,20 @@
       "startColumn": 3,
       "endColumn": 19
      },
+     "diagnostics": [
+      {
+       "severity": "INFO",
+       "code": "STATE_CARRIED",
+       "message": "package 変数 g_calls は呼び出し側が運ぶ（limits.yaml packageState.carried: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定））。IN OUT 引数として受け取り、結果で返す",
+       "range": {
+        "file": "emp_api.pkb",
+        "startLine": 7,
+        "endLine": 13,
+        "startColumn": 3,
+        "endColumn": 19
+       }
+      }
+     ],
      "name": "validate_pct",
      "routineKind": "procedure",
      "parameters": [
@@ -7832,7 +7849,29 @@
        },
        "name": "p_pct",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
+      },
+      {
+       "id": "emp_api.validate_pct#g_calls",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "emp_api.pkb",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 3,
+        "endColumn": 27
+       },
+       "type": {
+        "oracle": "PLS_INTEGER",
+        "resolved": "PLS_INTEGER",
+        "origin": "declared"
+       },
+       "name": "g_calls",
+       "direction": "IN OUT",
+       "default": "0",
+       "nocopy": false,
+       "carried": true
       }
      ],
      "body": [
@@ -7922,7 +7961,8 @@
        },
        "name": "p_first",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "emp_api.hire#param-2",
@@ -7941,7 +7981,8 @@
        },
        "name": "p_last",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "emp_api.hire#param-3",
@@ -7960,7 +8001,8 @@
        },
        "name": "p_email",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "emp_api.hire#param-4",
@@ -7979,7 +8021,8 @@
        },
        "name": "p_job",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "emp_api.hire#param-5",
@@ -7998,7 +8041,8 @@
        },
        "name": "p_salary",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "emp_api.hire#param-6",
@@ -8017,7 +8061,8 @@
        },
        "name": "p_dept",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "returnType": {
@@ -8236,6 +8281,20 @@
       "startColumn": 3,
       "endColumn": 17
      },
+     "diagnostics": [
+      {
+       "severity": "INFO",
+       "code": "STATE_CARRIED",
+       "message": "package 変数 g_calls は呼び出し側が運ぶ（limits.yaml packageState.carried: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定））。IN OUT 引数として受け取り、結果で返す",
+       "range": {
+        "file": "emp_api.pkb",
+        "startLine": 30,
+        "endLine": 34,
+        "startColumn": 3,
+        "endColumn": 17
+       }
+      }
+     ],
      "name": "give_raise",
      "routineKind": "procedure",
      "parameters": [
@@ -8256,7 +8315,8 @@
        },
        "name": "p_emp_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "emp_api.give_raise~1#param-2",
@@ -8275,7 +8335,29 @@
        },
        "name": "p_pct",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
+      },
+      {
+       "id": "emp_api.give_raise~1#g_calls",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "emp_api.pkb",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 3,
+        "endColumn": 27
+       },
+       "type": {
+        "oracle": "PLS_INTEGER",
+        "resolved": "PLS_INTEGER",
+        "origin": "declared"
+       },
+       "name": "g_calls",
+       "direction": "IN OUT",
+       "default": "0",
+       "nocopy": false,
+       "carried": true
       }
      ],
      "declarations": [
@@ -8710,6 +8792,20 @@
       "startColumn": 3,
       "endColumn": 17
      },
+     "diagnostics": [
+      {
+       "severity": "INFO",
+       "code": "STATE_CARRIED",
+       "message": "package 変数 g_calls は呼び出し側が運ぶ（limits.yaml packageState.carried: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定））。IN OUT 引数として受け取り、結果で返す",
+       "range": {
+        "file": "emp_api.pkb",
+        "startLine": 36,
+        "endLine": 42,
+        "startColumn": 3,
+        "endColumn": 17
+       }
+      }
+     ],
      "name": "give_raise",
      "routineKind": "procedure",
      "parameters": [
@@ -8730,7 +8826,8 @@
        },
        "name": "p_dept_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "emp_api.give_raise~2#param-2",
@@ -8749,7 +8846,8 @@
        },
        "name": "p_pct",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "emp_api.give_raise~2#param-3",
@@ -8768,7 +8866,29 @@
        },
        "name": "p_by_dept",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
+      },
+      {
+       "id": "emp_api.give_raise~2#g_calls",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "emp_api.pkb",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 3,
+        "endColumn": 27
+       },
+       "type": {
+        "oracle": "PLS_INTEGER",
+        "resolved": "PLS_INTEGER",
+        "origin": "declared"
+       },
+       "name": "g_calls",
+       "direction": "IN OUT",
+       "default": "0",
+       "nocopy": false,
+       "carried": true
       }
      ],
      "body": [
@@ -8936,7 +9056,8 @@
        },
        "name": "p_dept_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "returnType": {
@@ -9107,8 +9228,45 @@
       "startColumn": 3,
       "endColumn": 17
      },
+     "diagnostics": [
+      {
+       "severity": "INFO",
+       "code": "STATE_CARRIED",
+       "message": "package 変数 g_calls は呼び出し側が運ぶ（limits.yaml packageState.carried: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定））。IN OUT 引数として受け取り、結果で返す",
+       "range": {
+        "file": "emp_api.pkb",
+        "startLine": 53,
+        "endLine": 56,
+        "startColumn": 3,
+        "endColumn": 17
+       }
+      }
+     ],
      "name": "call_count",
      "routineKind": "function",
+     "parameters": [
+      {
+       "id": "emp_api.call_count#g_calls",
+       "kind": "Parameter",
+       "sourceRange": {
+        "file": "emp_api.pkb",
+        "startLine": 4,
+        "endLine": 4,
+        "startColumn": 3,
+        "endColumn": 27
+       },
+       "type": {
+        "oracle": "PLS_INTEGER",
+        "resolved": "PLS_INTEGER",
+        "origin": "declared"
+       },
+       "name": "g_calls",
+       "direction": "IN OUT",
+       "default": "0",
+       "nocopy": false,
+       "carried": true
+      }
+     ],
      "returnType": {
       "oracle": "PLS_INTEGER",
       "resolved": "PLS_INTEGER",
@@ -9160,6 +9318,51 @@
      "name": "g_calls",
      "declarationKind": "variable",
      "initial": "0"
+    },
+    {
+     "id": "emp_api#decl-1",
+     "kind": "Declaration",
+     "sourceRange": {
+      "file": "emp_api.pks",
+      "startLine": 4,
+      "endLine": 4,
+      "startColumn": 3,
+      "endColumn": 40
+     },
+     "type": {
+      "oracle": "NUMBER",
+      "resolved": "NUMBER",
+      "origin": "declared"
+     },
+     "name": "c_max_raise_pct",
+     "declarationKind": "constant",
+     "initial": "20"
+    },
+    {
+     "id": "emp_api#decl-2",
+     "kind": "Declaration",
+     "sourceRange": {
+      "file": "emp_api.pks",
+      "startLine": 6,
+      "endLine": 6,
+      "startColumn": 3,
+      "endColumn": 28
+     },
+     "name": "e_invalid_raise",
+     "declarationKind": "exception"
+    },
+    {
+     "id": "emp_api#decl-3",
+     "kind": "Declaration",
+     "sourceRange": {
+      "file": "emp_api.pks",
+      "startLine": 5,
+      "endLine": 5,
+      "startColumn": 3,
+      "endColumn": 47
+     },
+     "name": "t_emp_tab",
+     "declarationKind": "type"
     }
    ]
   },
@@ -9538,7 +9741,8 @@
        "name": "p_dept",
        "direction": "IN",
        "default": "NULL",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "returnType": {
@@ -9961,7 +10165,8 @@
        },
        "name": "p_msg",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "body": [
@@ -10093,7 +10298,8 @@
        },
        "name": "p_name",
        "direction": "IN OUT",
-       "nocopy": true
+       "nocopy": true,
+       "carried": false
       }
      ],
      "body": [
@@ -10169,7 +10375,8 @@
        },
        "name": "p_emp_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "raise_salary#param-2",
@@ -10189,7 +10396,8 @@
        "name": "p_pct",
        "direction": "IN",
        "default": "5",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "raise_salary#param-3",
@@ -10209,7 +10417,8 @@
        },
        "name": "p_new_sal",
        "direction": "OUT",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "declarations": [

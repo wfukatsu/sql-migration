@@ -4,6 +4,14 @@
 
 ## REDESIGN: `b04_3_implicit_cursor_attrs` — `b04_3_implicit_cursor_attrs.prc:2`
 
+**再設計の状態: 未決定**
+
+- `calls emp_salary_audit_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `TX-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- `TX-004` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- `TRG-002` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
+
 **根拠**
 
 - TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
@@ -40,6 +48,16 @@
 **確信度が 0 になっている要因**: targetCapability, testEvidence
 
 ## REDESIGN: `b04_4_3_for_update_current_of` — `b04_4_3_for_update_current_of.prc:2`
+
+**再設計の状態: 未決定**
+
+- `calls emp_dept_cap_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `calls emp_salary_audit_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `LOCK-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- `LOCK-002` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- `TX-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- `TRG-002` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
 
 **根拠**
 
@@ -86,6 +104,12 @@
 
 ## REDESIGN: `b04_6_2_user_exceptions` — `b04_6_2_user_exceptions.prc:2`
 
+**再設計の状態: 未決定**
+
+- `TX-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- `TRG-002` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
+
 **根拠**
 
 - TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
@@ -113,6 +137,12 @@
 
 ## REDESIGN: `b05_1_call_raise_salary` — `b05_1_call_raise_salary.prc:2`
 
+**再設計の状態: 未決定**
+
+- `TX-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- `calls raise_salary` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
+
 **根拠**
 
 - TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
@@ -135,6 +165,15 @@
 
 ## REDESIGN: `b05_3_call_emp_api` — `b05_3_call_emp_api.prc:2`
 
+**再設計の状態: 未決定**
+
+- `calls emp_api.call_count` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- `TX-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- `calls emp_api.give_raise~1` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- `calls emp_api.give_raise~2` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- `calls emp_api.hire` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
+
 **根拠**
 
 - TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
@@ -156,6 +195,15 @@
 **確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `b05_4_call_log_msg` — `b05_4_call_log_msg.prc:2`
+
+**再設計の状態: 未決定**
+
+- `calls emp_dept_cap_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `calls emp_salary_audit_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `TX-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- `TRG-002` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- `calls log_msg` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
 
 **根拠**
 
@@ -189,6 +237,11 @@
 
 ## REDESIGN: `b06_2_2_forall_returning` — `b06_2_2_forall_returning.prc:2`
 
+**再設計の状態: 未決定**
+
+- `TX-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
+
 **根拠**
 
 - TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
@@ -214,6 +267,11 @@
 **確信度が 0 になっている要因**: targetCapability, testEvidence
 
 ## REDESIGN: `b06_2_forall_save_exceptions` — `b06_2_forall_save_exceptions.prc:2`
+
+**再設計の状態: 未決定**
+
+- `TX-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
 
 **根拠**
 
@@ -244,6 +302,11 @@
 **確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `b06_3_6_dbms_sql` — `b06_3_6_dbms_sql.prc:2`
+
+**再設計の状態: 未決定**
+
+- `DYN-003` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
 
 **根拠**
 
@@ -298,6 +361,12 @@
 
 ## REDESIGN: `b06_3_native_dynamic_sql` — `b06_3_native_dynamic_sql.prc:2`
 
+**再設計の状態: 未決定**
+
+- `DYN-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- `TX-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
+
 **根拠**
 
 - DYN-001: 表名など識別子が実行時に決まる SQL です。allowlist か専用 Repository への再設計が要ります
@@ -336,6 +405,11 @@
 
 ## REDESIGN: `b06_5_2_scheduler_job` — `b06_5_2_scheduler_job.prc:2`
 
+**再設計の状態: 未決定**
+
+- `EXT-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
+
 **根拠**
 
 - EXT-001: UTL_* / DBMS_SCHEDULER / AQ などの外部副作用があります
@@ -361,6 +435,12 @@
 
 ## REDESIGN: `emp_api.call_count` — `emp_api.pkb:53`
 
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `STATE-001` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
+
 **根拠**
 
 - STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります
@@ -381,6 +461,12 @@
 **確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `emp_api.get_by_dept` — `emp_api.pkb:44`
+
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `STATE-001` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
 
 **根拠**
 
@@ -409,6 +495,15 @@
 **確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `emp_api.give_raise~1` — `emp_api.pkb:30`
+
+**再設計の状態: 未決定**
+
+- `STATE-001` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- `calls emp_api.validate_pct` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- `calls emp_dept_cap_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `calls emp_salary_audit_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `TRG-002` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
 
 **根拠**
 
@@ -441,6 +536,13 @@
 
 ## REDESIGN: `emp_api.give_raise~2` — `emp_api.pkb:36`
 
+**再設計の状態: 未決定**
+
+- `STATE-001` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- `calls emp_api.validate_pct` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- `TRG-002` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
+
 **根拠**
 
 - STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります
@@ -468,6 +570,12 @@
 **確信度が 0 になっている要因**: targetCapability, testEvidence
 
 ## REDESIGN: `emp_api.hire` — `emp_api.pkb:15`
+
+**再設計の状態: 未決定**
+
+- `STATE-001` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- `TRG-002` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
 
 **根拠**
 
@@ -501,6 +609,12 @@
 
 ## REDESIGN: `emp_api.validate_pct` — `emp_api.pkb:7`
 
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `STATE-001` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
+
 **根拠**
 
 - STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります
@@ -521,6 +635,11 @@
 **確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `emp_biu_trg.body` — `emp_biu_trg.trg:2`
+
+**再設計の状態: 未決定**
+
+- `TRG-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
 
 **根拠**
 
@@ -544,6 +663,12 @@
 
 ## REDESIGN: `emp_dept_cap_trg.body` — `emp_dept_cap_trg.trg:2`
 
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `TRG-001` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
+
 **根拠**
 
 - TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります
@@ -565,6 +690,12 @@
 **確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `emp_dept_upd_v_trg.body` — `emp_dept_upd_v_trg.trg:2`
+
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `TRG-001` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
 
 **根拠**
 
@@ -590,6 +721,12 @@
 
 ## REDESIGN: `emp_salary_audit_trg.body` — `emp_salary_audit_trg.trg:2`
 
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `TRG-001` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
+
 **根拠**
 
 - TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります
@@ -613,6 +750,12 @@
 **確信度が 0 になっている要因**: targetCapability, testEvidence
 
 ## REDESIGN: `log_msg` — `log_msg.prc:2`
+
+**再設計の状態: 未決定**
+
+- `TX-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- `TX-002` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
 
 **根拠**
 
@@ -643,6 +786,13 @@
 
 ## REDESIGN: `raise_salary` — `raise_salary.prc:2`
 
+**再設計の状態: 未決定**
+
+- `calls emp_dept_cap_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `calls emp_salary_audit_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `TRG-002` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
+
 **根拠**
 
 - TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
@@ -668,6 +818,11 @@
 **確信度が 0 になっている要因**: targetCapability, testEvidence
 
 ## REDESIGN: `setup_drop_objects` — `setup_drop_objects.prc:2`
+
+**再設計の状態: 未決定**
+
+- `DYN-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
 
 **根拠**
 

@@ -46,7 +46,8 @@
        },
        "name": "p_product_ids",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "pkg_bulk_load.restock#param-2",
@@ -65,7 +66,8 @@
        },
        "name": "p_deltas",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "declarations": [
@@ -303,7 +305,8 @@
        },
        "name": "p_limit",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "pkg_bulk_load.collect_open_orders#param-2",
@@ -322,7 +325,8 @@
        },
        "name": "p_count",
        "direction": "OUT",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "declarations": [
@@ -542,7 +546,8 @@
        },
        "name": "p_order_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "declarations": [

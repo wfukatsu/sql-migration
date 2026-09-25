@@ -284,3 +284,40 @@ def test_every_row_lock_decision_is_about_something():
                    for s in statements):
             empty.append(routine_id)
     assert empty == [], f"行ロックも読み書きも持たない routine が記録されている: {empty}"
+
+
+def test_carried_package_state_becomes_an_in_out_parameter_of_every_routine_that_touches_it(tmp_path):
+    """#46: `packageState.carried.<package>` in limits.yaml. The variable rides in and out of each routine that
+    reads or writes it, directly or through a callee, so that a caller keeps the session's value."""
+    from plsql.limits import PackageState
+    from plsql.redesign import Decided
+    from plsql.report import analyse
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "schema.sql").write_text("CREATE TABLE t (id NUMBER(4) PRIMARY KEY);\n")
+    (src / "pkg_counter.pks").write_text(
+        "CREATE OR REPLACE PACKAGE pkg_counter AS\n  PROCEDURE bump(p_by NUMBER);\n  PROCEDURE bump_twice;\n"
+        "  FUNCTION calls RETURN PLS_INTEGER;\n  PROCEDURE unrelated;\nEND;\n/\n")
+    (src / "pkg_counter.pkb").write_text(
+        "CREATE OR REPLACE PACKAGE BODY pkg_counter AS\n  g_calls PLS_INTEGER := 0;\n"
+        "  PROCEDURE bump(p_by NUMBER) IS\n  BEGIN\n    g_calls := g_calls + p_by;\n  END;\n"
+        "  PROCEDURE bump_twice IS\n  BEGIN\n    bump(1);\n    bump(1);\n  END;\n"
+        "  FUNCTION calls RETURN PLS_INTEGER IS\n  BEGIN\n    RETURN g_calls;\n  END;\n"
+        "  PROCEDURE unrelated IS\n  BEGIN\n    NULL;\n  END;\n"
+        "END;\n/\n")
+    limits = tmp_path / "limits.yaml"
+    limits.write_text("packageState:\n  carried:\n    pkg_counter: 呼び出し側が回数を持つ（テスト）\n")
+    decided = Decided.load(limits)
+    assert decided.package_state.decided("PKG_COUNTER")
+    program = analyse(src, src / "schema.sql", **decided.for_analysis()).program
+    module = next(m for m in program.modules if m.name == "pkg_counter")
+    carried = {r.name: [(p.name, p.direction, p.default, p.carried) for p in r.parameters if p.carried]
+               for r in module.routines}
+    assert carried == {"bump": [("g_calls", "IN OUT", "0", True)], "bump_twice": [("g_calls", "IN OUT", "0", True)],
+                       "calls": [("g_calls", "IN OUT", "0", True)], "unrelated": []}
+    # the decision answers STATE-001: the routine stays REDESIGN (AUTO is forbidden) but is decided, not open
+    from plsql.redesign import _answer
+    where, why = _answer("STATE-001", module.routines[0], module, decided)
+    assert where == "limits.yaml: packageState.carried" and "呼び出し側" in why
+    assert PackageState.load(None).decided("pkg_counter") is False

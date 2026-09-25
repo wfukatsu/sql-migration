@@ -1,0 +1,10 @@
+# samples/oracle-samples の決定。「決めた」と書けるのは、決めた人がいるときだけである。
+#
+# package 変数 emp_api.g_calls（セッション単位の呼び出し回数）の置き場（Issue #46、2026-09-25、利用者の決定）:
+# 呼び出し側が引数と戻り値で運ぶ。emp_api の各 routine は g_calls を IN OUT 引数として受け取り、結果で返す。
+# セッション単位の意味をそのまま保てるが、呼び出し側の signature が変わる。
+packageState:
+  carried:
+    emp_api: >-
+      g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。
+      呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）

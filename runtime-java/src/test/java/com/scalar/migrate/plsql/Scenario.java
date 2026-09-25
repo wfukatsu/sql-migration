@@ -23,7 +23,8 @@ import org.yaml.snakeyaml.Yaml;
  */
 public record Scenario(String name, String unit, String routine, Map<String, Object> pinned, List<String> setup,
                        String call, String kind, String body, Map<String, Object> args,
-                       List<String> captureTables, Map<String, List<String>> mask, String note) {
+                       List<String> captureTables, Map<String, List<String>> mask, String note,
+                       List<String> outs) {
 
   /** `:o_status := v.status;` -- the field of a record a block scenario projects into an OUT bind. */
   private static final java.util.regex.Pattern PROJECTION =
@@ -72,7 +73,8 @@ public record Scenario(String name, String unit, String routine, Map<String, Obj
         call.get("args") == null ? new LinkedHashMap<>() : (Map<String, Object>) call.get("args"),
         or((List<String>) spec.get("capture_tables")),
         spec.get("mask") == null ? Map.of() : (Map<String, List<String>>) spec.get("mask"),
-        (String) spec.get("note"));
+        (String) spec.get("note"),
+        call.get("out") == null ? List.of() : new ArrayList<>(((Map<String, Object>) call.get("out")).keySet()));
   }
 
   /** The Oracle capture always writes both keys, with nulls where the scenario said nothing. */
@@ -159,7 +161,7 @@ public record Scenario(String name, String unit, String routine, Map<String, Obj
   /** The same scenario with its arguments replaced (the harness fills omitted DEFAULTs from the setup file, #41). */
   public Scenario withArgs(Map<String, Object> replaced) {
     return new Scenario(name, unit, routine, pinned, setup, call, kind, body, new java.util.LinkedHashMap<>(replaced),
-        captureTables, mask, note);
+        captureTables, mask, note, outs);
   }
 
   /** The PL/SQL routine's arguments, in declaration order. */

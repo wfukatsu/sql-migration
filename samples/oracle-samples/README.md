@@ -14,7 +14,7 @@ Oracle 公式ドキュメントの構成に沿った **構文カタログ**（SQ
 | SQL の実 DB 比較（02 の読み取り文 + JSON 3 文 + 修正版 1 文） | 40 文 | PASS 19 / FAIL 10 / SKIP 9 / CASE_ERROR 2 | **PASS 19 / FAIL 5 / SKIP 14 / CASE_ERROR 2**。FAIL 5 はすべて同順位・非決定。JSON_OBJECT は PASS に |
 | PL/SQL routine（05・06 の全ユニット + 04 の無名ブロック 10 個） | 41 routine | AUTO 候補 7 / REVIEW 10 / REDESIGN 24 | 同じ（判定のルールは変えていない） |
 | PL/SQL の Java 生成 | 41 routine | javac エラー 15 件（8 routine） | **javac エラー 0**（41 routine 全部がコンパイルできる） |
-| PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 14 / 相違 17**（全 36 ユニット、31 シナリオ。#44 #45 のあと）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて） |
+| PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 15 / 相違 16**（全 36 ユニット、31 シナリオ。#44〜#46 のあと）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて） |
 
 ## フォルダ
 
@@ -54,7 +54,8 @@ samples/oracle-samples/
 | Oracle `DATE` の列（`hire_date` / `order_date`）は ScalarDB では TIMESTAMP | Oracle の DATE は時刻を持つ。DATE にすると比較で `2013-06-17T00:00:00` と `2013-06-17` が別の値になる（最初の比較で全シナリオが落ちて分かった） |
 | `NUMBER(8,2)` の金額列は DOUBLE の規約（`--variant double`） | corpus の外のプロジェクト `create_order` と同じ |
 | 索引: employees の department_id / manager_id / job_id / email、orders の status / employee_id、departments の department_name | 原文の索引 2 本と、PL/SQL が WHERE に使う列 |
-| 行ロック・トランザクション境界・自律型・package 変数・trigger は **決めていない** | `limits.yaml` は置かない。決めていない routine の書き込みを生成器が拒否するのが正しい動きで、その拒否がそのまま比較の結果に出ている |
+| package 変数 `emp_api.g_calls` は呼び出し側が運ぶ（2026-09-25、利用者の決定、`plsql/limits.yaml`） | セッション単位の意味を保つ唯一の機械的な形。呼び出し側の signature が変わる |
+| 行ロック・トランザクション境界・自律型・trigger は **決めていない** | 決めていない routine の書き込みを生成器が拒否するのが正しい動きで、その拒否がそのまま比較の結果に出ている |
 
 ---
 
@@ -329,15 +330,15 @@ Docker の検証環境（`difftest/`）と ScalarDB Cluster のライセンス�
 
 ### 2 回目の修正（2026-09-25、#44 #45 #46）
 
-「まだ無いもの」として残した 3 点を Issue にし、2 つを直した。
+「まだ無いもの」として残した 3 点を Issue にし、2 つを直し、1 つは利用者が決めた。
 
 | Issue | 何を直したか | 取り直した結果 |
 |---|---|---|
 | #44 | `OPEN rc FOR SELECT …` を下ろし、routine の中で完結する SYS_REFCURSOR は行を先に読むループに（IF の分岐ごとに別の問合せで開く形は分岐ごとのループに）、`OPEN rc FOR q; RETURN rc;` は行の List を返す method に | `b04_4_4_ref_cursor` が **一致**。`emp_api.get_by_dept` は `List<GetByDeptLoop1Row>` を返す形で生成される（package 変数の STATE-001 は残る） |
 | #45 | ネスト表 / VARRAY は List、INDEX BY VARCHAR2 は TreeMap（INDEX BY PLS_INTEGER は corpus の使い方に合わせて List のまま）。コンストラクタ、要素の読み書き、COUNT / FIRST / LAST / NEXT / PRIOR / EXISTS / DELETE / EXTEND / TRIM / LIMIT、途中の DELETE(i) の隙間。record は field ごとに NULL か既定値で作り、field への代入は組み直す | `b04_5_records_collections` が **一致**（連想配列のキー順の走査、EXTEND / DELETE / EXISTS / VARRAY の LIMIT を含む） |
-| #46 | package 変数（セッション状態）の置き場は決定事項として登録（`[決定]`）。生成器は決まるまで拒む | — |
+| #46 | package 変数（セッション状態）の置き場: **利用者の決定（2026-09-25）「呼び出し側が引数と戻り値で運ぶ」**。`plsql/limits.yaml` の `packageState.carried.emp_api` に理由つきで記録。生成器はその変数を読み書きする routine（呼び先経由も含む）に IN OUT 引数として持ち上げ、結果 record で返す。あわせて、package 仕様部の定数（`c_max_raise_pct`）を static field として出す | STATE-001 は「決定済み」に。`emp_api_give_raise_invalid` が **一致**（e_invalid_raise が ORA-06510 として観測される）。`give_raise` の残りは RMW（SQL-001）と trigger（TRG-002）の決定待ち |
 
-**修正後の PL/SQL 実 DB 比較（31 シナリオ、一致 14 / 相違 17）**: 相違 19 本はすべて「Oracle は正常終了、Java は解析が断った所で throw」で、値の差は無い。
+**修正後の PL/SQL 実 DB 比較（31 シナリオ、一致 15 / 相違 16）**: 相違 19 本はすべて「Oracle は正常終了、Java は解析が断った所で throw」で、値の差は無い。
 止まる理由は、RMW（`SET salary = salary + 1`）、`RETURNING`、`COMMIT` / `ROLLBACK`（TX-001）、IDENTITY 列の採番、行ロック、動的 SQL と DBMS_SQL、
 FORALL … RETURNING、オブジェクト型の `TABLE()`、package 変数（STATE-001）、`DBMS_APPLICATION_INFO` の名前付き引数。
 いずれも「人の決定」（`limits.yaml`）か「生成器がまだ模していない構文」で、解析の判定表（付録 C）に出ているとおり。
@@ -669,8 +670,8 @@ trigger を全部配備したので、employees を書くシナリオでは Orac
 | `b06_6_conditional_compilation` | `b06_6_conditional_compilation.b06_6_conditional_compilation` | 一致 |  |
 | `dept_name_of_missing` | `dept_name_of.dept_name_of` | 一致 |  |
 | `dept_name_of_ok` | `dept_name_of.dept_name_of` | 一致 |  |
-| `emp_api_give_raise_invalid` | `emp_api.give_raise~1` | 相違 | exception code: expected=-6510 actual=java.lang.UnsupportedOperationException (unresolved in Assignment: g_calls) |
-| `emp_api_give_raise_ok` | `emp_api.give_raise~1` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Assignment: g_calls); table emp_audit row count: expected=1 actual=0; table emp_aud |
+| `emp_api_give_raise_invalid` | `emp_api.give_raise~1` | 一致 |  |
+| `emp_api_give_raise_ok` | `emp_api.give_raise~1` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (SET salary = salary * (1 + :p_pct / 100): expressions referencing columns are not allowed; do SEL |
 | `log_msg_ok` | `log_msg.log_msg` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (INSERT must specify the full primary key; missing ['audit_id']); table emp_audit row count: expec |
 | `normalize_name_ok` | `normalize_name.normalize_name` | 一致 |  |
 | `raise_salary_missing` | `raise_salary.raise_salary` | 相違 | exception code: expected=-20010 actual=java.lang.UnsupportedOperationException (RETURNING is not supported) |

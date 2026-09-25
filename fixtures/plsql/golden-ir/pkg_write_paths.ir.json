@@ -46,7 +46,8 @@
        },
        "name": "p_customer_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "body": [
@@ -109,7 +110,8 @@
        },
        "name": "p_product_id",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       },
       {
        "id": "pkg_write_paths.set_price#param-2",
@@ -128,7 +130,8 @@
        },
        "name": "p_price",
        "direction": "IN",
-       "nocopy": false
+       "nocopy": false,
+       "carried": false
       }
      ],
      "body": [

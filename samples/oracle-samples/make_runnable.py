@@ -116,8 +116,11 @@ SCENARIOS = [
 
 
 def main() -> None:
-    if RUN.exists():
-        shutil.rmtree(RUN)
+    # src/ と scenarios/ だけを作り直す。golden/（Oracle の capture）と work/（生成物と ScalarDB の capture）は
+    # 取り直すのに時間がかかるので残す（2026-09-25: 消してしまい、比較が 0 件になった）
+    for sub in ("src", "scenarios"):
+        if (RUN / sub).exists():
+            shutil.rmtree(RUN / sub)
     (RUN / "src" / "blocks").mkdir(parents=True)
     (RUN / "scenarios").mkdir()
     copied = []
@@ -131,6 +134,8 @@ def main() -> None:
         copied.append(rel)
     # bulk_target は 06-2 が書く表。plsql/src/schema.sql に入っている
     shutil.copy(HERE / "scalardb-schema.json", RUN / "scalardb-schema.json")
+    if (HERE / "plsql" / "limits.yaml").exists():
+        shutil.copy(HERE / "plsql" / "limits.yaml", RUN / "limits.yaml")   # the project's decisions (#46)
     for s in SCENARIOS:
         (RUN / "scenarios" / f"{s['name']}.yaml").write_text(
             yaml.safe_dump(s, allow_unicode=True, sort_keys=False, width=200), encoding="utf-8")
