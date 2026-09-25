@@ -514,7 +514,18 @@ class _Parser:
                 if java == "BigDecimal" and arguments[i] != "null" and not arguments[i].startswith(f"{HELPER}.dec("):
                     self.result.imports.add(HELPER_IMPORT)
                     arguments[i] = f"{HELPER}.dec({arguments[i]})"
+        arguments.extend(self._extras(plsql_name))
         return f"{name}({', '.join(arguments)})"
+
+    def _extras(self, plsql_name: str) -> list[str]:
+        """What a routine of another module takes after the PL/SQL arguments (#48): the caller's `audit` (#1, #8)."""
+        extra = self.scope.get(f"{plsql_name.lower()}#extra")
+        if not extra:
+            return []
+        if extra == "audit":
+            self.result.imports.add(AUDIT_IMPORT)
+            self.result.audit = True
+        return [extra]
 
     def _subscript(self) -> str | None:
         """`name(index)` が丸ごと scope にあればそれを返し、トークンを読み進める。"""
@@ -587,6 +598,11 @@ class _Parser:
             self.result.imports.add(AUDIT_IMPORT)
             self.result.audit = True
             return AUDIT[upper]
+        refused = self.scope.get(f"{value.lower()}#refused")
+        if refused:
+            # a routine the scope knows but an expression cannot call (OUT arguments); say why (#48)
+            self.result.unknown.append(f"{value}: {refused}")
+            return value
         if following == "(" or upper in FUNCTIONS:
             # a sibling routine is a call too, and the scope knows its Java name; checking FUNCTIONS first
             # would report every local function call as unknown
@@ -602,6 +618,9 @@ class _Parser:
             # the whole dotted name first: a cursor FOR loop's `r.order_id` that was bound out of the SQL (#10)
             # is one repository parameter, and splitting it would look for a record called `r` that the
             # repository does not have
+            if self.scope.get(f"{value.lower()}#parameters") == "" and following != "(":
+                # a function that takes nothing, written without parentheses (`'…' || pkg.count`): Java needs them
+                return f"{self.scope[value.lower()]}({', '.join(self._extras(value))})"
             return self.scope[value.lower()]
         if "." in value:
             head, _, tail = value.partition(".")
