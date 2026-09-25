@@ -37,36 +37,71 @@ ROW = "r"
 
 def rewrite(routine: M.Routine) -> None:
     """Replace every `BULK COLLECT` + `FORALL` pair in `routine` with the loop it is, in place."""
-    routine.body = _sequence(routine.body)
+    mappings: list[dict[str, str]] = []
+    routine.body = _sequence(routine.body, mappings)
     for handler in routine.exception_handlers:
-        handler.body = _sequence(handler.body)
+        handler.body = _sequence(handler.body, mappings)
+    for of_column in mappings:
+        # `v_ids(SQL%BULK_EXCEPTIONS(j).ERROR_INDEX)` in a SAVE EXCEPTIONS handler is the failed element's
+        # value. The collections are gone (the rows are streamed), and the failed element is the row the
+        # per-element part receives (gen_java.split), so the reference becomes the row's column
+        for handler in routine.exception_handlers:
+            for statement in _walk(handler.body):
+                _handler_references(statement, of_column)
 
 
-def _sequence(statements: list[M.Statement]) -> list[M.Statement]:
+def _handler_references(statement: M.Statement, of_column: dict[str, str]) -> None:
+    import dataclasses
+
+    def rewrite_text(text: str) -> str:
+        for collection, column in of_column.items():
+            text = re.sub(rf"(?<![\w$#.]){re.escape(collection)}\s*\(\s*SQL%BULK_EXCEPTIONS\s*\(\s*[\w$#]+\s*\)"
+                          rf"\s*\.\s*ERROR_INDEX\s*\)", f"{ROW}.{column}", text, flags=re.IGNORECASE)
+        return text
+
+    for field in dataclasses.fields(statement):
+        value = getattr(statement, field.name, None)
+        if isinstance(value, str) and field.name not in ("id", "kind"):
+            setattr(statement, field.name, rewrite_text(value))
+        elif isinstance(value, list) and value and all(isinstance(v, str) for v in value):
+            setattr(statement, field.name, [rewrite_text(v) for v in value])
+    for branch in getattr(statement, "branches", []) or []:
+        branch.condition = rewrite_text(branch.condition or "")
+
+
+def _walk(statements: list[M.Statement]) -> list[M.Statement]:
+    from .lower import _walk as walk
+
+    return walk(statements)
+
+
+def _sequence(statements: list[M.Statement], mappings: list[dict[str, str]]) -> list[M.Statement]:
     for statement in statements:
         for attribute in ("body", "else_body"):
             nested = getattr(statement, attribute, None)
             if nested:
-                setattr(statement, attribute, _sequence(nested))
+                setattr(statement, attribute, _sequence(nested, mappings))
         for branch in getattr(statement, "branches", []) or []:
-            branch.body = _sequence(branch.body)
+            branch.body = _sequence(branch.body, mappings)
         for handler in getattr(statement, "exception_handlers", []) or []:
-            handler.body = _sequence(handler.body)
+            handler.body = _sequence(handler.body, mappings)
 
     out: list[M.Statement] = []
     index = 0
     while index < len(statements):
-        loop = _pair(statements, index)
-        if loop is None:
+        paired = _pair(statements, index)
+        if paired is None:
             out.append(statements[index])
             index += 1
             continue
+        loop, of_column = paired
+        mappings.append(of_column)
         out.append(loop)
         index += 2
     return out
 
 
-def _pair(statements: list[M.Statement], index: int) -> M.Loop | None:
+def _pair(statements: list[M.Statement], index: int) -> "tuple[M.Loop, dict[str, str]] | None":
     """`SELECT ... BULK COLLECT INTO a, b` の直後に `FORALL i IN 1 .. a.COUNT` が来る並び。"""
     run = statements[index:index + 2]
     if len(run) < 2 or run[0].kind != "SqlOperation" or run[1].kind != "Loop":
@@ -99,7 +134,7 @@ def _pair(statements: list[M.Statement], index: int) -> M.Loop | None:
              f"BULK COLLECT into {', '.join(targets)} と、それを回す FORALL を 1 つの走査ループに "
              f"した。FORALL は 1 往復、ループは行ごとに 1 回で、性能は変わるが答えは変わらない。"
              f"行数上限は cursor FOR ループとして決める（CUR-002）")
-    return loop
+    return loop, of_column
 
 
 def _without_bulk_into(sql: str, match: re.Match) -> str:
