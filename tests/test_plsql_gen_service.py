@@ -490,3 +490,24 @@ def test_a_sibling_call_converts_the_argument_of_a_number_parameter():
     routine the rules had judged AUTO. The String argument is left alone."""
     java = _service_of(SIBLING_CALL)
     assert "labelOf(Plsql.dec(vCount), pName)" in java
+
+
+def test_an_if_whose_every_branch_is_refused_ends_the_block(tmp_path):
+    """Both arms of the IF open a REF CURSOR the generator cannot translate, so both throw; javac then rejects the
+    loop after the IF as unreachable. The block ends at the IF instead (#36, samples/oracle-samples b04_4_4)."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "schema.sql").write_text("CREATE TABLE departments (department_id NUMBER(4) PRIMARY KEY, department_name VARCHAR2(30));\n")
+    (src / "pick.prc").write_text(
+        "CREATE OR REPLACE PROCEDURE pick (p_mode VARCHAR2) AS\n"
+        "  rc SYS_REFCURSOR;\n  v_name VARCHAR2(50);\n"
+        "BEGIN\n"
+        "  IF p_mode = 'DEPT' THEN\n    OPEN rc FOR SELECT department_name FROM departments;\n"
+        "  ELSE\n    OPEN rc FOR SELECT department_name FROM departments WHERE department_id = 1;\n  END IF;\n"
+        "  LOOP\n    FETCH rc INTO v_name;\n    EXIT WHEN rc%NOTFOUND;\n  END LOOP;\n  CLOSE rc;\n"
+        "END;\n/\n")
+    program = build_analysis(src, src / "schema.sql").program
+    java = generate_module(module_named(program, "pick"), APP, INFRA, DOMAIN).file.render()
+    assert java.count("throw new UnsupportedOperationException") >= 2
+    assert "the rest of this block is unreachable" in java
+    assert "while (true)" not in java

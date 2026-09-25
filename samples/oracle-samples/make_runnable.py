@@ -29,7 +29,6 @@ EXCLUDED = {
     "blocks/b05_3_call_emp_api.prc",           # emp_api を呼ぶ
     "blocks/b05_4_call_log_msg.prc",           # log_msg を呼ぶ（自律型）
     "blocks/b06_2_2_forall_returning.prc",     # FORALL … RETURNING BULK COLLECT
-    "blocks/b04_4_4_ref_cursor.prc",           # IF の両分岐が未翻訳の throw で終わり、後続の while が javac の unreachable になる
 }
 
 SYSDATE = "2026-09-24 09:30:00"
@@ -94,6 +93,7 @@ SCENARIOS = [
     scenario("b04_4_2_cursor_for_loop", "b04_4_2_cursor_for_loop", "procedure", "04-4-2: パラメータ付き cursor FOR ループ。読むだけ"),
     scenario("b04_4_3_for_update_current_of", "b04_4_3_for_update_current_of", "procedure",
              "04-4-3: FOR UPDATE + WHERE CURRENT OF で更新して ROLLBACK。表は元に戻る"),
+    scenario("b04_4_4_ref_cursor", "b04_4_4_ref_cursor", "procedure", "04-4-4: SYS_REFCURSOR。読むだけ"),
     scenario("b04_6_1_predefined_exceptions", "b04_6_1_predefined_exceptions", "procedure",
              "04-6-1: NO_DATA_FOUND / TOO_MANY_ROWS / ZERO_DIVIDE を捕捉。正常終了"),
     scenario("b04_6_2_user_exceptions", "b04_6_2_user_exceptions", "procedure",
