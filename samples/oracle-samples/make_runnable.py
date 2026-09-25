@@ -73,7 +73,7 @@ SCENARIOS = [
     scenario("annual_comp_with_comm", "annual_comp", "function", "年収 = 10000 × 12 × 1.3 = 156000",
              args={"p_salary": 10000, "p_comm": 0.3}, returns="NUMBER"),
     scenario("annual_comp_null_comm", "annual_comp", "function", "p_comm 省略（DEFAULT NULL → NVL で 0）: 72000",
-             args={"p_salary": 6000, "p_comm": None}, returns="NUMBER"),  # 省略ではなく NULL を渡す（Java 側は引数の数で method を探す）
+             args={"p_salary": 6000}, returns="NUMBER"),   # p_comm は省く: DEFAULT NULL を plsql_setup.py が埋める（#41）
     scenario("dept_name_of_ok", "dept_name_of", "function", "部門 60 → 'IT'", args={"p_dept_id": 60}, returns="VARCHAR2"),
     scenario("dept_name_of_missing", "dept_name_of", "function", "部門なし: NO_DATA_FOUND を NULL に言い換える",
              args={"p_dept_id": 42}, returns="VARCHAR2"),

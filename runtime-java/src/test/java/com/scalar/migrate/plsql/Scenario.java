@@ -156,6 +156,12 @@ public record Scenario(String name, String unit, String routine, Map<String, Obj
     return numbered ? callRoutine() + routine.substring(mark + 1) : callRoutine();
   }
 
+  /** The same scenario with its arguments replaced (the harness fills omitted DEFAULTs from the setup file, #41). */
+  public Scenario withArgs(Map<String, Object> replaced) {
+    return new Scenario(name, unit, routine, pinned, setup, call, kind, body, new java.util.LinkedHashMap<>(replaced),
+        captureTables, mask, note);
+  }
+
   /** The PL/SQL routine's arguments, in declaration order. */
   public List<Object> arguments() {
     return new ArrayList<>(args.values());

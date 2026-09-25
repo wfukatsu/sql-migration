@@ -78,6 +78,9 @@ class ScalarDbCaptureIT {
 
     for (Scenario scenario : Scenario.readAll(SCENARIOS)) {
       try {
+        // omitted arguments filled from the routine's DEFAULT by plsql_setup.py (#41)
+        Map<String, Object> filled = setup.arguments().get(scenario.name());
+        if (filled != null) scenario = scenario.withArgs(filled);
         ScalarDbRunner.Invocation direct = setup.direct(scenario, runner, scenario.args());
         ScalarDbRunner.Invocation invoker =
             direct != null ? direct : Invoker.forScenario(scenario, runner.connection());
@@ -122,7 +125,8 @@ class ScalarDbCaptureIT {
    * and a setup it cannot convert is a finding, not something for the harness to route around.
    */
   record ConvertedSetup(Map<String, List<String>> converted, Map<String, String> unconvertible,
-                        Map<String, Map<String, Object>> directs) {
+                        Map<String, Map<String, Object>> directs,
+                        Map<String, Map<String, Object>> arguments) {
     @SuppressWarnings("unchecked")
     static ConvertedSetup read(Path file) throws Exception {
       if (!Files.exists(file)) {
@@ -132,12 +136,14 @@ class ScalarDbCaptureIT {
       Map<String, Object> root = GSON.fromJson(Files.readString(file), Map.class);
       Map<String, List<String>> converted = new TreeMap<>();
       Map<String, Map<String, Object>> directs = new TreeMap<>();
+      Map<String, Map<String, Object>> arguments = new TreeMap<>();
       ((Map<String, Map<String, Object>>) root.get("scenarios")).forEach((name, body) -> {
         converted.put(name, (List<String>) body.get("setup"));
         if (body.get("direct") != null) directs.put(name, (Map<String, Object>) body.get("direct"));
+        if (body.get("arguments") != null) arguments.put(name, (Map<String, Object>) body.get("arguments"));
       });
       return new ConvertedSetup(converted, new TreeMap<>((Map<String, String>) root.get("unconvertible")),
-          directs);
+          directs, arguments);
     }
 
     /**
