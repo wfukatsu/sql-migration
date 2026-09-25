@@ -133,7 +133,7 @@ def _sibling_owner(statement: M.Statement, module: M.Module) -> str | None:
     """別の module の routine を呼ぶ文なら、その module 名。"""
     if statement.kind != "Call" or not getattr(statement, "resolved_to", None):
         return None
-    owner, _, _ = statement.resolved_to.rpartition(".")
+    owner = _owner_module(statement.resolved_to, module)
     if not owner or owner == module.name or _routine(statement.resolved_to) is None:
         return None
     return owner
@@ -251,7 +251,9 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
         names[variable] = java_name(bind.name)
         names[f":{variable}"] = java_name(bind.name)
     names.update({p.name: java_name(p.name) for p in routine.parameters})
-    names.update({d.name: java_name(d.name) for d in routine.declarations})
+    # a TYPE is not a value: `t_names('a', 'b')` (a collection constructor) rendered as a call to a method that
+    # does not exist. Left out, the constructor is reported instead (#40)
+    names.update({d.name: java_name(d.name) for d in routine.declarations if d.declaration_kind != "type"})
     if module is not None:
         # an overloaded name is several Java methods (`put1`, `put2`); which one an expression means is not
         # resolved, so the name is left out and the expression is reported instead of compiled against nothing
@@ -266,7 +268,11 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
                     java_type(p.type.resolved if p.type else None).name for p in r.parameters)
         # a trigger declares its locals on the module, not on the body, and a package-level cursor is visible
         # to every routine; leaving them out reports real names as unknown
-        names.update({d.name: java_name(d.name) for d in module.declarations})
+        # a package-level variable is session state (STATE-001): there is no field to assign, so a reference
+        # is reported rather than compiled against nothing (#40). Constants and a trigger's locals stay
+        names.update({d.name: java_name(d.name) for d in module.declarations
+                      if d.declaration_kind != "type"
+                      and not (module.module_kind == "package" and d.declaration_kind == "variable")})
     return names
 
 
@@ -733,6 +739,15 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
             # （採番 Service）へ移すのは再設計であって翻訳ではない（#12 / trigger-patterns C）。
             # 解決できる名前なので黙って通ってしまう——ここで明示的に拒む。
             raise Untranslatable([f"assignment to {statement.target}"], statement.target or "")
+        written = (statement.target or "").strip()
+        if "(" in written:
+            # `v_sal(r.last_name) := r.salary`: an element of a collection. The generated List has no such
+            # assignment, and `vSal(x) = y` is not Java (#40)
+            raise Untranslatable([f"assignment to collection element {written}"], written)
+        if "." in written and (_holder(routine, written.partition(".")[0]) is not None
+                               or written.partition(".")[0].lower() in {k.lower() for k in _LOOP_ROWS.get()}):
+            # `v_rec.id := 1`: a field of a record. The generated records are immutable (#40)
+            raise Untranslatable([f"assignment to record field {written}"], written)
         # the target goes through the translator too: `:NEW.col` is not a Java name, and rendering it anyway
         # produced code that did not compile
         target = _expr(file, statement.target, routine, result)
@@ -755,6 +770,9 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
             file.line(f"return new {java_class_name(routine_stem(routine))}Result({', '.join(components)});")
         elif value is not None:
             file.line(f"return {value};")
+        elif returns != "void":
+            # `RETURN;` in a function: a PIPELINED function ends its stream this way (#40)
+            file.line("return null;")
         else:
             file.line("return;")
     elif kind == "If":
@@ -1097,27 +1115,53 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
                              statement.callee)
     if statement.resolved_to:
         module = _MODULE.get()
-        owner = statement.resolved_to.rsplit(".", 1)[0] if "." in statement.resolved_to else None
+        owner = _owner_module(statement.resolved_to, module)
         callee = _routine(statement.resolved_to) or \
             next((r for r in (module.routines if module else []) if r.id == statement.resolved_to), None)
     else:
         callee = None
-    arguments = ", ".join(_expr(file, a, routine, result) for a in _positional(statement, callee))
+    ordered = _positional(statement, callee)
+    if callee is not None and any(p.direction in ("OUT", "IN OUT") for p in callee.parameters):
+        # the callee hands its OUT / IN OUT arguments back in its result record (#40): the values go in
+        # by position, the record comes back, and each OUT argument is assigned from the matching field
+        ins = [a for p, a in zip(callee.parameters, ordered) if p.direction != "OUT"]
+        outs = [(p, a) for p, a in zip(callee.parameters, ordered) if p.direction in ("OUT", "IN OUT")]
+        for p, a in outs:
+            if _holder(routine, a) is None and a.lower() not in _BLOCK_LOCALS.get():
+                raise Untranslatable([f"OUT argument {p.name} => {a} is not a local"], statement.callee)
+        arguments = ", ".join(_fit_argument(file, _expr(file, a, routine, result), p)
+                              for p, a in zip([p for p in callee.parameters if p.direction != "OUT"], ins))
+    else:
+        outs = []
+        expected = list(callee.parameters) if callee is not None else []
+        arguments = ", ".join(_fit_argument(file, _expr(file, a, routine, result), expected[i] if i < len(expected) else None)
+                              for i, a in enumerate(ordered))
     if statement.resolved_to:
+        if callee is not None and needs_audit(callee):
+            arguments = ", ".join(a for a in [arguments, "audit"] if a)
         if module is not None and owner is not None and owner != module.name:
             # 別の module の routine を呼ぶ。**PL/SQL がそう書いてある**ので、誰を呼ぶかは決定では
             # ない——注入するのは trigger と同じ形である（#12）。以前はここで拒んでいたが、
             # そのために「呼ばれる側が REVIEW なだけの routine」まで動かせなかった
             if callee is None:
                 raise Untranslatable([statement.resolved_to], f"call into {owner}")
-            if needs_audit(callee):
-                arguments = ", ".join(a for a in [arguments, "audit"] if a)
-            file.line(f"{java_name(owner)}.{java_name(routine_stem(callee))}({arguments});")
+            invocation = f"{java_name(owner)}.{java_name(routine_stem(callee))}({arguments})"
+        else:
+            # the Java name comes from the routine, not from the id: `pkg.put~2` is the method `put2`
+            invocation = f"{java_name(routine_stem(callee) if callee is not None else target.split('.')[-1])}({arguments})"
+        if not outs:
+            file.line(f"{invocation};")
             return
-        if callee is not None and needs_audit(callee):
-            arguments = ", ".join(a for a in [arguments, "audit"] if a)
-        # the Java name comes from the routine, not from the id: `pkg.put~2` is the method `put2`
-        file.line(f"{java_name(routine_stem(callee) if callee is not None else target.split('.')[-1])}({arguments});")
+        record = java_class_name(routine_stem(callee)) + "Result"
+        if _DOMAIN.get():
+            file.add_import(f"{_DOMAIN.get()}.{record}")
+        holder = f"{java_name(routine_stem(callee))}Result"
+        # a block of its own, so that the same routine called twice does not declare the holder twice
+        with file.block("") as f:
+            f.line(f"{record} {holder} = {invocation};")
+            for p, a in outs:
+                target_type = _local_type(routine, a)
+                f.line(f"{_expr(f, a, routine, result)} = {_coerce(f, f'{holder}.{java_name(p.name)}()', target_type)};")
     elif (statement.callee or "").upper() in ("DBMS_OUTPUT.PUT_LINE", "DBMS_OUTPUT.PUT", "DBMS_OUTPUT.NEW_LINE"):
         # the session's output buffer: no row is written, so the helper keeps the text per thread and the
         # caller reads it back (analysis.HARMLESS_CALLEES already treats it as harmless). Throwing here made
@@ -1131,25 +1175,62 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
 
 
 def _positional(statement: M.Call, callee: M.Routine | None) -> list[str]:
-    """The arguments in the callee's parameter order. `put(p_note => 'x', p_id => 1)` was rendered as it stood,
-    which is not Java -- and named notation is what tells two overloads apart."""
-    if not any("=>" in a for a in statement.arguments):
+    """The arguments in the callee's parameter order (OUT parameters included, so that `_call` can pair them).
+    `put(p_note => 'x', p_id => 1)` was rendered as it stood, which is not Java -- and named notation is what
+    tells two overloads apart. A parameter left to its DEFAULT is filled with the default when it is a literal."""
+    if not any("=>" in a for a in statement.arguments) and (
+            callee is None or len(statement.arguments) >= len(callee.parameters)):
         return list(statement.arguments)
     if callee is None:
         raise Untranslatable(["named arguments of a routine that is not in the program"], statement.callee)
     positional = [a for a in statement.arguments if "=>" not in a]
     named = {a.partition("=>")[0].strip().lower(): a.partition("=>")[2].strip()
              for a in statement.arguments if "=>" in a}
-    taken = [p for p in callee.parameters if p.direction == "IN"][len(positional):]
+    taken = list(callee.parameters)[len(positional):]
     out = list(positional)
     for parameter in taken:
-        if parameter.name.lower() not in named:
+        if parameter.name.lower() in named:
+            out.append(named.pop(parameter.name.lower()))
+        elif parameter.default is not None and LITERAL_DEFAULT.match(parameter.default.strip()):
+            out.append(parameter.default.strip())
+        else:
             # a parameter left to its default: the generated method has no default to fall back on
             raise Untranslatable([f"{parameter.name} is left to its default"], statement.callee)
-        out.append(named.pop(parameter.name.lower()))
     if named:
         raise Untranslatable([f"no parameter named {', '.join(named)}"], statement.callee)
     return out
+
+
+def _fit_argument(file: JavaFile, rendered: str, parameter: "M.Parameter | None") -> str:
+    """A rendered argument, shaped for the callee's Java parameter: `raise_salary(104, 10)` handed the literal 10
+    to a `BigDecimal pPct` and javac refused it (#40). The expression translator does this for calls inside
+    expressions; a call statement goes through here."""
+    if parameter is None or parameter.type is None:
+        return rendered
+    expected = java_type(parameter.type.resolved or parameter.type.oracle).name
+    literal = re.fullmatch(r"-?\d+(?:\.\d+)?", rendered)
+    if expected == "BigDecimal" and not rendered.startswith("Plsql.dec("):
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        return f"Plsql.dec({rendered})"
+    if expected == "Long" and literal and "." not in rendered:
+        return f"{rendered}L"
+    return rendered
+
+
+# a DEFAULT the call can spell out itself: NULL, a number, a quoted string, TRUE / FALSE
+LITERAL_DEFAULT = re.compile(r"^(?:NULL|TRUE|FALSE|[+-]?\d+(?:\.\d+)?|'(?:[^']|'')*')$", re.IGNORECASE)
+
+
+def _owner_module(routine_id: str, module: "M.Module | None") -> str | None:
+    """The module a resolved call lands in: `pkg.put` -> `pkg`; a standalone `log_msg` -> its own module
+    `log_msg` (there was no owner for it, so the call was rendered as if it were a sibling: #40)."""
+    if "." in routine_id:
+        return routine_id.rsplit(".", 1)[0]
+    program = _PROGRAM.get()
+    for candidate in (program.modules if program else []):
+        if any(r.id == routine_id for r in candidate.routines):
+            return None if module is not None and candidate.name == module.name else candidate.name
+    return None
 
 
 def _trigger_call(file: JavaFile, statement: M.Call, routine: M.Routine,

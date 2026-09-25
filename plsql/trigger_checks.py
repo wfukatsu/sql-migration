@@ -108,7 +108,10 @@ def _for(trigger, table: str, key: list[str]) -> list[Check]:
                                "拒否の条件はあるが、前の値を知る監査が無い。比べる相手が無い"))
         elif not writes:
             # D: 書かない本体。生成した本体を、今ある行ごとに呼べばよい
-            reads = [n for n in _correlations(trigger) if n.upper().startswith("NEW.")]
+            # the body takes one argument per correlation in name order (`gen_java.service.correlation_row`):
+            # a stored row is both its OLD and its NEW state for this check, so OLD.x is read from the same
+            # column as NEW.x (#40: passing NEW only left the call one argument short and javac refused it)
+            reads = [n for n in _correlations(trigger) if n.upper().startswith(("NEW.", "OLD."))]
             found.append(Check(name, "D", table, HOURLY, key=key,
                                reads=[n.partition(".")[2].lower() for n in reads]))
     return found
