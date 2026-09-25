@@ -68,6 +68,11 @@ class OracleSchema:
     # leaves them out; ScalarDB has no DEFAULT, so the writer has to (`plsql.identity`). Found with
     # samples/oracle-samples `emp_audit.changed_by DEFAULT USER` / `changed_at DEFAULT SYSTIMESTAMP` (2026-09-25)
     defaults: dict[str, dict[str, str]] = field(default_factory=dict)
+    # {table: [(constraint name, condition)]} for CHECK constraints, and {table: [ForeignKey]}. ScalarDB has
+    # neither, so a write that Oracle refused goes through; whether the writer guards it is a decision
+    # (`limits.yaml` constraints.enforce, #50). `REFERENCES parent` without columns means the parent's primary key
+    checks: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
+    foreign_keys: dict[str, list["ForeignKey"]] = field(default_factory=dict)
 
     @classmethod
     def from_ddl(cls, path: str | Path) -> "OracleSchema":
@@ -85,6 +90,7 @@ class OracleSchema:
             if table is None:
                 continue
             columns: dict[str, str] = {}
+            _constraints(schema, table.name.lower(), statement)
             for column in statement.find_all(exp.ColumnDef):
                 columns[column.name.lower()] = column.args["kind"].sql(dialect="oracle")
                 for constraint in column.constraints:
@@ -106,6 +112,13 @@ class OracleSchema:
                             int(start.group(1)) if start else 1, int(increment.group(1)) if increment else 1)
             schema.tables[table.name.lower()] = columns
             schema.keys[table.name.lower()] = _primary_key(statement)
+        # `REFERENCES jobs` names the parent's primary key, and the parent may be defined later (or be the
+        # table itself), so the columns are filled in once every table is known
+        for table_name, keys in schema.foreign_keys.items():
+            schema.foreign_keys[table_name] = [
+                k if k.parent_columns else ForeignKey(k.name, k.columns, k.parent,
+                                                      tuple(schema.keys.get(k.parent, [])))
+                for k in keys]
         return schema
 
     def column(self, table: str, column: str) -> str | None:
@@ -116,6 +129,62 @@ class OracleSchema:
 
     def primary_key(self, table: str) -> list[str]:
         return self.keys.get(table.lower(), [])
+
+
+@dataclass(frozen=True)
+class ForeignKey:
+    name: str
+    columns: tuple[str, ...]
+    parent: str
+    parent_columns: tuple[str, ...]
+
+
+def _constraints(schema: "OracleSchema", table: str, statement) -> None:
+    """CHECK と FOREIGN KEY を、列に付いたものも表に付いたものも拾う。名前が無ければ表名から作る。"""
+    from sqlglot import exp
+
+    unnamed = 0
+
+    def name_of(node, fallback: str) -> str:
+        nonlocal unnamed
+        this = node.args.get("this")
+        if isinstance(this, exp.Identifier):
+            return this.name.lower()
+        unnamed += 1
+        return f"{table}_{fallback}{unnamed}"
+
+    def check(name: str, node) -> None:
+        condition = node.args.get("this")
+        if condition is not None:
+            schema.checks.setdefault(table, []).append((name, condition.sql(dialect="oracle")))
+
+    def reference(name: str, columns: list[str], ref) -> None:
+        target = ref.args.get("this")
+        if isinstance(target, exp.Schema):
+            parent = target.this.name.lower()
+            parent_columns = tuple(c.name.lower() for c in target.expressions)
+        elif isinstance(target, exp.Table):
+            parent, parent_columns = target.name.lower(), ()
+        else:
+            return
+        schema.foreign_keys.setdefault(table, []).append(ForeignKey(name, tuple(columns), parent, parent_columns))
+
+    for column in statement.find_all(exp.ColumnDef):
+        for constraint in column.constraints:
+            kind = constraint.kind
+            if isinstance(kind, exp.CheckColumnConstraint):
+                check(name_of(constraint, "check"), kind)
+            elif isinstance(kind, exp.Reference):
+                reference(name_of(constraint, "fk"), [column.name.lower()], kind)
+    for constraint in statement.find_all(exp.Constraint):
+        for kind in constraint.expressions:
+            if isinstance(kind, exp.CheckColumnConstraint):
+                check(name_of(constraint, "check"), kind)
+            elif isinstance(kind, exp.ForeignKey):
+                columns = [c.name.lower() for c in kind.expressions]
+                ref = kind.args.get("reference")
+                if ref is not None:
+                    reference(name_of(constraint, "fk"), columns, ref)
 
 
 def _primary_key(statement) -> list[str]:

@@ -255,6 +255,39 @@ class PackageState:
         return self.carried.get(package.lower())
 
 
+@dataclass
+class Constraints:
+    """Tables whose CHECK / FOREIGN KEY constraints the writer guards (#50, 2026-09-25, the user's decision:
+    "表ごとに決めて guard を生成"): `constraints.enforce.<table>: <reason>`.
+
+    ScalarDB has neither constraint, so a write Oracle refused (ORA-02290 / ORA-02291) goes through. For a table
+    recorded here the generated code evaluates each CHECK on the values it is about to write and reads the parent
+    row of each FOREIGN KEY before writing, raising the Oracle error code when the constraint would have fired.
+    A table not recorded is left to the application, and the write says so (`CONSTRAINT_UNDECIDED`). Per table,
+    because that is where the constraint lives and where the question "who validates this now" is answered.
+    """
+
+    enforce: dict[str, str] = field(default_factory=dict)
+    source: str | None = None
+
+    @classmethod
+    def load(cls, path: str | Path | None) -> "Constraints":
+        if path is None:
+            return cls()
+        file = Path(path)
+        if not file.exists():
+            raise FileNotFoundError(f"{file} が無い")
+        data = yaml.safe_load(file.read_text(encoding="utf-8")) or {}
+        section = (data.get("constraints") or {}).get("enforce") or {}
+        return cls(enforce={str(k).lower(): str(v).strip() for k, v in section.items()}, source=str(file))
+
+    def decided(self, table: str) -> bool:
+        return table.lower() in self.enforce
+
+    def why(self, table: str) -> str | None:
+        return self.enforce.get(table.lower())
+
+
 def _positive(value, where) -> int:
     number = int(value)
     if number <= 0:

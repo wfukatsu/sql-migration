@@ -110,7 +110,7 @@ class Analysis:
 def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: str = "corpus",
             scalardb_schema: str | Path | None = None,
             row_locks: "RowLocks | None" = None, boundaries=None, limits=None, db_links=None,
-            package_state=None) -> Analysis:
+            package_state=None, constraints=None) -> Analysis:
     """Parse, resolve and lower every source file under `root`. Nothing raises; failures become diagnostics.
 
     With `scalardb_schema`, every SQL statement is also checked against the target (P2-4) and the answer lands on
@@ -176,6 +176,10 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
     # 織り込まれた trigger の呼び出しは SET の式を :NEW の値として受け取るので、列を読む式のままだと Java に
     # ならない（samples/oracle-samples raise_salary、2026-09-25）。capability の前でもある
     rmw.rewrite(program, row_locks, schema, analysis.symbol_table())
+    # #50: 移行先に無い CHECK / FOREIGN KEY を、決めた表では書く前に評価する。RMW を割ったあと（書く値が
+    # 変数になっている）、trigger を織り込む前（guard は書き込みの一部であって trigger ではない）
+    from . import constraints as constraint_guards
+    constraint_guards.rewrite(program, constraints, schema, analysis.symbol_table())
     triggers.rewrite(program, schema, analysis.symbol_table())
     # a DB link somebody mapped to a ScalarDB namespace: `orders@warehouse_link` -> `warehouse.orders`
     dblinks.rewrite(program, db_links)
