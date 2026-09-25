@@ -102,3 +102,32 @@ def test_the_lifted_default_reaches_the_audit_context():
     expressions = [b.expression for b in binds if b.expression]
     assert expressions == ["USER", "SYSTIMESTAMP"]
     assert all(translate(e).audit for e in expressions)
+
+
+# --- INSERT ... RETURNING INTO (samples/oracle-samples emp_api.hire, 2026-09-25) --------------------------------
+def test_a_returned_values_expression_is_assigned_before_the_insert():
+    statement = insert("INSERT INTO employees (employee_id, last_name, email) "
+                       "VALUES (emp_seq.NEXTVAL, :p_last, UPPER(:p_email)) RETURNING employee_id INTO v_id")
+    before = identity._returned(statement)
+    assert [ (s.kind, s.target, s.expression) for s in before ] == [("Assignment", "v_id", "emp_seq.NEXTVAL")]
+    sql = statement.original_sql.upper()
+    assert "RETURNING" not in sql and "V_ID" in sql and "NEXTVAL" not in sql
+    assert {d.code for d in statement.diagnostics} == {"RETURNING_HOISTED"}
+
+
+def test_a_returned_column_the_values_do_not_spell_out_is_left_alone():
+    statement = insert("INSERT INTO employees (last_name) VALUES (:p_last) RETURNING employee_id INTO v_id")
+    before = statement.original_sql
+    assert identity._returned(statement) == [] and statement.original_sql == before
+
+
+def test_the_rewrite_walks_nested_blocks(tmp_path):
+    from plsql.ir import model as M
+    inner = insert("INSERT INTO t (id) VALUES (s.NEXTVAL) RETURNING id INTO v")
+    routine = M.Routine(id="r", kind="Routine", name="r", routine_kind="procedure",
+                        body=[M.If(id="r#if", kind="If", branches=[M.Branch(condition="TRUE", body=[inner])])])
+    program = M.Program(id="p", kind="Program",
+                        modules=[M.Module(id="m", kind="Module", name="m", module_kind="procedure", routines=[routine])])
+    identity.rewrite(program, None)
+    body = routine.body[0].branches[0].body
+    assert [s.kind for s in body] == ["Assignment", "SqlOperation"]

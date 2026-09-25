@@ -17,6 +17,8 @@ after the migration -- that is #1, and it is the caller's value either way.
 """
 from __future__ import annotations
 
+import re
+
 import sqlglot
 from sqlglot import exp
 
@@ -29,16 +31,83 @@ def sequence_name(table: str, column: str) -> str:
     return f"{table.lower()}_{column.lower()}_identity"
 
 
+RETURNING_INTO = re.compile(r"\s+RETURNING\s+(?P<columns>.+?)\s+INTO\s+(?P<targets>.+?)\s*;?\s*$",
+                            re.IGNORECASE | re.DOTALL)
+
+
 def rewrite(program: M.Program, schema: OracleSchema | None) -> None:
-    if schema is None or not (schema.identity or schema.defaults):
-        return
     for module in program.modules:
         for routine in module.routines:
-            statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
-            for statement in statements:
-                if statement.kind != "SqlOperation" or (statement.sql_kind or "").upper() != "INSERT":
-                    continue
+            routine.body = _sequence(routine.body, schema)
+            for handler in routine.exception_handlers:
+                handler.body = _sequence(handler.body, schema)
+
+
+def _sequence(statements: list[M.Statement], schema: OracleSchema | None) -> list[M.Statement]:
+    out: list[M.Statement] = []
+    for statement in statements:
+        for attribute in ("body", "else_body"):
+            nested = getattr(statement, attribute, None)
+            if nested:
+                setattr(statement, attribute, _sequence(nested, schema))
+        for branch in getattr(statement, "branches", []) or []:
+            branch.body = _sequence(branch.body, schema)
+        for handler in getattr(statement, "exception_handlers", []) or []:
+            handler.body = _sequence(handler.body, schema)
+        if statement.kind == "SqlOperation" and (statement.sql_kind or "").upper() == "INSERT":
+            out.extend(_returned(statement))
+            if schema is not None and (schema.identity or schema.defaults):
                 _fill(statement, schema)
+        out.append(statement)
+    return out
+
+
+def _returned(statement: M.SqlOperation) -> list[M.Statement]:
+    """`INSERT ... VALUES (seq.NEXTVAL, ...) RETURNING id INTO v_id`: the value the row got is one the writer
+    computed, so take it before the INSERT and write it in (ScalarDB SQL has no RETURNING).
+
+        v_id := seq.NEXTVAL;
+        INSERT ... VALUES (v_id, ...);
+
+    Only a VALUES expression can be returned this way: it is the value written, whatever it is (a sequence
+    read, a parameter, `UPPER(p_email)`). A returned column the VALUES do not spell out (a DEFAULT the fill
+    below adds, an INSERT ... SELECT) is left as it was, and the RETURNING stays a refusal. Found with
+    samples/oracle-samples `emp_api.hire` (2026-09-25).
+    """
+    original = statement.original_sql or ""
+    returning = RETURNING_INTO.search(original)
+    if returning is None:
+        return []
+    try:
+        tree = sqlglot.parse_one(original[:returning.start()], dialect="oracle")
+    except Exception:
+        return []
+    if not isinstance(tree, exp.Insert) or not isinstance(tree.this, exp.Schema):
+        return []
+    values = tree.expression
+    tuples = values.expressions if isinstance(values, exp.Values) else []
+    if len(tuples) != 1 or not isinstance(tuples[0], exp.Tuple):
+        return []
+    columns = [c.name.lower() for c in tree.this.expressions]
+    row = tuples[0].expressions
+    if len(columns) != len(row):
+        return []
+    returned = [c.strip().lower() for c in returning.group("columns").split(",")]
+    targets = [t.strip() for t in returning.group("targets").split(",")]
+    if len(returned) != len(targets) or any(c not in columns for c in returned):
+        return []
+    before: list[M.Statement] = []
+    for column, target in zip(returned, targets):
+        index = columns.index(column)
+        before.append(M.Assignment(id=f"{statement.id}returned_{column}", kind="Assignment",
+                                   source_range=statement.source_range, target=target,
+                                   expression=row[index].sql(dialect="oracle")))
+        row[index].replace(exp.column(target))
+    statement.original_sql = tree.sql(dialect="oracle")
+    statement.add("INFO", "RETURNING_HOISTED",
+                  f"RETURNING {', '.join(returned)} INTO {', '.join(targets)}: 書く値は呼び出し側が計算したものなので、"
+                  f"INSERT の前に代入してその変数を書く（ScalarDB SQL に RETURNING は無い）")
+    return before
 
 
 def _fill(statement: M.SqlOperation, schema: OracleSchema) -> None:
