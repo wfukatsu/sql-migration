@@ -549,3 +549,24 @@ def test_sqlerrm_and_the_backtrace_come_from_the_caught_exception(tmp_path):
     assert "Plsql.sqlerrm(e.code(), e.getMessage())" in java
     assert "Plsql.errorBacktrace(e)" in java
     assert "UnsupportedOperationException" not in java
+
+
+def test_an_explicit_cursor_fetched_into_its_rowtype_becomes_a_loop_with_a_row_counter(tmp_path):
+    """`OPEN c; LOOP FETCH c INTO r; EXIT WHEN c%NOTFOUND; ... c%ROWCOUNT ... END LOOP; CLOSE c;` with
+    `r c%ROWTYPE` (#39, samples/oracle-samples b04_4_1_explicit_cursor)."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "schema.sql").write_text(
+        "CREATE TABLE employees (employee_id NUMBER(6) PRIMARY KEY, last_name VARCHAR2(25), salary NUMBER(8,2), department_id NUMBER(4));\n")
+    (src / "list_dept.prc").write_text(
+        "CREATE OR REPLACE PROCEDURE list_dept (p_dept NUMBER, p_out OUT VARCHAR2) AS\n"
+        "  CURSOR c_emp IS SELECT employee_id, last_name, salary FROM employees WHERE department_id = p_dept;\n"
+        "  r c_emp%ROWTYPE;\n"
+        "BEGIN\n  OPEN c_emp;\n  LOOP\n    FETCH c_emp INTO r;\n    EXIT WHEN c_emp%NOTFOUND;\n"
+        "    p_out := c_emp%ROWCOUNT || ': ' || r.last_name || ' ' || r.salary;\n  END LOOP;\n  CLOSE c_emp;\n"
+        "END;\n/\n")
+    program = build_analysis(src, src / "schema.sql").program
+    java = generate_module(module_named(program, "list_dept"), APP, INFRA, DOMAIN).file.render()
+    assert "for (" in java and "cEmpRowcount = Plsql.toInt(Plsql.add(cEmpRowcount, 1))" in java
+    assert "r.lastName()" in java and "OpenCursor" not in java
+    assert "UnsupportedOperationException" not in java

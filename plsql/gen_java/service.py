@@ -375,6 +375,11 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
             f.line(f"{mapped.name} {java_name(parameter.name)} = null;")
         chunked = {(loop.variable or "").lower() for loop in _walk(routine.body)
                    if loop.kind == "Loop" and getattr(loop, "chunk", None)}
+        # a `%ROWTYPE` record that a rewritten scan made its loop variable (#39): the for declares it
+        chunked |= {(loop.variable or "").lower() for loop in _walk(routine.body)
+                    if loop.kind == "Loop" and loop.loop_kind == "cursor-for" and loop.variable
+                    and any(d.name.lower() == loop.variable.lower() and d.type is not None
+                            and (d.type.oracle or "").upper().endswith("%ROWTYPE") for d in routine.declarations)}
         for declaration in routine.declarations:
             if declaration.name.lower() in chunked:
                 # 分割読みのループ変数（#14）。PL/SQL では宣言された配列だが、Java では塊そのもの
