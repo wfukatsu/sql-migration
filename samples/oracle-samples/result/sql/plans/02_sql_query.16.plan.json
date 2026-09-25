@@ -1,0 +1,91 @@
+{
+  "pattern": "P6",
+  "source_dialect": "oracle",
+  "source_sql": "-- C-5. 集合演算（MINUS は Oracle 固有 [ORA]、標準は EXCEPT。21c+ は EXCEPT も可）\nSELECT department_id FROM departments\nMINUS\nSELECT department_id FROM employees",
+  "fetch": [
+    {
+      "table": "departments",
+      "namespace": "hr",
+      "alias": "departments",
+      "columns": [
+        "department_id"
+      ],
+      "column_types": {
+        "department_id": "INT",
+        "department_name": "TEXT",
+        "manager_id": "INT",
+        "location": "TEXT"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT department_id FROM hr.departments",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "department_id"
+        ]
+      ],
+      "residual_types": {}
+    },
+    {
+      "table": "employees",
+      "namespace": "hr",
+      "alias": "employees",
+      "columns": [
+        "employee_id",
+        "department_id"
+      ],
+      "column_types": {
+        "employee_id": "INT",
+        "first_name": "TEXT",
+        "last_name": "TEXT",
+        "email": "TEXT",
+        "hire_date": "TIMESTAMP",
+        "job_id": "TEXT",
+        "salary": "DOUBLE",
+        "commission_pct": "DOUBLE",
+        "manager_id": "INT",
+        "department_id": "INT"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT employee_id, department_id FROM hr.employees",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "employee_id"
+        ]
+      ],
+      "residual_types": {}
+    }
+  ],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "-- C-5. 集合演算（MINUS は Oracle 固有 [ORA]、標準は EXCEPT。21c+ は EXCEPT も可）\nSELECT department_id FROM departments\nMINUS\nSELECT department_id FROM employees",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "/* C-5. 集合演算（MINUS は Oracle 固有 [ORA]、標準は EXCEPT。21c+ は EXCEPT も可） */ SELECT department_id FROM departments EXCEPT SELECT department_id FROM employees"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": true,
+    "row_limit": 10000
+  },
+  "unresolved": [],
+  "notes": [],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+    "scalar.db.scan_fetch_size": 1000,
+    "scalar.db.cluster.client.scan_fetch_size": 1000,
+    "scalar.db.cross_partition_scan.enabled": true,
+    "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+  }
+}

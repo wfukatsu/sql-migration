@@ -1,0 +1,54 @@
+{
+  "jobs": [
+    {"job_id": "AD_PRES",  "job_title": "President",            "min_salary": 20000, "max_salary": 40000},
+    {"job_id": "AD_VP",    "job_title": "Vice President",       "min_salary": 15000, "max_salary": 30000},
+    {"job_id": "IT_PROG",  "job_title": "Programmer",           "min_salary": 4000,  "max_salary": 10000},
+    {"job_id": "SA_MAN",   "job_title": "Sales Manager",        "min_salary": 10000, "max_salary": 20000},
+    {"job_id": "SA_REP",   "job_title": "Sales Representative", "min_salary": 6000,  "max_salary": 12000},
+    {"job_id": "ST_CLERK", "job_title": "Stock Clerk",          "min_salary": 2000,  "max_salary": 5000}
+  ],
+  "departments": [
+    {"department_id": 10, "department_name": "Administration", "manager_id": 200,  "location": "Tokyo"},
+    {"department_id": 60, "department_name": "IT",             "manager_id": 103,  "location": "Osaka"},
+    {"department_id": 80, "department_name": "Sales",          "manager_id": 145,  "location": "Tokyo"},
+    {"department_id": 50, "department_name": "Shipping",       "manager_id": 120,  "location": "Nagoya"},
+    {"department_id": 90, "department_name": "Executive",      "manager_id": 100,  "location": "Tokyo"},
+    {"department_id": 99, "department_name": "Research",       "manager_id": null, "location": "Fukuoka"}
+  ],
+  "employees": [
+    {"employee_id": 100, "first_name": "Steven",    "last_name": "King",      "email": "SKING",    "hire_date": "2013-06-17", "job_id": "AD_PRES",  "salary": 24000, "commission_pct": null, "manager_id": null, "department_id": 90},
+    {"employee_id": 101, "first_name": "Neena",     "last_name": "Kochhar",   "email": "NKOCHHAR", "hire_date": "2015-09-21", "job_id": "AD_VP",    "salary": 17000, "commission_pct": null, "manager_id": 100,  "department_id": 90},
+    {"employee_id": 102, "first_name": "Lex",       "last_name": "De Haan",   "email": "LDEHAAN",  "hire_date": "2011-01-13", "job_id": "AD_VP",    "salary": 17000, "commission_pct": null, "manager_id": 100,  "department_id": 90},
+    {"employee_id": 103, "first_name": "Alexander", "last_name": "Hunold",    "email": "AHUNOLD",  "hire_date": "2016-01-03", "job_id": "IT_PROG",  "salary": 9000,  "commission_pct": null, "manager_id": 102,  "department_id": 60},
+    {"employee_id": 104, "first_name": "Bruce",     "last_name": "Ernst",     "email": "BERNST",   "hire_date": "2017-05-21", "job_id": "IT_PROG",  "salary": 6000,  "commission_pct": null, "manager_id": 103,  "department_id": 60},
+    {"employee_id": 107, "first_name": "Diana",     "last_name": "Lorentz",   "email": "DLORENTZ", "hire_date": "2019-02-07", "job_id": "IT_PROG",  "salary": 4200,  "commission_pct": null, "manager_id": 103,  "department_id": 60},
+    {"employee_id": 145, "first_name": "John",      "last_name": "Russell",   "email": "JRUSSEL",  "hire_date": "2014-10-01", "job_id": "SA_MAN",   "salary": 14000, "commission_pct": 0.40, "manager_id": 100,  "department_id": 80},
+    {"employee_id": 146, "first_name": "Karen",     "last_name": "Partners",  "email": "KPARTNER", "hire_date": "2015-01-05", "job_id": "SA_MAN",   "salary": 13500, "commission_pct": 0.30, "manager_id": 100,  "department_id": 80},
+    {"employee_id": 150, "first_name": "Peter",     "last_name": "Tucker",    "email": "PTUCKER",  "hire_date": "2015-01-30", "job_id": "SA_REP",   "salary": 10000, "commission_pct": 0.30, "manager_id": 145,  "department_id": 80},
+    {"employee_id": 151, "first_name": "David",     "last_name": "Bernstein", "email": "DBERNSTE", "hire_date": "2015-03-24", "job_id": "SA_REP",   "salary": 9500,  "commission_pct": 0.25, "manager_id": 145,  "department_id": 80},
+    {"employee_id": 155, "first_name": "Oliver",    "last_name": "Tuvault",   "email": "OTUVAULT", "hire_date": "2017-11-23", "job_id": "SA_REP",   "salary": 7000,  "commission_pct": 0.15, "manager_id": 146,  "department_id": 80},
+    {"employee_id": 120, "first_name": "Matthew",   "last_name": "Weiss",     "email": "MWEISS",   "hire_date": "2014-07-18", "job_id": "ST_CLERK", "salary": 4800,  "commission_pct": null, "manager_id": 100,  "department_id": 50},
+    {"employee_id": 125, "first_name": "Julia",     "last_name": "Nayer",     "email": "JNAYER",   "hire_date": "2015-07-16", "job_id": "ST_CLERK", "salary": 3200,  "commission_pct": null, "manager_id": 120,  "department_id": 50},
+    {"employee_id": 178, "first_name": "Kimberely", "last_name": "Grant",     "email": "KGRANT",   "hire_date": "2017-05-24", "job_id": "SA_REP",   "salary": 7000,  "commission_pct": 0.15, "manager_id": 145,  "department_id": null},
+    {"employee_id": 200, "first_name": "Jennifer",  "last_name": "Whalen",    "email": "JWHALEN",  "hire_date": "2013-09-17", "job_id": "AD_VP",    "salary": 15000, "commission_pct": null, "manager_id": 101,  "department_id": 10}
+  ],
+  "orders": [
+    {"order_id": 1, "order_date": "2026-04-01", "employee_id": 150, "customer": "Acme Corp", "status": "SHIPPED",   "total": 1200},
+    {"order_id": 2, "order_date": "2026-04-15", "employee_id": 151, "customer": "Globex",    "status": "NEW",       "total": 450},
+    {"order_id": 3, "order_date": "2026-05-02", "employee_id": 150, "customer": "Initech",   "status": "SHIPPED",   "total": 3000},
+    {"order_id": 4, "order_date": "2026-05-20", "employee_id": 155, "customer": "Umbrella",  "status": "CANCELLED", "total": 800},
+    {"order_id": 5, "order_date": "2026-06-11", "employee_id": 145, "customer": "Acme Corp", "status": "NEW",       "total": 2200}
+  ],
+  "order_items": [
+    {"order_id": 1, "line_no": 1, "product": "ScalarDB License", "qty": 1, "unit_price": 1000},
+    {"order_id": 1, "line_no": 2, "product": "Support",          "qty": 1, "unit_price": 200},
+    {"order_id": 2, "line_no": 1, "product": "Training",         "qty": 3, "unit_price": 150},
+    {"order_id": 3, "line_no": 1, "product": "ScalarDL License", "qty": 2, "unit_price": 1500},
+    {"order_id": 4, "line_no": 1, "product": "Consulting",       "qty": 4, "unit_price": 200},
+    {"order_id": 5, "line_no": 1, "product": "ScalarDB License", "qty": 2, "unit_price": 1100}
+  ],
+  "products_json": [
+    {"id": 1, "doc": "{\"name\":\"ScalarDB\",\"tier\":\"Enterprise\",\"price\":1000,\"tags\":[\"db\",\"tx\"],\"spec\":{\"ha\":true}}"},
+    {"id": 2, "doc": "{\"name\":\"ScalarDL\",\"tier\":\"Standard\",\"price\":1500,\"tags\":[\"ledger\"],\"spec\":{\"ha\":false}}"}
+  ]
+}

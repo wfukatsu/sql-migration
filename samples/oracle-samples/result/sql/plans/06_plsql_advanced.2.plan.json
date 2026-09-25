@@ -1,0 +1,51 @@
+{
+  "pattern": "P1",
+  "source_dialect": "oracle",
+  "source_sql": "--==============================================================================\n-- 1. BULK COLLECT（LIMIT 付きで大量件数でもメモリを抑える）\n--==============================================================================\n\n--==============================================================================\n-- 2. FORALL + SAVE EXCEPTIONS（一括DML と行単位エラーの回収）\n--==============================================================================\n\n-- 2-2. FORALL + RETURNING BULK COLLECT INTO、SQL%BULK_ROWCOUNT\n\n--==============================================================================\n-- 3. 動的 SQL（ネイティブ動的SQL: EXECUTE IMMEDIATE / OPEN FOR）\n--==============================================================================\n\n-- 3-6. DBMS_SQL：列数・列名が実行時まで分からない問合せ\n\n--==============================================================================\n-- 4. スキーマレベルのオブジェクト型とパイプライン・テーブルファンクション\n--==============================================================================\n\n\n-- 表のように SELECT できる（18c+ は TABLE() 省略可）\nSELECT * FROM TABLE(emp_grades(80)) ORDER BY grade, last_name",
+  "fetch": [
+    {
+      "table": "",
+      "namespace": null,
+      "alias": "",
+      "columns": null,
+      "column_types": {},
+      "predicates": [],
+      "scalardb_sql": "SELECT * FROM \"\"",
+      "access_path": "UNKNOWN",
+      "max_rows": 10000,
+      "index_columns": [],
+      "residual_types": {}
+    }
+  ],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "/* ============================================================================== */ /* 1. BULK COLLECT（LIMIT 付きで大量件数でもメモリを抑える） */ /* ============================================================================== */ /* ============================================================================== */ /* 2. FORALL + SAVE EXCEPTIONS（一括DML と行単位エラーの回収） */ /* ============================================================================== */ /* 2-2. FORALL + RETURNING BULK COLLECT INTO、SQL%BULK_ROWCOUNT */ /* ============================================================================== */ /* 3. 動的 SQL（ネイティブ動的SQL: EXECUTE IMMEDIATE / OPEN FOR） */ /* ============================================================================== */ /* 3-6. DBMS_SQL：列数・列名が実行時まで分からない問合せ */ /* ============================================================================== */ /* 4. スキーマレベルのオブジェクト型とパイプライン・テーブルファンクション */ /* ============================================================================== */ /* 表のように SELECT できる（18c+ は TABLE() 省略可） */ SELECT * FROM TABLE(EMP_GRADES(80)) ORDER BY grade NULLS LAST, last_name NULLS LAST",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "/* ============================================================================== */ /* 1. BULK COLLECT（LIMIT 付きで大量件数でもメモリを抑える） */ /* ============================================================================== */ /* ============================================================================== */ /* 2. FORALL + SAVE EXCEPTIONS（一括DML と行単位エラーの回収） */ /* ============================================================================== */ /* 2-2. FORALL + RETURNING BULK COLLECT INTO、SQL%BULK_ROWCOUNT */ /* ============================================================================== */ /* 3. 動的 SQL（ネイティブ動的SQL: EXECUTE IMMEDIATE / OPEN FOR） */ /* ============================================================================== */ /* 3-6. DBMS_SQL：列数・列名が実行時まで分からない問合せ */ /* ============================================================================== */ /* 4. スキーマレベルのオブジェクト型とパイプライン・テーブルファンクション */ /* ============================================================================== */ /* 表のように SELECT できる（18c+ は TABLE() 省略可） */ SELECT * FROM TABLE(EMP_GRADES(80)) ORDER BY grade NULLS LAST, last_name NULLS LAST"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": false,
+    "row_limit": 10000
+  },
+  "unresolved": [],
+  "notes": [
+    ": schema unknown, fetching all columns; runtime must infer types",
+    "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+  ],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+    "scalar.db.scan_fetch_size": 1000,
+    "scalar.db.cluster.client.scan_fetch_size": 1000,
+    "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+  }
+}

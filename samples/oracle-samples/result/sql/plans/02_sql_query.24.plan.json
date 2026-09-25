@@ -1,0 +1,74 @@
+{
+  "pattern": "P1",
+  "source_dialect": "oracle",
+  "source_sql": "--==============================================================================\n-- E. 分析関数（ウィンドウ関数）\n--==============================================================================\nSELECT department_id, last_name, salary,\n       ROW_NUMBER() OVER (PARTITION BY department_id ORDER BY salary DESC) AS rn,\n       RANK()       OVER (PARTITION BY department_id ORDER BY salary DESC) AS rnk,\n       DENSE_RANK() OVER (ORDER BY salary DESC)                            AS drnk,\n       SUM(salary)  OVER (PARTITION BY department_id)                      AS dept_total,\n       ROUND(RATIO_TO_REPORT(salary) OVER (PARTITION BY department_id), 3) AS share,  -- [ORA]\n       LAG(salary)  OVER (PARTITION BY department_id ORDER BY hire_date)   AS prev_hire_sal,\n       LEAD(last_name) OVER (ORDER BY hire_date)                           AS next_hired,\n       NTILE(4)     OVER (ORDER BY salary)                                 AS quartile\nFROM   employees\nORDER  BY department_id, rn",
+  "fetch": [
+    {
+      "table": "employees",
+      "namespace": "hr",
+      "alias": "employees",
+      "columns": [
+        "employee_id",
+        "last_name",
+        "hire_date",
+        "salary",
+        "department_id"
+      ],
+      "column_types": {
+        "employee_id": "INT",
+        "first_name": "TEXT",
+        "last_name": "TEXT",
+        "email": "TEXT",
+        "hire_date": "TIMESTAMP",
+        "job_id": "TEXT",
+        "salary": "DOUBLE",
+        "commission_pct": "DOUBLE",
+        "manager_id": "INT",
+        "department_id": "INT"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT employee_id, last_name, hire_date, salary, department_id FROM hr.employees",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "employee_id"
+        ]
+      ],
+      "residual_types": {}
+    }
+  ],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "/* ============================================================================== */ /* E. 分析関数（ウィンドウ関数） */ /* ============================================================================== */ SELECT department_id, last_name, salary, ROW_NUMBER() OVER (PARTITION BY department_id ORDER BY salary DESC NULLS FIRST) AS rn, RANK() OVER (PARTITION BY department_id ORDER BY salary DESC NULLS FIRST) AS rnk, DENSE_RANK() OVER (ORDER BY salary DESC NULLS FIRST) AS drnk, SUM(salary) OVER (PARTITION BY department_id) AS dept_total, ROUND(RATIO_TO_REPORT(salary) OVER (PARTITION BY department_id), 3) AS share /* [ORA] */, LAG(salary) OVER (PARTITION BY department_id ORDER BY hire_date NULLS LAST) AS prev_hire_sal, LEAD(last_name) OVER (ORDER BY hire_date NULLS LAST) AS next_hired, NTILE(4) OVER (ORDER BY salary NULLS LAST) AS quartile FROM employees ORDER BY department_id NULLS LAST, rn NULLS LAST",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "/* ============================================================================== */ /* E. 分析関数（ウィンドウ関数） */ /* ============================================================================== */ SELECT department_id, last_name, salary, ROW_NUMBER() OVER (PARTITION BY department_id ORDER BY salary DESC NULLS FIRST) AS rn, RANK() OVER (PARTITION BY department_id ORDER BY salary DESC NULLS FIRST) AS rnk, DENSE_RANK() OVER (ORDER BY salary DESC NULLS FIRST) AS drnk, SUM(salary) OVER (PARTITION BY department_id) AS dept_total, ROUND(RATIO_TO_REPORT(salary) OVER (PARTITION BY department_id), 3) AS share /* [ORA] */, LAG(salary) OVER (PARTITION BY department_id ORDER BY hire_date NULLS LAST) AS prev_hire_sal, LEAD(last_name) OVER (ORDER BY hire_date NULLS LAST) AS next_hired, NTILE(4) OVER (ORDER BY salary NULLS LAST) AS quartile FROM employees ORDER BY department_id NULLS LAST, rn NULLS LAST"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": true,
+    "row_limit": 10000
+  },
+  "unresolved": [
+    "employees: columns ['rn'] not in schema"
+  ],
+  "notes": [
+    "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+  ],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+    "scalar.db.scan_fetch_size": 1000,
+    "scalar.db.cluster.client.scan_fetch_size": 1000,
+    "scalar.db.cross_partition_scan.enabled": true,
+    "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+  }
+}

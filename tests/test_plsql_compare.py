@@ -327,3 +327,11 @@ def test_an_accepted_difference_covers_exactly_the_pair_of_codes_the_scenario_na
     assert _accepted("remote_sync_already_queued", oracle, {"exception": {"code": -1, "message": "x"}}) is None
     assert _accepted("remote_sync_already_queued", oracle, {"exception": None}) is None
     assert _accepted("remote_sync", oracle, target) is None
+
+
+def test_an_oracle_date_at_midnight_equals_the_target_date_column():
+    """Oracle DATE captures as `2013-06-17T00:00:00`; a ScalarDB DATE column captures as `2013-06-17` (#42)."""
+    assert difference("2013-06-17T00:00:00", "2013-06-17") is None
+    assert difference("2013-06-17", "2013-06-17T00:00:00") is None
+    assert difference("2013-06-17T09:30:00", "2013-06-17") == "value"
+    assert difference("2013-06-17T00:00:00", "2013-06-18") == "value"

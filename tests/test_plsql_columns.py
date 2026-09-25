@@ -91,3 +91,25 @@ def test_money_binds_carry_the_column_type_and_the_declared_oracle_type():
         assert bind.scalardb_type, f"{bind.name} has no ScalarDB type"
         assert bind.column_oracle_type and "," in bind.column_oracle_type, \
             f"{bind.name} did not pick up the column's declared scale"
+
+
+def test_an_insert_without_a_column_list_pairs_its_binds_by_definition_order(tmp_path):
+    """`INSERT INTO t VALUES (a, b, c)`: the Oracle DDL says which column each value lands in (#35). Without it the
+    NUMBER(8,2) element of a BULK COLLECT reached a DOUBLE column as a BigDecimal (DB-SQL-10016)."""
+    import json
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "schema.sql").write_text(
+        "CREATE TABLE bulk_target (employee_id NUMBER(6) PRIMARY KEY, last_name VARCHAR2(25), salary NUMBER(8,2));\n")
+    (src / "load_one.prc").write_text(
+        "CREATE OR REPLACE PROCEDURE load_one (p_id NUMBER, p_name VARCHAR2, p_salary NUMBER) AS\n"
+        "BEGIN\n  INSERT INTO bulk_target VALUES (p_id, p_name, p_salary);\nEND;\n/\n")
+    schema = tmp_path / "scalardb-schema.json"
+    schema.write_text(json.dumps({"t.bulk_target": {
+        "transaction": True, "partition-key": ["employee_id"],
+        "columns": {"employee_id": "INT", "last_name": "TEXT", "salary": "DOUBLE"}}}))
+    analysis = analyse(src, src / "schema.sql", scalardb_schema=schema)
+    insert = next(s for _, routine in analysis.routines() for s in routine.body if getattr(s, "sql_kind", "") == "INSERT")
+    assert [(b.plsql_variable, b.column, b.scalardb_type, b.column_oracle_type) for b in insert.binds] == [
+        ("p_id", "employee_id", "INT", "NUMBER(6)"), ("p_name", "last_name", "TEXT", "VARCHAR2(25)"),
+        ("p_salary", "salary", "DOUBLE", "NUMBER(8, 2)")]

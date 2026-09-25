@@ -1,0 +1,724 @@
+{
+  "source": "oracle",
+  "target": "scalardb",
+  "summary": {
+    "total": 37,
+    "ok": 9,
+    "warn": 6,
+    "error": 21,
+    "planned": 1,
+    "converted": 15,
+    "rate": 40.5
+  },
+  "results": [
+    {
+      "index": 1,
+      "source_sql": "--------------------------------------------------------------------------------\n-- 03_sql_dml.sql : DML・トランザクション制御・JSON のサンプル\n--   参照: SQL Language Reference - INSERT / UPDATE / DELETE / MERGE /\n--         SAVEPOINT / SELECT FOR UPDATE、JSON Developer's Guide\n--   前提: 00_setup.sql, 01_sql_ddl.sql 実行済み（emp_stage を使用）\n--   [ORA] = Oracle 固有 / 他DBへの移行で要注意の構文\n--------------------------------------------------------------------------------\n\n--==============================================================================\n-- A. INSERT\n--==============================================================================\n-- A-1. 単一行（シーケンス使用）\nINSERT INTO employees (employee_id, first_name, last_name, email, hire_date, job_id, salary, department_id)\nVALUES (emp_seq.NEXTVAL, 'Taro', 'Yamada', 'TYAMADA', SYSDATE, 'IT_PROG', 5000, 60)",
+      "kind": "INSERT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "SEQUENCE",
+          "message": "VALUES column employee_id: sequences are not supported; generate keys in the application (e.g. UUID)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 2,
+      "source_sql": "-- A-2. INSERT ... SELECT\nINSERT INTO emp_stage (employee_id, last_name, salary, department_id)\nSELECT employee_id, last_name, salary, department_id\nFROM   employees\nWHERE  department_id = 60",
+      "kind": "INSERT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "INSERT_SELECT",
+          "message": "INSERT ... SELECT is not supported; read rows in the application then insert"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 3,
+      "source_sql": "-- A-3. 複数表への条件付き INSERT（INSERT ALL / FIRST）[ORA]\nCREATE TABLE emp_high AS SELECT employee_id, salary FROM employees WHERE 1 = 0",
+      "kind": "CREATE",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "DDL",
+          "message": "CREATE TABLE ... AS SELECT / LIKE is not supported"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 4,
+      "source_sql": "CREATE TABLE emp_low  AS SELECT employee_id, salary FROM employees WHERE 1 = 0",
+      "kind": "CREATE",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "DDL",
+          "message": "CREATE TABLE ... AS SELECT / LIKE is not supported"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 5,
+      "source_sql": "INSERT FIRST\n  WHEN salary >= 10000 THEN INTO emp_high (employee_id, salary) VALUES (employee_id, salary)\n  ELSE                      INTO emp_low  (employee_id, salary) VALUES (employee_id, salary)\nSELECT employee_id, salary FROM employees",
+      "kind": "MULTITABLEINSERTS",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "STATEMENT",
+          "message": "MultitableInserts statements are not supported by ScalarDB SQL"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 6,
+      "source_sql": "-- A-4. INSERT ALL による複数行挿入（23ai 未満で複数行 VALUES の代替）[ORA]\nINSERT ALL\n  INTO jobs VALUES ('MK_MAN', 'Marketing Manager', 9000, 15000)\n  INTO jobs VALUES ('MK_REP', 'Marketing Rep',     4000,  9000)\nSELECT * FROM dual",
+      "kind": "MULTITABLEINSERTS",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "STATEMENT",
+          "message": "MultitableInserts statements are not supported by ScalarDB SQL"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 7,
+      "source_sql": "-- 23ai 以降は表値コンストラクタで複数行挿入可\n-- INSERT INTO jobs VALUES ('HR_REP','HR Rep',4000,9000), ('PR_REP','PR Rep',4500,10500);\n\n--==============================================================================\n-- B. UPDATE / DELETE\n--==============================================================================\n-- B-1. 相関副問合せによる更新\nUPDATE employees e\nSET    salary = salary * 1.05\nWHERE  salary < (SELECT AVG(salary) FROM employees x WHERE x.department_id = e.department_id)",
+      "kind": "UPDATE",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "RMW",
+          "message": "SET salary = salary * 1.05: expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 8,
+      "source_sql": "-- B-2. 複数列を副問合せで一括更新\nUPDATE departments d\nSET   (location) = (SELECT 'Tokyo' FROM dual)\nWHERE  d.department_id = 99",
+      "kind": "UPDATE",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "SET",
+          "message": "unsupported SET clause '(location) = (SELECT 'Tokyo' FROM dual)'"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 9,
+      "source_sql": "-- B-3. 結合更新（インラインビュー更新）[ORA]\n--      結合先の主キーで一意に決まる（キー保存表）場合のみ可能\nUPDATE (SELECT e.salary, j.min_salary\n        FROM   employees e JOIN jobs j ON j.job_id = e.job_id\n        WHERE  e.salary < j.min_salary)\nSET    salary = min_salary",
+      "kind": "PARSE_ERROR",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PARSE",
+          "message": "Invalid expression / Unexpected token. Line 6, Col: 13."
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 10,
+      "source_sql": "-- 23ai 以降は UPDATE ... FROM も利用可\n-- UPDATE employees e SET e.salary = j.min_salary FROM jobs j\n--  WHERE j.job_id = e.job_id AND e.salary < j.min_salary;\n\n-- B-4. DELETE（ROWID による重複削除の定番パターン）[ORA]\nDELETE FROM emp_stage a\nWHERE  a.ROWID > (SELECT MIN(b.ROWID) FROM emp_stage b WHERE b.employee_id = a.employee_id)",
+      "kind": "DELETE",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "ROWID",
+          "message": "pseudo-column ROWID does not exist in ScalarDB; use the primary key"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 11,
+      "source_sql": "--==============================================================================\n-- C. MERGE（UPSERT）\n--==============================================================================\n-- ステージ表の内容で employees を更新／存在しなければ挿入\nUPDATE emp_stage SET salary = salary + 500",
+      "kind": "UPDATE",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "RMW",
+          "message": "SET salary = salary + 500: expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 12,
+      "source_sql": "MERGE INTO employees t\nUSING (SELECT employee_id, salary FROM emp_stage) s\nON    (t.employee_id = s.employee_id)\nWHEN MATCHED THEN\n  UPDATE SET t.salary = s.salary\n  WHERE  t.salary <> s.salary\n  DELETE WHERE t.salary > 20000                 -- [ORA] 更新後に条件で削除\nWHEN NOT MATCHED THEN\n  INSERT (employee_id, last_name, email, hire_date, job_id, salary)\n  VALUES (s.employee_id, 'NEW', 'NEW' || s.employee_id, SYSDATE, 'IT_PROG', s.salary)",
+      "kind": "PARSE_ERROR",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PARSE",
+          "message": "Invalid expression / Unexpected token. Line 7, Col: 8."
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 13,
+      "source_sql": "--==============================================================================\n-- D. DML エラーロギング [ORA]\n--    制約違反の行をスキップしてエラー表へ記録し、処理全体は継続する\n--==============================================================================\nALTER TABLE emp_stage ADD CONSTRAINT emp_stage_sal_ck CHECK (salary < 10000) ENABLE NOVALIDATE",
+      "kind": "COMMAND",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "UNPARSED",
+          "message": "statement type 'ALTER' is not supported (views, triggers, procedures, sequences, grants, session settings ...)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 14,
+      "source_sql": "INSERT INTO emp_stage (employee_id, last_name, salary, department_id)\nSELECT employee_id, last_name, salary, department_id FROM employees\nLOG ERRORS INTO emp_err_log ('batch-001') REJECT LIMIT UNLIMITED",
+      "kind": "PARSE_ERROR",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PARSE",
+          "message": "Invalid expression / Unexpected token. Line 3, Col: 10."
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 15,
+      "source_sql": "SELECT ora_err_number$, ora_err_tag$, employee_id, salary FROM emp_err_log",
+      "kind": "SELECT",
+      "status": "OK",
+      "converted": [
+        "SELECT \"ora_err_number$\", \"ora_err_tag$\", employee_id, salary FROM emp_err_log"
+      ],
+      "issues": [
+        {
+          "severity": "INFO",
+          "code": "IDENT",
+          "message": "identifier ora_err_number$ is not a plain identifier; written as \"ora_err_number$\" (quoted)"
+        },
+        {
+          "severity": "INFO",
+          "code": "IDENT",
+          "message": "identifier ora_err_tag$ is not a plain identifier; written as \"ora_err_tag$\" (quoted)"
+        },
+        {
+          "severity": "INFO",
+          "code": "SCHEMA",
+          "message": "SELECT: table definition unknown, access path (GET / SCAN / cross-partition) not analysed"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 16,
+      "source_sql": "--==============================================================================\n-- E. トランザクション制御・ロック\n--==============================================================================\nSAVEPOINT before_raise",
+      "kind": "ALIAS",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "STATEMENT",
+          "message": "Alias statements are not supported by ScalarDB SQL"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 17,
+      "source_sql": "UPDATE employees SET salary = salary * 2 WHERE department_id = 60",
+      "kind": "UPDATE",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "RMW",
+          "message": "SET salary = salary * 2: expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 18,
+      "source_sql": "ROLLBACK TO SAVEPOINT before_raise",
+      "kind": "ROLLBACK",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "SAVEPOINT",
+          "message": "savepoints / named transactions are not supported"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 19,
+      "source_sql": "-- 部分ロールバック\nCOMMIT",
+      "kind": "COMMIT",
+      "status": "OK",
+      "converted": [
+        "COMMIT /* 部分ロールバック */ /* 部分ロールバック */"
+      ],
+      "issues": [],
+      "plan": null
+    },
+    {
+      "index": 20,
+      "source_sql": "-- 悲観ロック\nSELECT employee_id, salary FROM employees WHERE department_id = 80\nFOR UPDATE OF salary NOWAIT",
+      "kind": "SELECT",
+      "status": "WARN",
+      "converted": [
+        "/* 悲観ロック */ SELECT employee_id, salary FROM employees WHERE department_id = 80"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "LOCK",
+          "message": "FOR UPDATE / locking clause dropped (ScalarDB transactions handle isolation)"
+        },
+        {
+          "severity": "INFO",
+          "code": "ACCESS",
+          "message": "SELECT: equality on secondary index -> index SCAN"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 21,
+      "source_sql": "-- ロック取得できなければ即 ORA-00054\nROLLBACK",
+      "kind": "ROLLBACK",
+      "status": "OK",
+      "converted": [
+        "ROLLBACK /* ロック取得できなければ即 ORA-00054 */ /* ロック取得できなければ即 ORA-00054 */"
+      ],
+      "issues": [],
+      "plan": null
+    },
+    {
+      "index": 22,
+      "source_sql": "-- キュー処理の定番: ロック済み行を飛ばして取得 [ORA]\nSELECT order_id FROM orders WHERE status = 'NEW'\nFOR UPDATE SKIP LOCKED",
+      "kind": "SELECT",
+      "status": "WARN",
+      "converted": [
+        "/* キュー処理の定番: ロック済み行を飛ばして取得 [ORA] */ SELECT order_id FROM orders WHERE status = 'NEW'"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "LOCK",
+          "message": "FOR UPDATE / locking clause dropped (ScalarDB transactions handle isolation)"
+        },
+        {
+          "severity": "INFO",
+          "code": "ACCESS",
+          "message": "SELECT: equality on secondary index -> index SCAN"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 23,
+      "source_sql": "ROLLBACK",
+      "kind": "ROLLBACK",
+      "status": "OK",
+      "converted": [
+        "ROLLBACK"
+      ],
+      "issues": [],
+      "plan": null
+    },
+    {
+      "index": 24,
+      "source_sql": "-- 分離レベル（Oracle は READ COMMITTED と SERIALIZABLE のみ）\nSET TRANSACTION ISOLATION LEVEL SERIALIZABLE",
+      "kind": "SET",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "STATEMENT",
+          "message": "Set statements are not supported by ScalarDB SQL"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 25,
+      "source_sql": "SELECT COUNT(*) FROM employees",
+      "kind": "SELECT",
+      "status": "WARN",
+      "converted": [
+        "SELECT COUNT(*) FROM employees"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "CROSS_PARTITION",
+          "message": "SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 26,
+      "source_sql": "COMMIT",
+      "kind": "COMMIT",
+      "status": "OK",
+      "converted": [
+        "COMMIT"
+      ],
+      "issues": [],
+      "plan": null
+    },
+    {
+      "index": 27,
+      "source_sql": "--==============================================================================\n-- F. JSON（12c+、19c で機能強化、21c+ でネイティブ JSON 型）\n--==============================================================================\n-- F-1. JSON を格納する表（19c 互換: CLOB + IS JSON 制約）\nCREATE TABLE products_json (\n  id   NUMBER PRIMARY KEY,\n  doc  CLOB CONSTRAINT products_json_ck CHECK (doc IS JSON)\n)",
+      "kind": "CREATE",
+      "status": "WARN",
+      "converted": [
+        "CREATE TABLE products_json (\n  id DOUBLE PRIMARY KEY,\n  doc TEXT\n)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "TYPE",
+          "message": "column id: NUMBER: unconstrained NUMBER mapped to DOUBLE; exact decimal precision is lost"
+        },
+        {
+          "severity": "WARN",
+          "code": "CHECK",
+          "message": "column doc: CHECK dropped; enforce in the application"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 28,
+      "source_sql": "-- 21c+ なら  doc JSON  と書ける\n\nINSERT INTO products_json VALUES (1,\n  '{\"name\":\"ScalarDB\",\"tier\":\"Enterprise\",\"price\":1000,\"tags\":[\"db\",\"tx\"],\"spec\":{\"ha\":true}}')",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "/* 21c+ なら  doc JSON  と書ける */ INSERT INTO products_json VALUES (1, '{\"name\":\"ScalarDB\",\"tier\":\"Enterprise\",\"price\":1000,\"tags\":[\"db\",\"tx\"],\"spec\":{\"ha\":true}}')"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 29,
+      "source_sql": "INSERT INTO products_json VALUES (2,\n  '{\"name\":\"ScalarDL\",\"tier\":\"Standard\",\"price\":1500,\"tags\":[\"ledger\"],\"spec\":{\"ha\":false}}')",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO products_json VALUES (2, '{\"name\":\"ScalarDL\",\"tier\":\"Standard\",\"price\":1500,\"tags\":[\"ledger\"],\"spec\":{\"ha\":false}}')"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 30,
+      "source_sql": "COMMIT",
+      "kind": "COMMIT",
+      "status": "OK",
+      "converted": [
+        "COMMIT"
+      ],
+      "issues": [],
+      "plan": null
+    },
+    {
+      "index": 31,
+      "source_sql": "-- F-2. 値の取り出し（JSON_VALUE / JSON_QUERY / ドット記法）\nSELECT JSON_VALUE(doc, '$.name')                    AS name,\n       JSON_VALUE(doc, '$.price' RETURNING NUMBER)  AS price,\n       JSON_QUERY(doc, '$.tags')                    AS tags,\n       p.doc.spec.ha                                AS ha            -- ドット記法（表別名必須）\nFROM   products_json p\nWHERE  JSON_EXISTS(doc, '$.tags[*]?(@ == \"db\")')",
+      "kind": "PARSE_ERROR",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PARSE",
+          "message": "Expecting ). Line 3, Col: 42."
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 32,
+      "source_sql": "-- F-3. JSON_TABLE：JSON を行列に展開\nSELECT p.id, jt.name, jt.tag\nFROM   products_json p,\n       JSON_TABLE(p.doc, '$'\n         COLUMNS (name VARCHAR2(40) PATH '$.name',\n                  NESTED PATH '$.tags[*]' COLUMNS (tag VARCHAR2(20) PATH '$'))) jt",
+      "kind": "SELECT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "JOIN",
+          "message": "comma join without join condition (cartesian product) is not supported"
+        },
+        {
+          "severity": "ERROR",
+          "code": "RESIDUAL_H2",
+          "message": "the H2 residual engine cannot run JSON_TABLE (H2 has no JSON_TABLE: read the JSON column and unnest it in the application); implement this part in the application"
+        },
+        {
+          "severity": "INFO",
+          "code": "DESIGN",
+          "message": "table definitions unknown for : include CREATE TABLE or pass --schema to get access-path checks and key-design advice"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 33,
+      "source_sql": "-- F-4. リレーショナル → JSON 生成\nSELECT JSON_OBJECT('dept' VALUE d.department_name,\n                   'members' VALUE JSON_ARRAYAGG(\n                       JSON_OBJECT('id' VALUE e.employee_id, 'name' VALUE e.last_name)\n                       ORDER BY e.employee_id)\n                   ) AS dept_json\nFROM   departments d JOIN employees e ON e.department_id = d.department_id\nGROUP  BY d.department_name",
+      "kind": "SELECT",
+      "status": "PLANNED",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PROJECTION",
+          "message": "main query: expressions in the select list (JSON_OBJECT('dept': d.department_name, 'members': JSON_ARRAYAGG(JSON_OBJECT('...) -- compute them in the application"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT department_id, department_name FROM hr.departments"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, last_name, department_id FROM hr.employees"
+        },
+        {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
+        },
+        {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of departments, employees (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": {
+        "pattern": "P1",
+        "source_dialect": "oracle",
+        "source_sql": "-- F-4. リレーショナル → JSON 生成\nSELECT JSON_OBJECT('dept' VALUE d.department_name,\n                   'members' VALUE JSON_ARRAYAGG(\n                       JSON_OBJECT('id' VALUE e.employee_id, 'name' VALUE e.last_name)\n                       ORDER BY e.employee_id)\n                   ) AS dept_json\nFROM   departments d JOIN employees e ON e.department_id = d.department_id\nGROUP  BY d.department_name",
+        "fetch": [
+          {
+            "table": "departments",
+            "namespace": "hr",
+            "alias": "d",
+            "columns": [
+              "department_id",
+              "department_name"
+            ],
+            "column_types": {
+              "department_id": "INT",
+              "department_name": "TEXT",
+              "manager_id": "INT",
+              "location": "TEXT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT department_id, department_name FROM hr.departments",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "department_id"
+              ]
+            ],
+            "residual_types": {}
+          },
+          {
+            "table": "employees",
+            "namespace": "hr",
+            "alias": "e",
+            "columns": [
+              "employee_id",
+              "last_name",
+              "department_id"
+            ],
+            "column_types": {
+              "employee_id": "INT",
+              "first_name": "TEXT",
+              "last_name": "TEXT",
+              "email": "TEXT",
+              "hire_date": "TIMESTAMP",
+              "job_id": "TEXT",
+              "salary": "DOUBLE",
+              "commission_pct": "DOUBLE",
+              "manager_id": "INT",
+              "department_id": "INT"
+            },
+            "predicates": [],
+            "scalardb_sql": "SELECT employee_id, last_name, department_id FROM hr.employees",
+            "access_path": "CROSS_PARTITION",
+            "max_rows": 10000,
+            "index_columns": [
+              [
+                "employee_id"
+              ],
+              [
+                "department_id"
+              ]
+            ],
+            "residual_types": {}
+          }
+        ],
+        "residual": {
+          "java": {
+            "engine": "h2",
+            "mode": "Oracle",
+            "sql": "/* F-4. リレーショナル → JSON 生成 */ SELECT JSON_OBJECT('dept': d.department_name, 'members': JSON_ARRAYAGG(JSON_OBJECT('id': e.employee_id, 'name': e.last_name) ORDER BY e.employee_id NULLS LAST)) AS dept_json FROM departments d JOIN employees e ON e.department_id = d.department_id GROUP BY d.department_name",
+            "build_indexes": false
+          },
+          "python": {
+            "engine": "sqlite3",
+            "sql": "/* F-4. リレーショナル → JSON 生成 */ SELECT JSON_OBJECT('dept', d.department_name, 'members', JSON_GROUP_ARRAY(JSON_OBJECT('id', e.employee_id, 'name', e.last_name),  ORDER BY e.employee_id NULLS LAST)) AS dept_json FROM departments AS d JOIN employees AS e ON e.department_id = d.department_id GROUP BY d.department_name"
+          }
+        },
+        "write": null,
+        "guardrails": {
+          "requires_cross_partition_scan": true,
+          "row_limit": 10000
+        },
+        "unresolved": [],
+        "notes": [
+          "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+        ],
+        "transaction": {
+          "read_only": true
+        },
+        "recommended_config": {
+          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+          "scalar.db.scan_fetch_size": 1000,
+          "scalar.db.cluster.client.scan_fetch_size": 1000,
+          "scalar.db.cross_partition_scan.enabled": true,
+          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        }
+      }
+    },
+    {
+      "index": 34,
+      "source_sql": "-- F-5. 部分更新（19c+）\nUPDATE products_json\nSET    doc = JSON_MERGEPATCH(doc, '{\"price\":1200,\"spec\":{\"ha\":true}}' RETURNING CLOB)\nWHERE  id = 2",
+      "kind": "PARSE_ERROR",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PARSE",
+          "message": "Expecting ). Line 3, Col: 79."
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 35,
+      "source_sql": "COMMIT",
+      "kind": "COMMIT",
+      "status": "OK",
+      "converted": [
+        "COMMIT"
+      ],
+      "issues": [],
+      "plan": null
+    },
+    {
+      "index": 36,
+      "source_sql": "-- 後片付け（このファイル内だけで使った表）\nDROP TABLE emp_high PURGE",
+      "kind": "DROP",
+      "status": "OK",
+      "converted": [
+        "DROP TABLE emp_high"
+      ],
+      "issues": [],
+      "plan": null
+    },
+    {
+      "index": 37,
+      "source_sql": "DROP TABLE emp_low  PURGE",
+      "kind": "DROP",
+      "status": "OK",
+      "converted": [
+        "DROP TABLE emp_low"
+      ],
+      "issues": [],
+      "plan": null
+    }
+  ]
+}

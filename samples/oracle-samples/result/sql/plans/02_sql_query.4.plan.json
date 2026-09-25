@@ -1,0 +1,73 @@
+{
+  "pattern": "P1",
+  "source_dialect": "oracle",
+  "source_sql": "-- A-4. 文字列・数値・日付関数\nSELECT UPPER(last_name)                         AS upper_name,\n       INITCAP(email)                           AS initcap_email,\n       SUBSTR(last_name, 1, 3)                  AS short_name,\n       INSTR(last_name, 'e')                    AS pos_e,\n       LPAD(employee_id, 6, '0')                AS padded_id,\n       first_name || ' ' || last_name           AS full_name,     -- 連結演算子\n       ROUND(salary / 12, 2)                    AS monthly,\n       TRUNC(hire_date, 'MM')                   AS hire_month,    -- [ORA] 日付のTRUNC\n       ADD_MONTHS(hire_date, 6)                 AS probation_end, -- [ORA]\n       TRUNC(MONTHS_BETWEEN(SYSDATE, hire_date) / 12) AS years,   -- [ORA]\n       TO_CHAR(hire_date, 'YYYY\"年\"MM\"月\"DD\"日\"') AS hire_jp,\n       TO_CHAR(salary, 'FM999,999')             AS salary_fmt\nFROM   employees\nWHERE  ROWNUM <= 5",
+  "fetch": [
+    {
+      "table": "employees",
+      "namespace": "hr",
+      "alias": "employees",
+      "columns": [
+        "employee_id",
+        "first_name",
+        "last_name",
+        "email",
+        "hire_date",
+        "salary"
+      ],
+      "column_types": {
+        "employee_id": "INT",
+        "first_name": "TEXT",
+        "last_name": "TEXT",
+        "email": "TEXT",
+        "hire_date": "TIMESTAMP",
+        "job_id": "TEXT",
+        "salary": "DOUBLE",
+        "commission_pct": "DOUBLE",
+        "manager_id": "INT",
+        "department_id": "INT"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT employee_id, first_name, last_name, email, hire_date, salary FROM hr.employees",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "employee_id"
+        ]
+      ],
+      "residual_types": {}
+    }
+  ],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "/* A-4. 文字列・数値・日付関数 */ SELECT UPPER(last_name) AS upper_name, INITCAP(email) AS initcap_email, SUBSTR(last_name, 1, 3) AS short_name, INSTR(last_name, 'e') AS pos_e, LPAD(employee_id, 6, '0') AS padded_id, first_name || ' ' || last_name AS full_name /* 連結演算子 */, ROUND(salary / 12, 2) AS monthly, DATE_TRUNC('MONTH', hire_date) AS hire_month /* [ORA] 日付のTRUNC */, ADD_MONTHS(hire_date, 6) AS probation_end /* [ORA] */, TRUNC(MONTHS_BETWEEN(SYSDATE, hire_date) / 12) AS years /* [ORA] */, TO_CHAR(hire_date, 'YYYY\"年\"MM\"月\"DD\"日\"') AS hire_jp, TO_CHAR(salary, 'FM999,999') AS salary_fmt FROM employees WHERE ROWNUM <= 5",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "/* A-4. 文字列・数値・日付関数 */ SELECT UPPER(last_name) AS upper_name, INITCAP(email) AS initcap_email, SUBSTRING(last_name, 1, 3) AS short_name, INSTR(last_name, 'e') AS pos_e, LPAD(employee_id, 6, '0') AS padded_id, first_name || ' ' || last_name AS full_name /* 連結演算子 */, ROUND(CAST(salary AS REAL) / 12, 2) AS monthly, DATE_TRUNC('MM', hire_date) AS hire_month /* [ORA] 日付のTRUNC */, ADD_MONTHS(hire_date, 6) AS probation_end /* [ORA] */, TRUNC(CAST(MONTHS_BETWEEN(CURRENT_TIMESTAMP, hire_date) AS REAL) / 12) AS years /* [ORA] */, CAST(hire_date AS TEXT) AS hire_jp, CAST(salary AS TEXT) AS salary_fmt FROM employees LIMIT 5"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": true,
+    "row_limit": 10000
+  },
+  "unresolved": [],
+  "notes": [
+    "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+  ],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+    "scalar.db.scan_fetch_size": 1000,
+    "scalar.db.cluster.client.scan_fetch_size": 1000,
+    "scalar.db.cross_partition_scan.enabled": true,
+    "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+  }
+}

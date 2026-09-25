@@ -1,0 +1,66 @@
+{
+  "pattern": "P1",
+  "source_dialect": "oracle",
+  "source_sql": "-- E-2. 累計・移動平均（ウィンドウ句）\nSELECT order_date, total,\n       SUM(total) OVER (ORDER BY order_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total,\n       ROUND(AVG(total) OVER (ORDER BY order_date ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING), 1) AS moving_avg\nFROM   orders\nORDER  BY order_date",
+  "fetch": [
+    {
+      "table": "orders",
+      "namespace": "hr",
+      "alias": "orders",
+      "columns": [
+        "order_id",
+        "order_date",
+        "total"
+      ],
+      "column_types": {
+        "order_id": "BIGINT",
+        "order_date": "TIMESTAMP",
+        "employee_id": "INT",
+        "customer": "TEXT",
+        "status": "TEXT",
+        "total": "DOUBLE"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT order_id, order_date, total FROM hr.orders",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "order_id"
+        ]
+      ],
+      "residual_types": {}
+    }
+  ],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "/* E-2. 累計・移動平均（ウィンドウ句） */ SELECT order_date, total, SUM(total) OVER (ORDER BY order_date NULLS LAST ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total, ROUND(AVG(total) OVER (ORDER BY order_date NULLS LAST ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING), 1) AS moving_avg FROM orders ORDER BY order_date NULLS LAST",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "/* E-2. 累計・移動平均（ウィンドウ句） */ SELECT order_date, total, SUM(total) OVER (ORDER BY order_date NULLS LAST ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total, ROUND(AVG(total) OVER (ORDER BY order_date NULLS LAST ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING), 1) AS moving_avg FROM orders ORDER BY order_date NULLS LAST"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": true,
+    "row_limit": 10000
+  },
+  "unresolved": [],
+  "notes": [
+    "java: Oracle semantics made explicit for H2 (date functions, NULL ordering)"
+  ],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+    "scalar.db.scan_fetch_size": 1000,
+    "scalar.db.cluster.client.scan_fetch_size": 1000,
+    "scalar.db.cross_partition_scan.enabled": true,
+    "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+  }
+}

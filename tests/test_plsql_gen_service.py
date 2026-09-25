@@ -490,3 +490,144 @@ def test_a_sibling_call_converts_the_argument_of_a_number_parameter():
     routine the rules had judged AUTO. The String argument is left alone."""
     java = _service_of(SIBLING_CALL)
     assert "labelOf(Plsql.dec(vCount), pName)" in java
+
+
+def test_an_if_whose_every_branch_is_refused_ends_the_block(tmp_path):
+    """Both arms of the IF open a REF CURSOR the generator cannot translate, so both throw; javac then rejects the
+    loop after the IF as unreachable. The block ends at the IF instead (#36, samples/oracle-samples b04_4_4)."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "schema.sql").write_text("CREATE TABLE departments (department_id NUMBER(4) PRIMARY KEY, department_name VARCHAR2(30));\n")
+    (src / "pick.prc").write_text(
+        "CREATE OR REPLACE PROCEDURE pick (p_mode VARCHAR2) AS\n"
+        "  rc SYS_REFCURSOR;\n  v_name VARCHAR2(50);\n"
+        "BEGIN\n"
+        "  IF p_mode = 'DEPT' THEN\n    OPEN rc FOR SELECT department_name FROM departments;\n"
+        "  ELSE\n    OPEN rc FOR SELECT department_name FROM departments WHERE department_id = 1;\n  END IF;\n"
+        "  LOOP\n    FETCH rc INTO v_name;\n    EXIT WHEN rc%NOTFOUND;\n  END LOOP;\n  CLOSE rc;\n"
+        "END;\n/\n")
+    program = build_analysis(src, src / "schema.sql").program
+    java = generate_module(module_named(program, "pick"), APP, INFRA, DOMAIN).file.render()
+    assert java.count("throw new UnsupportedOperationException") >= 2
+    assert "the rest of this block is unreachable" in java
+    assert "while (true)" not in java
+
+
+def test_numeric_for_loops_count_up_or_down_with_bounds_read_once(tmp_path):
+    """`FOR i IN low .. high` and `REVERSE` (#37, samples/oracle-samples b04_2_control_flow)."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "schema.sql").write_text("CREATE TABLE t (id NUMBER(4) PRIMARY KEY);\n")
+    (src / "count_loops.prc").write_text(
+        "CREATE OR REPLACE PROCEDURE count_loops (p_max PLS_INTEGER) AS\n  v_sum PLS_INTEGER := 0;\n"
+        "BEGIN\n"
+        "  FOR j IN REVERSE 1 .. 6 LOOP\n    CONTINUE WHEN MOD(j, 2) = 0;\n    v_sum := v_sum + j;\n  END LOOP;\n"
+        "  <<outer_loop>>\n  FOR a IN 1 .. p_max LOOP\n    FOR b IN 1 .. 3 LOOP\n"
+        "      EXIT outer_loop WHEN a * b = 4;\n      v_sum := v_sum + a * b;\n    END LOOP;\n  END LOOP outer_loop;\n"
+        "END;\n/\n")
+    program = build_analysis(src, src / "schema.sql").program
+    java = generate_module(module_named(program, "count_loops"), APP, INFRA, DOMAIN).file.render()
+    assert "for (int j = Plsql.toInt(6), jEnd = Plsql.toInt(1); j >= jEnd; j--)" in java
+    assert "outerLoop: for (int a = Plsql.toInt(1), aEnd = Plsql.toInt(pMax); a <= aEnd; a++)" in java
+    assert "for (int b = Plsql.toInt(1), bEnd = Plsql.toInt(3); b <= bEnd; b++)" in java
+    assert "break outerLoop;" in java and "continue;" in java
+    assert "UnsupportedOperationException" not in java
+
+
+def test_sqlerrm_and_the_backtrace_come_from_the_caught_exception(tmp_path):
+    """`WHEN OTHERS THEN ... SQLCODE || SQLERRM ... DBMS_UTILITY.FORMAT_ERROR_BACKTRACE` (#38)."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "schema.sql").write_text("CREATE TABLE t (id NUMBER(4) PRIMARY KEY);\n")
+    (src / "report_error.prc").write_text(
+        "CREATE OR REPLACE PROCEDURE report_error (p_out OUT VARCHAR2) AS\n"
+        "BEGIN\n  RAISE_APPLICATION_ERROR(-20001, 'boom');\n"
+        "EXCEPTION\n  WHEN OTHERS THEN\n    p_out := 'SQLCODE=' || SQLCODE || ' / ' || SQLERRM || DBMS_UTILITY.FORMAT_ERROR_BACKTRACE;\n"
+        "END;\n/\n")
+    program = build_analysis(src, src / "schema.sql").program
+    java = generate_module(module_named(program, "report_error"), APP, INFRA, DOMAIN).file.render()
+    assert "Plsql.sqlerrm(e.code(), e.getMessage())" in java
+    assert "Plsql.errorBacktrace(e)" in java
+    assert "UnsupportedOperationException" not in java
+
+
+def test_an_explicit_cursor_fetched_into_its_rowtype_becomes_a_loop_with_a_row_counter(tmp_path):
+    """`OPEN c; LOOP FETCH c INTO r; EXIT WHEN c%NOTFOUND; ... c%ROWCOUNT ... END LOOP; CLOSE c;` with
+    `r c%ROWTYPE` (#39, samples/oracle-samples b04_4_1_explicit_cursor)."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "schema.sql").write_text(
+        "CREATE TABLE employees (employee_id NUMBER(6) PRIMARY KEY, last_name VARCHAR2(25), salary NUMBER(8,2), department_id NUMBER(4));\n")
+    (src / "list_dept.prc").write_text(
+        "CREATE OR REPLACE PROCEDURE list_dept (p_dept NUMBER, p_out OUT VARCHAR2) AS\n"
+        "  CURSOR c_emp IS SELECT employee_id, last_name, salary FROM employees WHERE department_id = p_dept;\n"
+        "  r c_emp%ROWTYPE;\n"
+        "BEGIN\n  OPEN c_emp;\n  LOOP\n    FETCH c_emp INTO r;\n    EXIT WHEN c_emp%NOTFOUND;\n"
+        "    p_out := c_emp%ROWCOUNT || ': ' || r.last_name || ' ' || r.salary;\n  END LOOP;\n  CLOSE c_emp;\n"
+        "END;\n/\n")
+    program = build_analysis(src, src / "schema.sql").program
+    java = generate_module(module_named(program, "list_dept"), APP, INFRA, DOMAIN).file.render()
+    assert "for (" in java and "cEmpRowcount = Plsql.toInt(Plsql.add(cEmpRowcount, 1))" in java
+    assert "r.lastName()" in java and "OpenCursor" not in java
+    assert "UnsupportedOperationException" not in java
+
+
+def _project(tmp_path, ddl: str, **units: str):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "schema.sql").write_text(ddl)
+    for name, text in units.items():
+        (src / name).write_text(text)
+    program = build_analysis(src, src / "schema.sql").program
+    from plsql.analysis import build_call_graph
+    build_call_graph(program)   # what plsql.generate does before rendering: calls get their resolved_to
+    return program
+
+
+def test_collections_records_and_package_state_are_refused_not_miscompiled(tmp_path):
+    """The generated tree has to pass javac whatever the verdict (#40): a collection method, an element or
+    record-field assignment, a type constructor and a package variable become a throw, not broken Java."""
+    program = _project(tmp_path, "CREATE TABLE t (id NUMBER(4) PRIMARY KEY, name VARCHAR2(10));\n",
+        **{"pkg_state.pks": "CREATE OR REPLACE PACKAGE pkg_state AS\n  PROCEDURE bump;\n  PROCEDURE collect(p_out OUT NUMBER);\nEND;\n/\n",
+           "pkg_state.pkb": (
+               "CREATE OR REPLACE PACKAGE BODY pkg_state AS\n  g_calls PLS_INTEGER := 0;\n"
+               "  PROCEDURE bump IS\n  BEGIN\n    g_calls := g_calls + 1;\n  END;\n"
+               "  PROCEDURE collect(p_out OUT NUMBER) IS\n"
+               "    TYPE t_names IS TABLE OF VARCHAR2(30);\n    v_names t_names := t_names('a', 'b');\n"
+               "    TYPE t_rec IS RECORD (id NUMBER, name VARCHAR2(10));\n    v_rec t_rec;\n"
+               "  BEGIN\n    v_rec.id := 1;\n    v_names(1) := 'c';\n    p_out := v_names.COUNT + v_names.FIRST;\n  END;\n"
+               "END;\n/\n")})
+    java = rendered(program, "pkg_state")
+    assert "unresolved in Assignment: g_calls" in java
+    assert "unresolved in declaration v_names: t_names" in java
+    assert "gCalls = " not in java and "tNames(" not in java
+
+
+def test_a_call_with_out_arguments_reads_them_from_the_result_record(tmp_path):
+    """`raise_salary(104, 10, v_new)` and `raise_salary(p_emp_id => 107, p_new_sal => v_new)` (#40): the OUT
+    argument comes back in RaiseSalaryResult, the DEFAULT of p_pct is spelled out, the literal fits BigDecimal."""
+    program = _project(tmp_path, "CREATE TABLE employees (employee_id NUMBER(6) PRIMARY KEY, salary NUMBER(8,2));\n",
+        **{"raise_salary.prc": (
+               "CREATE OR REPLACE PROCEDURE raise_salary (p_emp_id IN NUMBER, p_pct IN NUMBER DEFAULT 5, p_new_sal OUT NUMBER) AS\n"
+               "BEGIN\n  p_new_sal := p_pct;\nEND;\n/\n"),
+           "twice.prc": (
+               "CREATE OR REPLACE PROCEDURE twice AS\n  v_new NUMBER;\nBEGIN\n"
+               "  raise_salary(104, 10, v_new);\n  raise_salary(p_emp_id => 107, p_new_sal => v_new);\nEND;\n/\n")})
+    java = generate_module(module_named(program, "twice"), APP, INFRA, DOMAIN, program).file.render()
+    assert "RaiseSalaryResult raiseSalaryResult = raiseSalary.raiseSalary(Plsql.dec(104), Plsql.dec(10));" in java
+    assert "raiseSalary.raiseSalary(Plsql.dec(107), Plsql.dec(5))" in java
+    assert "vNew = Plsql.dec(raiseSalaryResult.pNewSal());" in java
+    assert "UnsupportedOperationException" not in java
+
+
+def test_a_standalone_callee_is_invoked_through_its_own_service(tmp_path):
+    program = _project(tmp_path, "CREATE TABLE t (id NUMBER(4) PRIMARY KEY);\n",
+        **{"helper.prc": "CREATE OR REPLACE PROCEDURE helper (p_msg VARCHAR2) AS\nBEGIN\n  NULL;\nEND;\n/\n",
+           "caller.prc": "CREATE OR REPLACE PROCEDURE caller AS\nBEGIN\n  helper('hello');\nEND;\n/\n"})
+    assert 'helper.helper("hello");' in generate_module(module_named(program, "caller"), APP, INFRA, DOMAIN, program).file.render()
+
+
+def test_a_bare_return_in_a_function_returns_null(tmp_path):
+    program = _project(tmp_path, "CREATE TABLE t (id NUMBER(4) PRIMARY KEY);\n",
+        **{"nothing.fnc": "CREATE OR REPLACE FUNCTION nothing RETURN NUMBER AS\nBEGIN\n  RETURN;\nEND;\n/\n"})
+    assert "return null;" in rendered(program, "nothing")

@@ -1,0 +1,108 @@
+{
+  "pattern": "P6",
+  "source_dialect": "oracle",
+  "source_sql": "SELECT job_id FROM employees WHERE department_id = 80\nINTERSECT\nSELECT job_id FROM jobs WHERE min_salary >= 6000",
+  "fetch": [
+    {
+      "table": "employees",
+      "namespace": "hr",
+      "alias": "employees",
+      "columns": [
+        "employee_id",
+        "job_id",
+        "department_id"
+      ],
+      "column_types": {
+        "employee_id": "INT",
+        "first_name": "TEXT",
+        "last_name": "TEXT",
+        "email": "TEXT",
+        "hire_date": "TIMESTAMP",
+        "job_id": "TEXT",
+        "salary": "DOUBLE",
+        "commission_pct": "DOUBLE",
+        "manager_id": "INT",
+        "department_id": "INT"
+      },
+      "predicates": [
+        {
+          "column": "department_id",
+          "op": "=",
+          "value": 80
+        }
+      ],
+      "scalardb_sql": "SELECT employee_id, job_id, department_id FROM hr.employees WHERE department_id = 80",
+      "access_path": "INDEX_SCAN",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "employee_id"
+        ]
+      ],
+      "residual_types": {}
+    },
+    {
+      "table": "jobs",
+      "namespace": "hr",
+      "alias": "jobs",
+      "columns": [
+        "job_id",
+        "min_salary"
+      ],
+      "column_types": {
+        "job_id": "TEXT",
+        "job_title": "TEXT",
+        "min_salary": "DOUBLE",
+        "max_salary": "DOUBLE"
+      },
+      "predicates": [
+        {
+          "column": "min_salary",
+          "op": ">=",
+          "value": 6000
+        }
+      ],
+      "scalardb_sql": "SELECT job_id, min_salary FROM hr.jobs WHERE min_salary >= 6000",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "job_id"
+        ]
+      ],
+      "residual_types": {}
+    }
+  ],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "SELECT job_id FROM employees WHERE department_id = 80\nINTERSECT\nSELECT job_id FROM jobs WHERE min_salary >= 6000",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "SELECT job_id FROM employees WHERE department_id = 80 INTERSECT SELECT job_id FROM jobs WHERE min_salary >= 6000"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": true,
+    "row_limit": 10000
+  },
+  "unresolved": [],
+  "notes": [
+    "employees: pushdown department_id = 80",
+    "jobs: pushdown min_salary >= 6000"
+  ],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+    "scalar.db.scan_fetch_size": 1000,
+    "scalar.db.cluster.client.scan_fetch_size": 1000,
+    "scalar.db.cross_partition_scan.enabled": true,
+    "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+  }
+}

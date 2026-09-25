@@ -1,0 +1,72 @@
+{
+  "pattern": "P5",
+  "source_dialect": "oracle",
+  "source_sql": "-- C-2. 相関副問合せ：部門平均より高い社員\nSELECT e.last_name, e.department_id, e.salary\nFROM   employees e\nWHERE  e.salary > (SELECT AVG(x.salary)\n                   FROM   employees x\n                   WHERE  x.department_id = e.department_id)",
+  "fetch": [
+    {
+      "table": "employees",
+      "namespace": "hr",
+      "alias": "e",
+      "columns": [
+        "employee_id",
+        "last_name",
+        "salary",
+        "department_id"
+      ],
+      "column_types": {
+        "employee_id": "INT",
+        "first_name": "TEXT",
+        "last_name": "TEXT",
+        "email": "TEXT",
+        "hire_date": "TIMESTAMP",
+        "job_id": "TEXT",
+        "salary": "DOUBLE",
+        "commission_pct": "DOUBLE",
+        "manager_id": "INT",
+        "department_id": "INT"
+      },
+      "predicates": [],
+      "scalardb_sql": "SELECT employee_id, last_name, salary, department_id FROM hr.employees",
+      "access_path": "CROSS_PARTITION",
+      "max_rows": 10000,
+      "index_columns": [
+        [
+          "employee_id"
+        ],
+        [
+          "department_id"
+        ]
+      ],
+      "residual_types": {}
+    }
+  ],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "-- C-2. 相関副問合せ：部門平均より高い社員\nSELECT e.last_name, e.department_id, e.salary\nFROM   employees e\nWHERE  e.salary > (SELECT AVG(x.salary)\n                   FROM   employees x\n                   WHERE  x.department_id = e.department_id)",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "/* C-2. 相関副問合せ：部門平均より高い社員 */ SELECT e.last_name, e.department_id, e.salary FROM employees AS e WHERE e.salary > (SELECT AVG(x.salary) FROM employees AS x WHERE x.department_id = e.department_id)"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": true,
+    "row_limit": 10000
+  },
+  "unresolved": [],
+  "notes": [],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
+    "scalar.db.scan_fetch_size": 1000,
+    "scalar.db.cluster.client.scan_fetch_size": 1000,
+    "scalar.db.cross_partition_scan.enabled": true,
+    "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+  }
+}

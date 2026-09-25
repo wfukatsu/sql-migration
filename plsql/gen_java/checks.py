@@ -278,7 +278,8 @@ def _max_key(file: JavaFile, check: Check, types, domain_package: str) -> None:
 def _violations(file: JavaFile, check: Check, types, domain_package: str) -> None:
     """D 型: 書かない本体を、今ある行ごとに呼ぶ。拒否されたら違反の候補である。"""
     file.add_import(f"{domain_package}.MigratedException")
-    selected = check.key + [c for c in check.reads if c not in check.key]
+    # reads has one entry per correlation the body takes (new.x and old.x both read column x): select each once
+    selected = check.key + [c for c in dict.fromkeys(check.reads) if c not in check.key]
     file.comment(f"D 型（{check.interval}）: 今ある行を {check.trigger} に通すと拒否される行。\n"
                  f"**当時は正しかった行も含む**（支払いのあとで取消された注文など）——判断は人に回す")
     with file.block(f"public List<Drift> {_method(check)}() throws Exception") as f:

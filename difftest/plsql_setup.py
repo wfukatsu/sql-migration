@@ -199,6 +199,72 @@ def direct(spec: dict, registry: SchemaRegistry, scales: dict[str, dict[str, int
     return {"statements": out}
 
 
+# --------------------------------------------------------------------------------------------------
+# omitted arguments (#41)
+# --------------------------------------------------------------------------------------------------
+
+_LITERAL_NUMBER = re.compile(r"^[+-]?\d+(?:\.\d+)?$")
+_NOT_LITERAL = object()
+
+
+def routine_parameters(src: Path) -> dict[tuple[str, str], list]:
+    """{(unit, routine): [Parameter, ...]} for every routine under src/, from the same analysis the generator runs."""
+    from plsql.report import analyse
+    schema = src / "schema.sql"
+    analysis = analyse(src, schema if schema.exists() else None)
+    out = {}
+    for module, routine in analysis.routines():
+        out[(module.name.lower(), routine.name.lower())] = list(routine.parameters)
+        out[(module.name.lower(), routine.id.lower())] = list(routine.parameters)   # `pkg.put~2`
+    return out
+
+
+def _literal(default: str | None):
+    """A DEFAULT the harness can pass as it stands: NULL, a number, a quoted string, TRUE / FALSE. Anything else
+    (an expression, a call, SYSDATE) is left to the generated code, which does not evaluate defaults either."""
+    if default is None:
+        return _NOT_LITERAL
+    text = default.strip()
+    if text.upper() == "NULL":
+        return None
+    if text.upper() in ("TRUE", "FALSE"):
+        return text.upper() == "TRUE"
+    if _LITERAL_NUMBER.match(text):
+        return float(text) if "." in text else int(text)
+    if len(text) >= 2 and text[0] == "'" and text[-1] == "'":
+        return text[1:-1].replace("''", "'")
+    return _NOT_LITERAL
+
+
+def with_defaults(spec: dict, routines: dict) -> dict | None:
+    """The call's IN / IN OUT arguments in declaration order, with every omitted one filled from its DEFAULT.
+
+    Oracle binds by name and applies the defaults itself; the generated Java method takes every parameter, so
+    the harness looked for `annualComp/1` when the routine has two (#41, samples/oracle-samples). None when the
+    routine is unknown or a missing argument has no literal default -- the harness then behaves as before.
+    """
+    call = spec.get("call") or {}
+    if call.get("kind") not in ("function", "procedure"):
+        return None
+    unit, routine = (spec.get("unit") or "").lower(), (spec.get("routine") or "").lower()
+    parameters = routines.get((unit, routine))
+    if parameters is None:
+        return None
+    given = {str(k).lower(): v for k, v in (call.get("args") or {}).items()}
+    out = {}
+    for parameter in parameters:
+        if parameter.direction == "OUT":
+            continue
+        if parameter.name.lower() in given:
+            out[parameter.name] = given[parameter.name.lower()]
+            continue
+        literal = _literal(parameter.default)
+        if literal is _NOT_LITERAL:
+            return None
+        out[parameter.name] = literal
+    return out
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--schema", default=str(SCHEMA), help="Schema Loader JSON the setup rows must fit")
@@ -221,6 +287,7 @@ def main(argv=None) -> int:
     scales = decimals if args.variant == "scaled" else None
     rounded = decimals if args.variant == "double" else None
     db_links = DbLinks.load(project / "limits.yaml") if (project / "limits.yaml").exists() else None
+    routines = routine_parameters(project / "src")
     scenarios, unconvertible = {}, {}
     for path in sorted(scenario_dir.glob("*.yaml")):
         spec = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -232,6 +299,9 @@ def main(argv=None) -> int:
             straight = direct(spec, registry, scales, rounded)
             if straight is not None:
                 scenarios[spec["name"]]["direct"] = straight
+            filled = with_defaults(spec, routines)
+            if filled is not None:
+                scenarios[spec["name"]]["arguments"] = filled
         except ValueError as e:
             unconvertible[spec["name"]] = str(e)
 

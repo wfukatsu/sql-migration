@@ -502,6 +502,7 @@ def attribute_columns(tree: exp.Expression, binds: list[BindVariable], operation
     tables = [t.name.lower() for t in tree.find_all(exp.Table) if t.name]
     oracle = symbols.oracle_schema if symbols else None
     by_bind = bind_columns(tree)
+    _positional_insert_binds(tree, by_bind, registry, oracle)
     counts = _row_count_binds(tree)
     for bind in binds:
         column = by_bind.get(bind.name)
@@ -520,6 +521,33 @@ def attribute_columns(tree: exp.Expression, binds: list[BindVariable], operation
     operation.into_types = [_column_type(registry, tables, c) if c else None for c in operation.into_columns]
     operation.into_oracle_types = [_oracle_type(oracle, tables, c) if c else None
                                    for c in operation.into_columns]
+
+
+def _positional_insert_binds(tree: exp.Expression, found: dict[str, str], registry: SchemaRegistry, oracle) -> None:
+    """`INSERT INTO t VALUES (:a, :b, :c)` without a column list: the pairing is the table's definition order.
+
+    columns.bind_columns has no schema and skips it, so the binds went to the driver untyped and a NUMBER(8,2)
+    collection element arrived as BigDecimal at a DOUBLE column (DB-SQL-10016; #35, samples/oracle-samples
+    b06_2_forall_save_exceptions). The Oracle DDL gives the order; the Schema Loader JSON is the fallback.
+    """
+    for insert in ([tree] if isinstance(tree, exp.Insert) else list(tree.find_all(exp.Insert))):
+        if not isinstance(insert.this, exp.Table) or not insert.this.name:
+            continue
+        table = insert.this.name.lower()
+        ordered = oracle.columns(table) if oracle is not None else None
+        if not ordered:
+            meta = registry.get(table)
+            ordered = meta.columns if meta is not None else None
+        if not ordered:
+            continue
+        names = [n.lower() for n in ordered]
+        values = insert.expression
+        tuples = values.expressions if isinstance(values, exp.Values) else \
+            [values] if isinstance(values, exp.Tuple) else []
+        for tuple_ in tuples:
+            for i, value in enumerate(tuple_.expressions):
+                if isinstance(value, exp.Placeholder) and i < len(names):
+                    found.setdefault(str(value.this), names[i])
 
 
 def _row_count_binds(tree: exp.Expression) -> set[str]:

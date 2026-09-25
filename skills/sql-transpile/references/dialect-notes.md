@@ -308,6 +308,7 @@ SQLGlot の生成器が予期しない例外を出した。メッセージに例
 
 | コード | 重要度 | 意味 |
 |---|---|---|
+| `WITH_PLSQL` | ERROR | Oracle 12c 以降の `WITH FUNCTION … / PROCEDURE …` を WITH 句に持つ問合せ。内側の `;` は PL/SQL の文の終わりなので `/` だけの行までを 1 文として扱い、変換しない。関数をアプリ側へ移せば、問合せ自体は変換か実行計画にできる |
 | `PLSQL_BLOCK` | ERROR | Oracle の入力の PL/SQL のブロック（`CREATE … PROCEDURE / FUNCTION / PACKAGE / TRIGGER`、`DECLARE` / `BEGIN` の無名ブロック）。`/` だけの行までを 1 つとして扱い、変換しない。plsql-migrate スキルで移行する。`/` だけの行は SQL*Plus の区切りとして、文の切れ目にする |
 | `WITH_TIES` | ERROR | `FETCH … WITH TIES`。`LIMIT n` にすると n 番目と同順位の行が落ちる。`RANK() OVER (ORDER BY …) <= n` に書き直す |
 | `BOOLEAN_RESULT` | WARN | MySQL 向け: 真偽値の式を射影している。結果は TRUE / FALSE ではなく 1 / 0 で返る |

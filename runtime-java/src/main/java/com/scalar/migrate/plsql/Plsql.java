@@ -464,6 +464,79 @@ public final class Plsql {
    * result is the empty string, and an empty string in Oracle is NULL however it was arrived at. {@link
    * #concat} has always had the second rule; these did not.
    */
+  /** `INITCAP`: the first letter of each word upper-cased, the rest lower-cased (words split on non-letters/digits). */
+  public static String initcap(Object value) {
+    if (isNull(value)) return null;
+    StringBuilder out = new StringBuilder();
+    boolean start = true;
+    for (int cp : text(value).codePoints().toArray()) {
+      boolean word = Character.isLetterOrDigit(cp);
+      out.appendCodePoint(word ? (start ? Character.toUpperCase(cp) : Character.toLowerCase(cp)) : cp);
+      start = !word;
+    }
+    return out.toString();
+  }
+
+  /** `TRIM(x)`: both ends, spaces only; an empty result is NULL as in Oracle. */
+  public static String trim(Object value) {
+    return isNull(value) ? null : emptyIsNull(text(value).strip());
+  }
+
+  /** A PLS_INTEGER target: `i := i + 1` goes through {@link #add} (which returns Object) and lands in an Integer. */
+  public static Integer toInt(Object value) {
+    return isNull(value) ? null : num(value).intValueExact();
+  }
+
+  public static Long toLong(Object value) {
+    return isNull(value) ? null : num(value).longValueExact();
+  }
+
+  /** `SQLERRM` inside a handler: Oracle's text is `ORA-nnnnn: message` (the code is negative in PL/SQL). */
+  public static String sqlerrm(int code, String message) {
+    if (code == 0) return "ORA-0000: normal, successful completion";
+    if (code == 100) return "ORA-01403: no data found";
+    return String.format("ORA-%05d: %s", Math.abs(code), message == null ? "" : message);
+  }
+
+  /** `DBMS_UTILITY.FORMAT_ERROR_BACKTRACE`: where the exception came from, one `ORA-06512: at` line per frame. */
+  public static String errorBacktrace(Throwable error) {
+    if (error == null) return null;
+    StringBuilder out = new StringBuilder();
+    for (StackTraceElement frame : error.getStackTrace()) {
+      if (frame.getClassName().startsWith("java.") || frame.getClassName().startsWith("jdk.")) continue;
+      out.append("ORA-06512: at \"").append(frame.getClassName()).append('.').append(frame.getMethodName())
+          .append("\", line ").append(frame.getLineNumber()).append('\n');
+      if (out.length() > 2000) break;
+    }
+    return out.length() == 0 ? null : out.toString();
+  }
+
+  // DBMS_OUTPUT: the session's output buffer. Per thread here; nothing is written to a table, so a comparison
+  // of table state never sees it. `output()` hands the lines back and clears the buffer.
+  private static final ThreadLocal<java.util.List<String>> OUTPUT = ThreadLocal.withInitial(java.util.ArrayList::new);
+  private static final ThreadLocal<StringBuilder> OUTPUT_LINE = ThreadLocal.withInitial(StringBuilder::new);
+
+  public static void putLine(Object value) {
+    OUTPUT_LINE.get().append(isNull(value) ? "" : text(value));
+    newLine();
+  }
+
+  public static void put(Object value) {
+    OUTPUT_LINE.get().append(isNull(value) ? "" : text(value));
+  }
+
+  public static void newLine() {
+    OUTPUT.get().add(OUTPUT_LINE.get().toString());
+    OUTPUT_LINE.get().setLength(0);
+  }
+
+  public static java.util.List<String> output() {
+    java.util.List<String> lines = java.util.List.copyOf(OUTPUT.get());
+    OUTPUT.get().clear();
+    OUTPUT_LINE.get().setLength(0);
+    return lines;
+  }
+
   public static String rtrim(Object value) {
     return isNull(value) ? null : emptyIsNull(text(value).stripTrailing());
   }

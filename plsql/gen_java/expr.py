@@ -38,6 +38,7 @@ FUNCTIONS = {
     "NVL": f"{HELPER}.nvl", "ROUND": f"{HELPER}.round", "TRUNC": f"{HELPER}.trunc",
     "TO_CHAR": f"{HELPER}.text", "RTRIM": f"{HELPER}.rtrim", "LTRIM": f"{HELPER}.ltrim",
     "MOD": f"{HELPER}.mod", "ABS": f"{HELPER}.abs", "UPPER": f"{HELPER}.upper",
+    "INITCAP": f"{HELPER}.initcap", "TRIM": f"{HELPER}.trim",
     # text that is not a number raises Plsql.ValueError, which a VALUE_ERROR handler catches (as ORA-06502 does)
     "TO_NUMBER": f"{HELPER}.toNumber",
 }
@@ -55,6 +56,8 @@ VALUES = {"SYSDATE": f"{HELPER}.sysdate()"}
 # too, so a routine using both never had one instant to begin with.
 AUDIT = {"USER": "audit.user()", "SYSTIMESTAMP": "audit.now()"}
 KEYWORDS = {"AND", "OR", "NOT", "NULL", "IS", "TRUE", "FALSE", "MOD", "BETWEEN", "IN", "LIKE"}
+# collection methods (`v.FIRST`, `v.NEXT(k)`, `v.EXTEND`): the generated List does not have them (#40)
+COLLECTION_ATTRIBUTES = {"FIRST", "LAST", "NEXT", "PRIOR", "EXISTS", "DELETE", "EXTEND", "TRIM", "LIMIT", "COUNT"}
 
 
 @dataclass
@@ -562,9 +565,10 @@ class _Parser:
                 self.result.imports.add(SEQUENCES_IMPORT)
                 self.result.sequences.add(head.lower())
                 return f'sequences.next("{head.lower()}")'
-            if head.lower() not in self.scope:
+            if head.lower() not in self.scope or tail.upper() in COLLECTION_ATTRIBUTES:
                 # `v_ids.COUNT` on a collection, or a package-qualified name: neither is a record field, and
-                # rendering it as one produces a call to a method that does not exist
+                # rendering it as one produces a call to a method that does not exist. `v.FIRST` / `v.NEXT`
+                # / `v.EXISTS` on a local collection are the same (#40): a List has no such methods
                 self.result.unknown.append(value)
                 return value
             return f"{self.scope[head.lower()]}.{java_name(tail)}()"

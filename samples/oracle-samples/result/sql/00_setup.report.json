@@ -1,0 +1,1278 @@
+{
+  "source": "oracle",
+  "target": "scalardb",
+  "summary": {
+    "total": 50,
+    "ok": 5,
+    "warn": 37,
+    "error": 8,
+    "planned": 0,
+    "converted": 42,
+    "rate": 84.0
+  },
+  "results": [
+    {
+      "index": 1,
+      "source_sql": "--------------------------------------------------------------------------------\n-- 00_setup.sql\n--   サンプル用スキーマ（Oracle HR サンプルスキーマを簡略化したもの）を作成する。\n--   対象: Oracle Database 19c 以降（23ai / 26ai でも動作）\n--   実行: SQL*Plus / SQLcl で専用スキーマに接続して  @00_setup.sql\n--   ※ 既存の HR スキーマとは別の、空のスキーマで実行すること。\n--------------------------------------------------------------------------------\n\n-- 再実行できるよう既存オブジェクトを削除（存在しなくてもエラーを無視）\n\n--------------------------------------------------------------------------------\n-- テーブル\n--------------------------------------------------------------------------------\nCREATE TABLE jobs (\n  job_id      VARCHAR2(10)  CONSTRAINT jobs_pk PRIMARY KEY,\n  job_title   VARCHAR2(35)  NOT NULL,\n  min_salary  NUMBER(8,2),\n  max_salary  NUMBER(8,2)\n)",
+      "kind": "CREATE",
+      "status": "WARN",
+      "converted": [
+        "CREATE TABLE jobs (\n  job_id TEXT PRIMARY KEY,\n  job_title TEXT,\n  min_salary DOUBLE,\n  max_salary DOUBLE\n)"
+      ],
+      "issues": [
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column job_id: VARCHAR2(10): length limit is not enforced by ScalarDB TEXT"
+        },
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column job_title: VARCHAR2(35): length limit is not enforced by ScalarDB TEXT"
+        },
+        {
+          "severity": "INFO",
+          "code": "NOT_NULL",
+          "message": "column job_title: NOT NULL dropped (ScalarDB columns are nullable; enforce in the application)"
+        },
+        {
+          "severity": "WARN",
+          "code": "TYPE",
+          "message": "column min_salary: NUMBER(8, 2): ScalarDB has no DECIMAL type; mapped to DOUBLE (precision loss). For money, store a scaled integer (x10^2) in BIGINT instead"
+        },
+        {
+          "severity": "WARN",
+          "code": "TYPE",
+          "message": "column max_salary: NUMBER(8, 2): ScalarDB has no DECIMAL type; mapped to DOUBLE (precision loss). For money, store a scaled integer (x10^2) in BIGINT instead"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 2,
+      "source_sql": "CREATE TABLE departments (\n  department_id    NUMBER(4)     CONSTRAINT dept_pk PRIMARY KEY,\n  department_name  VARCHAR2(30)  NOT NULL,\n  manager_id       NUMBER(6),\n  location         VARCHAR2(30)\n)",
+      "kind": "CREATE",
+      "status": "OK",
+      "converted": [
+        "CREATE TABLE departments (\n  department_id INT PRIMARY KEY,\n  department_name TEXT,\n  manager_id INT,\n  location TEXT\n)"
+      ],
+      "issues": [
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column department_id: NUMBER(4) -> INT (exact, fits 32-bit)"
+        },
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column department_name: VARCHAR2(30): length limit is not enforced by ScalarDB TEXT"
+        },
+        {
+          "severity": "INFO",
+          "code": "NOT_NULL",
+          "message": "column department_name: NOT NULL dropped (ScalarDB columns are nullable; enforce in the application)"
+        },
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column manager_id: NUMBER(6) -> INT (exact, fits 32-bit)"
+        },
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column location: VARCHAR2(30): length limit is not enforced by ScalarDB TEXT"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 3,
+      "source_sql": "CREATE TABLE employees (\n  employee_id    NUMBER(6)     CONSTRAINT emp_pk PRIMARY KEY,\n  first_name     VARCHAR2(20),\n  last_name      VARCHAR2(25)  NOT NULL,\n  email          VARCHAR2(25)  NOT NULL CONSTRAINT emp_email_uk UNIQUE,\n  hire_date      DATE          NOT NULL,\n  job_id         VARCHAR2(10)  NOT NULL CONSTRAINT emp_job_fk REFERENCES jobs,\n  salary         NUMBER(8,2)   CONSTRAINT emp_salary_ck CHECK (salary > 0),\n  commission_pct NUMBER(2,2),\n  manager_id     NUMBER(6)     CONSTRAINT emp_mgr_fk  REFERENCES employees,\n  department_id  NUMBER(4)     CONSTRAINT emp_dept_fk REFERENCES departments\n)",
+      "kind": "CREATE",
+      "status": "WARN",
+      "converted": [
+        "CREATE TABLE employees (\n  employee_id INT PRIMARY KEY,\n  first_name TEXT,\n  last_name TEXT,\n  email TEXT,\n  hire_date DATE,\n  job_id TEXT,\n  salary DOUBLE,\n  commission_pct DOUBLE,\n  manager_id INT,\n  department_id INT\n)"
+      ],
+      "issues": [
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column employee_id: NUMBER(6) -> INT (exact, fits 32-bit)"
+        },
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column first_name: VARCHAR2(20): length limit is not enforced by ScalarDB TEXT"
+        },
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column last_name: VARCHAR2(25): length limit is not enforced by ScalarDB TEXT"
+        },
+        {
+          "severity": "INFO",
+          "code": "NOT_NULL",
+          "message": "column last_name: NOT NULL dropped (ScalarDB columns are nullable; enforce in the application)"
+        },
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column email: VARCHAR2(25): length limit is not enforced by ScalarDB TEXT"
+        },
+        {
+          "severity": "INFO",
+          "code": "NOT_NULL",
+          "message": "column email: NOT NULL dropped (ScalarDB columns are nullable; enforce in the application)"
+        },
+        {
+          "severity": "WARN",
+          "code": "UNIQUE",
+          "message": "column email: UNIQUE dropped (a secondary index does not enforce uniqueness)"
+        },
+        {
+          "severity": "WARN",
+          "code": "TYPE",
+          "message": "column hire_date: Oracle DATE carries a time-of-day component; use TIMESTAMP if the time part is used"
+        },
+        {
+          "severity": "INFO",
+          "code": "NOT_NULL",
+          "message": "column hire_date: NOT NULL dropped (ScalarDB columns are nullable; enforce in the application)"
+        },
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column job_id: VARCHAR2(10): length limit is not enforced by ScalarDB TEXT"
+        },
+        {
+          "severity": "INFO",
+          "code": "NOT_NULL",
+          "message": "column job_id: NOT NULL dropped (ScalarDB columns are nullable; enforce in the application)"
+        },
+        {
+          "severity": "WARN",
+          "code": "FK",
+          "message": "column job_id: REFERENCES dropped (no referential integrity)"
+        },
+        {
+          "severity": "WARN",
+          "code": "TYPE",
+          "message": "column salary: NUMBER(8, 2): ScalarDB has no DECIMAL type; mapped to DOUBLE (precision loss). For money, store a scaled integer (x10^2) in BIGINT instead"
+        },
+        {
+          "severity": "WARN",
+          "code": "CHECK",
+          "message": "column salary: CHECK dropped; enforce in the application"
+        },
+        {
+          "severity": "WARN",
+          "code": "TYPE",
+          "message": "column commission_pct: NUMBER(2, 2): ScalarDB has no DECIMAL type; mapped to DOUBLE (precision loss). For money, store a scaled integer (x10^2) in BIGINT instead"
+        },
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column manager_id: NUMBER(6) -> INT (exact, fits 32-bit)"
+        },
+        {
+          "severity": "WARN",
+          "code": "FK",
+          "message": "column manager_id: REFERENCES dropped (no referential integrity)"
+        },
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column department_id: NUMBER(4) -> INT (exact, fits 32-bit)"
+        },
+        {
+          "severity": "WARN",
+          "code": "FK",
+          "message": "column department_id: REFERENCES dropped (no referential integrity)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 4,
+      "source_sql": "CREATE INDEX emp_dept_ix ON employees (department_id)",
+      "kind": "CREATE",
+      "status": "OK",
+      "converted": [
+        "CREATE INDEX ON employees (department_id)"
+      ],
+      "issues": [
+        {
+          "severity": "INFO",
+          "code": "INDEX",
+          "message": "index name 'emp_dept_ix' dropped: ScalarDB identifies indexes by table + column"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 5,
+      "source_sql": "CREATE INDEX emp_mgr_ix  ON employees (manager_id)",
+      "kind": "CREATE",
+      "status": "OK",
+      "converted": [
+        "CREATE INDEX ON employees (manager_id)"
+      ],
+      "issues": [
+        {
+          "severity": "INFO",
+          "code": "INDEX",
+          "message": "index name 'emp_mgr_ix' dropped: ScalarDB identifies indexes by table + column"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 6,
+      "source_sql": "CREATE SEQUENCE emp_seq   START WITH 300 INCREMENT BY 1 NOCACHE",
+      "kind": "CREATE",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "DDL",
+          "message": "CREATE SEQUENCE is not supported (no views, sequences, triggers, procedures in ScalarDB)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 7,
+      "source_sql": "CREATE SEQUENCE order_seq START WITH 1   INCREMENT BY 1",
+      "kind": "CREATE",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "DDL",
+          "message": "CREATE SEQUENCE is not supported (no views, sequences, triggers, procedures in ScalarDB)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 8,
+      "source_sql": "CREATE TABLE orders (\n  order_id     NUMBER        DEFAULT order_seq.NEXTVAL CONSTRAINT orders_pk PRIMARY KEY,\n  order_date   DATE          DEFAULT SYSDATE NOT NULL,\n  employee_id  NUMBER(6)     CONSTRAINT orders_emp_fk REFERENCES employees,\n  customer     VARCHAR2(40)  NOT NULL,\n  status       VARCHAR2(10)  DEFAULT 'NEW'\n               CONSTRAINT orders_status_ck CHECK (status IN ('NEW','SHIPPED','CANCELLED')),\n  total        NUMBER(10,2)\n)",
+      "kind": "CREATE",
+      "status": "WARN",
+      "converted": [
+        "CREATE TABLE orders (\n  order_id DOUBLE PRIMARY KEY,\n  order_date DATE,\n  employee_id INT,\n  customer TEXT,\n  status TEXT,\n  total DOUBLE\n)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "TYPE",
+          "message": "column order_id: NUMBER: unconstrained NUMBER mapped to DOUBLE; exact decimal precision is lost"
+        },
+        {
+          "severity": "WARN",
+          "code": "DEFAULT",
+          "message": "column order_id: DEFAULT order_seq.NEXTVAL dropped; the application must supply the value"
+        },
+        {
+          "severity": "WARN",
+          "code": "TYPE",
+          "message": "column order_date: Oracle DATE carries a time-of-day component; use TIMESTAMP if the time part is used"
+        },
+        {
+          "severity": "WARN",
+          "code": "DEFAULT",
+          "message": "column order_date: DEFAULT SYSDATE dropped; the application must supply the value"
+        },
+        {
+          "severity": "INFO",
+          "code": "NOT_NULL",
+          "message": "column order_date: NOT NULL dropped (ScalarDB columns are nullable; enforce in the application)"
+        },
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column employee_id: NUMBER(6) -> INT (exact, fits 32-bit)"
+        },
+        {
+          "severity": "WARN",
+          "code": "FK",
+          "message": "column employee_id: REFERENCES dropped (no referential integrity)"
+        },
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column customer: VARCHAR2(40): length limit is not enforced by ScalarDB TEXT"
+        },
+        {
+          "severity": "INFO",
+          "code": "NOT_NULL",
+          "message": "column customer: NOT NULL dropped (ScalarDB columns are nullable; enforce in the application)"
+        },
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column status: VARCHAR2(10): length limit is not enforced by ScalarDB TEXT"
+        },
+        {
+          "severity": "WARN",
+          "code": "DEFAULT",
+          "message": "column status: DEFAULT 'NEW' dropped; the application must supply the value"
+        },
+        {
+          "severity": "WARN",
+          "code": "CHECK",
+          "message": "column status: CHECK dropped; enforce in the application"
+        },
+        {
+          "severity": "WARN",
+          "code": "TYPE",
+          "message": "column total: NUMBER(10, 2): ScalarDB has no DECIMAL type; mapped to DOUBLE (precision loss). For money, store a scaled integer (x10^2) in BIGINT instead"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 9,
+      "source_sql": "CREATE TABLE order_items (\n  order_id    NUMBER      CONSTRAINT oi_order_fk REFERENCES orders ON DELETE CASCADE,\n  line_no     NUMBER(3),\n  product     VARCHAR2(40) NOT NULL,\n  qty         NUMBER(5)    NOT NULL,\n  unit_price  NUMBER(8,2)  NOT NULL,\n  CONSTRAINT order_items_pk PRIMARY KEY (order_id, line_no)\n)",
+      "kind": "CREATE",
+      "status": "WARN",
+      "converted": [
+        "CREATE TABLE order_items (\n  order_id DOUBLE,\n  line_no INT,\n  product TEXT,\n  qty INT,\n  unit_price DOUBLE,\n  PRIMARY KEY (order_id, line_no)\n)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "TYPE",
+          "message": "column order_id: NUMBER: unconstrained NUMBER mapped to DOUBLE; exact decimal precision is lost"
+        },
+        {
+          "severity": "WARN",
+          "code": "FK",
+          "message": "column order_id: REFERENCES dropped (no referential integrity)"
+        },
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column line_no: NUMBER(3) -> INT (exact, fits 32-bit)"
+        },
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column product: VARCHAR2(40): length limit is not enforced by ScalarDB TEXT"
+        },
+        {
+          "severity": "INFO",
+          "code": "NOT_NULL",
+          "message": "column product: NOT NULL dropped (ScalarDB columns are nullable; enforce in the application)"
+        },
+        {
+          "severity": "INFO",
+          "code": "TYPE",
+          "message": "column qty: NUMBER(5) -> INT (exact, fits 32-bit)"
+        },
+        {
+          "severity": "INFO",
+          "code": "NOT_NULL",
+          "message": "column qty: NOT NULL dropped (ScalarDB columns are nullable; enforce in the application)"
+        },
+        {
+          "severity": "WARN",
+          "code": "TYPE",
+          "message": "column unit_price: NUMBER(8, 2): ScalarDB has no DECIMAL type; mapped to DOUBLE (precision loss). For money, store a scaled integer (x10^2) in BIGINT instead"
+        },
+        {
+          "severity": "INFO",
+          "code": "NOT_NULL",
+          "message": "column unit_price: NOT NULL dropped (ScalarDB columns are nullable; enforce in the application)"
+        },
+        {
+          "severity": "INFO",
+          "code": "KEYS",
+          "message": "primary key ['order_id', 'line_no']: first column 'order_id' used as partition key, ['line_no'] as clustering key(s). Review with --keys if a different split is needed"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 10,
+      "source_sql": "--------------------------------------------------------------------------------\n-- データ\n--------------------------------------------------------------------------------\nINSERT INTO jobs VALUES ('AD_PRES', 'President',            20000, 40000)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "/* ------------------------------------------------------------------------------ */ /* データ */ /* ------------------------------------------------------------------------------ */ INSERT INTO jobs VALUES ('AD_PRES', 'President', 20000, 40000)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 11,
+      "source_sql": "INSERT INTO jobs VALUES ('AD_VP',   'Vice President',       15000, 30000)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO jobs VALUES ('AD_VP', 'Vice President', 15000, 30000)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 12,
+      "source_sql": "INSERT INTO jobs VALUES ('IT_PROG', 'Programmer',            4000, 10000)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO jobs VALUES ('IT_PROG', 'Programmer', 4000, 10000)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 13,
+      "source_sql": "INSERT INTO jobs VALUES ('SA_MAN',  'Sales Manager',        10000, 20000)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO jobs VALUES ('SA_MAN', 'Sales Manager', 10000, 20000)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 14,
+      "source_sql": "INSERT INTO jobs VALUES ('SA_REP',  'Sales Representative',  6000, 12000)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO jobs VALUES ('SA_REP', 'Sales Representative', 6000, 12000)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 15,
+      "source_sql": "INSERT INTO jobs VALUES ('ST_CLERK','Stock Clerk',           2000,  5000)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO jobs VALUES ('ST_CLERK', 'Stock Clerk', 2000, 5000)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 16,
+      "source_sql": "INSERT INTO departments VALUES (10, 'Administration', NULL, 'Tokyo')",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO departments VALUES (10, 'Administration', NULL, 'Tokyo')"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 17,
+      "source_sql": "INSERT INTO departments VALUES (60, 'IT',             NULL, 'Osaka')",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO departments VALUES (60, 'IT', NULL, 'Osaka')"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 18,
+      "source_sql": "INSERT INTO departments VALUES (80, 'Sales',          NULL, 'Tokyo')",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO departments VALUES (80, 'Sales', NULL, 'Tokyo')"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 19,
+      "source_sql": "INSERT INTO departments VALUES (50, 'Shipping',       NULL, 'Nagoya')",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO departments VALUES (50, 'Shipping', NULL, 'Nagoya')"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 20,
+      "source_sql": "INSERT INTO departments VALUES (90, 'Executive',      NULL, 'Tokyo')",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO departments VALUES (90, 'Executive', NULL, 'Tokyo')"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 21,
+      "source_sql": "INSERT INTO departments VALUES (99, 'Research',       NULL, 'Fukuoka')",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO departments VALUES (99, 'Research', NULL, 'Fukuoka')"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 22,
+      "source_sql": "-- 社員なし部門\n\nINSERT INTO employees VALUES (100,'Steven','King',    'SKING',   DATE '2013-06-17','AD_PRES',24000,NULL,NULL,90)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "/* 社員なし部門 */ INSERT INTO employees VALUES (100, 'Steven', 'King', 'SKING', '2013-06-17 00:00:00', 'AD_PRES', 24000, NULL, NULL, 90)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: TO_DATE('2013-06-17', 'YYYY-MM-DD') written as the plain literal '2013-06-17'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2013-06-17' padded to '2013-06-17 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 23,
+      "source_sql": "INSERT INTO employees VALUES (101,'Neena','Kochhar',  'NKOCHHAR',DATE '2015-09-21','AD_VP',  17000,NULL,100, 90)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO employees VALUES (101, 'Neena', 'Kochhar', 'NKOCHHAR', '2015-09-21 00:00:00', 'AD_VP', 17000, NULL, 100, 90)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: TO_DATE('2015-09-21', 'YYYY-MM-DD') written as the plain literal '2015-09-21'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2015-09-21' padded to '2015-09-21 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 24,
+      "source_sql": "INSERT INTO employees VALUES (102,'Lex','De Haan',    'LDEHAAN', DATE '2011-01-13','AD_VP',  17000,NULL,100, 90)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO employees VALUES (102, 'Lex', 'De Haan', 'LDEHAAN', '2011-01-13 00:00:00', 'AD_VP', 17000, NULL, 100, 90)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: TO_DATE('2011-01-13', 'YYYY-MM-DD') written as the plain literal '2011-01-13'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2011-01-13' padded to '2011-01-13 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 25,
+      "source_sql": "INSERT INTO employees VALUES (103,'Alexander','Hunold','AHUNOLD',DATE '2016-01-03','IT_PROG', 9000,NULL,102, 60)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO employees VALUES (103, 'Alexander', 'Hunold', 'AHUNOLD', '2016-01-03 00:00:00', 'IT_PROG', 9000, NULL, 102, 60)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: TO_DATE('2016-01-03', 'YYYY-MM-DD') written as the plain literal '2016-01-03'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2016-01-03' padded to '2016-01-03 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 26,
+      "source_sql": "INSERT INTO employees VALUES (104,'Bruce','Ernst',    'BERNST',  DATE '2017-05-21','IT_PROG', 6000,NULL,103, 60)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO employees VALUES (104, 'Bruce', 'Ernst', 'BERNST', '2017-05-21 00:00:00', 'IT_PROG', 6000, NULL, 103, 60)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: TO_DATE('2017-05-21', 'YYYY-MM-DD') written as the plain literal '2017-05-21'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2017-05-21' padded to '2017-05-21 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 27,
+      "source_sql": "INSERT INTO employees VALUES (107,'Diana','Lorentz',  'DLORENTZ',DATE '2019-02-07','IT_PROG', 4200,NULL,103, 60)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO employees VALUES (107, 'Diana', 'Lorentz', 'DLORENTZ', '2019-02-07 00:00:00', 'IT_PROG', 4200, NULL, 103, 60)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: TO_DATE('2019-02-07', 'YYYY-MM-DD') written as the plain literal '2019-02-07'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2019-02-07' padded to '2019-02-07 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 28,
+      "source_sql": "INSERT INTO employees VALUES (145,'John','Russell',   'JRUSSEL', DATE '2014-10-01','SA_MAN', 14000, .40,100, 80)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO employees VALUES (145, 'John', 'Russell', 'JRUSSEL', '2014-10-01 00:00:00', 'SA_MAN', 14000, 0.40, 100, 80)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: TO_DATE('2014-10-01', 'YYYY-MM-DD') written as the plain literal '2014-10-01'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2014-10-01' padded to '2014-10-01 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 29,
+      "source_sql": "INSERT INTO employees VALUES (146,'Karen','Partners', 'KPARTNER',DATE '2015-01-05','SA_MAN', 13500, .30,100, 80)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO employees VALUES (146, 'Karen', 'Partners', 'KPARTNER', '2015-01-05 00:00:00', 'SA_MAN', 13500, 0.30, 100, 80)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: TO_DATE('2015-01-05', 'YYYY-MM-DD') written as the plain literal '2015-01-05'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2015-01-05' padded to '2015-01-05 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 30,
+      "source_sql": "INSERT INTO employees VALUES (150,'Peter','Tucker',   'PTUCKER', DATE '2015-01-30','SA_REP', 10000, .30,145, 80)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO employees VALUES (150, 'Peter', 'Tucker', 'PTUCKER', '2015-01-30 00:00:00', 'SA_REP', 10000, 0.30, 145, 80)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: TO_DATE('2015-01-30', 'YYYY-MM-DD') written as the plain literal '2015-01-30'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2015-01-30' padded to '2015-01-30 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 31,
+      "source_sql": "INSERT INTO employees VALUES (151,'David','Bernstein','DBERNSTE',DATE '2015-03-24','SA_REP',  9500, .25,145, 80)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO employees VALUES (151, 'David', 'Bernstein', 'DBERNSTE', '2015-03-24 00:00:00', 'SA_REP', 9500, 0.25, 145, 80)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: TO_DATE('2015-03-24', 'YYYY-MM-DD') written as the plain literal '2015-03-24'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2015-03-24' padded to '2015-03-24 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 32,
+      "source_sql": "INSERT INTO employees VALUES (155,'Oliver','Tuvault', 'OTUVAULT',DATE '2017-11-23','SA_REP',  7000, .15,146, 80)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO employees VALUES (155, 'Oliver', 'Tuvault', 'OTUVAULT', '2017-11-23 00:00:00', 'SA_REP', 7000, 0.15, 146, 80)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: TO_DATE('2017-11-23', 'YYYY-MM-DD') written as the plain literal '2017-11-23'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2017-11-23' padded to '2017-11-23 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 33,
+      "source_sql": "INSERT INTO employees VALUES (120,'Matthew','Weiss',  'MWEISS',  DATE '2014-07-18','ST_CLERK',4800,NULL,100, 50)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO employees VALUES (120, 'Matthew', 'Weiss', 'MWEISS', '2014-07-18 00:00:00', 'ST_CLERK', 4800, NULL, 100, 50)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: TO_DATE('2014-07-18', 'YYYY-MM-DD') written as the plain literal '2014-07-18'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2014-07-18' padded to '2014-07-18 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 34,
+      "source_sql": "INSERT INTO employees VALUES (125,'Julia','Nayer',    'JNAYER',  DATE '2015-07-16','ST_CLERK',3200,NULL,120, 50)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO employees VALUES (125, 'Julia', 'Nayer', 'JNAYER', '2015-07-16 00:00:00', 'ST_CLERK', 3200, NULL, 120, 50)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: TO_DATE('2015-07-16', 'YYYY-MM-DD') written as the plain literal '2015-07-16'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2015-07-16' padded to '2015-07-16 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 35,
+      "source_sql": "INSERT INTO employees VALUES (178,'Kimberely','Grant','KGRANT',  DATE '2017-05-24','SA_REP',  7000, .15,145, NULL)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO employees VALUES (178, 'Kimberely', 'Grant', 'KGRANT', '2017-05-24 00:00:00', 'SA_REP', 7000, 0.15, 145, NULL)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: TO_DATE('2017-05-24', 'YYYY-MM-DD') written as the plain literal '2017-05-24'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2017-05-24' padded to '2017-05-24 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 36,
+      "source_sql": "-- 部門なし社員\nINSERT INTO employees VALUES (200,'Jennifer','Whalen','JWHALEN', DATE '2013-09-17','AD_VP',  15000,NULL,101, 10)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "/* 部門なし社員 */ INSERT INTO employees VALUES (200, 'Jennifer', 'Whalen', 'JWHALEN', '2013-09-17 00:00:00', 'AD_VP', 15000, NULL, 101, 10)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: TO_DATE('2013-09-17', 'YYYY-MM-DD') written as the plain literal '2013-09-17'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2013-09-17' padded to '2013-09-17 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 37,
+      "source_sql": "UPDATE departments d\n   SET manager_id = CASE d.department_id\n                      WHEN 10 THEN 200 WHEN 60 THEN 103 WHEN 80 THEN 145\n                      WHEN 50 THEN 120 WHEN 90 THEN 100 END",
+      "kind": "UPDATE",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "RMW",
+          "message": "SET manager_id = CASE d.department_id WHEN 10 THEN 200 WHEN 60 THEN 103 WHEN 80 THEN 145 WHEN 50 THEN 120 WHEN 90 THEN 100 END: expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 38,
+      "source_sql": "INSERT INTO orders (order_date, employee_id, customer, status, total)\n  VALUES (DATE '2026-04-01', 150, 'Acme Corp',     'SHIPPED',  1200)",
+      "kind": "INSERT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column order_date: TO_DATE('2026-04-01', 'YYYY-MM-DD') written as the plain literal '2026-04-01'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column order_date: '2026-04-01' padded to '2026-04-01 00:00:00' for TIMESTAMP column order_date; ScalarDB does not parse a date-only literal as a timestamp"
+        },
+        {
+          "severity": "ERROR",
+          "code": "PK",
+          "message": "INSERT must specify the full primary key; missing ['order_id']"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 39,
+      "source_sql": "INSERT INTO orders (order_date, employee_id, customer, status, total)\n  VALUES (DATE '2026-04-15', 151, 'Globex',        'NEW',       450)",
+      "kind": "INSERT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column order_date: TO_DATE('2026-04-15', 'YYYY-MM-DD') written as the plain literal '2026-04-15'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column order_date: '2026-04-15' padded to '2026-04-15 00:00:00' for TIMESTAMP column order_date; ScalarDB does not parse a date-only literal as a timestamp"
+        },
+        {
+          "severity": "ERROR",
+          "code": "PK",
+          "message": "INSERT must specify the full primary key; missing ['order_id']"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 40,
+      "source_sql": "INSERT INTO orders (order_date, employee_id, customer, status, total)\n  VALUES (DATE '2026-05-02', 150, 'Initech',       'SHIPPED',  3000)",
+      "kind": "INSERT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column order_date: TO_DATE('2026-05-02', 'YYYY-MM-DD') written as the plain literal '2026-05-02'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column order_date: '2026-05-02' padded to '2026-05-02 00:00:00' for TIMESTAMP column order_date; ScalarDB does not parse a date-only literal as a timestamp"
+        },
+        {
+          "severity": "ERROR",
+          "code": "PK",
+          "message": "INSERT must specify the full primary key; missing ['order_id']"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 41,
+      "source_sql": "INSERT INTO orders (order_date, employee_id, customer, status, total)\n  VALUES (DATE '2026-05-20', 155, 'Umbrella',      'CANCELLED', 800)",
+      "kind": "INSERT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column order_date: TO_DATE('2026-05-20', 'YYYY-MM-DD') written as the plain literal '2026-05-20'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column order_date: '2026-05-20' padded to '2026-05-20 00:00:00' for TIMESTAMP column order_date; ScalarDB does not parse a date-only literal as a timestamp"
+        },
+        {
+          "severity": "ERROR",
+          "code": "PK",
+          "message": "INSERT must specify the full primary key; missing ['order_id']"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 42,
+      "source_sql": "INSERT INTO orders (order_date, employee_id, customer, status, total)\n  VALUES (DATE '2026-06-11', 145, 'Acme Corp',     'NEW',      2200)",
+      "kind": "INSERT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column order_date: TO_DATE('2026-06-11', 'YYYY-MM-DD') written as the plain literal '2026-06-11'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column order_date: '2026-06-11' padded to '2026-06-11 00:00:00' for TIMESTAMP column order_date; ScalarDB does not parse a date-only literal as a timestamp"
+        },
+        {
+          "severity": "ERROR",
+          "code": "PK",
+          "message": "INSERT must specify the full primary key; missing ['order_id']"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 43,
+      "source_sql": "INSERT INTO order_items VALUES (1, 1, 'ScalarDB License', 1, 1000)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO order_items VALUES (1, 1, 'ScalarDB License', 1, 1000)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 44,
+      "source_sql": "INSERT INTO order_items VALUES (1, 2, 'Support',          1,  200)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO order_items VALUES (1, 2, 'Support', 1, 200)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 45,
+      "source_sql": "INSERT INTO order_items VALUES (2, 1, 'Training',         3,  150)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO order_items VALUES (2, 1, 'Training', 3, 150)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 46,
+      "source_sql": "INSERT INTO order_items VALUES (3, 1, 'ScalarDL License', 2, 1500)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO order_items VALUES (3, 1, 'ScalarDL License', 2, 1500)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 47,
+      "source_sql": "INSERT INTO order_items VALUES (4, 1, 'Consulting',       4,  200)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO order_items VALUES (4, 1, 'Consulting', 4, 200)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 48,
+      "source_sql": "INSERT INTO order_items VALUES (5, 1, 'ScalarDB License', 2, 1100)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO order_items VALUES (5, 1, 'ScalarDB License', 2, 1100)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 49,
+      "source_sql": "COMMIT",
+      "kind": "COMMIT",
+      "status": "OK",
+      "converted": [
+        "COMMIT"
+      ],
+      "issues": [],
+      "plan": null
+    },
+    {
+      "index": 50,
+      "source_sql": "-- 統計情報収集（オプティマイザ用）\n\nSELECT table_name, num_rows FROM user_tables ORDER BY table_name",
+      "kind": "SELECT",
+      "status": "OK",
+      "converted": [
+        "/* 統計情報収集（オプティマイザ用） */ SELECT table_name, num_rows FROM user_tables ORDER BY table_name"
+      ],
+      "issues": [
+        {
+          "severity": "INFO",
+          "code": "SCHEMA",
+          "message": "SELECT: table definition unknown, access path (GET / SCAN / cross-partition) not analysed"
+        }
+      ],
+      "plan": null
+    }
+  ]
+}

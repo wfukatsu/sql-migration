@@ -1,0 +1,608 @@
+{
+  "source": "oracle",
+  "target": "scalardb",
+  "summary": {
+    "total": 39,
+    "ok": 9,
+    "warn": 3,
+    "error": 27,
+    "planned": 0,
+    "converted": 12,
+    "rate": 30.8
+  },
+  "results": [
+    {
+      "index": 1,
+      "source_sql": "--------------------------------------------------------------------------------\n-- 01_sql_ddl.sql : DDL（データ定義言語）のサンプル\n--   参照: SQL Language Reference - CREATE TABLE / ALTER TABLE / CREATE INDEX /\n--         CREATE VIEW / CREATE SEQUENCE / CREATE SYNONYM\n--   前提: 00_setup.sql 実行済み\n--   [ORA] = Oracle 固有 / 他DBへの移行で要注意の構文\n--------------------------------------------------------------------------------\n\n-- 1. IDENTITY 列・仮想列・DEFAULT ON NULL を持つ表 (12c+)\nCREATE TABLE sample_ddl (\n  id          NUMBER GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1)\n              CONSTRAINT sample_ddl_pk PRIMARY KEY,\n  name        VARCHAR2(50 CHAR) NOT NULL,           -- CHAR 長セマンティクス\n  price       NUMBER(10,2) DEFAULT ON NULL 0,       -- [ORA] NULL 挿入時も既定値\n  tax_rate    NUMBER(4,3)  DEFAULT 0.1,\n  price_incl  NUMBER GENERATED ALWAYS AS (ROUND(price * (1 + tax_rate), 2)) VIRTUAL, -- [ORA] 仮想列\n  created_at  TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP,\n  note        CLOB\n)",
+      "kind": "PARSE_ERROR",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PARSE",
+          "message": "Required keyword: 'this' missing for <class 'sqlglot.expressions.constraints.DefaultColumnConstraint'>. Line 14, Col: 37."
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 2,
+      "source_sql": "COMMENT ON TABLE  sample_ddl       IS 'DDLサンプル用テーブル'",
+      "kind": "COMMENT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "STATEMENT",
+          "message": "Comment statements are not supported by ScalarDB SQL"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 3,
+      "source_sql": "COMMENT ON COLUMN sample_ddl.price IS '税抜価格'",
+      "kind": "COMMENT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "STATEMENT",
+          "message": "Comment statements are not supported by ScalarDB SQL"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 4,
+      "source_sql": "INSERT INTO sample_ddl (name, price) VALUES ('Widget', 1000)",
+      "kind": "INSERT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PK",
+          "message": "INSERT must specify the full primary key; missing ['id']"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 5,
+      "source_sql": "INSERT INTO sample_ddl (name, price) VALUES ('Gadget', NULL)",
+      "kind": "INSERT",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PK",
+          "message": "INSERT must specify the full primary key; missing ['id']"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 6,
+      "source_sql": "-- price は 0 になる\nSELECT id, name, price, price_incl FROM sample_ddl",
+      "kind": "SELECT",
+      "status": "WARN",
+      "converted": [
+        "/* price は 0 になる */ SELECT id, name, price, price_incl FROM sample_ddl"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "CROSS_PARTITION",
+          "message": "SELECT: predicates do not cover the partition key ['id'] of sample_ddl -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)"
+        },
+        {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+        },
+        {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of sample_ddl (~25 us per row); pass --expected-rows table=N for an estimate"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 7,
+      "source_sql": "-- 2. ALTER TABLE：列の追加・変更・名前変更・削除\nALTER TABLE sample_ddl ADD (category VARCHAR2(20) DEFAULT 'GENERAL' NOT NULL)",
+      "kind": "ALTER",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "ALTER",
+          "message": "ALTER TABLE action '(category VARCHAR2(20) DEFAULT 'GENERAL' NOT NULL)' is not supported (constraints, indexes, partitions, engine options ...)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 8,
+      "source_sql": "ALTER TABLE sample_ddl MODIFY (name VARCHAR2(100 CHAR))",
+      "kind": "COMMAND",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "UNPARSED",
+          "message": "statement type 'ALTER' is not supported (views, triggers, procedures, sequences, grants, session settings ...)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 9,
+      "source_sql": "ALTER TABLE sample_ddl RENAME COLUMN note TO description",
+      "kind": "ALTER",
+      "status": "OK",
+      "converted": [
+        "ALTER TABLE sample_ddl RENAME COLUMN note TO description"
+      ],
+      "issues": [],
+      "plan": null
+    },
+    {
+      "index": 10,
+      "source_sql": "ALTER TABLE sample_ddl SET UNUSED (description)",
+      "kind": "COMMAND",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "UNPARSED",
+          "message": "statement type 'ALTER' is not supported (views, triggers, procedures, sequences, grants, session settings ...)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 11,
+      "source_sql": "-- [ORA] 論理削除（即時）\nALTER TABLE sample_ddl DROP UNUSED COLUMNS",
+      "kind": "ALTER",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "ALTER",
+          "message": "ALTER TABLE action 'DROP UNUSED COLUMNS' is not supported (constraints, indexes, partitions, engine options ...)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 12,
+      "source_sql": "-- 物理削除\n\n-- 3. 制約の追加・無効化・有効化\nALTER TABLE sample_ddl ADD CONSTRAINT sample_ddl_name_uk UNIQUE (name)",
+      "kind": "ALTER",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "ALTER",
+          "message": "ALTER TABLE action 'ADD CONSTRAINT sample_ddl_name_uk UNIQUE (name)' is not supported (constraints, indexes, partitions, engine options ...)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 13,
+      "source_sql": "ALTER TABLE sample_ddl ADD CONSTRAINT sample_ddl_price_ck CHECK (price >= 0)",
+      "kind": "ALTER",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "ALTER",
+          "message": "ALTER TABLE action 'ADD CONSTRAINT sample_ddl_price_ck CHECK (price >= 0)' is not supported (constraints, indexes, partitions, engine options ...)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 14,
+      "source_sql": "ALTER TABLE sample_ddl DISABLE CONSTRAINT sample_ddl_price_ck",
+      "kind": "COMMAND",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "UNPARSED",
+          "message": "statement type 'ALTER' is not supported (views, triggers, procedures, sequences, grants, session settings ...)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 15,
+      "source_sql": "ALTER TABLE sample_ddl ENABLE NOVALIDATE CONSTRAINT sample_ddl_price_ck",
+      "kind": "COMMAND",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "UNPARSED",
+          "message": "statement type 'ALTER' is not supported (views, triggers, procedures, sequences, grants, session settings ...)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 16,
+      "source_sql": "-- [ORA] 既存行は検証しない\n\n-- 4. CTAS（CREATE TABLE AS SELECT）\nCREATE TABLE emp_stage AS\n  SELECT employee_id, last_name, salary, department_id\n  FROM   employees\n  WHERE  1 = 0",
+      "kind": "CREATE",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "DDL",
+          "message": "CREATE TABLE ... AS SELECT / LIKE is not supported"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 17,
+      "source_sql": "-- 構造のみコピー\n\n-- 5. インデックス\nCREATE INDEX emp_name_ix       ON employees (last_name, first_name)",
+      "kind": "CREATE",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "INDEX",
+          "message": "ScalarDB secondary indexes are single-column; got ['last_name', 'first_name']. Consider making the leading column a partition key / clustering key instead"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 18,
+      "source_sql": "-- 複合\nCREATE INDEX emp_upper_email_ix ON employees (UPPER(email))",
+      "kind": "CREATE",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "INDEX",
+          "message": "ScalarDB secondary indexes are single-column; got ['UPPER(email)']. Consider making the leading column a partition key / clustering key instead"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 19,
+      "source_sql": "-- ファンクション索引\nCREATE BITMAP INDEX orders_status_bix ON orders (status)",
+      "kind": "COMMAND",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "UNPARSED",
+          "message": "statement type 'CREATE' is not supported (views, triggers, procedures, sequences, grants, session settings ...)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 20,
+      "source_sql": "-- [ORA] ビットマップ索引(EE)\nALTER INDEX emp_name_ix INVISIBLE",
+      "kind": "COMMAND",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "UNPARSED",
+          "message": "statement type 'ALTER' is not supported (views, triggers, procedures, sequences, grants, session settings ...)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 21,
+      "source_sql": "-- [ORA] 不可視索引\nALTER INDEX emp_name_ix VISIBLE",
+      "kind": "COMMAND",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "UNPARSED",
+          "message": "statement type 'ALTER' is not supported (views, triggers, procedures, sequences, grants, session settings ...)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 22,
+      "source_sql": "-- 6. ビュー（WITH CHECK OPTION / READ ONLY）\nCREATE OR REPLACE VIEW emp_it_v AS\n  SELECT employee_id, last_name, salary, department_id\n  FROM   employees\n  WHERE  department_id = 60\n  WITH CHECK OPTION CONSTRAINT emp_it_v_ck",
+      "kind": "CREATE",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "DDL",
+          "message": "CREATE VIEW is not supported (no views, sequences, triggers, procedures in ScalarDB)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 23,
+      "source_sql": "CREATE OR REPLACE VIEW emp_dept_v AS\n  SELECT e.employee_id, e.last_name, d.department_name, e.salary\n  FROM   employees e JOIN departments d ON d.department_id = e.department_id\n  WITH READ ONLY",
+      "kind": "CREATE",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "DDL",
+          "message": "CREATE VIEW is not supported (no views, sequences, triggers, procedures in ScalarDB)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 24,
+      "source_sql": "-- 7. シーケンス [ORA]\nCREATE SEQUENCE audit_seq START WITH 1 INCREMENT BY 1 CACHE 20 NOCYCLE",
+      "kind": "CREATE",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "DDL",
+          "message": "CREATE SEQUENCE is not supported (no views, sequences, triggers, procedures in ScalarDB)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 25,
+      "source_sql": "SELECT audit_seq.NEXTVAL, audit_seq.CURRVAL FROM dual",
+      "kind": "SELECT",
+      "status": "OK",
+      "converted": [
+        "SELECT audit_seq.NEXTVAL, audit_seq.CURRVAL FROM dual"
+      ],
+      "issues": [
+        {
+          "severity": "INFO",
+          "code": "SCHEMA",
+          "message": "SELECT: table definition unknown, access path (GET / SCAN / cross-partition) not analysed"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 26,
+      "source_sql": "ALTER SEQUENCE audit_seq INCREMENT BY 10",
+      "kind": "COMMAND",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "UNPARSED",
+          "message": "statement type 'ALTER' is not supported (views, triggers, procedures, sequences, grants, session settings ...)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 27,
+      "source_sql": "-- 8. シノニム [ORA]\nCREATE OR REPLACE SYNONYM staff FOR employees",
+      "kind": "COMMAND",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "UNPARSED",
+          "message": "statement type 'CREATE' is not supported (views, triggers, procedures, sequences, grants, session settings ...)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 28,
+      "source_sql": "SELECT COUNT(*) FROM staff",
+      "kind": "SELECT",
+      "status": "OK",
+      "converted": [
+        "SELECT COUNT(*) FROM staff"
+      ],
+      "issues": [
+        {
+          "severity": "INFO",
+          "code": "SCHEMA",
+          "message": "SELECT: table definition unknown, access path (GET / SCAN / cross-partition) not analysed"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 29,
+      "source_sql": "-- 9. 一時表 [ORA]\n--    GLOBAL TEMPORARY：定義は永続、データはセッション/トランザクション単位\nCREATE GLOBAL TEMPORARY TABLE gtt_work (\n  id  NUMBER,\n  val VARCHAR2(100)\n) ON COMMIT PRESERVE ROWS",
+      "kind": "CREATE",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "TEMP",
+          "message": "temporary tables are not supported"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 30,
+      "source_sql": "-- DELETE ROWS ならコミットで消える\n\n-- 10. パーティション表 [ORA]（EE の Partitioning オプション / Free 版でも利用可）\nCREATE TABLE sales_part (\n  sale_id    NUMBER,\n  sale_date  DATE,\n  amount     NUMBER(10,2)\n)\nPARTITION BY RANGE (sale_date)\nINTERVAL (NUMTOYMINTERVAL(1, 'MONTH'))          -- 月単位で自動パーティション追加\n( PARTITION p_before_2026 VALUES LESS THAN (DATE '2026-01-01') )",
+      "kind": "COMMAND",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "UNPARSED",
+          "message": "statement type 'CREATE' is not supported (views, triggers, procedures, sequences, grants, session settings ...)"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 31,
+      "source_sql": "INSERT INTO sales_part VALUES (1, DATE '2025-12-31', 100)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO sales_part VALUES (1, '2025-12-31', 100)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column sale_date: TO_DATE('2025-12-31', 'YYYY-MM-DD') written as the plain literal '2025-12-31'"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 32,
+      "source_sql": "INSERT INTO sales_part VALUES (2, DATE '2026-03-15', 200)",
+      "kind": "INSERT",
+      "status": "WARN",
+      "converted": [
+        "INSERT INTO sales_part VALUES (2, '2026-03-15', 200)"
+      ],
+      "issues": [
+        {
+          "severity": "WARN",
+          "code": "INSERT_COLS",
+          "message": "no column list: ScalarDB uses table definition order; add an explicit column list"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column sale_date: TO_DATE('2026-03-15', 'YYYY-MM-DD') written as the plain literal '2026-03-15'"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 33,
+      "source_sql": "COMMIT",
+      "kind": "COMMIT",
+      "status": "OK",
+      "converted": [
+        "COMMIT"
+      ],
+      "issues": [],
+      "plan": null
+    },
+    {
+      "index": 34,
+      "source_sql": "SELECT partition_name, high_value FROM user_tab_partitions WHERE table_name = 'SALES_PART'",
+      "kind": "SELECT",
+      "status": "OK",
+      "converted": [
+        "SELECT partition_name, high_value FROM user_tab_partitions WHERE table_name = 'SALES_PART'"
+      ],
+      "issues": [
+        {
+          "severity": "INFO",
+          "code": "SCHEMA",
+          "message": "SELECT: table definition unknown, access path (GET / SCAN / cross-partition) not analysed"
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 35,
+      "source_sql": "-- 11. TRUNCATE / DROP / FLASHBACK TABLE（ごみ箱から復元）[ORA]\nTRUNCATE TABLE emp_stage",
+      "kind": "TRUNCATETABLE",
+      "status": "OK",
+      "converted": [
+        "TRUNCATE TABLE emp_stage"
+      ],
+      "issues": [],
+      "plan": null
+    },
+    {
+      "index": 36,
+      "source_sql": "DROP TABLE gtt_work",
+      "kind": "DROP",
+      "status": "OK",
+      "converted": [
+        "DROP TABLE gtt_work"
+      ],
+      "issues": [],
+      "plan": null
+    },
+    {
+      "index": 37,
+      "source_sql": "DROP TABLE sales_part",
+      "kind": "DROP",
+      "status": "OK",
+      "converted": [
+        "DROP TABLE sales_part"
+      ],
+      "issues": [],
+      "plan": null
+    },
+    {
+      "index": 38,
+      "source_sql": "-- ごみ箱へ\nFLASHBACK TABLE sales_part TO BEFORE DROP",
+      "kind": "PARSE_ERROR",
+      "status": "ERROR",
+      "converted": [],
+      "issues": [
+        {
+          "severity": "ERROR",
+          "code": "PARSE",
+          "message": "Invalid expression / Unexpected token. Line 2, Col: 26."
+        }
+      ],
+      "plan": null
+    },
+    {
+      "index": 39,
+      "source_sql": "-- 復元\nDROP TABLE sales_part PURGE",
+      "kind": "DROP",
+      "status": "OK",
+      "converted": [
+        "DROP TABLE sales_part"
+      ],
+      "issues": [],
+      "plan": null
+    }
+  ]
+}

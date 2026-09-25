@@ -61,6 +61,19 @@ class ResidualTest {
     }
   }
 
+  @Test
+  @SuppressWarnings("unchecked")
+  void jsonValuesComeBackAsTextNotBase64() throws Exception {
+    // H2 hands JSON_OBJECT's JSON type to getObject as byte[]; Oracle returns the document as text (#34)
+    try (Residual residual = new Residual("Oracle")) {
+      load(residual);
+      Object json = ((List<List<Object>>) residual.query(
+          "SELECT JSON_OBJECT('id' VALUE customer_id, 'name' VALUE name) FROM customers WHERE customer_id = 10",
+          Map.of()).get("rows")).get(0).get(0);
+      assertEquals("{\"id\":10,\"name\":\"a\"}", json);
+    }
+  }
+
   private static Object ratio(String mode) throws Exception {
     try (Residual residual = new Residual(mode)) {
       residual.load(fetch("lines", null), rows(List.of("id", "qty"), Map.of("id", "BIGINT", "qty", "INT"),

@@ -1,0 +1,31 @@
+{
+  "pattern": "P1",
+  "source_dialect": "oracle",
+  "source_sql": "--------------------------------------------------------------------------------\n-- 02_sql_query.sql : 問合せ（SELECT）のサンプル\n--   参照: SQL Language Reference - SELECT / Functions / Analytic Functions /\n--         Hierarchical Queries / Joins\n--   前提: 00_setup.sql 実行済み\n--   [ORA] = Oracle 固有 / 他DBへの移行で要注意の構文\n--------------------------------------------------------------------------------\n\n--==============================================================================\n-- A. 基本\n--==============================================================================\n-- A-1. DUAL 表 [ORA]（23ai 以降は FROM 句省略も可）\nSELECT SYSDATE, SYSTIMESTAMP, USER FROM dual",
+  "fetch": [],
+  "residual": {
+    "java": {
+      "engine": "h2",
+      "mode": "Oracle",
+      "sql": "--------------------------------------------------------------------------------\n-- 02_sql_query.sql : 問合せ（SELECT）のサンプル\n--   参照: SQL Language Reference - SELECT / Functions / Analytic Functions /\n--         Hierarchical Queries / Joins\n--   前提: 00_setup.sql 実行済み\n--   [ORA] = Oracle 固有 / 他DBへの移行で要注意の構文\n--------------------------------------------------------------------------------\n\n--==============================================================================\n-- A. 基本\n--==============================================================================\n-- A-1. DUAL 表 [ORA]（23ai 以降は FROM 句省略も可）\nSELECT SYSDATE, SYSTIMESTAMP, USER FROM dual",
+      "build_indexes": false
+    },
+    "python": {
+      "engine": "sqlite3",
+      "sql": "/* ------------------------------------------------------------------------------ */ /* 02_sql_query.sql : 問合せ（SELECT）のサンプル */ /*   参照: SQL Language Reference - SELECT / Functions / Analytic Functions / */ /*         Hierarchical Queries / Joins */ /*   前提: 00_setup.sql 実行済み */ /*   [ORA] = Oracle 固有 / 他DBへの移行で要注意の構文 */ /* ------------------------------------------------------------------------------ */ /* ============================================================================== */ /* A. 基本 */ /* ============================================================================== */ /* A-1. DUAL 表 [ORA]（23ai 以降は FROM 句省略も可） */ SELECT CURRENT_TIMESTAMP, SYSTIMESTAMP(), USER FROM dual"
+    }
+  },
+  "write": null,
+  "guardrails": {
+    "requires_cross_partition_scan": false,
+    "row_limit": 10000
+  },
+  "unresolved": [],
+  "notes": [],
+  "transaction": {
+    "read_only": true
+  },
+  "recommended_config": {
+    "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)"
+  }
+}

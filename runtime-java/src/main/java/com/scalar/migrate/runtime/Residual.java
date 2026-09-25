@@ -246,7 +246,11 @@ public class Residual implements AutoCloseable {
       case java.sql.Types.TIMESTAMP: return rs.getObject(i, java.time.LocalDateTime.class);
       case java.sql.Types.DATE: return rs.getObject(i, java.time.LocalDate.class);
       case java.sql.Types.TIME: return rs.getObject(i, java.time.LocalTime.class);
-      default: return rs.getObject(i);
+      default:
+        // H2's JSON type (JSON_OBJECT / JSON_ARRAYAGG results) comes out of getObject as byte[], which toJson then
+        // base64-encoded; Oracle returns the document as text (#34, samples/oracle-samples 03 F-4)
+        if ("JSON".equalsIgnoreCase(m.getColumnTypeName(i))) return rs.getString(i);
+        return rs.getObject(i);
     }
   }
 

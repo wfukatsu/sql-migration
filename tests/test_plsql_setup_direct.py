@@ -68,3 +68,24 @@ def test_the_report_says_the_direct_path_differs_by_design():
     assert _is_direct_dml("trigger_products_audit_price")
     assert not _is_direct_dml("payment_record")
     assert not _is_direct_dml("view_load_rowtype"), "record を射影するブロックは routine の呼び出しである"
+
+
+def test_omitted_arguments_are_filled_from_literal_defaults():
+    """`annual_comp(p_salary, p_comm DEFAULT NULL)` called with p_salary only (#41)."""
+    from difftest.plsql_setup import with_defaults
+    from plsql.ir import model as M
+
+    def param(name, direction="IN", default=None):
+        return M.Parameter(id=name, kind="Parameter", source_range=None, name=name, direction=direction, default=default)
+    routines = {("annual_comp", "annual_comp"): [param("p_salary"), param("p_comm", default="NULL")],
+                ("raise_salary", "raise_salary"): [param("p_emp_id"), param("p_pct", default="5"),
+                                                   param("p_new_sal", "OUT")],
+                ("stamp", "stamp"): [param("p_id"), param("p_when", default="SYSDATE")]}
+    call = lambda unit, args: {"unit": unit, "routine": unit, "call": {"kind": "procedure", "name": unit, "args": args}}
+    assert with_defaults(call("annual_comp", {"p_salary": 6000}), routines) == {"p_salary": 6000, "p_comm": None}
+    # declaration order wins over the order the scenario wrote, and OUT parameters are not arguments
+    assert list(with_defaults(call("raise_salary", {"p_pct": 10, "p_emp_id": 104}), routines)) == ["p_emp_id", "p_pct"]
+    assert with_defaults(call("raise_salary", {"p_emp_id": 104}), routines)["p_pct"] == 5
+    assert with_defaults(call("stamp", {"p_id": 1}), routines) is None        # SYSDATE is not a literal
+    assert with_defaults(call("unknown", {"p_id": 1}), routines) is None
+    assert with_defaults({"call": {"kind": "block", "body": "BEGIN NULL; END;"}}, routines) is None

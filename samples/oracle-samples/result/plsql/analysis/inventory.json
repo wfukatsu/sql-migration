@@ -1,0 +1,1684 @@
+{
+ "schemaVersion": "1.1.0",
+ "corpus": {
+  "origin": "synthetic",
+  "note": "合成 corpus 上の値であり、実案件耐性の証拠にはならない（実装計画 §9）"
+ },
+ "kpi": {
+  "parseRate": 1.0,
+  "parsedFiles": 37,
+  "totalFiles": 37,
+  "failedFiles": [],
+  "typeResolutionRate": 0.9904,
+  "typedSymbols": 104,
+  "resolvedSymbols": 103
+ },
+ "totals": {
+  "modules": 36,
+  "routines": 41,
+  "statements": 243,
+  "issues": 151,
+  "errors": 15
+ },
+ "statementKinds": {
+  "Call": 77,
+  "SqlOperation": 41,
+  "Assignment": 25,
+  "Loop": 24,
+  "If": 20,
+  "Rollback": 8,
+  "Unsupported": 8,
+  "Return": 7,
+  "DynamicSql": 7,
+  "Block": 6,
+  "Raise": 6,
+  "Exit": 5,
+  "Commit": 3,
+  "Fetch": 2,
+  "CloseCursor": 2,
+  "Case": 1,
+  "Continue": 1
+ },
+ "targetCapability": {
+  "statuses": {
+   "OK": 22,
+   "ERROR": 14,
+   "WARN": 5,
+   "PLANNED": 4
+  },
+  "runnableRate": 0.6
+ },
+ "modules": [
+  {
+   "id": "annual_comp",
+   "name": "annual_comp",
+   "kind": "function",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "annual_comp",
+     "name": "annual_comp",
+     "kind": "function",
+     "visibility": "public",
+     "statements": 1,
+     "parameters": 2,
+     "declarations": 0,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [],
+     "sourceRange": {
+      "file": "annual_comp.fnc",
+      "startLine": 2,
+      "endLine": 10
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "annual_comp.fnc",
+    "startLine": 2,
+    "endLine": 10
+   }
+  },
+  {
+   "id": "b04_1_variables",
+   "name": "b04_1_variables",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b04_1_variables",
+     "name": "b04_1_variables",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 6,
+     "parameters": 0,
+     "declarations": 6,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [],
+     "sourceRange": {
+      "file": "b04_1_variables.prc",
+      "startLine": 2,
+      "endLine": 18
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b04_1_variables.prc",
+    "startLine": 2,
+    "endLine": 18
+   }
+  },
+  {
+   "id": "b04_2_control_flow",
+   "name": "b04_2_control_flow",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b04_2_control_flow",
+     "name": "b04_2_control_flow",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 22,
+     "parameters": 0,
+     "declarations": 3,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [],
+     "sourceRange": {
+      "file": "b04_2_control_flow.prc",
+      "startLine": 2,
+      "endLine": 51
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b04_2_control_flow.prc",
+    "startLine": 2,
+    "endLine": 51
+   }
+  },
+  {
+   "id": "b04_3_implicit_cursor_attrs",
+   "name": "b04_3_implicit_cursor_attrs",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b04_3_implicit_cursor_attrs",
+     "name": "b04_3_implicit_cursor_attrs",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 9,
+     "parameters": 0,
+     "declarations": 2,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 1,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "transaction-control-in-routine"
+     ],
+     "sourceRange": {
+      "file": "b04_3_implicit_cursor_attrs.prc",
+      "startLine": 2,
+      "endLine": 12
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b04_3_implicit_cursor_attrs.prc",
+    "startLine": 2,
+    "endLine": 12
+   }
+  },
+  {
+   "id": "b04_4_1_explicit_cursor",
+   "name": "b04_4_1_explicit_cursor",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b04_4_1_explicit_cursor",
+     "name": "b04_4_1_explicit_cursor",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 4,
+     "parameters": 0,
+     "declarations": 3,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [],
+     "sourceRange": {
+      "file": "b04_4_1_explicit_cursor.prc",
+      "startLine": 2,
+      "endLine": 15
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b04_4_1_explicit_cursor.prc",
+    "startLine": 2,
+    "endLine": 15
+   }
+  },
+  {
+   "id": "b04_4_2_cursor_for_loop",
+   "name": "b04_4_2_cursor_for_loop",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b04_4_2_cursor_for_loop",
+     "name": "b04_4_2_cursor_for_loop",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 6,
+     "parameters": 0,
+     "declarations": 1,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [],
+     "sourceRange": {
+      "file": "b04_4_2_cursor_for_loop.prc",
+      "startLine": 2,
+      "endLine": 15
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b04_4_2_cursor_for_loop.prc",
+    "startLine": 2,
+    "endLine": 15
+   }
+  },
+  {
+   "id": "b04_4_3_for_update_current_of",
+   "name": "b04_4_3_for_update_current_of",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b04_4_3_for_update_current_of",
+     "name": "b04_4_3_for_update_current_of",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 10,
+     "parameters": 0,
+     "declarations": 4,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 1,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "transaction-control-in-routine",
+      "row-lock"
+     ],
+     "sourceRange": {
+      "file": "b04_4_3_for_update_current_of.prc",
+      "startLine": 2,
+      "endLine": 12
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b04_4_3_for_update_current_of.prc",
+    "startLine": 2,
+    "endLine": 12
+   }
+  },
+  {
+   "id": "b04_4_4_ref_cursor",
+   "name": "b04_4_4_ref_cursor",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b04_4_4_ref_cursor",
+     "name": "b04_4_4_ref_cursor",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 8,
+     "parameters": 0,
+     "declarations": 3,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "unmodelled-construct"
+     ],
+     "sourceRange": {
+      "file": "b04_4_4_ref_cursor.prc",
+      "startLine": 2,
+      "endLine": 18
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b04_4_4_ref_cursor.prc",
+    "startLine": 2,
+    "endLine": 18
+   }
+  },
+  {
+   "id": "b04_5_records_collections",
+   "name": "b04_5_records_collections",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b04_5_records_collections",
+     "name": "b04_5_records_collections",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 19,
+     "parameters": 0,
+     "declarations": 9,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "unmodelled-construct"
+     ],
+     "sourceRange": {
+      "file": "b04_5_records_collections.prc",
+      "startLine": 2,
+      "endLine": 44
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b04_5_records_collections.prc",
+    "startLine": 2,
+    "endLine": 44
+   }
+  },
+  {
+   "id": "b04_6_1_predefined_exceptions",
+   "name": "b04_6_1_predefined_exceptions",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b04_6_1_predefined_exceptions",
+     "name": "b04_6_1_predefined_exceptions",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 9,
+     "parameters": 0,
+     "declarations": 1,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [],
+     "sourceRange": {
+      "file": "b04_6_1_predefined_exceptions.prc",
+      "startLine": 2,
+      "endLine": 22
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b04_6_1_predefined_exceptions.prc",
+    "startLine": 2,
+    "endLine": 22
+   }
+  },
+  {
+   "id": "b04_6_2_user_exceptions",
+   "name": "b04_6_2_user_exceptions",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b04_6_2_user_exceptions",
+     "name": "b04_6_2_user_exceptions",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 11,
+     "parameters": 0,
+     "declarations": 3,
+     "handlers": 1,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 1,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "transaction-control-in-routine"
+     ],
+     "sourceRange": {
+      "file": "b04_6_2_user_exceptions.prc",
+      "startLine": 2,
+      "endLine": 33
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b04_6_2_user_exceptions.prc",
+    "startLine": 2,
+    "endLine": 33
+   }
+  },
+  {
+   "id": "b05_1_call_raise_salary",
+   "name": "b05_1_call_raise_salary",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b05_1_call_raise_salary",
+     "name": "b05_1_call_raise_salary",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 5,
+     "parameters": 0,
+     "declarations": 1,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 1,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "transaction-control-in-routine"
+     ],
+     "sourceRange": {
+      "file": "b05_1_call_raise_salary.prc",
+      "startLine": 2,
+      "endLine": 10
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b05_1_call_raise_salary.prc",
+    "startLine": 2,
+    "endLine": 10
+   }
+  },
+  {
+   "id": "b05_3_call_emp_api",
+   "name": "b05_3_call_emp_api",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b05_3_call_emp_api",
+     "name": "b05_3_call_emp_api",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 9,
+     "parameters": 0,
+     "declarations": 1,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 1,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "transaction-control-in-routine"
+     ],
+     "sourceRange": {
+      "file": "b05_3_call_emp_api.prc",
+      "startLine": 2,
+      "endLine": 16
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b05_3_call_emp_api.prc",
+    "startLine": 2,
+    "endLine": 16
+   }
+  },
+  {
+   "id": "b05_4_call_log_msg",
+   "name": "b05_4_call_log_msg",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b05_4_call_log_msg",
+     "name": "b05_4_call_log_msg",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 9,
+     "parameters": 0,
+     "declarations": 3,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 1,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "transaction-control-in-routine"
+     ],
+     "sourceRange": {
+      "file": "b05_4_call_log_msg.prc",
+      "startLine": 2,
+      "endLine": 7
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b05_4_call_log_msg.prc",
+    "startLine": 2,
+    "endLine": 7
+   }
+  },
+  {
+   "id": "b06_1_bulk_collect_limit",
+   "name": "b06_1_bulk_collect_limit",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b06_1_bulk_collect_limit",
+     "name": "b06_1_bulk_collect_limit",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 6,
+     "parameters": 0,
+     "declarations": 4,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [],
+     "sourceRange": {
+      "file": "b06_1_bulk_collect_limit.prc",
+      "startLine": 2,
+      "endLine": 17
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b06_1_bulk_collect_limit.prc",
+    "startLine": 2,
+    "endLine": 17
+   }
+  },
+  {
+   "id": "b06_2_2_forall_returning",
+   "name": "b06_2_2_forall_returning",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b06_2_2_forall_returning",
+     "name": "b06_2_2_forall_returning",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 6,
+     "parameters": 0,
+     "declarations": 3,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 1,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "transaction-control-in-routine"
+     ],
+     "sourceRange": {
+      "file": "b06_2_2_forall_returning.prc",
+      "startLine": 2,
+      "endLine": 17
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b06_2_2_forall_returning.prc",
+    "startLine": 2,
+    "endLine": 17
+   }
+  },
+  {
+   "id": "b06_2_forall_save_exceptions",
+   "name": "b06_2_forall_save_exceptions",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b06_2_forall_save_exceptions",
+     "name": "b06_2_forall_save_exceptions",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 8,
+     "parameters": 0,
+     "declarations": 7,
+     "handlers": 1,
+     "transactionEffects": {
+      "commits": 2,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "transaction-control-in-routine"
+     ],
+     "sourceRange": {
+      "file": "b06_2_forall_save_exceptions.prc",
+      "startLine": 2,
+      "endLine": 28
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b06_2_forall_save_exceptions.prc",
+    "startLine": 2,
+    "endLine": 28
+   }
+  },
+  {
+   "id": "b06_3_6_dbms_sql",
+   "name": "b06_3_6_dbms_sql",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b06_3_6_dbms_sql",
+     "name": "b06_3_6_dbms_sql",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 11,
+     "parameters": 0,
+     "declarations": 5,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [],
+     "sourceRange": {
+      "file": "b06_3_6_dbms_sql.prc",
+      "startLine": 2,
+      "endLine": 23
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b06_3_6_dbms_sql.prc",
+    "startLine": 2,
+    "endLine": 23
+   }
+  },
+  {
+   "id": "b06_3_native_dynamic_sql",
+   "name": "b06_3_native_dynamic_sql",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b06_3_native_dynamic_sql",
+     "name": "b06_3_native_dynamic_sql",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 16,
+     "parameters": 0,
+     "declarations": 5,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 1,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": true
+     },
+     "autoBlockers": [
+      "transaction-control-in-routine",
+      "dynamic-sql",
+      "unmodelled-construct"
+     ],
+     "sourceRange": {
+      "file": "b06_3_native_dynamic_sql.prc",
+      "startLine": 2,
+      "endLine": 40
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b06_3_native_dynamic_sql.prc",
+    "startLine": 2,
+    "endLine": 40
+   }
+  },
+  {
+   "id": "b06_4_collection_in_sql",
+   "name": "b06_4_collection_in_sql",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b06_4_collection_in_sql",
+     "name": "b06_4_collection_in_sql",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 3,
+     "parameters": 0,
+     "declarations": 2,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [],
+     "sourceRange": {
+      "file": "b06_4_collection_in_sql.prc",
+      "startLine": 2,
+      "endLine": 12
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b06_4_collection_in_sql.prc",
+    "startLine": 2,
+    "endLine": 12
+   }
+  },
+  {
+   "id": "b06_5_2_scheduler_job",
+   "name": "b06_5_2_scheduler_job",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b06_5_2_scheduler_job",
+     "name": "b06_5_2_scheduler_job",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 1,
+     "parameters": 0,
+     "declarations": 0,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [
+       "DBMS_SCHEDULER"
+      ],
+      "dynamicSql": false
+     },
+     "autoBlockers": [],
+     "sourceRange": {
+      "file": "b06_5_2_scheduler_job.prc",
+      "startLine": 2,
+      "endLine": 12
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b06_5_2_scheduler_job.prc",
+    "startLine": 2,
+    "endLine": 12
+   }
+  },
+  {
+   "id": "b06_5_builtin_packages",
+   "name": "b06_5_builtin_packages",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b06_5_builtin_packages",
+     "name": "b06_5_builtin_packages",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 5,
+     "parameters": 0,
+     "declarations": 0,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [],
+     "sourceRange": {
+      "file": "b06_5_builtin_packages.prc",
+      "startLine": 2,
+      "endLine": 17
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b06_5_builtin_packages.prc",
+    "startLine": 2,
+    "endLine": 17
+   }
+  },
+  {
+   "id": "b06_6_conditional_compilation",
+   "name": "b06_6_conditional_compilation",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "b06_6_conditional_compilation",
+     "name": "b06_6_conditional_compilation",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 2,
+     "parameters": 0,
+     "declarations": 0,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [],
+     "sourceRange": {
+      "file": "b06_6_conditional_compilation.prc",
+      "startLine": 2,
+      "endLine": 9
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "b06_6_conditional_compilation.prc",
+    "startLine": 2,
+    "endLine": 9
+   }
+  },
+  {
+   "id": "dml_d_create_error_log",
+   "name": "dml_d_create_error_log",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "dml_d_create_error_log",
+     "name": "dml_d_create_error_log",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 1,
+     "parameters": 0,
+     "declarations": 0,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [],
+     "sourceRange": {
+      "file": "dml_d_create_error_log.prc",
+      "startLine": 2,
+      "endLine": 6
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "dml_d_create_error_log.prc",
+    "startLine": 2,
+    "endLine": 6
+   }
+  },
+  {
+   "id": "setup_drop_objects",
+   "name": "setup_drop_objects",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "setup_drop_objects",
+     "name": "setup_drop_objects",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 6,
+     "parameters": 0,
+     "declarations": 0,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": true
+     },
+     "autoBlockers": [
+      "dynamic-sql"
+     ],
+     "sourceRange": {
+      "file": "setup_drop_objects.prc",
+      "startLine": 2,
+      "endLine": 16
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "setup_drop_objects.prc",
+    "startLine": 2,
+    "endLine": 16
+   }
+  },
+  {
+   "id": "setup_gather_stats",
+   "name": "setup_gather_stats",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "setup_gather_stats",
+     "name": "setup_gather_stats",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 1,
+     "parameters": 0,
+     "declarations": 0,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [],
+     "sourceRange": {
+      "file": "setup_gather_stats.prc",
+      "startLine": 2,
+      "endLine": 5
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "setup_gather_stats.prc",
+    "startLine": 2,
+    "endLine": 5
+   }
+  },
+  {
+   "id": "dept_name_of",
+   "name": "dept_name_of",
+   "kind": "function",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "dept_name_of",
+     "name": "dept_name_of",
+     "kind": "function",
+     "visibility": "public",
+     "statements": 3,
+     "parameters": 1,
+     "declarations": 1,
+     "handlers": 1,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [],
+     "sourceRange": {
+      "file": "dept_name_of.fnc",
+      "startLine": 2,
+      "endLine": 12
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "dept_name_of.fnc",
+    "startLine": 2,
+    "endLine": 12
+   }
+  },
+  {
+   "id": "emp_api",
+   "name": "emp_api",
+   "kind": "package",
+   "packageState": true,
+   "routines": [
+    {
+     "id": "emp_api.validate_pct",
+     "name": "validate_pct",
+     "kind": "procedure",
+     "visibility": "private",
+     "statements": 3,
+     "parameters": 1,
+     "declarations": 0,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "package-state"
+     ],
+     "sourceRange": {
+      "file": "emp_api.pkb",
+      "startLine": 7,
+      "endLine": 13
+     }
+    },
+    {
+     "id": "emp_api.hire",
+     "name": "hire",
+     "kind": "function",
+     "visibility": "public",
+     "statements": 3,
+     "parameters": 6,
+     "declarations": 1,
+     "handlers": 1,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "package-state"
+     ],
+     "sourceRange": {
+      "file": "emp_api.pkb",
+      "startLine": 15,
+      "endLine": 28
+     }
+    },
+    {
+     "id": "emp_api.give_raise~1",
+     "name": "give_raise",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 8,
+     "parameters": 2,
+     "declarations": 3,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "package-state"
+     ],
+     "sourceRange": {
+      "file": "emp_api.pkb",
+      "startLine": 30,
+      "endLine": 34
+     }
+    },
+    {
+     "id": "emp_api.give_raise~2",
+     "name": "give_raise",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 3,
+     "parameters": 3,
+     "declarations": 0,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "package-state"
+     ],
+     "sourceRange": {
+      "file": "emp_api.pkb",
+      "startLine": 36,
+      "endLine": 42
+     }
+    },
+    {
+     "id": "emp_api.get_by_dept",
+     "name": "get_by_dept",
+     "kind": "function",
+     "visibility": "public",
+     "statements": 2,
+     "parameters": 1,
+     "declarations": 1,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "package-state",
+      "unmodelled-construct"
+     ],
+     "sourceRange": {
+      "file": "emp_api.pkb",
+      "startLine": 44,
+      "endLine": 51
+     }
+    },
+    {
+     "id": "emp_api.call_count",
+     "name": "call_count",
+     "kind": "function",
+     "visibility": "public",
+     "statements": 1,
+     "parameters": 0,
+     "declarations": 0,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "package-state"
+     ],
+     "sourceRange": {
+      "file": "emp_api.pkb",
+      "startLine": 53,
+      "endLine": 56
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "emp_api.pkb",
+    "startLine": 2,
+    "endLine": 61
+   }
+  },
+  {
+   "id": "emp_biu_trg",
+   "name": "emp_biu_trg",
+   "kind": "trigger",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "emp_biu_trg.body",
+     "name": "body",
+     "kind": "trigger-body",
+     "visibility": "public",
+     "statements": 3,
+     "parameters": 0,
+     "declarations": 0,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "trigger"
+     ],
+     "sourceRange": {
+      "file": "emp_biu_trg.trg",
+      "startLine": 2,
+      "endLine": 10
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "emp_biu_trg.trg",
+    "startLine": 2,
+    "endLine": 10
+   }
+  },
+  {
+   "id": "emp_dept_cap_trg",
+   "name": "emp_dept_cap_trg",
+   "kind": "trigger",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "emp_dept_cap_trg.body",
+     "name": "body",
+     "kind": "trigger-body",
+     "visibility": "public",
+     "statements": 2,
+     "parameters": 0,
+     "declarations": 0,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "trigger"
+     ],
+     "sourceRange": {
+      "file": "emp_dept_cap_trg.trg",
+      "startLine": 2,
+      "endLine": 27
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "emp_dept_cap_trg.trg",
+    "startLine": 2,
+    "endLine": 27
+   }
+  },
+  {
+   "id": "emp_dept_upd_v_trg",
+   "name": "emp_dept_upd_v_trg",
+   "kind": "trigger",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "emp_dept_upd_v_trg.body",
+     "name": "body",
+     "kind": "trigger-body",
+     "visibility": "public",
+     "statements": 1,
+     "parameters": 0,
+     "declarations": 0,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "trigger"
+     ],
+     "sourceRange": {
+      "file": "emp_dept_upd_v_trg.trg",
+      "startLine": 2,
+      "endLine": 11
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "emp_dept_upd_v_trg.trg",
+    "startLine": 2,
+    "endLine": 11
+   }
+  },
+  {
+   "id": "emp_grades",
+   "name": "emp_grades",
+   "kind": "function",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "emp_grades",
+     "name": "emp_grades",
+     "kind": "function",
+     "visibility": "public",
+     "statements": 4,
+     "parameters": 1,
+     "declarations": 0,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "unmodelled-construct"
+     ],
+     "sourceRange": {
+      "file": "emp_grades.fnc",
+      "startLine": 2,
+      "endLine": 13
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "emp_grades.fnc",
+    "startLine": 2,
+    "endLine": 13
+   }
+  },
+  {
+   "id": "emp_salary_audit_trg",
+   "name": "emp_salary_audit_trg",
+   "kind": "trigger",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "emp_salary_audit_trg.body",
+     "name": "body",
+     "kind": "trigger-body",
+     "visibility": "public",
+     "statements": 4,
+     "parameters": 0,
+     "declarations": 0,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "trigger"
+     ],
+     "sourceRange": {
+      "file": "emp_salary_audit_trg.trg",
+      "startLine": 2,
+      "endLine": 12
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "emp_salary_audit_trg.trg",
+    "startLine": 2,
+    "endLine": 12
+   }
+  },
+  {
+   "id": "log_msg",
+   "name": "log_msg",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "log_msg",
+     "name": "log_msg",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 2,
+     "parameters": 1,
+     "declarations": 0,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 1,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": true
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [
+      "transaction-control-in-routine",
+      "autonomous-transaction"
+     ],
+     "sourceRange": {
+      "file": "log_msg.prc",
+      "startLine": 2,
+      "endLine": 7
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "log_msg.prc",
+    "startLine": 2,
+    "endLine": 7
+   }
+  },
+  {
+   "id": "normalize_name",
+   "name": "normalize_name",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "normalize_name",
+     "name": "normalize_name",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 1,
+     "parameters": 1,
+     "declarations": 0,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [],
+     "sourceRange": {
+      "file": "normalize_name.prc",
+      "startLine": 2,
+      "endLine": 5
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "normalize_name.prc",
+    "startLine": 2,
+    "endLine": 5
+   }
+  },
+  {
+   "id": "raise_salary",
+   "name": "raise_salary",
+   "kind": "procedure",
+   "packageState": false,
+   "routines": [
+    {
+     "id": "raise_salary",
+     "name": "raise_salary",
+     "kind": "procedure",
+     "visibility": "public",
+     "statements": 9,
+     "parameters": 3,
+     "declarations": 3,
+     "handlers": 0,
+     "transactionEffects": {
+      "commits": 0,
+      "rollbacks": 0,
+      "savepoints": 0,
+      "autonomous": false
+     },
+     "externalEffects": {
+      "dbLinks": [],
+      "packages": [],
+      "dynamicSql": false
+     },
+     "autoBlockers": [],
+     "sourceRange": {
+      "file": "raise_salary.prc",
+      "startLine": 2,
+      "endLine": 16
+     }
+    }
+   ],
+   "sourceRange": {
+    "file": "raise_salary.prc",
+    "startLine": 2,
+    "endLine": 16
+   }
+  }
+ ],
+ "schemaSnapshot": "schema.sql@d6f64025"
+}
