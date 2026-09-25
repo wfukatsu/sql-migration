@@ -1158,6 +1158,9 @@
             "null"
           ]
         },
+        "returns_rows": {
+          "type": "boolean"
+        },
         "paged_key": {
           "type": [
             "string",
@@ -1516,6 +1519,12 @@
           }
         },
         "bulk_limit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "query_sql": {
           "type": [
             "string",
             "null"
