@@ -9,23 +9,23 @@
   "parsedFiles": 37,
   "totalFiles": 37,
   "failedFiles": [],
-  "typeResolutionRate": 0.9913,
-  "typedSymbols": 115,
-  "resolvedSymbols": 114
+  "typeResolutionRate": 0.9905,
+  "typedSymbols": 105,
+  "resolvedSymbols": 104
  },
  "totals": {
   "modules": 36,
   "routines": 41,
-  "statements": 265,
-  "issues": 195,
-  "errors": 8
+  "statements": 245,
+  "issues": 163,
+  "errors": 12
  },
  "statementKinds": {
-  "Call": 85,
-  "SqlOperation": 54,
+  "Call": 81,
+  "SqlOperation": 44,
   "Assignment": 28,
-  "Loop": 28,
-  "If": 24,
+  "Loop": 26,
+  "If": 20,
   "Rollback": 8,
   "DynamicSql": 7,
   "Return": 6,
@@ -41,12 +41,12 @@
  },
  "targetCapability": {
   "statuses": {
-   "OK": 40,
+   "OK": 25,
+   "ERROR": 11,
    "WARN": 8,
-   "PLANNED": 4,
-   "ERROR": 6
+   "PLANNED": 4
   },
-  "runnableRate": 0.8276
+  "runnableRate": 0.6875
  },
  "modules": [
   {
@@ -180,9 +180,9 @@
      "name": "b04_3_implicit_cursor_attrs",
      "kind": "procedure",
      "visibility": "public",
-     "statements": 17,
+     "statements": 9,
      "parameters": 0,
-     "declarations": 5,
+     "declarations": 2,
      "handlers": 0,
      "transactionEffects": {
       "commits": 0,
@@ -302,9 +302,9 @@
      "name": "b04_4_3_for_update_current_of",
      "kind": "procedure",
      "visibility": "public",
-     "statements": 11,
+     "statements": 10,
      "parameters": 0,
-     "declarations": 5,
+     "declarations": 4,
      "handlers": 0,
      "transactionEffects": {
       "commits": 0,
@@ -591,9 +591,9 @@
      "name": "b05_4_call_log_msg",
      "kind": "procedure",
      "visibility": "public",
-     "statements": 10,
+     "statements": 9,
      "parameters": 0,
-     "declarations": 4,
+     "declarations": 3,
      "handlers": 0,
      "transactionEffects": {
       "commits": 0,
@@ -1166,7 +1166,7 @@
      "kind": "procedure",
      "visibility": "private",
      "statements": 3,
-     "parameters": 2,
+     "parameters": 1,
      "declarations": 0,
      "handlers": 0,
      "transactionEffects": {
@@ -1194,7 +1194,7 @@
      "name": "hire",
      "kind": "function",
      "visibility": "public",
-     "statements": 3,
+     "statements": 4,
      "parameters": 6,
      "declarations": 1,
      "handlers": 1,
@@ -1223,9 +1223,9 @@
      "name": "give_raise",
      "kind": "procedure",
      "visibility": "public",
-     "statements": 9,
-     "parameters": 3,
-     "declarations": 4,
+     "statements": 8,
+     "parameters": 2,
+     "declarations": 3,
      "handlers": 0,
      "transactionEffects": {
       "commits": 0,
@@ -1252,9 +1252,9 @@
      "name": "give_raise",
      "kind": "procedure",
      "visibility": "public",
-     "statements": 11,
-     "parameters": 4,
-     "declarations": 3,
+     "statements": 3,
+     "parameters": 3,
+     "declarations": 0,
      "handlers": 0,
      "transactionEffects": {
       "commits": 0,
@@ -1311,7 +1311,7 @@
      "kind": "function",
      "visibility": "public",
      "statements": 1,
-     "parameters": 1,
+     "parameters": 0,
      "declarations": 0,
      "handlers": 0,
      "transactionEffects": {
@@ -1645,9 +1645,9 @@
      "name": "raise_salary",
      "kind": "procedure",
      "visibility": "public",
-     "statements": 11,
+     "statements": 9,
      "parameters": 3,
-     "declarations": 4,
+     "declarations": 3,
      "handlers": 0,
      "transactionEffects": {
       "commits": 0,

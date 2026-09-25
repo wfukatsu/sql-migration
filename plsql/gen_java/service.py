@@ -184,16 +184,25 @@ def needs_audit(routine: M.Routine) -> bool:
     a statement carries is translated instead, less the ones that are not expressions, so a node added to the
     IR is covered the day it arrives rather than the day someone remembers to add it here.
     """
+    return _needs_audit(routine, set())
+
+
+def _needs_audit(routine: M.Routine, visiting: set[str]) -> bool:
+    if routine.id in visiting:
+        return False   # recursion: the answer comes from the rest of the body
+    visiting.add(routine.id)
     for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
         for text in _expression_texts(statement):
             if translate(text).audit:
                 return True
         # #12: trigger を呼ぶなら、その trigger が要る値も呼び出し側から来る。ここを見ないと、
-        # 本体が `audit` を使うのに signature がそれを受け取らない Java になる
+        # 本体が `audit` を使うのに signature がそれを受け取らない Java になる。trigger だけでなく
+        # ふつうの routine も同じ: 呼び先が audit を受け取るなら、呼ぶ側はそれを渡す引数を持つ
+        # （b05_1 → raise_salary → trigger、samples/oracle-samples 2026-09-25。呼び先だけ見ていて
+        # 呼ぶ側の signature に audit が無い Java が出た）
         if statement.kind == "Call" and getattr(statement, "resolved_to", None):
             callee = _routine(statement.resolved_to)
-            if callee is not None and callee is not routine and callee.routine_kind == "trigger-body" \
-                    and needs_audit(callee):
+            if callee is not None and callee is not routine and _needs_audit(callee, visiting):
                 return True
     return False
 
@@ -222,7 +231,7 @@ def correlation_row(routine: M.Routine) -> dict[str, "M.BindVariable"]:
     （この method の signature）が別々に数えると、引数が静かにずれる。使われている参照だけを返すのは
     `AuditContext` と同じ理由で、読んでいない列まで呼び出し側に用意させないためである。
     """
-    from ..triggers import EVENTS, correlation_row as correlations
+    from ..triggers import EVENT_OF_COLUMN_PREFIX, EVENTS, correlation_row as correlations
 
     module = _MODULE.get()
     out: dict[str, M.BindVariable] = {}
@@ -231,7 +240,7 @@ def correlation_row(routine: M.Routine) -> dict[str, "M.BindVariable"]:
         # 条件ごと拒んで「なぜ読めないのか」を隠すよりよい
         # `INSERTING` / `UPDATING` / `DELETING`: どのイベントの文のところで呼んでいるかは呼ぶ側が知っている
         # ので、相関行と同じく引数で受け取る（#29 の 25）
-        event = "BOOLEAN" if variable in EVENTS else None
+        event = "BOOLEAN" if variable in EVENTS or variable.startswith(EVENT_OF_COLUMN_PREFIX) else None
         out[variable] = bind or M.BindVariable(name=variable.replace(".", "_"), direction="IN",
                                                oracle_type=event, plsql_variable=variable)
     return out

@@ -23,7 +23,6 @@
   {
    "routine": "b04_3_implicit_cursor_attrs",
    "calls": [
-    "emp_dept_cap_trg.body",
     "emp_salary_audit_trg.body"
    ],
    "external": [
@@ -222,9 +221,7 @@
   {
    "routine": "emp_api.give_raise~2",
    "calls": [
-    "emp_api.validate_pct",
-    "emp_dept_cap_trg.body",
-    "emp_salary_audit_trg.body"
+    "emp_api.validate_pct"
    ],
    "external": []
   },

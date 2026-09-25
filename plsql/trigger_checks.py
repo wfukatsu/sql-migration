@@ -66,6 +66,9 @@ class Check:
     condition: str | None = None        # B: 拒否の条件（PL/SQL のまま）
     sequence: str | None = None         # C
     reads: list[str] = field(default_factory=list)   # D: 本体に渡す :NEW の列（本体の引数の順）
+    # D: 本体の引数の並びそのもの（相関名と、INSERTING / UPDATING('列') などのイベント。`correlation_row` の順）。
+    # イベントは「今ある行」には無いので false を渡す
+    arguments: list[str] = field(default_factory=list)
     refused: str | None = None          # 組めなかった理由
 
 
@@ -113,7 +116,8 @@ def _for(trigger, table: str, key: list[str]) -> list[Check]:
             # column as NEW.x (#40: passing NEW only left the call one argument short and javac refused it)
             reads = [n for n in _correlations(trigger) if n.upper().startswith(("NEW.", "OLD."))]
             found.append(Check(name, "D", table, HOURLY, key=key,
-                               reads=[n.partition(".")[2].lower() for n in reads]))
+                               reads=[n.partition(".")[2].lower() for n in reads],
+                               arguments=list(_correlations(trigger))))
     return found
 
 

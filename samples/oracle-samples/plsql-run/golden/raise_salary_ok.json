@@ -398,12 +398,16 @@
      },
      "HRS",
      {
-      "$ts": "2026-09-25T04:38:16.570887"
+      "$masked": "clock the harness cannot pin"
      },
      null
     ]
    ]
   }
  },
- "masked": {}
+ "masked": {
+  "emp_audit": [
+   "changed_at"
+  ]
+ }
 }

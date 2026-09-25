@@ -24,7 +24,7 @@ import org.yaml.snakeyaml.Yaml;
 public record Scenario(String name, String unit, String routine, Map<String, Object> pinned, List<String> setup,
                        String call, String kind, String body, Map<String, Object> args,
                        List<String> captureTables, Map<String, List<String>> mask, String note,
-                       List<String> outs) {
+                       List<String> outs, String boundary) {
 
   /** `:o_status := v.status;` -- the field of a record a block scenario projects into an OUT bind. */
   private static final java.util.regex.Pattern PROJECTION =
@@ -74,7 +74,20 @@ public record Scenario(String name, String unit, String routine, Map<String, Obj
         or((List<String>) spec.get("capture_tables")),
         spec.get("mask") == null ? Map.of() : (Map<String, List<String>>) spec.get("mask"),
         (String) spec.get("note"),
-        call.get("out") == null ? List.of() : new ArrayList<>(((Map<String, Object>) call.get("out")).keySet()));
+        call.get("out") == null ? List.of() : new ArrayList<>(((Map<String, Object>) call.get("out")).keySet()),
+        spec.get("boundary") == null ? "commit" : String.valueOf(spec.get("boundary")));
+  }
+
+  /**
+   * What the caller does with the transaction after the call: {@code commit} (the default) or {@code rollback}.
+   *
+   * <p>A routine whose COMMIT / ROLLBACK the migration moved to the caller ({@code limits.yaml}
+   * {@code transactions.callerBoundary}) no longer ends its own transaction; the caller does. This harness is
+   * that caller, so a scenario says which ending the original routine had. Oracle runs the original, which
+   * still rolls itself back, so the Oracle side ignores this key.
+   */
+  public boolean rollsBack() {
+    return "rollback".equalsIgnoreCase(boundary);
   }
 
   /** The Oracle capture always writes both keys, with nulls where the scenario said nothing. */
@@ -161,7 +174,7 @@ public record Scenario(String name, String unit, String routine, Map<String, Obj
   /** The same scenario with its arguments replaced (the harness fills omitted DEFAULTs from the setup file, #41). */
   public Scenario withArgs(Map<String, Object> replaced) {
     return new Scenario(name, unit, routine, pinned, setup, call, kind, body, new java.util.LinkedHashMap<>(replaced),
-        captureTables, mask, note, outs);
+        captureTables, mask, note, outs, boundary);
   }
 
   /** The PL/SQL routine's arguments, in declaration order. */

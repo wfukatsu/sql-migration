@@ -266,7 +266,14 @@ def _compare_one_table(table: str, expected: dict, actual: dict, diffs: list[str
             continue
         details = [f"{columns[i] if i < len(columns) else i}: expected={show(a)} actual={show(b)} ({kind})"
                    for i, (a, b) in enumerate(zip(row, best)) if (kind := difference(a, b))]
-        diffs.append(f"table {table} row {_row(columns, row)}: " + "; ".join(details))
+        # a `(scale)` column says nothing about the data (module docs); reported on a line of its own so that a
+        # row with one real difference and one scale difference is not counted as two real ones (2026-09-25:
+        # `old_salary 6000 / 6000.0` next to a NULL DEFAULT column made every such row look like a value difference)
+        scale = [d for d in details if d.endswith("(scale)")]
+        real = [d for d in details if not d.endswith("(scale)")]
+        for part in (real, scale):
+            if part:
+                diffs.append(f"table {table} row {_row(columns, row)}: " + "; ".join(part))
     for row in remaining:
         diffs.append(f"table {table}: unexpected (actual only): {_row(columns, row)}")
 

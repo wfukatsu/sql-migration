@@ -291,7 +291,12 @@ def _violations(file: JavaFile, check: Check, types, domain_package: str) -> Non
                 key = _read("rows.getObject(1)", check.table, check.key[0], types)
                 h.line(f"String key = Plsql.text({key});")
                 arguments = []
-                for column in check.reads:
+                for name in check.arguments or [f"NEW.{c}" for c in check.reads]:
+                    if not name.upper().startswith(("NEW.", "OLD.")):
+                        # INSERTING / UPDATING('列') など: 今ある行は書かれている最中ではないので false
+                        arguments.append("false")
+                        continue
+                    column = name.partition(".")[2].lower()
                     index = selected.index(column) + 1
                     kind, _ = types.get((check.table, column), ("", 0))
                     raw = _read(f"rows.getObject({index})", check.table, column, types)

@@ -209,7 +209,13 @@ public final class ScalarDbRunner implements AutoCloseable {
       // only the OUT arguments the scenario declares: Oracle binds no other, and a carried package variable
       // (#46) comes back in the record without being an OUT argument of the PL/SQL routine
       result.put("out", projection.isEmpty() ? outOf(returned, scenario.outs()) : project(returned, projection));
-      commit();
+      if (scenario.rollsBack()) {
+        // the original routine ended with ROLLBACK and the migration moved that to the caller
+        // (limits.yaml transactions.callerBoundary); this harness is the caller
+        rollback();
+      } else {
+        commit();
+      }
     } catch (Exception e) {
       rollback();
       raised = new LinkedHashMap<>();

@@ -57,4 +57,7 @@ call:
 capture_tables:
 - employees
 - emp_audit
-note: '社員 104 を 10% 昇給: 6000 → 6600（RETURNING で受け取る）'
+note: '社員 104 を 10% 昇給: 6000 → 6600（RETURNING で受け取る）。trigger が emp_audit に書く changed_at は固定できないので mask'
+mask:
+  emp_audit:
+  - changed_at
