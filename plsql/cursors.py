@@ -263,7 +263,9 @@ def _sequence(statements: list[M.Statement], routine: M.Routine, symbols: Symbol
         match = _first_row(statements, index, routine, symbols, module, schema) or \
             _count(statements, index, routine, symbols, module, schema) or \
             _chunks(statements, index, routine, symbols, module, schema) or \
-            _scan(statements, index, routine, symbols, module, schema)
+            _scan(statements, index, routine, symbols, module, schema) or \
+            _branched(statements, index, routine, symbols, module, schema) or \
+            _returned(statements, index, routine, symbols, module, schema)
         if match is None:
             out.append(statements[index])
             index += 1
@@ -301,7 +303,8 @@ def _first_row(statements: list[M.Statement], index: int, routine: M.Routine, sy
             _cursor_name(run[consumed].cursor) != cursor:
         return None
     consumed += 1
-    query = _query(cursor, list(run[0].arguments), routine, symbols, module, schema)
+    query = _query(cursor, list(run[0].arguments), routine, symbols, module, schema,
+                   opened=getattr(run[0], "query_sql", None))
     if query is None:
         return None
     operation = _operation(run[1], routine, _limit_one(query), run[1].into_targets)
@@ -344,7 +347,8 @@ def _count(statements: list[M.Statement], index: int, routine: M.Routine, symbol
     fetched = list(run[1].body[0].into_targets or [])
     if fetched and _reads_outside(routine, run[:3], fetched):
         return None
-    query = _query(cursor, list(run[0].arguments), routine, symbols, module, schema)
+    query = _query(cursor, list(run[0].arguments), routine, symbols, module, schema,
+                   opened=getattr(run[0], "query_sql", None))
     if query is None:
         return None
     if row_cap(sqlglot.parse_one(query, dialect="oracle"))[0] is not None:
@@ -427,7 +431,8 @@ def _scan(statements: list[M.Statement], index: int, routine: M.Routine, symbols
     if any(s.kind == "Exit" and _names(s.condition, cursor, NOTFOUND) for s in _walk_all(rest)):
         return None
     targets = list(body[0].into_targets or [])
-    query = _query(cursor, list(run[0].arguments), routine, symbols, module, schema)
+    query = _query(cursor, list(run[0].arguments), routine, symbols, module, schema,
+                   opened=getattr(run[0], "query_sql", None))
     if query is None or not targets:
         return None
     columns = _output_names(query)
@@ -506,6 +511,72 @@ def _replace_in(statements: list[M.Statement], pattern: re.Pattern, replacement:
                 branch.condition = pattern.sub(replacement, branch.condition)
 
 
+def _branched(statements: list[M.Statement], index: int, routine: M.Routine, symbols: SymbolTable,
+              module: str | None,
+              schema: OracleSchema | None) -> tuple[list[M.Statement], int, str] | None:
+    """`IF ... THEN OPEN rc FOR q1; ELSE OPEN rc FOR q2; END IF; LOOP FETCH rc ...; END LOOP; CLOSE rc;`
+
+    The IF only chooses which query the one loop reads (#44, samples/oracle-samples b04_4_4_ref_cursor). Each
+    branch becomes that loop over its own query -- the body is the same, the rows differ -- so the shapes above
+    apply per branch. An IF without ELSE leaves the cursor unopened on one path (Oracle: ORA-01001 at FETCH),
+    which this does not model, so it is left alone.
+    """
+    import copy
+
+    run = statements[index:]
+    if len(run) < 3 or run[0].kind != "If" or run[1].kind != "Loop" or run[2].kind != "CloseCursor":
+        return None
+    branches = [b.body for b in run[0].branches] + [run[0].else_body]
+    if not run[0].else_body or not all(
+            len(body) == 1 and body[0].kind == "OpenCursor" and getattr(body[0], "query_sql", None) for body in branches):
+        return None
+    cursor = _cursor_name(run[2].cursor)
+    if any(_cursor_name(body[0].cursor) != cursor for body in branches):
+        return None
+    for position, body in enumerate(branches, start=1):
+        loop = copy.deepcopy(run[1])
+        loop.id = f"{run[1].id}b{position}"       # the generated method is named from the id: one per branch
+        close = copy.deepcopy(run[2])
+        rewritten = _scan([body[0], loop, close], 0, routine, symbols, module, schema)
+        if rewritten is None:
+            return None
+        body[:] = rewritten[0]
+    run[0].add("INFO", "CUR_BRANCHED",
+               f"cursor 変数 {cursor} は分岐ごとに別の問合せで開かれていた。分岐ごとに、その問合せの行を先に読んで回す形にした")
+    return ([run[0]], 3, cursor)
+
+
+def _returned(statements: list[M.Statement], index: int, routine: M.Routine, symbols: SymbolTable,
+              module: str | None,
+              schema: OracleSchema | None) -> tuple[list[M.Statement], int, str] | None:
+    """`OPEN rc FOR q; RETURN rc;` -- a function that hands a cursor to its caller (#44).
+
+    The target has no cursor to hand over, so the function returns the rows: a List of the query's row record,
+    read here. The caller's interface changes from "a cursor to fetch from" to "the rows", which the generated
+    signature makes visible.
+    """
+    run = statements[index:]
+    if len(run) < 2 or run[0].kind != "OpenCursor" or not getattr(run[0], "query_sql", None):
+        return None
+    if run[1].kind != "Return" or (run[1].expression or "").strip().lower() != _cursor_name(run[0].cursor):
+        return None
+    cursor = _cursor_name(run[0].cursor)
+    query = _query(cursor, [], routine, symbols, module, schema, opened=run[0].query_sql)
+    if query is None:
+        return None
+    operation = _operation(run[0], routine, query, [])
+    if operation is None:
+        return None
+    operation.cardinality = "MANY"
+    row = _row_name(routine)
+    loop = M.Loop(id=run[0].id, kind="Loop", source_range=run[0].source_range, loop_kind="cursor-for",
+                  variable=row, query=operation, body=[], cursor=f"{row} IN ({query})", returns_rows=True)
+    loop.add("INFO", "CUR_RETURNED",
+             f"cursor 変数 {cursor} は呼び出し側へ返されていた。移行先に渡せる cursor は無いので、行を読んで List で返す"
+             f"（呼び出し側は cursor から FETCH する代わりに List を受け取る）")
+    return ([loop], 2, cursor)
+
+
 def _walk_all(statements: list[M.Statement]) -> list[M.Statement]:
     from .lower import _walk
 
@@ -563,7 +634,8 @@ def _chunks(statements: list[M.Statement], index: int, routine: M.Routine, symbo
     collection = fetch.into_targets[0]
     if _reads_outside(routine, run[:3], [collection]):
         return None
-    query = _query(cursor, list(run[0].arguments), routine, symbols, module, schema)
+    query = _query(cursor, list(run[0].arguments), routine, symbols, module, schema,
+                   opened=getattr(run[0], "query_sql", None))
     if query is None:
         return None
     guards = _limit_guards(run[1], fetch.bulk_limit)
@@ -717,13 +789,16 @@ def _word(name: str) -> re.Pattern:
 
 
 def _query(cursor: str, arguments: list[str], routine: M.Routine, symbols: SymbolTable,
-           module: str | None, schema: OracleSchema | None) -> str | None:
+           module: str | None, schema: OracleSchema | None, opened: str | None = None) -> str | None:
     """The cursor's query, with its own parameters substituted by what `OPEN` passed.
 
     A cursor declared in a package specification is not in the IR at all -- the lowering reads the body -- so
     the symbol table is what answers, and it is also what makes `OPEN c(p_status)` resolvable: the cursor's
-    parameter names are its own, not the caller's.
+    parameter names are its own, not the caller's. A cursor variable (`OPEN rc FOR SELECT ...`) has no
+    declaration to resolve: its query is the OPEN's own (#44).
     """
+    if opened:
+        return opened.strip().rstrip(";")
     symbol = symbols.resolve(routine.id, cursor) or (symbols.resolve(module, cursor) if module else None)
     if symbol is None or symbol.kind != "cursor" or not symbol.query:
         return None

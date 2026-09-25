@@ -168,6 +168,8 @@ class Loop(Statement):
     # ので、`n` はもう読み込む量ではなく、**1 回に配る量**である。その違いを残すために、
     # 「ただの走査」に潰さずに持つ
     chunk: str | None = None
+    # `OPEN rc FOR q; RETURN rc;` (#44): the rows are the function's result, not something to loop over here
+    returns_rows: bool = False
     # #19: 処理対象を件数つきで繰り返し読むとき、次のページの起点になるキー列（keyset）
     paged_key: str | None = None
     body: list[Statement] = field(default_factory=list)
@@ -250,6 +252,8 @@ class CursorStatement(Statement):
     # `FETCH ... BULK COLLECT INTO v LIMIT n` の `n`。INTO の対象ではないので分けて持つ——
     # 一緒くたにすると、**代入先が 1 つ増えたように見える**
     bulk_limit: str | None = None
+    # `OPEN rc FOR SELECT ...`: a cursor variable (SYS_REFCURSOR) has no declared query; the OPEN names it (#44)
+    query_sql: str | None = None
 
 
 @dataclass

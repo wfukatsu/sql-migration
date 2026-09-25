@@ -362,12 +362,17 @@ class _Builder:
         要素の型が無いと、その型の引数は Java で `Object` にしかならない——`List<BigDecimal>` と
         書けない。`RECORD` を解決しているのと同じ理由で、**名前だけでは移行先の型を決められない**。
         """
-        match = re.search(r"\bIS\s+TABLE\s+OF\s+(?P<element>.+?)(?:\s+INDEX\s+BY\b.*)?;?\s*$",
+        match = re.search(r"\bIS\s+(?:TABLE\s+OF|VARRAY\s*\(\s*(?P<limit>\d+)\s*\)\s+OF)\s+(?P<element>.+?)"
+                          r"(?:\s+INDEX\s+BY\s+(?P<key>[\w$#]+(?:\s*\(\s*\d+\s*\))?))?;?\s*$",
                           _text(declaration), re.IGNORECASE | re.DOTALL)
         if match is None:
             return None
         element = self._type(scope, match.group("element").strip())
-        return TypeRef(_text(declaration).split()[1], f"TABLE OF {element.resolved or element.oracle}",
+        # the INDEX BY key type stays: an associative array is a Map in the generated code, a nested table a
+        # List (#45). `VARRAY(n) OF` is a nested table with a bound the generated code does not enforce
+        key = f" INDEX BY {match.group('key').strip()}" if match.group("key") else ""
+        limit = f" LIMIT {match.group('limit')}" if match.group("limit") else ""
+        return TypeRef(_text(declaration).split()[1], f"TABLE OF {element.resolved or element.oracle}{key}{limit}",
                        "collection", self.table.schema_snapshot)
 
     # -- types ---------------------------------------------------------------------------------------------
