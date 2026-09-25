@@ -299,6 +299,12 @@ class ScalarDbCaptureIT {
       for (int i = 0; i < types.length; i++) {
         if (types[i].getName().endsWith("Service")) {
           arguments[i] = newService(types[i], connection, sequences, depth + 1);
+        } else if (types[i] == SeparateTransactions.class) {
+          // #49: the caller opens another transaction for a `transactions.separate` routine; this harness
+          // hands it a second connection on the same cluster
+          arguments[i] = runner.separate();
+        } else if (types[i] == Sequences.class) {
+          arguments[i] = sequences;
         } else {
           arguments[i] = newRepository(types[i], connection, sequences);
         }

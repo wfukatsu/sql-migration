@@ -42,3 +42,10 @@ transactions:
 # 表名が実行時に決まる動的 SQL が受け付ける表名。それ以外は実行時に拒否する。
 dynamicTables:
   b06_3_native_dynamic_sql: [employees]
+
+# 移行先に無い CHECK / FOREIGN KEY を、書く側で評価する表（Issue #50、2026-09-25、利用者の決定「表ごとに決めて guard を生成」）。
+# CHECK は書く値で式を評価し、FOREIGN KEY は親を先に読む。違反は Oracle と同じ番号（-2290 / -2291）の例外になる。
+constraints:
+  enforce:
+    bulk_target: bulk_target_sal_ck（salary < 15000）。06-2 の FORALL … SAVE EXCEPTIONS が弾かれる行を数えている（利用者の決定、2026-09-25）
+    employees: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上）

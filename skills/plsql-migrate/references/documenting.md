@@ -42,7 +42,10 @@
 | `scanRows` | 先に全部読む routine に行数の上限が付いた。超えると例外で止まる（Oracle では止まらなかった） |
 | `TRIGGER_INLINED` / trigger の織り込み | trigger は、生成コードが書く経路でだけ動く。PL/SQL の外からの書き込みには掛からない（照合で追う） |
 | `dynamicTables` | 動的 SQL の表名は一覧にあるものだけ。それ以外は実行時に拒否する |
+| `constraints.enforce.<table>` | 移行先に無い CHECK / FOREIGN KEY を書く側で評価する表（#50）。CHECK は書く値で式を評価、FOREIGN KEY は親を先に読み、違反は Oracle と同じ番号（-2290 / -2291）の例外。書かない表は `CONSTRAINT_UNDECIDED` でアプリ側の検証に任せたことが見える |
 | `transactions.callerBoundary` | routine の中の COMMIT / ROLLBACK / SAVEPOINT は出さず、呼び出し側が commit / rollback する。途中の ROLLBACK が戻していた分は呼び出し側が戻さないかぎり残る（意味が変わる決定） |
+
+`transactions.separate` の routine を呼ぶ側は、`SeparateTransactions`（runtime-java）の口を constructor で受け取り、その口が開いた connection の上に呼び先の Service を組み立てて呼ぶ（#49）。移行先の配線では、この口にトランザクションマネージャから新しい transaction を取る実装を渡す。検証ハーネスは同じ properties でもう 1 本 connection を開く。
 
 `callerBoundary` の routine を実 DB で比べるときは、元の routine が自分でしていた終わり方をシナリオに書く（`boundary: rollback`）。ScalarDB 側のハーネスが呼び出し側としてそのとおりに終え、Oracle 側は原文が自分で戻すのでこの鍵を無視する。書かなければ、Oracle が戻した行（trigger の監査行、FK 違反にならなかった行）が ScalarDB 側に残って相違になる。
 | `packageState.carried` | package 変数（セッション状態）は呼び出し側が運ぶ。その変数を読み書きする routine（呼び先経由も含む）は IN OUT 引数として受け取り、結果で返す（#46） |

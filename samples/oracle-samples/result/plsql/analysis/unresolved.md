@@ -4,19 +4,26 @@
 
 ## REDESIGN: `b04_3_implicit_cursor_attrs` — `b04_3_implicit_cursor_attrs.prc:2`
 
+**再設計の状態: 未決定**
+
+- `TX-001` は決定済み（limits.yaml: transactions.callerBoundary）: 最後の ROLLBACK はデモを戻すため。呼び出し側が戻す（利用者の決定、2026-09-25）
+- `calls emp_biu_trg.body` は決定済み（#12 / #47: :NEW を書き換える代入は、書く側が書く値に畳み込む。検査（RAISE）は呼び出しで行う）: docs/plsql-migration/plsql-trigger-patterns.md C-2
+- `calls emp_dept_cap_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `calls emp_salary_audit_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `TX-004` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
+
 **根拠**
 
 - TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
 - TX-004: 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します（P2-9 で実測）
-- TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
 
 **判定したルール**
 
+- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
 - `SQL-004` (REVIEW, `semantics.yaml`): SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です
-- `SQL-001` (REVIEW, `sql.yaml`): ScalarDB SQL で実行できない文があります
 - `TX-001` (REDESIGN, `transaction.yaml`): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
 - `TX-004` (REDESIGN, `transaction.yaml`): 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します（P2-9 で実測）
-- `TRG-002` (REDESIGN, `trigger.yaml`): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
 
 **代替案**
 
@@ -25,28 +32,36 @@
 - 再試行と冪等性の方針を決める
 - 耐久境界で routine を分割する
 - 読み取りをキーアクセスに変える
-- trigger の処理を、この書き込みをする Service に持たせる（値を書き換える trigger は採番 Service へ）
-- 複数行の更新・DELETE・MERGE・複数イベントの trigger は、行ごとに何を渡すかを設計する
 
 **受け入れに必要なテスト**
 
-- all_write_paths_covered
-- equivalent_result
 - partial_failure
+- performance
 - rollback_boundary
 - row_count
+- row_limit
 - scan_after_write
 
-**確信度が 0 になっている要因**: targetCapability, testEvidence
+**確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `b04_4_3_for_update_current_of` — `b04_4_3_for_update_current_of.prc:2`
+
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `LOCK-001` は決定済み（limits.yaml: rowLocks.optimistic）: 04-4-3 の FOR UPDATE + WHERE CURRENT OF。行を先に読み、楽観制御で書く（同上）
+- `LOCK-002` は決定済み（limits.yaml: rowLocks.optimistic）: 04-4-3 の FOR UPDATE + WHERE CURRENT OF。行を先に読み、楽観制御で書く（同上）
+- `TX-001` は決定済み（limits.yaml: transactions.callerBoundary）: 同上
+- `calls emp_biu_trg.body` は決定済み（#12 / #47: :NEW を書き換える代入は、書く側が書く値に畳み込む。検査（RAISE）は呼び出しで行う）: docs/plsql-migration/plsql-trigger-patterns.md C-2
+- `calls emp_dept_cap_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `calls emp_salary_audit_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
 
 **根拠**
 
 - LOCK-001: 行ロックです。ターゲットで同じ保証を別の方法で与える設計が要ります
 - LOCK-002: cursor の宣言で行ロックしています。文だけを見ると見えない形です
 - TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
-- TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
 
 **判定したルール**
 
@@ -54,9 +69,7 @@
 - `SQL-004` (REVIEW, `semantics.yaml`): SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です
 - `LOCK-001` (REDESIGN, `sql.yaml`): 行ロックです。ターゲットで同じ保証を別の方法で与える設計が要ります
 - `LOCK-002` (REDESIGN, `sql.yaml`): cursor の宣言で行ロックしています。文だけを見ると見えない形です
-- `SQL-001` (REVIEW, `sql.yaml`): ScalarDB SQL で実行できない文があります
 - `TX-001` (REDESIGN, `transaction.yaml`): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
-- `TRG-002` (REDESIGN, `trigger.yaml`): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
 
 **代替案**
 
@@ -67,51 +80,56 @@
 - SKIP LOCKED の「取り合い」の意味を業務要件として決める
 - use case の耐久境界で分割する
 - 再試行と冪等性の方針を決める
-- trigger の処理を、この書き込みをする Service に持たせる（値を書き換える trigger は採番 Service へ）
-- 複数行の更新・DELETE・MERGE・複数イベントの trigger は、行ごとに何を渡すかを設計する
 
 **受け入れに必要なテスト**
 
-- all_write_paths_covered
 - concurrent_claim
 - concurrent_update
-- equivalent_result
 - partial_failure
 - performance
 - rollback_boundary
 - row_count
 - row_limit
 
-**確信度が 0 になっている要因**: targetCapability, testEvidence
+**確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `b04_6_2_user_exceptions` — `b04_6_2_user_exceptions.prc:2`
+
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `TX-001` は決定済み（limits.yaml: transactions.callerBoundary）: WHEN OTHERS の中の ROLLBACK。呼び出し側が戻す（同上）
+- `calls emp_biu_trg.body` は決定済み（#12 / #47: :NEW を書き換える代入は、書く側が書く値に畳み込む。検査（RAISE）は呼び出しで行う）: docs/plsql-migration/plsql-trigger-patterns.md C-2
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
 
 **根拠**
 
 - TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
-- TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
 
 **判定したルール**
 
 - `TX-001` (REDESIGN, `transaction.yaml`): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
-- `TRG-002` (REDESIGN, `trigger.yaml`): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
 
 **代替案**
 
 - use case の耐久境界で分割する
 - 再試行と冪等性の方針を決める
-- trigger の処理を、この書き込みをする Service に持たせる（値を書き換える trigger は採番 Service へ）
-- 複数行の更新・DELETE・MERGE・複数イベントの trigger は、行ごとに何を渡すかを設計する
 
 **受け入れに必要なテスト**
 
-- all_write_paths_covered
 - partial_failure
 - rollback_boundary
 
 **確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `b05_1_call_raise_salary` — `b05_1_call_raise_salary.prc:2`
+
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `TX-001` は決定済み（limits.yaml: transactions.callerBoundary）: 同上
+- `calls raise_salary` は決定済み（#12 / #47: :NEW を書き換える代入は、書く側が書く値に畳み込む。検査（RAISE）は呼び出しで行う）: docs/plsql-migration/plsql-trigger-patterns.md C-2
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
 
 **根拠**
 
@@ -135,16 +153,30 @@
 
 ## REDESIGN: `b05_3_call_emp_api` — `b05_3_call_emp_api.prc:2`
 
+**再設計の状態: 未決定**
+
+- `TX-001` は決定済み（limits.yaml: transactions.callerBoundary）: 同上
+- `calls emp_api.call_count` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- `calls emp_api.give_raise~1` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- `calls emp_api.give_raise~2` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- `calls emp_api.hire` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- `SCAN-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
+
 **根拠**
 
+- SCAN-001: 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します
 - TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
 
 **判定したルール**
 
+- `SCAN-001` (REDESIGN, `scalardb_capability.yaml`): 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します
 - `TX-001` (REDESIGN, `transaction.yaml`): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
 
 **代替案**
 
+- 耐久境界で routine を分割する
+- 読み取りを主キーまたはパーティションキーのアクセスに変える
 - use case の耐久境界で分割する
 - 再試行と冪等性の方針を決める
 
@@ -152,42 +184,52 @@
 
 - partial_failure
 - rollback_boundary
+- scan_after_write
 
 **確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `b05_4_call_log_msg` — `b05_4_call_log_msg.prc:2`
 
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `TX-001` は決定済み（limits.yaml: transactions.callerBoundary）: 同上
+- `calls emp_biu_trg.body` は決定済み（#12 / #47: :NEW を書き換える代入は、書く側が書く値に畳み込む。検査（RAISE）は呼び出しで行う）: docs/plsql-migration/plsql-trigger-patterns.md C-2
+- `calls emp_dept_cap_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `calls emp_salary_audit_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `calls log_msg` は決定済み（limits.yaml: transactions.separate）: PRAGMA AUTONOMOUS_TRANSACTION。親が rollback しても emp_audit のログは残る、という意味を保つ（利用者の決定、2026-09-25）
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
+
 **根拠**
 
 - TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
-- TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
 
 **判定したルール**
 
 - `SQL-004` (REVIEW, `semantics.yaml`): SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です
-- `SQL-001` (REVIEW, `sql.yaml`): ScalarDB SQL で実行できない文があります
 - `TX-001` (REDESIGN, `transaction.yaml`): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
-- `TRG-002` (REDESIGN, `trigger.yaml`): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
 
 **代替案**
 
 - 件数を返す形に呼び出し先を直すか、件数を読む位置を静的な DML の直後に寄せる
 - use case の耐久境界で分割する
 - 再試行と冪等性の方針を決める
-- trigger の処理を、この書き込みをする Service に持たせる（値を書き換える trigger は採番 Service へ）
-- 複数行の更新・DELETE・MERGE・複数イベントの trigger は、行ごとに何を渡すかを設計する
 
 **受け入れに必要なテスト**
 
-- all_write_paths_covered
-- equivalent_result
 - partial_failure
 - rollback_boundary
 - row_count
 
-**確信度が 0 になっている要因**: targetCapability, testEvidence
+**確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `b06_2_2_forall_returning` — `b06_2_2_forall_returning.prc:2`
+
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `TX-001` は決定済み（limits.yaml: transactions.callerBoundary）: 同上
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
 
 **根拠**
 
@@ -214,6 +256,12 @@
 **確信度が 0 になっている要因**: targetCapability, testEvidence
 
 ## REDESIGN: `b06_2_forall_save_exceptions` — `b06_2_forall_save_exceptions.prc:2`
+
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `TX-001` は決定済み（limits.yaml: transactions.callerBoundary）: FORALL のあとの COMMIT（成功分の確定）。呼び出し側が commit する（同上）
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
 
 **根拠**
 
@@ -244,6 +292,11 @@
 **確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `b06_3_6_dbms_sql` — `b06_3_6_dbms_sql.prc:2`
+
+**再設計の状態: 未決定**
+
+- `DYN-003` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
 
 **根拠**
 
@@ -298,6 +351,13 @@
 
 ## REDESIGN: `b06_3_native_dynamic_sql` — `b06_3_native_dynamic_sql.prc:2`
 
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `DYN-001` は決定済み（limits.yaml: dynamicTables）: 受け付ける表名を決めてある: employees。それ以外は実行時に拒否する
+- `TX-001` は決定済み（limits.yaml: transactions.callerBoundary）: 同上
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
+
 **根拠**
 
 - DYN-001: 表名など識別子が実行時に決まる SQL です。allowlist か専用 Repository への再設計が要ります
@@ -336,6 +396,11 @@
 
 ## REDESIGN: `b06_5_2_scheduler_job` — `b06_5_2_scheduler_job.prc:2`
 
+**再設計の状態: 未決定**
+
+- `EXT-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
+
 **根拠**
 
 - EXT-001: UTL_* / DBMS_SCHEDULER / AQ などの外部副作用があります
@@ -361,6 +426,12 @@
 
 ## REDESIGN: `emp_api.call_count` — `emp_api.pkb:53`
 
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `STATE-001` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
+
 **根拠**
 
 - STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります
@@ -381,6 +452,12 @@
 **確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `emp_api.get_by_dept` — `emp_api.pkb:44`
+
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `STATE-001` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
 
 **根拠**
 
@@ -410,75 +487,92 @@
 
 ## REDESIGN: `emp_api.give_raise~1` — `emp_api.pkb:30`
 
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `STATE-001` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- `calls emp_api.validate_pct` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- `calls emp_biu_trg.body` は決定済み（#12 / #47: :NEW を書き換える代入は、書く側が書く値に畳み込む。検査（RAISE）は呼び出しで行う）: docs/plsql-migration/plsql-trigger-patterns.md C-2
+- `calls emp_dept_cap_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `calls emp_salary_audit_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
+
 **根拠**
 
 - STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります
-- TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
 
 **判定したルール**
 
 - `SQL-004` (REVIEW, `semantics.yaml`): SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です
-- `SQL-001` (REVIEW, `sql.yaml`): ScalarDB SQL で実行できない文があります
 - `STATE-001` (REDESIGN, `state.yaml`): Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります
-- `TRG-002` (REDESIGN, `trigger.yaml`): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
 
 **代替案**
 
 - 件数を返す形に呼び出し先を直すか、件数を読む位置を静的な DML の直後に寄せる
 - 引数で渡す
 - 明示的な SessionContext か永続化に移す
-- trigger の処理を、この書き込みをする Service に持たせる（値を書き換える trigger は採番 Service へ）
-- 複数行の更新・DELETE・MERGE・複数イベントの trigger は、行ごとに何を渡すかを設計する
 
 **受け入れに必要なテスト**
 
-- all_write_paths_covered
-- equivalent_result
 - row_count
 - state_isolation_between_calls
 
-**確信度が 0 になっている要因**: targetCapability, testEvidence
+**確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `emp_api.give_raise~2` — `emp_api.pkb:36`
 
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `STATE-001` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- `calls emp_api.validate_pct` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- `calls emp_biu_trg.body` は決定済み（#12 / #47: :NEW を書き換える代入は、書く側が書く値に畳み込む。検査（RAISE）は呼び出しで行う）: docs/plsql-migration/plsql-trigger-patterns.md C-2
+- `calls emp_dept_cap_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `calls emp_salary_audit_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
+
 **根拠**
 
 - STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります
-- TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
 
 **判定したルール**
 
-- `SQL-001` (REVIEW, `sql.yaml`): ScalarDB SQL で実行できない文があります
+- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
+- `SQL-004` (REVIEW, `semantics.yaml`): SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です
 - `STATE-001` (REDESIGN, `state.yaml`): Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります
-- `TRG-002` (REDESIGN, `trigger.yaml`): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
 
 **代替案**
 
+- 件数を返す形に呼び出し先を直すか、件数を読む位置を静的な DML の直後に寄せる
 - 引数で渡す
 - 明示的な SessionContext か永続化に移す
-- trigger の処理を、この書き込みをする Service に持たせる（値を書き換える trigger は採番 Service へ）
-- 複数行の更新・DELETE・MERGE・複数イベントの trigger は、行ごとに何を渡すかを設計する
 
 **受け入れに必要なテスト**
 
-- all_write_paths_covered
-- equivalent_result
+- performance
+- row_count
+- row_limit
 - state_isolation_between_calls
 
-**確信度が 0 になっている要因**: targetCapability, testEvidence
+**確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `emp_api.hire` — `emp_api.pkb:15`
+
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `STATE-001` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- `calls emp_biu_trg.body` は決定済み（#12 / #47: :NEW を書き換える代入は、書く側が書く値に畳み込む。検査（RAISE）は呼び出しで行う）: docs/plsql-migration/plsql-trigger-patterns.md C-2
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
 
 **根拠**
 
 - STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります
-- TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
 
 **判定したルール**
 
 - `EXC-001` (REVIEW, `semantics.yaml`): 移行先では自然には起こらない例外の handler があります。Oracle では DB 自身の誤りでも走っていた処理が、移行先では走りません
 - `STATE-001` (REDESIGN, `state.yaml`): Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります
-- `TRG-002` (REDESIGN, `trigger.yaml`): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
 
 **代替案**
 
@@ -486,18 +580,21 @@
 - INVALID_NUMBER / VALUE_ERROR は、変換の前に値を検査する形に書き直す
 - 引数で渡す
 - 明示的な SessionContext か永続化に移す
-- trigger の処理を、この書き込みをする Service に持たせる（値を書き換える trigger は採番 Service へ）
-- 複数行の更新・DELETE・MERGE・複数イベントの trigger は、行ごとに何を渡すかを設計する
 
 **受け入れに必要なテスト**
 
-- all_write_paths_covered
 - exception_path
 - state_isolation_between_calls
 
 **確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `emp_api.validate_pct` — `emp_api.pkb:7`
+
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `STATE-001` は決定済み（limits.yaml: packageState.carried）: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
 
 **根拠**
 
@@ -519,6 +616,12 @@
 **確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `emp_biu_trg.body` — `emp_biu_trg.trg:2`
+
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `TRG-001` は決定済み（#12 / #47: :NEW を書き換える代入は、書く側が書く値に畳み込む。検査（RAISE）は呼び出しで行う）: docs/plsql-migration/plsql-trigger-patterns.md C-2
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
 
 **根拠**
 
@@ -542,6 +645,12 @@
 
 ## REDESIGN: `emp_dept_cap_trg.body` — `emp_dept_cap_trg.trg:2`
 
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `TRG-001` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
+
 **根拠**
 
 - TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります
@@ -563,6 +672,12 @@
 **確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `emp_dept_upd_v_trg.body` — `emp_dept_upd_v_trg.trg:2`
+
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `TRG-001` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
 
 **根拠**
 
@@ -587,6 +702,12 @@
 **確信度が 0 になっている要因**: targetCapability, testEvidence
 
 ## REDESIGN: `emp_salary_audit_trg.body` — `emp_salary_audit_trg.trg:2`
+
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `TRG-001` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
 
 **根拠**
 
@@ -613,6 +734,13 @@
 **確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `log_msg` — `log_msg.prc:2`
+
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `TX-001` は決定済み（limits.yaml: transactions.separate）: PRAGMA AUTONOMOUS_TRANSACTION。親が rollback しても emp_audit のログは残る、という意味を保つ（利用者の決定、2026-09-25）
+- `TX-002` は決定済み（limits.yaml: transactions.separate）: PRAGMA AUTONOMOUS_TRANSACTION。親が rollback しても emp_audit のログは残る、という意味を保つ（利用者の決定、2026-09-25）
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
 
 **根拠**
 
@@ -645,31 +773,39 @@
 
 ## REDESIGN: `raise_salary` — `raise_salary.prc:2`
 
+**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+
+- `calls emp_biu_trg.body` は決定済み（#12 / #47: :NEW を書き換える代入は、書く側が書く値に畳み込む。検査（RAISE）は呼び出しで行う）: docs/plsql-migration/plsql-trigger-patterns.md C-2
+- `calls emp_dept_cap_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `calls emp_salary_audit_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- 実 DB の比較: まだ無い
+- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
+
 **根拠**
 
-- TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
+- SQL-004: SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です
+- calls emp_biu_trg.body, which is REDESIGN
 
 **判定したルール**
 
 - `SQL-004` (REVIEW, `semantics.yaml`): SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です
-- `SQL-001` (REVIEW, `sql.yaml`): ScalarDB SQL で実行できない文があります
-- `TRG-002` (REDESIGN, `trigger.yaml`): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません
 
 **代替案**
 
 - 件数を返す形に呼び出し先を直すか、件数を読む位置を静的な DML の直後に寄せる
-- trigger の処理を、この書き込みをする Service に持たせる（値を書き換える trigger は採番 Service へ）
-- 複数行の更新・DELETE・MERGE・複数イベントの trigger は、行ごとに何を渡すかを設計する
 
 **受け入れに必要なテスト**
 
-- all_write_paths_covered
-- equivalent_result
 - row_count
 
-**確信度が 0 になっている要因**: targetCapability, testEvidence
+**確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `setup_drop_objects` — `setup_drop_objects.prc:2`
+
+**再設計の状態: 未決定**
+
+- `DYN-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- 実 DB の比較: まだ無い
 
 **根拠**
 

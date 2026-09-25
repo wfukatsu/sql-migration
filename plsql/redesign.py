@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .ir import model as M
-from .limits import PackageState, Boundaries, DbLinks, DynamicTables, Limits, RowLocks
+from .limits import Constraints, PackageState, Boundaries, DbLinks, DynamicTables, Limits, RowLocks
 
 STATES = ("undecided", "decided", "verified")
 LABELS = {"undecided": "未決定", "decided": "決定済み（実 DB では未検証、または相違あり）",
@@ -29,6 +29,10 @@ LABELS = {"undecided": "未決定", "decided": "決定済み（実 DB では未�
 # coverage of other write paths is followed by reconciliation (docs/plsql-migration/plsql-trigger-patterns.md)
 TRIGGER_DECISION = ("#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う",
                     "docs/plsql-migration/plsql-trigger-patterns.md")
+
+
+FOLD_DECISION = ("#12 / #47: :NEW を書き換える代入は、書く側が書く値に畳み込む。検査（RAISE）は呼び出しで行う",
+                 "docs/plsql-migration/plsql-trigger-patterns.md C-2")
 
 
 SEQUENCE_DECISION = ("計画 §9: 採番は移行先の方式（counters 表 / hi-lo）で取り、書き込む側の INSERT に織り込む",
@@ -45,17 +49,18 @@ class Decided:
     limits: Limits = field(default_factory=Limits)
     db_links: DbLinks = field(default_factory=DbLinks)
     package_state: PackageState = field(default_factory=PackageState)
+    constraints: Constraints = field(default_factory=Constraints)
 
     @classmethod
     def load(cls, path: str | Path | None) -> "Decided":
         if path is None:
             return cls()
         return cls(RowLocks.load(path), Boundaries.load(path), DynamicTables.load(path), Limits.load(path),
-                   DbLinks.load(path), PackageState.load(path))
+                   DbLinks.load(path), PackageState.load(path), Constraints.load(path))
 
     def for_analysis(self) -> dict:
         return {"row_locks": self.row_locks, "boundaries": self.boundaries, "limits": self.limits,
-                "db_links": self.db_links, "package_state": self.package_state}
+                "db_links": self.db_links, "package_state": self.package_state, "constraints": self.constraints}
 
 
 @dataclass
@@ -109,7 +114,9 @@ def _answer(rule_id: str, routine: M.Routine, module: M.Module | None, decided: 
 
         shape = Trigger(module=module, routine=routine, table=(module.trigger_table or "").lower(),
                         timing=(module.trigger_timing or "BEFORE").upper(), event=(module.trigger_event or "").upper())
-        return SEQUENCE_DECISION if shape.sequence_key() is not None else None
+        if shape.sequence_key() is not None:
+            return SEQUENCE_DECISION
+        return FOLD_DECISION if shape.foldable_assignments() is not None else None
     return None
 
 

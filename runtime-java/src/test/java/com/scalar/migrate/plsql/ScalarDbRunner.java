@@ -42,6 +42,8 @@ public final class ScalarDbRunner implements AutoCloseable {
   static final String MASKED_REASON = "clock the harness cannot pin";
 
   private final Connection connection;
+
+  private final Path jdbcProperties;
   private final Map<String, List<String>> primaryKeys;
   private final Map<String, List<String>> columnOrder;
 
@@ -58,7 +60,8 @@ public final class ScalarDbRunner implements AutoCloseable {
    * @param schemaJson     the Schema Loader JSON the corpus was loaded from, read for primary keys
    */
   public ScalarDbRunner(Path propertiesPath, String namespace, Path schemaJson) throws Exception {
-    this.connection = DriverManager.getConnection("jdbc:scalardb:" + withNamespace(propertiesPath, namespace));
+    this.jdbcProperties = withNamespace(propertiesPath, namespace);
+    this.connection = DriverManager.getConnection("jdbc:scalardb:" + jdbcProperties);
     this.connection.setAutoCommit(false);
     Map<String, Map<String, Object>> schema = readSchema(schemaJson, namespace);
     this.primaryKeys = primaryKeysOf(schema);
@@ -86,6 +89,29 @@ public final class ScalarDbRunner implements AutoCloseable {
 
   public Connection connection() {
     return connection;
+  }
+
+  /**
+   * 別のトランザクションを開く口（#49）。同じ properties でもう 1 本 connection を開き、処理が返れば commit、
+   * 例外なら rollback して閉じる。生成コードが {@code transactions.separate} の routine を呼ぶときに使う。
+   */
+  public SeparateTransactions separate() {
+    return new SeparateTransactions() {
+      @Override
+      public <T> T run(Body<T> body) throws Exception {
+        try (Connection other = DriverManager.getConnection("jdbc:scalardb:" + jdbcProperties)) {
+          other.setAutoCommit(false);
+          try {
+            T out = body.run(other);
+            other.commit();
+            return out;
+          } catch (Exception e) {
+            other.rollback();
+            throw e;
+          }
+        }
+      }
+    };
   }
 
   /**
