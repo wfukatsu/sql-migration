@@ -366,10 +366,13 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
         for parameter in outs:
             # an OUT argument becomes a local, and comes back in the result record rather than through the
             # signature: a caller must not see a half-updated set when an exception interrupts the routine
+            if parameter.direction == "IN OUT":
+                # the method parameter itself is the local: `String pName = pName;` redeclared it and javac
+                # refused the whole class (2026-09-24, samples/oracle-samples normalize_name)
+                continue
             mapped = java_type(parameter.type.resolved if parameter.type else None)
             file.add_import(*mapped.imports)
-            initial = f" = {java_name(parameter.name)}" if parameter.direction == "IN OUT" else " = null"
-            f.line(f"{mapped.name} {java_name(parameter.name)}{initial};")
+            f.line(f"{mapped.name} {java_name(parameter.name)} = null;")
         chunked = {(loop.variable or "").lower() for loop in _walk(routine.body)
                    if loop.kind == "Loop" and getattr(loop, "chunk", None)}
         for declaration in routine.declarations:
@@ -598,7 +601,20 @@ def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
     # reads it then fails to compile. Writing the NULL out keeps the two the same.
     initial = " = null" if mapped.name not in ("int", "long", "double", "boolean") else ""
     if declaration.initial:
-        rendered = _expr(file, declaration.initial, routine, result, boolean_value=mapped.name == "Boolean")
+        try:
+            rendered = _expr(file, declaration.initial, routine, result, boolean_value=mapped.name == "Boolean")
+        except Untranslatable as e:
+            # `c INTEGER := DBMS_SQL.OPEN_CURSOR` -- an initialiser the translator has no Java for. Statements
+            # already came out as a comment plus a throw; a declaration crashed the whole run instead
+            # (2026-09-24, samples/oracle-samples). Same treatment: the variable is declared, the routine stops here.
+            file.comment(f"not translated: {declaration.name} := {e.text.strip()[:120]}")
+            file.comment(f"    unresolved: {', '.join(e.names)}")
+            file.line(f"{mapped.name} {java_name(declaration.name)}{initial};")
+            file.line(f'if (true) throw new UnsupportedOperationException("unresolved in declaration '
+                      f'{declaration.name}: {", ".join(e.names)}");')
+            if routine.id not in result.untranslated:
+                result.untranslated.append(routine.id)
+            return
         if mapped.name == "BigDecimal" and rendered.lstrip("-").isdigit():
             file.add_import("com.scalar.migrate.plsql.Plsql")
             rendered = f"Plsql.number({rendered})"
@@ -1052,6 +1068,13 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
             arguments = ", ".join(a for a in [arguments, "audit"] if a)
         # the Java name comes from the routine, not from the id: `pkg.put~2` is the method `put2`
         file.line(f"{java_name(routine_stem(callee) if callee is not None else target.split('.')[-1])}({arguments});")
+    elif (statement.callee or "").upper() in ("DBMS_OUTPUT.PUT_LINE", "DBMS_OUTPUT.PUT", "DBMS_OUTPUT.NEW_LINE"):
+        # the session's output buffer: no row is written, so the helper keeps the text per thread and the
+        # caller reads it back (analysis.HARMLESS_CALLEES already treats it as harmless). Throwing here made
+        # every sample block that prints a line unrunnable (2026-09-24, samples/oracle-samples)
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        helper = {"DBMS_OUTPUT.PUT_LINE": "putLine", "DBMS_OUTPUT.PUT": "put", "DBMS_OUTPUT.NEW_LINE": "newLine"}
+        file.line(f"Plsql.{helper[statement.callee.upper()]}({arguments});")
     else:
         file.comment(f"external call: {statement.callee}")
         file.line(f'throw new UnsupportedOperationException("external call: {statement.callee}");')
@@ -1335,6 +1358,11 @@ def _coerce(file: JavaFile, value: str, target_type: str) -> str:
     if target_type == "BigDecimal" and not value.startswith("Plsql.dec("):
         file.add_import("com.scalar.migrate.plsql.Plsql")
         return f"Plsql.dec({value})"
+    # `i := i + 1` on a PLS_INTEGER: the arithmetic helpers return Object (date arithmetic returns a date), and
+    # `Integer i = Plsql.add(i, 1)` did not compile (2026-09-24, samples/oracle-samples b04_2_control_flow)
+    if target_type in ("Integer", "Long") and value.startswith("Plsql.") and not value.startswith(("Plsql.fit", "Plsql.to")):
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        return f"Plsql.{'toInt' if target_type == 'Integer' else 'toLong'}({value})"
     return value
 
 

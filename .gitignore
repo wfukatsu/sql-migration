@@ -19,3 +19,5 @@ fixtures/plsql-external/*/work/
 samples/tutorial/plsql/work/
 *.snapshot.json
 .playwright-mcp/
+samples/oracle-samples/plsql/work/
+samples/oracle-samples/plsql-run/work/

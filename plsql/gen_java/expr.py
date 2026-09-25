@@ -38,6 +38,7 @@ FUNCTIONS = {
     "NVL": f"{HELPER}.nvl", "ROUND": f"{HELPER}.round", "TRUNC": f"{HELPER}.trunc",
     "TO_CHAR": f"{HELPER}.text", "RTRIM": f"{HELPER}.rtrim", "LTRIM": f"{HELPER}.ltrim",
     "MOD": f"{HELPER}.mod", "ABS": f"{HELPER}.abs", "UPPER": f"{HELPER}.upper",
+    "INITCAP": f"{HELPER}.initcap", "TRIM": f"{HELPER}.trim",
     # text that is not a number raises Plsql.ValueError, which a VALUE_ERROR handler catches (as ORA-06502 does)
     "TO_NUMBER": f"{HELPER}.toNumber",
 }

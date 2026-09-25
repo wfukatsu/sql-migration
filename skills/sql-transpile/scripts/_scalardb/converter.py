@@ -166,11 +166,15 @@ def _bad_join_mark_rewrite(node: exp.Expression) -> bool:
     return False
 
 
-_LEAD = r"(?:\s|--[^\n]*(?:\n|$)|/\*.*?\*/)*"
+# possessive (*+): a run of `----` lines, the usual banner of a SQL*Plus script, made the backtracking
+# (`--` + `[^\n]*` cut at every dash) exponential -- 80 dashes never returned (2026-09-24, samples/oracle-samples)
+_LEAD = r"(?:\s|--[^\n]*+(?:\n|$)|/\*.*?\*/)*+"
 # a stored program or an anonymous block: its semicolons end PL/SQL statements, not the SQL statement
 PLSQL_BLOCK = re.compile(_LEAD + r"(?:CREATE\s+(?:OR\s+REPLACE\s+)?(?:(?:NON)?EDITIONABLE\s+)?"
                          r"(?:PROCEDURE|FUNCTION|PACKAGE|TRIGGER|TYPE\s+BODY)\b|DECLARE\b|BEGIN\b)", re.I | re.S)
 _SLASH_LINE = re.compile(r"^[ \t]*/[ \t]*\r?$", re.M)
+# a chunk holding nothing but comments and whitespace (possessive for the same reason as _LEAD)
+_COMMENTS_ONLY = re.compile(r"(?:\s|--[^\n]*+\n?|/\*.*?\*/)*+", re.S)
 
 
 def _split_statements(text: str, dialect: str) -> list[str]:
@@ -205,7 +209,7 @@ def _split_on_semicolons(text: str, dialect: str) -> list[str]:
     tail = text[start:].strip()
     if tail:
         stmts.append(tail)
-    return [s for s in stmts if not re.fullmatch(r"(\s|--[^\n]*\n?|/\*.*?\*/)*", s, re.S)]
+    return [s for s in stmts if not _COMMENTS_ONLY.fullmatch(s)]
 
 
 # --------------------------------------------------------------------------------------------------
