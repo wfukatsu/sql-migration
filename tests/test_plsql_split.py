@@ -225,9 +225,9 @@ def test_the_caller_is_told_to_use_its_own_boundary(autonomous):
     assert "tx.runSeparately(" in autonomous
 
 
-def test_a_call_inside_another_transaction_is_refused(tmp_path):
-    """同じトランザクションの中で呼ぶと、親が rollback したときに一緒に消える。どこで別の境界を
-    開くかは呼び出し側の設計なので、生成器は推測しない。"""
+def test_a_call_inside_another_transaction_opens_one(tmp_path):
+    """同じトランザクションの中で呼ぶと、親が rollback したときに一緒に消える。呼ぶ側は別の境界を開く口
+    （SeparateTransactions）を受け取り、その connection の上に呼び先を組み立てて呼ぶ（#49。以前は推測せずに拒んでいた）。"""
     split.set_boundaries(Boundaries(separate={"prc_log": "自律"}))
     try:
         source = tmp_path / "src"
@@ -259,7 +259,8 @@ END prc_work;
         analyse_program(analysis.program)   # 呼び出しの解決（P2-1）。生成の前に走る段である
         module = next(m for m in analysis.program.modules if m.name == "prc_work")
         java = generate_module(module, "g.app", "g.infra", "g.domain", analysis.program).file.render()
-        assert "は別トランザクションで呼ぶ routine である" in java
+        assert "private final SeparateTransactions separate;" in java, java
+        assert 'separate.run(connection -> { new PrcLogService(new PrcLogRepository(connection)).prcLog("start"); return null; });' in java, java
     finally:
         split.set_boundaries(Boundaries())
 

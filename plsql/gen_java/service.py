@@ -36,6 +36,7 @@ from .types import java_class_name, java_name, java_type, record_columns, routin
 # every statement helper
 _MODULE: "contextvars.ContextVar[M.Module | None]" = contextvars.ContextVar("module", default=None)
 _DOMAIN: "contextvars.ContextVar[str | None]" = contextvars.ContextVar("domain", default=None)
+_INFRA: "contextvars.ContextVar[str | None]" = contextvars.ContextVar("infra", default=None)
 # #12: trigger の本体は別の module にある。呼ぶ側はその routine を見て、引数と audit の有無を決める
 _PROGRAM: "contextvars.ContextVar[M.Program | None]" = contextvars.ContextVar("program", default=None)
 # names a nested block declares (#18). They are in scope for its body and nowhere else, which is what the
@@ -89,10 +90,16 @@ def generate_module(module: M.Module, package: str, repository_package: str,
 
     _MODULE.set(module)
     _DOMAIN.set(domain_package)
+    _INFRA.set(repository_package)
     # #12: この module が呼ぶ trigger。**呼ぶ側に注入する**——移行先に trigger は無いので、
     # 掛けるには書き込む側が呼ぶしかない。誰が呼んでいるかが constructor に出るのは、
     # 「掛かるのはこの経路だけ」という事実がそこに見えるということでもある
     injected = trigger_services(module)
+    # #49: a routine that runs in a transaction of its own (transactions.separate) is not injected -- an instance
+    # bound to this transaction's connection would join it. The caller takes a port that opens another
+    # transaction, and builds the callee on that connection; Sequences travel with it when the callee numbers
+    separate = separate_callees(module)
+    separate_sequences = any(_module_of(owner) is not None and _uses_sequences(_module_of(owner)) for owner in separate)
     file.comment(
         f"{module.name} ({module.module_kind}).\n"
         "The transaction boundary belongs to the caller: no method here begins, commits or rolls back.")
@@ -100,14 +107,26 @@ def generate_module(module: M.Module, package: str, repository_package: str,
         f.line(f"private final {java_class_name(module.name)}Repository repository;")
         for trigger in injected:
             f.line(f"private final {java_class_name(trigger)}Service {java_name(trigger)};")
+        if separate:
+            file.add_import("com.scalar.migrate.plsql.SeparateTransactions")
+            f.line("private final SeparateTransactions separate;")
+        if separate_sequences:
+            file.add_import("com.scalar.migrate.plsql.Sequences")
+            f.line("private final Sequences sequences;")
         _constants(f, module)
         f.line()
         parameters = [f"{java_class_name(module.name)}Repository repository"] + \
-            [f"{java_class_name(t)}Service {java_name(t)}" for t in injected]
+            [f"{java_class_name(t)}Service {java_name(t)}" for t in injected] + \
+            (["SeparateTransactions separate"] if separate else []) + \
+            (["Sequences sequences"] if separate_sequences else [])
         with f.block(f"public {name}({', '.join(parameters)})") as g:
             g.line("this.repository = repository;")
             for trigger in injected:
                 g.line(f"this.{java_name(trigger)} = {java_name(trigger)};")
+            if separate:
+                g.line("this.separate = separate;")
+            if separate_sequences:
+                g.line("this.sequences = sequences;")
         for routine in module.routines:
             f.line()
             # 1 反復 = 1 トランザクションに割ると**決めてある** routine は、1 つの method ではなく
@@ -131,13 +150,73 @@ def trigger_services(module: M.Module) -> list[str]:
             owner = _trigger_owner(statement, module) or _sibling_owner(statement, module)
             if owner:
                 out.add(owner)
+        # a function of another module called inside an expression is a dependency too (#48)
+        out.update(owner for owner, _ in _expression_callees(routine, module).values())
     return sorted(out)
+
+
+# `pkg.name` inside an expression, outside string literals: a call into another module (#48)
+_QUALIFIED = re.compile(r"(?<![\w$#.:])([A-Za-z][\w$#]*)\.([A-Za-z][\w$#]*)(?![\w$#.])")
+_STRING = re.compile(r"'(?:[^']|'')*'")
+
+
+def _expression_callees(routine: M.Routine, module: "M.Module | None") -> dict[str, tuple[str, M.Routine]]:
+    """`pkg.fn` names inside the routine's expressions that resolve to a routine of another module of the
+    program: {"pkg.fn": (module name, routine)}. Overloads are left out (which one is meant is not resolved
+    from an expression), as is anything the program does not contain.
+
+    A statement-level call is a `Call` node the generator already resolves; a call inside an expression
+    (`v := emp_api.hire(...)`, `'…' || pkg.count`) only exists as text, so it is found here (#48,
+    samples/oracle-samples b05_3, 2026-09-25)."""
+    from ..lower import overload_of
+
+    program = _PROGRAM.get()
+    if program is None:
+        return {}
+    modules = {m.name.lower(): m for m in program.modules}
+    found: dict[str, tuple[str, M.Routine]] = {}
+    for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
+        for text in _expression_texts(statement):
+            for owner, name in _QUALIFIED.findall(_STRING.sub("''", text or "")):
+                target = modules.get(owner.lower())
+                if target is None or (module is not None and target is module):
+                    continue
+                callee = next((r for r in target.routines if r.name.lower() == name.lower()
+                               and overload_of(r) is None), None)
+                if callee is not None:
+                    found.setdefault(f"{owner.lower()}.{name.lower()}", (target.name, callee))
+    return found
+
+
+def separate_callees(module: M.Module) -> list[str]:
+    """The modules whose routines this module calls in a transaction of their own (transactions.separate, #49)."""
+    out: set[str] = set()
+    for routine in module.routines:
+        for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
+            if statement.kind == "Call" and statement.resolved_to and split.runs_separately(statement.resolved_to):
+                owner = _owner_module(statement.resolved_to, module)
+                if owner:
+                    out.add(owner)
+    return sorted(out)
+
+
+def _module_of(name: str) -> "M.Module | None":
+    program = _PROGRAM.get()
+    return next((m for m in (program.modules if program else []) if m.name.lower() == name.lower()), None)
+
+
+def _uses_sequences(module: M.Module) -> bool:
+    from .repository import _uses_sequences as uses
+
+    return uses(module)
 
 
 def _sibling_owner(statement: M.Statement, module: M.Module) -> str | None:
     """別の module の routine を呼ぶ文なら、その module 名。"""
     if statement.kind != "Call" or not getattr(statement, "resolved_to", None):
         return None
+    if split.runs_separately(statement.resolved_to):
+        return None   # #49: built on the connection SeparateTransactions opens, not injected
     owner = _owner_module(statement.resolved_to, module)
     if not owner or owner == module.name or _routine(statement.resolved_to) is None:
         return None
@@ -1272,11 +1351,6 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
     if _trigger_call(file, statement, routine, result):
         return
     target = statement.resolved_to or statement.callee
-    if statement.resolved_to and split.runs_separately(statement.resolved_to):
-        # 自律トランザクションの routine を**同じトランザクションの中で**呼ぶと、親が rollback した
-        # ときに一緒に消える（#3 §G）。どこで別の境界を開くかは呼び出し側の設計なので、推測しない
-        raise Untranslatable([f"{statement.resolved_to} は別トランザクションで呼ぶ routine である"],
-                             statement.callee)
     if statement.resolved_to:
         module = _MODULE.get()
         owner = _owner_module(statement.resolved_to, module)
@@ -1303,6 +1377,24 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
     if statement.resolved_to:
         if callee is not None and needs_audit(callee):
             arguments = ", ".join(a for a in [arguments, "audit"] if a)
+        if split.runs_separately(statement.resolved_to):
+            # 自律トランザクションの routine を**同じトランザクションの中で**呼ぶと、親が rollback した
+            # ときに一緒に消える（#3 §G）。別のトランザクションを開く口（SeparateTransactions）を呼び出し側が
+            # 受け取り、その connection の上に呼び先を組み立てて呼ぶ（#49）。OUT 引数と戻り値は、その境界の
+            # 外へ持ち出す形をまだ持っていない
+            if outs or statement.into or callee is None or owner is None or _module_of(owner) is None:
+                raise Untranslatable([f"{statement.resolved_to} は別トランザクションで呼ぶ routine で、OUT 引数 / 戻り値を"
+                                      f"境界の外へ持ち出す形が無い"], statement.callee)
+            repository_class = java_class_name(owner) + "Repository"
+            if _INFRA.get():
+                file.add_import(f"{_INFRA.get()}.{repository_class}")
+            built = f"new {repository_class}(connection{', sequences' if _uses_sequences(_module_of(owner)) else ''})"
+            why = split._BOUNDARIES.get().why(statement.resolved_to) or ""
+            file.comment(f"{statement.resolved_to} は別のトランザクションで呼ぶ（limits.yaml transactions.separate: {why}）。"
+                         f"親が rollback しても残る（#49）")
+            file.line(f"separate.run(connection -> {{ new {java_class_name(owner)}Service({built})"
+                      f".{java_name(routine_stem(callee))}({arguments}); return null; }});")
+            return
         if module is not None and owner is not None and owner != module.name:
             # 別の module の routine を呼ぶ。**PL/SQL がそう書いてある**ので、誰を呼ぶかは決定では
             # ない——注入するのは trigger と同じ形である（#12）。以前はここで拒んでいたが、
