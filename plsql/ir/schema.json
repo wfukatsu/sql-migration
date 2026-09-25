@@ -1308,6 +1308,9 @@
             "type": "string"
           }
         },
+        "accumulates_rowcount": {
+          "type": "boolean"
+        },
         "intoColumns": {
           "type": [
             "string",

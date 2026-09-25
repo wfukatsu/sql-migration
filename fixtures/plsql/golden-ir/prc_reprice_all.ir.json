@@ -143,6 +143,7 @@
         },
         "sqlKind": "SELECT",
         "originalSql": "SELECT o.order_id FROM orders o JOIN customers c ON c.customer_id = o.customer_id\n     WHERE c.tier = p_tier AND o.status = 'NEW'",
+        "accumulates_rowcount": false,
         "selectsStar": false,
         "cardinality": "MANY",
         "atMostOneRow": false

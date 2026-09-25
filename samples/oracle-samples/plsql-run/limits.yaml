@@ -8,3 +8,37 @@ packageState:
     emp_api: >-
       g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。
       呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定）
+
+# 2026-09-25、利用者の決定（Issue #46 のあとに AskUserQuestion で確認した 4 点）
+#
+# 行ロックと RMW（SET c = c + x）を楽観制御に移す routine。同じトランザクションの中で読んでから書き、
+# 同時の更新は commit の衝突（DB-CORE-20013）として弾かれる。衝突の再試行は呼び出し側の責務。
+rowLocks:
+  optimistic:
+    b04_3_implicit_cursor_attrs: 04-3 のサンプル。UPDATE … SET salary = salary + 100 を読んでから書く形に（利用者の決定、2026-09-25）
+    b04_4_3_for_update_current_of: 04-4-3 の FOR UPDATE + WHERE CURRENT OF。行を先に読み、楽観制御で書く（同上）
+    b05_4_call_log_msg: 05-4 の UPDATE … SET salary = salary + 1（同上）
+    emp_api.give_raise~1: 昇給の UPDATE … SET salary = salary * (1 + p_pct / 100)。衝突は呼び出し側が再試行（同上）
+    emp_api.give_raise~2: 部門ごとの昇給。同上
+    raise_salary: 昇給の UPDATE … RETURNING。読んでから書き、RETURNING の値は計算した値を返す（同上）
+
+# routine の中の COMMIT / ROLLBACK / SAVEPOINT は呼び出し側の境界に移す。サンプルの ROLLBACK は「試したあと戻す」ためのもので、
+# 呼び出し側（テストハーネス）が戻せば同じ結果になる。途中の ROLLBACK が戻していた分は呼び出し側が戻さないかぎり残る（意味が変わる決定）。
+# 自律型トランザクションの log_msg は別トランザクションで回す（親が rollback してもログは残る、という意味を保つ）。
+transactions:
+  callerBoundary:
+    b04_3_implicit_cursor_attrs: 最後の ROLLBACK はデモを戻すため。呼び出し側が戻す（利用者の決定、2026-09-25）
+    b04_4_3_for_update_current_of: 同上
+    b04_6_2_user_exceptions: WHEN OTHERS の中の ROLLBACK。呼び出し側が戻す（同上）
+    b05_1_call_raise_salary: 同上
+    b05_3_call_emp_api: 同上
+    b05_4_call_log_msg: 同上
+    b06_2_forall_save_exceptions: FORALL のあとの COMMIT（成功分の確定）。呼び出し側が commit する（同上）
+    b06_2_2_forall_returning: 同上
+    b06_3_native_dynamic_sql: 同上
+  separate:
+    log_msg: PRAGMA AUTONOMOUS_TRANSACTION。親が rollback しても emp_audit のログは残る、という意味を保つ（利用者の決定、2026-09-25）
+
+# 表名が実行時に決まる動的 SQL が受け付ける表名。それ以外は実行時に拒否する。
+dynamicTables:
+  b06_3_native_dynamic_sql: [employees]

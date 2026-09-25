@@ -104,7 +104,11 @@
     "routine": "b04_3_implicit_cursor_attrs.b04_3_implicit_cursor_attrs",
     "verdict": "REVIEW",
     "differences": [
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (SET salary = salary + 100: expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction)"
+     "table emp_audit row count: expected=0 actual=2",
+     "table emp_audit: unexpected (actual only): audit_id=1",
+     "table emp_audit: unexpected (actual only): audit_id=2",
+     "table employees row employee_id=120: salary: expected=4800 actual=4900.0 (value)",
+     "table employees row employee_id=125: salary: expected=3200 actual=3300.0 (value)"
     ],
     "accepted": [],
     "scale_only": [
@@ -114,8 +118,6 @@
      "table employees row employee_id=103: salary: expected=9000 actual=9000.0 (scale)",
      "table employees row employee_id=104: salary: expected=6000 actual=6000.0 (scale)",
      "table employees row employee_id=107: salary: expected=4200 actual=4200.0 (scale)",
-     "table employees row employee_id=120: salary: expected=4800 actual=4800.0 (scale)",
-     "table employees row employee_id=125: salary: expected=3200 actual=3200.0 (scale)",
      "table employees row employee_id=145: salary: expected=14000 actual=14000.0 (scale)",
      "table employees row employee_id=146: salary: expected=13500 actual=13500.0 (scale)",
      "table employees row employee_id=150: salary: expected=10000 actual=10000.0 (scale)",
@@ -178,7 +180,11 @@
     "routine": "b04_4_3_for_update_current_of.b04_4_3_for_update_current_of",
     "verdict": "REVIEW",
     "differences": [
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Loop: cursor FOR loop whose body writes ['employees'], which its own query reads)"
+     "table emp_audit row count: expected=0 actual=2",
+     "table emp_audit: unexpected (actual only): audit_id=1",
+     "table emp_audit: unexpected (actual only): audit_id=2",
+     "table employees row employee_id=120: salary: expected=4800 actual=5280.0 (value)",
+     "table employees row employee_id=125: salary: expected=3200 actual=3520.0 (value)"
     ],
     "accepted": [],
     "scale_only": [
@@ -188,8 +194,6 @@
      "table employees row employee_id=103: salary: expected=9000 actual=9000.0 (scale)",
      "table employees row employee_id=104: salary: expected=6000 actual=6000.0 (scale)",
      "table employees row employee_id=107: salary: expected=4200 actual=4200.0 (scale)",
-     "table employees row employee_id=120: salary: expected=4800 actual=4800.0 (scale)",
-     "table employees row employee_id=125: salary: expected=3200 actual=3200.0 (scale)",
      "table employees row employee_id=145: salary: expected=14000 actual=14000.0 (scale)",
      "table employees row employee_id=146: salary: expected=13500 actual=13500.0 (scale)",
      "table employees row employee_id=150: salary: expected=10000 actual=10000.0 (scale)",
@@ -276,7 +280,8 @@
     "routine": "b04_6_2_user_exceptions.b04_6_2_user_exceptions",
     "verdict": "REVIEW",
     "differences": [
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (Rollback is not translated)"
+     "table employees row count: expected=15 actual=16",
+     "table employees: unexpected (actual only): employee_id=999"
     ],
     "accepted": [],
     "scale_only": [
@@ -302,7 +307,11 @@
     "routine": "b05_1_call_raise_salary.b05_1_call_raise_salary",
     "verdict": "REVIEW",
     "differences": [
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (RETURNING is not supported)"
+     "table emp_audit row count: expected=0 actual=2",
+     "table emp_audit: unexpected (actual only): audit_id=1",
+     "table emp_audit: unexpected (actual only): audit_id=2",
+     "table employees row employee_id=104: salary: expected=6000 actual=6600.0 (value)",
+     "table employees row employee_id=107: salary: expected=4200 actual=4410.0 (value)"
     ],
     "accepted": [],
     "scale_only": [
@@ -310,8 +319,6 @@
      "table employees row employee_id=101: salary: expected=17000 actual=17000.0 (scale)",
      "table employees row employee_id=102: salary: expected=17000 actual=17000.0 (scale)",
      "table employees row employee_id=103: salary: expected=9000 actual=9000.0 (scale)",
-     "table employees row employee_id=104: salary: expected=6000 actual=6000.0 (scale)",
-     "table employees row employee_id=107: salary: expected=4200 actual=4200.0 (scale)",
      "table employees row employee_id=120: salary: expected=4800 actual=4800.0 (scale)",
      "table employees row employee_id=125: salary: expected=3200 actual=3200.0 (scale)",
      "table employees row employee_id=145: salary: expected=14000 actual=14000.0 (scale)",
@@ -354,9 +361,9 @@
     "routine": "b05_4_call_log_msg.b05_4_call_log_msg",
     "verdict": "REVIEW",
     "differences": [
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (SET salary = salary + 1: expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction)",
+     "exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Call: log_msg は別トランザクションで呼ぶ routine である)",
      "table emp_audit row count: expected=1 actual=0",
-     "table emp_audit: missing (expected only): audit_id=35"
+     "table emp_audit: missing (expected only): audit_id=2"
     ],
     "accepted": [],
     "scale_only": [
@@ -432,22 +439,25 @@
     "routine": "b06_2_forall_save_exceptions.b06_2_forall_save_exceptions",
     "verdict": "REVIEW",
     "differences": [
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (Commit is not translated)",
-     "table bulk_target row count: expected=11 actual=0",
-     "table bulk_target: missing (expected only): employee_id=103",
-     "table bulk_target: missing (expected only): employee_id=104",
-     "table bulk_target: missing (expected only): employee_id=107",
-     "table bulk_target: missing (expected only): employee_id=120",
-     "table bulk_target: missing (expected only): employee_id=125",
-     "table bulk_target: missing (expected only): employee_id=145",
-     "table bulk_target: missing (expected only): employee_id=146",
-     "table bulk_target: missing (expected only): employee_id=150",
-     "table bulk_target: missing (expected only): employee_id=151",
-     "table bulk_target: missing (expected only): employee_id=155",
-     "table bulk_target: missing (expected only): employee_id=178"
+     "table bulk_target row count: expected=11 actual=15",
+     "table bulk_target: unexpected (actual only): employee_id=100",
+     "table bulk_target: unexpected (actual only): employee_id=101",
+     "table bulk_target: unexpected (actual only): employee_id=102",
+     "table bulk_target: unexpected (actual only): employee_id=200"
     ],
     "accepted": [],
     "scale_only": [
+     "table bulk_target row employee_id=103: salary: expected=9000 actual=9000.0 (scale)",
+     "table bulk_target row employee_id=104: salary: expected=6000 actual=6000.0 (scale)",
+     "table bulk_target row employee_id=107: salary: expected=4200 actual=4200.0 (scale)",
+     "table bulk_target row employee_id=120: salary: expected=4800 actual=4800.0 (scale)",
+     "table bulk_target row employee_id=125: salary: expected=3200 actual=3200.0 (scale)",
+     "table bulk_target row employee_id=145: salary: expected=14000 actual=14000.0 (scale)",
+     "table bulk_target row employee_id=146: salary: expected=13500 actual=13500.0 (scale)",
+     "table bulk_target row employee_id=150: salary: expected=10000 actual=10000.0 (scale)",
+     "table bulk_target row employee_id=151: salary: expected=9500 actual=9500.0 (scale)",
+     "table bulk_target row employee_id=155: salary: expected=7000 actual=7000.0 (scale)",
+     "table bulk_target row employee_id=178: salary: expected=7000 actual=7000.0 (scale)",
      "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
      "table employees row employee_id=101: salary: expected=17000 actual=17000.0 (scale)",
      "table employees row employee_id=102: salary: expected=17000 actual=17000.0 (scale)",
@@ -496,7 +506,7 @@
     "routine": "b06_3_native_dynamic_sql.b06_3_native_dynamic_sql",
     "verdict": "REVIEW",
     "differences": [
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in DynamicSql: EXECUTE IMMEDIATE whose statement is not a knowable set)"
+     "exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in DynamicSql: RETURNING INTO of a dynamic UPDATE)"
     ],
     "accepted": [],
     "scale_only": [
@@ -670,10 +680,7 @@
     "routine": "emp_api.give_raise~1",
     "verdict": "REVIEW",
     "differences": [
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (SET salary = salary * (1 + :p_pct / 100): expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB tra)",
-     "table emp_audit row count: expected=1 actual=0",
-     "table emp_audit: missing (expected only): audit_id=44",
-     "table employees row employee_id=104: salary: expected=6600 actual=6000.0 (value)"
+     "table emp_audit row audit_id=1: old_salary: expected=6000 actual=6000.0 (scale); new_salary: expected=6600 actual=6600.0 (scale); changed_by: expected=<masked> actual=NULL (masked on one side only); changed_at: expected=<masked> actual=NULL (masked on one side only)"
     ],
     "accepted": [],
     "scale_only": [
@@ -681,6 +688,7 @@
      "table employees row employee_id=101: salary: expected=17000 actual=17000.0 (scale)",
      "table employees row employee_id=102: salary: expected=17000 actual=17000.0 (scale)",
      "table employees row employee_id=103: salary: expected=9000 actual=9000.0 (scale)",
+     "table employees row employee_id=104: salary: expected=6600 actual=6600.0 (scale)",
      "table employees row employee_id=107: salary: expected=4200 actual=4200.0 (scale)",
      "table employees row employee_id=120: salary: expected=4800 actual=4800.0 (scale)",
      "table employees row employee_id=125: salary: expected=3200 actual=3200.0 (scale)",
@@ -698,9 +706,7 @@
     "routine": "log_msg.log_msg",
     "verdict": "REVIEW",
     "differences": [
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (INSERT must specify the full primary key; missing ['audit_id'])",
-     "table emp_audit row count: expected=1 actual=0",
-     "table emp_audit: missing (expected only): audit_id=45"
+     "table emp_audit row audit_id=1: changed_by: expected=<masked> actual=NULL (masked on one side only); changed_at: expected=<masked> actual=NULL (masked on one side only)"
     ],
     "accepted": [],
     "scale_only": [
@@ -749,9 +755,7 @@
    "raise_salary_missing": {
     "routine": "raise_salary.raise_salary",
     "verdict": "REVIEW",
-    "differences": [
-     "exception code: expected=-20010 actual=java.lang.UnsupportedOperationException (RETURNING is not supported)"
-    ],
+    "differences": [],
     "accepted": [],
     "scale_only": [
      "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
@@ -776,18 +780,16 @@
     "routine": "raise_salary.raise_salary",
     "verdict": "REVIEW",
     "differences": [
-     "out p_new_sal: missing (expected only) = 6600",
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (RETURNING is not supported)",
-     "table emp_audit row count: expected=1 actual=0",
-     "table emp_audit: missing (expected only): audit_id=46",
-     "table employees row employee_id=104: salary: expected=6600 actual=6000.0 (value)"
+     "table emp_audit row audit_id=1: old_salary: expected=6000 actual=6000.0 (scale); new_salary: expected=6600 actual=6600.0 (scale); changed_by: expected='HRS' actual=NULL (value); changed_at: expected='2026-09-25T04:38:16.570887' actual=NULL (value)"
     ],
     "accepted": [],
     "scale_only": [
+     "out p_new_sal (scale): expected=6600 actual=6600.00",
      "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
      "table employees row employee_id=101: salary: expected=17000 actual=17000.0 (scale)",
      "table employees row employee_id=102: salary: expected=17000 actual=17000.0 (scale)",
      "table employees row employee_id=103: salary: expected=9000 actual=9000.0 (scale)",
+     "table employees row employee_id=104: salary: expected=6600 actual=6600.0 (scale)",
      "table employees row employee_id=107: salary: expected=4200 actual=4200.0 (scale)",
      "table employees row employee_id=120: salary: expected=4800 actual=4800.0 (scale)",
      "table employees row employee_id=125: salary: expected=3200 actual=3200.0 (scale)",
@@ -804,7 +806,7 @@
   },
   "not_compared": {},
   "fingerprints": {
-   "toolchain": "1e116d219fbf1fba8640ea45f0f8456467b70bee6d883932c85e0f7463b8625e",
+   "toolchain": "bc8ea8f0ec9eda4dd74420ca8585ade619109c55a0097f9497611dce33af54d2",
    "sources": {
     "annual_comp": "a43e3576d8b1c2f648b65d5603c0001c0aaec44531a54d9bf47462ce3bb2ac15",
     "b04_1_variables": "22a5f4c43ce7bc93eb38ea67f54f4b00a202f151bf79b7773cc553c6a005fc03",

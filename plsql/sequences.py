@@ -52,6 +52,8 @@ CACHE = re.compile(r"\bCACHE\s+(\d+)", re.IGNORECASE)
 COMMENT = re.compile(r"--[^\n]*|/\*.*?\*/", re.DOTALL)
 # CACHE も NOCACHE も書かれていないときの Oracle の既定
 DEFAULT_CACHE = 20
+IDENTITY_COLUMN = re.compile(r"^GENERATED\s+(?:ALWAYS|BY\s+DEFAULT)(?:\s+ON\s+NULL)?\s+AS\s+IDENTITY\s*(?:\((?P<options>[^)]*)\))?\s*$",
+                             re.IGNORECASE)
 
 
 def _first(pattern: re.Pattern, text: str) -> str | None:
@@ -102,6 +104,25 @@ class Policies(dict):
                 block = int(cache)
                 policies[name] = Policy(name, HILO, block, start, increment,
                                         f"DDL が CACHE {block}。停止時に未使用分を捨ててよいと書いてあるので hi/lo")
+        # IDENTITY columns number themselves in Oracle; here they are counters named `<table>_<column>_identity`
+        # (plsql.identity). Never a gap in Oracle either (the identity's own sequence is cached, but the
+        # comparison pins it per scenario), so a counter
+        import sqlglot
+        from sqlglot import exp
+
+        for statement in sqlglot.parse(COMMENT.sub(" ", text), dialect="oracle"):
+            if not isinstance(statement, exp.Create) or statement.kind != "TABLE":
+                continue
+            table = statement.find(exp.Table)
+            for column in statement.find_all(exp.ColumnDef):
+                for constraint in column.constraints:
+                    generated = IDENTITY_COLUMN.match(constraint.sql(dialect="oracle"))
+                    if generated and table is not None:
+                        options = generated.group("options") or ""
+                        name = f"{table.name.lower()}_{column.name.lower()}_identity"
+                        policies[name] = Policy(name, COUNTER, 1, int(_first(START, options) or 1),
+                                                int(_first(INCREMENT, options) or 1),
+                                                "IDENTITY 列。表が採番していたので counter で続ける")
         policies._apply(overrides)
         return policies
 

@@ -14,7 +14,7 @@ Oracle 公式ドキュメントの構成に沿った **構文カタログ**（SQ
 | SQL の実 DB 比較（02 の読み取り文 + JSON 3 文 + 修正版 1 文） | 40 文 | PASS 19 / FAIL 10 / SKIP 9 / CASE_ERROR 2 | **PASS 19 / FAIL 5 / SKIP 14 / CASE_ERROR 2**。FAIL 5 はすべて同順位・非決定。JSON_OBJECT は PASS に |
 | PL/SQL routine（05・06 の全ユニット + 04 の無名ブロック 10 個） | 41 routine | AUTO 候補 7 / REVIEW 10 / REDESIGN 24 | 同じ（判定のルールは変えていない） |
 | PL/SQL の Java 生成 | 41 routine | javac エラー 15 件（8 routine） | **javac エラー 0**（41 routine 全部がコンパイルできる） |
-| PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 15 / 相違 16**（全 36 ユニット、31 シナリオ。#44〜#46 のあと）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて） |
+| PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 16 / 相違 15**（全 36 ユニット、31 シナリオ。#44〜#46 と 4 つの決定のあと）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて） |
 
 ## フォルダ
 
@@ -55,7 +55,7 @@ samples/oracle-samples/
 | `NUMBER(8,2)` の金額列は DOUBLE の規約（`--variant double`） | corpus の外のプロジェクト `create_order` と同じ |
 | 索引: employees の department_id / manager_id / job_id / email、orders の status / employee_id、departments の department_name | 原文の索引 2 本と、PL/SQL が WHERE に使う列 |
 | package 変数 `emp_api.g_calls` は呼び出し側が運ぶ（2026-09-25、利用者の決定、`plsql/limits.yaml`） | セッション単位の意味を保つ唯一の機械的な形。呼び出し側の signature が変わる |
-| 行ロック・トランザクション境界・自律型・trigger は **決めていない** | 決めていない routine の書き込みを生成器が拒否するのが正しい動きで、その拒否がそのまま比較の結果に出ている |
+| 行ロックと RMW は楽観制御へ（6 routine）、routine の中の COMMIT / ROLLBACK は呼び出し側の境界へ（9 routine）、log_msg は別トランザクション、動的 SQL の表名は employees だけ（2026-09-25、利用者の決定、`plsql/limits.yaml`） | 「3 回目の修正」の節。trigger の掛け方（TRG-002）はまだ決めていない |
 
 ---
 
@@ -338,7 +338,23 @@ Docker の検証環境（`difftest/`）と ScalarDB Cluster のライセンス�
 | #45 | ネスト表 / VARRAY は List、INDEX BY VARCHAR2 は TreeMap（INDEX BY PLS_INTEGER は corpus の使い方に合わせて List のまま）。コンストラクタ、要素の読み書き、COUNT / FIRST / LAST / NEXT / PRIOR / EXISTS / DELETE / EXTEND / TRIM / LIMIT、途中の DELETE(i) の隙間。record は field ごとに NULL か既定値で作り、field への代入は組み直す | `b04_5_records_collections` が **一致**（連想配列のキー順の走査、EXTEND / DELETE / EXISTS / VARRAY の LIMIT を含む） |
 | #46 | package 変数（セッション状態）の置き場: **利用者の決定（2026-09-25）「呼び出し側が引数と戻り値で運ぶ」**。`plsql/limits.yaml` の `packageState.carried.emp_api` に理由つきで記録。生成器はその変数を読み書きする routine（呼び先経由も含む）に IN OUT 引数として持ち上げ、結果 record で返す。あわせて、package 仕様部の定数（`c_max_raise_pct`）を static field として出す | STATE-001 は「決定済み」に。`emp_api_give_raise_invalid` が **一致**（e_invalid_raise が ORA-06510 として観測される）。`give_raise` の残りは RMW（SQL-001）と trigger（TRG-002）の決定待ち |
 
-**修正後の PL/SQL 実 DB 比較（31 シナリオ、一致 15 / 相違 16）**: 相違 19 本はすべて「Oracle は正常終了、Java は解析が断った所で throw」で、値の差は無い。
+### 3 回目の修正（2026-09-25、`limits.yaml` の 4 つの決定）
+
+#46 のあと、残っていた「人の決定」を AskUserQuestion で確認し、4 点が決まった（`plsql/limits.yaml`。理由と日付つき）。
+
+| 決定 | 記録 | 効果 |
+|---|---|---|
+| 行ロックと RMW（`SET c = c + x`）は楽観制御へ | `rowLocks.optimistic`（6 routine） | 主キーで 1 行なら「読んでから書く 2 文」、そうでなければ「行を読んで 1 行ずつ書くループ」に割る。`RETURNING c INTO v` は計算した式の代入に。行が無いときは 0 行（`SQL%ROWCOUNT = 0`、`raise_salary_missing` が **一致**） |
+| routine の中の COMMIT / ROLLBACK は呼び出し側の境界へ | `transactions.callerBoundary`（9 routine、新しいキー） | その文は出さず、呼び出し側が commit / rollback する。**意味が変わる決定**: サンプルの「試したあと戻す」ROLLBACK は戻らないので、Oracle が戻した trigger の監査行（`emp_audit` 2 行）や FK 違反にならなかった行（employees 999）が ScalarDB 側に残る（b04_3 / b04_4_3 / b05_1 / b04_6_2 の相違はこれ） |
+| 自律型の log_msg は別トランザクション | `transactions.separate` | `log_msg_ok` が **一致**（IDENTITY 列 `audit_id` は `emp_audit_audit_id_identity` として採番）。呼び出し側 b05_4 は「別トランザクションで呼ぶ routine」として止まる（境界を開くのは呼び出し側の設計） |
+| 動的 SQL の表名は employees だけ | `dynamicTables` | `EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' \|\| DBMS_ASSERT.SIMPLE_SQL_NAME(v_table)` が畳まれる。同じ block の `UPDATE … RETURNING` の動的 SQL と動的 PL/SQL は移行先に無く、そこで止まる |
+
+この決定を通すために直したもの: IDENTITY 列を INSERT に足して `Sequences` から採番（Oracle 側はシナリオごとに IDENTITY を START WITH に戻す）、
+trigger 本体の DECLARE の変数が SQL の中で列に見えていた、`SQL%NOTFOUND` / `SQL%FOUND`、動的 SQL の表名がローカル変数でもよい、
+RMW を trigger の織り込みより前に割る（織り込まれた trigger は SET の式を :NEW の値として受け取る）、`INDEX BY` 表は宣言時から空、
+package 仕様部の定数を static field に。
+
+**修正後の PL/SQL 実 DB 比較（31 シナリオ、一致 16 / 相違 15）**: 相違 19 本はすべて「Oracle は正常終了、Java は解析が断った所で throw」で、値の差は無い。
 止まる理由は、RMW（`SET salary = salary + 1`）、`RETURNING`、`COMMIT` / `ROLLBACK`（TX-001）、IDENTITY 列の採番、行ロック、動的 SQL と DBMS_SQL、
 FORALL … RETURNING、オブジェクト型の `TABLE()`、package 変数（STATE-001）、`DBMS_APPLICATION_INFO` の名前付き引数。
 いずれも「人の決定」（`limits.yaml`）か「生成器がまだ模していない構文」で、解析の判定表（付録 C）に出ているとおり。
@@ -603,17 +619,17 @@ trigger を全部配備したので、employees を書くシナリオでは Orac
 | `annual_comp` | REVIEW |  | confidence factor testEvidence is 0 |
 | `b04_1_variables` | REVIEW |  | confidence factor testEvidence is 0 |
 | `b04_2_control_flow` | REVIEW |  | confidence factor testEvidence is 0 |
-| `b04_3_implicit_cursor_attrs` | REDESIGN | SQL-004, SQL-001, TX-001, TX-004, TRG-002 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
+| `b04_3_implicit_cursor_attrs` | REDESIGN | CUR-002, SQL-004, TX-001, TX-004, TRG-002 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b04_4_1_explicit_cursor` | REVIEW | SCAN-002, CUR-003, CUR-002 | CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります; CUR-002 |
 | `b04_4_2_cursor_for_loop` | REVIEW | CUR-002, SQL-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
-| `b04_4_3_for_update_current_of` | REDESIGN | CUR-002, SQL-004, LOCK-001, LOCK-002, SQL-001, TX-001, TRG-002 | LOCK-001: 行ロックです。ターゲットで同じ保証を別の方法で与える設計が要ります; LOCK-002: cursor の宣言で行ロックしています。文だけを |
+| `b04_4_3_for_update_current_of` | REDESIGN | CUR-002, SQL-004, LOCK-001, LOCK-002, TX-001, TRG-002 | LOCK-001: 行ロックです。ターゲットで同じ保証を別の方法で与える設計が要ります; LOCK-002: cursor の宣言で行ロックしています。文だけを |
 | `b04_4_4_ref_cursor` | REVIEW | SCAN-002, CUR-003, CUR-002 | CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります; CUR-003 |
 | `b04_5_records_collections` | REVIEW | CALL-001, CUR-002 | CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません; CUR |
 | `b04_6_1_predefined_exceptions` | REVIEW | SELECT-OPT-001 | confidence factor testEvidence is 0 |
 | `b04_6_2_user_exceptions` | REDESIGN | TX-001, TRG-002 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b05_1_call_raise_salary` | REDESIGN | TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
-| `b05_3_call_emp_api` | REDESIGN | TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
-| `b05_4_call_log_msg` | REDESIGN | SQL-004, SQL-001, TX-001, TRG-002 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
+| `b05_3_call_emp_api` | REDESIGN | SCAN-001, TX-001 | SCAN-001: 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します; TX-001: routine 内の COMMIT  |
+| `b05_4_call_log_msg` | REDESIGN | SQL-004, TX-001, TRG-002 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b06_1_bulk_collect_limit` | REVIEW | SCAN-002, CUR-002, BULK-003 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
 | `b06_2_2_forall_returning` | REDESIGN | SQL-001, BULK-001, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b06_2_forall_save_exceptions` | REDESIGN | SCAN-002, CUR-002, BULK-003, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
@@ -627,18 +643,18 @@ trigger を全部配備したので、employees を書くシナリオでは Orac
 | `dml_d_create_error_log` | REVIEW | CALL-001 | CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません |
 | `emp_api.call_count` | REDESIGN | STATE-001 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります |
 | `emp_api.get_by_dept` | REDESIGN | SCAN-002, CUR-002, STATE-001 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります |
-| `emp_api.give_raise~1` | REDESIGN | SQL-004, SQL-001, STATE-001, TRG-002 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります; TRG-002 |
-| `emp_api.give_raise~2` | REDESIGN | SQL-001, STATE-001, TRG-002 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります; TRG-002 |
+| `emp_api.give_raise~1` | REDESIGN | SQL-004, STATE-001, TRG-002 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります; TRG-002 |
+| `emp_api.give_raise~2` | REDESIGN | CUR-002, SQL-004, STATE-001, TRG-002 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります; TRG-002 |
 | `emp_api.hire` | REDESIGN | EXC-001, SQL-001, STATE-001, TRG-002 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります; TRG-002 |
 | `emp_api.validate_pct` | REDESIGN | STATE-001 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります |
 | `emp_biu_trg.body` | REDESIGN | TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
 | `emp_dept_cap_trg.body` | REDESIGN | TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
 | `emp_dept_upd_v_trg.body` | REDESIGN | SQL-001, TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
 | `emp_grades` | REVIEW | LOWER-001, CUR-002, SQL-002 | LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません; CUR-002: Cursor FOR LOOP です。走査 |
-| `emp_salary_audit_trg.body` | REDESIGN | SQL-001, TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
-| `log_msg` | REDESIGN | SQL-001, TX-001, TX-002 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
+| `emp_salary_audit_trg.body` | REDESIGN | TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
+| `log_msg` | REDESIGN | TX-001, TX-002 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `normalize_name` | REVIEW |  | confidence factor testEvidence is 0 |
-| `raise_salary` | REDESIGN | SQL-004, SQL-001, TRG-002 | TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigg |
+| `raise_salary` | REDESIGN | SQL-004, TRG-002 | TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigg |
 | `setup_drop_objects` | REDESIGN | DYN-001, DYN-002, CUR-002 | DYN-001: 表名など識別子が実行時に決まる SQL です。allowlist か専用 Repository への再設計が要ります |
 | `setup_gather_stats` | REVIEW | CALL-001 | CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません |
 
@@ -649,30 +665,30 @@ trigger を全部配備したので、employees を書くシナリオでは Orac
 | `annual_comp_with_comm` | `annual_comp.annual_comp` | 一致 |  |
 | `b04_1_variables` | `b04_1_variables.b04_1_variables` | 一致 |  |
 | `b04_2_control_flow` | `b04_2_control_flow.b04_2_control_flow` | 一致 |  |
-| `b04_3_implicit_cursor_attrs` | `b04_3_implicit_cursor_attrs.b04_3_implicit_cursor_attrs` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (SET salary = salary + 100: expressions referencing columns are not allowed; do SELECT -> compute  |
+| `b04_3_implicit_cursor_attrs` | `b04_3_implicit_cursor_attrs.b04_3_implicit_cursor_attrs` | 相違 | table emp_audit row count: expected=0 actual=2; table emp_audit: unexpected (actual only): audit_id=1; table emp_audit: unexpected (actual only): audit_id=2; table employ |
 | `b04_4_1_explicit_cursor` | `b04_4_1_explicit_cursor.b04_4_1_explicit_cursor` | 一致 |  |
 | `b04_4_2_cursor_for_loop` | `b04_4_2_cursor_for_loop.b04_4_2_cursor_for_loop` | 一致 |  |
-| `b04_4_3_for_update_current_of` | `b04_4_3_for_update_current_of.b04_4_3_for_update_current_of` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Loop: cursor FOR loop whose body writes ['employees'], which its own query reads) |
+| `b04_4_3_for_update_current_of` | `b04_4_3_for_update_current_of.b04_4_3_for_update_current_of` | 相違 | table emp_audit row count: expected=0 actual=2; table emp_audit: unexpected (actual only): audit_id=1; table emp_audit: unexpected (actual only): audit_id=2; table employ |
 | `b04_4_4_ref_cursor` | `b04_4_4_ref_cursor.b04_4_4_ref_cursor` | 一致 |  |
 | `b04_5_records_collections` | `b04_5_records_collections.b04_5_records_collections` | 一致 |  |
 | `b04_6_1_predefined_exceptions` | `b04_6_1_predefined_exceptions.b04_6_1_predefined_exceptions` | 一致 |  |
-| `b04_6_2_user_exceptions` | `b04_6_2_user_exceptions.b04_6_2_user_exceptions` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (Rollback is not translated) |
-| `b05_1_call_raise_salary` | `b05_1_call_raise_salary.b05_1_call_raise_salary` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (RETURNING is not supported) |
+| `b04_6_2_user_exceptions` | `b04_6_2_user_exceptions.b04_6_2_user_exceptions` | 相違 | table employees row count: expected=15 actual=16; table employees: unexpected (actual only): employee_id=999 |
+| `b05_1_call_raise_salary` | `b05_1_call_raise_salary.b05_1_call_raise_salary` | 相違 | table emp_audit row count: expected=0 actual=2; table emp_audit: unexpected (actual only): audit_id=1; table emp_audit: unexpected (actual only): audit_id=2; table employ |
 | `b05_3_call_emp_api` | `b05_3_call_emp_api.b05_3_call_emp_api` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Assignment: emp_api.hire) |
-| `b05_4_call_log_msg` | `b05_4_call_log_msg.b05_4_call_log_msg` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (SET salary = salary + 1: expressions referencing columns are not allowed; do SELECT -> compute -> |
+| `b05_4_call_log_msg` | `b05_4_call_log_msg.b05_4_call_log_msg` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Call: log_msg は別トランザクションで呼ぶ routine である); table emp_audit row count: expected=1 act |
 | `b06_1_bulk_collect_limit` | `b06_1_bulk_collect_limit.b06_1_bulk_collect_limit` | 一致 |  |
 | `b06_2_2_forall_returning` | `b06_2_2_forall_returning.b06_2_2_forall_returning` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Loop: forall loop) |
-| `b06_2_forall_save_exceptions` | `b06_2_forall_save_exceptions.b06_2_forall_save_exceptions` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (Commit is not translated); table bulk_target row count: expected=11 actual=0; table bulk_target:  |
+| `b06_2_forall_save_exceptions` | `b06_2_forall_save_exceptions.b06_2_forall_save_exceptions` | 相違 | table bulk_target row count: expected=11 actual=15; table bulk_target: unexpected (actual only): employee_id=100; table bulk_target: unexpected (actual only): employee_id |
 | `b06_3_6_dbms_sql` | `b06_3_6_dbms_sql.b06_3_6_dbms_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration c: DBMS_SQL.OPEN_CURSOR) |
-| `b06_3_native_dynamic_sql` | `b06_3_native_dynamic_sql.b06_3_native_dynamic_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in DynamicSql: EXECUTE IMMEDIATE whose statement is not a knowable set) |
+| `b06_3_native_dynamic_sql` | `b06_3_native_dynamic_sql.b06_3_native_dynamic_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in DynamicSql: RETURNING INTO of a dynamic UPDATE) |
 | `b06_4_collection_in_sql` | `b06_4_collection_in_sql.b06_4_collection_in_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in SqlOperation: execution plan result) |
 | `b06_5_builtin_packages` | `b06_5_builtin_packages.b06_5_builtin_packages` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Call: named arguments of a routine that is not in the program) |
 | `b06_6_conditional_compilation` | `b06_6_conditional_compilation.b06_6_conditional_compilation` | 一致 |  |
 | `dept_name_of_missing` | `dept_name_of.dept_name_of` | 一致 |  |
 | `dept_name_of_ok` | `dept_name_of.dept_name_of` | 一致 |  |
 | `emp_api_give_raise_invalid` | `emp_api.give_raise~1` | 一致 |  |
-| `emp_api_give_raise_ok` | `emp_api.give_raise~1` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (SET salary = salary * (1 + :p_pct / 100): expressions referencing columns are not allowed; do SEL |
-| `log_msg_ok` | `log_msg.log_msg` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (INSERT must specify the full primary key; missing ['audit_id']); table emp_audit row count: expec |
+| `emp_api_give_raise_ok` | `emp_api.give_raise~1` | 相違 | table emp_audit row audit_id=1: old_salary: expected=6000 actual=6000.0 (scale); new_salary: expected=6600 actual=6600.0 (scale); changed_by: expected=<masked> actual=NUL |
+| `log_msg_ok` | `log_msg.log_msg` | 相違 | table emp_audit row audit_id=1: changed_by: expected=<masked> actual=NULL (masked on one side only); changed_at: expected=<masked> actual=NULL (masked on one side only) |
 | `normalize_name_ok` | `normalize_name.normalize_name` | 一致 |  |
-| `raise_salary_missing` | `raise_salary.raise_salary` | 相違 | exception code: expected=-20010 actual=java.lang.UnsupportedOperationException (RETURNING is not supported) |
-| `raise_salary_ok` | `raise_salary.raise_salary` | 相違 | out p_new_sal: missing (expected only) = 6600; exception: expected=none actual=java.lang.UnsupportedOperationException (RETURNING is not supported); table emp_audit row c |
+| `raise_salary_missing` | `raise_salary.raise_salary` | 一致 |  |
+| `raise_salary_ok` | `raise_salary.raise_salary` | 相違 | table emp_audit row audit_id=1: old_salary: expected=6000 actual=6000.0 (scale); new_salary: expected=6600 actual=6600.0 (scale); changed_by: expected='HRS' actual=NULL ( |

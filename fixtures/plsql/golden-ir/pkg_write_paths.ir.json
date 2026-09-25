@@ -63,6 +63,7 @@
        },
        "sqlKind": "INSERT",
        "originalSql": "INSERT INTO orders (customer_id, status, ordered_at) VALUES (p_customer_id, 'NEW', SYSDATE)",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false
@@ -147,6 +148,7 @@
        },
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE products SET unit_price = p_price WHERE product_id = p_product_id",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false

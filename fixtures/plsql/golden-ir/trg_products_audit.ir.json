@@ -72,6 +72,7 @@
        },
        "sqlKind": "INSERT",
        "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, old_value, new_value, changed_at, changed_by)\n  VALUES (seq_audit_id.NEXTVAL, 'PRODUCTS', TO_CHAR(:NEW.product_id), 'PRICE',\n          TO_CHAR(:OLD.unit_price), TO_CHAR(:NEW.unit_price), SYSTIMESTAMP, USER)",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false

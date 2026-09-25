@@ -277,7 +277,10 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
     A function call inside an expression (`v := order_total(id)`) resolves to a sibling method, so the sibling
     names belong in the scope; without them every such call is reported as unknown.
     """
-    names = {"SQL%ROWCOUNT": "rowCount", "sql%rowcount": "rowCount"}
+    names = {"SQL%ROWCOUNT": "rowCount", "sql%rowcount": "rowCount",
+             # the implicit cursor's other attributes: the last DML touched no row / some row
+             "SQL%NOTFOUND": "(rowCount == 0)", "sql%notfound": "(rowCount == 0)",
+             "SQL%FOUND": "(rowCount > 0)", "sql%found": "(rowCount > 0)"}
     # trigger の相関名。`:NEW.status` は文が走る前から Java が値として持っているもので、
     # cursor FOR ループの行と同じ扱いになる（#10 / #12）
     for variable, bind in correlation_row(routine).items():
@@ -691,10 +694,13 @@ def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
             components.append(_expr(file, default.group(1).strip(), routine, result) if default else "null")
         file.line(f"{row} {java_name(declaration.name)} = new {row}({', '.join(components)});")
         return
-    if _collection_kind(declaration) == "map" and not declaration.initial:
+    if _collection_kind(declaration) and not declaration.initial \
+            and "INDEX BY" in (declaration.type.resolved or "").upper():
+        # an associative array exists from its declaration, empty; only a nested table / VARRAY starts NULL
         mapped = java_type(declaration.type.resolved)
         file.add_import(*mapped.imports, "com.scalar.migrate.plsql.Plsql")
-        file.line(f"{mapped.name} {java_name(declaration.name)} = Plsql.indexBy();")
+        constructor = "Plsql.indexBy()" if _collection_kind(declaration) == "map" else "Plsql.table()"
+        file.line(f"{mapped.name} {java_name(declaration.name)} = {constructor};")
         return
     mapped = java_type(declaration.type.resolved if declaration.type else None)
     file.add_import(*mapped.imports)
@@ -893,6 +899,11 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
         _sql(file, statement, routine)
     elif kind == "DynamicSql":
         _dynamic(file, statement, routine, result)
+    elif kind in ("Commit", "Rollback", "Savepoint") and routine.id in split._BOUNDARIES.get().caller:
+        # transactions.callerBoundary: the caller begins, commits and rolls back. The statement is left out,
+        # visibly. A ROLLBACK that undid earlier writes now undoes nothing unless the caller rolls back
+        file.comment(f"{kind.upper()} は呼び出し側の境界に移した（limits.yaml transactions.callerBoundary: "
+                     f"{split._BOUNDARIES.get().caller[routine.id]}）")
     else:
         _untranslated(file, statement, result)
 
@@ -1379,7 +1390,12 @@ def _trigger_call(file: JavaFile, statement: M.Call, routine: M.Routine,
     if missing:
         # 呼ばれる側が読む列を、呼ぶ側が渡していない。黙って null を渡すと**条件の意味が変わる**
         raise Untranslatable([f"{owner} needs {', '.join(missing)}"], statement.callee)
-    arguments = [_expr(file, given[name], routine, result) for name in wanted]
+    # each value is shaped for the body's parameter: the SET expression of a split RMW (`Plsql.add(vRmw1, 1)`)
+    # is an Object and the body takes the column's BigDecimal (samples/oracle-samples b05_4, 2026-09-25)
+    types = correlation_row(callee)
+    arguments = [_coerce(file, _expr(file, given[name], routine, result),
+                         java_type(types[name].oracle_type).name if name in types else "Object")
+                 for name in wanted]
     if needs_audit(callee):
         arguments.append("audit")
     file.line(f"{java_name(owner)}.{java_name(routine_stem(callee))}({', '.join(arguments)});")
@@ -1436,7 +1452,7 @@ def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine
     elif (statement.sql_kind or "").upper() in ("INSERT", "UPDATE", "DELETE", "MERGE"):
         # SQL%ROWCOUNT is part of the behaviour: `update_email` raises when it is zero. One variable per
         # statement, because a routine may hold several DML statements in one scope.
-        file.line(f"rowCount = repository.{method}({arguments});")
+        file.line(f"rowCount {'+' if getattr(statement, 'accumulates_rowcount', False) else ''}= repository.{method}({arguments});")
     else:
         file.line(f"repository.{method}({arguments});")
 
@@ -1491,6 +1507,10 @@ def _dynamic(file: JavaFile, statement: M.DynamicSql, routine: M.Routine,
 def _variant(file: JavaFile, operation: M.SqlOperation, statement: M.DynamicSql,
              routine: M.Routine) -> None:
     """畳んだ 1 つの variant。INTO は元の `EXECUTE IMMEDIATE ... INTO` が言っている。"""
+    if statement.into_targets and (operation.sql_kind or "").upper() != "SELECT":
+        # `EXECUTE IMMEDIATE 'UPDATE ... RETURNING x INTO :n' ... RETURNING INTO v`: ScalarDB SQL has no RETURNING,
+        # and the repository returns the row count, which is not the value (samples/oracle-samples b06_3, 2026-09-25)
+        raise Untranslatable([f"RETURNING INTO of a dynamic {operation.sql_kind}"], statement.expression or "")
     operation = dataclasses.replace(operation, into_targets=list(statement.into_targets))
     _sql(file, operation, routine)
 

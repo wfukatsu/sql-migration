@@ -616,10 +616,10 @@ public final class Plsql {
     if (collection instanceof java.util.List<?> raw) {
       java.util.List<Object> list = (java.util.List<Object>) raw;
       int i = num(at).intValueExact();
-      if (i < 1 || i > list.size()) {
-        throw new IndexOutOfBoundsException("SUBSCRIPT_BEYOND_COUNT (ORA-06533): element " + i + " of " + list.size()
-            + " (EXTEND first)");
-      }
+      if (i < 1) throw new IndexOutOfBoundsException("SUBSCRIPT_OUTSIDE_LIMIT (ORA-06532): element " + i);
+      // an INDEX BY PLS_INTEGER table takes any key: the List grows to it, the skipped slots being gaps. (A nested
+      // table would raise SUBSCRIPT_BEYOND_COUNT here; both are Lists, so the lenient rule serves both)
+      while (list.size() < i) list.add(GAP);
       list.set(i - 1, value);
       return;
     }

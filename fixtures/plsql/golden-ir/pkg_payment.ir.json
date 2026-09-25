@@ -88,6 +88,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT SUM(amount) INTO v_sum FROM payments WHERE order_id = p_order_id",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false
@@ -245,6 +246,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT status INTO v_status FROM orders WHERE order_id = p_order_id",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false
@@ -292,6 +294,7 @@
        },
        "sqlKind": "INSERT",
        "originalSql": "INSERT INTO payments (payment_id, order_id, amount, method, paid_at)\n    VALUES (p_payment_id, p_order_id, p_amount, p_method, SYSTIMESTAMP)",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false
@@ -413,6 +416,7 @@
        },
        "sqlKind": "SELECT",
        "originalSql": "SELECT MAX(paid_at) INTO v_at FROM payments WHERE order_id = p_order_id",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false

@@ -118,6 +118,7 @@
        ],
        "sqlKind": "SELECT",
        "originalSql": "SELECT tier INTO v_current FROM customers WHERE customer_id = p_customer_id FOR UPDATE",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false,
@@ -164,6 +165,7 @@
        },
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE customers SET tier = p_tier WHERE customer_id = p_customer_id",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false
@@ -248,6 +250,7 @@
        },
        "sqlKind": "UPDATE",
        "originalSql": "UPDATE customers SET credit_limit = p_limit WHERE customer_id = p_customer_id",
+       "accumulates_rowcount": false,
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false

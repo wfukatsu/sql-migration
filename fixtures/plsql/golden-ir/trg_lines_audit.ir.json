@@ -55,6 +55,7 @@
            },
            "sqlKind": "INSERT",
            "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, old_value, new_value, changed_at, changed_by)\n    VALUES (seq_audit_id.NEXTVAL, 'ORDER_LINES', TO_CHAR(:NEW.line_no), 'INSERT',\n            NULL, TO_CHAR(:NEW.qty), SYSTIMESTAMP, USER)",
+           "accumulates_rowcount": false,
            "selectsStar": false,
            "cardinality": "UNKNOWN",
            "atMostOneRow": false
@@ -76,6 +77,7 @@
            },
            "sqlKind": "INSERT",
            "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, old_value, new_value, changed_at, changed_by)\n    VALUES (seq_audit_id.NEXTVAL, 'ORDER_LINES', TO_CHAR(:NEW.line_no), 'UPDATE',\n            TO_CHAR(:OLD.qty), TO_CHAR(:NEW.qty), SYSTIMESTAMP, USER)",
+           "accumulates_rowcount": false,
            "selectsStar": false,
            "cardinality": "UNKNOWN",
            "atMostOneRow": false
@@ -96,6 +98,7 @@
          },
          "sqlKind": "INSERT",
          "originalSql": "INSERT INTO audit_log (audit_id, table_name, key_value, action, old_value, new_value, changed_at, changed_by)\n    VALUES (seq_audit_id.NEXTVAL, 'ORDER_LINES', TO_CHAR(:OLD.line_no), 'DELETE',\n            TO_CHAR(:OLD.qty), NULL, SYSTIMESTAMP, USER)",
+         "accumulates_rowcount": false,
          "selectsStar": false,
          "cardinality": "UNKNOWN",
          "atMostOneRow": false

@@ -143,6 +143,7 @@
         },
         "sqlKind": "SELECT",
         "originalSql": "SELECT audit_id FROM audit_log WHERE changed_at < SYSTIMESTAMP - p_keep_days",
+        "accumulates_rowcount": false,
         "selectsStar": false,
         "cardinality": "MANY",
         "atMostOneRow": false
@@ -175,6 +176,7 @@
          },
          "sqlKind": "DELETE",
          "originalSql": "DELETE FROM audit_log WHERE audit_id = v_id",
+         "accumulates_rowcount": false,
          "selectsStar": false,
          "cardinality": "UNKNOWN",
          "atMostOneRow": false
