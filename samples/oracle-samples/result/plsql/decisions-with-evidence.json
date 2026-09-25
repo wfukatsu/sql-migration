@@ -1,9 +1,9 @@
 {
  "schemaVersion": "1.1.0",
  "counts": {
-  "AUTO": 6,
-  "REDESIGN": 9,
-  "REVIEW": 9
+  "AUTO": 7,
+  "REDESIGN": 24,
+  "REVIEW": 10
  },
  "redesignStates": {},
  "scenariosMatchingNoRoutine": [],
@@ -19,9 +19,15 @@
    "b04_4_1_explicit_cursor",
    "b04_4_2_cursor_for_loop",
    "b04_4_3_for_update_current_of",
+   "b04_4_4_ref_cursor",
+   "b04_5_records_collections",
    "b04_6_1_predefined_exceptions",
    "b04_6_2_user_exceptions",
+   "b05_1_call_raise_salary",
+   "b05_3_call_emp_api",
+   "b05_4_call_log_msg",
    "b06_1_bulk_collect_limit",
+   "b06_2_2_forall_returning",
    "b06_2_forall_save_exceptions",
    "b06_3_6_dbms_sql",
    "b06_3_native_dynamic_sql",
@@ -31,6 +37,17 @@
    "b06_6_conditional_compilation",
    "dept_name_of",
    "dml_d_create_error_log",
+   "emp_api.call_count",
+   "emp_api.get_by_dept",
+   "emp_api.give_raise~1",
+   "emp_api.give_raise~2",
+   "emp_api.hire",
+   "emp_api.validate_pct",
+   "emp_biu_trg.body",
+   "emp_dept_cap_trg.body",
+   "emp_dept_upd_v_trg.body",
+   "emp_grades",
+   "emp_salary_audit_trg.body",
    "log_msg",
    "normalize_name",
    "raise_salary",
@@ -105,28 +122,24 @@
   },
   {
    "routine": "b04_2_control_flow",
-   "verdict": "REVIEW",
+   "verdict": "AUTO",
    "ruleVerdict": "AUTO",
    "confidence": {
-    "value": 0.0,
+    "value": 1.0,
     "ruleCoverage": 1.0,
     "symbolResolution": 1.0,
     "typeResolution": 1.0,
     "targetCapability": 1.0,
-    "testEvidence": 0.0,
-    "zeroFactors": [
-     "testEvidence"
-    ]
+    "testEvidence": 1.0,
+    "zeroFactors": []
    },
    "reasons": [
-    "confidence factor testEvidence is 0"
+    "confidence 1.000 >= 0.95, no rule objected"
    ],
    "rules": [],
    "remediation": [],
    "requiredTests": [],
-   "whyNotAuto": [
-    "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
-   ],
+   "whyNotAuto": [],
    "redesign": null,
    "source": {
     "file": "b04_2_control_flow.prc",
@@ -156,9 +169,18 @@
     ]
    },
    "reasons": [
-    "TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません"
+    "TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
+    "TX-004: 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します（P2-9 で実測）",
+    "TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません"
    ],
    "rules": [
+    {
+     "id": "SQL-004",
+     "decision": "REVIEW",
+     "message": "SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です",
+     "source": "semantics.yaml",
+     "severity": "warning"
+    },
     {
      "id": "SQL-001",
      "decision": "REVIEW",
@@ -172,20 +194,45 @@
      "message": "routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
      "source": "transaction.yaml",
      "severity": "critical"
+    },
+    {
+     "id": "TX-004",
+     "decision": "REDESIGN",
+     "message": "同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します（P2-9 で実測）",
+     "source": "transaction.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "TRG-002",
+     "decision": "REDESIGN",
+     "message": "trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
+     "source": "trigger.yaml",
+     "severity": "critical"
     }
    ],
    "remediation": [
+    "件数を返す形に呼び出し先を直すか、件数を読む位置を静的な DML の直後に寄せる",
     "use case の耐久境界で分割する",
-    "再試行と冪等性の方針を決める"
+    "再試行と冪等性の方針を決める",
+    "耐久境界で routine を分割する",
+    "読み取りをキーアクセスに変える",
+    "trigger の処理を、この書き込みをする Service に持たせる（値を書き換える trigger は採番 Service へ）",
+    "複数行の更新・DELETE・MERGE・複数イベントの trigger は、行ごとに何を渡すかを設計する"
    ],
    "requiredTests": [
+    "all_write_paths_covered",
     "equivalent_result",
     "partial_failure",
-    "rollback_boundary"
+    "rollback_boundary",
+    "row_count",
+    "scan_after_write"
    ],
    "whyNotAuto": [
+    "SQL-004 (REVIEW): SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です",
     "SQL-001 (REVIEW): ScalarDB SQL で実行できない文があります",
     "TX-001 (REDESIGN): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
+    "TX-004 (REDESIGN): 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します（P2-9 で実測）",
+    "TRG-002 (REDESIGN): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
     "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
    "redesign": null,
@@ -210,50 +257,53 @@
     "symbolResolution": 0.0,
     "typeResolution": 0.0,
     "targetCapability": 1.0,
-    "testEvidence": 0.0,
+    "testEvidence": 1.0,
     "zeroFactors": [
      "symbolResolution",
-     "typeResolution",
-     "testEvidence"
+     "typeResolution"
     ]
    },
    "reasons": [
-    "CUR-001: 明示 cursor は寿命がトランザクション境界をまたぎます",
-    "CUR-001: 明示 cursor は寿命がトランザクション境界をまたぎます",
-    "CUR-001: 明示 cursor は寿命がトランザクション境界をまたぎます"
+    "CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
+    "CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります"
    ],
    "rules": [
     {
-     "id": "CUR-001",
+     "id": "SCAN-002",
+     "decision": "AUTO",
+     "message": "パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります",
+     "source": "scalardb_capability.yaml",
+     "severity": "info"
+    },
+    {
+     "id": "CUR-003",
      "decision": "REVIEW",
-     "message": "明示 cursor は寿命がトランザクション境界をまたぎます",
+     "message": "明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
      "source": "semantics.yaml",
      "severity": "warning"
     },
     {
-     "id": "CUR-001",
+     "id": "CUR-002",
      "decision": "REVIEW",
-     "message": "明示 cursor は寿命がトランザクション境界をまたぎます",
-     "source": "semantics.yaml",
-     "severity": "warning"
-    },
-    {
-     "id": "CUR-001",
-     "decision": "REVIEW",
-     "message": "明示 cursor は寿命がトランザクション境界をまたぎます",
+     "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
      "source": "semantics.yaml",
      "severity": "warning"
     }
    ],
-   "remediation": [],
+   "remediation": [
+    "キーで届く読み取りに変える",
+    "全行を取得してアプリ側で絞る・並べる（docs/design/app-side-processing-plan.md）"
+   ],
    "requiredTests": [
-    "cursor_lifetime"
+    "cross_partition_scan",
+    "cursor_lifetime",
+    "performance",
+    "row_limit"
    ],
    "whyNotAuto": [
-    "CUR-001 (REVIEW): 明示 cursor は寿命がトランザクション境界をまたぎます",
-    "CUR-001 (REVIEW): 明示 cursor は寿命がトランザクション境界をまたぎます",
-    "CUR-001 (REVIEW): 明示 cursor は寿命がトランザクション境界をまたぎます",
-    "確信度が 0: symbolResolution, typeResolution, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+    "CUR-003 (REVIEW): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
+    "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+    "確信度が 0: symbolResolution, typeResolution"
    ],
    "redesign": null,
    "source": {
@@ -349,13 +399,21 @@
    "reasons": [
     "LOCK-001: 行ロックです。ターゲットで同じ保証を別の方法で与える設計が要ります",
     "LOCK-002: cursor の宣言で行ロックしています。文だけを見ると見えない形です",
-    "TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません"
+    "TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
+    "TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません"
    ],
    "rules": [
     {
      "id": "CUR-002",
      "decision": "REVIEW",
      "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+     "source": "semantics.yaml",
+     "severity": "warning"
+    },
+    {
+     "id": "SQL-004",
+     "decision": "REVIEW",
+     "message": "SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です",
      "source": "semantics.yaml",
      "severity": "warning"
     },
@@ -386,31 +444,45 @@
      "message": "routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
      "source": "transaction.yaml",
      "severity": "critical"
+    },
+    {
+     "id": "TRG-002",
+     "decision": "REDESIGN",
+     "message": "trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
+     "source": "trigger.yaml",
+     "severity": "critical"
     }
    ],
    "remediation": [
+    "件数を返す形に呼び出し先を直すか、件数を読む位置を静的な DML の直後に寄せる",
     "楽観制御と再試行にする",
     "NOWAIT / SKIP LOCKED は待たない意味を個別に設計する",
     "楽観制御と再試行にする",
     "SKIP LOCKED の「取り合い」の意味を業務要件として決める",
     "use case の耐久境界で分割する",
-    "再試行と冪等性の方針を決める"
+    "再試行と冪等性の方針を決める",
+    "trigger の処理を、この書き込みをする Service に持たせる（値を書き換える trigger は採番 Service へ）",
+    "複数行の更新・DELETE・MERGE・複数イベントの trigger は、行ごとに何を渡すかを設計する"
    ],
    "requiredTests": [
+    "all_write_paths_covered",
     "concurrent_claim",
     "concurrent_update",
     "equivalent_result",
     "partial_failure",
     "performance",
     "rollback_boundary",
+    "row_count",
     "row_limit"
    ],
    "whyNotAuto": [
     "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+    "SQL-004 (REVIEW): SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です",
     "LOCK-001 (REDESIGN): 行ロックです。ターゲットで同じ保証を別の方法で与える設計が要ります",
     "LOCK-002 (REDESIGN): cursor の宣言で行ロックしています。文だけを見ると見えない形です",
     "SQL-001 (REVIEW): ScalarDB SQL で実行できない文があります",
     "TX-001 (REDESIGN): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
+    "TRG-002 (REDESIGN): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
     "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
    "redesign": null,
@@ -422,6 +494,159 @@
    "generated": {
     "class": "B0443ForUpdateCurrentOfService",
     "method": "b0443ForUpdateCurrentOf"
+   },
+   "humanFixMinutes": null
+  },
+  {
+   "routine": "b04_4_4_ref_cursor",
+   "verdict": "REVIEW",
+   "ruleVerdict": "REVIEW",
+   "confidence": {
+    "value": 0.0,
+    "ruleCoverage": 0.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
+    "targetCapability": 1.0,
+    "testEvidence": 0.0,
+    "zeroFactors": [
+     "ruleCoverage",
+     "testEvidence"
+    ]
+   },
+   "reasons": [
+    "LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません",
+    "LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません",
+    "CUR-001: 明示 cursor は寿命がトランザクション境界をまたぎます",
+    "CUR-001: 明示 cursor は寿命がトランザクション境界をまたぎます"
+   ],
+   "rules": [
+    {
+     "id": "LOWER-001",
+     "decision": "REVIEW",
+     "message": "lowering がまだ模していない構文です。意味が保てる保証がありません",
+     "source": "lowering.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "LOWER-001",
+     "decision": "REVIEW",
+     "message": "lowering がまだ模していない構文です。意味が保てる保証がありません",
+     "source": "lowering.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "CUR-001",
+     "decision": "REVIEW",
+     "message": "明示 cursor は寿命がトランザクション境界をまたぎます",
+     "source": "semantics.yaml",
+     "severity": "warning"
+    },
+    {
+     "id": "CUR-001",
+     "decision": "REVIEW",
+     "message": "明示 cursor は寿命がトランザクション境界をまたぎます",
+     "source": "semantics.yaml",
+     "severity": "warning"
+    }
+   ],
+   "remediation": [],
+   "requiredTests": [
+    "cursor_lifetime",
+    "equivalent_result"
+   ],
+   "whyNotAuto": [
+    "LOWER-001 (REVIEW): lowering がまだ模していない構文です。意味が保てる保証がありません",
+    "LOWER-001 (REVIEW): lowering がまだ模していない構文です。意味が保てる保証がありません",
+    "CUR-001 (REVIEW): 明示 cursor は寿命がトランザクション境界をまたぎます",
+    "CUR-001 (REVIEW): 明示 cursor は寿命がトランザクション境界をまたぎます",
+    "確信度が 0: ruleCoverage, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+   ],
+   "redesign": null,
+   "source": {
+    "file": "b04_4_4_ref_cursor.prc",
+    "startLine": 2,
+    "endLine": 18
+   },
+   "generated": {
+    "class": "B0444RefCursorService",
+    "method": "b0444RefCursor"
+   },
+   "humanFixMinutes": null
+  },
+  {
+   "routine": "b04_5_records_collections",
+   "verdict": "REVIEW",
+   "ruleVerdict": "REVIEW",
+   "confidence": {
+    "value": 0.0,
+    "ruleCoverage": 0.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
+    "targetCapability": 1.0,
+    "testEvidence": 0.0,
+    "zeroFactors": [
+     "ruleCoverage",
+     "testEvidence"
+    ]
+   },
+   "reasons": [
+    "LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません",
+    "LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません",
+    "LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません",
+    "CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります"
+   ],
+   "rules": [
+    {
+     "id": "LOWER-001",
+     "decision": "REVIEW",
+     "message": "lowering がまだ模していない構文です。意味が保てる保証がありません",
+     "source": "lowering.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "LOWER-001",
+     "decision": "REVIEW",
+     "message": "lowering がまだ模していない構文です。意味が保てる保証がありません",
+     "source": "lowering.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "LOWER-001",
+     "decision": "REVIEW",
+     "message": "lowering がまだ模していない構文です。意味が保てる保証がありません",
+     "source": "lowering.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "CUR-002",
+     "decision": "REVIEW",
+     "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+     "source": "semantics.yaml",
+     "severity": "warning"
+    }
+   ],
+   "remediation": [],
+   "requiredTests": [
+    "equivalent_result",
+    "performance",
+    "row_limit"
+   ],
+   "whyNotAuto": [
+    "LOWER-001 (REVIEW): lowering がまだ模していない構文です。意味が保てる保証がありません",
+    "LOWER-001 (REVIEW): lowering がまだ模していない構文です。意味が保てる保証がありません",
+    "LOWER-001 (REVIEW): lowering がまだ模していない構文です。意味が保てる保証がありません",
+    "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+    "確信度が 0: ruleCoverage, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+   ],
+   "redesign": null,
+   "source": {
+    "file": "b04_5_records_collections.prc",
+    "startLine": 2,
+    "endLine": 44
+   },
+   "generated": {
+    "class": "B045RecordsCollectionsService",
+    "method": "b045RecordsCollections"
    },
    "humanFixMinutes": null
   },
@@ -484,6 +709,69 @@
     ]
    },
    "reasons": [
+    "TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
+    "TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません"
+   ],
+   "rules": [
+    {
+     "id": "TX-001",
+     "decision": "REDESIGN",
+     "message": "routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
+     "source": "transaction.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "TRG-002",
+     "decision": "REDESIGN",
+     "message": "trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
+     "source": "trigger.yaml",
+     "severity": "critical"
+    }
+   ],
+   "remediation": [
+    "use case の耐久境界で分割する",
+    "再試行と冪等性の方針を決める",
+    "trigger の処理を、この書き込みをする Service に持たせる（値を書き換える trigger は採番 Service へ）",
+    "複数行の更新・DELETE・MERGE・複数イベントの trigger は、行ごとに何を渡すかを設計する"
+   ],
+   "requiredTests": [
+    "all_write_paths_covered",
+    "partial_failure",
+    "rollback_boundary"
+   ],
+   "whyNotAuto": [
+    "TX-001 (REDESIGN): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
+    "TRG-002 (REDESIGN): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
+    "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+   ],
+   "redesign": null,
+   "source": {
+    "file": "b04_6_2_user_exceptions.prc",
+    "startLine": 2,
+    "endLine": 33
+   },
+   "generated": {
+    "class": "B0462UserExceptionsService",
+    "method": "b0462UserExceptions"
+   },
+   "humanFixMinutes": null
+  },
+  {
+   "routine": "b05_1_call_raise_salary",
+   "verdict": "REDESIGN",
+   "ruleVerdict": "REDESIGN",
+   "confidence": {
+    "value": 0.0,
+    "ruleCoverage": 1.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
+    "targetCapability": 1.0,
+    "testEvidence": 0.0,
+    "zeroFactors": [
+     "testEvidence"
+    ]
+   },
+   "reasons": [
     "TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません"
    ],
    "rules": [
@@ -509,13 +797,147 @@
    ],
    "redesign": null,
    "source": {
-    "file": "b04_6_2_user_exceptions.prc",
+    "file": "b05_1_call_raise_salary.prc",
     "startLine": 2,
-    "endLine": 33
+    "endLine": 10
    },
    "generated": {
-    "class": "B0462UserExceptionsService",
-    "method": "b0462UserExceptions"
+    "class": "B051CallRaiseSalaryService",
+    "method": "b051CallRaiseSalary"
+   },
+   "humanFixMinutes": null
+  },
+  {
+   "routine": "b05_3_call_emp_api",
+   "verdict": "REDESIGN",
+   "ruleVerdict": "REDESIGN",
+   "confidence": {
+    "value": 0.0,
+    "ruleCoverage": 1.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
+    "targetCapability": 1.0,
+    "testEvidence": 0.0,
+    "zeroFactors": [
+     "testEvidence"
+    ]
+   },
+   "reasons": [
+    "TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません"
+   ],
+   "rules": [
+    {
+     "id": "TX-001",
+     "decision": "REDESIGN",
+     "message": "routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
+     "source": "transaction.yaml",
+     "severity": "critical"
+    }
+   ],
+   "remediation": [
+    "use case の耐久境界で分割する",
+    "再試行と冪等性の方針を決める"
+   ],
+   "requiredTests": [
+    "partial_failure",
+    "rollback_boundary"
+   ],
+   "whyNotAuto": [
+    "TX-001 (REDESIGN): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
+    "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+   ],
+   "redesign": null,
+   "source": {
+    "file": "b05_3_call_emp_api.prc",
+    "startLine": 2,
+    "endLine": 16
+   },
+   "generated": {
+    "class": "B053CallEmpApiService",
+    "method": "b053CallEmpApi"
+   },
+   "humanFixMinutes": null
+  },
+  {
+   "routine": "b05_4_call_log_msg",
+   "verdict": "REDESIGN",
+   "ruleVerdict": "REDESIGN",
+   "confidence": {
+    "value": 0.0,
+    "ruleCoverage": 1.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
+    "targetCapability": 0.0,
+    "testEvidence": 0.0,
+    "zeroFactors": [
+     "targetCapability",
+     "testEvidence"
+    ]
+   },
+   "reasons": [
+    "TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
+    "TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません"
+   ],
+   "rules": [
+    {
+     "id": "SQL-004",
+     "decision": "REVIEW",
+     "message": "SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です",
+     "source": "semantics.yaml",
+     "severity": "warning"
+    },
+    {
+     "id": "SQL-001",
+     "decision": "REVIEW",
+     "message": "ScalarDB SQL で実行できない文があります",
+     "source": "sql.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "TX-001",
+     "decision": "REDESIGN",
+     "message": "routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
+     "source": "transaction.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "TRG-002",
+     "decision": "REDESIGN",
+     "message": "trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
+     "source": "trigger.yaml",
+     "severity": "critical"
+    }
+   ],
+   "remediation": [
+    "件数を返す形に呼び出し先を直すか、件数を読む位置を静的な DML の直後に寄せる",
+    "use case の耐久境界で分割する",
+    "再試行と冪等性の方針を決める",
+    "trigger の処理を、この書き込みをする Service に持たせる（値を書き換える trigger は採番 Service へ）",
+    "複数行の更新・DELETE・MERGE・複数イベントの trigger は、行ごとに何を渡すかを設計する"
+   ],
+   "requiredTests": [
+    "all_write_paths_covered",
+    "equivalent_result",
+    "partial_failure",
+    "rollback_boundary",
+    "row_count"
+   ],
+   "whyNotAuto": [
+    "SQL-004 (REVIEW): SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です",
+    "SQL-001 (REVIEW): ScalarDB SQL で実行できない文があります",
+    "TX-001 (REDESIGN): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
+    "TRG-002 (REDESIGN): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
+    "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+   ],
+   "redesign": null,
+   "source": {
+    "file": "b05_4_call_log_msg.prc",
+    "startLine": 2,
+    "endLine": 7
+   },
+   "generated": {
+    "class": "B054CallLogMsgService",
+    "method": "b054CallLogMsg"
    },
    "humanFixMinutes": null
   },
@@ -581,6 +1003,76 @@
    "generated": {
     "class": "B061BulkCollectLimitService",
     "method": "b061BulkCollectLimit"
+   },
+   "humanFixMinutes": null
+  },
+  {
+   "routine": "b06_2_2_forall_returning",
+   "verdict": "REDESIGN",
+   "ruleVerdict": "REDESIGN",
+   "confidence": {
+    "value": 0.0,
+    "ruleCoverage": 1.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
+    "targetCapability": 0.0,
+    "testEvidence": 0.0,
+    "zeroFactors": [
+     "targetCapability",
+     "testEvidence"
+    ]
+   },
+   "reasons": [
+    "TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません"
+   ],
+   "rules": [
+    {
+     "id": "SQL-001",
+     "decision": "REVIEW",
+     "message": "ScalarDB SQL で実行できない文があります",
+     "source": "sql.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "BULK-001",
+     "decision": "REVIEW",
+     "message": "BULK COLLECT は行数上限とメモリ上限が要ります",
+     "source": "sql.yaml",
+     "severity": "warning"
+    },
+    {
+     "id": "TX-001",
+     "decision": "REDESIGN",
+     "message": "routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
+     "source": "transaction.yaml",
+     "severity": "critical"
+    }
+   ],
+   "remediation": [
+    "use case の耐久境界で分割する",
+    "再試行と冪等性の方針を決める"
+   ],
+   "requiredTests": [
+    "equivalent_result",
+    "partial_failure",
+    "rollback_boundary",
+    "row_limit"
+   ],
+   "whyNotAuto": [
+    "SQL-001 (REVIEW): ScalarDB SQL で実行できない文があります",
+    "BULK-001 (REVIEW): BULK COLLECT は行数上限とメモリ上限が要ります",
+    "TX-001 (REDESIGN): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
+    "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+   ],
+   "redesign": null,
+   "source": {
+    "file": "b06_2_2_forall_returning.prc",
+    "startLine": 2,
+    "endLine": 17
+   },
+   "generated": {
+    "class": "B0622ForallReturningService",
+    "method": "b0622ForallReturning"
    },
    "humanFixMinutes": null
   },
@@ -1248,6 +1740,695 @@
    "humanFixMinutes": null
   },
   {
+   "routine": "emp_api.call_count",
+   "verdict": "REDESIGN",
+   "ruleVerdict": "REDESIGN",
+   "confidence": {
+    "value": 0.0,
+    "ruleCoverage": 1.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
+    "targetCapability": 1.0,
+    "testEvidence": 0.0,
+    "zeroFactors": [
+     "testEvidence"
+    ]
+   },
+   "reasons": [
+    "STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります"
+   ],
+   "rules": [
+    {
+     "id": "STATE-001",
+     "decision": "REDESIGN",
+     "message": "Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
+     "source": "state.yaml",
+     "severity": "critical"
+    }
+   ],
+   "remediation": [
+    "引数で渡す",
+    "明示的な SessionContext か永続化に移す"
+   ],
+   "requiredTests": [
+    "state_isolation_between_calls"
+   ],
+   "whyNotAuto": [
+    "STATE-001 (REDESIGN): Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
+    "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+   ],
+   "redesign": null,
+   "source": {
+    "file": "emp_api.pkb",
+    "startLine": 53,
+    "endLine": 56
+   },
+   "generated": {
+    "class": "EmpApiService",
+    "method": "callCount"
+   },
+   "humanFixMinutes": null
+  },
+  {
+   "routine": "emp_api.get_by_dept",
+   "verdict": "REDESIGN",
+   "ruleVerdict": "REDESIGN",
+   "confidence": {
+    "value": 0.0,
+    "ruleCoverage": 0.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
+    "targetCapability": 1.0,
+    "testEvidence": 0.0,
+    "zeroFactors": [
+     "ruleCoverage",
+     "testEvidence"
+    ]
+   },
+   "reasons": [
+    "STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります"
+   ],
+   "rules": [
+    {
+     "id": "LOWER-001",
+     "decision": "REVIEW",
+     "message": "lowering がまだ模していない構文です。意味が保てる保証がありません",
+     "source": "lowering.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "STATE-001",
+     "decision": "REDESIGN",
+     "message": "Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
+     "source": "state.yaml",
+     "severity": "critical"
+    }
+   ],
+   "remediation": [
+    "引数で渡す",
+    "明示的な SessionContext か永続化に移す"
+   ],
+   "requiredTests": [
+    "equivalent_result",
+    "state_isolation_between_calls"
+   ],
+   "whyNotAuto": [
+    "LOWER-001 (REVIEW): lowering がまだ模していない構文です。意味が保てる保証がありません",
+    "STATE-001 (REDESIGN): Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
+    "確信度が 0: ruleCoverage, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+   ],
+   "redesign": null,
+   "source": {
+    "file": "emp_api.pkb",
+    "startLine": 44,
+    "endLine": 51
+   },
+   "generated": {
+    "class": "EmpApiService",
+    "method": "getByDept"
+   },
+   "humanFixMinutes": null
+  },
+  {
+   "routine": "emp_api.give_raise~1",
+   "verdict": "REDESIGN",
+   "ruleVerdict": "REDESIGN",
+   "confidence": {
+    "value": 0.0,
+    "ruleCoverage": 1.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
+    "targetCapability": 0.0,
+    "testEvidence": 0.0,
+    "zeroFactors": [
+     "targetCapability",
+     "testEvidence"
+    ]
+   },
+   "reasons": [
+    "STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
+    "TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません"
+   ],
+   "rules": [
+    {
+     "id": "SQL-004",
+     "decision": "REVIEW",
+     "message": "SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です",
+     "source": "semantics.yaml",
+     "severity": "warning"
+    },
+    {
+     "id": "SQL-001",
+     "decision": "REVIEW",
+     "message": "ScalarDB SQL で実行できない文があります",
+     "source": "sql.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "STATE-001",
+     "decision": "REDESIGN",
+     "message": "Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
+     "source": "state.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "TRG-002",
+     "decision": "REDESIGN",
+     "message": "trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
+     "source": "trigger.yaml",
+     "severity": "critical"
+    }
+   ],
+   "remediation": [
+    "件数を返す形に呼び出し先を直すか、件数を読む位置を静的な DML の直後に寄せる",
+    "引数で渡す",
+    "明示的な SessionContext か永続化に移す",
+    "trigger の処理を、この書き込みをする Service に持たせる（値を書き換える trigger は採番 Service へ）",
+    "複数行の更新・DELETE・MERGE・複数イベントの trigger は、行ごとに何を渡すかを設計する"
+   ],
+   "requiredTests": [
+    "all_write_paths_covered",
+    "equivalent_result",
+    "row_count",
+    "state_isolation_between_calls"
+   ],
+   "whyNotAuto": [
+    "SQL-004 (REVIEW): SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です",
+    "SQL-001 (REVIEW): ScalarDB SQL で実行できない文があります",
+    "STATE-001 (REDESIGN): Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
+    "TRG-002 (REDESIGN): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
+    "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+   ],
+   "redesign": null,
+   "source": {
+    "file": "emp_api.pkb",
+    "startLine": 30,
+    "endLine": 34
+   },
+   "generated": {
+    "class": "EmpApiService",
+    "method": "giveRaise1"
+   },
+   "humanFixMinutes": null
+  },
+  {
+   "routine": "emp_api.give_raise~2",
+   "verdict": "REDESIGN",
+   "ruleVerdict": "REDESIGN",
+   "confidence": {
+    "value": 0.0,
+    "ruleCoverage": 1.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
+    "targetCapability": 0.0,
+    "testEvidence": 0.0,
+    "zeroFactors": [
+     "targetCapability",
+     "testEvidence"
+    ]
+   },
+   "reasons": [
+    "STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
+    "TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません"
+   ],
+   "rules": [
+    {
+     "id": "SQL-001",
+     "decision": "REVIEW",
+     "message": "ScalarDB SQL で実行できない文があります",
+     "source": "sql.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "STATE-001",
+     "decision": "REDESIGN",
+     "message": "Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
+     "source": "state.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "TRG-002",
+     "decision": "REDESIGN",
+     "message": "trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
+     "source": "trigger.yaml",
+     "severity": "critical"
+    }
+   ],
+   "remediation": [
+    "引数で渡す",
+    "明示的な SessionContext か永続化に移す",
+    "trigger の処理を、この書き込みをする Service に持たせる（値を書き換える trigger は採番 Service へ）",
+    "複数行の更新・DELETE・MERGE・複数イベントの trigger は、行ごとに何を渡すかを設計する"
+   ],
+   "requiredTests": [
+    "all_write_paths_covered",
+    "equivalent_result",
+    "state_isolation_between_calls"
+   ],
+   "whyNotAuto": [
+    "SQL-001 (REVIEW): ScalarDB SQL で実行できない文があります",
+    "STATE-001 (REDESIGN): Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
+    "TRG-002 (REDESIGN): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
+    "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+   ],
+   "redesign": null,
+   "source": {
+    "file": "emp_api.pkb",
+    "startLine": 36,
+    "endLine": 42
+   },
+   "generated": {
+    "class": "EmpApiService",
+    "method": "giveRaise2"
+   },
+   "humanFixMinutes": null
+  },
+  {
+   "routine": "emp_api.hire",
+   "verdict": "REDESIGN",
+   "ruleVerdict": "REDESIGN",
+   "confidence": {
+    "value": 0.0,
+    "ruleCoverage": 1.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
+    "targetCapability": 0.0,
+    "testEvidence": 0.0,
+    "zeroFactors": [
+     "targetCapability",
+     "testEvidence"
+    ]
+   },
+   "reasons": [
+    "STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
+    "TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません"
+   ],
+   "rules": [
+    {
+     "id": "EXC-001",
+     "decision": "REVIEW",
+     "message": "移行先では自然には起こらない例外の handler があります。Oracle では DB 自身の誤りでも走っていた処理が、移行先では走りません",
+     "source": "semantics.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "SQL-001",
+     "decision": "REVIEW",
+     "message": "ScalarDB SQL で実行できない文があります",
+     "source": "sql.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "STATE-001",
+     "decision": "REDESIGN",
+     "message": "Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
+     "source": "state.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "TRG-002",
+     "decision": "REDESIGN",
+     "message": "trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
+     "source": "trigger.yaml",
+     "severity": "critical"
+    }
+   ],
+   "remediation": [
+    "DUP_VAL_ON_INDEX は「読んで、無ければ INSERT、あれば UPDATE」か UPSERT に書き直す（ScalarDB は重複 INSERT のあとトランザクションを続けられない）",
+    "INVALID_NUMBER / VALUE_ERROR は、変換の前に値を検査する形に書き直す",
+    "引数で渡す",
+    "明示的な SessionContext か永続化に移す",
+    "trigger の処理を、この書き込みをする Service に持たせる（値を書き換える trigger は採番 Service へ）",
+    "複数行の更新・DELETE・MERGE・複数イベントの trigger は、行ごとに何を渡すかを設計する"
+   ],
+   "requiredTests": [
+    "all_write_paths_covered",
+    "equivalent_result",
+    "exception_path",
+    "state_isolation_between_calls"
+   ],
+   "whyNotAuto": [
+    "EXC-001 (REVIEW): 移行先では自然には起こらない例外の handler があります。Oracle では DB 自身の誤りでも走っていた処理が、移行先では走りません",
+    "SQL-001 (REVIEW): ScalarDB SQL で実行できない文があります",
+    "STATE-001 (REDESIGN): Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
+    "TRG-002 (REDESIGN): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
+    "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+   ],
+   "redesign": null,
+   "source": {
+    "file": "emp_api.pkb",
+    "startLine": 15,
+    "endLine": 28
+   },
+   "generated": {
+    "class": "EmpApiService",
+    "method": "hire"
+   },
+   "humanFixMinutes": null
+  },
+  {
+   "routine": "emp_api.validate_pct",
+   "verdict": "REDESIGN",
+   "ruleVerdict": "REDESIGN",
+   "confidence": {
+    "value": 0.0,
+    "ruleCoverage": 1.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
+    "targetCapability": 1.0,
+    "testEvidence": 0.0,
+    "zeroFactors": [
+     "testEvidence"
+    ]
+   },
+   "reasons": [
+    "STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります"
+   ],
+   "rules": [
+    {
+     "id": "STATE-001",
+     "decision": "REDESIGN",
+     "message": "Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
+     "source": "state.yaml",
+     "severity": "critical"
+    }
+   ],
+   "remediation": [
+    "引数で渡す",
+    "明示的な SessionContext か永続化に移す"
+   ],
+   "requiredTests": [
+    "state_isolation_between_calls"
+   ],
+   "whyNotAuto": [
+    "STATE-001 (REDESIGN): Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります",
+    "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+   ],
+   "redesign": null,
+   "source": {
+    "file": "emp_api.pkb",
+    "startLine": 7,
+    "endLine": 13
+   },
+   "generated": {
+    "class": "EmpApiService",
+    "method": "validatePct"
+   },
+   "humanFixMinutes": null
+  },
+  {
+   "routine": "emp_biu_trg.body",
+   "verdict": "REDESIGN",
+   "ruleVerdict": "REDESIGN",
+   "confidence": {
+    "value": 0.0,
+    "ruleCoverage": 1.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
+    "targetCapability": 1.0,
+    "testEvidence": 0.0,
+    "zeroFactors": [
+     "testEvidence"
+    ]
+   },
+   "reasons": [
+    "TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります"
+   ],
+   "rules": [
+    {
+     "id": "TRG-001",
+     "decision": "REDESIGN",
+     "message": "Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります",
+     "source": "trigger.yaml",
+     "severity": "critical"
+    }
+   ],
+   "remediation": [
+    "validation は Service の検証と DB 制約へ",
+    "audit は interceptor / outbox へ",
+    "before/after 値と失敗時の挙動を保つ"
+   ],
+   "requiredTests": [
+    "all_write_paths_covered"
+   ],
+   "whyNotAuto": [
+    "TRG-001 (REDESIGN): Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります",
+    "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+   ],
+   "redesign": null,
+   "source": {
+    "file": "emp_biu_trg.trg",
+    "startLine": 2,
+    "endLine": 10
+   },
+   "generated": {
+    "class": "EmpBiuTrgService",
+    "method": "body"
+   },
+   "humanFixMinutes": null
+  },
+  {
+   "routine": "emp_dept_cap_trg.body",
+   "verdict": "REDESIGN",
+   "ruleVerdict": "REDESIGN",
+   "confidence": {
+    "value": 0.0,
+    "ruleCoverage": 1.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
+    "targetCapability": 1.0,
+    "testEvidence": 0.0,
+    "zeroFactors": [
+     "testEvidence"
+    ]
+   },
+   "reasons": [
+    "TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります"
+   ],
+   "rules": [
+    {
+     "id": "TRG-001",
+     "decision": "REDESIGN",
+     "message": "Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります",
+     "source": "trigger.yaml",
+     "severity": "critical"
+    }
+   ],
+   "remediation": [
+    "validation は Service の検証と DB 制約へ",
+    "audit は interceptor / outbox へ",
+    "before/after 値と失敗時の挙動を保つ"
+   ],
+   "requiredTests": [
+    "all_write_paths_covered"
+   ],
+   "whyNotAuto": [
+    "TRG-001 (REDESIGN): Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります",
+    "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+   ],
+   "redesign": null,
+   "source": {
+    "file": "emp_dept_cap_trg.trg",
+    "startLine": 2,
+    "endLine": 27
+   },
+   "generated": {
+    "class": "EmpDeptCapTrgService",
+    "method": "body"
+   },
+   "humanFixMinutes": null
+  },
+  {
+   "routine": "emp_dept_upd_v_trg.body",
+   "verdict": "REDESIGN",
+   "ruleVerdict": "REDESIGN",
+   "confidence": {
+    "value": 0.0,
+    "ruleCoverage": 1.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
+    "targetCapability": 0.0,
+    "testEvidence": 0.0,
+    "zeroFactors": [
+     "targetCapability",
+     "testEvidence"
+    ]
+   },
+   "reasons": [
+    "TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります"
+   ],
+   "rules": [
+    {
+     "id": "SQL-001",
+     "decision": "REVIEW",
+     "message": "ScalarDB SQL で実行できない文があります",
+     "source": "sql.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "TRG-001",
+     "decision": "REDESIGN",
+     "message": "Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります",
+     "source": "trigger.yaml",
+     "severity": "critical"
+    }
+   ],
+   "remediation": [
+    "validation は Service の検証と DB 制約へ",
+    "audit は interceptor / outbox へ",
+    "before/after 値と失敗時の挙動を保つ"
+   ],
+   "requiredTests": [
+    "all_write_paths_covered",
+    "equivalent_result"
+   ],
+   "whyNotAuto": [
+    "SQL-001 (REVIEW): ScalarDB SQL で実行できない文があります",
+    "TRG-001 (REDESIGN): Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります",
+    "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+   ],
+   "redesign": null,
+   "source": {
+    "file": "emp_dept_upd_v_trg.trg",
+    "startLine": 2,
+    "endLine": 11
+   },
+   "generated": {
+    "class": "EmpDeptUpdVTrgService",
+    "method": "body"
+   },
+   "humanFixMinutes": null
+  },
+  {
+   "routine": "emp_grades",
+   "verdict": "REVIEW",
+   "ruleVerdict": "REVIEW",
+   "confidence": {
+    "value": 0.0,
+    "ruleCoverage": 0.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
+    "targetCapability": 0.5,
+    "testEvidence": 0.0,
+    "zeroFactors": [
+     "ruleCoverage",
+     "testEvidence"
+    ]
+   },
+   "reasons": [
+    "LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません",
+    "CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+    "SQL-002: 実行計画（取得 + H2）に分解される文です。行数上限と性能を確認してください"
+   ],
+   "rules": [
+    {
+     "id": "LOWER-001",
+     "decision": "REVIEW",
+     "message": "lowering がまだ模していない構文です。意味が保てる保証がありません",
+     "source": "lowering.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "CUR-002",
+     "decision": "REVIEW",
+     "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+     "source": "semantics.yaml",
+     "severity": "warning"
+    },
+    {
+     "id": "SQL-002",
+     "decision": "REVIEW",
+     "message": "実行計画（取得 + H2）に分解される文です。行数上限と性能を確認してください",
+     "source": "sql.yaml",
+     "severity": "warning"
+    }
+   ],
+   "remediation": [],
+   "requiredTests": [
+    "equivalent_result",
+    "performance",
+    "row_limit"
+   ],
+   "whyNotAuto": [
+    "LOWER-001 (REVIEW): lowering がまだ模していない構文です。意味が保てる保証がありません",
+    "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+    "SQL-002 (REVIEW): 実行計画（取得 + H2）に分解される文です。行数上限と性能を確認してください",
+    "確信度が 0: ruleCoverage, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+   ],
+   "redesign": null,
+   "source": {
+    "file": "emp_grades.fnc",
+    "startLine": 2,
+    "endLine": 13
+   },
+   "generated": {
+    "class": "EmpGradesService",
+    "method": "empGrades"
+   },
+   "humanFixMinutes": null
+  },
+  {
+   "routine": "emp_salary_audit_trg.body",
+   "verdict": "REDESIGN",
+   "ruleVerdict": "REDESIGN",
+   "confidence": {
+    "value": 0.0,
+    "ruleCoverage": 1.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
+    "targetCapability": 0.0,
+    "testEvidence": 0.0,
+    "zeroFactors": [
+     "targetCapability",
+     "testEvidence"
+    ]
+   },
+   "reasons": [
+    "TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります"
+   ],
+   "rules": [
+    {
+     "id": "SQL-001",
+     "decision": "REVIEW",
+     "message": "ScalarDB SQL で実行できない文があります",
+     "source": "sql.yaml",
+     "severity": "critical"
+    },
+    {
+     "id": "TRG-001",
+     "decision": "REDESIGN",
+     "message": "Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります",
+     "source": "trigger.yaml",
+     "severity": "critical"
+    }
+   ],
+   "remediation": [
+    "validation は Service の検証と DB 制約へ",
+    "audit は interceptor / outbox へ",
+    "before/after 値と失敗時の挙動を保つ"
+   ],
+   "requiredTests": [
+    "all_write_paths_covered",
+    "equivalent_result"
+   ],
+   "whyNotAuto": [
+    "SQL-001 (REVIEW): ScalarDB SQL で実行できない文があります",
+    "TRG-001 (REDESIGN): Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります",
+    "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+   ],
+   "redesign": null,
+   "source": {
+    "file": "emp_salary_audit_trg.trg",
+    "startLine": 2,
+    "endLine": 12
+   },
+   "generated": {
+    "class": "EmpSalaryAuditTrgService",
+    "method": "body"
+   },
+   "humanFixMinutes": null
+  },
+  {
    "routine": "log_msg",
    "verdict": "REDESIGN",
    "ruleVerdict": "REDESIGN",
@@ -1354,8 +2535,8 @@
   },
   {
    "routine": "raise_salary",
-   "verdict": "REVIEW",
-   "ruleVerdict": "REVIEW",
+   "verdict": "REDESIGN",
+   "ruleVerdict": "REDESIGN",
    "confidence": {
     "value": 0.0,
     "ruleCoverage": 1.0,
@@ -1369,23 +2550,45 @@
     ]
    },
    "reasons": [
-    "SQL-001: ScalarDB SQL で実行できない文があります"
+    "TRG-002: trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません"
    ],
    "rules": [
+    {
+     "id": "SQL-004",
+     "decision": "REVIEW",
+     "message": "SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です",
+     "source": "semantics.yaml",
+     "severity": "warning"
+    },
     {
      "id": "SQL-001",
      "decision": "REVIEW",
      "message": "ScalarDB SQL で実行できない文があります",
      "source": "sql.yaml",
      "severity": "critical"
+    },
+    {
+     "id": "TRG-002",
+     "decision": "REDESIGN",
+     "message": "trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
+     "source": "trigger.yaml",
+     "severity": "critical"
     }
    ],
-   "remediation": [],
+   "remediation": [
+    "件数を返す形に呼び出し先を直すか、件数を読む位置を静的な DML の直後に寄せる",
+    "trigger の処理を、この書き込みをする Service に持たせる（値を書き換える trigger は採番 Service へ）",
+    "複数行の更新・DELETE・MERGE・複数イベントの trigger は、行ごとに何を渡すかを設計する"
+   ],
    "requiredTests": [
-    "equivalent_result"
+    "all_write_paths_covered",
+    "equivalent_result",
+    "row_count"
    ],
    "whyNotAuto": [
+    "SQL-004 (REVIEW): SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です",
     "SQL-001 (REVIEW): ScalarDB SQL で実行できない文があります",
+    "TRG-002 (REDESIGN): trigger の掛かる表へ書き込んでいますが、その trigger を呼び出しに置き換えられていません。移行先ではこの書き込みで trigger の処理が走りません",
     "確信度が 0: targetCapability, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
    "redesign": null,

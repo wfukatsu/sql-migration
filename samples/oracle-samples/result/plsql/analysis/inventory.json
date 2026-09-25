@@ -9,45 +9,44 @@
   "parsedFiles": 37,
   "totalFiles": 37,
   "failedFiles": [],
-  "typeResolutionRate": 0.9903,
-  "typedSymbols": 103,
-  "resolvedSymbols": 102
+  "typeResolutionRate": 0.9904,
+  "typedSymbols": 104,
+  "resolvedSymbols": 103
  },
  "totals": {
   "modules": 36,
   "routines": 41,
-  "statements": 242,
-  "issues": 147,
+  "statements": 243,
+  "issues": 151,
   "errors": 15
  },
  "statementKinds": {
   "Call": 77,
-  "SqlOperation": 40,
+  "SqlOperation": 41,
+  "Assignment": 25,
   "Loop": 24,
-  "Assignment": 22,
-  "If": 19,
+  "If": 20,
   "Rollback": 8,
   "Unsupported": 8,
   "Return": 7,
   "DynamicSql": 7,
-  "Exit": 6,
   "Block": 6,
   "Raise": 6,
-  "Fetch": 3,
-  "CloseCursor": 3,
+  "Exit": 5,
   "Commit": 3,
+  "Fetch": 2,
+  "CloseCursor": 2,
   "Case": 1,
-  "Continue": 1,
-  "OpenCursor": 1
+  "Continue": 1
  },
  "targetCapability": {
   "statuses": {
    "OK": 22,
    "ERROR": 14,
-   "PLANNED": 4,
-   "WARN": 4
+   "WARN": 5,
+   "PLANNED": 4
   },
-  "runnableRate": 0.5909
+  "runnableRate": 0.6
  },
  "modules": [
   {
@@ -223,9 +222,9 @@
      "name": "b04_4_1_explicit_cursor",
      "kind": "procedure",
      "visibility": "public",
-     "statements": 6,
+     "statements": 4,
      "parameters": 0,
-     "declarations": 2,
+     "declarations": 3,
      "handlers": 0,
      "transactionEffects": {
       "commits": 0,
@@ -1526,7 +1525,7 @@
      "name": "body",
      "kind": "trigger-body",
      "visibility": "public",
-     "statements": 1,
+     "statements": 4,
      "parameters": 0,
      "declarations": 0,
      "handlers": 0,
@@ -1547,14 +1546,14 @@
      "sourceRange": {
       "file": "emp_salary_audit_trg.trg",
       "startLine": 2,
-      "endLine": 11
+      "endLine": 12
      }
     }
    ],
    "sourceRange": {
     "file": "emp_salary_audit_trg.trg",
     "startLine": 2,
-    "endLine": 11
+    "endLine": 12
    }
   },
   {
@@ -1681,5 +1680,5 @@
    }
   }
  ],
- "schemaSnapshot": "schema.sql@9c816678"
+ "schemaSnapshot": "schema.sql@d6f64025"
 }

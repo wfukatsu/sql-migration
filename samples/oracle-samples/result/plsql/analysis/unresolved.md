@@ -742,23 +742,26 @@
 
 **根拠**
 
-- CUR-001: 明示 cursor は寿命がトランザクション境界をまたぎます
-- CUR-001: 明示 cursor は寿命がトランザクション境界をまたぎます
-- CUR-001: 明示 cursor は寿命がトランザクション境界をまたぎます
+- CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
+- CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
 
 **判定したルール**
 
-- `CUR-001` (REVIEW, `semantics.yaml`): 明示 cursor は寿命がトランザクション境界をまたぎます
-- `CUR-001` (REVIEW, `semantics.yaml`): 明示 cursor は寿命がトランザクション境界をまたぎます
-- `CUR-001` (REVIEW, `semantics.yaml`): 明示 cursor は寿命がトランザクション境界をまたぎます
+- `SCAN-002` (AUTO, `scalardb_capability.yaml`): パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります
+- `CUR-003` (REVIEW, `semantics.yaml`): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
+- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
 
 **代替案**
 
-- ルールに代替案が書かれていない。ルール側に足すべき。
+- キーで届く読み取りに変える
+- 全行を取得してアプリ側で絞る・並べる（docs/design/app-side-processing-plan.md）
 
 **受け入れに必要なテスト**
 
+- cross_partition_scan
 - cursor_lifetime
+- performance
+- row_limit
 
 **確信度が 0 になっている要因**: symbolResolution, typeResolution, testEvidence
 

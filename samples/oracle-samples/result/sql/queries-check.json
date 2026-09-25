@@ -9,7 +9,7 @@
     ],
     "pattern": "P1",
     "result": "FAIL",
-    "error": "result mismatch (no row of the actual result equals expected (datetime.datetime(2026, 9, 24, 7, 59, 16), datetime.datetime(2026, 9, 24, 7, 59, 16, 77663), 'SOURCE')): expected [(datetime.datetime(2026, 9, 24, 7, 59, 16), datetime.datetime(2026, 9, 24, 7, 59, 16, 77663), 'SOURCE')] actual [['2026-09-24T16:59:16', '2026-09-24T16:59:16.576865+09:00', 'RESIDUAL_READER']]",
+    "error": "result mismatch (no row of the actual result equals expected (datetime.datetime(2026, 9, 25, 1, 3, 21), datetime.datetime(2026, 9, 25, 1, 3, 21, 529278), 'SOURCE')): expected [(datetime.datetime(2026, 9, 25, 1, 3, 21), datetime.datetime(2026, 9, 25, 1, 3, 21, 529278), 'SOURCE')] actual [['2026-09-25T10:03:22', '2026-09-25T10:03:22.140940+09:00', 'RESIDUAL_READER']]",
     "fetched": 0,
     "fetch_sql": [],
     "unresolved": [],
@@ -142,19 +142,16 @@
     "index": 18,
     "feature": "",
     "sql": "SELECT e.last_name, d.department_name\nFROM   employees e\nFULL   OUTER JOIN departments d ON d.department_id = e.department_id\nWHERE  e.employee_id IS NULL OR d.department_id IS NULL",
-    "convert_status": "PLANNED",
+    "convert_status": "ERROR",
     "codes": [
       "JOIN",
-      "PLAN_CROSS_PARTITION"
+      "RESIDUAL_H2"
     ],
-    "pattern": "P8",
-    "result": "FAIL",
-    "error": "",
+    "pattern": null,
+    "result": "NOT_CONVERTIBLE",
+    "error": "OUTER JOIN is not supported; the H2 residual engine cannot run FULL OUTER JOIN (H2 has no FULL JOIN: UNION the LEFT and RIGHT joins, or match the two fetches in the application); implement this part in the application",
     "fetched": null,
-    "fetch_sql": [
-      "SELECT employee_id, last_name, department_id FROM employees",
-      "SELECT department_id, department_name FROM departments"
-    ],
+    "fetch_sql": [],
     "unresolved": []
   },
   {
@@ -177,19 +174,17 @@
     "index": 20,
     "feature": "",
     "sql": "SELECT d.department_name, t.last_name, t.salary\nFROM   departments d\nCROSS  APPLY (SELECT e.last_name, e.salary\n              FROM   employees e\n              WHERE  e.department_id = d.department_id\n              ORDER  BY e.salary DESC\n              FETCH  FIRST 2 ROWS ONLY) t",
-    "convert_status": "PLANNED",
+    "convert_status": "ERROR",
     "codes": [
+      "APP_SEMANTICS",
       "JOIN",
-      "PLAN_CROSS_PARTITION"
+      "RESIDUAL_H2"
     ],
-    "pattern": "P8",
-    "result": "FAIL",
-    "error": "",
+    "pattern": null,
+    "result": "NOT_CONVERTIBLE",
+    "error": "joined relation must be a base table (no subqueries); the H2 residual engine cannot run LATERAL / CROSS APPLY (H2 has no LATERAL: run the inner query per outer row in the application); implement this part in the application",
     "fetched": null,
-    "fetch_sql": [
-      "SELECT department_id, department_name FROM departments",
-      "SELECT employee_id, last_name, salary, department_id FROM employees"
-    ],
+    "fetch_sql": [],
     "unresolved": []
   },
   {
@@ -535,8 +530,8 @@
       "PLAN_CROSS_PARTITION"
     ],
     "pattern": "P4",
-    "result": "PASS",
-    "error": null,
+    "result": "FAIL",
+    "error": "result mismatch (row 5: expected ('Tuvault', 7000.0), actual ('Grant', 7000)): expected [('Partners', 13500.0), ('Tucker', 10000.0), ('Bernstein', 9500.0), ('Hunold', 9000.0), ('Tuvault', 7000.0)] actual [['Partners', 13500], ['Tucker', 10000], ['Bernstein', 9500], ['Hunold', 9000], ['Grant', 7000]]",
     "fetched": 15,
     "fetch_sql": [
       "SELECT employee_id, last_name, salary FROM employees"
@@ -609,20 +604,19 @@
     "index": 42,
     "feature": "",
     "sql": "WITH org (employee_id, last_name, manager_id, lvl, path) AS (\n  SELECT employee_id, last_name, manager_id, 1, CAST(last_name AS VARCHAR2(4000))\n  FROM   employees WHERE manager_id IS NULL\n  UNION ALL\n  SELECT e.employee_id, e.last_name, e.manager_id, o.lvl + 1, o.path || '/' || e.last_name\n  FROM   employees e JOIN org o ON e.manager_id = o.employee_id\n)\nSEARCH DEPTH FIRST BY last_name SET ord\nSELECT lvl, LPAD(' ', 2 * (lvl - 1)) || last_name AS org_chart, path\nFROM   org\nORDER  BY ord",
-    "convert_status": "PLANNED",
+    "convert_status": "ERROR",
     "codes": [
+      "APP_SEMANTICS",
       "CTE",
-      "PLAN_CROSS_PARTITION",
       "PROJECTION",
+      "RESIDUAL_H2",
       "SET_OP"
     ],
-    "pattern": "P1+P6",
-    "result": "FAIL",
-    "error": "",
+    "pattern": null,
+    "result": "NOT_CONVERTIBLE",
+    "error": "WITH org: evaluate each common table expression in the application (fetch its base tables through ScalarDB SQL); CTE org: UNION -- run each branch and combine the rows in the application; main query: expressions in the select list (LPAD(' ', 2 * (lvl - 1)) || last_name) -- compute them in the applic",
     "fetched": null,
-    "fetch_sql": [
-      "SELECT employee_id, last_name, manager_id FROM employees"
-    ],
+    "fetch_sql": [],
     "unresolved": []
   },
   {
@@ -662,18 +656,16 @@
     "index": 45,
     "feature": "",
     "sql": "SELECT COUNT(*) FROM employees SAMPLE (50)",
-    "convert_status": "PLANNED",
+    "convert_status": "ERROR",
     "codes": [
       "CLAUSE",
-      "PLAN_CROSS_PARTITION"
+      "RESIDUAL_H2"
     ],
-    "pattern": "P1",
-    "result": "FAIL",
-    "error": "",
+    "pattern": null,
+    "result": "NOT_CONVERTIBLE",
+    "error": "TABLESAMPLE on employees is not supported; it returns a random subset of the rows; the H2 residual engine cannot run SAMPLE (H2 has no SAMPLE; the result is random on Oracle too); implement this part in the application",
     "fetched": null,
-    "fetch_sql": [
-      "SELECT employee_id FROM employees"
-    ],
+    "fetch_sql": [],
     "unresolved": []
   },
   {
@@ -710,19 +702,16 @@
     "index": 48,
     "feature": "",
     "sql": "SELECT p.id, jt.name, jt.tag\nFROM   products_json p,\n       JSON_TABLE(p.doc, '$'\n         COLUMNS (name VARCHAR2(40) PATH '$.name',\n                  NESTED PATH '$.tags[*]' COLUMNS (tag VARCHAR2(20) PATH '$'))) jt",
-    "convert_status": "PLANNED",
+    "convert_status": "ERROR",
     "codes": [
       "JOIN",
-      "PLAN_CROSS_PARTITION"
+      "RESIDUAL_H2"
     ],
-    "pattern": "P8",
-    "result": "FAIL",
-    "error": "DB-SQL-10026: Syntax error. Line 1:14 no viable alternative at input 'SELECT * FROM \"')",
+    "pattern": null,
+    "result": "NOT_CONVERTIBLE",
+    "error": "comma join without join condition (cartesian product) is not supported; the H2 residual engine cannot run JSON_TABLE (H2 has no JSON_TABLE: read the JSON column and unnest it in the application); implement this part in the application",
     "fetched": null,
-    "fetch_sql": [
-      "SELECT id, doc FROM products_json",
-      "SELECT * FROM \"\""
-    ],
+    "fetch_sql": [],
     "unresolved": []
   },
   {
@@ -735,8 +724,8 @@
       "PROJECTION"
     ],
     "pattern": "P1",
-    "result": "FAIL",
-    "error": "result mismatch (no row of the actual result equals expected ('{\"dept\":\"Administration\",\"members\":[{\"id\":200,\"name\":\"Whalen\"}]}',)): expected [('{\"dept\":\"Administration\",\"members\":[{\"id\":200,\"name\":\"Whalen\"}]}',), ('{\"dept\":\"Executive\",\"members\":[{\"id\":100,\"name\":\"King\"},{\"id\":101,\"name\":\"Kochhar\"},{\"id\":102,\"name\":\"De Haan\"}]}',), ('{\"dept\":\"IT\",\"members\":[{\"id\":103,\"name\":\"Hunold\"},{\"id\":104,\"name\":\"Ernst\"},{\"id\":107,\"name\":\"Lorentz\"}]}',), ('{\"dept\":\"Sales\",\"members\":[{\"id\":145,\"name\":\"Russell\"},{\"id\":146,\"name\":\"Partners\"},{\"id\":150,\"name\":\"Tucker\"},{\"id\":151,\"name\":\"Bernstein\"},{\"id\":155,\"name\":\"Tuvault\"}]}',), ('{\"dept\":\"Shipping\",\"members\":[{\"id\":120,\"name\":\"Weiss\"},{\"id\":125,\"name\":\"Nayer\"}]}',)] actual [['eyJkZXB0IjoiQWRtaW5pc3RyYXRpb24iLCJtZW1iZXJzIjpbeyJpZCI6MjAwLCJuYW1lIjoiV2hhbGVuIn1dfQ=='], ['eyJkZXB0IjoiRXhlY3V0aXZlIiwibWVtYmVycyI6W3siaWQiOjEwMCwibmFtZSI6IktpbmcifSx7ImlkIjoxMDEsIm5hbWUiOiJLb2NoaGFyIn0seyJpZCI6MTAyLCJuYW1lIjoiRGUgSGFhbiJ9XX0='], ['eyJkZXB0IjoiSVQiLCJtZW1iZXJzIjpbeyJpZCI6MTAzLCJuYW1lIjoiSHVub2xkIn0seyJpZCI6MTA0LCJuYW1lIjoiRXJuc3QifSx7ImlkIjoxMDcsIm5hbWUiOiJMb3JlbnR6In1dfQ=='], ['eyJkZXB0IjoiU2FsZXMiLCJtZW1iZXJzIjpbeyJpZCI6MTQ1LCJuYW1lIjoiUnVzc2VsbCJ9LHsiaWQiOjE0NiwibmFtZSI6IlBhcnRuZXJzIn0seyJpZCI6MTUwLCJuYW1lIjoiVHVja2VyIn0seyJpZCI6MTUxLCJuYW1lIjoiQmVybnN0ZWluIn0seyJpZCI6MTU1LCJuYW1lIjoiVHV2YXVsdCJ9XX0='], ['eyJkZXB0IjoiU2hpcHBpbmciLCJtZW1iZXJzIjpbeyJpZCI6MTIwLCJuYW1lIjoiV2Vpc3MifSx7ImlkIjoxMjUsIm5hbWUiOiJOYXllciJ9XX0=']]",
+    "result": "PASS",
+    "error": null,
     "fetched": 21,
     "fetch_sql": [
       "SELECT department_id, department_name FROM departments",

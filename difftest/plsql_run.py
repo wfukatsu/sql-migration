@@ -335,17 +335,28 @@ def call_routine(cur, spec: dict) -> tuple[dict, dict | None]:
             out_vars[name].setvalue(0, binds[name])
         binds[name] = out_vars[name]
 
-    try:
+    def invoke():
         if call["kind"] == "function":
-            returned = cur.callfunc(call["name"], _oracle_type(cur, call["returns"]), keyword_parameters=binds)
-        elif call["kind"] == "block":
+            return cur.callfunc(call["name"], _oracle_type(cur, call["returns"]), keyword_parameters=binds)
+        if call["kind"] == "block":
             # 無名ブロック。PL/SQL 専用の戻り（%ROWTYPE、BOOLEAN）や、routine を持たない経路
             # （trigger を素の INSERT で踏むなど）はこれでないと捕まえられない
             cur.execute(call["body"], binds)
-            returned = None
-        else:
-            cur.callproc(call["name"], keyword_parameters=binds)
-            returned = None
+            return None
+        cur.callproc(call["name"], keyword_parameters=binds)
+        return None
+
+    try:
+        try:
+            returned = invoke()
+        except oracledb.DatabaseError as e:
+            # ORA-04068: a package with state was invalidated (a sequence it uses was recreated for the
+            # scenario) and Oracle discards the state on the first call; the call itself is fine the second
+            # time. Retrying once is what every client does (samples/oracle-samples emp_api, 2026-09-25)
+            if e.args and getattr(e.args[0], "code", None) == 4068:
+                returned = invoke()
+            else:
+                raise
     except oracledb.DatabaseError as e:
         (err,) = e.args
         # 例外は結果である。握り潰さず、コードとメッセージの 1 行目を記録する

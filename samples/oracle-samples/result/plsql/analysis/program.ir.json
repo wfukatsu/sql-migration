@@ -161,7 +161,7 @@
         "oracle": "employees.last_name%TYPE",
         "resolved": "VARCHAR2(25)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_name",
        "declarationKind": "variable"
@@ -180,7 +180,7 @@
         "oracle": "employees%ROWTYPE",
         "resolved": "RECORD(employee_id NUMBER(6), first_name VARCHAR2(20), last_name VARCHAR2(25), email VARCHAR2(25), hire_date DATE, job_id VARCHAR2(10), salary NUMBER(8, 2), commission_pct NUMBER(2, 2), manager_id NUMBER(6), department_id NUMBER(4))",
         "origin": "rowtype",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_emp",
        "declarationKind": "variable"
@@ -342,7 +342,7 @@
         "TEXT",
         "TEXT",
         "TEXT",
-        "DATE",
+        "TIMESTAMP",
         "TEXT",
         "DOUBLE",
         "DOUBLE",
@@ -487,7 +487,7 @@
         "oracle": "employees.salary%TYPE",
         "resolved": "NUMBER(8, 2)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_sal",
        "declarationKind": "variable"
@@ -1374,16 +1374,14 @@
        "type": {
         "oracle": "c_emp%ROWTYPE",
         "origin": "unresolved",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "r",
        "declarationKind": "variable"
-      }
-     ],
-     "body": [
+      },
       {
-       "id": "b04_4_1_explicit_cursor#stmt-1",
-       "kind": "OpenCursor",
+       "id": "b04_4_1_explicit_cursor#stmt-1rowcount",
+       "kind": "Declaration",
        "sourceRange": {
         "file": "b04_4_1_explicit_cursor.prc",
         "startLine": 8,
@@ -1391,8 +1389,17 @@
         "startColumn": 3,
         "endColumn": 8
        },
-       "cursor": "c_emp"
-      },
+       "type": {
+        "oracle": "PLS_INTEGER",
+        "resolved": "PLS_INTEGER",
+        "origin": "declared"
+       },
+       "name": "c_emp_rowcount",
+       "declarationKind": "variable",
+       "initial": "0"
+      }
+     ],
+     "body": [
       {
        "id": "b04_4_1_explicit_cursor#stmt-2",
        "kind": "Loop",
@@ -1403,34 +1410,115 @@
         "startColumn": 3,
         "endColumn": 7
        },
-       "loopKind": "basic",
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "CUR_SCAN",
+         "message": "cursor c_emp は読むだけのループだった。行を先に読んで回す形にした——移行先に跨トランザクションの cursor は無いので、動く行数はメモリで決まる（上限は --limits）。%ROWTYPE の r がループ変数になる（ループの後の r は読めない）",
+         "range": {
+          "file": "b04_4_1_explicit_cursor.prc",
+          "startLine": 9,
+          "endLine": 13,
+          "startColumn": 3,
+          "endColumn": 7
+         }
+        }
+       ],
+       "readSet": [
+        "employees"
+       ],
+       "loopKind": "cursor-for",
+       "cursor": "r IN (SELECT employee_id, last_name, salary FROM employees\n    WHERE  department_id = 60 ORDER BY salary DESC)",
+       "query": {
+        "id": "b04_4_1_explicit_cursor#stmt-2",
+        "kind": "SqlOperation",
+        "sourceRange": {
+         "file": "b04_4_1_explicit_cursor.prc",
+         "startLine": 9,
+         "endLine": 13,
+         "startColumn": 3,
+         "endColumn": 7
+        },
+        "diagnostics": [
+         {
+          "severity": "WARN",
+          "code": "CROSS_PARTITION",
+          "message": "SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)",
+          "range": {
+           "file": "b04_4_1_explicit_cursor.prc",
+           "startLine": 9,
+           "endLine": 13,
+           "startColumn": 3,
+           "endColumn": 7
+          }
+         },
+         {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node",
+          "range": {
+           "file": "b04_4_1_explicit_cursor.prc",
+           "startLine": 9,
+           "endLine": 13,
+           "startColumn": 3,
+           "endColumn": 7
+          }
+         },
+         {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate",
+          "range": {
+           "file": "b04_4_1_explicit_cursor.prc",
+           "startLine": 9,
+           "endLine": 13,
+           "startColumn": 3,
+           "endColumn": 7
+          }
+         }
+        ],
+        "readSet": [
+         "employees"
+        ],
+        "sqlKind": "SELECT",
+        "originalSql": "SELECT employee_id, last_name, salary FROM employees\n    WHERE  department_id = 60 ORDER BY salary DESC",
+        "intoColumns": [
+         "employee_id",
+         "last_name",
+         "salary"
+        ],
+        "intoTypes": [
+         "INT",
+         "TEXT",
+         "DOUBLE"
+        ],
+        "intoOracleTypes": [
+         "NUMBER(6)",
+         "VARCHAR2(25)",
+         "NUMBER(8, 2)"
+        ],
+        "selectsStar": false,
+        "cardinality": "MANY",
+        "atMostOneRow": false,
+        "targetStatus": "WARN",
+        "targetSql": [
+         "SELECT employee_id, last_name, salary FROM employees WHERE department_id = 60 ORDER BY salary DESC"
+        ]
+       },
+       "variable": "r",
        "body": [
         {
-         "id": "b04_4_1_explicit_cursor#stmt-3",
-         "kind": "Fetch",
+         "id": "b04_4_1_explicit_cursor#stmt-1count",
+         "kind": "Assignment",
          "sourceRange": {
           "file": "b04_4_1_explicit_cursor.prc",
-          "startLine": 10,
-          "endLine": 10,
-          "startColumn": 5,
-          "endColumn": 22
+          "startLine": 8,
+          "endLine": 8,
+          "startColumn": 3,
+          "endColumn": 8
          },
-         "cursor": "c_emp",
-         "intoTargets": [
-          "r"
-         ]
-        },
-        {
-         "id": "b04_4_1_explicit_cursor#stmt-4",
-         "kind": "Exit",
-         "sourceRange": {
-          "file": "b04_4_1_explicit_cursor.prc",
-          "startLine": 11,
-          "endLine": 11,
-          "startColumn": 5,
-          "endColumn": 20
-         },
-         "condition": "c_emp%NOTFOUND"
+         "target": "c_emp_rowcount",
+         "expression": "c_emp_rowcount + 1"
         },
         {
          "id": "b04_4_1_explicit_cursor#stmt-5",
@@ -1444,22 +1532,10 @@
          },
          "callee": "DBMS_OUTPUT.PUT_LINE",
          "arguments": [
-          "c_emp%ROWCOUNT || ': ' || r.last_name || ' ' || r.salary"
+          "c_emp_rowcount || ': ' || r.last_name || ' ' || r.salary"
          ]
         }
        ]
-      },
-      {
-       "id": "b04_4_1_explicit_cursor#stmt-6",
-       "kind": "CloseCursor",
-       "sourceRange": {
-        "file": "b04_4_1_explicit_cursor.prc",
-        "startLine": 14,
-        "endLine": 14,
-        "startColumn": 3,
-        "endColumn": 9
-       },
-       "cursor": "c_emp"
       }
      ],
      "deterministic": false,
@@ -2620,7 +2696,7 @@
         "oracle": "t_emp_rec",
         "resolved": "RECORD(id NUMBER(6), name VARCHAR2(25), sal employees.salary%TYPE := 0)",
         "origin": "record",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_rec",
        "declarationKind": "variable"
@@ -2652,7 +2728,7 @@
         "oracle": "t_sal_by_name",
         "resolved": "TABLE OF NUMBER",
         "origin": "collection",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_sal",
        "declarationKind": "variable"
@@ -2702,7 +2778,7 @@
         "oracle": "t_names",
         "resolved": "TABLE OF VARCHAR2(30)",
         "origin": "collection",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_names",
        "declarationKind": "variable",
@@ -3096,7 +3172,7 @@
         "oracle": "employees.last_name%TYPE",
         "resolved": "VARCHAR2(25)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_name",
        "declarationKind": "variable"
@@ -3586,7 +3662,7 @@
            "name": "expr1",
            "direction": "IN",
            "column": "hire_date",
-           "scalardbType": "DATE",
+           "scalardbType": "TIMESTAMP",
            "columnOracleType": "DATE",
            "expression": "SYSDATE"
           }
@@ -3775,7 +3851,7 @@
         "oracle": "employees.salary%TYPE",
         "resolved": "NUMBER(8, 2)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_new",
        "declarationKind": "variable"
@@ -4616,7 +4692,7 @@
         "oracle": "t_rows",
         "resolved": "TABLE OF c%ROWTYPE",
         "origin": "collection",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_rows",
        "declarationKind": "variable"
@@ -4872,7 +4948,7 @@
         "oracle": "t_num",
         "resolved": "TABLE OF NUMBER",
         "origin": "collection",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_depts",
        "declarationKind": "variable",
@@ -4892,7 +4968,7 @@
         "oracle": "t_num",
         "resolved": "TABLE OF NUMBER",
         "origin": "collection",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_new_sal",
        "declarationKind": "variable"
@@ -5121,7 +5197,7 @@
         "oracle": "t_ids",
         "resolved": "TABLE OF NUMBER(6)",
         "origin": "collection",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_ids",
        "declarationKind": "variable"
@@ -5140,7 +5216,7 @@
         "oracle": "t_names",
         "resolved": "TABLE OF VARCHAR2(25)",
         "origin": "collection",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_names",
        "declarationKind": "variable"
@@ -5159,7 +5235,7 @@
         "oracle": "t_sals",
         "resolved": "TABLE OF NUMBER(8, 2)",
         "origin": "collection",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_sals",
        "declarationKind": "variable"
@@ -5321,19 +5397,28 @@
            "name": "r_employee_id",
            "direction": "IN",
            "oracleType": "NUMBER(6)",
-           "plsqlVariable": "r.employee_id"
+           "plsqlVariable": "r.employee_id",
+           "column": "employee_id",
+           "scalardbType": "INT",
+           "columnOracleType": "NUMBER(6)"
           },
           {
            "name": "r_last_name",
            "direction": "IN",
            "oracleType": "VARCHAR2(25)",
-           "plsqlVariable": "r.last_name"
+           "plsqlVariable": "r.last_name",
+           "column": "last_name",
+           "scalardbType": "TEXT",
+           "columnOracleType": "VARCHAR2(25)"
           },
           {
            "name": "r_salary",
            "direction": "IN",
            "oracleType": "NUMBER(8, 2)",
-           "plsqlVariable": "r.salary"
+           "plsqlVariable": "r.salary",
+           "column": "salary",
+           "scalardbType": "DOUBLE",
+           "columnOracleType": "NUMBER(8, 2)"
           }
          ],
          "selectsStar": false,
@@ -5873,7 +5958,7 @@
         "oracle": "employees.last_name%TYPE",
         "resolved": "VARCHAR2(25)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_name",
        "declarationKind": "variable"
@@ -7398,7 +7483,7 @@
         "oracle": "departments.department_name%TYPE",
         "resolved": "VARCHAR2(30)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_name",
        "declarationKind": "variable"
@@ -7773,7 +7858,7 @@
         "oracle": "employees.employee_id%TYPE",
         "resolved": "NUMBER(6)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_id",
        "declarationKind": "variable"
@@ -7893,7 +7978,7 @@
          "name": "expr9",
          "direction": "IN",
          "column": "hire_date",
-         "scalardbType": "DATE",
+         "scalardbType": "TIMESTAMP",
          "columnOracleType": "DATE",
          "expression": "SYSDATE"
         }
@@ -9007,7 +9092,7 @@
       "oracle": "t_ids",
       "resolved": "TABLE OF NUMBER(4)",
       "origin": "collection",
-      "schemaSnapshot": "schema.sql@9c816678"
+      "schemaSnapshot": "schema.sql@d6f64025"
      },
      "name": "g_depts",
      "declarationKind": "variable"
@@ -9399,7 +9484,7 @@
    "sourceRange": {
     "file": "emp_salary_audit_trg.trg",
     "startLine": 2,
-    "endLine": 11,
+    "endLine": 12,
     "startColumn": 1,
     "endColumn": 1
    },
@@ -9412,7 +9497,7 @@
      "sourceRange": {
       "file": "emp_salary_audit_trg.trg",
       "startLine": 2,
-      "endLine": 11,
+      "endLine": 12,
       "startColumn": 1,
       "endColumn": 1
      },
@@ -9421,25 +9506,71 @@
      "body": [
       {
        "id": "emp_salary_audit_trg.body#stmt-1",
+       "kind": "If",
+       "sourceRange": {
+        "file": "emp_salary_audit_trg.trg",
+        "startLine": 9,
+        "endLine": 9,
+        "startColumn": 3,
+        "endColumn": 73
+       },
+       "branches": [
+        {
+         "condition": "DELETING",
+         "body": [
+          {
+           "id": "emp_salary_audit_trg.body#stmt-2",
+           "kind": "Assignment",
+           "sourceRange": {
+            "file": "emp_salary_audit_trg.trg",
+            "startLine": 9,
+            "endLine": 9,
+            "startColumn": 20,
+            "endColumn": 32
+           },
+           "target": "v_action",
+           "expression": "'DELETE'"
+          }
+         ]
+        }
+       ],
+       "elseBody": [
+        {
+         "id": "emp_salary_audit_trg.body#stmt-3",
+         "kind": "Assignment",
+         "sourceRange": {
+          "file": "emp_salary_audit_trg.trg",
+          "startLine": 9,
+          "endLine": 9,
+          "startColumn": 47,
+          "endColumn": 59
+         },
+         "target": "v_action",
+         "expression": "'UPDATE'"
+        }
+       ]
+      },
+      {
+       "id": "emp_salary_audit_trg.body#stmt-4",
        "kind": "SqlOperation",
        "sourceRange": {
         "file": "emp_salary_audit_trg.trg",
-        "startLine": 7,
-        "endLine": 10,
+        "startLine": 10,
+        "endLine": 11,
         "startColumn": 3,
-        "endColumn": 35
+        "endColumn": 63
        },
        "diagnostics": [
         {
          "severity": "ERROR",
          "code": "EXPR",
-         "message": "VALUES column action: only literals and bind markers are allowed, got 'CASE WHEN DELETING THEN 'DELETE' ELSE 'UPDATE' END'",
+         "message": "VALUES column action: only literals and bind markers are allowed, got 'v_action'",
          "range": {
           "file": "emp_salary_audit_trg.trg",
-          "startLine": 7,
-          "endLine": 10,
+          "startLine": 10,
+          "endLine": 11,
           "startColumn": 3,
-          "endColumn": 35
+          "endColumn": 63
          }
         }
        ],
@@ -9447,7 +9578,7 @@
         "emp_audit"
        ],
        "sqlKind": "INSERT",
-       "originalSql": "INSERT INTO emp_audit (employee_id, action, old_salary, new_salary)\n  VALUES (:OLD.employee_id,\n          CASE WHEN DELETING THEN 'DELETE' ELSE 'UPDATE' END,\n          :OLD.salary, :NEW.salary)",
+       "originalSql": "INSERT INTO emp_audit (employee_id, action, old_salary, new_salary)\n  VALUES (:OLD.employee_id, v_action, :OLD.salary, :NEW.salary)",
        "binds": [
         {
          "name": "OLD_employee_id",
@@ -9494,6 +9625,27 @@
      "externalEffects": {
       "dynamicSql": false
      }
+    }
+   ],
+   "declarations": [
+    {
+     "id": "emp_salary_audit_trg.body#decl-1",
+     "kind": "Declaration",
+     "sourceRange": {
+      "file": "emp_salary_audit_trg.trg",
+      "startLine": 7,
+      "endLine": 7,
+      "startColumn": 3,
+      "endColumn": 33
+     },
+     "type": {
+      "oracle": "emp_audit.action%TYPE",
+      "resolved": "VARCHAR2(10)",
+      "origin": "column-type",
+      "schemaSnapshot": "schema.sql@d6f64025"
+     },
+     "name": "v_action",
+     "declarationKind": "variable"
     }
    ],
    "triggerEvent": "UPDATE OR DELETE",
@@ -9750,7 +9902,7 @@
         "oracle": "employees.employee_id%TYPE",
         "resolved": "NUMBER(6)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "p_emp_id",
        "direction": "IN",
@@ -9790,7 +9942,7 @@
         "oracle": "employees.salary%TYPE",
         "resolved": "NUMBER(8, 2)",
         "origin": "column-type",
-        "schemaSnapshot": "schema.sql@9c816678"
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "p_new_sal",
        "direction": "OUT",
@@ -10263,5 +10415,5 @@
    }
   }
  ],
- "schemaSnapshot": "schema.sql@9c816678"
+ "schemaSnapshot": "schema.sql@d6f64025"
 }

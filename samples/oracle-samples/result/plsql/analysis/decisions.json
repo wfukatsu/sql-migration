@@ -276,41 +276,45 @@
     ]
    },
    "reasons": [
-    "CUR-001: 明示 cursor は寿命がトランザクション境界をまたぎます",
-    "CUR-001: 明示 cursor は寿命がトランザクション境界をまたぎます",
-    "CUR-001: 明示 cursor は寿命がトランザクション境界をまたぎます"
+    "CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
+    "CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります"
    ],
    "rules": [
     {
-     "id": "CUR-001",
+     "id": "SCAN-002",
+     "decision": "AUTO",
+     "message": "パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります",
+     "source": "scalardb_capability.yaml",
+     "severity": "info"
+    },
+    {
+     "id": "CUR-003",
      "decision": "REVIEW",
-     "message": "明示 cursor は寿命がトランザクション境界をまたぎます",
+     "message": "明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
      "source": "semantics.yaml",
      "severity": "warning"
     },
     {
-     "id": "CUR-001",
+     "id": "CUR-002",
      "decision": "REVIEW",
-     "message": "明示 cursor は寿命がトランザクション境界をまたぎます",
-     "source": "semantics.yaml",
-     "severity": "warning"
-    },
-    {
-     "id": "CUR-001",
-     "decision": "REVIEW",
-     "message": "明示 cursor は寿命がトランザクション境界をまたぎます",
+     "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
      "source": "semantics.yaml",
      "severity": "warning"
     }
    ],
-   "remediation": [],
+   "remediation": [
+    "キーで届く読み取りに変える",
+    "全行を取得してアプリ側で絞る・並べる（docs/design/app-side-processing-plan.md）"
+   ],
    "requiredTests": [
-    "cursor_lifetime"
+    "cross_partition_scan",
+    "cursor_lifetime",
+    "performance",
+    "row_limit"
    ],
    "whyNotAuto": [
-    "CUR-001 (REVIEW): 明示 cursor は寿命がトランザクション境界をまたぎます",
-    "CUR-001 (REVIEW): 明示 cursor は寿命がトランザクション境界をまたぎます",
-    "CUR-001 (REVIEW): 明示 cursor は寿命がトランザクション境界をまたぎます",
+    "CUR-003 (REVIEW): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
+    "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
     "確信度が 0: symbolResolution, typeResolution, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
    "redesign": null,
@@ -2446,7 +2450,7 @@
    "source": {
     "file": "emp_salary_audit_trg.trg",
     "startLine": 2,
-    "endLine": 11
+    "endLine": 12
    },
    "generated": {
     "class": "EmpSalaryAuditTrgService",

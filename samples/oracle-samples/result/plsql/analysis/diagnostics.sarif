@@ -58,6 +58,30 @@
        }
       },
       {
+       "id": "CUR_SCAN",
+       "shortDescription": {
+        "text": "CUR_SCAN"
+       }
+      },
+      {
+       "id": "CROSS_PARTITION",
+       "shortDescription": {
+        "text": "CROSS_PARTITION"
+       }
+      },
+      {
+       "id": "CONFIG",
+       "shortDescription": {
+        "text": "CONFIG"
+       }
+      },
+      {
+       "id": "COST",
+       "shortDescription": {
+        "text": "COST"
+       }
+      },
+      {
        "id": "ORDER",
        "shortDescription": {
         "text": "ORDER"
@@ -79,18 +103,6 @@
        "id": "PLAN_CROSS_PARTITION",
        "shortDescription": {
         "text": "PLAN_CROSS_PARTITION"
-       }
-      },
-      {
-       "id": "CONFIG",
-       "shortDescription": {
-        "text": "CONFIG"
-       }
-      },
-      {
-       "id": "COST",
-       "shortDescription": {
-        "text": "COST"
        }
       },
       {
@@ -133,12 +145,6 @@
        "id": "BULK_CHUNKED",
        "shortDescription": {
         "text": "BULK_CHUNKED"
-       }
-      },
-      {
-       "id": "CROSS_PARTITION",
-       "shortDescription": {
-        "text": "CROSS_PARTITION"
        }
       },
       {
@@ -544,6 +550,90 @@
         "region": {
          "startLine": 11,
          "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CUR_SCAN",
+     "level": "note",
+     "message": {
+      "text": "cursor c_emp は読むだけのループだった。行を先に読んで回す形にした——移行先に跨トランザクションの cursor は無いので、動く行数はメモリで決まる（上限は --limits）。%ROWTYPE の r がループ変数になる（ループの後の r は読めない）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_1_explicit_cursor.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 13,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CROSS_PARTITION",
+     "level": "warning",
+     "message": {
+      "text": "SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_1_explicit_cursor.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 13,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONFIG",
+     "level": "note",
+     "message": {
+      "text": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_1_explicit_cursor.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 13,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "COST",
+     "level": "note",
+     "message": {
+      "text": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_1_explicit_cursor.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 13,
          "startColumn": 3
         }
        }
@@ -3053,7 +3143,7 @@
      "ruleId": "EXPR",
      "level": "error",
      "message": {
-      "text": "VALUES column action: only literals and bind markers are allowed, got 'CASE WHEN DELETING THEN 'DELETE' ELSE 'UPDATE' END'"
+      "text": "VALUES column action: only literals and bind markers are allowed, got 'v_action'"
      },
      "locations": [
       {
@@ -3062,8 +3152,8 @@
          "uri": "emp_salary_audit_trg.trg"
         },
         "region": {
-         "startLine": 7,
-         "endLine": 10,
+         "startLine": 10,
+         "endLine": 11,
          "startColumn": 3
         }
        }

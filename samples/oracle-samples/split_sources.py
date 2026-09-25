@@ -126,9 +126,41 @@ def split(path: Path) -> None:
         (BLOCK_OUT / f"{name}.prc").write_text(wrap_block(name, buf, f"src/{path.name}"), encoding="utf-8")
 
 
+# 原文の不備で Oracle 自身がコンパイルできないユニットへの、最小の修正（2026-09-25、実 Oracle 26ai Free で確認）。
+# 変換ツールの評価ではなく、Oracle で動く原文を得るための修正なので、ここに理由つきで置く。
+FIXES = {
+    # VALUES 句の中の `CASE WHEN DELETING …` は ORA-00984（trigger 述語は SQL の中では使えない）。
+    # 先に PL/SQL の変数へ取り出してから INSERT する。意味は同じ
+    "emp_salary_audit_trg.trg": (
+        """BEGIN
+  INSERT INTO emp_audit (employee_id, action, old_salary, new_salary)
+  VALUES (:OLD.employee_id,
+          CASE WHEN DELETING THEN 'DELETE' ELSE 'UPDATE' END,
+          :OLD.salary, :NEW.salary);
+END;""",
+        """DECLARE
+  v_action emp_audit.action%TYPE;
+BEGIN
+  IF DELETING THEN v_action := 'DELETE'; ELSE v_action := 'UPDATE'; END IF;   -- 原文は VALUES の中の CASE WHEN DELETING（ORA-00984）
+  INSERT INTO emp_audit (employee_id, action, old_salary, new_salary)
+  VALUES (:OLD.employee_id, v_action, :OLD.salary, :NEW.salary);
+END;"""),
+}
+
+
+def apply_fixes() -> None:
+    for name, (old, new) in FIXES.items():
+        path = PLSQL_OUT / name
+        text = path.read_text(encoding="utf-8")
+        if old not in text:
+            raise SystemExit(f"{name}: 直す箇所が見つからない（原文が変わった？）")
+        path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+
 def main() -> None:
     for p in sorted(SRC.glob("0*.sql")):
         split(p)
+    apply_fixes()
     print("sql:", sorted(q.name for q in SQL_OUT.glob("*.sql")))
     print("plsql:", sorted(q.name for q in PLSQL_OUT.glob("*")))
     print("blocks:", sorted(q.name for q in BLOCK_OUT.glob("*")) if BLOCK_OUT.exists() else [])

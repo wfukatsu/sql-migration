@@ -78,35 +78,35 @@ INSERT INTO departments VALUES (90, 'Executive', NULL, 'Tokyo');
 
 INSERT INTO departments VALUES (99, 'Research', NULL, 'Fukuoka');
 
-/* 社員なし部門 */ INSERT INTO employees VALUES (100, 'Steven', 'King', 'SKING', '2013-06-17', 'AD_PRES', 24000, NULL, NULL, 90);
+/* 社員なし部門 */ INSERT INTO employees VALUES (100, 'Steven', 'King', 'SKING', '2013-06-17 00:00:00', 'AD_PRES', 24000, NULL, NULL, 90);
 
-INSERT INTO employees VALUES (101, 'Neena', 'Kochhar', 'NKOCHHAR', '2015-09-21', 'AD_VP', 17000, NULL, 100, 90);
+INSERT INTO employees VALUES (101, 'Neena', 'Kochhar', 'NKOCHHAR', '2015-09-21 00:00:00', 'AD_VP', 17000, NULL, 100, 90);
 
-INSERT INTO employees VALUES (102, 'Lex', 'De Haan', 'LDEHAAN', '2011-01-13', 'AD_VP', 17000, NULL, 100, 90);
+INSERT INTO employees VALUES (102, 'Lex', 'De Haan', 'LDEHAAN', '2011-01-13 00:00:00', 'AD_VP', 17000, NULL, 100, 90);
 
-INSERT INTO employees VALUES (103, 'Alexander', 'Hunold', 'AHUNOLD', '2016-01-03', 'IT_PROG', 9000, NULL, 102, 60);
+INSERT INTO employees VALUES (103, 'Alexander', 'Hunold', 'AHUNOLD', '2016-01-03 00:00:00', 'IT_PROG', 9000, NULL, 102, 60);
 
-INSERT INTO employees VALUES (104, 'Bruce', 'Ernst', 'BERNST', '2017-05-21', 'IT_PROG', 6000, NULL, 103, 60);
+INSERT INTO employees VALUES (104, 'Bruce', 'Ernst', 'BERNST', '2017-05-21 00:00:00', 'IT_PROG', 6000, NULL, 103, 60);
 
-INSERT INTO employees VALUES (107, 'Diana', 'Lorentz', 'DLORENTZ', '2019-02-07', 'IT_PROG', 4200, NULL, 103, 60);
+INSERT INTO employees VALUES (107, 'Diana', 'Lorentz', 'DLORENTZ', '2019-02-07 00:00:00', 'IT_PROG', 4200, NULL, 103, 60);
 
-INSERT INTO employees VALUES (145, 'John', 'Russell', 'JRUSSEL', '2014-10-01', 'SA_MAN', 14000, 0.40, 100, 80);
+INSERT INTO employees VALUES (145, 'John', 'Russell', 'JRUSSEL', '2014-10-01 00:00:00', 'SA_MAN', 14000, 0.40, 100, 80);
 
-INSERT INTO employees VALUES (146, 'Karen', 'Partners', 'KPARTNER', '2015-01-05', 'SA_MAN', 13500, 0.30, 100, 80);
+INSERT INTO employees VALUES (146, 'Karen', 'Partners', 'KPARTNER', '2015-01-05 00:00:00', 'SA_MAN', 13500, 0.30, 100, 80);
 
-INSERT INTO employees VALUES (150, 'Peter', 'Tucker', 'PTUCKER', '2015-01-30', 'SA_REP', 10000, 0.30, 145, 80);
+INSERT INTO employees VALUES (150, 'Peter', 'Tucker', 'PTUCKER', '2015-01-30 00:00:00', 'SA_REP', 10000, 0.30, 145, 80);
 
-INSERT INTO employees VALUES (151, 'David', 'Bernstein', 'DBERNSTE', '2015-03-24', 'SA_REP', 9500, 0.25, 145, 80);
+INSERT INTO employees VALUES (151, 'David', 'Bernstein', 'DBERNSTE', '2015-03-24 00:00:00', 'SA_REP', 9500, 0.25, 145, 80);
 
-INSERT INTO employees VALUES (155, 'Oliver', 'Tuvault', 'OTUVAULT', '2017-11-23', 'SA_REP', 7000, 0.15, 146, 80);
+INSERT INTO employees VALUES (155, 'Oliver', 'Tuvault', 'OTUVAULT', '2017-11-23 00:00:00', 'SA_REP', 7000, 0.15, 146, 80);
 
-INSERT INTO employees VALUES (120, 'Matthew', 'Weiss', 'MWEISS', '2014-07-18', 'ST_CLERK', 4800, NULL, 100, 50);
+INSERT INTO employees VALUES (120, 'Matthew', 'Weiss', 'MWEISS', '2014-07-18 00:00:00', 'ST_CLERK', 4800, NULL, 100, 50);
 
-INSERT INTO employees VALUES (125, 'Julia', 'Nayer', 'JNAYER', '2015-07-16', 'ST_CLERK', 3200, NULL, 120, 50);
+INSERT INTO employees VALUES (125, 'Julia', 'Nayer', 'JNAYER', '2015-07-16 00:00:00', 'ST_CLERK', 3200, NULL, 120, 50);
 
-INSERT INTO employees VALUES (178, 'Kimberely', 'Grant', 'KGRANT', '2017-05-24', 'SA_REP', 7000, 0.15, 145, NULL);
+INSERT INTO employees VALUES (178, 'Kimberely', 'Grant', 'KGRANT', '2017-05-24 00:00:00', 'SA_REP', 7000, 0.15, 145, NULL);
 
-/* 部門なし社員 */ INSERT INTO employees VALUES (200, 'Jennifer', 'Whalen', 'JWHALEN', '2013-09-17', 'AD_VP', 15000, NULL, 101, 10);
+/* 部門なし社員 */ INSERT INTO employees VALUES (200, 'Jennifer', 'Whalen', 'JWHALEN', '2013-09-17 00:00:00', 'AD_VP', 15000, NULL, 101, 10);
 
 -- [NOT CONVERTED #37] SET manager_id = CASE d.department_id WHEN 10 THEN 200 WHEN 60 THEN 103 WHEN 80 THEN 145 WHEN 50 THEN 120 WHEN 90 THEN 100 END: expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction
 -- UPDATE departments d

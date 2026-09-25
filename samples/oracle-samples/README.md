@@ -3,17 +3,18 @@
 Cowork のセッション「Oracle Database サンプルコード」（`cse_01Qxb85VaSWEDcRN9pWtb9vM`、`~/Downloads/oracle-samples.zip`）が書いた、
 Oracle 公式ドキュメントの構成に沿った **構文カタログ**（SQL 4 本 + PL/SQL 3 本、約 1,700 行）を、このリポジトリの変換ツールに通し、
 実 DB（移行元 Oracle 26ai Free と ScalarDB Cluster 3.19、バックエンド PostgreSQL）で同じ結果になるかを比べた記録。
+第 1 部・第 2 部は 2026-09-24 の初回の記録で、そこで見つかった不具合を Issue にして直した結果を「Issue の修正後」の節と付録（修正後の数字）に置く。
 
 題材は業務ロジックではなく「Oracle の構文を一つずつ見せる」サンプルなので、**変換率は低く出て当然**である。読む価値があるのは、
 構文ごとに「そのまま移る / 実行計画で動く / アプリに移す / 人が決めないと進まない」のどれになるかと、実 DB で本当にそうなったか、である。
 
-| | 数 | 結果 |
-|---|---|---|
-| SQL 文（6 ファイル） | 177 文 | OK 27 / WARN 54 / PLANNED 27 / ERROR 69。ScalarDB SQL になったのは 81 文（45.8%）、実行計画で動くものが 27 文 |
-| SQL の実 DB 比較（02 の読み取り文 + JSON 3 文 + 修正版 1 文） | 40 文 | **PASS 19** / FAIL 10 / SKIP 9（変換 ERROR）/ CASE_ERROR 2（Oracle 自身が拒否） |
-| PL/SQL routine（05・06 の全ユニット + 04 の無名ブロック 10 個） | 41 routine | AUTO 候補 7 / REVIEW 10 / REDESIGN 24（証拠なしの時点） |
-| PL/SQL の Java 生成 | 41 routine、109 ファイル | javac エラー 15 件（8 routine）。collection・package 変数・trigger・FORALL RETURNING |
-| PL/SQL の実 DB 比較（コンパイルできる 24 routine、23 シナリオ） | 23 | **一致 10** / 相違 13。証拠を渡すと **AUTO 6** |
+| | 数 | 2026-09-24（初回） | 2026-09-25（Issue #30〜#42 の修正後） |
+|---|---|---|---|
+| SQL 文（6 ファイル） | 175 文 | OK 27 / WARN 54 / PLANNED 27 / ERROR 69 | OK 27 / WARN 54 / PLANNED 20 / ERROR 74。H2 で動かない 7 文が PLANNED から ERROR に、WITH FUNCTION が 1 文に |
+| SQL の実 DB 比較（02 の読み取り文 + JSON 3 文 + 修正版 1 文） | 40 文 | PASS 19 / FAIL 10 / SKIP 9 / CASE_ERROR 2 | **PASS 19 / FAIL 5 / SKIP 14 / CASE_ERROR 2**。FAIL 5 はすべて同順位・非決定。JSON_OBJECT は PASS に |
+| PL/SQL routine（05・06 の全ユニット + 04 の無名ブロック 10 個） | 41 routine | AUTO 候補 7 / REVIEW 10 / REDESIGN 24 | 同じ（判定のルールは変えていない） |
+| PL/SQL の Java 生成 | 41 routine | javac エラー 15 件（8 routine） | **javac エラー 0**（41 routine 全部がコンパイルできる） |
+| PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 12 / 相違 19**（全 36 ユニット、31 シナリオ）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて） |
 
 ## フォルダ
 
@@ -299,7 +300,40 @@ Docker の検証環境（`difftest/`）と ScalarDB Cluster のライセンス�
 
 ---
 
-## 付録（`result/tables.md` と同じ。`make_tables.py` が結果ファイルから作る）
+## Issue の修正後（2026-09-25）
+
+初回で「直していない穴」とした 13 件を GitLab の Issue #30〜#42 に登録し、順に直した（ブランチ `feat/oracle-samples-verification`）。
+直したあと、同じ入力で SQL 変換・実 DB 比較・PL/SQL 生成・実 DB 比較を取り直した。付録の表は取り直したあとのもの。
+
+| Issue | 何を直したか | 取り直した結果 |
+|---|---|---|
+| #30 | `WITH FUNCTION … SELECT … /` を 1 文として `WITH_PLSQL` で断る | 02 H-4 が 3 断片から 1 文の ERROR に |
+| #31 | FULL OUTER JOIN / LATERAL・CROSS APPLY / SAMPLE は H2 で動かないので `RESIDUAL_H2`（ERROR） | B-3 / B-5 / H-2 が PLANNED → ERROR（実 DB の FAIL 3 → SKIP 3） |
+| #32 | 再帰 WITH の `SEARCH DEPTH FIRST` も同じ（`VARCHAR2` は H2 の Oracle モードが読める） | G-3 が PLANNED → ERROR |
+| #33 | `JSON_TABLE` を表として取得しない | 03 F-3 が PLANNED → ERROR（取得 SQL が壊れなくなった） |
+| #34 | residual-runner が H2 の JSON 型を文字列で返す | 03 F-4 `JSON_OBJECT` が FAIL → **PASS** |
+| #35 | 列並びを省いた INSERT の bind を表の定義順で列に帰属させ、DOUBLE 列へは double で bind | `b06_2_forall_save_exceptions` の DB-SQL-10016 は消えた（いまは `COMMIT` の TX-001 で止まる。決定待ち） |
+| #36 | 全分岐が throw で終わる IF / CASE の後の文を出さない | `b04_4_4_ref_cursor` が部分集合に戻った（SYS_REFCURSOR そのものは未対応のまま） |
+| #37 | 数値の FOR ループ（REVERSE 含む） | `b04_2_control_flow` が **一致**、AUTO |
+| #38 | handler の `SQLERRM` / `FORMAT_ERROR_BACKTRACE` | `b04_6_2_user_exceptions` は `ROLLBACK`（TX-001）まで進む |
+| #39 | 明示 cursor の OPEN / FETCH INTO %ROWTYPE / CLOSE と `%ROWCOUNT` | `b04_4_1_explicit_cursor` が **一致** |
+| #40 | 判定によらず生成物が javac を通る（collection・record・TYPE コンストラクタ・package 変数は throw に、OUT 引数つき呼び出しは Result record から受ける、standalone の呼び先は Service を注入、関数の `RETURN;`、trigger check の引数） | 41 routine 全部がコンパイルでき、部分集合ではなく全ユニットで比べられるようになった（23 → 31 シナリオ） |
+| #41 | シナリオで省いた引数を DEFAULT のリテラルで埋める | `annual_comp_null_comm` を `p_comm` 省略のまま比べられる |
+| #42 | plsql_compare が Oracle DATE の 0 時と ScalarDB DATE を同じ値と見る | hire_date を DATE のままにしても比較が落ちない（本記録は TIMESTAMP のまま） |
+
+あわせてハーネスを 1 つ直した: Oracle 側で package の状態が破棄される ORA-04068（シナリオごとに sequence を作り直すと package が無効になる）を 1 度だけ再試行する。
+
+**サンプルの不備がもう 1 つ見つかった。** 全ユニットを Oracle に配備したところ、`emp_salary_audit_trg` が ORA-00984 でコンパイルできない
+（`VALUES` 句の中の `CASE WHEN DELETING …`。trigger 述語は SQL の中では使えない）。この trigger が無効なまま employees を更新すると ORA-04098 になり、
+9 シナリオが Oracle 側で落ちた。`split_sources.py` の `FIXES` で、`DELETING` を先に PL/SQL の変数へ取り出す最小の修正を当てている（意味は同じ、理由つき）。
+
+**修正後の PL/SQL 実 DB 比較（31 シナリオ、一致 12 / 相違 19）**: 相違 19 本はすべて「Oracle は正常終了、Java は解析が断った所で throw」で、値の差は無い。
+止まる理由は、RMW（`SET salary = salary + 1`）、`RETURNING`、`COMMIT` / `ROLLBACK`（TX-001）、IDENTITY 列の採番、行ロック、動的 SQL、
+collection と TYPE コンストラクタ、package 変数（STATE-001）、SYS_REFCURSOR、`DBMS_APPLICATION_INFO` の名前付き引数。
+いずれも「人の決定」（`limits.yaml`）か「生成器がまだ模していない構文」で、解析の判定表（付録 C）に出ているとおり。
+trigger を全部配備したので、employees を書くシナリオでは Oracle 側の `emp_audit` に trigger の行が入る一方、Java 側には入らない（TRG-002 が言っていたこと）。
+
+## 付録（`result/tables.md` と同じ。`make_tables.py` が結果ファイルから作る。**Issue 修正後の数字**）
 
 ### 付録 A: SQL 変換（文ごと）
 
@@ -402,7 +436,7 @@ Docker の検証環境（`difftest/`）と ScalarDB Cluster のライセンス�
 | 38 |  | `FLASHBACK TABLE sales_part TO BEFORE DROP` | ERROR | PARSE |  |
 | 39 |  | `DROP TABLE sales_part PURGE` | OK |  |  |
 
-#### `02_sql_query.sql` — 39 文 / OK 0 / WARN 5 / PLANNED 23 / ERROR 11（変換率 12.8%）
+#### `02_sql_query.sql` — 37 文 / OK 0 / WARN 5 / PLANNED 18 / ERROR 14（変換率 13.5%）
 
 | # | 節 | 元の SQL | 判定 | 指摘 | 実行計画 |
 |---|---|---|---|---|---|
@@ -414,9 +448,9 @@ Docker の検証環境（`difftest/`）と ScalarDB Cluster のライセンス�
 | 6 | B-1 内部結合（ANSI） | `SELECT e.last_name, d.department_name FROM employees e JOIN departmen…` | WARN | CROSS_PARTITION |  |
 | 7 | B-2 外部結合（ANSI）と Oracle 独自の (+) 記 | `SELECT e.last_name, d.department_name FROM employees e LEFT JOIN depa…` | WARN | CROSS_PARTITION |  |
 | 8 |  | `SELECT e.last_name, d.department_name FROM employees e, departments d…` | WARN | CROSS_PARTITION, ORACLE_JOIN_MARK |  |
-| 9 | B-3 完全外部結合：部門なし社員・社員なし部門の両方を出す | `SELECT e.last_name, d.department_name FROM employees e FULL OUTER JOI…` | PLANNED | JOIN, PLAN_CROSS_PARTITION | P8 |
+| 9 | B-3 完全外部結合：部門なし社員・社員なし部門の両方を出す | `SELECT e.last_name, d.department_name FROM employees e FULL OUTER JOI…` | ERROR | JOIN, RESIDUAL_H2 |  |
 | 10 | B-4 自己結合（上司名の取得） | `SELECT w.last_name AS employee, m.last_name AS manager FROM employees…` | WARN | CROSS_PARTITION |  |
-| 11 | B-5 LATERAL / CROSS APPLY（12c+）： | `SELECT d.department_name, t.last_name, t.salary FROM departments d CR…` | PLANNED | JOIN, PLAN_CROSS_PARTITION | P8 |
+| 11 | B-5 LATERAL / CROSS APPLY（12c+）： | `SELECT d.department_name, t.last_name, t.salary FROM departments d CR…` | ERROR | APP_SEMANTICS, JOIN, RESIDUAL_H2 |  |
 | 12 | C-1 スカラー副問合せ | `SELECT last_name, salary, (SELECT ROUND(AVG(salary)) FROM employees) …` | PLANNED | PLAN_CROSS_PARTITION, PROJECTION | P1 |
 | 13 | C-2 相関副問合せ：部門平均より高い社員 | `SELECT e.last_name, e.department_id, e.salary FROM employees e WHERE …` | PLANNED | PLAN_CROSS_PARTITION, SUBQUERY | P5 |
 | 14 | C-3 EXISTS / NOT EXISTS | `SELECT d.department_name FROM departments d WHERE NOT EXISTS (SELECT …` | PLANNED | NOT, PLAN_CROSS_PARTITION, SUBQUERY | P5 |
@@ -437,16 +471,14 @@ Docker の検証環境（`difftest/`）と ScalarDB Cluster のライセンス�
 | 29 | F-2 11g 以前の ROWNUM 方式 [ORA]（移行元コ | `SELECT * FROM (SELECT a.*, ROWNUM rnum FROM (SELECT last_name, salary…` | PLANNED | FROM, PLAN_CROSS_PARTITION, PLAN_UNRESOLVED, SUBQUERY | P5 |
 | 30 | G-1 副問合せのファクタリング | `WITH dept_stats AS ( SELECT department_id, AVG(salary) AS avg_sal FRO…` | PLANNED | CTE, PLAN_CROSS_PARTITION, PROJECTION | P1+P6 |
 | 31 | G-2 CONNECT BY による階層問合せ [ORA] | `SELECT LEVEL, LPAD(' ', 2 * (LEVEL - 1)) || last_name AS org_chart, S…` | ERROR | APP_SEMANTICS, HIERARCHICAL, PROJECTION, RESIDUAL_H2 |  |
-| 32 | G-3 再帰 WITH（標準SQL、他DBへ移行しやすい書き方） | `WITH org (employee_id, last_name, manager_id, lvl, path) AS ( SELECT …` | PLANNED | CTE, PLAN_CROSS_PARTITION, PROJECTION, SET_OP | P1+P6 |
+| 32 | G-3 再帰 WITH（標準SQL、他DBへ移行しやすい書き方） | `WITH org (employee_id, last_name, manager_id, lvl, path) AS ( SELECT …` | ERROR | APP_SEMANTICS, CTE, PROJECTION, RESIDUAL_H2, SET_OP |  |
 | 33 | G-4 CONNECT BY LEVEL による連番生成 [OR | `SELECT DATE '2026-09-01' + LEVEL - 1 AS cal_date FROM dual CONNECT BY…` | ERROR | APP_SEMANTICS, HIERARCHICAL, PROJECTION, RESIDUAL_H2 |  |
 | 34 | H-1 フラッシュバック問合せ [ORA]（UNDO 保持期間内 | `SELECT employee_id, salary FROM employees AS OF TIMESTAMP (SYSTIMESTA…` | ERROR | PARSE |  |
-| 35 | H-2 サンプリング [ORA] | `SELECT COUNT(*) FROM employees SAMPLE (50)` | PLANNED | CLAUSE, PLAN_CROSS_PARTITION | P1 |
+| 35 | H-2 サンプリング [ORA] | `SELECT COUNT(*) FROM employees SAMPLE (50)` | ERROR | CLAUSE, RESIDUAL_H2 |  |
 | 36 | H-3 ROWID [ORA]（重複行削除などで頻出） | `SELECT ROWID, employee_id FROM employees WHERE ROWNUM <= 3` | ERROR | ROWID |  |
-| 37 | H-4 WITH 句内での PL/SQL 関数定義（12c+）[ | `WITH FUNCTION annual(p_sal NUMBER, p_comm NUMBER) RETURN NUMBER IS BE…` | ERROR | PARSE |  |
-| 38 |  | `END` | ERROR | STATEMENT |  |
-| 39 |  | `SELECT last_name, annual(salary, commission_pct) AS annual_comp FROM …` | PLANNED | PROJECTION | P1 |
+| 37 | H-4 WITH 句内での PL/SQL 関数定義（12c+）[ | `WITH FUNCTION annual(p_sal NUMBER, p_comm NUMBER) RETURN NUMBER IS BE…` | ERROR | WITH_PLSQL |  |
 
-#### `03_sql_dml.sql` — 37 文 / OK 9 / WARN 6 / PLANNED 2 / ERROR 20（変換率 40.5%）
+#### `03_sql_dml.sql` — 37 文 / OK 9 / WARN 6 / PLANNED 1 / ERROR 21（変換率 40.5%）
 
 | # | 節 | 元の SQL | 判定 | 指摘 | 実行計画 |
 |---|---|---|---|---|---|
@@ -481,7 +513,7 @@ Docker の検証環境（`difftest/`）と ScalarDB Cluster のライセンス�
 | 29 |  | `INSERT INTO products_json VALUES (2, '{"name":"ScalarDL","tier":"Stan…` | WARN | INSERT_COLS |  |
 | 30 |  | `COMMIT` | OK |  |  |
 | 31 | F-2 値の取り出し（JSON_VALUE / JSON_QUE | `SELECT JSON_VALUE(doc, '$.name') AS name, JSON_VALUE(doc, '$.price' R…` | ERROR | PARSE |  |
-| 32 | F-3 JSON_TABLE：JSON を行列に展開 | `SELECT p.id, jt.name, jt.tag FROM products_json p, JSON_TABLE(p.doc, …` | PLANNED | JOIN, PLAN_CROSS_PARTITION | P8 |
+| 32 | F-3 JSON_TABLE：JSON を行列に展開 | `SELECT p.id, jt.name, jt.tag FROM products_json p, JSON_TABLE(p.doc, …` | ERROR | JOIN, RESIDUAL_H2 |  |
 | 33 | F-4 リレーショナル → JSON 生成 | `SELECT JSON_OBJECT('dept' VALUE d.department_name, 'members' VALUE JS…` | PLANNED | PLAN_CROSS_PARTITION, PROJECTION | P1 |
 | 34 | F-5 部分更新（19c+） | `UPDATE products_json SET doc = JSON_MERGEPATCH(doc, '{"price":1200,"s…` | ERROR | PARSE |  |
 | 35 |  | `COMMIT` | OK |  |  |
@@ -513,7 +545,7 @@ Docker の検証環境（`difftest/`）と ScalarDB Cluster のライセンス�
 ### 付録 B: 実 DB 比較（SQL）
 | # | 元の SQL | 変換 | 実行 | 結果 | 差の内容 |
 |---|---|---|---|---|---|
-| 10 | `SELECT SYSDATE, SYSTIMESTAMP, USER FROM dual` | PLANNED | 実行計画 P1 | FAIL | result mismatch (no row of the actual result equals expected (datetime.datetime(2026, 9, 24, 7, 59, 16), datet |
+| 10 | `SELECT SYSDATE, SYSTIMESTAMP, USER FROM dual` | PLANNED | 実行計画 P1 | FAIL | result mismatch (no row of the actual result equals expected (datetime.datetime(2026, 9, 25, 1, 3, 21), dateti |
 | 11 | `SELECT employee_id, last_name, salary, commission_pct FROM …` | WARN | ScalarDB SQL | PASS |  |
 | 12 | `SELECT last_name, salary, CASE WHEN salary >= 15000 THEN 'H…` | PLANNED | 実行計画 P1 | PASS |  |
 | 13 | `SELECT UPPER(last_name) AS upper_name, INITCAP(email) AS in…` | PLANNED | 実行計画 P1 | FAIL | result mismatch (no row of the actual result equals expected ('DE HAAN', 'Ldehaan', 'De ', 2, '000102', 'Lex D |
@@ -521,9 +553,9 @@ Docker の検証環境（`difftest/`）と ScalarDB Cluster のライセンス�
 | 15 | `SELECT e.last_name, d.department_name FROM employees e JOIN…` | WARN | ScalarDB SQL | PASS |  |
 | 16 | `SELECT e.last_name, d.department_name FROM employees e LEFT…` | WARN | ScalarDB SQL | PASS |  |
 | 17 | `SELECT e.last_name, d.department_name FROM employees e, dep…` | WARN | ScalarDB SQL | PASS |  |
-| 18 | `SELECT e.last_name, d.department_name FROM employees e FULL…` | PLANNED | 実行計画 P8 | FAIL |  |
+| 18 | `SELECT e.last_name, d.department_name FROM employees e FULL…` | ERROR | — | NOT_CONVERTIBLE | OUTER JOIN is not supported; the H2 residual engine cannot run FULL OUTER JOIN (H2 has no FULL JOIN: UNION the |
 | 19 | `SELECT w.last_name AS employee, m.last_name AS manager FROM…` | WARN | ScalarDB SQL | PASS |  |
-| 20 | `SELECT d.department_name, t.last_name, t.salary FROM depart…` | PLANNED | 実行計画 P8 | FAIL |  |
+| 20 | `SELECT d.department_name, t.last_name, t.salary FROM depart…` | ERROR | — | NOT_CONVERTIBLE | joined relation must be a base table (no subqueries); the H2 residual engine cannot run LATERAL / CROSS APPLY  |
 | 21 | `SELECT last_name, salary, (SELECT ROUND(AVG(salary)) FROM e…` | PLANNED | 実行計画 P1 | PASS |  |
 | 22 | `SELECT e.last_name, e.department_id, e.salary FROM employee…` | PLANNED | 実行計画 P5 | PASS |  |
 | 23 | `SELECT d.department_name FROM departments d WHERE NOT EXIST…` | PLANNED | 実行計画 P5 | PASS |  |
@@ -541,18 +573,18 @@ Docker の検証環境（`difftest/`）と ScalarDB Cluster のライセンス�
 | 35 | `SELECT order_date, total, SUM(total) OVER (ORDER BY order_d…` | PLANNED | 実行計画 P1 | PASS |  |
 | 36 | `SELECT department_id, MAX(last_name) KEEP (DENSE_RANK FIRST…` | ERROR | — | NOT_CONVERTIBLE | projection 'MAX(last_name) KEEP (DENSE_RANK FIRST ORDER BY salary DESC)' is an expression; ScalarDB SQL only s |
 | 37 | `SELECT last_name, salary FROM employees ORDER BY salary DES…` | PLANNED | 実行計画 P1 | FAIL | result mismatch (row 2: expected ('Kochhar', 17000.0), actual ('De Haan', 17000)): expected [('King', 24000.0) |
-| 38 | `SELECT last_name, salary FROM employees ORDER BY salary DES…` | PLANNED | 実行計画 P4 | PASS |  |
+| 38 | `SELECT last_name, salary FROM employees ORDER BY salary DES…` | PLANNED | 実行計画 P4 | FAIL | result mismatch (row 5: expected ('Tuvault', 7000.0), actual ('Grant', 7000)): expected [('Partners', 13500.0) |
 | 39 | `SELECT * FROM (SELECT a.*, ROWNUM rnum FROM (SELECT last_na…` | PLANNED | 実行計画 P5 | PASS |  |
 | 40 | `WITH dept_stats AS ( SELECT department_id, AVG(salary) AS a…` | PLANNED | 実行計画 P1+P6 | PASS |  |
 | 41 | `SELECT LEVEL, LPAD(' ', 2 * (LEVEL - 1)) || last_name AS or…` | ERROR | — | NOT_CONVERTIBLE | main query: START WITH / CONNECT BY with CONNECT_BY_ISLEAF, CONNECT_BY_ROOT, LEVEL, SYS_CONNECT_BY_PATH -- wal |
-| 42 | `WITH org (employee_id, last_name, manager_id, lvl, path) AS…` | PLANNED | 実行計画 P1+P6 | FAIL |  |
+| 42 | `WITH org (employee_id, last_name, manager_id, lvl, path) AS…` | ERROR | — | NOT_CONVERTIBLE | WITH org: evaluate each common table expression in the application (fetch its base tables through ScalarDB SQL |
 | 43 | `SELECT DATE '2026-09-01' + LEVEL - 1 AS cal_date FROM dual …` | ERROR | — | NOT_CONVERTIBLE | main query: START WITH / CONNECT BY with LEVEL -- walk the tree in the application (appside.Hierarchy) or prec |
 | 44 | `SELECT employee_id, salary FROM employees AS OF TIMESTAMP (…` | ERROR | — | CASE_ERROR | source database rejected the statement: ORA-01466: unable to read data - table definition has changed |
-| 45 | `SELECT COUNT(*) FROM employees SAMPLE (50)` | PLANNED | 実行計画 P1 | FAIL |  |
+| 45 | `SELECT COUNT(*) FROM employees SAMPLE (50)` | ERROR | — | NOT_CONVERTIBLE | TABLESAMPLE on employees is not supported; it returns a random subset of the rows; the H2 residual engine cann |
 | 46 | `SELECT ROWID, employee_id FROM employees WHERE ROWNUM <= 3` | ERROR | — | NOT_CONVERTIBLE | pseudo-column ROWID does not exist in ScalarDB; use the primary key |
 | 47 | `SELECT JSON_VALUE(doc, '$.name') AS name, JSON_VALUE(doc, '…` | ERROR | — | NOT_CONVERTIBLE | Expecting ). Line 6, Col: 42. |
-| 48 | `SELECT p.id, jt.name, jt.tag FROM products_json p, JSON_TAB…` | PLANNED | 実行計画 P8 | FAIL | DB-SQL-10026: Syntax error. Line 1:14 no viable alternative at input 'SELECT * FROM "') |
-| 49 | `SELECT JSON_OBJECT('dept' VALUE d.department_name, 'members…` | PLANNED | 実行計画 P1 | FAIL | result mismatch (no row of the actual result equals expected ('{"dept":"Administration","members":[{"id":200," |
+| 48 | `SELECT p.id, jt.name, jt.tag FROM products_json p, JSON_TAB…` | ERROR | — | NOT_CONVERTIBLE | comma join without join condition (cartesian product) is not supported; the H2 residual engine cannot run JSON |
+| 49 | `SELECT JSON_OBJECT('dept' VALUE d.department_name, 'members…` | PLANNED | 実行計画 P1 | PASS |  |
 
 ### 付録 C: PL/SQL 判定（routine ごと）
 | routine | 判定 | ルール | 理由（先頭） |
@@ -561,7 +593,7 @@ Docker の検証環境（`difftest/`）と ScalarDB Cluster のライセンス�
 | `b04_1_variables` | REVIEW |  | confidence factor testEvidence is 0 |
 | `b04_2_control_flow` | REVIEW |  | confidence factor testEvidence is 0 |
 | `b04_3_implicit_cursor_attrs` | REDESIGN | SQL-004, SQL-001, TX-001, TX-004, TRG-002 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
-| `b04_4_1_explicit_cursor` | REVIEW | CUR-001 | CUR-001: 明示 cursor は寿命がトランザクション境界をまたぎます; CUR-001: 明示 cursor は寿命がトランザクション境界をまたぎます |
+| `b04_4_1_explicit_cursor` | REVIEW | SCAN-002, CUR-003, CUR-002 | CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります; CUR-002 |
 | `b04_4_2_cursor_for_loop` | REVIEW | CUR-002, SQL-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
 | `b04_4_3_for_update_current_of` | REDESIGN | CUR-002, SQL-004, LOCK-001, LOCK-002, SQL-001, TX-001, TRG-002 | LOCK-001: 行ロックです。ターゲットで同じ保証を別の方法で与える設計が要ります; LOCK-002: cursor の宣言で行ロックしています。文だけを |
 | `b04_4_4_ref_cursor` | REVIEW | LOWER-001, CUR-001 | LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません; LOWER-001: lowering がまだ模していない構 |
@@ -605,15 +637,21 @@ Docker の検証環境（`difftest/`）と ScalarDB Cluster のライセンス�
 | `annual_comp_null_comm` | `annual_comp.annual_comp` | 一致 |  |
 | `annual_comp_with_comm` | `annual_comp.annual_comp` | 一致 |  |
 | `b04_1_variables` | `b04_1_variables.b04_1_variables` | 一致 |  |
-| `b04_2_control_flow` | `b04_2_control_flow.b04_2_control_flow` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Loop: for loop) |
+| `b04_2_control_flow` | `b04_2_control_flow.b04_2_control_flow` | 一致 |  |
 | `b04_3_implicit_cursor_attrs` | `b04_3_implicit_cursor_attrs.b04_3_implicit_cursor_attrs` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (SET salary = salary + 100: expressions referencing columns are not allowed; do SELECT -> compute  |
-| `b04_4_1_explicit_cursor` | `b04_4_1_explicit_cursor.b04_4_1_explicit_cursor` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (OpenCursor is not translated) |
+| `b04_4_1_explicit_cursor` | `b04_4_1_explicit_cursor.b04_4_1_explicit_cursor` | 一致 |  |
 | `b04_4_2_cursor_for_loop` | `b04_4_2_cursor_for_loop.b04_4_2_cursor_for_loop` | 一致 |  |
 | `b04_4_3_for_update_current_of` | `b04_4_3_for_update_current_of.b04_4_3_for_update_current_of` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Loop: cursor FOR loop whose body writes ['employees'], which its own query reads) |
+| `b04_4_4_ref_cursor` | `b04_4_4_ref_cursor.b04_4_4_ref_cursor` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (Unsupported is not translated) |
+| `b04_5_records_collections` | `b04_5_records_collections.b04_5_records_collections` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration v_names: t_names) |
 | `b04_6_1_predefined_exceptions` | `b04_6_1_predefined_exceptions.b04_6_1_predefined_exceptions` | 一致 |  |
-| `b04_6_2_user_exceptions` | `b04_6_2_user_exceptions.b04_6_2_user_exceptions` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Call: SQLERRM) |
+| `b04_6_2_user_exceptions` | `b04_6_2_user_exceptions.b04_6_2_user_exceptions` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (Rollback is not translated) |
+| `b05_1_call_raise_salary` | `b05_1_call_raise_salary.b05_1_call_raise_salary` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (RETURNING is not supported) |
+| `b05_3_call_emp_api` | `b05_3_call_emp_api.b05_3_call_emp_api` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Assignment: emp_api.hire) |
+| `b05_4_call_log_msg` | `b05_4_call_log_msg.b05_4_call_log_msg` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (SET salary = salary + 1: expressions referencing columns are not allowed; do SELECT -> compute -> |
 | `b06_1_bulk_collect_limit` | `b06_1_bulk_collect_limit.b06_1_bulk_collect_limit` | 一致 |  |
-| `b06_2_forall_save_exceptions` | `b06_2_forall_save_exceptions.b06_2_forall_save_exceptions` | 相違 | exception: expected=none actual=java.sql.SQLDataException (Invalid data type (DB-SQL-10016: The type java.math.BigDecimal is not supported)); table bulk_target row count: |
+| `b06_2_2_forall_returning` | `b06_2_2_forall_returning.b06_2_2_forall_returning` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration v_depts: t_num) |
+| `b06_2_forall_save_exceptions` | `b06_2_forall_save_exceptions.b06_2_forall_save_exceptions` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (Commit is not translated); table bulk_target row count: expected=11 actual=0; table bulk_target:  |
 | `b06_3_6_dbms_sql` | `b06_3_6_dbms_sql.b06_3_6_dbms_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration c: DBMS_SQL.OPEN_CURSOR) |
 | `b06_3_native_dynamic_sql` | `b06_3_native_dynamic_sql.b06_3_native_dynamic_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in DynamicSql: EXECUTE IMMEDIATE whose statement is not a knowable set) |
 | `b06_4_collection_in_sql` | `b06_4_collection_in_sql.b06_4_collection_in_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in SqlOperation: execution plan result) |
@@ -621,7 +659,9 @@ Docker の検証環境（`difftest/`）と ScalarDB Cluster のライセンス�
 | `b06_6_conditional_compilation` | `b06_6_conditional_compilation.b06_6_conditional_compilation` | 一致 |  |
 | `dept_name_of_missing` | `dept_name_of.dept_name_of` | 一致 |  |
 | `dept_name_of_ok` | `dept_name_of.dept_name_of` | 一致 |  |
+| `emp_api_give_raise_invalid` | `emp_api.give_raise~1` | 相違 | exception code: expected=-6510 actual=java.lang.UnsupportedOperationException (unresolved in Assignment: g_calls) |
+| `emp_api_give_raise_ok` | `emp_api.give_raise~1` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Assignment: g_calls); table emp_audit row count: expected=1 actual=0; table emp_aud |
 | `log_msg_ok` | `log_msg.log_msg` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (INSERT must specify the full primary key; missing ['audit_id']); table emp_audit row count: expec |
 | `normalize_name_ok` | `normalize_name.normalize_name` | 一致 |  |
 | `raise_salary_missing` | `raise_salary.raise_salary` | 相違 | exception code: expected=-20010 actual=java.lang.UnsupportedOperationException (RETURNING is not supported) |
-| `raise_salary_ok` | `raise_salary.raise_salary` | 相違 | out p_new_sal: missing (expected only) = 6600; exception: expected=none actual=java.lang.UnsupportedOperationException (RETURNING is not supported); table employees row e |
+| `raise_salary_ok` | `raise_salary.raise_salary` | 相違 | out p_new_sal: missing (expected only) = 6600; exception: expected=none actual=java.lang.UnsupportedOperationException (RETURNING is not supported); table emp_audit row c |

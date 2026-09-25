@@ -100,7 +100,7 @@
               "first_name": "TEXT",
               "last_name": "TEXT",
               "email": "TEXT",
-              "hire_date": "DATE",
+              "hire_date": "TIMESTAMP",
               "job_id": "TEXT",
               "salary": "DOUBLE",
               "commission_pct": "DOUBLE",

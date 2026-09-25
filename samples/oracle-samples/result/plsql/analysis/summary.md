@@ -1,8 +1,8 @@
 # PL/SQL 移行 インベントリ（Phase 1）
 
-- 解析対象: 36 モジュール / 41 routine / 242 文
-- DDL スナップショット: `schema.sql@9c816678`
-- 診断: 147 件（うち ERROR 15 件）
+- 解析対象: 36 モジュール / 41 routine / 243 文
+- DDL スナップショット: `schema.sql@d6f64025`
+- 診断: 151 件（うち ERROR 15 件）
 
 > この数値は**合成 corpus 上の値**であり、実案件の PL/SQL に対する耐性を示すものではない（実装計画 §9、docs/design/plsql-kpi.md §0）。
 
@@ -11,7 +11,7 @@
 | KPI | 値 | 目標 |
 |---|---|---|
 | parse 率 | 100.0%（37/37） | Phase 1 で 90% 以上 |
-| 型解決率 | 99.0%（102/103） | Phase 1 で 95% 以上 |
+| 型解決率 | 99.0%（103/104） | Phase 1 で 95% 以上 |
 
 ## AUTO を妨げる条件が既に見えている routine
 
@@ -61,7 +61,7 @@
 - **ERROR** `RMW` SET salary = salary * (1 + :p_pct / 100): expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction（emp_api.pkb:40）
 - **ERROR** `EXPR` SET last_name: only literals and bind markers are allowed, got ':NEW.last_name'（emp_dept_upd_v_trg.trg:6-10）
 - **ERROR** `PRED` WHERE: IS is only supported as IS [NOT] NULL on a column（emp_grades.fnc:6-11）
-- **ERROR** `EXPR` VALUES column action: only literals and bind markers are allowed, got 'CASE WHEN DELETING THEN 'DELETE' ELSE 'UPDATE' END'（emp_salary_audit_trg.trg:7-10）
+- **ERROR** `EXPR` VALUES column action: only literals and bind markers are allowed, got 'v_action'（emp_salary_audit_trg.trg:10-11）
 - **ERROR** `PK` INSERT must specify the full primary key; missing ['audit_id']（log_msg.prc:5）
 - **ERROR** `RETURNING` RETURNING is not supported（raise_salary.prc:8-11）
 - **WARN** `UNRESOLVED_TYPE` c_emp%ROWTYPE: no table c_emp in the DDL snapshot（b04_4_1_explicit_cursor.prc:1-16）
@@ -75,7 +75,7 @@
 | `b04_1_variables` | procedure | 1 | 6 | — |
 | `b04_2_control_flow` | procedure | 1 | 22 | — |
 | `b04_3_implicit_cursor_attrs` | procedure | 1 | 9 | — |
-| `b04_4_1_explicit_cursor` | procedure | 1 | 6 | — |
+| `b04_4_1_explicit_cursor` | procedure | 1 | 4 | — |
 | `b04_4_2_cursor_for_loop` | procedure | 1 | 6 | — |
 | `b04_4_3_for_update_current_of` | procedure | 1 | 10 | — |
 | `b04_4_4_ref_cursor` | procedure | 1 | 8 | — |
@@ -103,7 +103,7 @@
 | `emp_dept_cap_trg` | trigger | 1 | 2 | — |
 | `emp_dept_upd_v_trg` | trigger | 1 | 1 | — |
 | `emp_grades` | function | 1 | 4 | — |
-| `emp_salary_audit_trg` | trigger | 1 | 1 | — |
+| `emp_salary_audit_trg` | trigger | 1 | 4 | — |
 | `log_msg` | procedure | 1 | 2 | — |
 | `normalize_name` | procedure | 1 | 1 | — |
 | `raise_salary` | procedure | 1 | 9 | — |
@@ -113,20 +113,19 @@
 | 種別 | 件数 |
 |---|---|
 | Call | 77 |
-| SqlOperation | 40 |
+| SqlOperation | 41 |
+| Assignment | 25 |
 | Loop | 24 |
-| Assignment | 22 |
-| If | 19 |
+| If | 20 |
 | Rollback | 8 |
 | Unsupported | 8 |
 | Return | 7 |
 | DynamicSql | 7 |
-| Exit | 6 |
 | Block | 6 |
 | Raise | 6 |
-| Fetch | 3 |
-| CloseCursor | 3 |
+| Exit | 5 |
 | Commit | 3 |
+| Fetch | 2 |
+| CloseCursor | 2 |
 | Case | 1 |
 | Continue | 1 |
-| OpenCursor | 1 |

@@ -605,7 +605,7 @@
       "kind": "INSERT",
       "status": "WARN",
       "converted": [
-        "/* 社員なし部門 */ INSERT INTO employees VALUES (100, 'Steven', 'King', 'SKING', '2013-06-17', 'AD_PRES', 24000, NULL, NULL, 90)"
+        "/* 社員なし部門 */ INSERT INTO employees VALUES (100, 'Steven', 'King', 'SKING', '2013-06-17 00:00:00', 'AD_PRES', 24000, NULL, NULL, 90)"
       ],
       "issues": [
         {
@@ -617,6 +617,11 @@
           "severity": "INFO",
           "code": "DATE_LIT",
           "message": "VALUES column hire_date: TO_DATE('2013-06-17', 'YYYY-MM-DD') written as the plain literal '2013-06-17'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2013-06-17' padded to '2013-06-17 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
         }
       ],
       "plan": null
@@ -627,7 +632,7 @@
       "kind": "INSERT",
       "status": "WARN",
       "converted": [
-        "INSERT INTO employees VALUES (101, 'Neena', 'Kochhar', 'NKOCHHAR', '2015-09-21', 'AD_VP', 17000, NULL, 100, 90)"
+        "INSERT INTO employees VALUES (101, 'Neena', 'Kochhar', 'NKOCHHAR', '2015-09-21 00:00:00', 'AD_VP', 17000, NULL, 100, 90)"
       ],
       "issues": [
         {
@@ -639,6 +644,11 @@
           "severity": "INFO",
           "code": "DATE_LIT",
           "message": "VALUES column hire_date: TO_DATE('2015-09-21', 'YYYY-MM-DD') written as the plain literal '2015-09-21'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2015-09-21' padded to '2015-09-21 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
         }
       ],
       "plan": null
@@ -649,7 +659,7 @@
       "kind": "INSERT",
       "status": "WARN",
       "converted": [
-        "INSERT INTO employees VALUES (102, 'Lex', 'De Haan', 'LDEHAAN', '2011-01-13', 'AD_VP', 17000, NULL, 100, 90)"
+        "INSERT INTO employees VALUES (102, 'Lex', 'De Haan', 'LDEHAAN', '2011-01-13 00:00:00', 'AD_VP', 17000, NULL, 100, 90)"
       ],
       "issues": [
         {
@@ -661,6 +671,11 @@
           "severity": "INFO",
           "code": "DATE_LIT",
           "message": "VALUES column hire_date: TO_DATE('2011-01-13', 'YYYY-MM-DD') written as the plain literal '2011-01-13'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2011-01-13' padded to '2011-01-13 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
         }
       ],
       "plan": null
@@ -671,7 +686,7 @@
       "kind": "INSERT",
       "status": "WARN",
       "converted": [
-        "INSERT INTO employees VALUES (103, 'Alexander', 'Hunold', 'AHUNOLD', '2016-01-03', 'IT_PROG', 9000, NULL, 102, 60)"
+        "INSERT INTO employees VALUES (103, 'Alexander', 'Hunold', 'AHUNOLD', '2016-01-03 00:00:00', 'IT_PROG', 9000, NULL, 102, 60)"
       ],
       "issues": [
         {
@@ -683,6 +698,11 @@
           "severity": "INFO",
           "code": "DATE_LIT",
           "message": "VALUES column hire_date: TO_DATE('2016-01-03', 'YYYY-MM-DD') written as the plain literal '2016-01-03'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2016-01-03' padded to '2016-01-03 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
         }
       ],
       "plan": null
@@ -693,7 +713,7 @@
       "kind": "INSERT",
       "status": "WARN",
       "converted": [
-        "INSERT INTO employees VALUES (104, 'Bruce', 'Ernst', 'BERNST', '2017-05-21', 'IT_PROG', 6000, NULL, 103, 60)"
+        "INSERT INTO employees VALUES (104, 'Bruce', 'Ernst', 'BERNST', '2017-05-21 00:00:00', 'IT_PROG', 6000, NULL, 103, 60)"
       ],
       "issues": [
         {
@@ -705,6 +725,11 @@
           "severity": "INFO",
           "code": "DATE_LIT",
           "message": "VALUES column hire_date: TO_DATE('2017-05-21', 'YYYY-MM-DD') written as the plain literal '2017-05-21'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2017-05-21' padded to '2017-05-21 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
         }
       ],
       "plan": null
@@ -715,7 +740,7 @@
       "kind": "INSERT",
       "status": "WARN",
       "converted": [
-        "INSERT INTO employees VALUES (107, 'Diana', 'Lorentz', 'DLORENTZ', '2019-02-07', 'IT_PROG', 4200, NULL, 103, 60)"
+        "INSERT INTO employees VALUES (107, 'Diana', 'Lorentz', 'DLORENTZ', '2019-02-07 00:00:00', 'IT_PROG', 4200, NULL, 103, 60)"
       ],
       "issues": [
         {
@@ -727,6 +752,11 @@
           "severity": "INFO",
           "code": "DATE_LIT",
           "message": "VALUES column hire_date: TO_DATE('2019-02-07', 'YYYY-MM-DD') written as the plain literal '2019-02-07'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2019-02-07' padded to '2019-02-07 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
         }
       ],
       "plan": null
@@ -737,7 +767,7 @@
       "kind": "INSERT",
       "status": "WARN",
       "converted": [
-        "INSERT INTO employees VALUES (145, 'John', 'Russell', 'JRUSSEL', '2014-10-01', 'SA_MAN', 14000, 0.40, 100, 80)"
+        "INSERT INTO employees VALUES (145, 'John', 'Russell', 'JRUSSEL', '2014-10-01 00:00:00', 'SA_MAN', 14000, 0.40, 100, 80)"
       ],
       "issues": [
         {
@@ -749,6 +779,11 @@
           "severity": "INFO",
           "code": "DATE_LIT",
           "message": "VALUES column hire_date: TO_DATE('2014-10-01', 'YYYY-MM-DD') written as the plain literal '2014-10-01'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2014-10-01' padded to '2014-10-01 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
         }
       ],
       "plan": null
@@ -759,7 +794,7 @@
       "kind": "INSERT",
       "status": "WARN",
       "converted": [
-        "INSERT INTO employees VALUES (146, 'Karen', 'Partners', 'KPARTNER', '2015-01-05', 'SA_MAN', 13500, 0.30, 100, 80)"
+        "INSERT INTO employees VALUES (146, 'Karen', 'Partners', 'KPARTNER', '2015-01-05 00:00:00', 'SA_MAN', 13500, 0.30, 100, 80)"
       ],
       "issues": [
         {
@@ -771,6 +806,11 @@
           "severity": "INFO",
           "code": "DATE_LIT",
           "message": "VALUES column hire_date: TO_DATE('2015-01-05', 'YYYY-MM-DD') written as the plain literal '2015-01-05'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2015-01-05' padded to '2015-01-05 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
         }
       ],
       "plan": null
@@ -781,7 +821,7 @@
       "kind": "INSERT",
       "status": "WARN",
       "converted": [
-        "INSERT INTO employees VALUES (150, 'Peter', 'Tucker', 'PTUCKER', '2015-01-30', 'SA_REP', 10000, 0.30, 145, 80)"
+        "INSERT INTO employees VALUES (150, 'Peter', 'Tucker', 'PTUCKER', '2015-01-30 00:00:00', 'SA_REP', 10000, 0.30, 145, 80)"
       ],
       "issues": [
         {
@@ -793,6 +833,11 @@
           "severity": "INFO",
           "code": "DATE_LIT",
           "message": "VALUES column hire_date: TO_DATE('2015-01-30', 'YYYY-MM-DD') written as the plain literal '2015-01-30'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2015-01-30' padded to '2015-01-30 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
         }
       ],
       "plan": null
@@ -803,7 +848,7 @@
       "kind": "INSERT",
       "status": "WARN",
       "converted": [
-        "INSERT INTO employees VALUES (151, 'David', 'Bernstein', 'DBERNSTE', '2015-03-24', 'SA_REP', 9500, 0.25, 145, 80)"
+        "INSERT INTO employees VALUES (151, 'David', 'Bernstein', 'DBERNSTE', '2015-03-24 00:00:00', 'SA_REP', 9500, 0.25, 145, 80)"
       ],
       "issues": [
         {
@@ -815,6 +860,11 @@
           "severity": "INFO",
           "code": "DATE_LIT",
           "message": "VALUES column hire_date: TO_DATE('2015-03-24', 'YYYY-MM-DD') written as the plain literal '2015-03-24'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2015-03-24' padded to '2015-03-24 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
         }
       ],
       "plan": null
@@ -825,7 +875,7 @@
       "kind": "INSERT",
       "status": "WARN",
       "converted": [
-        "INSERT INTO employees VALUES (155, 'Oliver', 'Tuvault', 'OTUVAULT', '2017-11-23', 'SA_REP', 7000, 0.15, 146, 80)"
+        "INSERT INTO employees VALUES (155, 'Oliver', 'Tuvault', 'OTUVAULT', '2017-11-23 00:00:00', 'SA_REP', 7000, 0.15, 146, 80)"
       ],
       "issues": [
         {
@@ -837,6 +887,11 @@
           "severity": "INFO",
           "code": "DATE_LIT",
           "message": "VALUES column hire_date: TO_DATE('2017-11-23', 'YYYY-MM-DD') written as the plain literal '2017-11-23'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2017-11-23' padded to '2017-11-23 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
         }
       ],
       "plan": null
@@ -847,7 +902,7 @@
       "kind": "INSERT",
       "status": "WARN",
       "converted": [
-        "INSERT INTO employees VALUES (120, 'Matthew', 'Weiss', 'MWEISS', '2014-07-18', 'ST_CLERK', 4800, NULL, 100, 50)"
+        "INSERT INTO employees VALUES (120, 'Matthew', 'Weiss', 'MWEISS', '2014-07-18 00:00:00', 'ST_CLERK', 4800, NULL, 100, 50)"
       ],
       "issues": [
         {
@@ -859,6 +914,11 @@
           "severity": "INFO",
           "code": "DATE_LIT",
           "message": "VALUES column hire_date: TO_DATE('2014-07-18', 'YYYY-MM-DD') written as the plain literal '2014-07-18'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2014-07-18' padded to '2014-07-18 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
         }
       ],
       "plan": null
@@ -869,7 +929,7 @@
       "kind": "INSERT",
       "status": "WARN",
       "converted": [
-        "INSERT INTO employees VALUES (125, 'Julia', 'Nayer', 'JNAYER', '2015-07-16', 'ST_CLERK', 3200, NULL, 120, 50)"
+        "INSERT INTO employees VALUES (125, 'Julia', 'Nayer', 'JNAYER', '2015-07-16 00:00:00', 'ST_CLERK', 3200, NULL, 120, 50)"
       ],
       "issues": [
         {
@@ -881,6 +941,11 @@
           "severity": "INFO",
           "code": "DATE_LIT",
           "message": "VALUES column hire_date: TO_DATE('2015-07-16', 'YYYY-MM-DD') written as the plain literal '2015-07-16'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2015-07-16' padded to '2015-07-16 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
         }
       ],
       "plan": null
@@ -891,7 +956,7 @@
       "kind": "INSERT",
       "status": "WARN",
       "converted": [
-        "INSERT INTO employees VALUES (178, 'Kimberely', 'Grant', 'KGRANT', '2017-05-24', 'SA_REP', 7000, 0.15, 145, NULL)"
+        "INSERT INTO employees VALUES (178, 'Kimberely', 'Grant', 'KGRANT', '2017-05-24 00:00:00', 'SA_REP', 7000, 0.15, 145, NULL)"
       ],
       "issues": [
         {
@@ -903,6 +968,11 @@
           "severity": "INFO",
           "code": "DATE_LIT",
           "message": "VALUES column hire_date: TO_DATE('2017-05-24', 'YYYY-MM-DD') written as the plain literal '2017-05-24'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2017-05-24' padded to '2017-05-24 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
         }
       ],
       "plan": null
@@ -913,7 +983,7 @@
       "kind": "INSERT",
       "status": "WARN",
       "converted": [
-        "/* 部門なし社員 */ INSERT INTO employees VALUES (200, 'Jennifer', 'Whalen', 'JWHALEN', '2013-09-17', 'AD_VP', 15000, NULL, 101, 10)"
+        "/* 部門なし社員 */ INSERT INTO employees VALUES (200, 'Jennifer', 'Whalen', 'JWHALEN', '2013-09-17 00:00:00', 'AD_VP', 15000, NULL, 101, 10)"
       ],
       "issues": [
         {
@@ -925,6 +995,11 @@
           "severity": "INFO",
           "code": "DATE_LIT",
           "message": "VALUES column hire_date: TO_DATE('2013-09-17', 'YYYY-MM-DD') written as the plain literal '2013-09-17'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column hire_date: '2013-09-17' padded to '2013-09-17 00:00:00' for TIMESTAMP column hire_date; ScalarDB does not parse a date-only literal as a timestamp"
         }
       ],
       "plan": null
@@ -957,6 +1032,11 @@
           "message": "VALUES column order_date: TO_DATE('2026-04-01', 'YYYY-MM-DD') written as the plain literal '2026-04-01'"
         },
         {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column order_date: '2026-04-01' padded to '2026-04-01 00:00:00' for TIMESTAMP column order_date; ScalarDB does not parse a date-only literal as a timestamp"
+        },
+        {
           "severity": "ERROR",
           "code": "PK",
           "message": "INSERT must specify the full primary key; missing ['order_id']"
@@ -975,6 +1055,11 @@
           "severity": "INFO",
           "code": "DATE_LIT",
           "message": "VALUES column order_date: TO_DATE('2026-04-15', 'YYYY-MM-DD') written as the plain literal '2026-04-15'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column order_date: '2026-04-15' padded to '2026-04-15 00:00:00' for TIMESTAMP column order_date; ScalarDB does not parse a date-only literal as a timestamp"
         },
         {
           "severity": "ERROR",
@@ -997,6 +1082,11 @@
           "message": "VALUES column order_date: TO_DATE('2026-05-02', 'YYYY-MM-DD') written as the plain literal '2026-05-02'"
         },
         {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column order_date: '2026-05-02' padded to '2026-05-02 00:00:00' for TIMESTAMP column order_date; ScalarDB does not parse a date-only literal as a timestamp"
+        },
+        {
           "severity": "ERROR",
           "code": "PK",
           "message": "INSERT must specify the full primary key; missing ['order_id']"
@@ -1017,6 +1107,11 @@
           "message": "VALUES column order_date: TO_DATE('2026-05-20', 'YYYY-MM-DD') written as the plain literal '2026-05-20'"
         },
         {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column order_date: '2026-05-20' padded to '2026-05-20 00:00:00' for TIMESTAMP column order_date; ScalarDB does not parse a date-only literal as a timestamp"
+        },
+        {
           "severity": "ERROR",
           "code": "PK",
           "message": "INSERT must specify the full primary key; missing ['order_id']"
@@ -1035,6 +1130,11 @@
           "severity": "INFO",
           "code": "DATE_LIT",
           "message": "VALUES column order_date: TO_DATE('2026-06-11', 'YYYY-MM-DD') written as the plain literal '2026-06-11'"
+        },
+        {
+          "severity": "INFO",
+          "code": "DATE_LIT",
+          "message": "VALUES column order_date: '2026-06-11' padded to '2026-06-11 00:00:00' for TIMESTAMP column order_date; ScalarDB does not parse a date-only literal as a timestamp"
         },
         {
           "severity": "ERROR",

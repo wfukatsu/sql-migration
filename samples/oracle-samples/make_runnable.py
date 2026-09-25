@@ -19,17 +19,9 @@ HERE = Path(__file__).resolve().parent
 FULL = HERE / "plsql" / "src"
 RUN = HERE / "plsql-run"
 
-# 2026-09-24 の --verify-compile で javac が落ちた routine を持つユニット（理由は README.md の表）
-EXCLUDED = {
-    "emp_api.pks", "emp_api.pkb",              # package 変数 g_calls（STATE-001）
-    "emp_grades.fnc",                          # PIPELINED / PIPE ROW
-    "emp_biu_trg.trg", "emp_dept_cap_trg.trg", "emp_dept_upd_v_trg.trg", "emp_salary_audit_trg.trg",  # trigger
-    "blocks/b04_5_records_collections.prc",    # 連想配列・ネスト表・VARRAY
-    "blocks/b05_1_call_raise_salary.prc",      # OUT 引数つき呼び出し
-    "blocks/b05_3_call_emp_api.prc",           # emp_api を呼ぶ
-    "blocks/b05_4_call_log_msg.prc",           # log_msg を呼ぶ（自律型）
-    "blocks/b06_2_2_forall_returning.prc",     # FORALL … RETURNING BULK COLLECT
-}
+# 2026-09-24 の --verify-compile で javac が落ちた routine を持つユニットを外していたが、#40（2026-09-25）で
+# 判定によらず生成物がコンパイルできるようになったので、いまは全ユニットを写す
+EXCLUDED: set[str] = set()
 
 SYSDATE = "2026-09-24 09:30:00"
 
@@ -54,8 +46,8 @@ def seeds() -> list[str]:
 
 def scenario(name: str, unit: str, kind: str, note: str, *, routine: str | None = None, args: dict | None = None,
              out: dict | None = None, returns: str | None = None, extra_setup: list[str] = (),
-             mask: dict | None = None, capture: list[str] | None = None) -> dict:
-    call = {"kind": kind, "name": unit}
+             mask: dict | None = None, capture: list[str] | None = None, name_override: str | None = None) -> dict:
+    call = {"kind": kind, "name": name_override or unit}
     if args:
         call["args"] = args
     if out:
@@ -107,6 +99,19 @@ SCENARIOS = [
     scenario("b06_4_collection_in_sql", "b06_4_collection_in_sql", "procedure", "06-4: BULK COLLECT INTO オブジェクト型の表、TABLE() で SQL から数える"),
     scenario("b06_5_builtin_packages", "b06_5_builtin_packages", "procedure", "06-5: DBMS_APPLICATION_INFO / DBMS_SESSION.SLEEP / DBMS_RANDOM / DBMS_UTILITY"),
     scenario("b06_6_conditional_compilation", "b06_6_conditional_compilation", "procedure", "06-6: $IF DBMS_DB_VERSION.VERSION >= 23"),
+    # 2026-09-25（#40 のあと）: 前は生成物がコンパイルできず外していたもの
+    scenario("b04_5_records_collections", "b04_5_records_collections", "procedure", "04-5: レコード・連想配列・ネスト表・VARRAY。読むだけ"),
+    scenario("b05_1_call_raise_salary", "b05_1_call_raise_salary", "procedure",
+             "05-1: raise_salary を位置指定と名前指定で呼び、ROLLBACK。表は元に戻る（Oracle では trigger が emp_audit に書く）"),
+    scenario("b05_3_call_emp_api", "b05_3_call_emp_api", "procedure", "05-3: emp_api.hire / give_raise（オーバーロード）/ call_count、ROLLBACK"),
+    scenario("b05_4_call_log_msg", "b05_4_call_log_msg", "procedure", "05-4: 自律型トランザクションの log_msg を呼んで ROLLBACK。emp_audit の LOG 行だけ残る",
+             mask={"emp_audit": ["changed_at", "changed_by"]}),
+    scenario("b06_2_2_forall_returning", "b06_2_2_forall_returning", "procedure", "06-2-2: FORALL … RETURNING BULK COLLECT INTO、SQL%BULK_ROWCOUNT、ROLLBACK"),
+    scenario("emp_api_give_raise_ok", "emp_api", "procedure", "emp_api.give_raise(104, 10): 6000 → 6600（validate_pct が g_calls を数える）",
+             routine="give_raise~1", args={"p_emp_id": 104, "p_pct": 10}, name_override="emp_api.give_raise",
+             mask={"emp_audit": ["changed_at", "changed_by"]}),
+    scenario("emp_api_give_raise_invalid", "emp_api", "procedure", "emp_api.give_raise(104, 50): e_invalid_raise（ユーザ定義例外、ORA-06510）",
+             routine="give_raise~1", args={"p_emp_id": 104, "p_pct": 50}, name_override="emp_api.give_raise"),
 ]
 
 
