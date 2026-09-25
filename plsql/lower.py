@@ -627,7 +627,16 @@ class _Lowerer:
                "Open_for_statementContext", "Commit_statementContext", "Rollback_statementContext",
                "Savepoint_statementContext", "Set_transaction_commandContext"}
 
+    COLLECTION_CALL = re.compile(r"^\s*(?P<name>[\w$#]+\.(?:EXTEND|DELETE|TRIM))\s*(?:\((?P<args>.*)\))?\s*;?\s*$",
+                                 re.IGNORECASE | re.DOTALL)
+
     def _sql_statement(self, context, ids, text, source) -> M.Statement:
+        call = self.COLLECTION_CALL.match(text)
+        if call is not None:
+            # `v_names.EXTEND;`, `v_names.DELETE(2);`: the grammar reads a dotted call as a SQL statement (#45)
+            arguments = [a.strip() for a in (call.group("args") or "").split(",") if a.strip()]
+            return M.Call(id=ids.next("stmt"), kind="Call", source_range=source, callee=call.group("name"),
+                          arguments=arguments)
         inner = _descend(context, self.WRAPPED | self.WRAPPERS)
         if inner:
             return self._statement(inner[0], ids)
