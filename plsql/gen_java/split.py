@@ -85,6 +85,7 @@ class Shape:
     after: list[M.Statement] = field(default_factory=list)
     failed_batch: list[M.Statement] = field(default_factory=list)
     index: str | None = None       # FORALL の添字。失敗した要素の位置でもある
+    notes: list[str] = field(default_factory=list)   # 割ったときに落としたものの説明
 
 
 def emit(file: JavaFile, module: M.Module, routine: M.Routine, result, domain_package: str) -> bool:
@@ -196,7 +197,7 @@ def _parts(file, module, routine, shape, result, domain_package) -> list:
              notes=["失敗した 1 反復の記録。**別トランザクション**である——失敗した"
                     "トランザクションと同じ中に入れると、記録ごと巻き戻る（#3 §F / §G）",
                     f"`SQLERRM` は呼び出し側が渡す例外から読む（`{FAILED}.getMessage()`）"]
-             + _position_note(shape))
+             + _position_note(shape) + list(shape.notes))
     if shape.after:
         part("done", shape.after, notes=["ループの後。**別トランザクション**"])
     if shape.failed_batch:
@@ -245,7 +246,7 @@ def _takes(carried: "Carried", statements: list[M.Statement]) -> bool:
 
 def _position_note(shape: Shape) -> list[str]:
     """失敗した要素の**位置**は、数え始めが Oracle と違う。黙って 1 ずれるより、書いておく。"""
-    if shape.kind != "forall" or not shape.index:
+    if not shape.index:
         return []
     return [f"`{shape.index}` は失敗した要素の位置である。Oracle の `ERROR_INDEX` は **1 から**"
             f"数え、生成したループは **0 から**数える——記録に残る値が 1 ずれる。1 から数えた"
@@ -256,7 +257,7 @@ def _failure(shape: Shape) -> list["Carried"]:
     """失敗したときだけ渡すもの。FORALL では**失敗した要素の位置**も渡す——Oracle はそれを
     `SQL%BULK_EXCEPTIONS(i).ERROR_INDEX` から読んでいた。"""
     index = [Carried("int", java_name(shape.index), java_name(shape.index), shape.index)] \
-        if shape.kind == "forall" and shape.index else []
+        if shape.index else []
     return index + [Carried("Exception", FAILED, FAILED)]
 
 
@@ -360,7 +361,12 @@ def _element(file: JavaFile, routine: M.Routine, shape: Shape):
         variable = java_name(shape.loop.variable or "r")
         file.add_import(f"{_domain()}.{record}")
         key = shape.loop.variable or "r"
-        return {key: variable}, [Carried(record, variable, variable, key)]
+        scope = {key: variable}
+        if shape.index:
+            # a BULK COLLECT + FORALL ... SAVE EXCEPTIONS pair (plsql.bulk): the handler's loop index is the
+            # failed element's position here too
+            scope[shape.index.lower()] = java_name(shape.index)
+        return scope, [Carried(record, variable, variable, key)]
 
     scope, carried = {}, []
     # 要素の並びは**元の routine の引数の並び**にする。本体が読んだ順にすると、`p_deltas(i)` が
@@ -428,14 +434,30 @@ def _targets(file: JavaFile, routine: M.Routine, shape: Shape, result, domain_pa
             with f.block("if (pBatch == null || pBatch < 1)") as g:
                 g.line('throw new IllegalArgumentException("pBatch は 1 以上: " + pBatch);')
             # 最初のページの起点は、いちばん小さい値である。null のまま渡すと `key > NULL` が偽になり、
-            # 1 件も返らない
-            f.line("if (pAfterKey == null) pAfterKey = BigDecimal.valueOf(Long.MIN_VALUE);")
+            # 1 件も返らない。起点の型はキー列の型（NUMBER(6) は Integer、NUMBER(19) は BigDecimal）:
+            # BigDecimal と決め打つと、Integer の起点に代入できない Java が出た（samples/oracle-samples b06_2）
+            key_type = next((t for t, n in parameters if n == "pAfterKey"), "BigDecimal")
+            f.line(f"if (pAfterKey == null) pAfterKey = {_smallest(key_type)};")
         f.line(f"return repository.{loop_method(routine, shape.loop)}({arguments});")
     if key:
+        key_type = next((t for t, n in parameters if n == "pAfterKey"), "BigDecimal")
         file.line()
         file.comment("次のページの起点: そのページの最後の行のキー")
-        with file.block(f"public static BigDecimal {java_name(routine_stem(routine))}After({record} row)") as f:
-            f.line(f"return row.{java_name(key)}();")
+        with file.block(f"public static {key_type} {java_name(routine_stem(routine))}After({record} row)") as f:
+            # the row record keeps the key as PL/SQL NUMBER (BigDecimal); the page parameter has the column's type
+            convert = {"Integer": "Plsql.toInt", "Long": "Plsql.toLong", "BigDecimal": "Plsql.dec",
+                       "String": "Plsql.text"}.get(key_type)
+            if convert:
+                file.add_import("com.scalar.migrate.plsql.Plsql")
+                f.line(f"return {convert}(row.{java_name(key)}());")
+            else:
+                f.line(f"return row.{java_name(key)}();")
+
+
+def _smallest(java_type_name: str) -> str:
+    """The value below every key of that type: the starting point of the first page."""
+    return {"Integer": "Integer.MIN_VALUE", "Long": "Long.MIN_VALUE", "String": '""',
+            "BigDecimal": "BigDecimal.valueOf(Long.MIN_VALUE)"}.get(java_type_name, "null")
 
 
 def _query_needs_audit(query: M.SqlOperation) -> bool:
@@ -485,14 +507,19 @@ def _shape(routine: M.Routine) -> Shape | None:
         one, failed = _iteration(loop.body)
         if one is None:
             return None
+        index, notes = None, []
+        if not failed:
+            # a BULK COLLECT + FORALL ... SAVE EXCEPTIONS pair became this loop (plsql.bulk): the handler that
+            # walked SQL%BULK_EXCEPTIONS is the per-element failure record here too
+            failed, index, notes = _save_exceptions(routine.exception_handlers, routine)
         return Shape(kind="cursor", loop=loop, before=before, after=after, one=one, failed=failed,
-                     failed_batch=_batch(routine.exception_handlers))
+                     failed_batch=_batch(routine.exception_handlers), index=index, notes=notes)
     if loop.loop_kind == "forall":
-        failed, index = _save_exceptions(routine.exception_handlers)
+        failed, index, notes = _save_exceptions(routine.exception_handlers, routine)
         if index is None:
             return None
         return Shape(kind="forall", loop=loop, before=before, after=after, one=list(loop.body),
-                     failed=failed, index=index)
+                     failed=failed, index=index, notes=notes)
     return None
 
 
@@ -546,8 +573,8 @@ def _from_handler(body: list[M.Statement]) -> list[M.Statement]:
     return [_rewritten(s) for s in _plain(body)]
 
 
-def _save_exceptions(handlers: list[M.ExceptionHandler]):
-    """`FORALL ... SAVE EXCEPTIONS` の handler を、**失敗した 1 要素**の記録に割る。
+def _save_exceptions(handlers: list[M.ExceptionHandler], routine: "M.Routine | None" = None):
+    """`FORALL ... SAVE EXCEPTIONS` の handler を、**失敗した 1 要素**の記録に割る。(failed, index, notes)。
 
     Oracle の形はこうである:
 
@@ -564,24 +591,42 @@ def _save_exceptions(handlers: list[M.ExceptionHandler]):
 
     `ELSE RAISE` も消える。-24381（一括の中に失敗があった）という番号は、まとめて投げていたから
     付いていたもので、要素ごとに失敗が来るなら、それ以外の誤りはそのまま呼び出し側へ出る。
+
+    もう 1 つの形は `WHEN e_bulk_errors THEN`（`PRAGMA EXCEPTION_INIT(e_bulk_errors, -24381)`）で、ループの前後に
+    まとめの文（`SQL%BULK_EXCEPTIONS.COUNT` を数える PUT_LINE など）が並ぶ（samples/oracle-samples b06_2、
+    2026-09-25）。ループが失敗した 1 要素の記録で、まとめの文は要素ごとには言えないので落とし、notes に残す。
     """
+    from .exception import declared_code
+
     for handler in handlers:
-        if not any(e.upper() == "OTHERS" for e in handler.exceptions):
+        names = [e.upper() for e in handler.exceptions]
+        bound_by_name = routine is not None and any(declared_code(n, routine) == int(BULK_ERRORS) for n in names)
+        if "OTHERS" not in names and not bound_by_name:
             continue
         body = [s for s in handler.body if not _is_transaction(s)]
-        if len(body) != 1 or body[0].kind != "If" or len(body[0].branches) != 1:
-            continue
-        branch = body[0].branches[0]
-        if BULK_ERRORS not in (branch.condition or "").replace(" ", ""):
-            continue
-        loops = [s for s in branch.body if s.kind == "Loop"]
-        if len(loops) != 1 or len(branch.body) != 1:
+        if "OTHERS" in names:
+            if len(body) != 1 or body[0].kind != "If" or len(body[0].branches) != 1:
+                continue
+            branch = body[0].branches[0]
+            if BULK_ERRORS not in (branch.condition or "").replace(" ", ""):
+                continue
+            candidates = list(branch.body)
+        else:
+            candidates = body
+        loops = [s for s in candidates if s.kind == "Loop" and BULK_COUNT_BOUND.match(s.cursor or "")]
+        if len(loops) != 1 or ("OTHERS" in names and len(candidates) != 1):
             continue
         bound = BULK_COUNT_BOUND.match(loops[0].cursor or "")
-        if bound is None:
-            continue
-        return [_rewritten(s) for s in _plain(loops[0].body)], bound.group("index")
-    return [], None
+        dropped = [s for s in candidates if s is not loops[0]]
+        notes = [f"handler のまとめの文（{_summary(s)}）は出していない。失敗は要素ごとに来るので、"
+                 f"`SQL%BULK_EXCEPTIONS.COUNT` のような合計は呼び出し側が数える" for s in dropped]
+        return [_rewritten(s) for s in _plain(loops[0].body)], bound.group("index"), notes
+    return [], None, []
+
+
+def _summary(statement: M.Statement) -> str:
+    text = next((t for t in _texts(statement) if t), None) or statement.kind
+    return text.strip().replace("\n", " ")[:80]
 
 
 def _rewritten(statement: M.Statement) -> M.Statement:
@@ -596,6 +641,11 @@ def _rewritten(statement: M.Statement) -> M.Statement:
             text = getattr(node, field, None)
             if isinstance(text, str) and text:
                 setattr(node, field, _rewritten_text(text))
+        arguments = getattr(node, "arguments", None)
+        if isinstance(arguments, list) and arguments:
+            # `DBMS_OUTPUT.PUT_LINE('idx=' || SQL%BULK_EXCEPTIONS(j).ERROR_INDEX ...)`: the references live in a
+            # call's arguments as often as in an assignment (samples/oracle-samples b06_2)
+            node.arguments = [_rewritten_text(a) if isinstance(a, str) else a for a in arguments]
         for branch in getattr(node, "branches", []) or []:
             branch.condition = _rewritten_text(branch.condition or "")
         for bind in getattr(node, "binds", None) or []:

@@ -33,9 +33,13 @@ transactions:
     b05_1_call_raise_salary: 同上
     b05_3_call_emp_api: 同上
     b05_4_call_log_msg: 同上
-    b06_2_forall_save_exceptions: FORALL のあとの COMMIT（成功分の確定）。呼び出し側が commit する（同上）
     b06_2_2_forall_returning: 同上
     b06_3_native_dynamic_sql: 同上
+  perIteration:
+    b06_2_forall_save_exceptions: >-
+      FORALL … SAVE EXCEPTIONS は「失敗した要素を飛ばして続け、成功分を確定する」。1 要素 = 1 トランザクション
+      に割る（BULK-002 の形）。3 回目は callerBoundary にしていたが、CHECK の guard（#50）が最初の違反行で止める
+      ようになったので、利用者が perIteration に変えた（2026-09-25）。全体の原子性は無くなる（BIZ-1）
   separate:
     log_msg: PRAGMA AUTONOMOUS_TRANSACTION。親が rollback しても emp_audit のログは残る、という意味を保つ（利用者の決定、2026-09-25）
 

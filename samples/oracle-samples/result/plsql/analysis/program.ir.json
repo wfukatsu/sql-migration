@@ -7115,6 +7115,34 @@
      },
      "name": "b06_2_forall_save_exceptions",
      "routineKind": "procedure",
+     "parameters": [
+      {
+       "id": "b06_2_forall_save_exceptions#param-p_after_key",
+       "kind": "Parameter",
+       "type": {
+        "oracle": "NUMBER(6)",
+        "resolved": "NUMBER(6)",
+        "origin": "declared"
+       },
+       "name": "p_after_key",
+       "direction": "IN",
+       "nocopy": false,
+       "carried": false
+      },
+      {
+       "id": "b06_2_forall_save_exceptions#param-p_batch",
+       "kind": "Parameter",
+       "type": {
+        "oracle": "PLS_INTEGER",
+        "resolved": "PLS_INTEGER",
+        "origin": "declared"
+       },
+       "name": "p_batch",
+       "direction": "IN",
+       "nocopy": false,
+       "carried": false
+      }
+     ],
      "declarations": [
       {
        "id": "b06_2_forall_save_exceptions#decl-1",
@@ -7250,13 +7278,25 @@
           "startColumn": 3,
           "endColumn": 10
          }
+        },
+        {
+         "severity": "INFO",
+         "code": "ROW_LIMIT_DECIDED",
+         "message": "1 反復 = 1 トランザクションに割り、対象をキー順に件数つきで繰り返し読む形にした（limits.yaml: transactions.perIteration）。一度に持つ行数は読む単位で決まる",
+         "range": {
+          "file": "b06_2_forall_save_exceptions.prc",
+          "startLine": 12,
+          "endLine": 14,
+          "startColumn": 3,
+          "endColumn": 10
+         }
         }
        ],
        "readSet": [
         "employees"
        ],
        "loopKind": "cursor-for",
-       "cursor": "r IN (SELECT employee_id, last_name, salary\n  FROM   employees)",
+       "cursor": "r IN (SELECT employee_id, last_name, salary FROM employees WHERE employee_id > p_after_key ORDER BY employee_id FETCH FIRST p_batch ROWS ONLY)",
        "query": {
         "id": "b06_2_forall_save_exceptions#stmt-1#query",
         "kind": "SqlOperation",
@@ -7268,6 +7308,30 @@
          "endColumn": 10
         },
         "diagnostics": [
+         {
+          "severity": "INFO",
+          "code": "PAGED",
+          "message": "処理対象を employee_id の順に p_batch 件ずつ読む（#19 の決定）。上限は「何行来うるか」ではなく「1 回に何行ずつ取るか」になる。ページごとに読むので、途中で増えた行も回る",
+          "range": {
+           "file": "b06_2_forall_save_exceptions.prc",
+           "startLine": 12,
+           "endLine": 14,
+           "startColumn": 3,
+           "endColumn": 10
+          }
+         },
+         {
+          "severity": "INFO",
+          "code": "LIMIT",
+          "message": "FETCH FIRST :p_batch ROWS ONLY rewritten to LIMIT :p_batch",
+          "range": {
+           "file": "b06_2_forall_save_exceptions.prc",
+           "startLine": 12,
+           "endLine": 14,
+           "startColumn": 3,
+           "endColumn": 10
+          }
+         },
          {
           "severity": "WARN",
           "code": "CROSS_PARTITION",
@@ -7309,7 +7373,25 @@
          "employees"
         ],
         "sqlKind": "SELECT",
-        "originalSql": "SELECT employee_id, last_name, salary\n  FROM   employees",
+        "originalSql": "SELECT employee_id, last_name, salary FROM employees WHERE employee_id > p_after_key ORDER BY employee_id FETCH FIRST p_batch ROWS ONLY",
+        "binds": [
+         {
+          "name": "p_after_key",
+          "direction": "IN",
+          "oracleType": "NUMBER(6)",
+          "plsqlVariable": "p_after_key",
+          "column": "employee_id",
+          "scalardbType": "INT",
+          "columnOracleType": "NUMBER(6)"
+         },
+         {
+          "name": "p_batch",
+          "direction": "IN",
+          "oracleType": "PLS_INTEGER",
+          "plsqlVariable": "p_batch",
+          "scalardbType": "INT"
+         }
+        ],
         "accumulates_rowcount": false,
         "intoColumns": [
          "employee_id",
@@ -7331,11 +7413,12 @@
         "atMostOneRow": false,
         "targetStatus": "WARN",
         "targetSql": [
-         "SELECT employee_id, last_name, salary FROM employees"
+         "SELECT employee_id, last_name, salary FROM employees WHERE employee_id > :p_after_key ORDER BY employee_id LIMIT :p_batch"
         ]
        },
        "variable": "r",
        "returns_rows": false,
+       "paged_key": "employee_id",
        "body": [
         {
          "id": "b06_2_forall_save_exceptions#stmt-3ck1if",
@@ -7531,7 +7614,7 @@
            },
            "callee": "DBMS_OUTPUT.PUT_LINE",
            "arguments": [
-            "'  idx=' || SQL%BULK_EXCEPTIONS(j).ERROR_INDEX ||\n                           ' id=' || v_ids(SQL%BULK_EXCEPTIONS(j).ERROR_INDEX) ||\n                           ' ' || SQLERRM(-SQL%BULK_EXCEPTIONS(j).ERROR_CODE)"
+            "'  idx=' || SQL%BULK_EXCEPTIONS(j).ERROR_INDEX ||\n                           ' id=' || r.employee_id ||\n                           ' ' || SQLERRM(-SQL%BULK_EXCEPTIONS(j).ERROR_CODE)"
            ]
           }
          ]

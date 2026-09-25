@@ -400,16 +400,19 @@ trigger を全部配備したので、employees を書くシナリオでは Orac
 
 | Issue | 何を直したか | 取り直した結果 |
 |---|---|---|
-| #50 | 移行先に無い CHECK / FOREIGN KEY を、`limits.yaml constraints.enforce` に記録した表で書く前に評価する（CHECK は書く値で式を評価、FOREIGN KEY は親を先に読む。違反は Oracle と同じ番号 -2290 / -2291）。あわせて `PRAGMA EXCEPTION_INIT` で番号を付けた例外は、その番号を持つクラスになり、番号で投げた例外も同じクラスになる（`WHEN e_fk_violation` が guard の -2291 を受ける） | `b04_6_2_user_exceptions` は guard の -2291 を handler が受けて **一致** のまま。`b06_2_forall_save_exceptions` は最初の違反行で -2290 が出て止まる（Oracle の SAVE EXCEPTIONS は続けて -24381 をまとめて投げる。境界を `perIteration` にする決定待ち、下記） |
+| #50 | 移行先に無い CHECK / FOREIGN KEY を、`limits.yaml constraints.enforce` に記録した表で書く前に評価する（CHECK は書く値で式を評価、FOREIGN KEY は親を先に読む。違反は Oracle と同じ番号 -2290 / -2291）。あわせて `PRAGMA EXCEPTION_INIT` で番号を付けた例外は、その番号を持つクラスになり、番号で投げた例外も同じクラスになる（`WHEN e_fk_violation` が guard の -2291 を受ける） | `b04_6_2_user_exceptions` は guard の -2291 を handler が受けて **一致** のまま。`b06_2_forall_save_exceptions` は最初の違反行で -2290 が出て止まるようになったので、境界を `perIteration` に変える決定を確認した（下記。変えたあと **一致**） |
 | #48 | 式の中の別 module の関数呼び出し（`v_id := emp_api.hire(...)`）を、注入した Service の呼び出しに。OUT / IN OUT 引数（運ぶ package 変数を含む）のある関数は、式の中から文に出して（`plsql.hoist`、`CALL_HOISTED`）Result record から受ける。`WHEN emp_api.e_invalid_raise` は package が投げるクラスで受ける。package 変数を運ぶ決定（#46）は、別 module の呼び出し側にも伝わる | `b05_3_call_emp_api` が **一致**（`boundary: rollback` を足した） |
 | #47 | `:NEW.x := 式` を無条件に書く BEFORE trigger は、書く側が同じ式を書く値に畳み込む（`TRIGGER_FOLDED`。UPDATE が触らない列は先に読む）。本体は自分の引数に代入し、検査は呼び出しで走る。条件つき・局所変数を読む代入は `TRIGGER_REDESIGN` のまま | `emp_biu_trg` が 8 か所すべてで掛かる（`UPPER(:NEW.email)` は書く値に、`UPDATING('SALARY')` の検査は呼び出しで） |
 | #49 | `transactions.separate` の routine を呼ぶ側は `SeparateTransactions`（runtime-java の口）を受け取り、その connection の上に呼び先を組み立てて呼ぶ。ハーネスは同じ properties でもう 1 本 connection を開く | `b05_4_call_log_msg` が **一致**（親を rollback しても LOG 行が残る） |
 
-**5 回目のあとの PL/SQL 実 DB 比較（31 シナリオ、一致 25 / 相違 6）**:
+**5 回目のあとの PL/SQL 実 DB 比較（31 シナリオ、一致 25 / 相違 6）**。そのあと利用者が `b06_2_forall_save_exceptions` の境界を
+`transactions.perIteration`（1 要素 = 1 トランザクション、BULK-002 の形）に変えた（2026-09-25、AskUserQuestion。`limits.yaml` に理由つき）。
+通すために、`WHEN e_bulk_errors`（EXCEPTION_INIT -24381）の handler の形を split が読めるようにし（ループが失敗した 1 要素の記録、
+まとめの PUT_LINE は落として注記）、BULK COLLECT の collection への参照 `v_ids(SQL%BULK_EXCEPTIONS(j).ERROR_INDEX)` を行の列に、
+ページ読みの起点の型をキー列の型に合わせた。**その後の比較は 一致 26 / 相違 5**:
 
 | 相違 | 状態 |
 |---|---|
-| `b06_2_forall_save_exceptions` | guard が最初の違反行で -2290 を投げる。Oracle は SAVE EXCEPTIONS で続け、成功分を確定する。`transactions.perIteration`（1 要素 = 1 トランザクション、BULK-002 の形）に切り替える決定と、`WHEN e_bulk_errors`（EXCEPTION_INIT -24381）の handler の形への対応が要る |
 | `b06_2_2_forall_returning` | FORALL … RETURNING BULK COLLECT（#51） |
 | `b06_3_native_dynamic_sql` | 動的 UPDATE の RETURNING、動的 PL/SQL（#52） |
 | `b06_3_6_dbms_sql` | DBMS_SQL（#53） |
@@ -688,7 +691,7 @@ trigger を全部配備したので、employees を書くシナリオでは Orac
 | `b05_4_call_log_msg` | REDESIGN | SQL-004, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b06_1_bulk_collect_limit` | REVIEW | SCAN-002, CUR-002, BULK-003 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
 | `b06_2_2_forall_returning` | REDESIGN | SQL-001, BULK-001, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
-| `b06_2_forall_save_exceptions` | REDESIGN | SCAN-002, CUR-002, BULK-003, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
+| `b06_2_forall_save_exceptions` | REDESIGN | SCAN-002, CUR-OPT-002, BULK-OPT-003, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b06_3_6_dbms_sql` | REDESIGN | DYN-003, CALL-001 | DYN-003: DBMS_SQL は静的解析だけでは追えません。実行ログも使って query family を洗い出す必要があります; DYN-003: DB |
 | `b06_3_native_dynamic_sql` | REDESIGN | DYN-001, DYN-002, DYN-OPT-002, LOWER-001, CUR-001, TX-001 | DYN-001: 表名など識別子が実行時に決まる SQL です。allowlist か専用 Repository への再設計が要ります; TX-001: rou |
 | `b06_4_collection_in_sql` | REVIEW | SELECT-001, SEM-004, SQL-002, BULK-001 | SELECT-001: キーで届かない SELECT INTO で、ScalarDB がそのまま実行できる文ではありません。0 件と複数件の意味（NO_DATA |
@@ -734,7 +737,7 @@ trigger を全部配備したので、employees を書くシナリオでは Orac
 | `b05_4_call_log_msg` | `b05_4_call_log_msg.b05_4_call_log_msg` | 一致 |  |
 | `b06_1_bulk_collect_limit` | `b06_1_bulk_collect_limit.b06_1_bulk_collect_limit` | 一致 |  |
 | `b06_2_2_forall_returning` | `b06_2_2_forall_returning.b06_2_2_forall_returning` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Loop: forall loop) |
-| `b06_2_forall_save_exceptions` | `b06_2_forall_save_exceptions.b06_2_forall_save_exceptions` | 相違 | exception: expected=none actual=-2290 (ORA-02290: check constraint (BULK_TARGET_SAL_CK) violated); table bulk_target row count: expected=11 actual=0; table bulk_target: m |
+| `b06_2_forall_save_exceptions` | `b06_2_forall_save_exceptions.b06_2_forall_save_exceptions` | 一致 |  |
 | `b06_3_6_dbms_sql` | `b06_3_6_dbms_sql.b06_3_6_dbms_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration c: DBMS_SQL.OPEN_CURSOR) |
 | `b06_3_native_dynamic_sql` | `b06_3_native_dynamic_sql.b06_3_native_dynamic_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in DynamicSql: RETURNING INTO of a dynamic UPDATE) |
 | `b06_4_collection_in_sql` | `b06_4_collection_in_sql.b06_4_collection_in_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in SqlOperation: execution plan result) |

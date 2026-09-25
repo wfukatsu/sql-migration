@@ -268,7 +268,7 @@
 | `b05_4_call_log_msg` | REDESIGN | SQL-004, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b06_1_bulk_collect_limit` | REVIEW | SCAN-002, CUR-002, BULK-003 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
 | `b06_2_2_forall_returning` | REDESIGN | SQL-001, BULK-001, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
-| `b06_2_forall_save_exceptions` | REDESIGN | SCAN-002, CUR-002, BULK-003, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
+| `b06_2_forall_save_exceptions` | REDESIGN | SCAN-002, CUR-OPT-002, BULK-OPT-003, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b06_3_6_dbms_sql` | REDESIGN | DYN-003, CALL-001 | DYN-003: DBMS_SQL は静的解析だけでは追えません。実行ログも使って query family を洗い出す必要があります; DYN-003: DB |
 | `b06_3_native_dynamic_sql` | REDESIGN | DYN-001, DYN-002, DYN-OPT-002, LOWER-001, CUR-001, TX-001 | DYN-001: 表名など識別子が実行時に決まる SQL です。allowlist か専用 Repository への再設計が要ります; TX-001: rou |
 | `b06_4_collection_in_sql` | REVIEW | SELECT-001, SEM-004, SQL-002, BULK-001 | SELECT-001: キーで届かない SELECT INTO で、ScalarDB がそのまま実行できる文ではありません。0 件と複数件の意味（NO_DATA |
@@ -314,7 +314,7 @@
 | `b05_4_call_log_msg` | `b05_4_call_log_msg.b05_4_call_log_msg` | 一致 |  |
 | `b06_1_bulk_collect_limit` | `b06_1_bulk_collect_limit.b06_1_bulk_collect_limit` | 一致 |  |
 | `b06_2_2_forall_returning` | `b06_2_2_forall_returning.b06_2_2_forall_returning` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Loop: forall loop) |
-| `b06_2_forall_save_exceptions` | `b06_2_forall_save_exceptions.b06_2_forall_save_exceptions` | 相違 | exception: expected=none actual=-2290 (ORA-02290: check constraint (BULK_TARGET_SAL_CK) violated); table bulk_target row count: expected=11 actual=0; table bulk_target: m |
+| `b06_2_forall_save_exceptions` | `b06_2_forall_save_exceptions.b06_2_forall_save_exceptions` | 一致 |  |
 | `b06_3_6_dbms_sql` | `b06_3_6_dbms_sql.b06_3_6_dbms_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration c: DBMS_SQL.OPEN_CURSOR) |
 | `b06_3_native_dynamic_sql` | `b06_3_native_dynamic_sql.b06_3_native_dynamic_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in DynamicSql: RETURNING INTO of a dynamic UPDATE) |
 | `b06_4_collection_in_sql` | `b06_4_collection_in_sql.b06_4_collection_in_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in SqlOperation: execution plan result) |
