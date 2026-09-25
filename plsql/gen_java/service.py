@@ -231,7 +231,7 @@ def correlation_row(routine: M.Routine) -> dict[str, "M.BindVariable"]:
     （この method の signature）が別々に数えると、引数が静かにずれる。使われている参照だけを返すのは
     `AuditContext` と同じ理由で、読んでいない列まで呼び出し側に用意させないためである。
     """
-    from ..triggers import EVENTS, correlation_row as correlations
+    from ..triggers import EVENT_OF_COLUMN_PREFIX, EVENTS, correlation_row as correlations
 
     module = _MODULE.get()
     out: dict[str, M.BindVariable] = {}
@@ -240,7 +240,7 @@ def correlation_row(routine: M.Routine) -> dict[str, "M.BindVariable"]:
         # 条件ごと拒んで「なぜ読めないのか」を隠すよりよい
         # `INSERTING` / `UPDATING` / `DELETING`: どのイベントの文のところで呼んでいるかは呼ぶ側が知っている
         # ので、相関行と同じく引数で受け取る（#29 の 25）
-        event = "BOOLEAN" if variable in EVENTS else None
+        event = "BOOLEAN" if variable in EVENTS or variable.startswith(EVENT_OF_COLUMN_PREFIX) else None
         out[variable] = bind or M.BindVariable(name=variable.replace(".", "_"), direction="IN",
                                                oracle_type=event, plsql_variable=variable)
     return out
