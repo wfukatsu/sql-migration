@@ -25,6 +25,16 @@ class PlsqlTest {
   }
 
   @Test
+  void sqlerrmAndBacktraceReadTheCaughtException() {
+    assertEquals("ORA-20001: 業務エラー", Plsql.sqlerrm(-20001, "業務エラー"));
+    assertEquals("ORA-01403: no data found", Plsql.sqlerrm(100, null));
+    assertEquals("ORA-02291: x", Plsql.sqlerrm(-2291, "x"));
+    String trace = Plsql.errorBacktrace(new RuntimeException("boom"));
+    assertTrue(trace.startsWith("ORA-06512: at \"com.scalar.migrate.plsql.PlsqlTest"), trace);
+    assertNull(Plsql.errorBacktrace(null));
+  }
+
+  @Test
   void dbmsOutputIsBufferedPerThreadAndReadBack() {
     Plsql.output();                            // start clean
     Plsql.put("a");

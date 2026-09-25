@@ -532,3 +532,20 @@ def test_numeric_for_loops_count_up_or_down_with_bounds_read_once(tmp_path):
     assert "for (int b = Plsql.toInt(1), bEnd = Plsql.toInt(3); b <= bEnd; b++)" in java
     assert "break outerLoop;" in java and "continue;" in java
     assert "UnsupportedOperationException" not in java
+
+
+def test_sqlerrm_and_the_backtrace_come_from_the_caught_exception(tmp_path):
+    """`WHEN OTHERS THEN ... SQLCODE || SQLERRM ... DBMS_UTILITY.FORMAT_ERROR_BACKTRACE` (#38)."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "schema.sql").write_text("CREATE TABLE t (id NUMBER(4) PRIMARY KEY);\n")
+    (src / "report_error.prc").write_text(
+        "CREATE OR REPLACE PROCEDURE report_error (p_out OUT VARCHAR2) AS\n"
+        "BEGIN\n  RAISE_APPLICATION_ERROR(-20001, 'boom');\n"
+        "EXCEPTION\n  WHEN OTHERS THEN\n    p_out := 'SQLCODE=' || SQLCODE || ' / ' || SQLERRM || DBMS_UTILITY.FORMAT_ERROR_BACKTRACE;\n"
+        "END;\n/\n")
+    program = build_analysis(src, src / "schema.sql").program
+    java = generate_module(module_named(program, "report_error"), APP, INFRA, DOMAIN).file.render()
+    assert "Plsql.sqlerrm(e.code(), e.getMessage())" in java
+    assert "Plsql.errorBacktrace(e)" in java
+    assert "UnsupportedOperationException" not in java
