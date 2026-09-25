@@ -511,3 +511,24 @@ def test_an_if_whose_every_branch_is_refused_ends_the_block(tmp_path):
     assert java.count("throw new UnsupportedOperationException") >= 2
     assert "the rest of this block is unreachable" in java
     assert "while (true)" not in java
+
+
+def test_numeric_for_loops_count_up_or_down_with_bounds_read_once(tmp_path):
+    """`FOR i IN low .. high` and `REVERSE` (#37, samples/oracle-samples b04_2_control_flow)."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "schema.sql").write_text("CREATE TABLE t (id NUMBER(4) PRIMARY KEY);\n")
+    (src / "count_loops.prc").write_text(
+        "CREATE OR REPLACE PROCEDURE count_loops (p_max PLS_INTEGER) AS\n  v_sum PLS_INTEGER := 0;\n"
+        "BEGIN\n"
+        "  FOR j IN REVERSE 1 .. 6 LOOP\n    CONTINUE WHEN MOD(j, 2) = 0;\n    v_sum := v_sum + j;\n  END LOOP;\n"
+        "  <<outer_loop>>\n  FOR a IN 1 .. p_max LOOP\n    FOR b IN 1 .. 3 LOOP\n"
+        "      EXIT outer_loop WHEN a * b = 4;\n      v_sum := v_sum + a * b;\n    END LOOP;\n  END LOOP outer_loop;\n"
+        "END;\n/\n")
+    program = build_analysis(src, src / "schema.sql").program
+    java = generate_module(module_named(program, "count_loops"), APP, INFRA, DOMAIN).file.render()
+    assert "for (int j = Plsql.toInt(6), jEnd = Plsql.toInt(1); j >= jEnd; j--)" in java
+    assert "outerLoop: for (int a = Plsql.toInt(1), aEnd = Plsql.toInt(pMax); a <= aEnd; a++)" in java
+    assert "for (int b = Plsql.toInt(1), bEnd = Plsql.toInt(3); b <= bEnd; b++)" in java
+    assert "break outerLoop;" in java and "continue;" in java
+    assert "UnsupportedOperationException" not in java
