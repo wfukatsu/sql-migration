@@ -208,6 +208,10 @@ def _needs_audit(routine: M.Routine, visiting: set[str]) -> bool:
             callee = _routine(statement.resolved_to)
             if callee is not None and callee is not routine and _needs_audit(callee, visiting):
                 return True
+    # a function of another module called inside an expression takes the audit too (#48)
+    for _, callee in _expression_callees(routine, _MODULE.get()).values():
+        if callee is not routine and _needs_audit(callee, visiting):
+            return True
     return False
 
 
@@ -338,6 +342,20 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
         names.update({d.name: java_name(d.name) for d in module.declarations
                       if d.declaration_kind != "type"
                       and not (module.module_kind == "package" and d.declaration_kind == "variable")})
+    # #48: a function of another module inside an expression: `emp_api.hire(...)` -> `empApi.hire(...)`. The
+    # service is injected (trigger_services). One with OUT / IN OUT arguments -- a carried package variable
+    # (#46) included -- hands values back in a result record, which an expression has nowhere to put, so it is
+    # reported with the reason instead of compiled against nothing
+    for qualified, (owner, callee) in _expression_callees(routine, module).items():
+        if any(p.direction in ("OUT", "IN OUT") for p in callee.parameters):
+            names[f"{qualified}#refused"] = ("OUT / IN OUT 引数（運ぶ package 変数を含む）のある routine は式の中では"
+                                             "呼べない。文に分けて Result record から受ける")
+            continue
+        names[qualified] = f"{java_name(owner)}.{java_name(routine_stem(callee))}"
+        names[f"{qualified}#parameters"] = ",".join(
+            java_type(p.type.resolved if p.type else None).name for p in callee.parameters)
+        if needs_audit(callee):
+            names[f"{qualified}#extra"] = "audit"
     return names
 
 
@@ -529,7 +547,7 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
             # A PL/SQL-declared exception is its own class. It used to become `catch (MigratedException e)`, which
             # also caught a NO_DATA_FOUND raised in the same block and relabelled it as this handler's error --
             # in Oracle that NO_DATA_FOUND goes past a handler that does not name it.
-            classes = list(dict.fromkeys(PREDEFINED[n][0] if n in PREDEFINED else user_class(n) for n in names))
+            classes = list(dict.fromkeys(class_of(n, routine, _MODULE.get(), program=_PROGRAM.get())[1] for n in names))
             caught = " | ".join(classes)
             comment = f"WHEN {', '.join(names)}"
             for class_name in classes:
@@ -1221,7 +1239,7 @@ def _raise(file: JavaFile, statement: M.Raise, routine: M.Routine, result: Servi
     else:
         # by its own class, so that `WHEN e_unknown_status` catches this and nothing else
         name = statement.exception.upper()
-        class_name = PREDEFINED[name][0] if name in PREDEFINED else user_class(name)
+        class_name = class_of(name, routine, _MODULE.get(), program=_PROGRAM.get())[1]
         if _DOMAIN.get():
             file.add_import(f"{_DOMAIN.get()}.{class_name}")
         file.line(f'throw new {class_name}("{statement.exception}");')
@@ -1273,7 +1291,11 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
             # the Java name comes from the routine, not from the id: `pkg.put~2` is the method `put2`
             invocation = f"{java_name(routine_stem(callee) if callee is not None else target.split('.')[-1])}({arguments})"
         if not outs:
-            file.line(f"{invocation};")
+            if statement.into:
+                file.line(f"{_expr(file, statement.into, routine, result)} = "
+                          f"{_coerce(file, invocation, _local_type(routine, statement.into))};")
+            else:
+                file.line(f"{invocation};")
             return
         record = java_class_name(routine_stem(callee)) + "Result"
         if _DOMAIN.get():
@@ -1285,6 +1307,10 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
             for p, a in outs:
                 target_type = _local_type(routine, a)
                 f.line(f"{_expr(f, a, routine, result)} = {_coerce(f, f'{holder}.{java_name(p.name)}()', target_type)};")
+            if statement.into:
+                # a function hoisted out of an expression (plsql.hoist, #48): its return value is in the record too
+                f.line(f"{_expr(f, statement.into, routine, result)} = "
+                       f"{_coerce(f, f'{holder}.returned()', _local_type(routine, statement.into))};")
     elif _collection_call(file, statement, routine, result):
         return
     elif (statement.callee or "").upper() in ("DBMS_OUTPUT.PUT_LINE", "DBMS_OUTPUT.PUT", "DBMS_OUTPUT.NEW_LINE"):

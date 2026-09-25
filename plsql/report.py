@@ -166,6 +166,10 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
 
         build_call_graph(program)
         carry(program, package_state)
+    # #48: a function with OUT / IN OUT arguments (a carried package variable included) called inside an
+    # expression becomes a call statement of its own, so the generator can unpack its result record
+    from . import hoist
+    hoist.rewrite(program)
     # IDENTITY 列を INSERT に足す（採番は Sequences から）。trigger を織り込む前に行う: 織り込まれた trigger の INSERT も同じ
     from . import identity
     identity.rewrite(program, schema)
