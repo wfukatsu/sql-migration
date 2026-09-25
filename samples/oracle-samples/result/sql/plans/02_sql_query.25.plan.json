@@ -14,7 +14,7 @@
       ],
       "column_types": {
         "order_id": "BIGINT",
-        "order_date": "DATE",
+        "order_date": "TIMESTAMP",
         "employee_id": "INT",
         "customer": "TEXT",
         "status": "TEXT",

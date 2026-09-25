@@ -90,14 +90,13 @@ def split(path: Path) -> None:
             i += 1
             blocks.append(buf)
             continue
-        if WITH_FUNCTION.match(line):  # 02 H-4: WITH FUNCTION … SELECT … / は SQL 文として残す（終端を ; にする）
+        if WITH_FUNCTION.match(line):  # 02 H-4: WITH FUNCTION … SELECT … / は SQL 文として残す（終端の / も残す。#30）
             buf = []
             while i < len(lines) and lines[i].strip() != "/":
                 buf.append(lines[i])
                 i += 1
             i += 1
-            sql.extend(buf)
-            sql[-1] = sql[-1] + ";"
+            sql.extend(buf + ["/"])
             continue
         sql.append(line)
         i += 1

@@ -160,9 +160,7 @@ COMMIT;
 -- FROM   products_json p
 -- WHERE  JSON_EXISTS(doc, '$.tags[*]?(@ == "db")')
 
--- [APP-SIDE PLAN #32] ScalarDB から取得して H2 で実行する
---   SELECT id, doc FROM hr.products_json;
---   SELECT * FROM "";
+-- [NOT CONVERTED #32] comma join without join condition (cartesian product) is not supported; the H2 residual engine cannot run JSON_TABLE (H2 has no JSON_TABLE: read the JSON column and unnest it in the application); implement this part in the application
 -- -- F-3. JSON_TABLE：JSON を行列に展開
 -- SELECT p.id, jt.name, jt.tag
 -- FROM   products_json p,

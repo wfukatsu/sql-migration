@@ -277,4 +277,5 @@ WITH
   END;
 SELECT last_name, annual(salary, commission_pct) AS annual_comp
 FROM   employees
-WHERE  department_id = 80;
+WHERE  department_id = 80
+/

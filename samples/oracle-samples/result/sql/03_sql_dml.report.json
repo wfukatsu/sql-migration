@@ -5,8 +5,8 @@
     "total": 37,
     "ok": 9,
     "warn": 6,
-    "error": 20,
-    "planned": 2,
+    "error": 21,
+    "planned": 1,
     "converted": 15,
     "rate": 40.5
   },
@@ -509,7 +509,7 @@
       "index": 32,
       "source_sql": "-- F-3. JSON_TABLE：JSON を行列に展開\nSELECT p.id, jt.name, jt.tag\nFROM   products_json p,\n       JSON_TABLE(p.doc, '$'\n         COLUMNS (name VARCHAR2(40) PATH '$.name',\n                  NESTED PATH '$.tags[*]' COLUMNS (tag VARCHAR2(20) PATH '$'))) jt",
       "kind": "SELECT",
-      "status": "PLANNED",
+      "status": "ERROR",
       "converted": [],
       "issues": [
         {
@@ -518,34 +518,9 @@
           "message": "comma join without join condition (cartesian product) is not supported"
         },
         {
-          "severity": "INFO",
-          "code": "PLAN_FETCH",
-          "message": "CROSS_PARTITION: SELECT id, doc FROM hr.products_json"
-        },
-        {
-          "severity": "INFO",
-          "code": "PLAN_FETCH",
-          "message": "UNKNOWN: SELECT * FROM \"\""
-        },
-        {
-          "severity": "INFO",
-          "code": "PLAN_RESIDUAL",
-          "message": "H2 Oracle mode runs the original SQL (pattern P8, H2 indexes off)"
-        },
-        {
-          "severity": "WARN",
-          "code": "PLAN_CROSS_PARTITION",
-          "message": "a fetch needs a cross-partition scan"
-        },
-        {
-          "severity": "INFO",
-          "code": "CONFIG",
-          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
-        },
-        {
-          "severity": "INFO",
-          "code": "COST",
-          "message": "full scan of products_json,  (~25 us per row); pass --expected-rows table=N for an estimate"
+          "severity": "ERROR",
+          "code": "RESIDUAL_H2",
+          "message": "the H2 residual engine cannot run JSON_TABLE (H2 has no JSON_TABLE: read the JSON column and unnest it in the application); implement this part in the application"
         },
         {
           "severity": "INFO",
@@ -553,80 +528,7 @@
           "message": "table definitions unknown for : include CREATE TABLE or pass --schema to get access-path checks and key-design advice"
         }
       ],
-      "plan": {
-        "pattern": "P8",
-        "source_dialect": "oracle",
-        "source_sql": "-- F-3. JSON_TABLE：JSON を行列に展開\nSELECT p.id, jt.name, jt.tag\nFROM   products_json p,\n       JSON_TABLE(p.doc, '$'\n         COLUMNS (name VARCHAR2(40) PATH '$.name',\n                  NESTED PATH '$.tags[*]' COLUMNS (tag VARCHAR2(20) PATH '$'))) jt",
-        "fetch": [
-          {
-            "table": "products_json",
-            "namespace": "hr",
-            "alias": "p",
-            "columns": [
-              "id",
-              "doc"
-            ],
-            "column_types": {
-              "id": "BIGINT",
-              "doc": "TEXT"
-            },
-            "predicates": [],
-            "scalardb_sql": "SELECT id, doc FROM hr.products_json",
-            "access_path": "CROSS_PARTITION",
-            "max_rows": 10000,
-            "index_columns": [
-              [
-                "id"
-              ]
-            ],
-            "residual_types": {}
-          },
-          {
-            "table": "",
-            "namespace": null,
-            "alias": "jt",
-            "columns": null,
-            "column_types": {},
-            "predicates": [],
-            "scalardb_sql": "SELECT * FROM \"\"",
-            "access_path": "UNKNOWN",
-            "max_rows": 10000,
-            "index_columns": [],
-            "residual_types": {}
-          }
-        ],
-        "residual": {
-          "java": {
-            "engine": "h2",
-            "mode": "Oracle",
-            "sql": "-- F-3. JSON_TABLE：JSON を行列に展開\nSELECT p.id, jt.name, jt.tag\nFROM   products_json p,\n       JSON_TABLE(p.doc, '$'\n         COLUMNS (name VARCHAR2(40) PATH '$.name',\n                  NESTED PATH '$.tags[*]' COLUMNS (tag VARCHAR2(20) PATH '$'))) jt",
-            "build_indexes": false
-          },
-          "python": {
-            "engine": "sqlite3",
-            "sql": "/* F-3. JSON_TABLE：JSON を行列に展開 */ SELECT p.id, jt.name, jt.tag FROM products_json AS p, JSON_TABLE(p.doc, '$' COLUMNS(name TEXT(40) PATH '$.name', NESTED PATH '$.tags[*]' COLUMNS(tag TEXT(20) PATH '$'))) AS jt"
-          }
-        },
-        "write": null,
-        "guardrails": {
-          "requires_cross_partition_scan": true,
-          "row_limit": 10000
-        },
-        "unresolved": [],
-        "notes": [
-          ": schema unknown, fetching all columns; runtime must infer types"
-        ],
-        "transaction": {
-          "read_only": true
-        },
-        "recommended_config": {
-          "transaction": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+)",
-          "scalar.db.scan_fetch_size": 1000,
-          "scalar.db.cluster.client.scan_fetch_size": 1000,
-          "scalar.db.cross_partition_scan.enabled": true,
-          "isolation_note": "SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
-        }
-      }
+      "plan": null
     },
     {
       "index": 33,
@@ -715,7 +617,7 @@
               "first_name": "TEXT",
               "last_name": "TEXT",
               "email": "TEXT",
-              "hire_date": "DATE",
+              "hire_date": "TIMESTAMP",
               "job_id": "TEXT",
               "salary": "DOUBLE",
               "commission_pct": "DOUBLE",

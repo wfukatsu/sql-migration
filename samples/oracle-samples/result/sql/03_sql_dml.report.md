@@ -1,7 +1,7 @@
 # SQL 変換レポート: oracle → scalardb
 
 - 入力: `samples/oracle-samples/sql/03_sql_dml.sql`
-- 文数: 37　|　OK: 9　|　WARN: 6　|　PLANNED: 2　|　ERROR: 20
+- 文数: 37　|　OK: 9　|　WARN: 6　|　PLANNED: 1　|　ERROR: 21
 - **変換率: 40.5%**（15 / 37 文が scalardb の SQL を出力できた）
 
 | # | 種別 | 状態 | 元の SQL | 変換後 | 指摘 |
@@ -37,7 +37,7 @@
 | 29 | INSERT | ⚠️ WARN | `INSERT INTO products_json VALUES (2,   '{"name":"ScalarDL","tier":"Standard","price":1500,…` | `INSERT INTO products_json VALUES (2, '{"name":"ScalarDL","tier":"Standard","price":1500,"t…` | **WARN** INSERT_COLS: no column list: ScalarDB uses table definition order; add an explicit column list |
 | 30 | COMMIT | ✅ OK | `COMMIT` | `COMMIT` |  |
 | 31 | PARSE_ERROR | ❌ ERROR | `-- F-2. 値の取り出し（JSON_VALUE / JSON_QUERY / ドット記法） SELECT JSON_VALUE(doc, '$.name')          …` | — | **ERROR** PARSE: Expecting ). Line 3, Col: 42. |
-| 32 | SELECT | 🧩 PLANNED | `-- F-3. JSON_TABLE：JSON を行列に展開 SELECT p.id, jt.name, jt.tag FROM   products_json p,       …` | — | **ERROR** JOIN: comma join without join condition (cartesian product) is not supported<br>**INFO** PLAN_FETCH: CROSS_PARTITION: SELECT id, doc FROM hr.products_json<br>**INFO** PLAN_FETCH: UNKNOWN: SELECT * FROM ""<br>**INFO** PLAN_RESIDUAL: H2 Oracle mode runs the original SQL (pattern P8, H2 indexes off)<br>**WARN** PLAN_CROSS_PARTITION: a fetch needs a cross-partition scan |
+| 32 | SELECT | ❌ ERROR | `-- F-3. JSON_TABLE：JSON を行列に展開 SELECT p.id, jt.name, jt.tag FROM   products_json p,       …` | — | **ERROR** JOIN: comma join without join condition (cartesian product) is not supported<br>**ERROR** RESIDUAL_H2: the H2 residual engine cannot run JSON_TABLE (H2 has no JSON_TABLE: read the JSON column and unnest it in the application); implement this part in the application |
 | 33 | SELECT | 🧩 PLANNED | `-- F-4. リレーショナル → JSON 生成 SELECT JSON_OBJECT('dept' VALUE d.department_name,              …` | — | **ERROR** PROJECTION: main query: expressions in the select list (JSON_OBJECT('dept': d.department_name, 'members': JSON_ARRAYAGG(JSON_OBJECT('...) -- compute them in the application<br>**INFO** PLAN_FETCH: CROSS_PARTITION: SELECT department_id, department_name FROM hr.departments<br>**INFO** PLAN_FETCH: CROSS_PARTITION: SELECT employee_id, last_name, department_id FROM hr.employees<br>**INFO** PLAN_RESIDUAL: H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)<br>**WARN** PLAN_CROSS_PARTITION: a fetch needs a cross-partition scan |
 | 34 | PARSE_ERROR | ❌ ERROR | `-- F-5. 部分更新（19c+） UPDATE products_json SET    doc = JSON_MERGEPATCH(doc, '{"price":1200,"…` | — | **ERROR** PARSE: Expecting ). Line 3, Col: 79. |
 | 35 | COMMIT | ✅ OK | `COMMIT` | `COMMIT` |  |
@@ -59,21 +59,22 @@
 | ERROR | UNPARSED | 1 |
 | ERROR | SAVEPOINT | 1 |
 | ERROR | JOIN | 1 |
+| ERROR | RESIDUAL_H2 | 1 |
 | ERROR | PROJECTION | 1 |
 | WARN | LOCK | 2 |
 | WARN | INSERT_COLS | 2 |
-| WARN | PLAN_CROSS_PARTITION | 2 |
 | WARN | CROSS_PARTITION | 1 |
 | WARN | TYPE | 1 |
 | WARN | CHECK | 1 |
-| INFO | PLAN_FETCH | 4 |
-| INFO | CONFIG | 3 |
-| INFO | COST | 3 |
+| WARN | PLAN_CROSS_PARTITION | 1 |
 | INFO | IDENT | 2 |
 | INFO | ACCESS | 2 |
-| INFO | PLAN_RESIDUAL | 2 |
+| INFO | CONFIG | 2 |
+| INFO | COST | 2 |
+| INFO | PLAN_FETCH | 2 |
 | INFO | SCHEMA | 1 |
 | INFO | DESIGN | 1 |
+| INFO | PLAN_RESIDUAL | 1 |
 
 ## アプリ側に移す処理
 
@@ -201,25 +202,16 @@
 
 - `PARSE` Expecting ). Line 3, Col: 42.
 
-### #32 🧩 PLANNED `-- F-3. JSON_TABLE：JSON を行列に展開 SELECT p.id, jt.name, jt.tag FROM   pro…`
-
-実行計画あり: ScalarDB から行を取得し、元の SQL を H2 で実行する（計画の JSON は --plan-dir の出力）。
+### #32 ❌ ERROR `-- F-3. JSON_TABLE：JSON を行列に展開 SELECT p.id, jt.name, jt.tag FROM   pro…`
 
 **アプリ側で処理する構文**
 
 - `JOIN` comma join without join condition (cartesian product) is not supported
+- `RESIDUAL_H2` the H2 residual engine cannot run JSON_TABLE (H2 has no JSON_TABLE: read the JSON column and unnest it in the application); implement this part in the application
 
 **設計の提案**
 
 - `DESIGN` table definitions unknown for : include CREATE TABLE or pass --schema to get access-path checks and key-design advice
-
-**取得コストの見積もり**
-
-- `COST` full scan of products_json,  (~25 us per row); pass --expected-rows table=N for an estimate
-
-**推奨設定**
-
-- `CONFIG` read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node
 
 ### #33 🧩 PLANNED `-- F-4. リレーショナル → JSON 生成 SELECT JSON_OBJECT('dept' VALUE d.department…`
 

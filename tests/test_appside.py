@@ -100,6 +100,16 @@ def test_plan_is_rejected_when_h2_cannot_run_connect_by():
     ("SELECT deptno, SUM(sal) AS s FROM emp GROUP BY ROLLUP (deptno)", "ROLLUP"),
     ("SELECT * FROM (SELECT deptno, job, sal FROM emp) PIVOT (SUM(sal) FOR job IN ('A' AS a))", "PIVOT"),
     ("SELECT deptno, MAX(sal) KEEP (DENSE_RANK FIRST ORDER BY hiredate) AS s FROM emp GROUP BY deptno", "KEEP"),
+    # found against H2 2.5 with samples/oracle-samples (2026-09-24): planned, then refused at run time (#31-#33)
+    ("SELECT e.ename, d.dname FROM emp e FULL OUTER JOIN dept d ON d.deptno = e.deptno", "FULL OUTER JOIN"),
+    ("SELECT d.dname, t.ename FROM dept d CROSS APPLY (SELECT ename FROM emp e WHERE e.deptno = d.deptno "
+     "ORDER BY sal DESC FETCH FIRST 2 ROWS ONLY) t", "LATERAL"),
+    ("SELECT COUNT(*) FROM emp SAMPLE (50)", "SAMPLE"),
+    ("WITH org (empno, lvl) AS (SELECT empno, 1 FROM emp WHERE mgr IS NULL UNION ALL SELECT e.empno, o.lvl + 1 "
+     "FROM emp e JOIN org o ON e.mgr = o.empno) SEARCH DEPTH FIRST BY empno SET ord SELECT empno FROM org ORDER BY ord",
+     "SEARCH"),
+    ("SELECT p.id, jt.name FROM products_json p, JSON_TABLE(p.doc, '$' COLUMNS (name VARCHAR2(40) PATH '$.name')) jt",
+     "JSON_TABLE"),
 ])
 def test_other_constructs_h2_lacks_are_not_planned(sql, construct):
     r = last(sql)

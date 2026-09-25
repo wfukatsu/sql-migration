@@ -982,3 +982,14 @@ def test_split_statements_survives_dashed_banner_lines():
     stmts = _split_statements(text, "oracle")
     assert time.monotonic() - t < 2
     assert [s.splitlines()[-1] for s in stmts] == ["SELECT 1 FROM dual", "SELECT 2 FROM dual"]
+
+
+def test_with_function_is_one_statement_refused_by_name():
+    """Oracle 12c `WITH FUNCTION ... SELECT ... /`: its semicolons end PL/SQL statements (#30, samples/oracle-samples 02 H-4)."""
+    text = ("SELECT 1 FROM dual;\n"
+            "WITH\n  FUNCTION annual(p_sal NUMBER) RETURN NUMBER IS\n  BEGIN\n    RETURN p_sal * 12;\n  END;\n"
+            "SELECT ename, annual(sal) AS a FROM emp WHERE deptno = 10\n/\n"
+            "SELECT 2 FROM dual;\n")
+    results, _ = convert_script(text, "oracle")
+    assert [r.kind for r in results] == ["SELECT", "WITH_PLSQL", "SELECT"]
+    assert results[1].status == "ERROR" and [i.code for i in results[1].issues if i.severity == "ERROR"] == ["WITH_PLSQL"]

@@ -68,9 +68,7 @@
 
 SELECT e.last_name, d.department_name /* 上と同じ結果（旧記法） */ FROM employees AS e LEFT JOIN departments AS d ON e.department_id = d.department_id;
 
--- [APP-SIDE PLAN #9] ScalarDB から取得して H2 で実行する
---   SELECT employee_id, last_name, department_id FROM hr.employees;
---   SELECT department_id, department_name FROM hr.departments;
+-- [NOT CONVERTED #9] OUTER JOIN is not supported; the H2 residual engine cannot run FULL OUTER JOIN (H2 has no FULL JOIN: UNION the LEFT and RIGHT joins, or match the two fetches in the application); implement this part in the application
 -- -- B-3. 完全外部結合：部門なし社員・社員なし部門の両方を出す
 -- SELECT e.last_name, d.department_name
 -- FROM   employees e
@@ -79,9 +77,7 @@ SELECT e.last_name, d.department_name /* 上と同じ結果（旧記法） */ FR
 
 /* B-4. 自己結合（上司名の取得） */ SELECT w.last_name AS employee, m.last_name AS manager FROM employees AS w LEFT JOIN employees AS m ON m.employee_id = w.manager_id;
 
--- [APP-SIDE PLAN #11] ScalarDB から取得して H2 で実行する
---   SELECT department_id, department_name FROM hr.departments;
---   SELECT employee_id, last_name, salary, department_id FROM hr.employees;
+-- [NOT CONVERTED #11] joined relation must be a base table (no subqueries); the H2 residual engine cannot run LATERAL / CROSS APPLY (H2 has no LATERAL: run the inner query per outer row in the application); implement this part in the application
 -- -- B-5. LATERAL / CROSS APPLY（12c+）：部門ごとの高給上位2名
 -- SELECT d.department_name, t.last_name, t.salary
 -- FROM   departments d
@@ -274,8 +270,7 @@ SELECT e.last_name, d.department_name /* 上と同じ結果（旧記法） */ FR
 -- CONNECT BY PRIOR employee_id = manager_id
 -- ORDER  SIBLINGS BY last_name
 
--- [APP-SIDE PLAN #32] ScalarDB から取得して H2 で実行する
---   SELECT employee_id, last_name, manager_id FROM hr.employees;
+-- [NOT CONVERTED #32] WITH org: evaluate each common table expression in the application (fetch its base tables through ScalarDB SQL); CTE org: UNION -- run each branch and combine the rows in the application; main query: expressions in the select list (LPAD(' ', 2 * (lvl - 1)) || last_name) -- compute them in the application; CTE org: expressions in the select list (CAST(last_name AS VARCHAR2(4000))) -- compute them in the application; CTE org: expressions in the select list (o.lvl + 1; o.path || '/' || e.last_name) -- compute them in the application; the H2 residual engine cannot run SEARCH DEPTH / BREADTH FIRST (H2 has no SEARCH clause: order the recursion in the application); implement this part in the application
 -- -- G-3. 再帰 WITH（標準SQL、他DBへ移行しやすい書き方）
 -- WITH org (employee_id, last_name, manager_id, lvl, path) AS (
 --   SELECT employee_id, last_name, manager_id, 1, CAST(last_name AS VARCHAR2(4000))
@@ -304,8 +299,7 @@ SELECT e.last_name, d.department_name /* 上と同じ結果（旧記法） */ FR
 -- FROM   employees AS OF TIMESTAMP (SYSTIMESTAMP - INTERVAL '1' MINUTE)
 -- WHERE  department_id = 60
 
--- [APP-SIDE PLAN #35] ScalarDB から取得して H2 で実行する
---   SELECT employee_id FROM hr.employees;
+-- [NOT CONVERTED #35] TABLESAMPLE on employees is not supported; it returns a random subset of the rows; the H2 residual engine cannot run SAMPLE (H2 has no SAMPLE; the result is random on Oracle too); implement this part in the application
 -- -- H-2. サンプリング [ORA]
 -- SELECT COUNT(*) FROM employees SAMPLE (50)
 
@@ -313,18 +307,13 @@ SELECT e.last_name, d.department_name /* 上と同じ結果（旧記法） */ FR
 -- -- H-3. ROWID [ORA]（重複行削除などで頻出）
 -- SELECT ROWID, employee_id FROM employees WHERE ROWNUM <= 3
 
--- [NOT CONVERTED #37] Expecting (. Line 3, Col: 17.
+-- [NOT CONVERTED #37] a PL/SQL function or procedure declared in the WITH clause: move it to the application and call it there; the query itself can then be converted or planned
 -- -- H-4. WITH 句内での PL/SQL 関数定義（12c+）[ORA]
 -- WITH
 --   FUNCTION annual(p_sal NUMBER, p_comm NUMBER) RETURN NUMBER IS
 --   BEGIN
---     RETURN p_sal * 12 * (1 + NVL(p_comm, 0))
-
--- [NOT CONVERTED #38] Column statements are not supported by ScalarDB SQL
--- END
-
--- [APP-SIDE PLAN #39] ScalarDB から取得して H2 で実行する
---   SELECT employee_id, last_name, salary, commission_pct, department_id FROM hr.employees WHERE department_id = 80;
+--     RETURN p_sal * 12 * (1 + NVL(p_comm, 0));
+-- END;
 -- SELECT last_name, annual(salary, commission_pct) AS annual_comp
 -- FROM   employees
 -- WHERE  department_id = 80

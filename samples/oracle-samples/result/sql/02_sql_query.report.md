@@ -1,8 +1,8 @@
 # SQL 変換レポート: oracle → scalardb
 
 - 入力: `samples/oracle-samples/sql/02_sql_query.sql`
-- 文数: 39　|　OK: 0　|　WARN: 5　|　PLANNED: 23　|　ERROR: 11
-- **変換率: 12.8%**（5 / 39 文が scalardb の SQL を出力できた）
+- 文数: 37　|　OK: 0　|　WARN: 5　|　PLANNED: 18　|　ERROR: 14
+- **変換率: 13.5%**（5 / 37 文が scalardb の SQL を出力できた）
 
 | # | 種別 | 状態 | 元の SQL | 変換後 | 指摘 |
 |---|---|---|---|---|---|
@@ -14,9 +14,9 @@
 | 6 | SELECT | ⚠️ WARN | `--============================================================================== -- B. 結合 …` | `/* ============================================================================== */ /* B.…` | **WARN** CROSS_PARTITION: SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends) |
 | 7 | SELECT | ⚠️ WARN | `-- B-2. 外部結合（ANSI）と Oracle 独自の (+) 記法 [ORA] SELECT e.last_name, d.department_name FROM   e…` | `/* B-2. 外部結合（ANSI）と Oracle 独自の (+) 記法 [ORA] */ SELECT e.last_name, d.department_name FROM …` | **WARN** CROSS_PARTITION: SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends) |
 | 8 | SELECT | ⚠️ WARN | `SELECT e.last_name, d.department_name          -- 上と同じ結果（旧記法） FROM   employees e, departme…` | `SELECT e.last_name, d.department_name /* 上と同じ結果（旧記法） */ FROM employees AS e LEFT JOIN depa…` | **WARN** ORACLE_JOIN_MARK: Oracle (+) outer join rewritten as LEFT/RIGHT OUTER JOIN<br>**WARN** CROSS_PARTITION: SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends) |
-| 9 | SELECT | 🧩 PLANNED | `-- B-3. 完全外部結合：部門なし社員・社員なし部門の両方を出す SELECT e.last_name, d.department_name FROM   employees …` | — | **ERROR** JOIN: OUTER JOIN is not supported<br>**INFO** PLAN_FETCH: CROSS_PARTITION: SELECT employee_id, last_name, department_id FROM hr.employees<br>**INFO** PLAN_FETCH: CROSS_PARTITION: SELECT department_id, department_name FROM hr.departments<br>**INFO** PLAN_RESIDUAL: H2 Oracle mode runs the original SQL (pattern P8, H2 indexes off)<br>**WARN** PLAN_CROSS_PARTITION: a fetch needs a cross-partition scan |
+| 9 | SELECT | ❌ ERROR | `-- B-3. 完全外部結合：部門なし社員・社員なし部門の両方を出す SELECT e.last_name, d.department_name FROM   employees …` | — | **ERROR** JOIN: OUTER JOIN is not supported<br>**ERROR** RESIDUAL_H2: the H2 residual engine cannot run FULL OUTER JOIN (H2 has no FULL JOIN: UNION the LEFT and RIGHT joins, or match the two fetches in the application); implement this part in the application |
 | 10 | SELECT | ⚠️ WARN | `-- B-4. 自己結合（上司名の取得） SELECT w.last_name AS employee, m.last_name AS manager FROM   employe…` | `/* B-4. 自己結合（上司名の取得） */ SELECT w.last_name AS employee, m.last_name AS manager FROM employ…` | **WARN** CROSS_PARTITION: SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends) |
-| 11 | SELECT | 🧩 PLANNED | `-- B-5. LATERAL / CROSS APPLY（12c+）：部門ごとの高給上位2名 SELECT d.department_name, t.last_name, t.s…` | — | **ERROR** JOIN: joined relation must be a base table (no subqueries)<br>**INFO** PLAN_FETCH: CROSS_PARTITION: SELECT department_id, department_name FROM hr.departments<br>**INFO** PLAN_FETCH: CROSS_PARTITION: SELECT employee_id, last_name, salary, department_id FROM hr.employees<br>**INFO** PLAN_RESIDUAL: H2 Oracle mode runs the original SQL (pattern P8, H2 indexes off)<br>**WARN** PLAN_CROSS_PARTITION: a fetch needs a cross-partition scan |
+| 11 | SELECT | ❌ ERROR | `-- B-5. LATERAL / CROSS APPLY（12c+）：部門ごとの高給上位2名 SELECT d.department_name, t.last_name, t.s…` | — | **ERROR** JOIN: joined relation must be a base table (no subqueries)<br>**ERROR** RESIDUAL_H2: the H2 residual engine cannot run LATERAL / CROSS APPLY (H2 has no LATERAL: run the inner query per outer row in the application); implement this part in the application |
 | 12 | SELECT | 🧩 PLANNED | `--============================================================================== -- C. 副問合…` | — | **ERROR** PROJECTION: subquery: expressions in the select list (ROUND(AVG(salary))) -- compute them in the application<br>**INFO** PLAN_FETCH: CROSS_PARTITION: SELECT employee_id, last_name, salary FROM hr.employees<br>**INFO** PLAN_RESIDUAL: H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)<br>**WARN** PLAN_CROSS_PARTITION: a fetch needs a cross-partition scan |
 | 13 | SELECT | 🧩 PLANNED | `-- C-2. 相関副問合せ：部門平均より高い社員 SELECT e.last_name, e.department_id, e.salary FROM   employees e…` | — | **ERROR** SUBQUERY: main query: subquery in WHERE -- fetch the inner result first and bind its values<br>**INFO** PLAN_FETCH: CROSS_PARTITION: SELECT employee_id, last_name, salary, department_id FROM hr.employees<br>**INFO** PLAN_RESIDUAL: H2 Oracle mode runs the original SQL (pattern P5, H2 indexes off)<br>**WARN** PLAN_CROSS_PARTITION: a fetch needs a cross-partition scan |
 | 14 | SELECT | 🧩 PLANNED | `-- C-3. EXISTS / NOT EXISTS SELECT d.department_name FROM   departments d WHERE  NOT EXIST…` | — | **ERROR** NOT: cannot negate 'EXISTS(SELECT 1 FROM employees e WHERE e.department_id = d.department_id)'<br>**ERROR** SUBQUERY: main query: subquery in WHERE -- fetch the inner result first and bind its values<br>**INFO** PLAN_FETCH: CROSS_PARTITION: SELECT department_id, department_name FROM hr.departments<br>**INFO** PLAN_FETCH: CROSS_PARTITION: SELECT employee_id, department_id FROM hr.employees<br>**INFO** PLAN_RESIDUAL: H2 Oracle mode runs the original SQL (pattern P5, H2 indexes off)<br>**WARN** PLAN_CROSS_PARTITION: a fetch needs a cross-partition scan |
@@ -37,22 +37,20 @@
 | 29 | SELECT | 🧩 PLANNED | `-- 2ページ目（5件/ページ）  -- F-2. 11g 以前の ROWNUM 方式 [ORA]（移行元コードで頻出） SELECT * FROM  (SELECT a.*, R…` | — | **ERROR** FROM: FROM must reference exactly one base table (no subqueries)<br>**ERROR** SUBQUERY: main query: derived table in FROM -- evaluate it in the application<br>**ERROR** SUBQUERY: subquery: derived table in FROM -- evaluate it in the application<br>**INFO** PLAN_FETCH: CROSS_PARTITION: SELECT employee_id, last_name, salary FROM hr.employees<br>**INFO** PLAN_RESIDUAL: H2 Oracle mode runs the original SQL (pattern P5, H2 indexes off)<br>**WARN** PLAN_UNRESOLVED: python: ROWNUM in a form SQLite cannot express<br>**WARN** PLAN_CROSS_PARTITION: a fetch needs a cross-partition scan |
 | 30 | SELECT | 🧩 PLANNED | `--============================================================================== -- G. WIT…` | — | **ERROR** CTE: WITH dept_stats: evaluate each common table expression in the application (fetch its base tables through ScalarDB SQL)<br>**ERROR** PROJECTION: main query: expressions in the select list (ROUND(s.avg_sal)) -- compute them in the application<br>**INFO** PLAN_FETCH: CROSS_PARTITION: SELECT employee_id, last_name, salary, department_id FROM hr.employees<br>**INFO** PLAN_RESIDUAL: H2 Oracle mode runs the original SQL (pattern P1+P6, H2 indexes off)<br>**WARN** PLAN_CROSS_PARTITION: a fetch needs a cross-partition scan |
 | 31 | SELECT | ❌ ERROR | `-- G-2. CONNECT BY による階層問合せ [ORA] SELECT LEVEL,        LPAD(' ', 2 * (LEVEL - 1)) \|\| las…` | — | **ERROR** HIERARCHICAL: main query: START WITH / CONNECT BY with CONNECT_BY_ISLEAF, CONNECT_BY_ROOT, LEVEL, SYS_CONNECT_BY_PATH -- walk the tree in the application (appside.Hierarchy) or precompute it into a table<br>**ERROR** PROJECTION: main query: expressions in the select list (LPAD(' ', 2 * (LEVEL - 1)) \|\| last_name) -- compute them in the application<br>**ERROR** RESIDUAL_H2: the H2 residual engine cannot run CONNECT BY (rewrite as recursive WITH, or walk the tree in the application); implement this part in the application |
-| 32 | SELECT | 🧩 PLANNED | `-- G-3. 再帰 WITH（標準SQL、他DBへ移行しやすい書き方） WITH org (employee_id, last_name, manager_id, lvl, pa…` | — | **ERROR** CTE: WITH org: evaluate each common table expression in the application (fetch its base tables through ScalarDB SQL)<br>**ERROR** SET_OP: CTE org: UNION -- run each branch and combine the rows in the application<br>**ERROR** PROJECTION: main query: expressions in the select list (LPAD(' ', 2 * (lvl - 1)) \|\| last_name) -- compute them in the application<br>**ERROR** PROJECTION: CTE org: expressions in the select list (CAST(last_name AS VARCHAR2(4000))) -- compute them in the application<br>**ERROR** PROJECTION: CTE org: expressions in the select list (o.lvl + 1; o.path \|\| '/' \|\| e.last_name) -- compute them in the application<br>**INFO** PLAN_FETCH: CROSS_PARTITION: SELECT employee_id, last_name, manager_id FROM hr.employees<br>**INFO** PLAN_RESIDUAL: H2 Oracle mode runs the original SQL (pattern P1+P6, H2 indexes off)<br>**WARN** PLAN_CROSS_PARTITION: a fetch needs a cross-partition scan |
+| 32 | SELECT | ❌ ERROR | `-- G-3. 再帰 WITH（標準SQL、他DBへ移行しやすい書き方） WITH org (employee_id, last_name, manager_id, lvl, pa…` | — | **ERROR** CTE: WITH org: evaluate each common table expression in the application (fetch its base tables through ScalarDB SQL)<br>**ERROR** SET_OP: CTE org: UNION -- run each branch and combine the rows in the application<br>**ERROR** PROJECTION: main query: expressions in the select list (LPAD(' ', 2 * (lvl - 1)) \|\| last_name) -- compute them in the application<br>**ERROR** PROJECTION: CTE org: expressions in the select list (CAST(last_name AS VARCHAR2(4000))) -- compute them in the application<br>**ERROR** PROJECTION: CTE org: expressions in the select list (o.lvl + 1; o.path \|\| '/' \|\| e.last_name) -- compute them in the application<br>**ERROR** RESIDUAL_H2: the H2 residual engine cannot run SEARCH DEPTH / BREADTH FIRST (H2 has no SEARCH clause: order the recursion in the application); implement this part in the application |
 | 33 | SELECT | ❌ ERROR | `-- G-4. CONNECT BY LEVEL による連番生成 [ORA]（カレンダー表などで頻出） SELECT DATE '2026-09-01' + LEVEL - 1 A…` | — | **ERROR** HIERARCHICAL: main query: START WITH / CONNECT BY with LEVEL -- walk the tree in the application (appside.Hierarchy) or precompute it into a table<br>**ERROR** PROJECTION: main query: expressions in the select list (TO_DATE('2026-09-01', 'YYYY-MM-DD') + LEVEL - 1) -- compute them in the application<br>**ERROR** RESIDUAL_H2: the H2 residual engine cannot run CONNECT BY (rewrite as recursive WITH, or walk the tree in the application); implement this part in the application |
 | 34 | PARSE_ERROR | ❌ ERROR | `--============================================================================== -- H. その他…` | — | **ERROR** PARSE: Invalid expression / Unexpected token. Line 6, Col: 32. |
-| 35 | SELECT | 🧩 PLANNED | `-- H-2. サンプリング [ORA] SELECT COUNT(*) FROM employees SAMPLE (50)` | — | **ERROR** CLAUSE: TABLESAMPLE on employees is not supported; it returns a random subset of the rows<br>**INFO** PLAN_FETCH: CROSS_PARTITION: SELECT employee_id FROM hr.employees<br>**INFO** PLAN_RESIDUAL: H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)<br>**WARN** PLAN_CROSS_PARTITION: a fetch needs a cross-partition scan |
+| 35 | SELECT | ❌ ERROR | `-- H-2. サンプリング [ORA] SELECT COUNT(*) FROM employees SAMPLE (50)` | — | **ERROR** CLAUSE: TABLESAMPLE on employees is not supported; it returns a random subset of the rows<br>**ERROR** RESIDUAL_H2: the H2 residual engine cannot run SAMPLE (H2 has no SAMPLE; the result is random on Oracle too); implement this part in the application |
 | 36 | SELECT | ❌ ERROR | `-- H-3. ROWID [ORA]（重複行削除などで頻出） SELECT ROWID, employee_id FROM employees WHERE ROWNUM <= 3` | — | **ERROR** ROWID: pseudo-column ROWID does not exist in ScalarDB; use the primary key<br>**INFO** PLAN: not decomposable: pseudo-column ROWID cannot be fetched from ScalarDB |
-| 37 | PARSE_ERROR | ❌ ERROR | `-- H-4. WITH 句内での PL/SQL 関数定義（12c+）[ORA] WITH   FUNCTION annual(p_sal NUMBER, p_comm NUMBE…` | — | **ERROR** PARSE: Expecting (. Line 3, Col: 17. |
-| 38 | COLUMN | ❌ ERROR | `END` | — | **ERROR** STATEMENT: Column statements are not supported by ScalarDB SQL |
-| 39 | SELECT | 🧩 PLANNED | `SELECT last_name, annual(salary, commission_pct) AS annual_comp FROM   employees WHERE  de…` | — | **ERROR** PROJECTION: main query: expressions in the select list (ANNUAL(salary, commission_pct)) -- compute them in the application<br>**INFO** PLAN_FETCH: INDEX_SCAN: SELECT employee_id, last_name, salary, commission_pct, department_id FROM hr.employees WHERE department_id = 80<br>**INFO** PLAN_RESIDUAL: H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off) |
+| 37 | WITH_PLSQL | ❌ ERROR | `-- H-4. WITH 句内での PL/SQL 関数定義（12c+）[ORA] WITH   FUNCTION annual(p_sal NUMBER, p_comm NUMBE…` | — | **ERROR** WITH_PLSQL: a PL/SQL function or procedure declared in the WITH clause: move it to the application and call it there; the query itself can then be converted or planned |
 
 ## 指摘の集計
 
 | 重要度 | コード | 件数 |
 |---|---|---|
-| ERROR | PROJECTION | 19 |
+| ERROR | PROJECTION | 18 |
+| ERROR | RESIDUAL_H2 | 11 |
 | ERROR | SUBQUERY | 7 |
-| ERROR | RESIDUAL_H2 | 7 |
 | ERROR | SET_OP | 3 |
 | ERROR | FROM | 3 |
 | ERROR | JOIN | 2 |
@@ -60,25 +58,25 @@
 | ERROR | WINDOW | 2 |
 | ERROR | CTE | 2 |
 | ERROR | HIERARCHICAL | 2 |
-| ERROR | PARSE | 2 |
 | ERROR | NOT | 1 |
 | ERROR | AGG | 1 |
 | ERROR | KEEP | 1 |
 | ERROR | LIMIT | 1 |
 | ERROR | OFFSET | 1 |
+| ERROR | PARSE | 1 |
 | ERROR | CLAUSE | 1 |
 | ERROR | ROWID | 1 |
-| ERROR | STATEMENT | 1 |
-| WARN | PLAN_CROSS_PARTITION | 21 |
-| WARN | APP_SEMANTICS | 11 |
+| ERROR | WITH_PLSQL | 1 |
+| WARN | PLAN_CROSS_PARTITION | 17 |
+| WARN | APP_SEMANTICS | 14 |
 | WARN | CROSS_PARTITION | 5 |
 | WARN | PLAN_UNRESOLVED | 3 |
 | WARN | NULLS | 2 |
 | WARN | ORACLE_JOIN_MARK | 1 |
-| INFO | CONFIG | 28 |
-| INFO | PLAN_FETCH | 27 |
-| INFO | COST | 26 |
-| INFO | PLAN_RESIDUAL | 23 |
+| INFO | CONFIG | 23 |
+| INFO | COST | 22 |
+| INFO | PLAN_FETCH | 20 |
+| INFO | PLAN_RESIDUAL | 18 |
 | INFO | DESIGN | 8 |
 | INFO | IDENT | 1 |
 | INFO | PLAN | 1 |
@@ -185,21 +183,12 @@
 
 - `CONFIG` read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node
 
-### #9 🧩 PLANNED `-- B-3. 完全外部結合：部門なし社員・社員なし部門の両方を出す SELECT e.last_name, d.department_na…`
-
-実行計画あり: ScalarDB から行を取得し、元の SQL を H2 で実行する（計画の JSON は --plan-dir の出力）。
+### #9 ❌ ERROR `-- B-3. 完全外部結合：部門なし社員・社員なし部門の両方を出す SELECT e.last_name, d.department_na…`
 
 **アプリ側で処理する構文**
 
 - `JOIN` OUTER JOIN is not supported
-
-**取得コストの見積もり**
-
-- `COST` full scan of employees, departments (~25 us per row); pass --expected-rows table=N for an estimate
-
-**推奨設定**
-
-- `CONFIG` read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node
+- `RESIDUAL_H2` the H2 residual engine cannot run FULL OUTER JOIN (H2 has no FULL JOIN: UNION the LEFT and RIGHT joins, or match the two fetches in the application); implement this part in the application
 
 ### #10 ⚠️ WARN `-- B-4. 自己結合（上司名の取得） SELECT w.last_name AS employee, m.last_name AS ma…`
 
@@ -211,21 +200,16 @@
 
 - `CONFIG` read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node
 
-### #11 🧩 PLANNED `-- B-5. LATERAL / CROSS APPLY（12c+）：部門ごとの高給上位2名 SELECT d.department_na…`
-
-実行計画あり: ScalarDB から行を取得し、元の SQL を H2 で実行する（計画の JSON は --plan-dir の出力）。
+### #11 ❌ ERROR `-- B-5. LATERAL / CROSS APPLY（12c+）：部門ごとの高給上位2名 SELECT d.department_na…`
 
 **アプリ側で処理する構文**
 
 - `JOIN` joined relation must be a base table (no subqueries)
+- `RESIDUAL_H2` the H2 residual engine cannot run LATERAL / CROSS APPLY (H2 has no LATERAL: run the inner query per outer row in the application); implement this part in the application
 
-**取得コストの見積もり**
+**結果を変えないための注意（意味の差）**
 
-- `COST` full scan of departments, employees (~25 us per row); pass --expected-rows table=N for an estimate
-
-**推奨設定**
-
-- `CONFIG` read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node
+- `APP_SEMANTICS` NULLs sort last for ASC and first for DESC (also inside OVER (ORDER BY ...)); Java comparators need an explicit nullsFirst / nullsLast (appside.OracleOrdering)
 
 ### #12 🧩 PLANNED `--====================================================================…`
 
@@ -556,9 +540,7 @@
 
 - `DESIGN` employees: precompute the hierarchy (node id -> parent, level, path) into a table keyed by node id and rebuild it when the tree changes, or cache the tree in the application; the tree is then read by key instead of scanning employees
 
-### #32 🧩 PLANNED `-- G-3. 再帰 WITH（標準SQL、他DBへ移行しやすい書き方） WITH org (employee_id, last_name,…`
-
-実行計画あり: ScalarDB から行を取得し、元の SQL を H2 で実行する（計画の JSON は --plan-dir の出力）。
+### #32 ❌ ERROR `-- G-3. 再帰 WITH（標準SQL、他DBへ移行しやすい書き方） WITH org (employee_id, last_name,…`
 
 **アプリ側で処理する構文**
 
@@ -567,14 +549,12 @@
 - `PROJECTION` main query: expressions in the select list (LPAD(' ', 2 * (lvl - 1)) || last_name) -- compute them in the application
 - `PROJECTION` CTE org: expressions in the select list (CAST(last_name AS VARCHAR2(4000))) -- compute them in the application
 - `PROJECTION` CTE org: expressions in the select list (o.lvl + 1; o.path || '/' || e.last_name) -- compute them in the application
+- `RESIDUAL_H2` the H2 residual engine cannot run SEARCH DEPTH / BREADTH FIRST (H2 has no SEARCH clause: order the recursion in the application); implement this part in the application
 
-**取得コストの見積もり**
+**結果を変えないための注意（意味の差）**
 
-- `COST` full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate
-
-**推奨設定**
-
-- `CONFIG` read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node
+- `APP_SEMANTICS` NULLs sort last for ASC and first for DESC (also inside OVER (ORDER BY ...)); Java comparators need an explicit nullsFirst / nullsLast (appside.OracleOrdering)
+- `APP_SEMANTICS` string ORDER BY follows NLS_SORT: BINARY is code-point order (AL32UTF8 byte order), which String.compareTo breaks for surrogate pairs (appside.OracleOrdering.BINARY); linguistic sorts such as JAPANESE_M need a Collator
 
 ### #33 ❌ ERROR `-- G-4. CONNECT BY LEVEL による連番生成 [ORA]（カレンダー表などで頻出） SELECT DATE '2026-…`
 
@@ -598,21 +578,12 @@
 
 - `PARSE` Invalid expression / Unexpected token. Line 6, Col: 32.
 
-### #35 🧩 PLANNED `-- H-2. サンプリング [ORA] SELECT COUNT(*) FROM employees SAMPLE (50)`
-
-実行計画あり: ScalarDB から行を取得し、元の SQL を H2 で実行する（計画の JSON は --plan-dir の出力）。
+### #35 ❌ ERROR `-- H-2. サンプリング [ORA] SELECT COUNT(*) FROM employees SAMPLE (50)`
 
 **アプリ側で処理する構文**
 
 - `CLAUSE` TABLESAMPLE on employees is not supported; it returns a random subset of the rows
-
-**取得コストの見積もり**
-
-- `COST` full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate
-
-**推奨設定**
-
-- `CONFIG` read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node
+- `RESIDUAL_H2` the H2 residual engine cannot run SAMPLE (H2 has no SAMPLE; the result is random on Oracle too); implement this part in the application
 
 ### #36 ❌ ERROR `-- H-3. ROWID [ORA]（重複行削除などで頻出） SELECT ROWID, employee_id FROM employe…`
 
@@ -624,23 +595,5 @@
 
 **アプリ側で処理する構文**
 
-- `PARSE` Expecting (. Line 3, Col: 17.
-
-### #38 ❌ ERROR `END`
-
-**アプリ側で処理する構文**
-
-- `STATEMENT` Column statements are not supported by ScalarDB SQL
-
-### #39 🧩 PLANNED `SELECT last_name, annual(salary, commission_pct) AS annual_comp FROM  …`
-
-実行計画あり: ScalarDB から行を取得し、元の SQL を H2 で実行する（計画の JSON は --plan-dir の出力）。
-
-**アプリ側で処理する構文**
-
-- `PROJECTION` main query: expressions in the select list (ANNUAL(salary, commission_pct)) -- compute them in the application
-
-**推奨設定**
-
-- `CONFIG` read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node
+- `WITH_PLSQL` a PL/SQL function or procedure declared in the WITH clause: move it to the application and call it there; the query itself can then be converted or planned
 
