@@ -66,6 +66,8 @@ def scenario(name: str, unit: str, kind: str, note: str, *, routine: str | None 
     return s
 
 
+ROLL_NOTE = "呼び出し側（ハーネス）が ROLLBACK する（callerBoundary の決定）"
+
 SCENARIOS = [
     scenario("annual_comp_with_comm", "annual_comp", "function", "年収 = 10000 × 12 × 1.3 = 156000",
              args={"p_salary": 10000, "p_comm": 0.3}, returns="NUMBER"),
@@ -109,9 +111,11 @@ SCENARIOS = [
     scenario("b04_5_records_collections", "b04_5_records_collections", "procedure", "04-5: レコード・連想配列・ネスト表・VARRAY。読むだけ"),
     scenario("b05_1_call_raise_salary", "b05_1_call_raise_salary", "procedure",
              "05-1: raise_salary を位置指定と名前指定で呼び、ROLLBACK。表は元に戻る（Oracle では trigger が emp_audit に書く）。呼び出し側（ハーネス）が ROLLBACK する（callerBoundary の決定）", boundary="rollback"),
-    scenario("b05_3_call_emp_api", "b05_3_call_emp_api", "procedure", "05-3: emp_api.hire / give_raise（オーバーロード）/ call_count、ROLLBACK"),
-    scenario("b05_4_call_log_msg", "b05_4_call_log_msg", "procedure", "05-4: 自律型トランザクションの log_msg を呼んで ROLLBACK。emp_audit の LOG 行だけ残る",
-             mask={"emp_audit": ["changed_at", "changed_by"]}),
+    scenario("b05_3_call_emp_api", "b05_3_call_emp_api", "procedure",
+             "05-3: emp_api.hire / give_raise（オーバーロード）/ call_count、ROLLBACK。" + ROLL_NOTE, boundary="rollback"),
+    scenario("b05_4_call_log_msg", "b05_4_call_log_msg", "procedure",
+             "05-4: 自律型トランザクションの log_msg を呼んで ROLLBACK。emp_audit の LOG 行だけ残る。" + ROLL_NOTE,
+             mask={"emp_audit": ["changed_at", "changed_by"]}, boundary="rollback"),
     scenario("b06_2_2_forall_returning", "b06_2_2_forall_returning", "procedure", "06-2-2: FORALL … RETURNING BULK COLLECT INTO、SQL%BULK_ROWCOUNT、ROLLBACK"),
     scenario("emp_api_give_raise_ok", "emp_api", "procedure", "emp_api.give_raise(104, 10): 6000 → 6600（validate_pct が g_calls を数える）",
              routine="give_raise~1", args={"p_emp_id": 104, "p_pct": 10}, name_override="emp_api.give_raise",

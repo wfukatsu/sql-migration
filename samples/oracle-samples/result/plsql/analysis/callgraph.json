@@ -23,6 +23,8 @@
   {
    "routine": "b04_3_implicit_cursor_attrs",
    "calls": [
+    "emp_biu_trg.body",
+    "emp_dept_cap_trg.body",
     "emp_salary_audit_trg.body"
    ],
    "external": [
@@ -46,6 +48,7 @@
   {
    "routine": "b04_4_3_for_update_current_of",
    "calls": [
+    "emp_biu_trg.body",
     "emp_dept_cap_trg.body",
     "emp_salary_audit_trg.body"
    ],
@@ -77,7 +80,9 @@
   },
   {
    "routine": "b04_6_2_user_exceptions",
-   "calls": [],
+   "calls": [
+    "emp_biu_trg.body"
+   ],
    "external": [
     "DBMS_OUTPUT.PUT_LINE"
    ]
@@ -106,6 +111,7 @@
   {
    "routine": "b05_4_call_log_msg",
    "calls": [
+    "emp_biu_trg.body",
     "emp_dept_cap_trg.body",
     "emp_salary_audit_trg.body",
     "log_msg"
@@ -213,6 +219,7 @@
    "routine": "emp_api.give_raise~1",
    "calls": [
     "emp_api.validate_pct",
+    "emp_biu_trg.body",
     "emp_dept_cap_trg.body",
     "emp_salary_audit_trg.body"
    ],
@@ -221,13 +228,18 @@
   {
    "routine": "emp_api.give_raise~2",
    "calls": [
-    "emp_api.validate_pct"
+    "emp_api.validate_pct",
+    "emp_biu_trg.body",
+    "emp_dept_cap_trg.body",
+    "emp_salary_audit_trg.body"
    ],
    "external": []
   },
   {
    "routine": "emp_api.hire",
-   "calls": [],
+   "calls": [
+    "emp_biu_trg.body"
+   ],
    "external": []
   },
   {
@@ -273,6 +285,7 @@
   {
    "routine": "raise_salary",
    "calls": [
+    "emp_biu_trg.body",
     "emp_dept_cap_trg.body",
     "emp_salary_audit_trg.body"
    ],

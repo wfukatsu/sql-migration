@@ -319,9 +319,7 @@
    "b05_3_call_emp_api": {
     "routine": "b05_3_call_emp_api.b05_3_call_emp_api",
     "verdict": "REVIEW",
-    "differences": [
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Assignment: emp_api.hire)"
-    ],
+    "differences": [],
     "accepted": [],
     "scale_only": [
      "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
@@ -345,11 +343,7 @@
    "b05_4_call_log_msg": {
     "routine": "b05_4_call_log_msg.b05_4_call_log_msg",
     "verdict": "REVIEW",
-    "differences": [
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Call: log_msg は別トランザクションで呼ぶ routine である)",
-     "table emp_audit row count: expected=1 actual=0",
-     "table emp_audit: missing (expected only): audit_id=2"
-    ],
+    "differences": [],
     "accepted": [],
     "scale_only": [
      "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
@@ -424,25 +418,22 @@
     "routine": "b06_2_forall_save_exceptions.b06_2_forall_save_exceptions",
     "verdict": "REVIEW",
     "differences": [
-     "table bulk_target row count: expected=11 actual=15",
-     "table bulk_target: unexpected (actual only): employee_id=100",
-     "table bulk_target: unexpected (actual only): employee_id=101",
-     "table bulk_target: unexpected (actual only): employee_id=102",
-     "table bulk_target: unexpected (actual only): employee_id=200"
+     "exception: expected=none actual=-2290 (ORA-02290: check constraint (BULK_TARGET_SAL_CK) violated)",
+     "table bulk_target row count: expected=11 actual=0",
+     "table bulk_target: missing (expected only): employee_id=103",
+     "table bulk_target: missing (expected only): employee_id=104",
+     "table bulk_target: missing (expected only): employee_id=107",
+     "table bulk_target: missing (expected only): employee_id=120",
+     "table bulk_target: missing (expected only): employee_id=125",
+     "table bulk_target: missing (expected only): employee_id=145",
+     "table bulk_target: missing (expected only): employee_id=146",
+     "table bulk_target: missing (expected only): employee_id=150",
+     "table bulk_target: missing (expected only): employee_id=151",
+     "table bulk_target: missing (expected only): employee_id=155",
+     "table bulk_target: missing (expected only): employee_id=178"
     ],
     "accepted": [],
     "scale_only": [
-     "table bulk_target row employee_id=103: salary: expected=9000 actual=9000.0 (scale)",
-     "table bulk_target row employee_id=104: salary: expected=6000 actual=6000.0 (scale)",
-     "table bulk_target row employee_id=107: salary: expected=4200 actual=4200.0 (scale)",
-     "table bulk_target row employee_id=120: salary: expected=4800 actual=4800.0 (scale)",
-     "table bulk_target row employee_id=125: salary: expected=3200 actual=3200.0 (scale)",
-     "table bulk_target row employee_id=145: salary: expected=14000 actual=14000.0 (scale)",
-     "table bulk_target row employee_id=146: salary: expected=13500 actual=13500.0 (scale)",
-     "table bulk_target row employee_id=150: salary: expected=10000 actual=10000.0 (scale)",
-     "table bulk_target row employee_id=151: salary: expected=9500 actual=9500.0 (scale)",
-     "table bulk_target row employee_id=155: salary: expected=7000 actual=7000.0 (scale)",
-     "table bulk_target row employee_id=178: salary: expected=7000 actual=7000.0 (scale)",
      "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
      "table employees row employee_id=101: salary: expected=17000 actual=17000.0 (scale)",
      "table employees row employee_id=102: salary: expected=17000 actual=17000.0 (scale)",
@@ -787,7 +778,7 @@
   },
   "not_compared": {},
   "fingerprints": {
-   "toolchain": "e0569dbed4bd38e4ba71271d3f451ed441259baa9d2e4a7d4d4625e42285101a",
+   "toolchain": "ca8478846b40e2f99ac1be8d128188f87f7e36cc6c80e9ed68b3c95f7585514a",
    "sources": {
     "annual_comp": "a43e3576d8b1c2f648b65d5603c0001c0aaec44531a54d9bf47462ce3bb2ac15",
     "b04_1_variables": "22a5f4c43ce7bc93eb38ea67f54f4b00a202f151bf79b7773cc553c6a005fc03",

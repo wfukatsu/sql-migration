@@ -52,8 +52,9 @@ call:
 capture_tables:
 - employees
 - emp_audit
-note: '05-4: 自律型トランザクションの log_msg を呼んで ROLLBACK。emp_audit の LOG 行だけ残る'
+note: '05-4: 自律型トランザクションの log_msg を呼んで ROLLBACK。emp_audit の LOG 行だけ残る。呼び出し側（ハーネス）が ROLLBACK する（callerBoundary の決定）'
 mask:
   emp_audit:
   - changed_at
   - changed_by
+boundary: rollback

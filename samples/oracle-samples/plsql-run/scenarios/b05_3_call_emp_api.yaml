@@ -52,4 +52,5 @@ call:
 capture_tables:
 - employees
 - emp_audit
-note: '05-3: emp_api.hire / give_raise（オーバーロード）/ call_count、ROLLBACK'
+note: '05-3: emp_api.hire / give_raise（オーバーロード）/ call_count、ROLLBACK。呼び出し側（ハーネス）が ROLLBACK する（callerBoundary の決定）'
+boundary: rollback

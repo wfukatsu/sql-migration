@@ -22,39 +22,39 @@
        }
       },
       {
-       "id": "TRIGGER_REDESIGN",
-       "shortDescription": {
-        "text": "TRIGGER_REDESIGN"
-       }
-      },
-      {
-       "id": "TRIGGER_NOT_APPLIED",
-       "shortDescription": {
-        "text": "TRIGGER_NOT_APPLIED"
-       }
-      },
-      {
-       "id": "RMW",
-       "shortDescription": {
-        "text": "RMW"
-       }
-      },
-      {
        "id": "TRIGGER_OLD",
        "shortDescription": {
         "text": "TRIGGER_OLD"
        }
       },
       {
-       "id": "TRIGGER_APPLIED",
-       "shortDescription": {
-        "text": "TRIGGER_APPLIED"
-       }
-      },
-      {
        "id": "TRIGGER_CALL",
        "shortDescription": {
         "text": "TRIGGER_CALL"
+       }
+      },
+      {
+       "id": "RMW_SPLIT",
+       "shortDescription": {
+        "text": "RMW_SPLIT"
+       }
+      },
+      {
+       "id": "CONSTRAINT_GUARD",
+       "shortDescription": {
+        "text": "CONSTRAINT_GUARD"
+       }
+      },
+      {
+       "id": "TRIGGER_FOLDED",
+       "shortDescription": {
+        "text": "TRIGGER_FOLDED"
+       }
+      },
+      {
+       "id": "TRIGGER_APPLIED",
+       "shortDescription": {
+        "text": "TRIGGER_APPLIED"
        }
       },
       {
@@ -118,21 +118,27 @@
        }
       },
       {
+       "id": "OPTIMISTIC",
+       "shortDescription": {
+        "text": "OPTIMISTIC"
+       }
+      },
+      {
        "id": "LOCK",
        "shortDescription": {
         "text": "LOCK"
        }
       },
       {
-       "id": "CURRENT_OF",
+       "id": "LIMIT",
        "shortDescription": {
-        "text": "CURRENT_OF"
+        "text": "LIMIT"
        }
       },
       {
-       "id": "EXPR",
+       "id": "CURRENT_OF",
        "shortDescription": {
-        "text": "EXPR"
+        "text": "CURRENT_OF"
        }
       },
       {
@@ -148,6 +154,24 @@
        }
       },
       {
+       "id": "STATE_CARRIED",
+       "shortDescription": {
+        "text": "STATE_CARRIED"
+       }
+      },
+      {
+       "id": "SCAN_AFTER_WRITE",
+       "shortDescription": {
+        "text": "SCAN_AFTER_WRITE"
+       }
+      },
+      {
+       "id": "CALL_HOISTED",
+       "shortDescription": {
+        "text": "CALL_HOISTED"
+       }
+      },
+      {
        "id": "BULK_CHUNKED",
        "shortDescription": {
         "text": "BULK_CHUNKED"
@@ -157,6 +181,12 @@
        "id": "BULK_COLLECT",
        "shortDescription": {
         "text": "BULK_COLLECT"
+       }
+      },
+      {
+       "id": "CONSTRAINT_NOT_GUARDED",
+       "shortDescription": {
+        "text": "CONSTRAINT_NOT_GUARDED"
        }
       },
       {
@@ -244,6 +274,12 @@
        }
       },
       {
+       "id": "EXPR",
+       "shortDescription": {
+        "text": "EXPR"
+       }
+      },
+      {
        "id": "PRED",
        "shortDescription": {
         "text": "PRED"
@@ -259,12 +295,6 @@
        "id": "DEFAULT_FILLED",
        "shortDescription": {
         "text": "DEFAULT_FILLED"
-       }
-      },
-      {
-       "id": "RETURNING",
-       "shortDescription": {
-        "text": "RETURNING"
        }
       }
      ]
@@ -377,10 +407,10 @@
      ]
     },
     {
-     "ruleId": "TRIGGER_REDESIGN",
-     "level": "warning",
+     "ruleId": "ACCESS",
+     "level": "note",
      "message": {
-      "text": "emp_biu_trg は書き込まれる行の値そのものを変える trigger である。呼び出しでは置き換えられない——採番 Service への再設計である（trigger-patterns C / #12）"
+      "text": "SELECT: equality on secondary index -> index SCAN"
      },
      "locations": [
       {
@@ -398,10 +428,10 @@
      ]
     },
     {
-     "ruleId": "TRIGGER_NOT_APPLIED",
-     "level": "warning",
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
      "message": {
-      "text": "emp_dept_cap_trg が掛かる書き込みだが、**掛けていない**。1 行に絞れない更新は Oracle なら行ごとに発火するので、1 回の呼び出しでは同じにならない（#12）"
+      "text": "emp_biu_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
      },
      "locations": [
       {
@@ -419,10 +449,10 @@
      ]
     },
     {
-     "ruleId": "TRIGGER_NOT_APPLIED",
-     "level": "warning",
+     "ruleId": "ACCESS",
+     "level": "note",
      "message": {
-      "text": "emp_salary_audit_trg が掛かる書き込みだが、**掛けていない**。1 行に絞れない更新は Oracle なら行ごとに発火するので、1 回の呼び出しでは同じにならない（#12）"
+      "text": "SELECT: full primary key specified -> GET (single record)"
      },
      "locations": [
       {
@@ -440,10 +470,283 @@
      ]
     },
     {
-     "ruleId": "RMW",
-     "level": "error",
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
      "message": {
-      "text": "SET salary = salary + 100: expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction"
+      "text": "emp_biu_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "RMW_SPLIT",
+     "level": "note",
+     "message": {
+      "text": "employees.salary を読んでから 1 行ずつ書くループにした（WHERE が主キーを決めていない）。ScalarDB SQL は列を読む式を受け付けないので、値はアプリで計算する。**同じトランザクションの中で読んで書く**ので、衝突は commit で弾かれる（再試行は呼び出し側の責務・#9）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONSTRAINT_GUARD",
+     "level": "note",
+     "message": {
+      "text": "employees の CHECK emp_salary_ck を書く前に評価する。移行先に制約は無く、違反は Oracle と同じ番号の例外になる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_FOLDED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg の代入を書く値に畳み込んだ: email = UPPER(v_trg_1)。検査は呼び出しで行う（#47）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg（BEFORE INSERT OR UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg（AFTER UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg（AFTER UPDATE OR DELETE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "UPDATE: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_3_implicit_cursor_attrs.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
      },
      "locations": [
       {
@@ -839,6 +1142,27 @@
      ]
     },
     {
+     "ruleId": "OPTIMISTIC",
+     "level": "warning",
+     "message": {
+      "text": "行ロックを落として楽観制御へ移すと決めてある（04-4-3 の FOR UPDATE + WHERE CURRENT OF。行を先に読み、楽観制御で書く（同上））。**弾かれた衝突を再試行するのは呼び出し側の責務**である（計画 §9 / #9）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "LOCK",
      "level": "warning",
      "message": {
@@ -875,6 +1199,111 @@
          "startLine": 8,
          "endLine": 10,
          "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "LIMIT",
+     "level": "note",
+     "message": {
+      "text": "FETCH FIRST 1 ROWS ONLY rewritten to LIMIT 1"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
         }
        }
       }
@@ -986,10 +1415,73 @@
      ]
     },
     {
-     "ruleId": "TRIGGER_REDESIGN",
-     "level": "warning",
+     "ruleId": "RMW_SPLIT",
+     "level": "note",
      "message": {
-      "text": "emp_biu_trg は書き込まれる行の値そのものを変える trigger である。呼び出しでは置き換えられない——採番 Service への再設計である（trigger-patterns C / #12）"
+      "text": "employees.salary を読んでから書く 2 文に割った。ScalarDB SQL は列を読む式を受け付けないので、値はアプリで計算する。**同じトランザクションの中で読んで書く**ので、衝突は commit で弾かれる（再試行は呼び出し側の責務・#9）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONSTRAINT_GUARD",
+     "level": "note",
+     "message": {
+      "text": "employees の CHECK emp_salary_ck を書く前に評価する。移行先に制約は無く、違反は Oracle と同じ番号の例外になる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_FOLDED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg の代入を書く値に畳み込んだ: email = UPPER(v_trg_1)。検査は呼び出しで行う（#47）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_3_for_update_current_of.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 9,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg（BEFORE INSERT OR UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
      },
      "locations": [
       {
@@ -1049,10 +1541,10 @@
      ]
     },
     {
-     "ruleId": "EXPR",
-     "level": "error",
+     "ruleId": "ACCESS",
+     "level": "note",
      "message": {
-      "text": "SET salary: only literals and bind markers are allowed, got ':r_salary * 1.1'"
+      "text": "UPDATE: full primary key specified -> GET (single record)"
      },
      "locations": [
       {
@@ -1406,10 +1898,157 @@
      ]
     },
     {
-     "ruleId": "TRIGGER_REDESIGN",
-     "level": "warning",
+     "ruleId": "CONSTRAINT_GUARD",
+     "level": "note",
      "message": {
-      "text": "emp_biu_trg は書き込まれる行の値そのものを変える trigger である。呼び出しでは置き換えられない——採番 Service への再設計である（trigger-patterns C / #12）"
+      "text": "FOREIGN KEY emp_job_fk の親（jobs）を書く前に読む。無ければ ORA-02291 を投げる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_6_2_user_exceptions.prc"
+        },
+        "region": {
+         "startLine": 18,
+         "endLine": 19,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_6_2_user_exceptions.prc"
+        },
+        "region": {
+         "startLine": 18,
+         "endLine": 19,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONSTRAINT_GUARD",
+     "level": "note",
+     "message": {
+      "text": "FOREIGN KEY emp_dept_fk の親（departments）を書く前に読む。無ければ ORA-02291 を投げる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_6_2_user_exceptions.prc"
+        },
+        "region": {
+         "startLine": 18,
+         "endLine": 19,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_6_2_user_exceptions.prc"
+        },
+        "region": {
+         "startLine": 18,
+         "endLine": 19,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_6_2_user_exceptions.prc"
+        },
+        "region": {
+         "startLine": 18,
+         "endLine": 19,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONSTRAINT_GUARD",
+     "level": "note",
+     "message": {
+      "text": "employees の CHECK emp_salary_ck, FOREIGN KEY emp_job_fk, FOREIGN KEY emp_dept_fk を書く前に評価する。移行先に制約は無く、違反は Oracle と同じ番号の例外になる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_6_2_user_exceptions.prc"
+        },
+        "region": {
+         "startLine": 18,
+         "endLine": 19,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_FOLDED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg の代入を書く値に畳み込んだ: email = UPPER('X999')。検査は呼び出しで行う（#47）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_6_2_user_exceptions.prc"
+        },
+        "region": {
+         "startLine": 18,
+         "endLine": 19,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg（BEFORE INSERT OR UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
      },
      "locations": [
       {
@@ -1469,6 +2108,69 @@
      ]
     },
     {
+     "ruleId": "STATE_CARRIED",
+     "level": "note",
+     "message": {
+      "text": "package 変数 g_calls は呼び出し側が運ぶ（limits.yaml packageState.carried: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定））。IN OUT 引数として受け取り、結果で返す"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_3_call_emp_api.prc"
+        },
+        "region": {
+         "startLine": 2,
+         "endLine": 16,
+         "startColumn": 1
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "SCAN_AFTER_WRITE",
+     "level": "error",
+     "message": {
+      "text": "employees was written earlier in this transaction; ScalarDB refuses to scan it"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_3_call_emp_api.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 8,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CALL_HOISTED",
+     "level": "note",
+     "message": {
+      "text": "emp_api.call_count は OUT / IN OUT 引数のある関数なので、式の中から文に出した。戻り値は v_call_1 に受け、OUT 引数は結果 record から受ける（#48）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_3_call_emp_api.prc"
+        },
+        "region": {
+         "startLine": 14,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "TRANSACTION_IN_ROUTINE",
      "level": "warning",
      "message": {
@@ -1483,6 +2185,111 @@
         "region": {
          "startLine": 15,
          "endLine": 15,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "LIMIT",
+     "level": "note",
+     "message": {
+      "text": "FETCH FIRST 1 ROWS ONLY rewritten to LIMIT 1"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
          "startColumn": 3
         }
        }
@@ -1574,10 +2381,73 @@
      ]
     },
     {
-     "ruleId": "TRIGGER_REDESIGN",
-     "level": "warning",
+     "ruleId": "RMW_SPLIT",
+     "level": "note",
      "message": {
-      "text": "emp_biu_trg は書き込まれる行の値そのものを変える trigger である。呼び出しでは置き換えられない——採番 Service への再設計である（trigger-patterns C / #12）"
+      "text": "employees.salary を読んでから書く 2 文に割った。ScalarDB SQL は列を読む式を受け付けないので、値はアプリで計算する。**同じトランザクションの中で読んで書く**ので、衝突は commit で弾かれる（再試行は呼び出し側の責務・#9）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONSTRAINT_GUARD",
+     "level": "note",
+     "message": {
+      "text": "employees の CHECK emp_salary_ck を書く前に評価する。移行先に制約は無く、違反は Oracle と同じ番号の例外になる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_FOLDED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg の代入を書く値に畳み込んだ: email = UPPER(v_trg_1)。検査は呼び出しで行う（#47）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b05_4_call_log_msg.prc"
+        },
+        "region": {
+         "startLine": 4,
+         "endLine": 4,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg（BEFORE INSERT OR UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
      },
      "locations": [
       {
@@ -1637,10 +2507,10 @@
      ]
     },
     {
-     "ruleId": "RMW",
-     "level": "error",
+     "ruleId": "ACCESS",
+     "level": "note",
      "message": {
-      "text": "SET salary = salary + 1: expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction"
+      "text": "UPDATE: full primary key specified -> GET (single record)"
      },
      "locations": [
       {
@@ -1826,6 +2696,27 @@
      ]
     },
     {
+     "ruleId": "CONSTRAINT_NOT_GUARDED",
+     "level": "warning",
+     "message": {
+      "text": "CHECK emp_salary_ck の値が表の値を読む式である（RMW を割っていない）。書く前に評価できない"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "SQL_PARSE",
      "level": "error",
      "message": {
@@ -1946,6 +2837,27 @@
          "startLine": 12,
          "endLine": 14,
          "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONSTRAINT_GUARD",
+     "level": "note",
+     "message": {
+      "text": "bulk_target の CHECK bulk_target_sal_ck を書く前に評価する。移行先に制約は無く、違反は Oracle と同じ番号の例外になる（limits.yaml constraints.enforce: bulk_target_sal_ck（salary < 15000）。06-2 の FORALL … SAVE EXCEPTIONS が弾かれる行を数えている（利用者の決定、2026-09-25））"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_forall_save_exceptions.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 17,
+         "startColumn": 5
         }
        }
       }
@@ -2792,6 +3704,132 @@
      ]
     },
     {
+     "ruleId": "STATE_CARRIED",
+     "level": "note",
+     "message": {
+      "text": "package 変数 g_calls は呼び出し側が運ぶ（limits.yaml packageState.carried: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定））。IN OUT 引数として受け取り、結果で返す"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 7,
+         "endLine": 13,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONSTRAINT_GUARD",
+     "level": "note",
+     "message": {
+      "text": "FOREIGN KEY emp_job_fk の親（jobs）を書く前に読む。無ければ ORA-02291 を投げる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 19,
+         "endLine": 23,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 19,
+         "endLine": 23,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONSTRAINT_GUARD",
+     "level": "note",
+     "message": {
+      "text": "FOREIGN KEY emp_dept_fk の親（departments）を書く前に読む。無ければ ORA-02291 を投げる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 19,
+         "endLine": 23,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 19,
+         "endLine": 23,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 19,
+         "endLine": 23,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "RETURNING_HOISTED",
      "level": "note",
      "message": {
@@ -2813,10 +3851,10 @@
      ]
     },
     {
-     "ruleId": "TRIGGER_REDESIGN",
-     "level": "warning",
+     "ruleId": "CONSTRAINT_GUARD",
+     "level": "note",
      "message": {
-      "text": "emp_biu_trg は書き込まれる行の値そのものを変える trigger である。呼び出しでは置き換えられない——採番 Service への再設計である（trigger-patterns C / #12）"
+      "text": "employees の CHECK emp_salary_ck, FOREIGN KEY emp_job_fk, FOREIGN KEY emp_dept_fk を書く前に評価する。移行先に制約は無く、違反は Oracle と同じ番号の例外になる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））"
      },
      "locations": [
       {
@@ -2827,6 +3865,174 @@
         "region": {
          "startLine": 19,
          "endLine": 23,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_FOLDED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg の代入を書く値に畳み込んだ: email = UPPER(UPPER(p_email))。検査は呼び出しで行う（#47）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 19,
+         "endLine": 23,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg（BEFORE INSERT OR UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 19,
+         "endLine": 23,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "STATE_CARRIED",
+     "level": "note",
+     "message": {
+      "text": "package 変数 g_calls は呼び出し側が運ぶ（limits.yaml packageState.carried: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定））。IN OUT 引数として受け取り、結果で返す"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 30,
+         "endLine": 34,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "LIMIT",
+     "level": "note",
+     "message": {
+      "text": "FETCH FIRST 1 ROWS ONLY rewritten to LIMIT 1"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
          "startColumn": 5
         }
        }
@@ -2918,10 +4124,73 @@
      ]
     },
     {
-     "ruleId": "TRIGGER_REDESIGN",
-     "level": "warning",
+     "ruleId": "RMW_SPLIT",
+     "level": "note",
      "message": {
-      "text": "emp_biu_trg は書き込まれる行の値そのものを変える trigger である。呼び出しでは置き換えられない——採番 Service への再設計である（trigger-patterns C / #12）"
+      "text": "employees.salary を読んでから書く 2 文に割った。ScalarDB SQL は列を読む式を受け付けないので、値はアプリで計算する。**同じトランザクションの中で読んで書く**ので、衝突は commit で弾かれる（再試行は呼び出し側の責務・#9）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONSTRAINT_GUARD",
+     "level": "note",
+     "message": {
+      "text": "employees の CHECK emp_salary_ck を書く前に評価する。移行先に制約は無く、違反は Oracle と同じ番号の例外になる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_FOLDED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg の代入を書く値に畳み込んだ: email = UPPER(v_trg_1)。検査は呼び出しで行う（#47）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 33,
+         "endLine": 33,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg（BEFORE INSERT OR UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
      },
      "locations": [
       {
@@ -2981,10 +4250,10 @@
      ]
     },
     {
-     "ruleId": "RMW",
-     "level": "error",
+     "ruleId": "ACCESS",
+     "level": "note",
      "message": {
-      "text": "SET salary = salary * (1 + :p_pct / 100): expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction"
+      "text": "UPDATE: full primary key specified -> GET (single record)"
      },
      "locations": [
       {
@@ -3044,10 +4313,31 @@
      ]
     },
     {
-     "ruleId": "TRIGGER_REDESIGN",
-     "level": "warning",
+     "ruleId": "STATE_CARRIED",
+     "level": "note",
      "message": {
-      "text": "emp_biu_trg は書き込まれる行の値そのものを変える trigger である。呼び出しでは置き換えられない——採番 Service への再設計である（trigger-patterns C / #12）"
+      "text": "package 変数 g_calls は呼び出し側が運ぶ（limits.yaml packageState.carried: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定））。IN OUT 引数として受け取り、結果で返す"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 36,
+         "endLine": 42,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: equality on secondary index -> index SCAN"
      },
      "locations": [
       {
@@ -3065,10 +4355,10 @@
      ]
     },
     {
-     "ruleId": "TRIGGER_NOT_APPLIED",
-     "level": "warning",
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
      "message": {
-      "text": "emp_dept_cap_trg が掛かる書き込みだが、**掛けていない**。1 行に絞れない更新は Oracle なら行ごとに発火するので、1 回の呼び出しでは同じにならない（#12）"
+      "text": "emp_biu_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
      },
      "locations": [
       {
@@ -3086,10 +4376,10 @@
      ]
     },
     {
-     "ruleId": "TRIGGER_NOT_APPLIED",
-     "level": "warning",
+     "ruleId": "ACCESS",
+     "level": "note",
      "message": {
-      "text": "emp_salary_audit_trg が掛かる書き込みだが、**掛けていない**。1 行に絞れない更新は Oracle なら行ごとに発火するので、1 回の呼び出しでは同じにならない（#12）"
+      "text": "SELECT: full primary key specified -> GET (single record)"
      },
      "locations": [
       {
@@ -3107,10 +4397,283 @@
      ]
     },
     {
-     "ruleId": "RMW",
-     "level": "error",
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
      "message": {
-      "text": "SET salary = salary * (1 + :p_pct / 100): expressions referencing columns are not allowed; do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction"
+      "text": "emp_biu_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 40,
+         "endLine": 40,
+         "startColumn": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 40,
+         "endLine": 40,
+         "startColumn": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 40,
+         "endLine": 40,
+         "startColumn": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 40,
+         "endLine": 40,
+         "startColumn": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 40,
+         "endLine": 40,
+         "startColumn": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "RMW_SPLIT",
+     "level": "note",
+     "message": {
+      "text": "employees.salary を読んでから 1 行ずつ書くループにした（WHERE が主キーを決めていない）。ScalarDB SQL は列を読む式を受け付けないので、値はアプリで計算する。**同じトランザクションの中で読んで書く**ので、衝突は commit で弾かれる（再試行は呼び出し側の責務・#9）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 40,
+         "endLine": 40,
+         "startColumn": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONSTRAINT_GUARD",
+     "level": "note",
+     "message": {
+      "text": "employees の CHECK emp_salary_ck を書く前に評価する。移行先に制約は無く、違反は Oracle と同じ番号の例外になる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 40,
+         "endLine": 40,
+         "startColumn": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_FOLDED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg の代入を書く値に畳み込んだ: email = UPPER(v_trg_1)。検査は呼び出しで行う（#47）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 40,
+         "endLine": 40,
+         "startColumn": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg（BEFORE INSERT OR UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 40,
+         "endLine": 40,
+         "startColumn": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg（AFTER UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 40,
+         "endLine": 40,
+         "startColumn": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg（AFTER UPDATE OR DELETE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 40,
+         "endLine": 40,
+         "startColumn": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "UPDATE: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 40,
+         "endLine": 40,
+         "startColumn": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 40,
+         "endLine": 40,
+         "startColumn": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
      },
      "locations": [
       {
@@ -3206,6 +4769,69 @@
          "startLine": 47,
          "endLine": 49,
          "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "STATE_CARRIED",
+     "level": "note",
+     "message": {
+      "text": "package 変数 g_calls は呼び出し側が運ぶ（limits.yaml packageState.carried: g_calls はセッション単位の呼び出し回数で、Singleton の field に置くとプロセス単位になる。 呼び出し側が値を保持して各 routine に渡し、返された値を次の呼び出しに渡す（2026-09-25、利用者の決定））。IN OUT 引数として受け取り、結果で返す"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_api.pkb"
+        },
+        "region": {
+         "startLine": 53,
+         "endLine": 56,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONSTRAINT_NOT_GUARDED",
+     "level": "warning",
+     "message": {
+      "text": "CHECK emp_salary_ck はこの UPDATE が書かない列（salary）を読む。書く前に評価できない"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_dept_upd_v_trg.trg"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONSTRAINT_NOT_GUARDED",
+     "level": "warning",
+     "message": {
+      "text": "FOREIGN KEY emp_dept_fk の値が表の値を読む式である。書く前に親を読めない"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_dept_upd_v_trg.trg"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 10,
+         "startColumn": 3
         }
        }
       }
@@ -3485,6 +5111,111 @@
      ]
     },
     {
+     "ruleId": "LIMIT",
+     "level": "note",
+     "message": {
+      "text": "FETCH FIRST 1 ROWS ONLY rewritten to LIMIT 1"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "TRIGGER_OLD",
      "level": "note",
      "message": {
@@ -3569,10 +5300,73 @@
      ]
     },
     {
-     "ruleId": "TRIGGER_REDESIGN",
-     "level": "warning",
+     "ruleId": "RMW_SPLIT",
+     "level": "note",
      "message": {
-      "text": "emp_biu_trg は書き込まれる行の値そのものを変える trigger である。呼び出しでは置き換えられない——採番 Service への再設計である（trigger-patterns C / #12）"
+      "text": "employees.salary を読んでから書く 2 文に割った。ScalarDB SQL は列を読む式を受け付けないので、値はアプリで計算する。**同じトランザクションの中で読んで書く**ので、衝突は commit で弾かれる（再試行は呼び出し側の責務・#9）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONSTRAINT_GUARD",
+     "level": "note",
+     "message": {
+      "text": "employees の CHECK emp_salary_ck を書く前に評価する。移行先に制約は無く、違反は Oracle と同じ番号の例外になる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_FOLDED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg の代入を書く値に畳み込んだ: email = UPPER(v_trg_1)。検査は呼び出しで行う（#47）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "raise_salary.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg（BEFORE INSERT OR UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
      },
      "locations": [
       {
@@ -3632,10 +5426,10 @@
      ]
     },
     {
-     "ruleId": "RETURNING",
-     "level": "error",
+     "ruleId": "ACCESS",
+     "level": "note",
      "message": {
-      "text": "RETURNING is not supported"
+      "text": "UPDATE: full primary key specified -> GET (single record)"
      },
      "locations": [
       {
