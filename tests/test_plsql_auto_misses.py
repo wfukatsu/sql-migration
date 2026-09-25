@@ -7,6 +7,8 @@ any evidence arrives.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from plsql.analysis import analyse as analyse_program
@@ -205,7 +207,6 @@ def test_a_write_the_trigger_fires_on_is_never_silently_clean(tmp_path, events, 
 @pytest.mark.parametrize("body,statement", [
     ("NULL;", "MERGE INTO payments t USING (SELECT 1 AS id FROM dual) s ON (t.payment_id = s.id) "
               "WHEN MATCHED THEN UPDATE SET t.amount = 1;"),
-    ("IF UPDATING('AMOUNT') THEN NULL; END IF;", "UPDATE payments SET amount = 1 WHERE payment_id = p_id;"),
     ("NULL;", "DELETE FROM payments WHERE amount > 1;"),                  # not one row
 ])
 def test_a_shape_nobody_knows_how_to_apply_still_says_so(tmp_path, body, statement):
@@ -385,3 +386,39 @@ def test_update_of_columns_end_at_the_next_event(tmp_path):
     module = next(m for m in program.modules if m.module_kind == "trigger")
     assert module.trigger_columns == ["amount", "method"] and module.trigger_event == "INSERT OR UPDATE OR DELETE"
     assert found["p"].rule_verdict == "REDESIGN"
+
+
+# --- `UPDATING('column')` (samples/oracle-samples emp_biu_trg, 2026-09-25) -----------------------------------
+COLUMN_EVENT_TRIGGER = TRIGGER.format(events="BEFORE INSERT OR UPDATE").replace(
+    "  NULL;", "  IF UPDATING('AMOUNT') AND :NEW.amount < 0 THEN RAISE_APPLICATION_ERROR(-20001, 'x'); END IF;")
+
+
+@pytest.mark.parametrize("statement,expected", [
+    ("UPDATE payments SET amount = 1 WHERE payment_id = p_id;", "TRUE"),
+    ("UPDATE payments SET method = 'X' WHERE payment_id = p_id;", "FALSE"),
+    ("INSERT INTO payments (payment_id, order_id, amount, method) VALUES (p_id, 1, 1, 'X');", "FALSE"),
+])
+def test_updating_of_a_column_is_passed_by_the_writer(tmp_path, statement, expected):
+    """`UPDATING('AMOUNT')` used to make the trigger unappliable ("no way to pass it"). The writer knows statically
+    whether its UPDATE sets amount, so it passes the answer as the BOOLEAN argument `UPDATING_AMOUNT`."""
+    found, program = decisions(tmp_path, **{"trg.trg": COLUMN_EVENT_TRIGGER, "p.prc": procedure("p", statement)})
+    routine = next(r for m in program.modules for r in m.routines if r.id == "p")
+    calls = [s for s in _walk(routine.body) if s.kind == "Call" and (s.callee or "").startswith("trg_payments_any")]
+    assert calls, "the trigger was not applied"
+    assert f"UPDATING_AMOUNT => {expected}" in calls[0].arguments
+    assert "TRG-002" not in rules_of(found["p"])
+
+
+def test_the_trigger_body_takes_the_column_event_as_a_boolean(tmp_path):
+    from plsql.gen_java.service import generate_module
+
+    _, program = decisions(tmp_path, **{"trg.trg": COLUMN_EVENT_TRIGGER,
+                                        "p.prc": procedure("p", "UPDATE payments SET amount = 1 WHERE payment_id = p_id;")})
+    trigger = next(m for m in program.modules if m.module_kind == "trigger")
+    java = generate_module(trigger, "g.app", "g.infra", "g.domain", program=program).file.render()
+    assert "Boolean updatingAmount" in java, java
+    assert "updatingAmount" in java.split("public void body(")[1]
+    assert "UPDATING(" not in java, "the predicate reached the Java as a call"
+    writer = next(m for m in program.modules if m.name == "p")
+    java = generate_module(writer, "g.app", "g.infra", "g.domain", program=program).file.render()
+    assert re.search(r"trgPaymentsAny\.body\([^;]*\btrue\)", java), java

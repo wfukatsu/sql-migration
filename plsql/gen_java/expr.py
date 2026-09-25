@@ -469,6 +469,8 @@ class _Parser:
         if whole is not None:
             return whole
         plsql_name = self.peek()[1]
+        if plsql_name.upper() == "UPDATING":
+            return self._event_of_column()
         head, _, tail = plsql_name.partition(".")
         collection = self.scope.get(f"{head.lower()}#collection")
         constructor = self.scope.get(f"{plsql_name.lower()}#constructor")
@@ -556,6 +558,21 @@ class _Parser:
         if kind == "name":
             return self._name(value)
         return value
+
+    def _event_of_column(self) -> str:
+        """`UPDATING('SALARY')`: whether this UPDATE sets salary is known where the trigger is called, so the
+        writer passes it as the BOOLEAN argument `UPDATING_SALARY` (`plsql.triggers.event_of_column`)."""
+        self.take()                                                     # UPDATING
+        if self.peek() is not None and self.peek()[1] == "(":
+            self.take()
+        literal = self.take()[1] if self.peek() is not None else ""
+        if self.peek() is not None and self.peek()[1] == ")":
+            self.take()
+        key = f"updating_{literal.strip(chr(39)).lower()}"
+        if key in self.scope:
+            return self.scope[key]
+        self.result.unknown.append(f"UPDATING({literal})")
+        return f"UPDATING({literal})"
 
     def _name(self, value: str) -> str:
         upper = value.upper()

@@ -44,8 +44,15 @@ CORRELATION = re.compile(r":?\b(?P<qualifier>NEW|OLD)\s*\.\s*(?P<column>[A-Za-z]
 # 複数イベントの trigger の本体が、どのイベントで発火したかを見る述語。呼び出し側は「どの文のところで
 # 呼んでいるか」を静的に知っているので、**相関行と同じく引数として渡す**（#29 の 25）
 EVENT = re.compile(r"(?<![\w$#.:])(?P<event>INSERTING|UPDATING|DELETING)\b(?!\s*\()", re.IGNORECASE)
-# `UPDATING('STATUS')`: 列ごとの述語。SET の列を見れば静的に決まるが、まだ渡す形を持っていない
-EVENT_OF_COLUMN = re.compile(r"(?<![\w$#.:])(?:INSERTING|UPDATING|DELETING)\s*\(", re.IGNORECASE)
+# `UPDATING('STATUS')`: 列ごとの述語。SET の列を見れば静的に決まるので、書く側が TRUE / FALSE を渡す
+# （`UPDATING_STATUS` という名前の BOOLEAN 引数。samples/oracle-samples emp_biu_trg、2026-09-25）
+EVENT_OF_COLUMN = re.compile(r"(?<![\w$#.:])UPDATING\s*\(\s*'(?P<column>[\w$#]+)'\s*\)", re.IGNORECASE)
+EVENT_OF_COLUMN_PREFIX = "UPDATING_"
+
+
+def event_of_column(column: str) -> str:
+    """The argument name that carries `UPDATING('<column>')`: one per column the body asks about."""
+    return f"{EVENT_OF_COLUMN_PREFIX}{column.upper()}"
 _LITERAL = re.compile(r"'(?:[^']|'')*'")
 
 
@@ -67,13 +74,6 @@ class Trigger:
     @property
     def correlations(self) -> list[str]:
         return list(correlation_row(self.routine, self.module.trigger_when))
-
-    def asks_event_of_column(self) -> bool:
-        """`UPDATING('STATUS')` を読む本体。**掛けない**（渡す形が無い）。"""
-        from .lower import _walk
-
-        statements = _walk(self.routine.body) + [s for h in self.routine.exception_handlers for s in _walk(h.body)]
-        return any(EVENT_OF_COLUMN.search(_LITERAL.sub("''", text or "")) for s in statements for text in _texts(s))
 
     def sequence_key(self) -> tuple[str, str] | None:
         """(column, sequence) for a trigger that does nothing but `:NEW.<column> := <sequence>.NEXTVAL` before an
@@ -132,6 +132,9 @@ def correlation_row(routine: M.Routine, trigger_when: str | None) -> dict[str, "
         # `IF INSERTING THEN`。文字列リテラルの中の単語は述語ではない
         for match in EVENT.finditer(_LITERAL.sub("''", text or "")):
             seen.setdefault(match.group("event").upper(), None)
+        # `IF UPDATING('SALARY') THEN`: 列ごとの述語も、書く側が静的に知っている値である
+        for match in EVENT_OF_COLUMN.finditer(text or ""):
+            seen.setdefault(event_of_column(match.group("column")), None)
     return dict(sorted(seen.items()))
 
 
@@ -242,9 +245,7 @@ def _apply(statement: M.Statement, routine: M.Routine, found: dict[str, list[Tri
         # 掛け方を知らない形は、**掛けていないと言う**。以前は黙って通り過ぎていたので、trigger のある表へ
         # DELETE / MERGE で書く routine と、複数イベントの trigger のある表へ書く routine が、何の診断も
         # 無いまま AUTO になりえた——正しく掛けられた routine のほうが悪い判定になる、逆転である
-        unhandled = ("MERGE は INSERT と UPDATE のどちらで発火するかが行ごとに決まる" if kind == "MERGE" else
-                     "本体が `UPDATING('列')` の形で列ごとのイベントを見ている。それを渡す形をまだ持っていない"
-                     if trigger.asks_event_of_column() else None)
+        unhandled = "MERGE は INSERT と UPDATE のどちらで発火するかが行ごとに決まる" if kind == "MERGE" else None
         if unhandled is not None:
             statement.add("WARN", "TRIGGER_NOT_APPLIED",
                           f"{trigger.module.name} が掛かる書き込みだが、**掛けていない**。{unhandled}（#12）")
@@ -365,9 +366,14 @@ def _inserted(tree: exp.Expression) -> dict[str, str] | None:
 def _call(statement: M.SqlOperation, routine: M.Routine, trigger: Trigger, kind: str,
           tree: exp.Expression, schema: OracleSchema | None, index: int):
     """(:OLD を読む文, trigger を呼ぶ文)。掛けられなければ None。"""
-    # どのイベントの文のところで呼んでいるかは、ここで静的に決まっている
+    # どのイベントの文のところで呼んでいるかは、ここで静的に決まっている。`UPDATING('SALARY')` も同じ:
+    # この UPDATE が SET に salary を書いているかどうかである
+    written = _assignments(tree) if kind == "UPDATE" else {}
     events = {name: ("TRUE" if EVENTS[name] == kind else "FALSE") for name in trigger.correlations if name in EVENTS}
-    correlations = [name for name in trigger.correlations if name not in EVENTS]
+    events.update({name: ("TRUE" if kind == "UPDATE" and name[len(EVENT_OF_COLUMN_PREFIX):].lower() in written
+                          else "FALSE")
+                   for name in trigger.correlations if name.startswith(EVENT_OF_COLUMN_PREFIX)})
+    correlations = [name for name in trigger.correlations if name not in events]
     if kind == "INSERT":
         written = _inserted(tree)
         if written is None:
@@ -379,7 +385,6 @@ def _call(statement: M.SqlOperation, routine: M.Routine, trigger: Trigger, kind:
         # INSERT は必ず 1 行入るので、掛かる条件は無い
         return None, _invocation(statement, trigger, {**values, **events}, index)
 
-    written = _assignments(tree) if kind == "UPDATE" else {}
     where = tree.args.get("where")
     if where is None or not _one_row(where, _table(tree), schema):
         return None
