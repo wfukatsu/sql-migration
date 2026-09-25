@@ -570,3 +570,64 @@ def test_an_explicit_cursor_fetched_into_its_rowtype_becomes_a_loop_with_a_row_c
     assert "for (" in java and "cEmpRowcount = Plsql.toInt(Plsql.add(cEmpRowcount, 1))" in java
     assert "r.lastName()" in java and "OpenCursor" not in java
     assert "UnsupportedOperationException" not in java
+
+
+def _project(tmp_path, ddl: str, **units: str):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "schema.sql").write_text(ddl)
+    for name, text in units.items():
+        (src / name).write_text(text)
+    program = build_analysis(src, src / "schema.sql").program
+    from plsql.analysis import build_call_graph
+    build_call_graph(program)   # what plsql.generate does before rendering: calls get their resolved_to
+    return program
+
+
+def test_collections_records_and_package_state_are_refused_not_miscompiled(tmp_path):
+    """The generated tree has to pass javac whatever the verdict (#40): a collection method, an element or
+    record-field assignment, a type constructor and a package variable become a throw, not broken Java."""
+    program = _project(tmp_path, "CREATE TABLE t (id NUMBER(4) PRIMARY KEY, name VARCHAR2(10));\n",
+        **{"pkg_state.pks": "CREATE OR REPLACE PACKAGE pkg_state AS\n  PROCEDURE bump;\n  PROCEDURE collect(p_out OUT NUMBER);\nEND;\n/\n",
+           "pkg_state.pkb": (
+               "CREATE OR REPLACE PACKAGE BODY pkg_state AS\n  g_calls PLS_INTEGER := 0;\n"
+               "  PROCEDURE bump IS\n  BEGIN\n    g_calls := g_calls + 1;\n  END;\n"
+               "  PROCEDURE collect(p_out OUT NUMBER) IS\n"
+               "    TYPE t_names IS TABLE OF VARCHAR2(30);\n    v_names t_names := t_names('a', 'b');\n"
+               "    TYPE t_rec IS RECORD (id NUMBER, name VARCHAR2(10));\n    v_rec t_rec;\n"
+               "  BEGIN\n    v_rec.id := 1;\n    v_names(1) := 'c';\n    p_out := v_names.COUNT + v_names.FIRST;\n  END;\n"
+               "END;\n/\n")})
+    java = rendered(program, "pkg_state")
+    assert "unresolved in Assignment: g_calls" in java
+    assert "unresolved in declaration v_names: t_names" in java
+    assert "gCalls = " not in java and "tNames(" not in java
+
+
+def test_a_call_with_out_arguments_reads_them_from_the_result_record(tmp_path):
+    """`raise_salary(104, 10, v_new)` and `raise_salary(p_emp_id => 107, p_new_sal => v_new)` (#40): the OUT
+    argument comes back in RaiseSalaryResult, the DEFAULT of p_pct is spelled out, the literal fits BigDecimal."""
+    program = _project(tmp_path, "CREATE TABLE employees (employee_id NUMBER(6) PRIMARY KEY, salary NUMBER(8,2));\n",
+        **{"raise_salary.prc": (
+               "CREATE OR REPLACE PROCEDURE raise_salary (p_emp_id IN NUMBER, p_pct IN NUMBER DEFAULT 5, p_new_sal OUT NUMBER) AS\n"
+               "BEGIN\n  p_new_sal := p_pct;\nEND;\n/\n"),
+           "twice.prc": (
+               "CREATE OR REPLACE PROCEDURE twice AS\n  v_new NUMBER;\nBEGIN\n"
+               "  raise_salary(104, 10, v_new);\n  raise_salary(p_emp_id => 107, p_new_sal => v_new);\nEND;\n/\n")})
+    java = generate_module(module_named(program, "twice"), APP, INFRA, DOMAIN, program).file.render()
+    assert "RaiseSalaryResult raiseSalaryResult = raiseSalary.raiseSalary(Plsql.dec(104), Plsql.dec(10));" in java
+    assert "raiseSalary.raiseSalary(Plsql.dec(107), Plsql.dec(5))" in java
+    assert "vNew = Plsql.dec(raiseSalaryResult.pNewSal());" in java
+    assert "UnsupportedOperationException" not in java
+
+
+def test_a_standalone_callee_is_invoked_through_its_own_service(tmp_path):
+    program = _project(tmp_path, "CREATE TABLE t (id NUMBER(4) PRIMARY KEY);\n",
+        **{"helper.prc": "CREATE OR REPLACE PROCEDURE helper (p_msg VARCHAR2) AS\nBEGIN\n  NULL;\nEND;\n/\n",
+           "caller.prc": "CREATE OR REPLACE PROCEDURE caller AS\nBEGIN\n  helper('hello');\nEND;\n/\n"})
+    assert 'helper.helper("hello");' in generate_module(module_named(program, "caller"), APP, INFRA, DOMAIN, program).file.render()
+
+
+def test_a_bare_return_in_a_function_returns_null(tmp_path):
+    program = _project(tmp_path, "CREATE TABLE t (id NUMBER(4) PRIMARY KEY);\n",
+        **{"nothing.fnc": "CREATE OR REPLACE FUNCTION nothing RETURN NUMBER AS\nBEGIN\n  RETURN;\nEND;\n/\n"})
+    assert "return null;" in rendered(program, "nothing")
