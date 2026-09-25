@@ -592,9 +592,10 @@ def _project(tmp_path, ddl: str, scalardb: dict | None = None, **units: str):
     return program
 
 
-def test_collections_records_and_package_state_are_refused_not_miscompiled(tmp_path):
-    """The generated tree has to pass javac whatever the verdict (#40): a collection method, an element or
-    record-field assignment, a type constructor and a package variable become a throw, not broken Java."""
+def test_package_state_is_refused_not_miscompiled(tmp_path):
+    """The generated tree has to pass javac whatever the verdict (#40): a package variable becomes a throw,
+    not an assignment to a field that does not exist. (Collections and record fields, refused here at first,
+    translate since #45 -- the same source now renders them.)"""
     program = _project(tmp_path, "CREATE TABLE t (id NUMBER(4) PRIMARY KEY, name VARCHAR2(10));\n",
         **{"pkg_state.pks": "CREATE OR REPLACE PACKAGE pkg_state AS\n  PROCEDURE bump;\n  PROCEDURE collect(p_out OUT NUMBER);\nEND;\n/\n",
            "pkg_state.pkb": (
@@ -607,8 +608,9 @@ def test_collections_records_and_package_state_are_refused_not_miscompiled(tmp_p
                "END;\n/\n")})
     java = rendered(program, "pkg_state")
     assert "unresolved in Assignment: g_calls" in java
-    assert "unresolved in declaration v_names: t_names" in java
     assert "gCalls = " not in java and "tNames(" not in java
+    assert 'List<String> vNames = Plsql.table("a", "b");' in java
+    assert "vRec = new TRec(Plsql.dec(1), vRec.name());" in java or "vRec = new TRec(1, vRec.name());" in java
 
 
 def test_a_call_with_out_arguments_reads_them_from_the_result_record(tmp_path):
@@ -670,4 +672,36 @@ def test_a_function_returning_a_ref_cursor_returns_the_rows(tmp_path):
     java = generate_module(module_named(program, "by_dept"), APP, INFRA, DOMAIN, program).file.render()
     assert "public List<ByDeptLoop1Row> byDept(BigDecimal pDeptId)" in java
     assert "return repository.byDeptLoop1(pDeptId);" in java
+    assert "UnsupportedOperationException" not in java
+
+
+def test_local_collections_and_record_fields_are_translated(tmp_path):
+    """Nested table / VARRAY -> List, INDEX BY -> sorted Map, record field assignment -> rebuilt record (#45)."""
+    program = _project(tmp_path, "CREATE TABLE employees (employee_id NUMBER(6) PRIMARY KEY, last_name VARCHAR2(25), salary NUMBER(8,2));\n",
+        scalardb={"t.employees": {"transaction": True, "partition-key": ["employee_id"],
+                                  "columns": {"employee_id": "INT", "last_name": "TEXT", "salary": "DOUBLE"}}},
+        **{"coll.prc": (
+            "CREATE OR REPLACE PROCEDURE coll (p_out OUT VARCHAR2) AS\n"
+            "  TYPE t_rec IS RECORD (id employees.employee_id%TYPE, name VARCHAR2(25), sal NUMBER := 0);\n  v_rec t_rec;\n"
+            "  TYPE t_sal_by_name IS TABLE OF NUMBER INDEX BY VARCHAR2(30);\n  v_sal t_sal_by_name;\n  k VARCHAR2(30);\n"
+            "  TYPE t_names IS TABLE OF VARCHAR2(30);\n  v_names t_names := t_names('Alpha', 'Bravo');\n"
+            "  TYPE t_top3 IS VARRAY(3) OF NUMBER;\n  v_top3 t_top3 := t_top3();\n"
+            "BEGIN\n  v_rec.id := 1;\n"
+            "  FOR r IN (SELECT last_name, salary FROM employees WHERE employee_id = 100) LOOP\n    v_sal(r.last_name) := r.salary;\n  END LOOP;\n"
+            "  k := v_sal.FIRST;\n  WHILE k IS NOT NULL LOOP\n    p_out := k || ' => ' || v_sal(k);\n    k := v_sal.NEXT(k);\n  END LOOP;\n"
+            "  v_names.EXTEND;\n  v_names(v_names.LAST) := 'Delta';\n  v_names.DELETE(2);\n"
+            "  v_top3.EXTEND(3);\n  v_top3(1) := 100;\n"
+            "  p_out := v_names.COUNT || CASE WHEN v_names.EXISTS(2) THEN 'Y' ELSE 'N' END || v_top3.LIMIT;\n"
+            "END;\n/\n")})
+    java = generate_module(module_named(program, "coll"), APP, INFRA, DOMAIN, program).file.render()
+    assert "TRec vRec = new TRec(null, null, Plsql.dec(0));" in java or "TRec vRec = new TRec(null, null, 0);" in java
+    assert "vRec = new TRec(1, vRec.name(), vRec.sal());" in java
+    assert "Map<String, BigDecimal> vSal = Plsql.indexBy();" in java
+    assert "Plsql.set(vSal, r.lastName(), Plsql.dec(r.salary()));" in java
+    assert "Plsql.first(vSal)" in java and "Plsql.next(vSal, k)" in java and "Plsql.at(vSal, k)" in java
+    assert 'List<String> vNames = Plsql.table("Alpha", "Bravo");' in java
+    assert "Plsql.extend(vNames);" in java and 'Plsql.set(vNames, Plsql.last(vNames), "Delta");' in java
+    assert "Plsql.delete(vNames, 2);" in java and "Plsql.count(vNames)" in java and "Plsql.exists(vNames, 2)" in java
+    assert "Plsql.extend(vTop3, 3);" in java and "Plsql.set(vTop3, 1, Plsql.dec(100));" in java
+    assert '"3"' in java or ", 3)" in java   # v_top3.LIMIT is the declared bound
     assert "UnsupportedOperationException" not in java

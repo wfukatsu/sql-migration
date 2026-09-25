@@ -25,6 +25,7 @@ RECORD = re.compile(r"^RECORD\((.*)\)$", re.IGNORECASE | re.DOTALL)
 
 # Java types that need an import
 IMPORTS = {
+    "Map": "java.util.Map",
     "List": "java.util.List",
     "BigDecimal": "java.math.BigDecimal",
     "LocalDateTime": "java.time.LocalDateTime",
@@ -57,7 +58,8 @@ class JavaType:
 UNKNOWN = JavaType("Object", "TEXT", note="type not resolved; the generator must not guess")
 
 # `TABLE OF <type>`: symbol table がコレクション型をこの形に解決する（`RECORD(...)` と同じ考え方）
-COLLECTION = re.compile(r"^TABLE\s+OF\s+(?P<element>.+)$", re.IGNORECASE | re.DOTALL)
+COLLECTION = re.compile(r"^TABLE\s+OF\s+(?P<element>.+?)(?:\s+INDEX\s+BY\s+(?P<key>.+?))?(?:\s+LIMIT\s+(?P<limit>\d+))?$",
+                        re.IGNORECASE | re.DOTALL)
 
 
 def java_type(oracle: str | None, *, money: bool = False) -> JavaType:
@@ -124,6 +126,14 @@ def java_type(oracle: str | None, *, money: bool = False) -> JavaType:
         element = java_type(collection.group("element"), money=money)
         if element is UNKNOWN or element.name == "Object":
             return JavaType("Object", "TEXT", note=f"collection of an unmapped type: {written!r}")
+        key = java_type(collection.group("key").strip(), money=False) if collection.group("key") else None
+        if key is not None and key.name == "String":
+            # `INDEX BY VARCHAR2(30)`: an associative array keyed by text is a sorted Map (#45). Oracle walks it
+            # in key order (FIRST / NEXT), which a TreeMap gives for free. `INDEX BY PLS_INTEGER` stays a List:
+            # the corpus fills those with BULK COLLECT and walks them 1 .. COUNT, and the harness binds them as
+            # arrays. A sparse integer-keyed table is not modelled (Plsql.set refuses the gap)
+            return JavaType(f"Map<String, {element.name}>", element.storage, scale=element.scale,
+                            note="PL/SQL の連想配列。キー順に回る TreeMap で持つ")
         return JavaType(f"List<{element.name}>", element.storage, scale=element.scale,
                         note="PL/SQL のコレクション。呼び出し側が渡す")
     if RECORD.match(written):

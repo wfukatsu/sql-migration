@@ -58,6 +58,10 @@ AUDIT = {"USER": "audit.user()", "SYSTIMESTAMP": "audit.now()"}
 KEYWORDS = {"AND", "OR", "NOT", "NULL", "IS", "TRUE", "FALSE", "MOD", "BETWEEN", "IN", "LIKE"}
 # collection methods (`v.FIRST`, `v.NEXT(k)`, `v.EXTEND`): the generated List does not have them (#40)
 COLLECTION_ATTRIBUTES = {"FIRST", "LAST", "NEXT", "PRIOR", "EXISTS", "DELETE", "EXTEND", "TRIM", "LIMIT", "COUNT"}
+# what each becomes on a local collection the scope knows (`name#collection`), see Plsql (#45). LIMIT is not
+# here: the VARRAY bound is not kept, so it stays unknown
+COLLECTION_METHODS = {"COUNT": "count", "FIRST": "first", "LAST": "last", "NEXT": "next", "PRIOR": "prior",
+                      "EXISTS": "exists", "DELETE": "delete", "EXTEND": "extend", "TRIM": "trimTable"}
 
 
 @dataclass
@@ -465,7 +469,14 @@ class _Parser:
         if whole is not None:
             return whole
         plsql_name = self.peek()[1]
-        name = self._name(self.take()[1])
+        head, _, tail = plsql_name.partition(".")
+        collection = self.scope.get(f"{head.lower()}#collection")
+        constructor = self.scope.get(f"{plsql_name.lower()}#constructor")
+        if collection or constructor:
+            self.take()   # the name: rendered below as a helper call, not through _name
+            name = None
+        else:
+            name = self._name(self.take()[1])
         expected = (self.scope.get(f"{plsql_name.lower()}#parameters") or "").split(",")
         self.take()  # the '('
         arguments: list[str] = []
@@ -478,6 +489,23 @@ class _Parser:
         if self.peek() is not None and self.peek()[1] == ")":
             self.take()
         arguments = [a for a in arguments if a]
+        if constructor:
+            # `t_names('a', 'b')`: a nested table constructor (#45). An associative array has none. The
+            # elements take the element type: `t_num(60, 80, 99)` into a List<BigDecimal> needs BigDecimals
+            self.result.imports.add(HELPER_IMPORT)
+            if self.scope.get(f"{plsql_name.lower()}#element") == "BigDecimal":
+                arguments = [a if a == "null" or a.startswith(f"{HELPER}.dec(") else f"{HELPER}.dec({a})" for a in arguments]
+            return f"{HELPER}.table({', '.join(arguments)})"
+        if collection:
+            self.result.imports.add(HELPER_IMPORT)
+            java = self.scope[head.lower()]
+            if not tail:
+                return f"{HELPER}.at({java}, {', '.join(arguments)})"       # `v(i)`: an element
+            method = COLLECTION_METHODS.get(tail.upper())
+            if method is None:
+                self.result.unknown.append(plsql_name)
+                return plsql_name
+            return f"{HELPER}.{method}({', '.join([java] + arguments)})"    # `v.NEXT(k)`, `v.EXISTS(k)` ...
         if expected != [""] and len(expected) == len(arguments) and not any("=>" in a for a in arguments):
             # a sibling that declares NUMBER takes BigDecimal; the argument may be a Long / Integer local or a literal
             for i, java in enumerate(expected):
@@ -565,10 +593,17 @@ class _Parser:
                 self.result.imports.add(SEQUENCES_IMPORT)
                 self.result.sequences.add(head.lower())
                 return f'sequences.next("{head.lower()}")'
+            if tail.upper() == "LIMIT" and self.scope.get(f"{head.lower()}#limit"):
+                return self.scope[f"{head.lower()}#limit"]   # a VARRAY's declared bound (#45)
+            if self.scope.get(f"{head.lower()}#collection") and tail.upper() in COLLECTION_METHODS \
+                    and tail.upper() not in ("NEXT", "PRIOR", "EXISTS"):
+                # `v.COUNT`, `v.FIRST`, `v.LAST`, `v.DELETE`, `v.EXTEND`, `v.TRIM` on a local collection (#45)
+                self.result.imports.add(HELPER_IMPORT)
+                return f"{HELPER}.{COLLECTION_METHODS[tail.upper()]}({self.scope[head.lower()]})"
             if head.lower() not in self.scope or tail.upper() in COLLECTION_ATTRIBUTES:
-                # `v_ids.COUNT` on a collection, or a package-qualified name: neither is a record field, and
-                # rendering it as one produces a call to a method that does not exist. `v.FIRST` / `v.NEXT`
-                # / `v.EXISTS` on a local collection are the same (#40): a List has no such methods
+                # `v_ids.COUNT` on a collection the scope does not know as one, or a package-qualified name:
+                # neither is a record field, and rendering it as one produces a call to a method that does
+                # not exist (#40)
                 self.result.unknown.append(value)
                 return value
             return f"{self.scope[head.lower()]}.{java_name(tail)}()"

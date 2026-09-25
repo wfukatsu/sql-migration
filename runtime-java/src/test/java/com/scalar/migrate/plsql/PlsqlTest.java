@@ -35,6 +35,37 @@ class PlsqlTest {
   }
 
   @Test
+  void nestedTablesAreDenseListsAndAssociativeArraysAreSortedMaps() {
+    java.util.List<String> names = Plsql.table("Alpha", "Bravo", "Charlie");
+    Plsql.extend(names);
+    Plsql.set(names, Plsql.last(names), "Delta");
+    assertEquals(4, Plsql.count(names));
+    assertEquals("Delta", Plsql.at(names, 4));
+    assertEquals(Integer.valueOf(1), Plsql.first(names));
+    assertEquals(Integer.valueOf(3), Plsql.next(names, 2));
+    assertNull(Plsql.next(names, 4));
+    assertTrue(Plsql.exists(names, 2));
+    assertFalse(Plsql.exists(names, 9));
+    Plsql.delete(names, 4);
+    assertEquals(3, Plsql.count(names));
+
+    java.util.Map<String, java.math.BigDecimal> byName = Plsql.indexBy();
+    Plsql.set(byName, "Kochhar", new java.math.BigDecimal("17000"));
+    Plsql.set(byName, "De Haan", new java.math.BigDecimal("17000"));
+    Plsql.set(byName, "King", new java.math.BigDecimal("24000"));
+    assertEquals("De Haan", Plsql.first(byName));      // key order, as Oracle walks an INDEX BY VARCHAR2 table
+    assertEquals("King", Plsql.next(byName, "De Haan"));
+    assertNull(Plsql.next(byName, "Kochhar"));
+    assertEquals(new java.math.BigDecimal("24000"), Plsql.at(byName, "King"));
+    assertFalse(Plsql.exists(null, 1));
+
+    java.util.Map<Integer, Integer> depts = Plsql.indexBy();
+    Plsql.set(depts, Plsql.add(50, 10), 60);           // a BigDecimal key lands as the Integer the map holds
+    assertTrue(Plsql.exists(depts, 60));
+    assertEquals(Integer.valueOf(60), Plsql.first(depts));
+  }
+
+  @Test
   void dbmsOutputIsBufferedPerThreadAndReadBack() {
     Plsql.output();                            // start clean
     Plsql.put("a");

@@ -236,6 +236,14 @@ def correlation_row(routine: M.Routine) -> dict[str, "M.BindVariable"]:
     return out
 
 
+def _collection_kind(holder) -> str | None:
+    """`list` for a nested table / VARRAY, `map` for an INDEX BY table, None for anything else (#45)."""
+    if holder.type is None or holder.type.origin != "collection":
+        return None
+    resolved = (holder.type.resolved or "").upper()
+    return "map" if re.search(r"INDEX\s+BY\s+N?VARCHAR2?\b", resolved) else "list"
+
+
 def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]:
     """PL/SQL name -> Java name for everything visible inside the method, siblings included.
 
@@ -254,6 +262,20 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
     # a TYPE is not a value: `t_names('a', 'b')` (a collection constructor) rendered as a call to a method that
     # does not exist. Left out, the constructor is reported instead (#40)
     names.update({d.name: java_name(d.name) for d in routine.declarations if d.declaration_kind != "type"})
+    # collections (#45): `v#collection` says a local is one (list / map), `t#constructor` that a TYPE builds one
+    trigger_locals = list(module.declarations) if module is not None and module.module_kind == "trigger" else []
+    for holder in list(routine.parameters) + list(routine.declarations) + trigger_locals:
+        kind = _collection_kind(holder)
+        if kind:
+            names[f"{holder.name.lower()}#collection"] = kind
+            element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
+            names[f"{holder.name.lower()}#element"] = element
+            bound = re.search(r"\bLIMIT\s+(\d+)$", holder.type.resolved or "")
+            if bound:
+                names[f"{holder.name.lower()}#limit"] = bound.group(1)   # `v.LIMIT` of a VARRAY(n)
+            if kind == "list" and holder.type is not None and "%" not in (holder.type.oracle or ""):
+                names[f"{(holder.type.oracle or '').strip().lower()}#constructor"] = kind
+                names[f"{(holder.type.oracle or '').strip().lower()}#element"] = element
     if module is not None:
         # an overloaded name is several Java methods (`put1`, `put2`); which one an expression means is not
         # resolved, so the name is left out and the expression is reported instead of compiled against nothing
@@ -634,7 +656,18 @@ def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
     row = _row_type(declaration)
     if row is not None:
         file.add_import(f"{_DOMAIN.get()}.{row}" if _DOMAIN.get() else row)
-        file.line(f"{row} {java_name(declaration.name)};")
+        # a PL/SQL record is born with every field NULL, or the default its TYPE gave the field (#45); the
+        # Java record is immutable, so it is built here and rebuilt on each field assignment
+        components = []
+        for _, declared in record_columns(declaration.type.resolved if declaration.type else ""):
+            default = re.search(r":=\s*(.+)$", declared)
+            components.append(_expr(file, default.group(1).strip(), routine, result) if default else "null")
+        file.line(f"{row} {java_name(declaration.name)} = new {row}({', '.join(components)});")
+        return
+    if _collection_kind(declaration) == "map" and not declaration.initial:
+        mapped = java_type(declaration.type.resolved)
+        file.add_import(*mapped.imports, "com.scalar.migrate.plsql.Plsql")
+        file.line(f"{mapped.name} {java_name(declaration.name)} = Plsql.indexBy();")
         return
     mapped = java_type(declaration.type.resolved if declaration.type else None)
     file.add_import(*mapped.imports)
@@ -663,7 +696,7 @@ def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
             # `Plsql.number` takes a long: `v NUMBER := 1.005` came out as Java that does not compile. The text
             # constructor keeps the literal exact, which a double would not
             rendered = f'new BigDecimal("{rendered}")'
-        initial = f" = {_constrain(file, rendered, declaration.type)}"
+        initial = f" = {_constrain(file, _coerce(file, rendered, mapped.name), declaration.type)}"
     file.line(f"{mapped.name} {java_name(declaration.name)}{initial};")
 
 
@@ -749,13 +782,35 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
             raise Untranslatable([f"assignment to {statement.target}"], statement.target or "")
         written = (statement.target or "").strip()
         if "(" in written:
-            # `v_sal(r.last_name) := r.salary`: an element of a collection. The generated List has no such
-            # assignment, and `vSal(x) = y` is not Java (#40)
-            raise Untranslatable([f"assignment to collection element {written}"], written)
+            # `v_sal(r.last_name) := r.salary`: an element of a collection (#45). `Plsql.set` grows a nested
+            # table only through EXTEND, as Oracle does; an associative array takes any key
+            head, _, subscript = written.partition("(")
+            holder = _holder(routine, head.strip())
+            if holder is None or not _collection_kind(holder):
+                raise Untranslatable([f"assignment to collection element {written}"], written)
+            file.add_import("com.scalar.migrate.plsql.Plsql")
+            key = _expr(file, subscript.rstrip()[:-1], routine, result)
+            element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
+            value = _coerce(file, _expr(file, statement.expression, routine, result), element)
+            file.line(f"Plsql.set({java_name(holder.name)}, {key}, {value});")
+            return
         if "." in written and (_holder(routine, written.partition(".")[0]) is not None
                                or written.partition(".")[0].lower() in {k.lower() for k in _LOOP_ROWS.get()}):
-            # `v_rec.id := 1`: a field of a record. The generated records are immutable (#40)
-            raise Untranslatable([f"assignment to record field {written}"], written)
+            # `v_rec.id := 1`: a field of a record. The generated records are immutable, so the record is
+            # rebuilt with that one component replaced (#45)
+            head, _, field_name = written.partition(".")
+            holder = _holder(routine, head)
+            columns = record_columns(holder.type.resolved) if holder is not None and holder.type is not None else []
+            record = _row_type(holder) if holder is not None else None
+            if record is None or not any(c.lower() == field_name.lower() for c, _ in columns):
+                raise Untranslatable([f"assignment to record field {written}"], written)
+            if _DOMAIN.get():
+                file.add_import(f"{_DOMAIN.get()}.{record}")
+            value = _expr(file, statement.expression, routine, result)
+            variable = java_name(holder.name)
+            components = [value if c.lower() == field_name.lower() else f"{variable}.{java_name(c)}()" for c, _ in columns]
+            file.line(f"{variable} = new {record}({', '.join(components)});")
+            return
         # the target goes through the translator too: `:NEW.col` is not a Java name, and rendering it anyway
         # produced code that did not compile
         target = _expr(file, statement.target, routine, result)
@@ -1173,6 +1228,8 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
             for p, a in outs:
                 target_type = _local_type(routine, a)
                 f.line(f"{_expr(f, a, routine, result)} = {_coerce(f, f'{holder}.{java_name(p.name)}()', target_type)};")
+    elif _collection_call(file, statement, routine, result):
+        return
     elif (statement.callee or "").upper() in ("DBMS_OUTPUT.PUT_LINE", "DBMS_OUTPUT.PUT", "DBMS_OUTPUT.NEW_LINE"):
         # the session's output buffer: no row is written, so the helper keeps the text per thread and the
         # caller reads it back (analysis.HARMLESS_CALLEES already treats it as harmless). Throwing here made
@@ -1187,18 +1244,32 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
             result.untranslated.append(statement.id)   # it throws, so what follows in the block is unreachable
 
 
+def _collection_call(file: JavaFile, statement: M.Call, routine: M.Routine, result: ServiceFile) -> bool:
+    """`v_names.EXTEND;`, `v_names.DELETE(2);`, `v_top3.EXTEND(3);`: a collection method as a statement (#45)."""
+    from .expr import COLLECTION_METHODS
+
+    head, _, tail = (statement.callee or "").partition(".")
+    holder = _holder(routine, head)
+    if holder is None or not _collection_kind(holder) or tail.upper() not in COLLECTION_METHODS:
+        return False
+    file.add_import("com.scalar.migrate.plsql.Plsql")
+    arguments = [java_name(holder.name)] + [_expr(file, a, routine, result) for a in statement.arguments]
+    file.line(f"Plsql.{COLLECTION_METHODS[tail.upper()]}({', '.join(arguments)});")
+    return True
+
+
 def _positional(statement: M.Call, callee: M.Routine | None) -> list[str]:
     """The arguments in the callee's parameter order (OUT parameters included, so that `_call` can pair them).
     `put(p_note => 'x', p_id => 1)` was rendered as it stood, which is not Java -- and named notation is what
     tells two overloads apart. A parameter left to its DEFAULT is filled with the default when it is a literal."""
-    if not any("=>" in a for a in statement.arguments) and (
+    if not any(NAMED_ARGUMENT.match(a) for a in statement.arguments) and (
             callee is None or len(statement.arguments) >= len(callee.parameters)):
         return list(statement.arguments)
     if callee is None:
         raise Untranslatable(["named arguments of a routine that is not in the program"], statement.callee)
-    positional = [a for a in statement.arguments if "=>" not in a]
+    positional = [a for a in statement.arguments if not NAMED_ARGUMENT.match(a)]
     named = {a.partition("=>")[0].strip().lower(): a.partition("=>")[2].strip()
-             for a in statement.arguments if "=>" in a}
+             for a in statement.arguments if NAMED_ARGUMENT.match(a)}
     taken = list(callee.parameters)[len(positional):]
     out = list(positional)
     for parameter in taken:
@@ -1229,6 +1300,10 @@ def _fit_argument(file: JavaFile, rendered: str, parameter: "M.Parameter | None"
         return f"{rendered}L"
     return rendered
 
+
+# `p_id => 1`: named notation starts with the parameter name. Looking for `=>` anywhere took the string literal
+# `' => '` inside `k || ' => ' || v(k)` for one (samples/oracle-samples b04_5, 2026-09-25)
+NAMED_ARGUMENT = re.compile(r"^\s*[\w$#]+\s*=>")
 
 # a DEFAULT the call can spell out itself: NULL, a number, a quoted string, TRUE / FALSE
 LITERAL_DEFAULT = re.compile(r"^(?:NULL|TRUE|FALSE|[+-]?\d+(?:\.\d+)?|'(?:[^']|'')*')$", re.IGNORECASE)

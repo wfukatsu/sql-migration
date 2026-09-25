@@ -148,7 +148,7 @@ def test_a_collection_parameter_keeps_its_element_type(schema):
     corpus = build_analysis(SRC, SRC / "schema.sql", scalardb_schema=FIXTURES / "scalardb-schema.json")
     routine = next(r for _, r in corpus.routines() if r.id == "pkg_customer_import.import")
     types = {p.name: p.type.resolved for p in routine.parameters}
-    assert types == {"p_ids": "TABLE OF NUMBER(19)", "p_names": "TABLE OF VARCHAR2(100)"}
+    assert types == {"p_ids": "TABLE OF NUMBER(19) INDEX BY PLS_INTEGER", "p_names": "TABLE OF VARCHAR2(100) INDEX BY PLS_INTEGER"}
 
 
 def test_the_forall_becomes_a_loop_over_the_collection(schema):
