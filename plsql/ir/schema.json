@@ -779,6 +779,12 @@
             "string",
             "null"
           ]
+        },
+        "into": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },

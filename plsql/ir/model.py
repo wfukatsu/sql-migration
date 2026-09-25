@@ -114,6 +114,9 @@ class Call(Statement):
     callee: str = ""
     arguments: list[str] = field(default_factory=list)
     resolved_to: str | None = None   # the routine id, once the call graph is built (P2-1)
+    # a function call hoisted out of an expression because the callee has OUT / IN OUT arguments (plsql.hoist,
+    # #48): the local that receives the return value. None for an ordinary call statement
+    into: str | None = None
 
 
 @dataclass

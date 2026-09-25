@@ -125,8 +125,8 @@ routine の NUMBER 引数に列由来の Long / Integer を渡すときは `Plsq
 | REDESIGN 27 件の状態（決定の適用後） | **27 件すべて、再設計を決定済みで実 DB でも一致** / 未決定 0。DB Link の `prc_remote_sync` は、失敗時の例外の種類の差 1 点を「受け入れた差」として記録してある（2026-09-20。比較の報告には理由つきで出る）。判定は REDESIGN のまま動かさない（AUTO 禁止条件） |
 
 **構文カタログ上の値**（[samples/oracle-samples](../../samples/oracle-samples/README.md)、Oracle 公式ドキュメントの構成に沿った SQL 4 本 + PL/SQL 3 本、2026-09-24〜25）:
-41 routine が AUTO 候補 7 / REVIEW 10 / REDESIGN 24、41 routine 全部が javac を通り、実 DB の 31 シナリオで一致 23 / 相違 8（2026-09-25 の 4 回目の対応後。相違は値の差ではなく、下の「まだ模していない構文」で止まるものと、移行先に無い CHECK 制約の帰結）。
-この検証で直した生成器の穴は 22 件（Issue #30〜#45）+ 4 回目の 5 件で、記録の「Issue の修正後」以降の節にある。
+41 routine が AUTO 候補 7 / REVIEW 10 / REDESIGN 24、41 routine 全部が javac を通り、実 DB の 31 シナリオで一致 25 / 相違 6（2026-09-25 の 5 回目の対応後。相違は値の差ではなく、下の「まだ模していない構文」で止まるものと、`FORALL … SAVE EXCEPTIONS` の境界の決定待ち）。
+この検証で直した生成器の穴は 22 件（Issue #30〜#45）+ 4 回目の 5 件 + 5 回目の 4 件（#47〜#50）で、記録の「Issue の修正後」以降の節にある。
 
 ### 移行先で模していない構文（2026-09-25 時点）
 
@@ -134,10 +134,10 @@ routine の NUMBER 引数に列由来の Long / Integer を渡すときは `Plsq
 
 | 構文 | 止まり方 | Issue |
 |---|---|---|
-| `:NEW` の値を書き換える BEFORE trigger（`:NEW.email := UPPER(:NEW.email)`） | `TRIGGER_REDESIGN`（TRG-002） | #47 |
-| 式の中の別 module の関数呼び出し（`v := pkg.f(...)`、package 変数を運ぶ関数を含む） | `unresolved in Assignment` | #48 |
-| `transactions.separate` の routine を呼ぶ側 | 「別トランザクションで呼ぶ routine」 | #49 |
-| CHECK / FK 制約の代わり（guard を生成するか） | 決定待ち | #50 |
+| `:NEW` の値を書き換える BEFORE trigger（`:NEW.email := UPPER(:NEW.email)`） | 対応済み（無条件で :NEW / :OLD だけを読む代入は書く値に畳み込む、`TRIGGER_FOLDED`）。条件つき・局所変数を読む代入は `TRIGGER_REDESIGN` のまま | #47 |
+| 式の中の別 module の関数呼び出し（`v := pkg.f(...)`） | 対応済み（注入した Service を呼ぶ）。OUT / IN OUT 引数（運ぶ package 変数を含む）のある関数は式の中では断る（理由つき） | #48 |
+| `transactions.separate` の routine を呼ぶ側 | 対応済み（呼ぶ側が `SeparateTransactions` の口を受け取り、その connection の上に呼び先を組み立てて呼ぶ）。OUT 引数 / 戻り値を境界の外へ持ち出す形は無い | #49 |
+| CHECK / FK 制約の代わり | 決定済み（2026-09-25「表ごとに決めて guard を生成」、`constraints.enforce`）。決めていない表は `CONSTRAINT_UNDECIDED` | #50 |
 | `FORALL … RETURNING BULK COLLECT INTO` | `SQL_PARSE` / `forall loop` | #51 |
 | 動的 UPDATE の `RETURNING INTO`、動的 PL/SQL ブロック | `RETURNING INTO of a dynamic UPDATE` | #52 |
 | `DBMS_SQL` | `declaration c: DBMS_SQL.OPEN_CURSOR` | #53 |
@@ -145,7 +145,8 @@ routine の NUMBER 引数に列由来の Long / Integer を渡すときは `Plsq
 | program の外の routine への名前付き引数（`DBMS_APPLICATION_INFO`） | `named arguments of a routine that is not in the program` | #55 |
 | view への INSTEAD OF trigger | `EXPR`（`:NEW.last_name` を SET に書く） | #56 |
 
-模せるようになったもの（同じ検証で直した）: DDL の `DEFAULT` 句（省いた列を INSERT に足す）、trigger 本体の `UPDATING('列')`（書く側が静的に決めて渡す）、`INSERT … VALUES (seq.NEXTVAL, …) RETURNING id INTO v`（INSERT の前に代入）。
+模せるようになったもの（同じ検証で直した）: DDL の `DEFAULT` 句（省いた列を INSERT に足す）、trigger 本体の `UPDATING('列')`（書く側が静的に決めて渡す）、`INSERT … VALUES (seq.NEXTVAL, …) RETURNING id INTO v`（INSERT の前に代入）、
+CHECK / FOREIGN KEY の guard（`constraints.enforce`、#50）、`PRAGMA EXCEPTION_INIT` の番号を持つ例外クラス、`:NEW` を書き換える BEFORE trigger の畳み込み（#47）、式の中の別 module の関数呼び出しと OUT 引数のある関数の巻き上げ（#48）、別トランザクションの routine を呼ぶ側（#49）。
 
 **数値は合成 corpus 上のものであり、実案件耐性の証拠ではありません。** 非 AUTO の 27 件（決定の適用後。すべて REDESIGN で、全件が再設計を決定済み・実 DB で一致）を塞いでいるのは
 変換できない構文ではなく、**人が決めるべきこと**です（走査行数の上限、採番方式、トランザクション境界など。

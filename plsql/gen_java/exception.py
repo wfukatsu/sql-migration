@@ -11,6 +11,7 @@ preserved: `NO_DATA_FOUND` and `TOO_MANY_ROWS` are what a `SELECT INTO` does, no
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass, field
 
 from ..ir import model as M
@@ -95,7 +96,7 @@ def collect(program: M.Program) -> Registry:
                 if statement.kind != "Raise":
                     continue
                 if statement.error_code is not None:
-                    registry.add(statement.error_code, _class_for(statement, module),
+                    registry.add(statement.error_code, _class_for(statement, module, program),
                                  f"RAISE_APPLICATION_ERROR({statement.error_code})",
                                  statement.message or "", routine.id)
                 elif statement.exception:
@@ -104,8 +105,8 @@ def collect(program: M.Program) -> Registry:
                     if known:
                         registry.add(known[1], known[0], name, known[2], routine.id)
                     else:
-                        registry.add(_user_code(name), user_class(name), name,
-                                     "declared in PL/SQL", routine.id)
+                        code, class_name = class_of(name, routine, module, program=program)
+                        registry.add(code, class_name, name, "declared in PL/SQL", routine.id)
             handlers = list(routine.exception_handlers) + [
                 h for s in statements for h in getattr(s, "exception_handlers", []) or []]
             for handler in handlers:
@@ -116,9 +117,58 @@ def collect(program: M.Program) -> Registry:
                     elif name.upper() != "OTHERS":
                         # a handler catches this class by name, so the class has to exist even when the RAISE is
                         # in another routine (or nowhere: `PRAGMA EXCEPTION_INIT` binds it to an Oracle error)
-                        registry.add(_user_code(name.upper()), user_class(name), name.upper(),
-                                     "declared in PL/SQL", routine.id)
+                        code, class_name = class_of(name, routine, module, program=program)
+                        registry.add(code, class_name, name.upper(), "declared in PL/SQL", routine.id)
     return registry
+
+
+def declared_code(name: str, *holders) -> int | None:
+    """The Oracle number `PRAGMA EXCEPTION_INIT(name, -2291)` bound to a declared exception, from the routine's
+    or the package's declarations (`lower._bind_exception_codes` puts it in `initial`). None when unbound."""
+    for holder in holders:
+        for declaration in getattr(holder, "declarations", None) or []:
+            if declaration.declaration_kind == "exception" and declaration.name.upper() == name.upper() \
+                    and declaration.initial and re.fullmatch(r"-?\d+", declaration.initial.strip()):
+                return int(declaration.initial)
+    return None
+
+
+def class_of(name: str, *holders, program=None) -> tuple[int, str]:
+    """(code, Java class) for a PL/SQL exception name: predefined, PRAGMA-bound, or a pseudo-code of its own.
+
+    A bound exception keeps Oracle's number (#50, 2026-09-25): a guard the generator writes for a FOREIGN KEY
+    raises -2291, and `WHEN e_fk_violation` (EXCEPTION_INIT -2291) has to catch it. Before, the class carried a
+    pseudo-code and the two never met. A number Oracle already names (-1 is DUP_VAL_ON_INDEX) is that class.
+    """
+    upper = name.upper()
+    if upper in PREDEFINED:
+        return PREDEFINED[upper][1], PREDEFINED[upper][0]
+    if "." in upper and program is not None:
+        # `WHEN emp_api.e_invalid_raise`: the package's exception, so the package's class -- the one its own
+        # `RAISE e_invalid_raise` throws. Named from the qualified text it was `EmpApiEInvalidRaiseException`,
+        # which nothing ever threw (#48, samples/oracle-samples b05_3, 2026-09-25)
+        owner, _, bare = upper.partition(".")
+        module = next((m for m in program.modules if m.name.upper() == owner), None)
+        if module is not None:
+            return class_of(bare, module, *module.routines)
+    code = declared_code(upper, *holders)
+    if code is not None:
+        predefined = next((c for c, k, _ in PREDEFINED.values() if k == code), None)
+        return code, predefined or user_class(name)
+    return _user_code(upper), user_class(name)
+
+
+def bound_class(code: int, program) -> str | None:
+    """The class of a declared exception bound to `code` anywhere in the program, for a RAISE by number."""
+    if program is None or any(code == k for _, k, _ in PREDEFINED.values()):
+        return None
+    for module in program.modules:
+        holders = [module] + list(module.routines)
+        for holder in holders:
+            for declaration in getattr(holder, "declarations", None) or []:
+                if declaration.declaration_kind == "exception" and declared_code(declaration.name, holder) == code:
+                    return user_class(declaration.name)
+    return None
 
 
 def user_class(name: str) -> str:
@@ -126,9 +176,14 @@ def user_class(name: str) -> str:
     return java_class_name(name) + "Exception"
 
 
-def _class_for(statement: M.Raise, module: M.Module) -> str:
+def _class_for(statement: M.Raise, module: M.Module, program: M.Program | None = None) -> str:
     """One class per business code, named after the module that raises it."""
     predefined = next((c for c, code, _ in PREDEFINED.values() if code == statement.error_code), None)
+    bound = bound_class(statement.error_code, program) if statement.error_code is not None else None
+    if bound is not None:
+        # a number a declared exception is bound to (PRAGMA EXCEPTION_INIT): the RAISE by number throws that
+        # class (service._raise), so the registry has to name it the same
+        return bound
     if predefined is not None:
         # a code Oracle already names (-6502 is VALUE_ERROR) is that exception, not a business error of the
         # module: a second class for the code would keep the predefined one from being written at all
