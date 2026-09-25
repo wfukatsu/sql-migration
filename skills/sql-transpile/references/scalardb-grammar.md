@@ -152,6 +152,7 @@ ScalarDB の型は 11 種（`BOOLEAN` / `INT` / `BIGINT` / `FLOAT` / `DOUBLE` / 
 | `NAMESPACE` | WARN | `catalog.schema.table` の catalog を落とし、schema を namespace にした |
 | `ALTER` / `DROP_INDEX` | INFO / ERROR | 複数の操作の ALTER TABLE を 1 操作ずつに割った（INFO。原子的でなくなる）。対応しない操作、表と列を名指ししない DROP INDEX（ERROR） |
 | `TEMP` / `SAVEPOINT` / `STATEMENT` / `UNPARSED` | ERROR | 一時表、SAVEPOINT、ScalarDB SQL に無い文、SQLGlot が文として解析しなかったもの（ビュー、トリガー、シーケンス、GRANT、セッションの設定） |
+| `WITH_PLSQL` | ERROR | WITH 句の中に PL/SQL の関数・プロシージャを持つ問合せ（Oracle 12c+）。関数はアプリ側へ移し、問合せはそのあと変換する |
 | `PLSQL_BLOCK` | ERROR | PL/SQL のブロック（ストアドプログラムか無名ブロック）。SQL 文ではない。plsql-migrate スキルで移行する |
 | `RMW` | ERROR | `SET col = col + 1` のように列を参照する SET。1 つのトランザクションの中で SELECT → 計算 → リテラルで UPDATE |
 | `EXPR` / `COL_COL` | ERROR | 値にリテラルとバインド変数以外の式がある / 列どうしの比較 |
