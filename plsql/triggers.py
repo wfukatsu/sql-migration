@@ -96,6 +96,30 @@ class Trigger:
             return None
         return column, source.group(1).lower()
 
+    def foldable_assignments(self) -> list[tuple[str, str]] | None:
+        """[(column, expression)] for the `:NEW.<column> := <expression>` statements the writer can fold into
+        the values it writes (#47): every correlation assignment is at the top of the body (unconditional), and
+        each expression reads only :NEW / :OLD values, literals and functions the runtime evaluates. None when
+        any assignment is not of that shape -- then the trigger stays a redesign (trigger-patterns C)."""
+        from .lower import _walk
+
+        anywhere = [s for s in _walk(self.routine.body)
+                    if s.kind == "Assignment" and CORRELATION.match((s.target or "").strip())]
+        top = [s for s in self.routine.body
+               if s.kind == "Assignment" and CORRELATION.match((s.target or "").strip())]
+        if not anywhere or len(anywhere) != len(top):
+            return None
+        out: list[tuple[str, str]] = []
+        for statement in top:
+            target = CORRELATION.fullmatch((statement.target or "").strip())
+            if target is None or target.group("qualifier").upper() != "NEW":
+                return None
+            expression = (statement.expression or "").strip()
+            if not _folds(expression):
+                return None
+            out.append((target.group("column").lower(), expression))
+        return out
+
     def assigns_correlation(self) -> bool:
         """`:NEW.x := ...` を書く trigger（採番 trigger）。**掛けない。**
 
@@ -107,6 +131,26 @@ class Trigger:
 
         return any(s.kind == "Assignment" and CORRELATION.match((s.target or "").strip())
                    for s in _walk(self.routine.body))
+
+
+_KEYWORDS = {"NULL", "AND", "OR", "NOT", "IS", "TRUE", "FALSE", "IN", "LIKE", "BETWEEN", "CASE", "WHEN", "THEN",
+             "ELSE", "END"}
+
+
+def _folds(expression: str) -> bool:
+    """Whether the expression reads nothing but :NEW / :OLD values, literals and evaluable functions."""
+    from .sqlbridge import EVALUABLE
+
+    rest = CORRELATION.sub(" ", _LITERAL.sub("''", expression))
+    if re.search(r"\bSELECT\b", rest, re.IGNORECASE):
+        return False
+    for name, call in re.findall(r"\b([A-Za-z][\w$#]*)\b(\s*\()?", rest):
+        if call:
+            if name.upper() not in EVALUABLE:
+                return False
+        elif name.upper() not in _KEYWORDS:
+            return False   # a local, a parameter, a package variable: the writer does not have it
+    return True
 
 
 def correlation_row(routine: M.Routine, trigger_when: str | None) -> dict[str, "M.BindVariable | None"]:
@@ -250,6 +294,7 @@ def _apply(statement: M.Statement, routine: M.Routine, found: dict[str, list[Tri
             statement.add("WARN", "TRIGGER_NOT_APPLIED",
                           f"{trigger.module.name} が掛かる書き込みだが、**掛けていない**。{unhandled}（#12）")
             continue
+        folds: list[tuple[str, str]] | None = None
         if trigger.assigns_correlation():
             inlined = _inline_sequence(statement, trigger, kind, tree)
             if inlined is not None:
@@ -259,11 +304,13 @@ def _apply(statement: M.Statement, routine: M.Routine, found: dict[str, list[Tri
                                   f"{trigger.sequence_key()[1]}.NEXTVAL`）を、この INSERT の値として織り込んだ。"
                                   f"番号は移行先の採番方式（計画 §9）で取る。**掛かるのはこの経路だけ**である（#12 §0）")
                 continue
-            statement.add("WARN", "TRIGGER_REDESIGN",
-                          f"{trigger.module.name} は書き込まれる行の値そのものを変える trigger である。"
-                          f"呼び出しでは置き換えられない——採番 Service への再設計である"
-                          f"（trigger-patterns C / #12）")
-            continue
+            folds = trigger.foldable_assignments()
+            if folds is None:
+                statement.add("WARN", "TRIGGER_REDESIGN",
+                              f"{trigger.module.name} は書き込まれる行の値そのものを変える trigger で、その代入は"
+                              f"書く値に畳み込めない（条件つき、または局所変数や SQL を読む）。"
+                              f"呼び出しでは置き換えられない——再設計である（trigger-patterns C / #12）")
+                continue
         applied = _call(statement, routine, trigger, kind, tree, schema, index)
         if applied is None:
             statement.add("WARN", "TRIGGER_NOT_APPLIED",
@@ -272,6 +319,19 @@ def _apply(statement: M.Statement, routine: M.Routine, found: dict[str, list[Tri
                           f"同じにならない（#12）")
             continue
         read, call = applied
+        if folds:
+            # #47: `:NEW.email := UPPER(:NEW.email)` -- the written value is the assigned one. The body is still
+            # called (its checks run, and it reassigns its own argument), and the statement writes the expression
+            # with the row's values put in; later triggers on this statement see the folded values, as in Oracle
+            folded = _fold(tree, kind, folds, _argument_values(call))
+            if folded is None:
+                statement.add("WARN", "TRIGGER_NOT_APPLIED",
+                              f"{trigger.module.name} の `:NEW` の代入をこの文の値に畳み込めなかった（#47）")
+                continue
+            statement.original_sql = tree.sql(dialect="oracle", normalize_functions=False)
+            statement.add("INFO", "TRIGGER_FOLDED",
+                          f"{trigger.module.name} の代入を書く値に畳み込んだ: "
+                          f"{'; '.join(f'{c} = {e}' for c, e in folded)}。検査は呼び出しで行う（#47）")
         if read is not None:
             head.append(read)
         (head if trigger.timing == "BEFORE" else tail).append(call)
@@ -280,6 +340,55 @@ def _apply(statement: M.Statement, routine: M.Routine, found: dict[str, list[Tri
                       f"この書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML "
                       f"には掛からない——網羅性は検証で追う（#12 §0 の決定）")
     return head, tail
+
+
+def _argument_values(call: M.Statement) -> dict[str, str]:
+    """{correlation name (lower): the SQL text passed for it} from the call `_invocation` built (or its guard)."""
+    node = call if call.kind == "Call" else call.branches[0].body[0]
+    out: dict[str, str] = {}
+    for argument in getattr(node, "arguments", None) or []:
+        name, _, value = argument.partition("=>")
+        out[name.strip().lower()] = value.strip()
+    return out
+
+
+def _fold(tree: exp.Expression, kind: str, folds: list[tuple[str, str]],
+          values: dict[str, str]) -> list[tuple[str, str]] | None:
+    """Write each `:NEW.<column> := <expression>` into the statement, with :NEW / :OLD replaced by what this
+    statement passes for them. Returns [(column, folded expression)], or None when the tree is not a shape
+    the values can be written into."""
+    out: list[tuple[str, str]] = []
+    for column, expression in folds:
+        def replace(match: re.Match) -> str:
+            key = f"{match.group('qualifier')}.{match.group('column')}".lower()
+            return values.get(key, "NULL")
+        folded = CORRELATION.sub(replace, expression)
+        try:
+            value = sqlglot.parse_one(folded, dialect="oracle")
+        except Exception:
+            return None
+        if kind == "INSERT":
+            schema = tree.this if isinstance(tree.this, exp.Schema) else None
+            row = tree.expression.expressions[0] if isinstance(tree.expression, exp.Values) else None
+            if schema is None or not isinstance(row, exp.Tuple):
+                return None
+            columns = [c.name.lower() for c in schema.expressions if isinstance(c, (exp.Column, exp.Identifier))]
+            if column in columns:
+                row.expressions[columns.index(column)].replace(value)
+            else:
+                schema.append("expressions", exp.to_identifier(column))
+                row.append("expressions", value)
+        elif kind == "UPDATE":
+            existing = next((a for a in tree.expressions or [] if isinstance(a, exp.EQ)
+                             and isinstance(a.this, exp.Column) and a.this.name.lower() == column), None)
+            if existing is not None:
+                existing.set("expression", value)
+            else:
+                tree.append("expressions", exp.EQ(this=exp.column(column), expression=value))
+        else:
+            return None
+        out.append((column, folded))
+    return out
 
 
 def _inline_sequence(statement: M.SqlOperation, trigger: Trigger, kind: str, tree: exp.Expression) -> bool | None:

@@ -833,17 +833,40 @@ def _statement(file: JavaFile, statement: M.Statement, routine: M.Routine, resul
             result.untranslated.append(statement.id)
 
 
+def _folded_by_writer(routine: M.Routine) -> bool:
+    """Whether every `:NEW.x := ...` of this trigger body is one the writer folds into its values (#47). A body
+    whose assignments cannot be folded (a sequence read, a conditional assignment) is never called, and an
+    assignment to its own argument would only look as if the row were changed."""
+    from ..triggers import Trigger
+
+    module = _MODULE.get()
+    if module is None or routine.routine_kind != "trigger-body":
+        return False
+    shape = Trigger(module=module, routine=routine, table=(module.trigger_table or "").lower(),
+                    timing=(module.trigger_timing or "BEFORE").upper(), event=(module.trigger_event or "").upper())
+    return shape.foldable_assignments() is not None
+
+
 def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Routine,
                          result: ServiceFile) -> None:
     kind = statement.kind
 
     if kind == "Assignment":
         if (statement.target or "").lstrip(":").upper().startswith(("NEW.", "OLD.")):
-            # `:NEW.order_id := seq_order_id.NEXTVAL` は、**これから書き込まれる行を書き換える**もので、
-            # Java の引数への代入では呼び出し側に返らない。値として受け取ったものを、値として返す形
-            # （採番 Service）へ移すのは再設計であって翻訳ではない（#12 / trigger-patterns C）。
-            # 解決できる名前なので黙って通ってしまう——ここで明示的に拒む。
-            raise Untranslatable([f"assignment to {statement.target}"], statement.target or "")
+            # `:NEW.email := UPPER(:NEW.email)` は、**これから書き込まれる行を書き換える**もので、Java の引数への
+            # 代入では呼び出し側に返らない。書く側が同じ式を書く値に畳み込む（triggers._fold、#47）ので、本体では
+            # 自分の引数に代入して、あとの検査が書き換え後の値を読めるようにする。畳み込めない代入（条件つき、
+            # 局所変数を読む）の trigger は書く側が呼ばない（TRIGGER_REDESIGN）ので、ここは通らない
+            target = (statement.target or "").strip()
+            if target.lstrip(":").upper().startswith("OLD.") or not _folded_by_writer(routine):
+                raise Untranslatable([f"assignment to {statement.target}"], statement.target or "")
+            mapped = next((java for name, java in _scope(routine, _MODULE.get()).items()
+                           if name.lower() == target.lower()), None)
+            if mapped is None:
+                raise Untranslatable([f"assignment to {statement.target}"], statement.target or "")
+            file.comment(f"{target}: 書く側は同じ式を書く値に畳み込んでいる（#47）。ここでは後続の検査のために引数へ代入する")
+            file.line(f"{mapped} = {_expr(file, statement.expression, routine, result)};")
+            return
         written = (statement.target or "").strip()
         if "(" in written:
             # `v_sal(r.last_name) := r.salary`: an element of a collection (#45). `Plsql.set` grows a nested

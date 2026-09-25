@@ -300,6 +300,33 @@ hi/lo、業務上意味のある番号は counters 表 + 再試行。`docs/plsql
 trigger 固有の論点は **`WHEN (NEW.order_id IS NULL)`** で、「呼び出し側が指定したならそれを使う」
 という意味である。Service でも同じにすること——**常に採番すると、指定した ID が黙って無視される**。
 
+### C-2. 値を書き換える BEFORE trigger（畳み込み、#47）
+
+```sql
+BEFORE INSERT OR UPDATE OF salary, email ON employees FOR EACH ROW
+BEGIN
+  :NEW.email := UPPER(:NEW.email);
+  IF UPDATING('SALARY') AND :NEW.salary < :OLD.salary * 0.5 THEN RAISE_APPLICATION_ERROR(-20030, '…'); END IF;
+END;
+```
+
+採番以外の `:NEW.x := 式` も、**式が :NEW / :OLD の値・リテラル・runtime が評価できる関数だけを読み、本体の先頭で無条件**
+なら、書く側が同じ式を書く値に畳み込める（`triggers._fold`、2026-09-25、samples/oracle-samples の `emp_biu_trg`）:
+
+```sql
+INSERT INTO employees (…, email, …) VALUES (…, UPPER(p_email), …);
+-> emp_biu_trg.body(NEW.email => UPPER(p_email), …);            -- 検査はここで走る（BEFORE）
+   INSERT INTO employees (…, email, …) VALUES (…, UPPER(UPPER(p_email)), …);
+UPDATE employees SET salary = v WHERE employee_id = p_id;         -- email を SET していない
+-> SELECT email, salary INTO v_trg_1, v_trg_2 …;                  -- :NEW.email は今の値
+   emp_biu_trg.body(…);
+   UPDATE employees SET salary = v, email = UPPER(v_trg_1) WHERE employee_id = p_id;
+```
+
+本体は自分の引数に代入する（`newEmail = Plsql.upper(newEmail)`）ので、あとの検査は書き換え後の値を読む。
+`TRIGGER_FOLDED` が付き、TRG-001 は「決定済み」（FOLD_DECISION）になる。畳み込めない代入——条件つき、局所変数や
+SQL を読む、`:OLD` への代入——は `TRIGGER_REDESIGN` のまま（掛けない、と言う）。
+
 ## D. 別表を読んで検証する
 
 ```sql
