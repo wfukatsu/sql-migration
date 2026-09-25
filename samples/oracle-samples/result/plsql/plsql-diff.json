@@ -103,13 +103,7 @@
    "b04_3_implicit_cursor_attrs": {
     "routine": "b04_3_implicit_cursor_attrs.b04_3_implicit_cursor_attrs",
     "verdict": "REVIEW",
-    "differences": [
-     "table emp_audit row count: expected=0 actual=2",
-     "table emp_audit: unexpected (actual only): audit_id=1",
-     "table emp_audit: unexpected (actual only): audit_id=2",
-     "table employees row employee_id=120: salary: expected=4800 actual=4900.0 (value)",
-     "table employees row employee_id=125: salary: expected=3200 actual=3300.0 (value)"
-    ],
+    "differences": [],
     "accepted": [],
     "scale_only": [
      "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
@@ -118,6 +112,8 @@
      "table employees row employee_id=103: salary: expected=9000 actual=9000.0 (scale)",
      "table employees row employee_id=104: salary: expected=6000 actual=6000.0 (scale)",
      "table employees row employee_id=107: salary: expected=4200 actual=4200.0 (scale)",
+     "table employees row employee_id=120: salary: expected=4800 actual=4800.0 (scale)",
+     "table employees row employee_id=125: salary: expected=3200 actual=3200.0 (scale)",
      "table employees row employee_id=145: salary: expected=14000 actual=14000.0 (scale)",
      "table employees row employee_id=146: salary: expected=13500 actual=13500.0 (scale)",
      "table employees row employee_id=150: salary: expected=10000 actual=10000.0 (scale)",
@@ -179,13 +175,7 @@
    "b04_4_3_for_update_current_of": {
     "routine": "b04_4_3_for_update_current_of.b04_4_3_for_update_current_of",
     "verdict": "REVIEW",
-    "differences": [
-     "table emp_audit row count: expected=0 actual=2",
-     "table emp_audit: unexpected (actual only): audit_id=1",
-     "table emp_audit: unexpected (actual only): audit_id=2",
-     "table employees row employee_id=120: salary: expected=4800 actual=5280.0 (value)",
-     "table employees row employee_id=125: salary: expected=3200 actual=3520.0 (value)"
-    ],
+    "differences": [],
     "accepted": [],
     "scale_only": [
      "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
@@ -194,6 +184,8 @@
      "table employees row employee_id=103: salary: expected=9000 actual=9000.0 (scale)",
      "table employees row employee_id=104: salary: expected=6000 actual=6000.0 (scale)",
      "table employees row employee_id=107: salary: expected=4200 actual=4200.0 (scale)",
+     "table employees row employee_id=120: salary: expected=4800 actual=4800.0 (scale)",
+     "table employees row employee_id=125: salary: expected=3200 actual=3200.0 (scale)",
      "table employees row employee_id=145: salary: expected=14000 actual=14000.0 (scale)",
      "table employees row employee_id=146: salary: expected=13500 actual=13500.0 (scale)",
      "table employees row employee_id=150: salary: expected=10000 actual=10000.0 (scale)",
@@ -279,10 +271,7 @@
    "b04_6_2_user_exceptions": {
     "routine": "b04_6_2_user_exceptions.b04_6_2_user_exceptions",
     "verdict": "REVIEW",
-    "differences": [
-     "table employees row count: expected=15 actual=16",
-     "table employees: unexpected (actual only): employee_id=999"
-    ],
+    "differences": [],
     "accepted": [],
     "scale_only": [
      "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
@@ -306,19 +295,15 @@
    "b05_1_call_raise_salary": {
     "routine": "b05_1_call_raise_salary.b05_1_call_raise_salary",
     "verdict": "REVIEW",
-    "differences": [
-     "table emp_audit row count: expected=0 actual=2",
-     "table emp_audit: unexpected (actual only): audit_id=1",
-     "table emp_audit: unexpected (actual only): audit_id=2",
-     "table employees row employee_id=104: salary: expected=6000 actual=6600.0 (value)",
-     "table employees row employee_id=107: salary: expected=4200 actual=4410.0 (value)"
-    ],
+    "differences": [],
     "accepted": [],
     "scale_only": [
      "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
      "table employees row employee_id=101: salary: expected=17000 actual=17000.0 (scale)",
      "table employees row employee_id=102: salary: expected=17000 actual=17000.0 (scale)",
      "table employees row employee_id=103: salary: expected=9000 actual=9000.0 (scale)",
+     "table employees row employee_id=104: salary: expected=6000 actual=6000.0 (scale)",
+     "table employees row employee_id=107: salary: expected=4200 actual=4200.0 (scale)",
      "table employees row employee_id=120: salary: expected=4800 actual=4800.0 (scale)",
      "table employees row employee_id=125: salary: expected=3200 actual=3200.0 (scale)",
      "table employees row employee_id=145: salary: expected=14000 actual=14000.0 (scale)",
@@ -679,11 +664,10 @@
    "emp_api_give_raise_ok": {
     "routine": "emp_api.give_raise~1",
     "verdict": "REVIEW",
-    "differences": [
-     "table emp_audit row audit_id=1: old_salary: expected=6000 actual=6000.0 (scale); new_salary: expected=6600 actual=6600.0 (scale); changed_by: expected=<masked> actual=NULL (masked on one side only); changed_at: expected=<masked> actual=NULL (masked on one side only)"
-    ],
+    "differences": [],
     "accepted": [],
     "scale_only": [
+     "table emp_audit row audit_id=1: old_salary: expected=6000 actual=6000.0 (scale); new_salary: expected=6600 actual=6600.0 (scale)",
      "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
      "table employees row employee_id=101: salary: expected=17000 actual=17000.0 (scale)",
      "table employees row employee_id=102: salary: expected=17000 actual=17000.0 (scale)",
@@ -705,9 +689,7 @@
    "log_msg_ok": {
     "routine": "log_msg.log_msg",
     "verdict": "REVIEW",
-    "differences": [
-     "table emp_audit row audit_id=1: changed_by: expected=<masked> actual=NULL (masked on one side only); changed_at: expected=<masked> actual=NULL (masked on one side only)"
-    ],
+    "differences": [],
     "accepted": [],
     "scale_only": [
      "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
@@ -779,12 +761,11 @@
    "raise_salary_ok": {
     "routine": "raise_salary.raise_salary",
     "verdict": "REVIEW",
-    "differences": [
-     "table emp_audit row audit_id=1: old_salary: expected=6000 actual=6000.0 (scale); new_salary: expected=6600 actual=6600.0 (scale); changed_by: expected='HRS' actual=NULL (value); changed_at: expected='2026-09-25T04:38:16.570887' actual=NULL (value)"
-    ],
+    "differences": [],
     "accepted": [],
     "scale_only": [
      "out p_new_sal (scale): expected=6600 actual=6600.00",
+     "table emp_audit row audit_id=1: old_salary: expected=6000 actual=6000.0 (scale); new_salary: expected=6600 actual=6600.0 (scale)",
      "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
      "table employees row employee_id=101: salary: expected=17000 actual=17000.0 (scale)",
      "table employees row employee_id=102: salary: expected=17000 actual=17000.0 (scale)",
@@ -806,7 +787,7 @@
   },
   "not_compared": {},
   "fingerprints": {
-   "toolchain": "bc8ea8f0ec9eda4dd74420ca8585ade619109c55a0097f9497611dce33af54d2",
+   "toolchain": "e0569dbed4bd38e4ba71271d3f451ed441259baa9d2e4a7d4d4625e42285101a",
    "sources": {
     "annual_comp": "a43e3576d8b1c2f648b65d5603c0001c0aaec44531a54d9bf47462ce3bb2ac15",
     "b04_1_variables": "22a5f4c43ce7bc93eb38ea67f54f4b00a202f151bf79b7773cc553c6a005fc03",

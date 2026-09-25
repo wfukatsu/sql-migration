@@ -366,6 +366,34 @@ package 仕様部の定数を static field に。
 
 trigger を全部配備したので、employees を書くシナリオでは Oracle 側の `emp_audit` に trigger の行が入る一方、Java 側には入らない（TRG-002 が言っていたこと）。
 
+### 4 回目の対応（2026-09-25、検証結果から洗い出したタスク）
+
+3 回目の結果を読み直して洗い出したタスクを順に対応した。すぐに対応できないものは Issue #47〜#58 にした。
+
+| タスク | 対応 | 取り直した結果 |
+|---|---|---|
+| 記録の訂正 | 「相違 15 本は値の差が無い」は誤り。DEFAULT 列の NULL は値の差だった（上の内訳表） | — |
+| DDL の `DEFAULT` 句を INSERT に反映 | 省かれた DEFAULT 列（`changed_by DEFAULT USER` / `changed_at DEFAULT SYSTIMESTAMP` / リテラル / `seq.NEXTVAL` / `SYSDATE`）を INSERT に書き足す（`plsql.identity`、`DEFAULT_FILLED`）。USER / SYSTIMESTAMP は AuditContext が受ける。あわせて audit を受け取る routine を呼ぶ側にも audit の引数が要る（`needs_audit` を呼び先へ再帰） | `raise_salary_ok` `emp_api_give_raise_ok` `log_msg_ok` が **一致** |
+| TRG-002（trigger の掛け方） | 決定の適用後に残っていた `TRIGGER_NOT_APPLIED` は `emp_biu_trg` の `UPDATING('SALARY')` だけで、決定ではなくツールの穴だった。書く側が SET の列から静的に決めて BOOLEAN 引数（`UPDATING_SALARY`）で渡す。TriggerChecks の D 型はイベントに false を渡す | `emp_biu_trg` は `:NEW.email := UPPER(:NEW.email)` の代入が残るので `TRIGGER_REDESIGN`（→ #47） |
+| callerBoundary の ROLLBACK をハーネスが再現 | シナリオの `boundary: rollback`（Oracle 側は原文が自分で戻すので無視、ScalarDB 側はハーネス＝呼び出し側が戻す） | `b04_3` `b04_4_3` `b04_6_2` `b05_1` が **一致** |
+| plsql_compare の混在行 | `(scale)` だけの列を別の行に出し、scale-only として数える | `6000` と `6000.0` が差に数えられなくなった |
+| `INSERT … RETURNING id INTO v`（`emp_api.hire`） | VALUES の式（`emp_seq.NEXTVAL`）を INSERT の前に代入し、その変数を書く（`RETURNING_HOISTED`） | `hire` は生成できる。呼ぶ側 `b05_3` は式の中の別 module 呼び出しで止まる（→ #48） |
+
+**4 回目のあとの PL/SQL 実 DB 比較（31 シナリオ、一致 23 / 相違 8）**。相違 8 本はすべて「Oracle は正常終了、Java は解析が断った所で throw」（値の差なし）か、移行先に無い制約の帰結:
+
+| 相違 | Issue |
+|---|---|
+| `b05_3_call_emp_api`: 式の中の `emp_api.hire(...)` / `emp_api.call_count` | #48（trigger の値の書き換えは #47） |
+| `b05_4_call_log_msg`: 別トランザクションの routine を呼ぶ側 | #49 |
+| `b06_2_forall_save_exceptions`: CHECK 制約が無く 4 行多く入る | #50（決定待ち） |
+| `b06_2_2_forall_returning`: FORALL … RETURNING BULK COLLECT | #51 |
+| `b06_3_native_dynamic_sql`: 動的 UPDATE の RETURNING、動的 PL/SQL | #52 |
+| `b06_3_6_dbms_sql`: DBMS_SQL | #53 |
+| `b06_4_collection_in_sql`: オブジェクト型のコンストラクタ、`TABLE()` | #54 |
+| `b06_5_builtin_packages`: 外部 package の名前付き引数 | #55 |
+
+そのほかに Issue にしたもの: view への INSTEAD OF trigger（#56）、SQL 側の非決定な文の宣言（#57）、CASE_ERROR の分類（#58）。
+
 ## 付録（`result/tables.md` と同じ。`make_tables.py` が結果ファイルから作る。**Issue 修正後の数字**）
 
 ### SQL 変換（文ごと）
@@ -651,7 +679,7 @@ trigger を全部配備したので、employees を書くシナリオでは Orac
 | `emp_api.get_by_dept` | REDESIGN | SCAN-002, CUR-002, STATE-001 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります |
 | `emp_api.give_raise~1` | REDESIGN | SQL-004, SQL-001, STATE-001, TRG-002 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります; TRG-002 |
 | `emp_api.give_raise~2` | REDESIGN | SQL-001, STATE-001, TRG-002 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります; TRG-002 |
-| `emp_api.hire` | REDESIGN | EXC-001, SQL-001, STATE-001, TRG-002 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります; TRG-002 |
+| `emp_api.hire` | REDESIGN | EXC-001, STATE-001, TRG-002 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります; TRG-002 |
 | `emp_api.validate_pct` | REDESIGN | STATE-001 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります |
 | `emp_biu_trg.body` | REDESIGN | TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
 | `emp_dept_cap_trg.body` | REDESIGN | TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
@@ -671,15 +699,15 @@ trigger を全部配備したので、employees を書くシナリオでは Orac
 | `annual_comp_with_comm` | `annual_comp.annual_comp` | 一致 |  |
 | `b04_1_variables` | `b04_1_variables.b04_1_variables` | 一致 |  |
 | `b04_2_control_flow` | `b04_2_control_flow.b04_2_control_flow` | 一致 |  |
-| `b04_3_implicit_cursor_attrs` | `b04_3_implicit_cursor_attrs.b04_3_implicit_cursor_attrs` | 相違 | table emp_audit row count: expected=0 actual=2; table emp_audit: unexpected (actual only): audit_id=1; table emp_audit: unexpected (actual only): audit_id=2; table employ |
+| `b04_3_implicit_cursor_attrs` | `b04_3_implicit_cursor_attrs.b04_3_implicit_cursor_attrs` | 一致 |  |
 | `b04_4_1_explicit_cursor` | `b04_4_1_explicit_cursor.b04_4_1_explicit_cursor` | 一致 |  |
 | `b04_4_2_cursor_for_loop` | `b04_4_2_cursor_for_loop.b04_4_2_cursor_for_loop` | 一致 |  |
-| `b04_4_3_for_update_current_of` | `b04_4_3_for_update_current_of.b04_4_3_for_update_current_of` | 相違 | table emp_audit row count: expected=0 actual=2; table emp_audit: unexpected (actual only): audit_id=1; table emp_audit: unexpected (actual only): audit_id=2; table employ |
+| `b04_4_3_for_update_current_of` | `b04_4_3_for_update_current_of.b04_4_3_for_update_current_of` | 一致 |  |
 | `b04_4_4_ref_cursor` | `b04_4_4_ref_cursor.b04_4_4_ref_cursor` | 一致 |  |
 | `b04_5_records_collections` | `b04_5_records_collections.b04_5_records_collections` | 一致 |  |
 | `b04_6_1_predefined_exceptions` | `b04_6_1_predefined_exceptions.b04_6_1_predefined_exceptions` | 一致 |  |
-| `b04_6_2_user_exceptions` | `b04_6_2_user_exceptions.b04_6_2_user_exceptions` | 相違 | table employees row count: expected=15 actual=16; table employees: unexpected (actual only): employee_id=999 |
-| `b05_1_call_raise_salary` | `b05_1_call_raise_salary.b05_1_call_raise_salary` | 相違 | table emp_audit row count: expected=0 actual=2; table emp_audit: unexpected (actual only): audit_id=1; table emp_audit: unexpected (actual only): audit_id=2; table employ |
+| `b04_6_2_user_exceptions` | `b04_6_2_user_exceptions.b04_6_2_user_exceptions` | 一致 |  |
+| `b05_1_call_raise_salary` | `b05_1_call_raise_salary.b05_1_call_raise_salary` | 一致 |  |
 | `b05_3_call_emp_api` | `b05_3_call_emp_api.b05_3_call_emp_api` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Assignment: emp_api.hire) |
 | `b05_4_call_log_msg` | `b05_4_call_log_msg.b05_4_call_log_msg` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Call: log_msg は別トランザクションで呼ぶ routine である); table emp_audit row count: expected=1 act |
 | `b06_1_bulk_collect_limit` | `b06_1_bulk_collect_limit.b06_1_bulk_collect_limit` | 一致 |  |
