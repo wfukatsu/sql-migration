@@ -173,6 +173,9 @@ _LEAD = r"(?:\s|--[^\n]*+(?:\n|$)|/\*.*?\*/)*+"
 PLSQL_BLOCK = re.compile(_LEAD + r"(?:CREATE\s+(?:OR\s+REPLACE\s+)?(?:(?:NON)?EDITIONABLE\s+)?"
                          r"(?:PROCEDURE|FUNCTION|PACKAGE|TRIGGER|TYPE\s+BODY)\b|DECLARE\b|BEGIN\b)", re.I | re.S)
 _SLASH_LINE = re.compile(r"^[ \t]*/[ \t]*\r?$", re.M)
+# a query that declares PL/SQL in its WITH clause (Oracle 12c+): its semicolons end PL/SQL statements too, and
+# SQL*Plus needs a `/` after it. Kept whole like a block and refused by name (#30)
+WITH_PLSQL = re.compile(_LEAD + r"WITH\s+(?:FUNCTION|PROCEDURE)\b", re.I | re.S)
 # a chunk holding nothing but comments and whitespace (possessive for the same reason as _LEAD)
 _COMMENTS_ONLY = re.compile(r"(?:\s|--[^\n]*+\n?|/\*.*?\*/)*+", re.S)
 
@@ -193,7 +196,13 @@ def _split_statements(text: str, dialect: str) -> list[str]:
         if PLSQL_BLOCK.match(segment):
             stmts.append(segment.strip())
         else:
-            stmts.extend(_split_on_semicolons(segment, dialect))
+            chunks = _split_on_semicolons(segment, dialect)
+            for i, chunk in enumerate(chunks):
+                if WITH_PLSQL.match(chunk):
+                    # WITH FUNCTION ... runs up to the `/` that ends this segment: everything after it is its body
+                    chunks = chunks[:i] + [";\n".join(chunks[i:])]
+                    break
+            stmts.extend(chunks)
     return stmts
 
 
@@ -259,6 +268,12 @@ class StatementConverter:
         if replace:
             src = replace.group("lead") + "INSERT INTO" + sql[replace.end():]
             upsert = True
+        if self.dialect == "oracle" and WITH_PLSQL.match(src):
+            res.kind, res.status = "WITH_PLSQL", "ERROR"
+            res.issues.append(Issue("ERROR", "WITH_PLSQL", "a PL/SQL function or procedure declared in the WITH clause: "
+                                                           "move it to the application and call it there; the query "
+                                                           "itself can then be converted or planned"))
+            return res
         if self.dialect == "oracle" and PLSQL_BLOCK.match(src):
             res.kind, res.status = "PLSQL_BLOCK", "ERROR"
             res.issues.append(Issue("ERROR", "PLSQL_BLOCK", "a PL/SQL block (stored program or anonymous block) is not a SQL "

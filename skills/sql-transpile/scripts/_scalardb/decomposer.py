@@ -293,7 +293,8 @@ class Decomposer:
         preds_seen: dict[str, list] = {}
         global_alias: dict[str, str] = {}
         for t in node.find_all(exp.Table):
-            if t.name.lower() not in cte_names and t.name.lower() != "dual":
+            # a table function (JSON_TABLE ...) parses as a Table without a name: nothing to fetch (#33)
+            if t.name and t.name.lower() not in cte_names and t.name.lower() != "dual":
                 global_alias[(t.alias or t.name).lower()] = t.name.lower()
         for sel in node.find_all(exp.Select):
             scope = Scope(sel, self.registry)
