@@ -214,6 +214,8 @@ Oracle との比較が捕まえた——**trigger を掛ける側のバグは、
 routine は黙って通り過ぎていた——**正しく掛けられた routine が REDESIGN で、掛けられなかった routine が AUTO に
 なりうる**、という逆転があった（レビュー #27-25）。
 
+**`UPDATING('列')` は書く側が渡す**（2026-09-25、samples/oracle-samples の `emp_biu_trg`）。本体が `IF UPDATING('SALARY') THEN` で列ごとのイベントを読むとき、この UPDATE が SET に salary を書いているかは呼ぶ側で静的に決まるので、`INSERTING` / `UPDATING` / `DELETING` と同じく BOOLEAN の引数（`UPDATING_SALARY`）で渡す。以前は「渡す形が無い」として掛けていなかった。TriggerChecks の D 型（今ある行を本体に通す）はイベントに false を渡す——今ある行は書かれている最中ではない。`:NEW.x := …` で値を書き換える本体は変わらず `TRIGGER_REDESIGN`（#47）。
+
 **判定は動かない。** trigger が REDESIGN なら、それを呼ぶ経路も REDESIGN になる（呼び出しグラフを
 通って伝わる）。`mark_shipped` は AUTO から REDESIGN へ変わった——**簡単な routine だから安全、
 ということではない**。網羅性はその経路の設計の問題であって、routine の複雑さの問題ではない。
