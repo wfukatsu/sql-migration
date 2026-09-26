@@ -431,6 +431,19 @@ class _Parser:
                     and self.tokens[self.position + 1][1] == "(":
                 out.append(self._cast() if value.upper() == "CAST" else self._call())
                 continue
+            if kind == "attribute" and self.position + 1 < len(self.tokens) \
+                    and self.tokens[self.position + 1][1] == "(":
+                # `SQL%BULK_ROWCOUNT(i)`: an attribute that is a collection, read by element (#51)
+                holder = self.scope.get(" ".join(value.split()).replace(" ", "").lower() + "#collection")
+                if holder is not None:
+                    self.take()
+                    self.take()   # (
+                    element = self.parse_or()
+                    if self.peek() is not None and self.peek()[1] == ")":
+                        self.take()
+                    self.result.imports.add(HELPER_IMPORT)
+                    out.append(f"{HELPER}.at({holder}, {element})")
+                    continue
             self.take()
             out.append(self._atom(kind, value))
         return "".join(out).strip()
@@ -481,6 +494,32 @@ class _Parser:
         head, _, tail = plsql_name.partition(".")
         collection = self.scope.get(f"{head.lower()}#collection")
         constructor = self.scope.get(f"{plsql_name.lower()}#constructor")
+        record = self.scope.get(f"{plsql_name.lower()}#record")
+        if record and not collection and not constructor:
+            # `emp_grade_t(a, b, 'X')`: a schema object type's constructor builds its record (#54)
+            self.take()
+            self.take()   # (
+            arguments: list[str] = []
+            while self.peek() is not None and self.peek()[1] != ")":
+                arguments.append(self.parse_or())
+                if self.peek() is not None and self.peek()[1] == ",":
+                    self.take()
+            if self.peek() is not None and self.peek()[1] == ")":
+                self.take()
+            fields = (self.scope.get(f"{plsql_name.lower()}#fields") or "").split(",")
+            if len(fields) != len(arguments):
+                self.result.unknown.append(f"{plsql_name}: {len(arguments)} arguments for {len(fields)} attributes")
+                return plsql_name
+            for i, java in enumerate(fields):
+                if java == "BigDecimal" and arguments[i] != "null" and not arguments[i].startswith(f"{HELPER}.dec("):
+                    self.result.imports.add(HELPER_IMPORT)
+                    arguments[i] = f"{HELPER}.dec({arguments[i]})"
+                elif java == "String" and arguments[i] != "null" and not arguments[i].startswith('"'):
+                    self.result.imports.add(HELPER_IMPORT)
+                    arguments[i] = f"{HELPER}.text({arguments[i]})"
+            if self.scope.get(f"{plsql_name.lower()}#import"):
+                self.result.imports.add(self.scope[f"{plsql_name.lower()}#import"])
+            return f"new {record}({', '.join(arguments)})"
         if collection or constructor:
             self.take()   # the name: rendered below as a helper call, not through _name
             name = None

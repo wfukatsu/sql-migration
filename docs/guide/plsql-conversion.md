@@ -138,15 +138,16 @@ routine の NUMBER 引数に列由来の Long / Integer を渡すときは `Plsq
 | 式の中の別 module の関数呼び出し（`v := pkg.f(...)`） | 対応済み（注入した Service を呼ぶ）。OUT / IN OUT 引数（運ぶ package 変数を含む）のある関数は式の中では断る（理由つき） | #48 |
 | `transactions.separate` の routine を呼ぶ側 | 対応済み（呼ぶ側が `SeparateTransactions` の口を受け取り、その connection の上に呼び先を組み立てて呼ぶ）。OUT 引数 / 戻り値を境界の外へ持ち出す形は無い | #49 |
 | CHECK / FK 制約の代わり | 決定済み（2026-09-25「表ごとに決めて guard を生成」、`constraints.enforce`）。決めていない表は `CONSTRAINT_UNDECIDED` | #50 |
-| `FORALL … RETURNING BULK COLLECT INTO` | `SQL_PARSE` / `forall loop` | #51 |
-| 動的 UPDATE の `RETURNING INTO`、動的 PL/SQL ブロック | `RETURNING INTO of a dynamic UPDATE` | #52 |
-| `DBMS_SQL` | `declaration c: DBMS_SQL.OPEN_CURSOR` | #53 |
-| select list のオブジェクト型コンストラクタ、`TABLE(コレクション)`、PIPELINED | `PROJECTION` / `UNSUPPORTED function TABLE` | #54 |
-| program の外の routine への名前付き引数（`DBMS_APPLICATION_INFO`） | `named arguments of a routine that is not in the program` | #55 |
-| view への INSTEAD OF trigger | `EXPR`（`:NEW.last_name` を SET に書く） | #56 |
+| `FORALL … RETURNING BULK COLLECT INTO`、`SQL%BULK_ROWCOUNT(i)` | 対応済み（RMW を割った 1 行ごとに書いた値を List に足す。FORALL の前で空にする。要素ごとの件数は `bulkRowCount`）。RMW なので `rowLocks.optimistic` の決定が要る | #51 |
+| 動的 UPDATE の `RETURNING INTO`、動的 PL/SQL ブロック、`OPEN FOR '定数'` | 対応済み（文字列が定数なら静的な文として下ろす、`DYN_STATIC` / `DYN_INLINED`）。routine の中の DDL は断る（`ddl.omit` で省ける） | #52 |
+| `DBMS_SQL` | PARSE の文字列が定数の問合せなら対応済み（静的な cursor FOR ループ、`DBMS_SQL_STATIC`。列番号で読む `COLUMN_VALUE` と `col_name` は列ごとの CASE）。文字列が実行時に決まるもの、DML、BIND_VARIABLE などは `DBMS_SQL_DYNAMIC` で断る | #53 |
+| select list のオブジェクト型コンストラクタ、`TABLE(コレクション)`、PIPELINED | 対応済み（スキーマの `CREATE TYPE … AS OBJECT` は Java の record、`AS TABLE OF` はその List。コンストラクタを選ぶ SELECT は列を読んでアプリで組む `OBJECT_BUILT`、`TABLE(v)` への `COUNT(*)` は List を回す `TABLE_COLLECTION`、PIPELINED は List を返す関数）。`TABLE(v)` への COUNT(*) 以外の問合せは断る | #54 |
+| program の外の routine への名前付き引数（`DBMS_APPLICATION_INFO`） | 対応済み（組み込み package の対応表 `plsql/builtins.py`）。表に無い package は断る | #55 |
+| view への INSTEAD OF trigger | trigger 本体は対応済み（:NEW / :OLD は view の列の型で受け取る。SET の相関の無いスカラ副問合せは先に読む `SUBQUERY_READ_FIRST`、0 行は NULL、2 行以上は ORA-01427）。view へ書く routine に本体を織り込む形はまだ無い（view へ書く文は ScalarDB に view が無いので断られる） | #56 |
 
 模せるようになったもの（同じ検証で直した）: DDL の `DEFAULT` 句（省いた列を INSERT に足す）、trigger 本体の `UPDATING('列')`（書く側が静的に決めて渡す）、`INSERT … VALUES (seq.NEXTVAL, …) RETURNING id INTO v`（INSERT の前に代入）、
 CHECK / FOREIGN KEY の guard（`constraints.enforce`、#50）、`PRAGMA EXCEPTION_INIT` の番号を持つ例外クラス、`:NEW` を書き換える BEFORE trigger の畳み込み（#47）、式の中の別 module の関数呼び出しと OUT 引数のある関数の巻き上げ（#48）、別トランザクションの routine を呼ぶ側（#49）。
+`WHERE p IS NULL OR col = p`（引数が NULL なら絞らない）は、p が NULL のときの問合せと等号で絞る問合せに分けて、実行時に選ぶ（`OPTIONAL_FILTER`）。
 
 **数値は合成 corpus 上のものであり、実案件耐性の証拠ではありません。** 非 AUTO の 27 件（決定の適用後。すべて REDESIGN で、全件が再設計を決定済み・実 DB で一致）を塞いでいるのは
 変換できない構文ではなく、**人が決めるべきこと**です（走査行数の上限、採番方式、トランザクション境界など。

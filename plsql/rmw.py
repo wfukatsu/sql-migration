@@ -75,12 +75,50 @@ def _sequence(statements: list[M.Statement], routine: M.Routine,
         for handler in getattr(statement, "exception_handlers", []) or []:
             handler.body = _sequence(handler.body, routine, schema)
         replacement = _split(statement, routine, schema)
+        if statement.kind == "Loop" and statement.loop_kind == "forall":
+            # `FORALL … RETURNING c BULK COLLECT INTO v` (#51): the collection holds what the whole FORALL
+            # returned, so it is emptied before the loop and each written row is added to it
+            out.extend(_bulk_initialisers(statement, routine))
         out.extend(replacement if replacement is not None else [statement])
     return out
 
 
+def _bulk_initialisers(loop: M.Loop, routine: M.Routine) -> list[M.Statement]:
+    out = []
+    for inner in _walk_body(loop.body):
+        added = getattr(inner, "bulk_returned_into", None) or []
+        for target in added:
+            declared = next((d for d in routine.declarations if d.name.lower() == target.lower()), None)
+            if declared is None or declared.type is None:
+                continue
+            out.append(M.Assignment(id=f"{loop.id}init_{target}", kind="Assignment", source_range=loop.source_range,
+                                    target=target, expression=f"{declared.type.oracle}()"))
+    return out
+
+
+def _walk_body(statements: list[M.Statement]) -> list[M.Statement]:
+    from .lower import _walk
+
+    return _walk(statements)
+
+
 RETURNING_INTO = re.compile(r"\s+RETURNING\s+(?P<columns>.+?)\s+INTO\s+(?P<targets>.+?)\s*;?\s*$",
                             re.IGNORECASE | re.DOTALL)
+# `RETURNING c BULK COLLECT INTO v` inside a FORALL (#51): every row the statement wrote, added to a collection
+BULK_RETURNING = re.compile(r"\s+RETURNING\s+(?P<columns>.+?)\s+BULK\s+COLLECT\s+INTO\s+(?P<targets>.+?)\s*;?\s*$",
+                            re.IGNORECASE | re.DOTALL)
+
+
+def _returned(statement: M.Statement, column: str, target: str, value: str, bulk: bool) -> list[M.Statement]:
+    """`v := <value>` for RETURNING INTO; `v.EXTEND; v(v.LAST) := <value>` for RETURNING BULK COLLECT INTO."""
+    where = statement.source_range
+    if not bulk:
+        return [M.Assignment(id=f"{statement.id}returned_{column}", kind="Assignment", source_range=where,
+                             target=target, expression=value)]
+    return [M.Call(id=f"{statement.id}extend_{column}", kind="Call", source_range=where,
+                   callee=f"{target}.EXTEND", arguments=[]),
+            M.Assignment(id=f"{statement.id}returned_{column}", kind="Assignment", source_range=where,
+                         target=f"{target}({target}.LAST)", expression=value)]
 
 
 def _split(statement: M.Statement, routine: M.Routine,
@@ -107,7 +145,8 @@ def _split(statement: M.Statement, routine: M.Routine,
     if statement.kind != "SqlOperation" or (statement.sql_kind or "").upper() != "UPDATE":
         return None
     original = statement.original_sql or ""
-    returning = RETURNING_INTO.search(original)
+    bulk = BULK_RETURNING.search(original)
+    returning = bulk or RETURNING_INTO.search(original)
     if returning is not None:
         original = original[:returning.start()]
     try:
@@ -159,17 +198,26 @@ def _split(statement: M.Statement, routine: M.Routine,
         written = {a.this.name.lower(): a for a in assignments if isinstance(a.this, exp.Column)}
         if len(columns) != len(targets) or not all(re.fullmatch(r"[\w$#]+", c) for c in columns):
             return None
+        pending = []
         for column, target in zip(columns, targets):
             if column in written:
-                after.append(M.Assignment(id=f"{statement.id}returned_{column}", kind="Assignment",
-                                          source_range=statement.source_range, target=target,
-                                          expression=written[column].expression.sql(dialect="oracle")))
+                pending.append((column, target, written[column].expression.sql(dialect="oracle")))
             else:
                 # a column the statement does not write has the same value after it as before, so the read that
                 # precedes the write can return it (#52, samples/oracle-samples b06_3: `RETURNING last_name`)
                 unwritten.append((column, target))
-        if unwritten and not keyed:
+                pending.append((column, target, None))
+        if unwritten and not keyed and not bulk:
             return None   # a multi-row UPDATE ... RETURNING INTO is ORA-01422 in Oracle anyway
+        for column, target, value in pending:
+            if value is None and not keyed:
+                value = f"{row}.{column}"          # the loop's row holds it (added to the query below)
+            if value is not None:
+                after.extend(_returned(statement, column, target, value, bool(bulk)))
+        if bulk:
+            statement.bulk_returned_into = list(dict.fromkeys(targets))
+    if keyed and bulk and unwritten:
+        return None   # would read into the collection itself; not a shape the samples need
     if keyed:
         column, variable = reads[0]
         routine.declarations.append(_declaration(routine, variable, table, column, schema, statement))
@@ -186,7 +234,7 @@ def _split(statement: M.Statement, routine: M.Routine,
                                sql_kind="SELECT", original_sql=read, into_targets=[variable] + [t for _, t in unwritten],
                                cardinality="AT_MOST_ONE"),
                 statement] + after
-    columns = list(dict.fromkeys(list(key) + [c for c, _ in reads]))
+    columns = list(dict.fromkeys(list(key) + [c for c, _ in reads] + [c for c, _ in unwritten]))
     query = f"SELECT {', '.join(columns)} FROM {table} {where.sql(dialect='oracle')}"
     tree.set("where", exp.Where(this=exp.and_(*(exp.EQ(this=exp.column(k), expression=exp.column(k, table=row))
                                                  for k in key))))

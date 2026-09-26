@@ -116,7 +116,7 @@ SCENARIOS = [
     scenario("b05_4_call_log_msg", "b05_4_call_log_msg", "procedure",
              "05-4: 自律型トランザクションの log_msg を呼んで ROLLBACK。emp_audit の LOG 行だけ残る。" + ROLL_NOTE,
              mask={"emp_audit": ["changed_at", "changed_by"]}, boundary="rollback"),
-    scenario("b06_2_2_forall_returning", "b06_2_2_forall_returning", "procedure", "06-2-2: FORALL … RETURNING BULK COLLECT INTO、SQL%BULK_ROWCOUNT、ROLLBACK"),
+    scenario("b06_2_2_forall_returning", "b06_2_2_forall_returning", "procedure", "06-2-2: FORALL … RETURNING BULK COLLECT INTO、SQL%BULK_ROWCOUNT、ROLLBACK。呼び出し側（ハーネス）が ROLLBACK する（callerBoundary の決定）", boundary="rollback"),
     scenario("emp_api_give_raise_ok", "emp_api", "procedure", "emp_api.give_raise(104, 10): 6000 → 6600（validate_pct が g_calls を数える）",
              routine="give_raise~1", args={"p_emp_id": 104, "p_pct": 10}, name_override="emp_api.give_raise",
              mask={"emp_audit": ["changed_at", "changed_by"]}),

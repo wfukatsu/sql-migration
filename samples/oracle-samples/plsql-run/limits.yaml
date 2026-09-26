@@ -21,6 +21,9 @@ rowLocks:
     emp_api.give_raise~1: 昇給の UPDATE … SET salary = salary * (1 + p_pct / 100)。衝突は呼び出し側が再試行（同上）
     emp_api.give_raise~2: 部門ごとの昇給。同上
     raise_salary: 昇給の UPDATE … RETURNING。読んでから書き、RETURNING の値は計算した値を返す（同上）
+    b06_2_2_forall_returning: >-
+      06-2-2 の FORALL … UPDATE … SET salary = salary + 10 … RETURNING salary BULK COLLECT INTO。部門ごとに行を読んでから
+      1 行ずつ書き、書いた値を v_new_sal に足す（#51、利用者の決定、2026-09-26）
     b06_3_native_dynamic_sql: >-
       06-3-2 の動的 UPDATE（SET salary = salary … RETURNING last_name）。定数なので静的な文として下ろし（#52）、読んでから
       書く。RETURNING の last_name は書かない列なので先読みの値を返す（利用者の決定、2026-09-26）
@@ -63,3 +66,9 @@ ddl:
   omit:
     b06_3_native_dynamic_sql: >-
       06-3-3 は一時表 dyn_tmp を作ってすぐ DROP … PURGE する例で、データに何も残さない。移行先では実行しない（利用者の決定、2026-09-26）
+
+# 再設計として残すもの（2026-09-26、利用者の決定。生成器が読むキーではない）:
+#   b06_3_native_dynamic_sql の 3-4（OPEN rc FOR … salary > :s）は、3-2 で employees を書いた同じトランザクションで employees を
+#   走査する。ScalarDB はこれを断る（SCAN_AFTER_WRITE / SCAN-001）。直すなら、読みを書き込みの前に移す（結果が書き込みに
+#   依存しないと確かめたうえで）か、読みだけを別の読み取り専用トランザクションで行う。どちらもアプリの設計の判断で、生成器は
+#   断ったままにする。

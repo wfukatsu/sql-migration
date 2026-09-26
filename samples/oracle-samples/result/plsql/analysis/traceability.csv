@@ -185,8 +185,24 @@ com/example/migrated/application/B061BulkCollectLimitService.java,b061BulkCollec
 com/example/migrated/application/B061BulkCollectLimitService.java,b061BulkCollectLimit @ b06_1_bulk_collect_limit.prc:13,b06_1_bulk_collect_limit.prc,13,13,Call,REVIEW,not-generated
 com/example/migrated/application/B061BulkCollectLimitService.java,b061BulkCollectLimit @ b06_1_bulk_collect_limit.prc:16,b06_1_bulk_collect_limit.prc,16,16,Call,REVIEW,not-generated
 com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning,b06_2_2_forall_returning.prc,2,17,routine,REDESIGN,not-generated
+com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:7,b06_2_2_forall_returning.prc,7,10,Assignment,REDESIGN,not-generated
 com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:7,b06_2_2_forall_returning.prc,7,10,Loop,REDESIGN,not-generated
+com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:8,b06_2_2_forall_returning.prc,8,10,Loop,REDESIGN,not-generated
 com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:8,b06_2_2_forall_returning.prc,8,10,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:8,b06_2_2_forall_returning.prc,8,10,If,REDESIGN,not-generated
+com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:8,b06_2_2_forall_returning.prc,8,10,Raise,REDESIGN,not-generated
+com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:8,b06_2_2_forall_returning.prc,8,10,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:8,b06_2_2_forall_returning.prc,8,10,If,REDESIGN,not-generated
+com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:8,b06_2_2_forall_returning.prc,8,10,Call,REDESIGN,not-generated
+com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:8,b06_2_2_forall_returning.prc,8,10,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:8,b06_2_2_forall_returning.prc,8,10,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:8,b06_2_2_forall_returning.prc,8,10,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:8,b06_2_2_forall_returning.prc,8,10,If,REDESIGN,not-generated
+com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:8,b06_2_2_forall_returning.prc,8,10,Call,REDESIGN,not-generated
+com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:8,b06_2_2_forall_returning.prc,8,10,If,REDESIGN,not-generated
+com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:8,b06_2_2_forall_returning.prc,8,10,Call,REDESIGN,not-generated
+com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:8,b06_2_2_forall_returning.prc,8,10,Call,REDESIGN,not-generated
+com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:8,b06_2_2_forall_returning.prc,8,10,Assignment,REDESIGN,not-generated
 com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:12,b06_2_2_forall_returning.prc,12,14,Loop,REDESIGN,not-generated
 com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:13,b06_2_2_forall_returning.prc,13,13,Call,REDESIGN,not-generated
 com/example/migrated/application/B0622ForallReturningService.java,b0622ForallReturning @ b06_2_2_forall_returning.prc:15,b06_2_2_forall_returning.prc,15,15,Call,REDESIGN,not-generated
@@ -202,18 +218,15 @@ com/example/migrated/application/B062ForallSaveExceptionsService.java,b062Forall
 com/example/migrated/application/B062ForallSaveExceptionsService.java,b062ForallSaveExceptions @ b06_2_forall_save_exceptions.prc:22,b06_2_forall_save_exceptions.prc,22,26,Loop,REDESIGN,not-generated
 com/example/migrated/application/B062ForallSaveExceptionsService.java,b062ForallSaveExceptions @ b06_2_forall_save_exceptions.prc:23,b06_2_forall_save_exceptions.prc,23,25,Call,REDESIGN,not-generated
 com/example/migrated/application/B062ForallSaveExceptionsService.java,b062ForallSaveExceptions @ b06_2_forall_save_exceptions.prc:27,b06_2_forall_save_exceptions.prc,27,27,Commit,REDESIGN,not-generated
-com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql,b06_3_6_dbms_sql.prc,2,23,routine,REDESIGN,not-generated
-com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:9,b06_3_6_dbms_sql.prc,9,9,Call,REDESIGN,not-generated
-com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:10,b06_3_6_dbms_sql.prc,10,10,Call,REDESIGN,not-generated
-com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:11,b06_3_6_dbms_sql.prc,11,13,Loop,REDESIGN,not-generated
-com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:12,b06_3_6_dbms_sql.prc,12,12,Call,REDESIGN,not-generated
-com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:14,b06_3_6_dbms_sql.prc,14,14,Assignment,REDESIGN,not-generated
-com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:15,b06_3_6_dbms_sql.prc,15,21,Loop,REDESIGN,not-generated
-com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:16,b06_3_6_dbms_sql.prc,16,19,Loop,REDESIGN,not-generated
-com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:17,b06_3_6_dbms_sql.prc,17,17,Call,REDESIGN,not-generated
-com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:18,b06_3_6_dbms_sql.prc,18,18,Call,REDESIGN,not-generated
-com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:20,b06_3_6_dbms_sql.prc,20,20,Call,REDESIGN,not-generated
-com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:22,b06_3_6_dbms_sql.prc,22,22,Call,REDESIGN,not-generated
+com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql,b06_3_6_dbms_sql.prc,2,23,routine,REVIEW,not-generated
+com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:10,b06_3_6_dbms_sql.prc,10,10,Assignment,REVIEW,not-generated
+com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:14,b06_3_6_dbms_sql.prc,14,14,Assignment,REVIEW,not-generated
+com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:15,b06_3_6_dbms_sql.prc,15,21,Loop,REVIEW,not-generated
+com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:15,b06_3_6_dbms_sql.prc,15,21,SqlOperation,REVIEW,not-generated
+com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:16,b06_3_6_dbms_sql.prc,16,19,Loop,REVIEW,not-generated
+com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:17,b06_3_6_dbms_sql.prc,17,17,Assignment,REVIEW,not-generated
+com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:18,b06_3_6_dbms_sql.prc,18,18,Call,REVIEW,not-generated
+com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6_dbms_sql.prc:20,b06_3_6_dbms_sql.prc,20,20,Call,REVIEW,not-generated
 com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql,b06_3_native_dynamic_sql.prc,2,40,routine,REDESIGN,not-generated
 com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:10,b06_3_native_dynamic_sql.prc,10,13,DynamicSql,REDESIGN,not-generated
 com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:14,b06_3_native_dynamic_sql.prc,14,14,Call,REDESIGN,not-generated
@@ -243,8 +256,16 @@ com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDyna
 com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:38,b06_3_native_dynamic_sql.prc,38,38,Call,REDESIGN,not-generated
 com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:39,b06_3_native_dynamic_sql.prc,39,39,Rollback,REDESIGN,not-generated
 com/example/migrated/application/B064CollectionInSqlService.java,b064CollectionInSql,b06_4_collection_in_sql.prc,2,12,routine,REVIEW,not-generated
+com/example/migrated/application/B064CollectionInSqlService.java,b064CollectionInSql @ b06_4_collection_in_sql.prc:6,b06_4_collection_in_sql.prc,6,8,Assignment,REVIEW,not-generated
+com/example/migrated/application/B064CollectionInSqlService.java,b064CollectionInSql @ b06_4_collection_in_sql.prc:6,b06_4_collection_in_sql.prc,6,8,Loop,REVIEW,not-generated
 com/example/migrated/application/B064CollectionInSqlService.java,b064CollectionInSql @ b06_4_collection_in_sql.prc:6,b06_4_collection_in_sql.prc,6,8,SqlOperation,REVIEW,not-generated
-com/example/migrated/application/B064CollectionInSqlService.java,b064CollectionInSql @ b06_4_collection_in_sql.prc:10,b06_4_collection_in_sql.prc,10,10,SqlOperation,REVIEW,not-generated
+com/example/migrated/application/B064CollectionInSqlService.java,b064CollectionInSql @ b06_4_collection_in_sql.prc:6,b06_4_collection_in_sql.prc,6,8,Call,REVIEW,not-generated
+com/example/migrated/application/B064CollectionInSqlService.java,b064CollectionInSql @ b06_4_collection_in_sql.prc:6,b06_4_collection_in_sql.prc,6,8,Assignment,REVIEW,not-generated
+com/example/migrated/application/B064CollectionInSqlService.java,b064CollectionInSql @ b06_4_collection_in_sql.prc:10,b06_4_collection_in_sql.prc,10,10,Assignment,REVIEW,not-generated
+com/example/migrated/application/B064CollectionInSqlService.java,b064CollectionInSql @ b06_4_collection_in_sql.prc:10,b06_4_collection_in_sql.prc,10,10,Loop,REVIEW,not-generated
+com/example/migrated/application/B064CollectionInSqlService.java,b064CollectionInSql @ b06_4_collection_in_sql.prc:10,b06_4_collection_in_sql.prc,10,10,Assignment,REVIEW,not-generated
+com/example/migrated/application/B064CollectionInSqlService.java,b064CollectionInSql @ b06_4_collection_in_sql.prc:10,b06_4_collection_in_sql.prc,10,10,If,REVIEW,not-generated
+com/example/migrated/application/B064CollectionInSqlService.java,b064CollectionInSql @ b06_4_collection_in_sql.prc:10,b06_4_collection_in_sql.prc,10,10,Assignment,REVIEW,not-generated
 com/example/migrated/application/B064CollectionInSqlService.java,b064CollectionInSql @ b06_4_collection_in_sql.prc:11,b06_4_collection_in_sql.prc,11,11,Call,REVIEW,not-generated
 com/example/migrated/application/B0652SchedulerJobService.java,b0652SchedulerJob,b06_5_2_scheduler_job.prc,2,12,routine,REDESIGN,not-generated
 com/example/migrated/application/B0652SchedulerJobService.java,b0652SchedulerJob @ b06_5_2_scheduler_job.prc:4,b06_5_2_scheduler_job.prc,4,11,Call,REDESIGN,not-generated
@@ -335,11 +356,24 @@ com/example/migrated/application/EmpDeptCapTrgService.java,body,emp_dept_cap_trg
 com/example/migrated/application/EmpDeptCapTrgService.java,body @ emp_dept_cap_trg.trg:10,emp_dept_cap_trg.trg,10,12,If,REDESIGN,not-generated
 com/example/migrated/application/EmpDeptCapTrgService.java,body @ emp_dept_cap_trg.trg:11,emp_dept_cap_trg.trg,11,11,Assignment,REDESIGN,not-generated
 com/example/migrated/application/EmpDeptUpdVTrgService.java,body,emp_dept_upd_v_trg.trg,2,11,routine,REDESIGN,not-generated
+com/example/migrated/application/EmpDeptUpdVTrgService.java,body @ emp_dept_upd_v_trg.trg:6,emp_dept_upd_v_trg.trg,6,10,Block,REDESIGN,not-generated
+com/example/migrated/application/EmpDeptUpdVTrgService.java,body @ emp_dept_upd_v_trg.trg:6,emp_dept_upd_v_trg.trg,6,10,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/EmpDeptUpdVTrgService.java,body @ emp_dept_upd_v_trg.trg:6,emp_dept_upd_v_trg.trg,6,10,Assignment,REDESIGN,not-generated
+com/example/migrated/application/EmpDeptUpdVTrgService.java,body @ emp_dept_upd_v_trg.trg:6,emp_dept_upd_v_trg.trg,6,10,Raise,REDESIGN,not-generated
+com/example/migrated/application/EmpDeptUpdVTrgService.java,body @ emp_dept_upd_v_trg.trg:6,emp_dept_upd_v_trg.trg,6,10,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/EmpDeptUpdVTrgService.java,body @ emp_dept_upd_v_trg.trg:6,emp_dept_upd_v_trg.trg,6,10,If,REDESIGN,not-generated
+com/example/migrated/application/EmpDeptUpdVTrgService.java,body @ emp_dept_upd_v_trg.trg:6,emp_dept_upd_v_trg.trg,6,10,Raise,REDESIGN,not-generated
 com/example/migrated/application/EmpDeptUpdVTrgService.java,body @ emp_dept_upd_v_trg.trg:6,emp_dept_upd_v_trg.trg,6,10,SqlOperation,REDESIGN,not-generated
 com/example/migrated/application/EmpGradesService.java,empGrades,emp_grades.fnc,2,13,routine,REVIEW,not-generated
+com/example/migrated/application/EmpGradesService.java,empGrades @ emp_grades.fnc:6,emp_grades.fnc,6,11,If,REVIEW,not-generated
 com/example/migrated/application/EmpGradesService.java,empGrades @ emp_grades.fnc:6,emp_grades.fnc,6,11,Loop,REVIEW,not-generated
 com/example/migrated/application/EmpGradesService.java,empGrades @ emp_grades.fnc:6,emp_grades.fnc,6,11,SqlOperation,REVIEW,not-generated
-com/example/migrated/application/EmpGradesService.java,empGrades @ emp_grades.fnc:8,emp_grades.fnc,8,10,Unsupported,REVIEW,not-generated
+com/example/migrated/application/EmpGradesService.java,empGrades @ emp_grades.fnc:8,emp_grades.fnc,8,10,Call,REVIEW,not-generated
+com/example/migrated/application/EmpGradesService.java,empGrades @ emp_grades.fnc:8,emp_grades.fnc,8,10,Assignment,REVIEW,not-generated
+com/example/migrated/application/EmpGradesService.java,empGrades @ emp_grades.fnc:6,emp_grades.fnc,6,11,Loop,REVIEW,not-generated
+com/example/migrated/application/EmpGradesService.java,empGrades @ emp_grades.fnc:6,emp_grades.fnc,6,11,SqlOperation,REVIEW,not-generated
+com/example/migrated/application/EmpGradesService.java,empGrades @ emp_grades.fnc:8,emp_grades.fnc,8,10,Call,REVIEW,not-generated
+com/example/migrated/application/EmpGradesService.java,empGrades @ emp_grades.fnc:8,emp_grades.fnc,8,10,Assignment,REVIEW,not-generated
 com/example/migrated/application/EmpGradesService.java,empGrades @ emp_grades.fnc:12,emp_grades.fnc,12,12,Return,REVIEW,not-generated
 com/example/migrated/application/EmpSalaryAuditTrgService.java,body,emp_salary_audit_trg.trg,2,12,routine,REDESIGN,not-generated
 com/example/migrated/application/EmpSalaryAuditTrgService.java,body @ emp_salary_audit_trg.trg:9,emp_salary_audit_trg.trg,9,9,If,REDESIGN,not-generated
