@@ -216,7 +216,11 @@ def generate_module(module: M.Module, package: str, domain_package: str) -> Repo
             expanded = []
             for statement in statements:
                 expanded.append(statement)
-                expanded.extend(getattr(statement, "variant_statements", None) or [])
+                # a DDL variant is never called: the service refuses it or omits it (#52), and a method that
+                # runs `DROP TABLE` from application code is not something to leave lying around
+                from .service import DDL
+                expanded.extend(v for v in (getattr(statement, "variant_statements", None) or [])
+                                if not DDL.match(v.original_sql or ""))
             for statement in expanded:
                 if statement.kind != "SqlOperation" or not statement.original_sql:
                     continue

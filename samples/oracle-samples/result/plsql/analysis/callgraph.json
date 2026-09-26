@@ -156,7 +156,11 @@
   },
   {
    "routine": "b06_3_native_dynamic_sql",
-   "calls": [],
+   "calls": [
+    "emp_biu_trg.body",
+    "emp_dept_cap_trg.body",
+    "emp_salary_audit_trg.body"
+   ],
    "external": [
     "DBMS_ASSERT.SIMPLE_SQL_NAME",
     "DBMS_OUTPUT.PUT_LINE"

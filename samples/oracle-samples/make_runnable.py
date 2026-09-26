@@ -102,7 +102,7 @@ SCENARIOS = [
     scenario("b06_2_forall_save_exceptions", "b06_2_forall_save_exceptions", "procedure",
              "06-2: FORALL SAVE EXCEPTIONS で bulk_target へ。salary >= 15000 の 4 行が CHECK 違反、11 行が入る",
              extra_setup=["DELETE FROM bulk_target"], capture=["employees", "emp_audit", "bulk_target"]),
-    scenario("b06_3_native_dynamic_sql", "b06_3_native_dynamic_sql", "procedure", "06-3: EXECUTE IMMEDIATE / OPEN FOR / 動的 PL/SQL。最後に ROLLBACK"),
+    scenario("b06_3_native_dynamic_sql", "b06_3_native_dynamic_sql", "procedure", "06-3: EXECUTE IMMEDIATE / OPEN FOR / 動的 PL/SQL。最後に ROLLBACK。呼び出し側（ハーネス）が ROLLBACK する（callerBoundary の決定）", boundary="rollback"),
     scenario("b06_3_6_dbms_sql", "b06_3_6_dbms_sql", "procedure", "06-3-6: DBMS_SQL で列数不定の問合せ。読むだけ"),
     scenario("b06_4_collection_in_sql", "b06_4_collection_in_sql", "procedure", "06-4: BULK COLLECT INTO オブジェクト型の表、TABLE() で SQL から数える"),
     scenario("b06_5_builtin_packages", "b06_5_builtin_packages", "procedure", "06-5: DBMS_APPLICATION_INFO / DBMS_SESSION.SLEEP / DBMS_RANDOM / DBMS_UTILITY"),

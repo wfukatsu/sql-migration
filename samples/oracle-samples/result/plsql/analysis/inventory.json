@@ -9,44 +9,42 @@
   "parsedFiles": 37,
   "totalFiles": 37,
   "failedFiles": [],
-  "typeResolutionRate": 0.9925,
-  "typedSymbols": 133,
-  "resolvedSymbols": 132
+  "typeResolutionRate": 0.9928,
+  "typedSymbols": 139,
+  "resolvedSymbols": 138
  },
  "totals": {
   "modules": 36,
   "routines": 41,
-  "statements": 317,
-  "issues": 250,
-  "errors": 7
+  "statements": 328,
+  "issues": 270,
+  "errors": 9
  },
  "statementKinds": {
-  "Call": 94,
-  "SqlOperation": 64,
-  "If": 43,
-  "Assignment": 29,
+  "Call": 97,
+  "SqlOperation": 70,
+  "If": 47,
+  "Assignment": 31,
   "Loop": 28,
-  "Raise": 19,
+  "Raise": 20,
   "Rollback": 8,
-  "DynamicSql": 7,
+  "Block": 7,
   "Return": 6,
-  "Block": 6,
-  "Exit": 4,
+  "DynamicSql": 5,
+  "Exit": 3,
   "Commit": 3,
-  "Unsupported": 2,
   "Case": 1,
   "Continue": 1,
-  "Fetch": 1,
-  "CloseCursor": 1
+  "Unsupported": 1
  },
  "targetCapability": {
   "statuses": {
-   "OK": 51,
+   "OK": 56,
    "WARN": 8,
-   "PLANNED": 4,
-   "ERROR": 5
+   "PLANNED": 5,
+   "ERROR": 3
   },
-  "runnableRate": 0.8676
+  "runnableRate": 0.8889
  },
  "modules": [
   {
@@ -797,9 +795,9 @@
      "name": "b06_3_native_dynamic_sql",
      "kind": "procedure",
      "visibility": "public",
-     "statements": 16,
+     "statements": 27,
      "parameters": 0,
-     "declarations": 5,
+     "declarations": 11,
      "handlers": 0,
      "transactionEffects": {
       "commits": 0,
@@ -814,8 +812,7 @@
      },
      "autoBlockers": [
       "transaction-control-in-routine",
-      "dynamic-sql",
-      "unmodelled-construct"
+      "dynamic-sql"
      ],
      "sourceRange": {
       "file": "b06_3_native_dynamic_sql.prc",

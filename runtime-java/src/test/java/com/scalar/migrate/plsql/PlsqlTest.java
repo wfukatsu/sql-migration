@@ -430,4 +430,28 @@ class PlsqlTest {
     assertEquals("-.5", Plsql.text(-0.5d));
     assertEquals("2", Plsql.text(2.0));
   }
+
+  @Test
+  void oracleSuppliedPackagesTheGeneratorMaps() throws Exception {
+    // plsql/builtins.py (#55): DBMS_SESSION.SLEEP, DBMS_RANDOM.VALUE / STRING, DBMS_UTILITY.GET_TIME
+    long started = System.nanoTime();
+    Plsql.sleep(new BigDecimal("0.05"));
+    assertTrue(System.nanoTime() - started >= 45_000_000L, "sleeps the fraction of a second it was given");
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.ValueError.class, () -> Plsql.sleep(null));
+    for (int i = 0; i < 200; i++) {
+      BigDecimal unit = Plsql.randomValue();
+      assertTrue(unit.signum() >= 0 && unit.compareTo(BigDecimal.ONE) < 0, unit.toPlainString());
+      BigDecimal ranged = Plsql.randomValue(1, 100);
+      assertTrue(ranged.compareTo(BigDecimal.ONE) >= 0 && ranged.compareTo(BigDecimal.valueOf(100)) < 0);
+    }
+    assertNull(Plsql.randomValue(null, 5));
+    assertEquals(0, new BigDecimal("3").compareTo(Plsql.round(new BigDecimal("2.5"))));
+    assertEquals(0, new BigDecimal("-3").compareTo(Plsql.round(new BigDecimal("-2.5"))));
+    assertTrue(Plsql.randomString("U", 12).matches("[A-Z]{12}"));
+    assertTrue(Plsql.randomString("x", 8).matches("[A-Z0-9]{8}"));
+    assertNull(Plsql.randomString("A", 0), "an empty string is NULL, as in Oracle");
+    BigDecimal before = Plsql.getTime();
+    Thread.sleep(30);
+    assertTrue(Plsql.getTime().subtract(before).compareTo(BigDecimal.valueOf(2)) >= 0, "hundredths of a second");
+  }
 }

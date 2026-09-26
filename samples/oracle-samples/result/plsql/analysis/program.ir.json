@@ -8085,6 +8085,114 @@
        },
        "name": "rc",
        "declarationKind": "variable"
+      },
+      {
+       "id": "b06_3_native_dynamic_sql#decl-v_rmw_1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "b06_3_native_dynamic_sql.prc",
+        "startLine": 17,
+        "endLine": 19,
+        "startColumn": 3,
+        "endColumn": 30
+       },
+       "type": {
+        "oracle": "NUMBER(8, 2)",
+        "resolved": "NUMBER(8, 2)",
+        "origin": "column-type"
+       },
+       "name": "v_rmw_1",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "b06_3_native_dynamic_sql#decl-v_trg_1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "b06_3_native_dynamic_sql.prc",
+        "startLine": 17,
+        "endLine": 19,
+        "startColumn": 3,
+        "endColumn": 30
+       },
+       "type": {
+        "oracle": "VARCHAR2(25)",
+        "resolved": "VARCHAR2(25)",
+        "origin": "column-type"
+       },
+       "name": "v_trg_1",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "b06_3_native_dynamic_sql#decl-v_trg_2",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "b06_3_native_dynamic_sql.prc",
+        "startLine": 17,
+        "endLine": 19,
+        "startColumn": 3,
+        "endColumn": 30
+       },
+       "type": {
+        "oracle": "NUMBER(8, 2)",
+        "resolved": "NUMBER(8, 2)",
+        "origin": "column-type"
+       },
+       "name": "v_trg_2",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "b06_3_native_dynamic_sql#decl-v_trg_3",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "b06_3_native_dynamic_sql.prc",
+        "startLine": 17,
+        "endLine": 19,
+        "startColumn": 3,
+        "endColumn": 30
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "column-type"
+       },
+       "name": "v_trg_3",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "b06_3_native_dynamic_sql#decl-v_trg_4",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "b06_3_native_dynamic_sql.prc",
+        "startLine": 17,
+        "endLine": 19,
+        "startColumn": 3,
+        "endColumn": 30
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "column-type"
+       },
+       "name": "v_trg_4",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "b06_3_native_dynamic_sql#decl-v_trg_5",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "b06_3_native_dynamic_sql.prc",
+        "startLine": 17,
+        "endLine": 19,
+        "startColumn": 3,
+        "endColumn": 30
+       },
+       "type": {
+        "oracle": "NUMBER(8, 2)",
+        "resolved": "NUMBER(8, 2)",
+        "origin": "column-type"
+       },
+       "name": "v_trg_5",
+       "declarationKind": "variable"
       }
      ],
      "body": [
@@ -8140,8 +8248,8 @@
        ]
       },
       {
-       "id": "b06_3_native_dynamic_sql#stmt-3",
-       "kind": "DynamicSql",
+       "id": "b06_3_native_dynamic_sql#stmt-3read",
+       "kind": "SqlOperation",
        "sourceRange": {
         "file": "b06_3_native_dynamic_sql.prc",
         "startLine": 17,
@@ -8152,8 +8260,8 @@
        "diagnostics": [
         {
          "severity": "INFO",
-         "code": "DYNAMIC_SQL",
-         "message": "the statement folds to a constant and can be analysed",
+         "code": "LIMIT",
+         "message": "FETCH FIRST 1 ROWS ONLY rewritten to LIMIT 1",
          "range": {
           "file": "b06_3_native_dynamic_sql.prc",
           "startLine": 17,
@@ -8164,8 +8272,93 @@
         },
         {
          "severity": "INFO",
-         "code": "DYN_FOLDED",
-         "message": "dynamic SQL resolved to 1 statement(s); each is converted and checked like static SQL",
+         "code": "ACCESS",
+         "message": "SELECT: full primary key specified -> GET (single record)",
+         "range": {
+          "file": "b06_3_native_dynamic_sql.prc",
+          "startLine": 17,
+          "endLine": 19,
+          "startColumn": 3,
+          "endColumn": 30
+         }
+        }
+       ],
+       "readSet": [
+        "employees"
+       ],
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT salary, last_name FROM employees WHERE employee_id = 100 FETCH FIRST 1 ROWS ONLY",
+       "intoTargets": [
+        "v_rmw_1",
+        "v_name"
+       ],
+       "accumulates_rowcount": false,
+       "intoColumns": [
+        "salary",
+        "last_name"
+       ],
+       "intoTypes": [
+        "DOUBLE",
+        "TEXT"
+       ],
+       "intoOracleTypes": [
+        "NUMBER(8, 2)",
+        "VARCHAR2(25)"
+       ],
+       "selectsStar": false,
+       "cardinality": "AT_MOST_ONE",
+       "atMostOneRow": true,
+       "targetStatus": "OK",
+       "targetSql": [
+        "SELECT salary, last_name FROM employees WHERE employee_id = 100 LIMIT 1"
+       ]
+      },
+      {
+       "id": "b06_3_native_dynamic_sql#stmt-3ck1if",
+       "kind": "If",
+       "sourceRange": {
+        "file": "b06_3_native_dynamic_sql.prc",
+        "startLine": 17,
+        "endLine": 19,
+        "startColumn": 3,
+        "endColumn": 30
+       },
+       "branches": [
+        {
+         "condition": "NOT (v_rmw_1 > 0)",
+         "body": [
+          {
+           "id": "b06_3_native_dynamic_sql#stmt-3ck1raise",
+           "kind": "Raise",
+           "sourceRange": {
+            "file": "b06_3_native_dynamic_sql.prc",
+            "startLine": 17,
+            "endLine": 19,
+            "startColumn": 3,
+            "endColumn": 30
+           },
+           "errorCode": -2290,
+           "message": "'ORA-02290: check constraint (EMP_SALARY_CK) violated'"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "b06_3_native_dynamic_sql#stmt-3trg0",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "b06_3_native_dynamic_sql.prc",
+        "startLine": 17,
+        "endLine": 19,
+        "startColumn": 3,
+        "endColumn": 30
+       },
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "TRIGGER_OLD",
+         "message": "emp_biu_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである",
          "range": {
           "file": "b06_3_native_dynamic_sql.prc",
           "startLine": 17,
@@ -8175,9 +8368,245 @@
          }
         },
         {
-         "severity": "WARN",
-         "code": "DYN_BIND",
-         "message": "USING binds (100) are restored positionally; confirm each lands on the placeholder it did before",
+         "severity": "INFO",
+         "code": "ACCESS",
+         "message": "SELECT: full primary key specified -> GET (single record)",
+         "range": {
+          "file": "b06_3_native_dynamic_sql.prc",
+          "startLine": 17,
+          "endLine": 19,
+          "startColumn": 3,
+          "endColumn": 30
+         }
+        }
+       ],
+       "readSet": [
+        "employees"
+       ],
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT email, salary FROM employees WHERE employee_id = 100",
+       "intoTargets": [
+        "v_trg_1",
+        "v_trg_2"
+       ],
+       "accumulates_rowcount": false,
+       "intoColumns": [
+        "email",
+        "salary"
+       ],
+       "intoTypes": [
+        "TEXT",
+        "DOUBLE"
+       ],
+       "intoOracleTypes": [
+        "VARCHAR2(25)",
+        "NUMBER(8, 2)"
+       ],
+       "selectsStar": false,
+       "cardinality": "AT_MOST_ONE",
+       "notFoundFlag": "trg0",
+       "atMostOneRow": false,
+       "targetStatus": "OK",
+       "targetSql": [
+        "SELECT email, salary FROM employees WHERE employee_id = 100"
+       ]
+      },
+      {
+       "id": "b06_3_native_dynamic_sql#stmt-3call0if",
+       "kind": "If",
+       "sourceRange": {
+        "file": "b06_3_native_dynamic_sql.prc",
+        "startLine": 17,
+        "endLine": 19,
+        "startColumn": 3,
+        "endColumn": 30
+       },
+       "branches": [
+        {
+         "condition": "NOT trg0%NOTFOUND",
+         "body": [
+          {
+           "id": "b06_3_native_dynamic_sql#stmt-3call0",
+           "kind": "Call",
+           "sourceRange": {
+            "file": "b06_3_native_dynamic_sql.prc",
+            "startLine": 17,
+            "endLine": 19,
+            "startColumn": 3,
+            "endColumn": 30
+           },
+           "diagnostics": [
+            {
+             "severity": "INFO",
+             "code": "TRIGGER_CALL",
+             "message": "emp_biu_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）",
+             "range": {
+              "file": "b06_3_native_dynamic_sql.prc",
+              "startLine": 17,
+              "endLine": 19,
+              "startColumn": 3,
+              "endColumn": 30
+             }
+            }
+           ],
+           "callee": "emp_biu_trg.body",
+           "arguments": [
+            "NEW.email => v_trg_1",
+            "NEW.salary => v_rmw_1",
+            "OLD.salary => v_trg_2",
+            "UPDATING_SALARY => TRUE"
+           ],
+           "resolvedTo": "emp_biu_trg.body"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "b06_3_native_dynamic_sql#stmt-3trg1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "b06_3_native_dynamic_sql.prc",
+        "startLine": 17,
+        "endLine": 19,
+        "startColumn": 3,
+        "endColumn": 30
+       },
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "TRIGGER_OLD",
+         "message": "emp_dept_cap_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである",
+         "range": {
+          "file": "b06_3_native_dynamic_sql.prc",
+          "startLine": 17,
+          "endLine": 19,
+          "startColumn": 3,
+          "endColumn": 30
+         }
+        },
+        {
+         "severity": "INFO",
+         "code": "ACCESS",
+         "message": "SELECT: full primary key specified -> GET (single record)",
+         "range": {
+          "file": "b06_3_native_dynamic_sql.prc",
+          "startLine": 17,
+          "endLine": 19,
+          "startColumn": 3,
+          "endColumn": 30
+         }
+        }
+       ],
+       "readSet": [
+        "employees"
+       ],
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT department_id FROM employees WHERE employee_id = 100",
+       "intoTargets": [
+        "v_trg_3"
+       ],
+       "accumulates_rowcount": false,
+       "intoColumns": [
+        "department_id"
+       ],
+       "intoTypes": [
+        "INT"
+       ],
+       "intoOracleTypes": [
+        "NUMBER(4)"
+       ],
+       "selectsStar": false,
+       "cardinality": "AT_MOST_ONE",
+       "notFoundFlag": "trg1",
+       "atMostOneRow": false,
+       "targetStatus": "OK",
+       "targetSql": [
+        "SELECT department_id FROM employees WHERE employee_id = 100"
+       ]
+      },
+      {
+       "id": "b06_3_native_dynamic_sql#stmt-3trg2",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "b06_3_native_dynamic_sql.prc",
+        "startLine": 17,
+        "endLine": 19,
+        "startColumn": 3,
+        "endColumn": 30
+       },
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "TRIGGER_OLD",
+         "message": "emp_salary_audit_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである",
+         "range": {
+          "file": "b06_3_native_dynamic_sql.prc",
+          "startLine": 17,
+          "endLine": 19,
+          "startColumn": 3,
+          "endColumn": 30
+         }
+        },
+        {
+         "severity": "INFO",
+         "code": "ACCESS",
+         "message": "SELECT: full primary key specified -> GET (single record)",
+         "range": {
+          "file": "b06_3_native_dynamic_sql.prc",
+          "startLine": 17,
+          "endLine": 19,
+          "startColumn": 3,
+          "endColumn": 30
+         }
+        }
+       ],
+       "readSet": [
+        "employees"
+       ],
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT employee_id, salary FROM employees WHERE employee_id = 100",
+       "intoTargets": [
+        "v_trg_4",
+        "v_trg_5"
+       ],
+       "accumulates_rowcount": false,
+       "intoColumns": [
+        "employee_id",
+        "salary"
+       ],
+       "intoTypes": [
+        "INT",
+        "DOUBLE"
+       ],
+       "intoOracleTypes": [
+        "NUMBER(6)",
+        "NUMBER(8, 2)"
+       ],
+       "selectsStar": false,
+       "cardinality": "AT_MOST_ONE",
+       "notFoundFlag": "trg2",
+       "atMostOneRow": false,
+       "targetStatus": "OK",
+       "targetSql": [
+        "SELECT employee_id, salary FROM employees WHERE employee_id = 100"
+       ]
+      },
+      {
+       "id": "b06_3_native_dynamic_sql#stmt-3",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "b06_3_native_dynamic_sql.prc",
+        "startLine": 17,
+        "endLine": 19,
+        "startColumn": 3,
+        "endColumn": 30
+       },
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "DYN_STATIC",
+         "message": "定数の動的 DML で RETURNING INTO を持つので、USING を位置で戻して静的な文として下ろした。RETURNING は静的な文と同じ経路で扱う（#52）",
          "range": {
           "file": "b06_3_native_dynamic_sql.prc",
           "startLine": 17,
@@ -8197,25 +8626,228 @@
           "startColumn": 3,
           "endColumn": 30
          }
+        },
+        {
+         "severity": "INFO",
+         "code": "RMW_SPLIT",
+         "message": "employees.salary を読んでから書く 2 文に割った。ScalarDB SQL は列を読む式を受け付けないので、値はアプリで計算する。**同じトランザクションの中で読んで書く**ので、衝突は commit で弾かれる（再試行は呼び出し側の責務・#9）",
+         "range": {
+          "file": "b06_3_native_dynamic_sql.prc",
+          "startLine": 17,
+          "endLine": 19,
+          "startColumn": 3,
+          "endColumn": 30
+         }
+        },
+        {
+         "severity": "INFO",
+         "code": "CONSTRAINT_GUARD",
+         "message": "employees の CHECK emp_salary_ck を書く前に評価する。移行先に制約は無く、違反は Oracle と同じ番号の例外になる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））",
+         "range": {
+          "file": "b06_3_native_dynamic_sql.prc",
+          "startLine": 17,
+          "endLine": 19,
+          "startColumn": 3,
+          "endColumn": 30
+         }
+        },
+        {
+         "severity": "INFO",
+         "code": "TRIGGER_FOLDED",
+         "message": "emp_biu_trg の代入を書く値に畳み込んだ: email = UPPER(v_trg_1)。検査は呼び出しで行う（#47）",
+         "range": {
+          "file": "b06_3_native_dynamic_sql.prc",
+          "startLine": 17,
+          "endLine": 19,
+          "startColumn": 3,
+          "endColumn": 30
+         }
+        },
+        {
+         "severity": "INFO",
+         "code": "TRIGGER_APPLIED",
+         "message": "emp_biu_trg（BEFORE INSERT OR UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）",
+         "range": {
+          "file": "b06_3_native_dynamic_sql.prc",
+          "startLine": 17,
+          "endLine": 19,
+          "startColumn": 3,
+          "endColumn": 30
+         }
+        },
+        {
+         "severity": "INFO",
+         "code": "TRIGGER_APPLIED",
+         "message": "emp_dept_cap_trg（AFTER UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）",
+         "range": {
+          "file": "b06_3_native_dynamic_sql.prc",
+          "startLine": 17,
+          "endLine": 19,
+          "startColumn": 3,
+          "endColumn": 30
+         }
+        },
+        {
+         "severity": "INFO",
+         "code": "TRIGGER_APPLIED",
+         "message": "emp_salary_audit_trg（AFTER UPDATE OR DELETE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）",
+         "range": {
+          "file": "b06_3_native_dynamic_sql.prc",
+          "startLine": 17,
+          "endLine": 19,
+          "startColumn": 3,
+          "endColumn": 30
+         }
+        },
+        {
+         "severity": "INFO",
+         "code": "ACCESS",
+         "message": "UPDATE: full primary key specified -> GET (single record)",
+         "range": {
+          "file": "b06_3_native_dynamic_sql.prc",
+          "startLine": 17,
+          "endLine": 19,
+          "startColumn": 3,
+          "endColumn": 30
+         }
         }
        ],
-       "expression": "'UPDATE employees SET salary = salary WHERE employee_id = :id RETURNING last_name INTO :n'",
-       "constantSql": "UPDATE employees SET salary = salary WHERE employee_id = :id RETURNING last_name INTO :n",
-       "variants": [
-        {
-         "guard": "",
-         "sql": "UPDATE employees SET salary = salary WHERE employee_id = :id RETURNING last_name INTO :n"
-        }
+       "writeSet": [
+        "employees"
        ],
-       "using": [
+       "sqlKind": "UPDATE",
+       "originalSql": "UPDATE employees SET salary = v_rmw_1, email = UPPER(v_trg_1) WHERE employee_id = 100",
+       "binds": [
         {
-         "name": "100",
+         "name": "v_rmw_1",
          "direction": "IN",
-         "plsqlVariable": "100"
+         "oracleType": "NUMBER(8, 2)",
+         "plsqlVariable": "v_rmw_1",
+         "column": "salary",
+         "scalardbType": "DOUBLE",
+         "columnOracleType": "NUMBER(8, 2)"
+        },
+        {
+         "name": "v_trg_1",
+         "direction": "IN",
+         "oracleType": "VARCHAR2(25)",
+         "plsqlVariable": "v_trg_1"
+        },
+        {
+         "name": "expr3",
+         "direction": "IN",
+         "column": "email",
+         "scalardbType": "TEXT",
+         "columnOracleType": "VARCHAR2(25)",
+         "expression": "UPPER(v_trg_1)"
         }
        ],
-       "intoTargets": [
-        "v_name"
+       "accumulates_rowcount": false,
+       "selectsStar": false,
+       "cardinality": "UNKNOWN",
+       "atMostOneRow": false,
+       "targetStatus": "OK",
+       "targetSql": [
+        "UPDATE employees SET salary = :v_rmw_1, email = :expr3 WHERE employee_id = 100"
+       ]
+      },
+      {
+       "id": "b06_3_native_dynamic_sql#stmt-3call1if",
+       "kind": "If",
+       "sourceRange": {
+        "file": "b06_3_native_dynamic_sql.prc",
+        "startLine": 17,
+        "endLine": 19,
+        "startColumn": 3,
+        "endColumn": 30
+       },
+       "branches": [
+        {
+         "condition": "SQL%ROWCOUNT > 0",
+         "body": [
+          {
+           "id": "b06_3_native_dynamic_sql#stmt-3call1",
+           "kind": "Call",
+           "sourceRange": {
+            "file": "b06_3_native_dynamic_sql.prc",
+            "startLine": 17,
+            "endLine": 19,
+            "startColumn": 3,
+            "endColumn": 30
+           },
+           "diagnostics": [
+            {
+             "severity": "INFO",
+             "code": "TRIGGER_CALL",
+             "message": "emp_dept_cap_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）",
+             "range": {
+              "file": "b06_3_native_dynamic_sql.prc",
+              "startLine": 17,
+              "endLine": 19,
+              "startColumn": 3,
+              "endColumn": 30
+             }
+            }
+           ],
+           "callee": "emp_dept_cap_trg.body",
+           "arguments": [
+            "NEW.department_id => v_trg_3"
+           ],
+           "resolvedTo": "emp_dept_cap_trg.body"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "b06_3_native_dynamic_sql#stmt-3call2if",
+       "kind": "If",
+       "sourceRange": {
+        "file": "b06_3_native_dynamic_sql.prc",
+        "startLine": 17,
+        "endLine": 19,
+        "startColumn": 3,
+        "endColumn": 30
+       },
+       "branches": [
+        {
+         "condition": "SQL%ROWCOUNT > 0",
+         "body": [
+          {
+           "id": "b06_3_native_dynamic_sql#stmt-3call2",
+           "kind": "Call",
+           "sourceRange": {
+            "file": "b06_3_native_dynamic_sql.prc",
+            "startLine": 17,
+            "endLine": 19,
+            "startColumn": 3,
+            "endColumn": 30
+           },
+           "diagnostics": [
+            {
+             "severity": "INFO",
+             "code": "TRIGGER_CALL",
+             "message": "emp_salary_audit_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）",
+             "range": {
+              "file": "b06_3_native_dynamic_sql.prc",
+              "startLine": 17,
+              "endLine": 19,
+              "startColumn": 3,
+              "endColumn": 30
+             }
+            }
+           ],
+           "callee": "emp_salary_audit_trg.body",
+           "arguments": [
+            "NEW.salary => v_rmw_1",
+            "OLD.employee_id => v_trg_4",
+            "OLD.salary => v_trg_5",
+            "DELETING => FALSE"
+           ],
+           "resolvedTo": "emp_salary_audit_trg.body"
+          }
+         ]
+        }
        ]
       },
       {
@@ -8348,33 +8980,6 @@
        ]
       },
       {
-       "id": "b06_3_native_dynamic_sql#stmt-7",
-       "kind": "Unsupported",
-       "sourceRange": {
-        "file": "b06_3_native_dynamic_sql.prc",
-        "startLine": 27,
-        "endLine": 27,
-        "startColumn": 3,
-        "endColumn": 84
-       },
-       "diagnostics": [
-        {
-         "severity": "WARN",
-         "code": "UNSUPPORTED_CONSTRUCT",
-         "message": "Open_for_statement is not lowered yet; the routine cannot be AUTO while it is present",
-         "range": {
-          "file": "b06_3_native_dynamic_sql.prc",
-          "startLine": 27,
-          "endLine": 27,
-          "startColumn": 3,
-          "endColumn": 84
-         }
-        }
-       ],
-       "text": "OPEN rc FOR 'SELECT last_name FROM employees WHERE salary > :s ORDER BY 1' USING 15000",
-       "construct": "Open_for_statement"
-      },
-      {
        "id": "b06_3_native_dynamic_sql#stmt-8",
        "kind": "Loop",
        "sourceRange": {
@@ -8384,12 +8989,148 @@
         "startColumn": 3,
         "endColumn": 7
        },
-       "loopKind": "basic",
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "CUR_SCAN",
+         "message": "cursor rc は読むだけのループだった。行を先に読んで回す形にした——移行先に跨トランザクションの cursor は無いので、動く行数はメモリで決まる（上限は --limits）。FETCH の代入先はそのまま残してあるので、ループの後でも Oracle と同じ値が入っている",
+         "range": {
+          "file": "b06_3_native_dynamic_sql.prc",
+          "startLine": 28,
+          "endLine": 32,
+          "startColumn": 3,
+          "endColumn": 7
+         }
+        }
+       ],
+       "readSet": [
+        "employees"
+       ],
+       "loopKind": "cursor-for",
+       "cursor": "r IN (SELECT last_name FROM employees WHERE salary > 15000 ORDER BY 1)",
+       "query": {
+        "id": "b06_3_native_dynamic_sql#stmt-8",
+        "kind": "SqlOperation",
+        "sourceRange": {
+         "file": "b06_3_native_dynamic_sql.prc",
+         "startLine": 28,
+         "endLine": 32,
+         "startColumn": 3,
+         "endColumn": 7
+        },
+        "diagnostics": [
+         {
+          "severity": "ERROR",
+          "code": "ORDER",
+          "message": "main query: ORDER BY expression 1 -- sort in the application",
+          "range": {
+           "file": "b06_3_native_dynamic_sql.prc",
+           "startLine": 28,
+           "endLine": 32,
+           "startColumn": 3,
+           "endColumn": 7
+          }
+         },
+         {
+          "severity": "INFO",
+          "code": "PLAN_FETCH",
+          "message": "CROSS_PARTITION: SELECT employee_id, last_name, salary FROM hr.employees WHERE salary > 15000",
+          "range": {
+           "file": "b06_3_native_dynamic_sql.prc",
+           "startLine": 28,
+           "endLine": 32,
+           "startColumn": 3,
+           "endColumn": 7
+          }
+         },
+         {
+          "severity": "INFO",
+          "code": "PLAN_RESIDUAL",
+          "message": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)",
+          "range": {
+           "file": "b06_3_native_dynamic_sql.prc",
+           "startLine": 28,
+           "endLine": 32,
+           "startColumn": 3,
+           "endColumn": 7
+          }
+         },
+         {
+          "severity": "WARN",
+          "code": "PLAN_CROSS_PARTITION",
+          "message": "a fetch needs a cross-partition scan",
+          "range": {
+           "file": "b06_3_native_dynamic_sql.prc",
+           "startLine": 28,
+           "endLine": 32,
+           "startColumn": 3,
+           "endColumn": 7
+          }
+         },
+         {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node",
+          "range": {
+           "file": "b06_3_native_dynamic_sql.prc",
+           "startLine": 28,
+           "endLine": 32,
+           "startColumn": 3,
+           "endColumn": 7
+          }
+         },
+         {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate",
+          "range": {
+           "file": "b06_3_native_dynamic_sql.prc",
+           "startLine": 28,
+           "endLine": 32,
+           "startColumn": 3,
+           "endColumn": 7
+          }
+         },
+         {
+          "severity": "ERROR",
+          "code": "SCAN_AFTER_WRITE",
+          "message": "employees was written earlier in this transaction; ScalarDB refuses to scan it",
+          "range": {
+           "file": "b06_3_native_dynamic_sql.prc",
+           "startLine": 28,
+           "endLine": 32,
+           "startColumn": 3,
+           "endColumn": 7
+          }
+         }
+        ],
+        "readSet": [
+         "employees"
+        ],
+        "sqlKind": "SELECT",
+        "originalSql": "SELECT last_name FROM employees WHERE salary > 15000 ORDER BY 1",
+        "accumulates_rowcount": false,
+        "intoColumns": [
+         "last_name"
+        ],
+        "intoTypes": [
+         "TEXT"
+        ],
+        "intoOracleTypes": [
+         "VARCHAR2(25)"
+        ],
+        "selectsStar": false,
+        "cardinality": "MANY",
+        "atMostOneRow": false,
+        "targetStatus": "PLANNED",
+        "planId": "b06_3_native_dynamic_sql#stmt-8.plan.json"
+       },
+       "variable": "r",
        "returns_rows": false,
        "body": [
         {
-         "id": "b06_3_native_dynamic_sql#stmt-9",
-         "kind": "Fetch",
+         "id": "b06_3_native_dynamic_sql#stmt-9row1",
+         "kind": "Assignment",
          "sourceRange": {
           "file": "b06_3_native_dynamic_sql.prc",
           "startLine": 29,
@@ -8397,22 +9138,8 @@
           "startColumn": 5,
           "endColumn": 19
          },
-         "cursor": "rc",
-         "intoTargets": [
-          "v_name"
-         ]
-        },
-        {
-         "id": "b06_3_native_dynamic_sql#stmt-10",
-         "kind": "Exit",
-         "sourceRange": {
-          "file": "b06_3_native_dynamic_sql.prc",
-          "startLine": 30,
-          "endLine": 30,
-          "startColumn": 5,
-          "endColumn": 17
-         },
-         "condition": "rc%NOTFOUND"
+         "target": "v_name",
+         "expression": "r.last_name"
         },
         {
          "id": "b06_3_native_dynamic_sql#stmt-11",
@@ -8432,18 +9159,6 @@
        ]
       },
       {
-       "id": "b06_3_native_dynamic_sql#stmt-12",
-       "kind": "CloseCursor",
-       "sourceRange": {
-        "file": "b06_3_native_dynamic_sql.prc",
-        "startLine": 33,
-        "endLine": 33,
-        "startColumn": 3,
-        "endColumn": 9
-       },
-       "cursor": "rc"
-      },
-      {
        "id": "b06_3_native_dynamic_sql#stmt-13",
        "kind": "Assignment",
        "sourceRange": {
@@ -8458,7 +9173,7 @@
       },
       {
        "id": "b06_3_native_dynamic_sql#stmt-14",
-       "kind": "DynamicSql",
+       "kind": "Block",
        "sourceRange": {
         "file": "b06_3_native_dynamic_sql.prc",
         "startLine": 37,
@@ -8469,44 +9184,8 @@
        "diagnostics": [
         {
          "severity": "INFO",
-         "code": "DYNAMIC_SQL",
-         "message": "the statement folds to a constant and can be analysed",
-         "range": {
-          "file": "b06_3_native_dynamic_sql.prc",
-          "startLine": 37,
-          "endLine": 37,
-          "startColumn": 3,
-          "endColumn": 62
-         }
-        },
-        {
-         "severity": "INFO",
-         "code": "DYN_FOLDED",
-         "message": "dynamic SQL resolved to 1 statement(s); each is converted and checked like static SQL",
-         "range": {
-          "file": "b06_3_native_dynamic_sql.prc",
-          "startLine": 37,
-          "endLine": 37,
-          "startColumn": 3,
-          "endColumn": 62
-         }
-        },
-        {
-         "severity": "WARN",
-         "code": "DYN_BIND",
-         "message": "USING binds (v_cnt) are restored positionally; confirm each lands on the placeholder it did before",
-         "range": {
-          "file": "b06_3_native_dynamic_sql.prc",
-          "startLine": 37,
-          "endLine": 37,
-          "startColumn": 3,
-          "endColumn": 62
-         }
-        },
-        {
-         "severity": "WARN",
-         "code": "DYN_PRIVILEGE",
-         "message": "EXECUTE IMMEDIATE runs with the privileges of the executing user, which a static statement may not have; confirm the caller is allowed to run this",
+         "code": "DYN_INLINED",
+         "message": "定数の動的 PL/SQL ブロックを、placeholder を USING の変数に名前で戻して、その場の block として下ろした（#52）",
          "range": {
           "file": "b06_3_native_dynamic_sql.prc",
           "startLine": 37,
@@ -8516,24 +9195,24 @@
          }
         }
        ],
-       "expression": "'BEGIN :x := :x * 10; END;'",
-       "constantSql": "BEGIN :x := :x * 10; END;",
-       "variants": [
+       "body": [
         {
-         "guard": "",
-         "sql": "BEGIN :x := :x * 10; END;"
-        }
-       ],
-       "using": [
-        {
-         "name": "v_cnt",
-         "direction": "IN",
-         "plsqlVariable": "v_cnt"
+         "id": "b06_3_native_dynamic_sql#stmt-15",
+         "kind": "Assignment",
+         "sourceRange": {
+          "file": "b06_3_native_dynamic_sql.prc",
+          "startLine": 37,
+          "endLine": 37,
+          "startColumn": 3,
+          "endColumn": 62
+         },
+         "target": "v_cnt",
+         "expression": "v_cnt * 10"
         }
        ]
       },
       {
-       "id": "b06_3_native_dynamic_sql#stmt-15",
+       "id": "b06_3_native_dynamic_sql#stmt-16",
        "kind": "Call",
        "sourceRange": {
         "file": "b06_3_native_dynamic_sql.prc",
@@ -8548,7 +9227,7 @@
        ]
       },
       {
-       "id": "b06_3_native_dynamic_sql#stmt-16",
+       "id": "b06_3_native_dynamic_sql#stmt-17",
        "kind": "Rollback",
        "sourceRange": {
         "file": "b06_3_native_dynamic_sql.prc",

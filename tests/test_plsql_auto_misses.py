@@ -40,7 +40,8 @@ def procedure(name: str, body: str, declare: str = "") -> str:
 @pytest.mark.parametrize("body,callee", [
     ("billing_pkg.post_and_commit(p_id);", "billing_pkg.post_and_commit"),
     ("UTL_MAIL.SEND('a@example.com', 'b@example.com', NULL, NULL, 'subject', 'body');", "UTL_MAIL.SEND"),
-    ("DBMS_LOCK.SLEEP(5);", "DBMS_LOCK.SLEEP"),
+    # an Oracle-supplied package that plsql/builtins.py does not map (#55: DBMS_LOCK.SLEEP is mapped now)
+    ("DBMS_SESSION.SET_IDENTIFIER('batch');", "DBMS_SESSION.SET_IDENTIFIER"),
     ("IF billing_pkg.is_open(p_id) THEN NULL; END IF;", "billing_pkg.is_open"),
 ])
 def test_a_call_that_resolves_to_nothing_in_the_program_is_not_auto(tmp_path, body, callee):

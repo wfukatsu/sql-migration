@@ -115,6 +115,11 @@ public final class Plsql {
   }
 
   /** Oracle's ROUND is half-up; BigDecimal's default is half-even. */
+  /** `ROUND(x)`: to a whole number, half away from zero (samples/oracle-samples b06_5, #55). */
+  public static BigDecimal round(Object value) {
+    return round(value, 0);
+  }
+
   public static BigDecimal round(Object value, int scale) {
     return value == null ? null : OracleNumbers.round(num(value), scale);
   }
@@ -691,6 +696,55 @@ public final class Plsql {
     OUTPUT.get().clear();
     OUTPUT_LINE.get().setLength(0);
     return lines;
+  }
+
+  // Oracle-supplied packages the generator maps (plsql/builtins.py, #55)
+
+  /** `DBMS_SESSION.SLEEP` / `DBMS_LOCK.SLEEP`: seconds, fractions allowed. */
+  public static void sleep(Object seconds) {
+    if (isNull(seconds)) throw new ValueError("DBMS_SESSION.SLEEP: seconds is null");
+    long millis = num(seconds).movePointRight(3).setScale(0, java.math.RoundingMode.HALF_UP).longValueExact();
+    try {
+      Thread.sleep(Math.max(0, millis));
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("interrupted while sleeping", e);
+    }
+  }
+
+  /** `DBMS_RANDOM.VALUE`: at least 0 and less than 1. */
+  public static BigDecimal randomValue() {
+    return BigDecimal.valueOf(java.util.concurrent.ThreadLocalRandom.current().nextDouble());
+  }
+
+  /** `DBMS_RANDOM.VALUE(low, high)`: at least low and less than high. */
+  public static BigDecimal randomValue(Object low, Object high) {
+    if (isNull(low) || isNull(high)) return null;
+    BigDecimal from = num(low);
+    return from.add(num(high).subtract(from).multiply(randomValue()));
+  }
+
+  /** `DBMS_RANDOM.STRING(opt, len)`: U upper, L lower, A mixed, X upper and digits, P any printable. */
+  public static String randomString(Object opt, Object len) {
+    if (isNull(len)) return null;
+    String option = isNull(opt) ? "U" : text(opt).toUpperCase(java.util.Locale.ROOT);
+    String alphabet = switch (option.isEmpty() ? 'U' : option.charAt(0)) {
+      case 'L' -> "abcdefghijklmnopqrstuvwxyz";
+      case 'A' -> "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+      case 'X' -> "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+      case 'P' -> " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+      default -> "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    };
+    int length = Math.max(0, Math.min(4000, num(len).intValue()));
+    StringBuilder out = new StringBuilder(length);
+    java.util.concurrent.ThreadLocalRandom random = java.util.concurrent.ThreadLocalRandom.current();
+    for (int i = 0; i < length; i++) out.append(alphabet.charAt(random.nextInt(alphabet.length())));
+    return emptyIsNull(out.toString());
+  }
+
+  /** `DBMS_UTILITY.GET_TIME`: a clock in hundredths of a second, for differences only (its origin is arbitrary). */
+  public static BigDecimal getTime() {
+    return BigDecimal.valueOf(System.nanoTime() / 10_000_000L);
   }
 
   public static String rtrim(Object value) {
