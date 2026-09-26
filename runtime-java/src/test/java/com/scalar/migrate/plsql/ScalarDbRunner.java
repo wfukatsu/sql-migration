@@ -227,6 +227,7 @@ public final class ScalarDbRunner implements AutoCloseable {
 
     Map<String, Object> result = new LinkedHashMap<>();
     Map<String, Object> raised = null;
+    Plsql.output();  // start from an empty DBMS_OUTPUT buffer, as the Oracle side enables a fresh one
     try {
       Object returned = invocation.run();
       Map<String, String> projection = scenario.projection();
@@ -252,6 +253,10 @@ public final class ScalarDbRunner implements AutoCloseable {
     }
     capture.put("result", result);
     capture.put("exception", raised);
+    // DBMS_OUTPUT lines, only when the scenario asks: what a block prints is its result when it touches no table
+    // (the Oracle PL/SQL reference examples, samples/oracle-plsql-docs). Lines written before an exception stay.
+    List<String> printed = Plsql.output();
+    if (scenario.output()) capture.put("output", printed);
 
     Map<String, Object> tables = new LinkedHashMap<>();
     Map<String, List<String>> masked = new LinkedHashMap<>();
@@ -278,6 +283,8 @@ public final class ScalarDbRunner implements AutoCloseable {
    * are comparable. Anything else is not a business outcome and is recorded under its Java class name, which
    * will not match Oracle -- and that mismatch is the correct signal.
    */
+  private static final java.util.regex.Pattern ORA_MESSAGE = java.util.regex.Pattern.compile("ORA-(\\d{5})");
+
   private static Object errorCode(Exception e) {
     try {
       Object code = e.getClass().getMethod("code").invoke(e);
@@ -288,6 +295,13 @@ public final class ScalarDbRunner implements AutoCloseable {
       if (code instanceof Integer n && n <= -900000) return -6510;
       return code;
     } catch (ReflectiveOperationException notMigrated) {
+      // the runtime's own predefined errors (`Plsql.ZeroDivide`, `Plsql.ValueError`) escape a routine that does not
+      // handle them, and each says which Oracle error it stands for in its message ("ORA-01476: ..."). That is the
+      // same outcome an Oracle client sees, so it is recorded under the same number (samples/oracle-plsql-docs)
+      java.util.regex.Matcher ora = ORA_MESSAGE.matcher(String.valueOf(e.getMessage()));
+      if (e.getClass().getName().startsWith(Plsql.class.getName() + "$") && ora.lookingAt()) {
+        return -Integer.parseInt(ora.group(1));
+      }
       return e.getClass().getName();
     }
   }

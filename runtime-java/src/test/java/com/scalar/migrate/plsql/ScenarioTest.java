@@ -61,4 +61,13 @@ class ScenarioTest {
     assertEquals(false, scenario.blockIsMoreThanAProjection());
     assertEquals(Scenario.IS_NULL_OF_RESULT, scenario.projection().get("o_is_null"));
   }
+
+  @Test
+  void dbmsOutputIsPartOfTheResultOnlyWhenTheScenarioSaysSo(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+    // samples/oracle-plsql-docs: what an example block prints is its result when it touches no table
+    java.nio.file.Files.writeString(dir.resolve("s.yaml"),
+        "name: s\nunit: u\nroutine: u\ncall:\n  kind: procedure\n  name: u\noutput: true\n");
+    assertEquals(true, Scenario.read(dir.resolve("s.yaml")).output());
+    assertEquals(false, Scenario.read(SCENARIOS.resolve("payment_record.yaml")).output());
+  }
 }
