@@ -135,9 +135,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.quiet:
         print(f"wrote {len(written)} files to {args.out_dir}/")
-        print(f"routines: {len(decisions)}  AUTO {len(auto)}  "
+        # two answers, both named: what the rules say, and the verdict with the evidence's confidence folded in
+        # (what generation-report.json calls `verdict`). Printing the first under bare labels read as the second
+        # (2026-09-26: "AUTO 3" here, "REVIEW 3" in the report, for routines nobody had compared yet)
+        print(f"routines: {len(decisions)}  rules: AUTO {len(auto)}  "
               f"REVIEW {sum(1 for d in decisions.values() if d.rule_verdict == 'REVIEW')}  "
-              f"REDESIGN {sum(1 for d in decisions.values() if d.rule_verdict == 'REDESIGN')}")
+              f"REDESIGN {sum(1 for d in decisions.values() if d.rule_verdict == 'REDESIGN')}  |  "
+              f"verdict: AUTO {sum(1 for d in decisions.values() if d.verdict == 'AUTO')}  "
+              f"REVIEW {sum(1 for d in decisions.values() if d.verdict == 'REVIEW')}  "
+              f"REDESIGN {sum(1 for d in decisions.values() if d.verdict == 'REDESIGN')}")
         print(f"untranslated statements {summary['untranslatedStatements']}  "
               f"SQL ScalarDB refuses {summary['unsupportedSql']}  planned {summary['plannedSql']}")
         if summary["unknownNames"]:
