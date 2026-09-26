@@ -359,6 +359,9 @@ def compare_variant(variant: str, scales: dict) -> dict:
             continue
         actual = unscale(json.loads(target.read_text(encoding="utf-8")), scales) if variant == "scaled" \
             else json.loads(target.read_text(encoding="utf-8"))
+        nondeterministic = _nondeterministic(name)
+        if nondeterministic:
+            oracle, actual = (_without(c, nondeterministic["ignore_columns"]) for c in (oracle, actual))
         found = compare_capture(oracle, actual)
         accepted = _accepted(name, oracle, actual)
         report["scenarios"][name] = {
@@ -368,12 +371,53 @@ def compare_variant(variant: str, scales: dict) -> dict:
             "accepted": [{"difference": d, **accepted} for d in found if accepted and _is_exception_code(d)],
             "scale_only": [d for d in found if _scale_only(d)],
             "direct": _is_direct_dml(name)}
+        if nondeterministic:
+            report["scenarios"][name]["nondeterministic"] = nondeterministic
     # what the captures were taken from (plsql_capture.py). Absent for captures older than the fingerprint --
     # `plsql.cli --evidence` then counts none of this report, which is the point: nobody can say what it measured
     recorded = captures / "fingerprint.json"
     if recorded.exists():
         report["fingerprints"] = json.loads(recorded.read_text(encoding="utf-8"))
     return report
+
+
+def _nondeterministic(name: str) -> dict | None:
+    """The scenario's `nondeterministic` declaration: which columns Oracle itself does not fix, and why.
+
+    `SELECT … WHERE status = 'NEW' AND ROWNUM <= :n` with no ORDER BY claims *some* n rows; which ones is the heap
+    order in Oracle and the scan order in ScalarDB, and neither is wrong (fixtures `stock_claim_batch`, 2026-09-26,
+    matched under one money convention and not the other). The declared columns are left out of both tables, which
+    are compared as multisets anyway, so what is still checked is how many rows changed and to what. A reason is
+    required; a declaration without one is refused rather than read as permission.
+    """
+    import yaml
+
+    path = FIXTURES / "scenarios" / f"{name}.yaml"
+    if not path.exists():
+        return None
+    declared = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("nondeterministic")
+    if not declared:
+        return None
+    columns = declared.get("ignore_columns") or {}
+    if not str(declared.get("reason") or "").strip() or not columns:
+        raise SystemExit(f"{path}: nondeterministic needs a reason and ignore_columns ({{table: [column, ...]}})")
+    return {"reason": " ".join(str(declared["reason"]).split()), "decided": str(declared.get("decided", "")),
+            "ignore_columns": {t.lower(): [c.lower() for c in cs] for t, cs in columns.items()}}
+
+
+def _without(capture: dict, ignore: dict[str, list[str]]) -> dict:
+    """The capture with the declared columns removed from the declared tables."""
+    tables = {}
+    for table, body in (capture.get("tables") or {}).items():
+        drop = set(ignore.get(table.lower(), []))
+        columns = body.get("columns") or []
+        if not drop or not columns:
+            tables[table] = body
+            continue
+        keep = [i for i, c in enumerate(columns) if c.lower() not in drop]
+        tables[table] = {**body, "columns": [columns[i] for i in keep],
+                         "rows": [[row[i] for i in keep] for row in body.get("rows") or []]}
+    return {**capture, "tables": tables}
 
 
 def _is_exception_code(line: str) -> bool:
@@ -461,6 +505,11 @@ def render(report: dict) -> int:
             print(f"     {line}")
 
     for name, scenario in sorted(report["scenarios"].items()):
+        declared = scenario.get("nondeterministic")
+        if declared:
+            ignored = "、".join(f"{t}.{c}" for t, cs in declared["ignore_columns"].items() for c in cs)
+            print(f"   {name}  [{scenario['verdict']}] 非決定として比べない列: {ignored}")
+            print(f"     {declared['reason']}")
         for item in scenario.get("accepted") or []:
             print(f"   {name}  [{scenario['verdict']}] 受け入れた差（{item['decided']}）: {item['difference'][:90]}")
             print(f"     {item['reason']}")
