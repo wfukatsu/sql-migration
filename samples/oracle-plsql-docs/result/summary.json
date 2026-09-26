@@ -509,8 +509,7 @@
   "chapter": "2 言語の基本",
   "category": "RUN",
   "doc": "MATCH",
-  "outcome": "DIFFERS",
-  "kind": "VALUE",
+  "outcome": "IDENTICAL",
   "verdict": "REVIEW",
   "ruleVerdict": "AUTO"
  },
@@ -642,9 +641,8 @@
   "chapter": "3 データ型",
   "category": "RUN",
   "doc": "MATCH",
-  "outcome": "DIFFERS",
-  "kind": "VALUE",
-  "verdict": "REVIEW",
+  "outcome": "IDENTICAL",
+  "verdict": "AUTO",
   "ruleVerdict": "AUTO"
  },
  "3-2": {
@@ -674,9 +672,8 @@
   "chapter": "3 データ型",
   "category": "RUN",
   "doc": "MATCH",
-  "outcome": "DIFFERS",
-  "kind": "NOT_RAISED",
-  "verdict": "REVIEW",
+  "outcome": "IDENTICAL",
+  "verdict": "AUTO",
   "ruleVerdict": "AUTO"
  },
  "3-5": {
@@ -695,9 +692,8 @@
   "chapter": "3 データ型",
   "category": "RUN",
   "doc": "MATCH",
-  "outcome": "DIFFERS",
-  "kind": "NOT_RAISED",
-  "verdict": "REVIEW",
+  "outcome": "IDENTICAL",
+  "verdict": "AUTO",
   "ruleVerdict": "AUTO"
  },
  "3-7": {
@@ -717,9 +713,8 @@
   "chapter": "3 データ型",
   "category": "RUN",
   "doc": "MATCH",
-  "outcome": "DIFFERS",
-  "kind": "NOT_RAISED",
-  "verdict": "REVIEW",
+  "outcome": "IDENTICAL",
+  "verdict": "AUTO",
   "ruleVerdict": "AUTO"
  },
  "3-9": {
@@ -728,9 +723,8 @@
   "chapter": "3 データ型",
   "category": "RUN",
   "doc": "MATCH",
-  "outcome": "DIFFERS",
-  "kind": "NOT_RAISED",
-  "verdict": "REVIEW",
+  "outcome": "IDENTICAL",
+  "verdict": "AUTO",
   "ruleVerdict": "AUTO"
  },
  "3-10": {
@@ -739,9 +733,8 @@
   "chapter": "3 データ型",
   "category": "RUN",
   "doc": "MATCH",
-  "outcome": "DIFFERS",
-  "kind": "NOT_RAISED",
-  "verdict": "REVIEW",
+  "outcome": "IDENTICAL",
+  "verdict": "AUTO",
   "ruleVerdict": "AUTO"
  },
  "4-1": {
@@ -1268,9 +1261,8 @@
   "chapter": "5 コレクションとレコード",
   "category": "RUN",
   "doc": "MATCH",
-  "outcome": "DIFFERS",
-  "kind": "VALUE",
-  "verdict": "REVIEW",
+  "outcome": "IDENTICAL",
+  "verdict": "AUTO",
   "ruleVerdict": "AUTO"
  },
  "5-16": {
@@ -3442,8 +3434,7 @@
   "chapter": "11 エラー処理",
   "category": "RUN",
   "doc": "MATCH",
-  "outcome": "DIFFERS",
-  "kind": "VALUE",
+  "outcome": "IDENTICAL",
   "verdict": "REVIEW",
   "ruleVerdict": "AUTO"
  },
@@ -3453,8 +3444,7 @@
   "chapter": "11 エラー処理",
   "category": "RUN",
   "doc": "MATCH",
-  "outcome": "DIFFERS",
-  "kind": "VALUE",
+  "outcome": "IDENTICAL",
   "verdict": "REVIEW",
   "ruleVerdict": "AUTO"
  },
