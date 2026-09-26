@@ -379,7 +379,10 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
     alone, so a real qualified column is untouched.
     """
     loop_fields = {name.lower(): fields for name, fields in (loop_variables or {}).items()}
-    if symbols is None and not loop_fields:
+    # a numeric FOR loop's index (`FOR i IN 1..n LOOP INSERT ... VALUES (i, ...)`) is a PLS_INTEGER no symbol table
+    # declares; capability passes the ones in scope under this key (#85, samples/oracle-plsql-docs 4-24)
+    indexes = {n.lower() for n in (loop_fields.pop("#indexes", None) or {})}
+    if symbols is None and not loop_fields and not indexes:
         return []
     _correlation_as_qualified(tree, loop_fields)
     found: dict[str, BindVariable] = {}
@@ -390,6 +393,17 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
     for column in list(tree.find_all(exp.Column)):
         if column.table:
             fields = loop_fields.get(column.table.lower())
+            routine_name = scope.rsplit(".", 1)[-1].lower() if scope else ""
+            if fields is None and symbols is not None and column.table.lower() == routine_name:
+                # `hire_employee.last_name`: a parameter qualified by its routine's name (10-9, #85)
+                symbol = symbols.resolve(scope, column.name)
+                if symbol is not None and symbol.kind in BIND_KINDS:
+                    placeholder = _unique(column.name, found)
+                    found[placeholder] = BindVariable(
+                        name=placeholder, direction=symbol.direction or "IN",
+                        oracle_type=symbol.type.oracle if symbol.type else None, plsql_variable=column.name)
+                    column.replace(exp.Placeholder(this=placeholder))
+                continue
             if fields is None:
                 continue  # qualified: it is a column of that table, not a variable
             variable = f"{column.table}.{column.name}"
@@ -399,9 +413,15 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
                 plsql_variable=variable)
             column.replace(exp.Placeholder(this=placeholder))
             continue
+        name = column.name
+        if name.lower() in indexes and name.lower() not in columns:
+            placeholder = _unique(name, found)
+            found[placeholder] = BindVariable(name=placeholder, direction="IN", oracle_type="PLS_INTEGER",
+                                              plsql_variable=name)
+            column.replace(exp.Placeholder(this=placeholder))
+            continue
         if symbols is None:
             continue
-        name = column.name
         symbol = symbols.resolve(scope, name)
         if symbol is None and "." in scope:
             # a trigger declares its locals on the trigger (`symbols._trigger`), and its body is the routine

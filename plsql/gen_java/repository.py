@@ -89,8 +89,8 @@ def _loop_rows(file: JavaFile, name: str, loop: M.Loop, result: RepositoryFile, 
         f.line("String bound = Residual.bindNamed(sql, params, values);")
         f.line(f"List<{record}> rows = new ArrayList<>();")
         with f.block("try (PreparedStatement statement = connection.prepareStatement(bound))") as g:
-            with g.block("for (int i = 0; i < values.size(); i++)") as h:
-                h.line("statement.setObject(i + 1, values.get(i));")
+            with g.block("for (int i_ = 0; i_ < values.size(); i_++)") as h:
+                h.line("statement.setObject(i_ + 1, values.get(i_));")
             with g.block("try (ResultSet rows_ = statement.executeQuery())") as g2:
                 with g2.block("while (rows_.next())") as g3:
                     if limit is not None:
@@ -349,8 +349,8 @@ def _direct(file: JavaFile, name: str, statement: M.SqlOperation, result: Reposi
         f.line("List<Object> values = new ArrayList<>();")
         f.line("String bound = Residual.bindNamed(sql, params, values);")
         with f.block("try (PreparedStatement statement = connection.prepareStatement(bound))") as g:
-            with g.block("for (int i = 0; i < values.size(); i++)") as h:
-                h.line("statement.setObject(i + 1, values.get(i));")
+            with g.block("for (int i_ = 0; i_ < values.size(); i_++)") as h:
+                h.line("statement.setObject(i_ + 1, values.get(i_));")
             if returns == "int":
                 g.line("return statement.executeUpdate();")
             elif statement.cardinality == "AT_MOST_ONE":
