@@ -37,12 +37,37 @@ public final class Plsql {
   public static boolean eq(Object a, Object b) {
     if (isNull(a) || isNull(b)) return false;
     if (a instanceof Number && b instanceof Number) return compare(a, b) == 0;
+    if (a instanceof java.util.List<?> x && b instanceof java.util.List<?> y) return Boolean.TRUE.equals(sameMultiset(x, y));
     return Objects.equals(a, b);
   }
 
   public static boolean ne(Object a, Object b) {
     if (isNull(a) || isNull(b)) return false;  // NULL <> x is unknown, not true
+    if (a instanceof java.util.List<?> x && b instanceof java.util.List<?> y) return Boolean.FALSE.equals(sameMultiset(x, y));
     return !eq(a, b);
+  }
+
+  /**
+   * {@code =} on two nested tables: the same elements the same number of times, in any order -- Oracle compares
+   * them as multisets. A NULL element makes it unknown unless the sizes already differ (samples/oracle-plsql-docs
+   * 5-15, #63). Only a nested table has {@code =}; a VARRAY or an associative array does not compile in PL/SQL.
+   */
+  static Boolean sameMultiset(java.util.List<?> a, java.util.List<?> b) {
+    if (a.size() != b.size()) return Boolean.FALSE;
+    if (a.stream().anyMatch(Plsql::isNull) || b.stream().anyMatch(Plsql::isNull)) return null;
+    java.util.List<Object> rest = new java.util.ArrayList<>(b);
+    for (Object element : a) {
+      int at = -1;
+      for (int i = 0; i < rest.size(); i++) {
+        if (eq(element, rest.get(i))) {
+          at = i;
+          break;
+        }
+      }
+      if (at < 0) return Boolean.FALSE;
+      rest.remove(at);
+    }
+    return Boolean.TRUE;
   }
 
   public static boolean lt(Object a, Object b) {
@@ -199,8 +224,9 @@ public final class Plsql {
   public static Object sub(Object a, Object b) {
     if (isTemporal(a) && isTemporal(b)) {
       // Oracle subtracts two DATEs into a number of days, fraction included
-      return BigDecimal.valueOf(java.time.Duration.between(castDate(b), castDate(a)).toSeconds())
-          .divide(BigDecimal.valueOf(86400), OracleNumbers.NUMBER);
+      // (the division rounds as Oracle's NUMBER does: #64)
+      return OracleNumbers.divide(BigDecimal.valueOf(java.time.Duration.between(castDate(b), castDate(a)).toSeconds()),
+          BigDecimal.valueOf(86400));
     }
     // `SYSTIMESTAMP - 30` は 30 日前の DATE である。日数として数値に直すと落ちる
     if (isTemporal(a) && b instanceof Number days) return shiftDays(a, days, -1);
@@ -326,6 +352,67 @@ public final class Plsql {
         : text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
     if (length > size) throw new ValueError("character string buffer too small");
     return text;
+  }
+
+  /**
+   * A value going into CHAR(size): refused past the size as {@link #fit(Object, int, boolean)} does, then padded
+   * with blanks up to it. {@code first_name CHAR(10) := 'John '} holds {@code 'John      '} in Oracle, and a
+   * concatenation or a LENGTH shows it (samples/oracle-plsql-docs 3-1, #62).
+   */
+  public static String pad(Object value, int size, boolean chars) {
+    String text = fit(value, size, chars);
+    if (text == null) return null;
+    int length = chars ? text.codePointCount(0, text.length())
+        : text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+    return length >= size ? text : text + " ".repeat(size - length);
+  }
+
+  /**
+   * One side of a blank-padded comparison (a CHAR(n) local against a literal or another CHAR): the trailing
+   * blanks do not count, and all blanks is still a value -- {@code rtrim} would make it NULL.
+   */
+  public static Object unpad(Object value) {
+    if (!(value instanceof String text)) return value;
+    int end = text.length();
+    while (end > 0 && text.charAt(end - 1) == ' ') end--;
+    return text.substring(0, end);
+  }
+
+  /** ORA-01426. A PLS_INTEGER computation or assignment past 32 bits; its own type, like {@link ZeroDivide}. */
+  public static final class NumericOverflow extends ArithmeticException {
+    public NumericOverflow() {
+      super("ORA-01426: numeric overflow");
+    }
+  }
+
+  /**
+   * A value that has to fit PLS_INTEGER: {@code p1 + p2} of two PLS_INTEGERs is computed in 32 bits, and
+   * 2147483647 + 1 is ORA-01426 even on its way into a NUMBER (samples/oracle-plsql-docs 3-4, #60). The value
+   * comes back as it was given, so the caller's type does not change.
+   */
+  public static <T> T plsInteger(T value) {
+    if (isNull(value)) return value;
+    BigDecimal n = num(value);
+    if (n.compareTo(BigDecimal.valueOf(Integer.MIN_VALUE)) < 0 || n.compareTo(BigDecimal.valueOf(Integer.MAX_VALUE)) > 0) {
+      throw new NumericOverflow();
+    }
+    return value;
+  }
+
+  /** {@code SUBTYPE Digit IS PLS_INTEGER RANGE 0..9}, NATURAL, POSITIVE, SIGNTYPE: VALUE_ERROR outside the range (#59). */
+  public static <T> T inRange(T value, long low, long high) {
+    if (isNull(value)) return value;
+    BigDecimal n = num(value);
+    if (n.compareTo(BigDecimal.valueOf(low)) < 0 || n.compareTo(BigDecimal.valueOf(high)) > 0) {
+      throw new ValueError("value " + n.toPlainString() + " is outside " + low + ".." + high);
+    }
+    return value;
+  }
+
+  /** A NOT NULL variable, SIMPLE_INTEGER, NATURALN, POSITIVEN: assigning NULL is VALUE_ERROR (3-6, #60). */
+  public static <T> T notNull(T value) {
+    if (isNull(value)) throw new ValueError("NULL assigned to a NOT NULL variable");
+    return value;
   }
 
   // --- the bind boundary (P3-1) -------------------------------------------------------------------------
@@ -488,8 +575,13 @@ public final class Plsql {
   }
 
   /** A PLS_INTEGER target: `i := i + 1` goes through {@link #add} (which returns Object) and lands in an Integer. */
+  /**
+   * A value going into a PLS_INTEGER (an Integer here): Oracle rounds a fraction half away from zero, and a value
+   * past 32 bits is ORA-01426 -- not Java's ArithmeticException, which no handler of the migrated code names (#60).
+   */
   public static Integer toInt(Object value) {
-    return isNull(value) ? null : num(value).intValueExact();
+    if (isNull(value)) return null;
+    return plsInteger(num(value).setScale(0, java.math.RoundingMode.HALF_UP)).intValue();
   }
 
   public static Long toLong(Object value) {

@@ -23,6 +23,7 @@ finding that later would mean walking the IR again for something the lowering al
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -368,9 +369,42 @@ class _Lowerer:
             default=default.strip() if default else None,
             nocopy=bool(re.search(r"\bNOCOPY\b", text, re.IGNORECASE)))
 
+    def _subtype_declarations(self, context: ParserRuleContext, stop: set[str] | None) -> None:
+        """`SUBTYPE Balance IS NUMBER(8,2)`, `SUBTYPE Digit IS PLS_INTEGER RANGE 0..9 [NOT NULL]`: remembered by
+        name, so that a variable declared `Balance` gets NUMBER(8,2) -- and its check -- instead of an unknown
+        type that became `Object` (samples/oracle-plsql-docs 3-8〜3-10, #59). A subtype of a subtype is followed."""
+        subtypes = self.__dict__.setdefault("_subtypes", {})
+        for declaration in _descend(context, {"Subtype_declarationContext"}, stop=stop):
+            identifier = _child(declaration, "IdentifierContext")
+            spec = _child(declaration, "Type_specContext")
+            if identifier is None or spec is None:
+                continue
+            text = _text(declaration)
+            bounds = re.search(r"\bRANGE\s+(.+?)\s*\.\.\s*(.+?)(?:\s+NOT\s+NULL)?\s*;?\s*$", text, re.I | re.S)
+            base = self._subtype_of(M.TypeRef(oracle=_text(spec).strip(), resolved=_text(spec).strip()))
+            subtypes[_text(identifier).lower()] = M.TypeRef(
+                oracle=base.oracle, resolved=base.resolved, origin="declared",
+                nullable=False if re.search(r"\bNOT\s+NULL\b", text, re.I) else base.nullable,
+                range=f"{bounds.group(1).strip()}..{bounds.group(2).strip()}" if bounds else base.range)
+
+    def _subtype_of(self, written: M.TypeRef) -> M.TypeRef:
+        """The type a declaration names, with a user subtype replaced by what it stands for. `Balance(6,2)` on a
+        `SUBTYPE Balance IS NUMBER` adds the constraint the use site wrote."""
+        subtypes = self.__dict__.get("_subtypes") or {}
+        named = re.fullmatch(r"\s*([A-Za-z][\w$#]*)\s*(\([^)]*\))?\s*", written.oracle or "")
+        if not named or named.group(1).lower() not in subtypes:
+            return written
+        base = subtypes[named.group(1).lower()]
+        resolved = base.resolved or base.oracle
+        if named.group(2) and "(" not in resolved:
+            resolved = f"{resolved}{named.group(2)}"
+        return M.TypeRef(oracle=written.oracle, resolved=resolved, origin="declared", nullable=base.nullable,
+                         range=base.range)
+
     def _declarations(self, context: ParserRuleContext, ids: M.IdFactory,
                       scope: str | None = None, stop: set[str] | None = None) -> list[M.Declaration]:
         out: list[M.Declaration] = []
+        self._subtype_declarations(context, stop)
         for kind, context_name in (("variable", "Variable_declarationContext"),
                                    ("exception", "Exception_declarationContext"),
                                    ("cursor", "Cursor_declarationContext"),
@@ -387,11 +421,15 @@ class _Lowerer:
                 else:
                     initial = _first(re.search(r":=\s*(.+?);?\s*$", text, re.DOTALL))
                 declared_name = _text(identifier)
+                declared = self._subtype_of(self._type(scope, _text(spec), declared_name)) if spec is not None else None
+                if declared is not None and kind == "variable" and re.search(r"\bNOT\s+NULL\b", text, re.I):
+                    # `acct_id INTEGER(4) NOT NULL := 9999`: a NULL assigned later raises VALUE_ERROR
+                    declared = dataclasses.replace(declared, nullable=False)   # a copy: the symbol table's is shared
                 out.append(M.Declaration(
                     id=ids.next("decl"), kind="Declaration", name=declared_name,
                     declaration_kind="constant" if re.search(r"\bCONSTANT\b", text, re.I) else kind,
                     source_range=self._range(declaration), initial=initial.strip() if initial else None,
-                    type=self._type(scope, _text(spec), declared_name) if spec is not None else None))
+                    type=declared))
         return out
 
     def _block(self, context, ids, text, source) -> M.Statement:

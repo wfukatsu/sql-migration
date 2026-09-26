@@ -454,4 +454,45 @@ class PlsqlTest {
     Thread.sleep(30);
     assertTrue(Plsql.getTime().subtract(before).compareTo(BigDecimal.valueOf(2)) >= 0, "hundredths of a second");
   }
+
+  @Test
+  void aCharIsPaddedToItsSizeAndComparedWithoutTheBlanks() {
+    // CHAR(10) := 'John ' holds 'John      ' (samples/oracle-plsql-docs 3-1, #62)
+    assertEquals("John      ", Plsql.pad("John ", 10, true));
+    assertEquals("Y", Plsql.pad("Y", 1, false));
+    assertNull(Plsql.pad(null, 3, true));
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.ValueError.class, () -> Plsql.pad("See Tom run.", 6, true));
+    assertTrue(Plsql.eq(Plsql.unpad("John      "), Plsql.unpad("John")));
+    assertEquals("", Plsql.unpad("   "), "all blanks is still a value, not NULL");
+  }
+
+  @Test
+  void nestedTablesAreEqualAsMultisets() {
+    // dnames_tab('Shipping','Sales','Finance','Payroll') = dnames_tab('Sales','Finance','Shipping','Payroll') (#63)
+    var a = java.util.List.of("Shipping", "Sales", "Finance", "Payroll");
+    var b = java.util.List.of("Sales", "Finance", "Shipping", "Payroll");
+    var c = java.util.List.of("Sales", "Finance", "Payroll");
+    assertTrue(Plsql.eq(a, b));
+    assertFalse(Plsql.ne(a, b));
+    assertTrue(Plsql.ne(b, c));
+    assertFalse(Plsql.eq(java.util.List.of("a", "a", "b"), java.util.List.of("a", "b", "b")), "counts matter");
+    java.util.List<String> withNull = new java.util.ArrayList<>(java.util.Arrays.asList("a", null));
+    assertFalse(Plsql.eq(withNull, java.util.List.of("a", "b")), "a NULL element makes it unknown");
+    assertFalse(Plsql.ne(withNull, java.util.List.of("a", "b")));
+  }
+
+  @Test
+  void plsIntegerRangesAndNotNullRaiseWhatOracleRaises() {
+    // #59 #60 (samples/oracle-plsql-docs 3-4, 3-6, 3-9)
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.NumericOverflow.class,
+        () -> Plsql.plsInteger(Plsql.add(2147483647, 1)));
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.NumericOverflow.class, () -> Plsql.toInt(new BigDecimal("2147483648")));
+    assertEquals(3, Plsql.toInt(new BigDecimal("2.5")), "a fraction into a PLS_INTEGER rounds half away from zero");
+    assertEquals(-3, Plsql.toInt(new BigDecimal("-2.5")));
+    assertEquals(35, Plsql.inRange(35, 10L, 99L));
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.ValueError.class, () -> Plsql.inRange(4, 10L, 99L));
+    assertNull(Plsql.inRange(null, 10L, 99L), "a range does not forbid NULL");
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.ValueError.class, () -> Plsql.notNull(null));
+    assertEquals(1, Plsql.notNull(1));
+  }
 }

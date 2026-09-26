@@ -705,3 +705,51 @@ def test_local_collections_and_record_fields_are_translated(tmp_path):
     assert "Plsql.extend(vTop3, 3);" in java and "Plsql.set(vTop3, 1, Plsql.dec(100));" in java
     assert '"3"' in java or ", 3)" in java   # v_top3.LIMIT is the declared bound
     assert "UnsupportedOperationException" not in java
+
+
+def test_a_comparison_handed_to_a_boolean_parameter_keeps_unknown_as_null(tmp_path):
+    """`show('x', 100 IN (a, b))` with a NULL `a` passes NULL to the BOOLEAN parameter: no candidate matches and
+    one is unknown. Rendered as a branch ("is TRUE") it passed FALSE (samples/oracle-plsql-docs 2-48, #61)."""
+    program = _project(tmp_path, "CREATE TABLE t (id NUMBER(4) PRIMARY KEY);\n",
+        **{"show.prc": "CREATE OR REPLACE PROCEDURE show(p_label VARCHAR2, p_value BOOLEAN) IS\nBEGIN\n  NULL;\nEND;\n/\n",
+           "run_it.prc": ("CREATE OR REPLACE PROCEDURE run_it IS\n  a INTEGER;\n  b INTEGER := 10;\nBEGIN\n"
+                          "  show('in', 100 IN (a, b));\n  show('plain', TRUE);\nEND;\n/\n")})
+    java = rendered(program, "run_it")
+    assert 'show("in", Plsql.bool3(Plsql.in(100, a, b), Plsql.notIn(100, a, b)));' in java
+    assert 'show("plain", true);' in java
+
+
+def test_a_char_local_is_blank_padded_and_compared_blank_padded(tmp_path):
+    """`first_name CHAR(10) := 'John '` holds 'John      ' (samples/oracle-plsql-docs 3-1, #62), and comparing it
+    with the literal 'John' is still TRUE in Oracle: CHAR against a literal is a blank-padded comparison. A
+    VARCHAR2 keeps what it was given and compares as it is."""
+    program = _project(tmp_path, "CREATE TABLE t (id NUMBER(4) PRIMARY KEY);\n",
+        **{"p.prc": ("CREATE OR REPLACE PROCEDURE p(p_out OUT NUMBER) IS\n  first_name CHAR(10 CHAR);\n"
+                     "  flag CHAR;\n  last_name VARCHAR2(10);\nBEGIN\n  first_name := 'John ';\n  flag := 'Y';\n"
+                     "  last_name := 'Chen ';\n  IF first_name = 'John' AND last_name = 'Chen' THEN\n    p_out := 1;\n"
+                     "  END IF;\nEND;\n/\n")})
+    java = rendered(program, "p")
+    assert 'firstName = Plsql.pad("John ", 10, true);' in java
+    assert 'flag = Plsql.pad("Y", 1, false);' in java
+    assert 'Plsql.eq(Plsql.unpad(firstName), Plsql.unpad("John"))' in java
+    assert 'Plsql.eq(lastName, "Chen")' in java
+
+
+def test_a_subtype_carries_its_constraint_range_and_not_null(tmp_path):
+    """`SUBTYPE Balance IS NUMBER(8,2)` / `RANGE 10..99` / `CHAR(6)` / SIMPLE_INTEGER: the variables were `Object`
+    and nothing was checked (samples/oracle-plsql-docs 3-6, 3-8〜3-10, #59 #60). Two PLS_INTEGERs add in 32 bits."""
+    program = _project(tmp_path, "CREATE TABLE t (id NUMBER(4) PRIMARY KEY);\n",
+        **{"p.prc": ("CREATE OR REPLACE PROCEDURE p IS\n"
+                     "  SUBTYPE Balance IS NUMBER(8,2);\n"
+                     "  SUBTYPE Double_digit IS PLS_INTEGER RANGE 10..99;\n  SUBTYPE Word IS CHAR(6);\n"
+                     "  savings Balance;\n  dd Double_digit := 35;\n  verb Word := 'run';\n"
+                     "  a SIMPLE_INTEGER := 1;\n  p1 PLS_INTEGER := 2147483647;\n  p2 PLS_INTEGER := 1;\n  n NUMBER;\n"
+                     "BEGIN\n  savings := 1000000.00;\n  dd := 4;\n  verb := 'See Tom run.';\n"
+                     "  a := NULL;\n  n := p1 + p2;\nEND;\n/\n")})
+    java = rendered(program, "p")
+    assert "savings = Plsql.fit(" in java and ", 8, 2)" in java
+    assert "dd = Plsql.inRange(4, 10L, 99L);" in java
+    assert 'verb = Plsql.pad("See Tom run.", 6, false);' in java
+    assert "a = Plsql.notNull(null)" in java or "a = Plsql.notNull(" in java
+    assert "Plsql.plsInteger(Plsql.add(p1, p2))" in java
+    assert "Object " not in java

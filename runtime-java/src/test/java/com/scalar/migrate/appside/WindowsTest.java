@@ -57,9 +57,9 @@ class WindowsTest {
 
   @Test
   void movingAverageKeepsPrecisionForCallerRounding() {
-    // (1 + 0 + 0) / 3 = 0.333... (38 digits) -> ROUND 0
+    // (1 + 0 + 0) / 3 = 0.333... (40 digits, as Oracle AVG gives: #64) -> ROUND 0
     List<BigDecimal> avg = Windows.movingAverage(decs("1", "0", "0"), 2);
-    assertEquals(new BigDecimal("0." + "3".repeat(38)), avg.get(2));
+    assertEquals(new BigDecimal("0." + "3".repeat(40)), avg.get(2));
     // (5 + -10) / 2 = -2.5 exactly -> ROUND -3 (half away from zero)
     List<BigDecimal> neg = Windows.movingAverage(decs("5", "-10"), 1);
     assertEquals(0, new BigDecimal("-3").compareTo(OracleNumbers.round(neg.get(1), 0)));

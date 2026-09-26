@@ -33,12 +33,17 @@ class OracleNumbersTest {
   }
 
   @Test
-  void divideWith38SignificantDigits() {
-    BigDecimal third = OracleNumbers.divide(d("1"), d("3"));
-    assertEquals(38, third.precision());
-    assertEquals(d("0." + "3".repeat(38)), third);
+  void divideKeepsOraclesTwentyBase100Digits() {
+    // measured with DUMP on Oracle 26ai (#64): 40 digits from a full leading pair, 39 from a half one
+    assertEquals(d("0." + "3".repeat(40)), OracleNumbers.divide(d("1"), d("3")));
+    assertEquals(d("0." + "6".repeat(39) + "7"), OracleNumbers.divide(d("2"), d("3")));
+    assertEquals(d("3." + "3".repeat(38)), OracleNumbers.divide(d("10"), d("3")));
+    assertEquals(d("33." + "3".repeat(38)), OracleNumbers.divide(d("100"), d("3")));
+    assertEquals(d("0.0" + "3".repeat(39)), OracleNumbers.divide(d("1"), d("30")));
+    assertEquals(d("0.00" + "3".repeat(40)), OracleNumbers.divide(d("1"), d("300")));
+    assertEquals(d("3." + "14285714285714285714285714285714285714"), OracleNumbers.divide(d("22"), d("7")));
     same("-2.5", OracleNumbers.divide(d("-5"), d("2")));
-    assertEquals(d("0." + "6".repeat(37) + "7"), OracleNumbers.divide(d("2"), d("3")));
+    same("5", OracleNumbers.divide(d("10"), d("2")));
   }
 
   @Test

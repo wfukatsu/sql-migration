@@ -26,20 +26,20 @@
 | 章 | 実行 | 一致 | 値が違う | 例外が出ない | 別の例外 | 並びだけ違う | 直接の DML を断る | 未対応で止まる | javac エラー | 流せない | ハーネスの失敗 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | 1 概要 | 1 | 1 |  |  |  |  |  |  |  |  |  |
-| 2 言語の基本 | 51 | 24 | 1 |  | 1 |  |  | 17 | 8 |  |  |
-| 3 データ型 | 10 | 2 | 1 | 5 |  |  |  | 2 |  |  |  |
+| 2 言語の基本 | 51 | 25 |  |  | 1 |  |  | 17 | 8 |  |  |
+| 3 データ型 | 10 | 8 |  |  |  |  |  | 2 |  |  |  |
 | 4 制御文 | 31 | 17 |  |  | 1 |  |  | 9 | 4 |  |  |
-| 5 コレクションとレコード | 48 | 12 | 1 |  |  |  |  | 23 | 9 | 1 | 2 |
+| 5 コレクションとレコード | 48 | 13 |  |  |  |  |  | 23 | 9 | 1 | 2 |
 | 6 静的 SQL | 39 | 8 |  |  | 3 | 1 | 1 | 24 | 2 |  |  |
 | 7 動的 SQL | 17 | 1 |  |  |  |  |  | 14 | 2 |  |  |
 | 8 サブプログラム | 25 | 2 |  | 1 |  |  |  | 14 | 7 | 1 |  |
 | 9 トリガー | 7 |  |  | 1 |  |  | 5 |  |  | 1 |  |
 | 10 パッケージ | 4 |  |  |  |  |  |  | 4 |  |  |  |
-| 11 エラー処理 | 20 | 9 | 2 |  | 1 |  |  | 6 | 2 |  |  |
+| 11 エラー処理 | 20 | 11 |  |  | 1 |  |  | 6 | 2 |  |  |
 | 12 最適化 | 23 | 1 |  |  | 2 |  |  | 16 | 4 |  |  |
 | A ソースの隠蔽 | 1 |  |  |  |  |  |  |  |  | 1 |  |
 | B 名前解決 | 5 |  |  |  | 1 |  |  | 1 |  | 3 |  |
-| **計** | **282** | **77** | **5** | **7** | **9** | **1** | **6** | **130** | **38** | **7** | **2** |
+| **計** | **282** | **87** | **0** | **2** | **9** | **1** | **6** | **130** | **38** | **7** | **2** |
 
 ## 表 3. 例ごとの結果
 
@@ -96,7 +96,7 @@
 | [2-45](https://docs.oracle.com/cd/E57425_01/121/LNPLS/fundamentals.htm#GUID-C3921F3A-52B3-473D-A93F-D198DED21BA9__CIHFIIEA) | パターン内のエスケープ文字 | 一致 | 実行して比較 | 未対応で止まる | REVIEW | exception: expected=none actual=java.lang.UnsupportedOperationException (Unsupported is not translated) |
 | [2-46](https://docs.oracle.com/cd/E57425_01/121/LNPLS/fundamentals.htm#GUID-B748E382-B068-48EC-B809-4FAB1F8D7C6B__CIHDEEAG) | 式でのBETWEEN演算子 | 一致 | 実行して比較 | 一致 | REVIEW（AUTO） |  |
 | [2-47](https://docs.oracle.com/cd/E57425_01/121/LNPLS/fundamentals.htm#GUID-3E3F4260-9773-41E8-BA10-069CFE1F0A6D__CIHJEGAE) | 式でのIN演算子 | 一致 | 実行して比較 | 一致 | REVIEW（AUTO） |  |
-| [2-48](https://docs.oracle.com/cd/E57425_01/121/LNPLS/fundamentals.htm#GUID-3E3F4260-9773-41E8-BA10-069CFE1F0A6D__CIHFHEIE) | NULL値を含む集合でのIN演算子 | 一致 | 実行して比較 | 値が違う | REVIEW（AUTO） | output line 3: expected='100 IN (a, b) = NULL' actual='100 IN (a, b) = FALSE' |
+| [2-48](https://docs.oracle.com/cd/E57425_01/121/LNPLS/fundamentals.htm#GUID-3E3F4260-9773-41E8-BA10-069CFE1F0A6D__CIHFHEIE) | NULL値を含む集合でのIN演算子 | 一致 | 実行して比較 | 一致 | REVIEW（AUTO） |  |
 | [2-49](https://docs.oracle.com/cd/E57425_01/121/LNPLS/fundamentals.htm#GUID-E277B6FF-866F-486A-BCB1-58235C0AFC69__CIHBABAD) | 等価なBOOLEAN式 | 結果なし | 実行して比較 | 一致 | AUTO |  |
 | [2-50](https://docs.oracle.com/cd/E57425_01/121/LNPLS/fundamentals.htm#GUID-F52A70F5-87E1-4AAE-9388-FE56E1ED5598__BEIFHCJE) | 単純なCASE式 | 一致 | 実行して比較 | 一致 | AUTO |  |
 | [2-51](https://docs.oracle.com/cd/E57425_01/121/LNPLS/fundamentals.htm#GUID-F52A70F5-87E1-4AAE-9388-FE56E1ED5598__CIHIJABF) | WHEN NULLを使用した単純なCASE式 | 一致 | 実行して比較 | 一致 | AUTO |  |
@@ -109,16 +109,16 @@
 | [2-58](https://docs.oracle.com/cd/E57425_01/121/LNPLS/fundamentals.htm#GUID-1C90EF04-87AA-4406-B126-F64BEBC65DB7__BEIJFDHG) | データベース・バージョンを確認するコード | 出力が違う | 実行して比較 | 未対応で止まる | REDESIGN | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Call: DBMS_DB_VERSION.VERSION, DBMS_DB_VERS |
 | [2-59](https://docs.oracle.com/cd/E57425_01/121/LNPLS/fundamentals.htm#GUID-1C90EF04-87AA-4406-B126-F64BEBC65DB7__CBJBAEAA) | 異なるデータベース・バージョンに対する異なるコードのコンパイル | 両方違う | ユニットだけ（呼び出し無し） |  | REVIEW（AUTO） | javac 可 |
 | [2-60](https://docs.oracle.com/cd/E57425_01/121/LNPLS/fundamentals.htm#GUID-75F8A716-B2BE-494F-B150-1B4AB802DF25__CIHHCGII) | 処理後のソース・テキストの表示 | 両方違う | PL/SQL が無い |  |  | PL/SQL のブロックもユニットも無い（SQL 文・構文の図だけ） |
-| [3-1](https://docs.oracle.com/cd/E57425_01/121/LNPLS/datatypes.htm#GUID-91989965-9087-4091-8B37-01E025E33FD7__CHDBABGF) | CHARおよびVARCHAR2の空白埋めの相違点 | 一致 | 実行して比較 | 値が違う | REVIEW（AUTO） | output line 1: expected='*John␣␣␣␣␣␣*' actual='*John *' |
+| [3-1](https://docs.oracle.com/cd/E57425_01/121/LNPLS/datatypes.htm#GUID-91989965-9087-4091-8B37-01E025E33FD7__CHDBABGF) | CHARおよびVARCHAR2の空白埋めの相違点 | 一致 | 実行して比較 | 一致 | AUTO |  |
 | [3-2](https://docs.oracle.com/cd/E57425_01/121/LNPLS/datatypes.htm#GUID-02AEA63C-9A27-43F4-80B7-4781343445D0__CHDHDHHA) | BOOLEAN値の出力 | 一致 | 実行して比較 | 一致 | REVIEW（AUTO） |  |
 | [3-3](https://docs.oracle.com/cd/E57425_01/121/LNPLS/datatypes.htm#GUID-02AEA63C-9A27-43F4-80B7-4781343445D0__CJAJAJIC) | SQL文からのBOOLEANパラメータを持つPL/SQLファンクションの起動 | 一致 | 実行して比較 | 未対応で止まる | REDESIGN | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in SqlOperation: execution plan result) |
-| [3-4](https://docs.oracle.com/cd/E57425_01/121/LNPLS/datatypes.htm#GUID-EC45A8BA-1D95-4A36-AE06-6F1E77EC4965__CHDDIAEG) | オーバーフロー例外が発生するPLS_INTEGERの計算 | 一致 | 実行して比較 | 例外が出ない | REVIEW（AUTO） | exception: expected=-1426 (ORA-01426: numeric overflow) actual=none |
+| [3-4](https://docs.oracle.com/cd/E57425_01/121/LNPLS/datatypes.htm#GUID-EC45A8BA-1D95-4A36-AE06-6F1E77EC4965__CHDDIAEG) | オーバーフロー例外が発生するPLS_INTEGERの計算 | 一致 | 実行して比較 | 一致 | AUTO |  |
 | [3-5](https://docs.oracle.com/cd/E57425_01/121/LNPLS/datatypes.htm#GUID-EC45A8BA-1D95-4A36-AE06-6F1E77EC4965__CHDEDAGD) | 例3-4のオーバーフローの回避 | 一致 | 実行して比較 | 一致 | AUTO |  |
-| [3-6](https://docs.oracle.com/cd/E57425_01/121/LNPLS/datatypes.htm#GUID-00859F04-85FC-422D-B35B-93F5B5F4B912__CHDBJFJE) | SIMPLE_INTEGERサブタイプの制約違反 | 一致 | 実行して比較 | 例外が出ない | REVIEW（AUTO） | exception: expected=-6502 (ORA-06502: PL/SQL: value or conversion error) actual=none |
+| [3-6](https://docs.oracle.com/cd/E57425_01/121/LNPLS/datatypes.htm#GUID-00859F04-85FC-422D-B35B-93F5B5F4B912__CHDBJFJE) | SIMPLE_INTEGERサブタイプの制約違反 | 一致 | 実行して比較 | 一致 | AUTO |  |
 | [3-7](https://docs.oracle.com/cd/E57425_01/121/LNPLS/datatypes.htm#GUID-31F465A3-F8F7-413A-AB6F-7EF422D052E0__BABEDFGH) | 使用意図を示すユーザー定義の無制約のサブタイプ | 結果なし | 実行して比較 | 未対応で止まる | REVIEW | exception: expected=none actual=java.lang.UnsupportedOperationException (Unsupported is not translated) |
-| [3-8](https://docs.oracle.com/cd/E57425_01/121/LNPLS/datatypes.htm#GUID-FDC366F3-66AA-4F6A-A59B-5A08DCBD4F9F__CJABHGBG) | 範囲外の値を検出するユーザー定義の制約付きサブタイプ | 一致 | 実行して比較 | 例外が出ない | REVIEW（AUTO） | exception: expected=-6502 (ORA-06502: PL/SQL: value or conversion error: number precision too large) actual=none |
-| [3-9](https://docs.oracle.com/cd/E57425_01/121/LNPLS/datatypes.htm#GUID-FDC366F3-66AA-4F6A-A59B-5A08DCBD4F9F__CHDDEEJC) | 同じベース型を使用する制約付きサブタイプ間の暗黙的な変換 | 一致 | 実行して比較 | 例外が出ない | REVIEW（AUTO） | exception: expected=-6502 (ORA-06502: PL/SQL: value or conversion error) actual=none |
-| [3-10](https://docs.oracle.com/cd/E57425_01/121/LNPLS/datatypes.htm#GUID-126CB7F3-7E65-40BC-B6CD-2244B63240A7__CHDIIGEA) | 同じファミリ内のベース型を使用するサブタイプ間の暗黙的な変換 | 一致 | 実行して比較 | 例外が出ない | REVIEW（AUTO） | exception: expected=-6502 (ORA-06502: PL/SQL: value or conversion error: character string buffer too small) actual=none |
+| [3-8](https://docs.oracle.com/cd/E57425_01/121/LNPLS/datatypes.htm#GUID-FDC366F3-66AA-4F6A-A59B-5A08DCBD4F9F__CJABHGBG) | 範囲外の値を検出するユーザー定義の制約付きサブタイプ | 一致 | 実行して比較 | 一致 | AUTO |  |
+| [3-9](https://docs.oracle.com/cd/E57425_01/121/LNPLS/datatypes.htm#GUID-FDC366F3-66AA-4F6A-A59B-5A08DCBD4F9F__CHDDEEJC) | 同じベース型を使用する制約付きサブタイプ間の暗黙的な変換 | 一致 | 実行して比較 | 一致 | AUTO |  |
+| [3-10](https://docs.oracle.com/cd/E57425_01/121/LNPLS/datatypes.htm#GUID-126CB7F3-7E65-40BC-B6CD-2244B63240A7__CHDIIGEA) | 同じファミリ内のベース型を使用するサブタイプ間の暗黙的な変換 | 一致 | 実行して比較 | 一致 | AUTO |  |
 | [4-1](https://docs.oracle.com/cd/E57425_01/121/LNPLS/controlstatements.htm#GUID-1D6FD34F-F58B-4D0B-B7FC-F7C2C22377C3__BABDAEGB) | IF THEN文 | 一致 | 実行して比較 | 未対応で止まる | REVIEW | exception: expected=none actual=java.lang.UnsupportedOperationException (Unsupported is not translated) |
 | [4-2](https://docs.oracle.com/cd/E57425_01/121/LNPLS/controlstatements.htm#GUID-BED02F52-7886-487A-A45C-D117532EFCF1__BABGBDCB) | IF THEN ELSE文 | 一致 | 実行して比較 | 未対応で止まる | REVIEW | exception: expected=none actual=java.lang.UnsupportedOperationException (Unsupported is not translated) |
 | [4-3](https://docs.oracle.com/cd/E57425_01/121/LNPLS/controlstatements.htm#GUID-BED02F52-7886-487A-A45C-D117532EFCF1__BABHIAAC) | ネストしたIF THEN ELSE文 | 一致 | 実行して比較 | 未対応で止まる | REVIEW | exception: expected=none actual=java.lang.UnsupportedOperationException (Unsupported is not translated) |
@@ -169,7 +169,7 @@
 | [5-12](https://docs.oracle.com/cd/E57425_01/121/LNPLS/composites.htm#GUID-2E00BF7F-0285-41F1-8075-AC859F622A3F__BABBHGFG) | ネストした表のネストした表と整数のVARRAYのネストした表 | 結果なし | 実行して比較 | 未対応で止まる | REVIEW | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration vntb2: tv1, tv1) |
 | [5-13](https://docs.oracle.com/cd/E57425_01/121/LNPLS/composites.htm#GUID-2E00BF7F-0285-41F1-8075-AC859F622A3F__BABIBDDG) | 結合配列のネストした表と文字列のVARRAYのネストした表 | 結果なし | 実行して比較 | javac エラー | REVIEW（AUTO） | Ex513Service.java:42: ';'がありません |
 | [5-14](https://docs.oracle.com/cd/E57425_01/121/LNPLS/composites.htm#GUID-71CB53BF-9FE6-493D-9D66-451AAAB091FC__CIHCGJIC) | VARRAYおよびネストした表の変数とNULLの比較 | 一致 | 実行して比較 | 一致 | AUTO |  |
-| [5-15](https://docs.oracle.com/cd/E57425_01/121/LNPLS/composites.htm#GUID-B2837845-3175-444E-81A5-7D0D5BFC7F20__BABCBFHA) | ネストした表が等しいかどうかの比較 | 一致 | 実行して比較 | 値が違う | REVIEW（AUTO） | output line 1: expected='dept_names1 = dept_names2' actual='dept_names2 != dept_names3' (2 vs 1 lines) |
+| [5-15](https://docs.oracle.com/cd/E57425_01/121/LNPLS/composites.htm#GUID-B2837845-3175-444E-81A5-7D0D5BFC7F20__BABCBFHA) | ネストした表が等しいかどうかの比較 | 一致 | 実行して比較 | 一致 | AUTO |  |
 | [5-16](https://docs.oracle.com/cd/E57425_01/121/LNPLS/composites.htm#GUID-C8C96B4E-09BE-476F-A95C-D2D0B1589CB8__BABCDABC) | ネストした表のSQL MULTISET条件による比較 | 一致 | 実行して比較 | 未対応で止まる | REVIEW | exception: expected=none actual=java.lang.UnsupportedOperationException (Unsupported is not translated) |
 | [5-17](https://docs.oracle.com/cd/E57425_01/121/LNPLS/composites.htm#GUID-E43509F6-5044-4B17-9516-2EB4BDDD5173__CIHJFHJE) | ネストした表でのDELETEメソッド | 一致 | 実行して比較 | javac エラー | REVIEW（AUTO） | Ex517Service.java:39: deleteに適切なメソッドが見つかりません(List<BigDecimal>,int,int) |
 | [5-18](https://docs.oracle.com/cd/E57425_01/121/LNPLS/composites.htm#GUID-E43509F6-5044-4B17-9516-2EB4BDDD5173__CIHHFHFJ) | 文字列で索引付けされている結合配列でのDELETEメソッド | 一致 | 実行して比較 | 未対応で止まる | REVIEW | exception: expected=none actual=java.lang.UnsupportedOperationException (Unsupported is not translated) |
@@ -324,7 +324,7 @@
 | [9-1](https://docs.oracle.com/cd/E57425_01/121/LNPLS/triggers.htm#GUID-EC6A8FA1-9E60-4374-9905-639F4F100D83__CIHBCDJH) | トリガーによる条件述語を使用したトリガーを起動する文の検出 | 結果なし | ユニットだけ（呼び出し無し） |  | REDESIGN | javac 可 |
 | [9-2](https://docs.oracle.com/cd/E57425_01/121/LNPLS/triggers.htm#GUID-9F06D45C-7C60-434E-A597-114A0C445671__CIHFGDJG) | INSTEAD OFトリガー | 両方違う | Oracle が断る例 |  | REDESIGN | Oracle: order_info_insert: ORA-00942: table or view "PLSQLDOC"."ORDER_INFO" do / 変換: javac 可 |
 | [9-3](https://docs.oracle.com/cd/E57425_01/121/LNPLS/triggers.htm#GUID-9F06D45C-7C60-434E-A597-114A0C445671__CIHFBGDC) | ビューのネストした表の列に対するINSTEAD OFトリガー | 出力が違う | 実行して比較 | 直接の DML を断る | REDESIGN | exception: expected=none actual=java.lang.IllegalStateException (直接の DML が ScalarDB SQL に変換できない: "INSERT INTO TABLE (\n␣␣SELECT d. |
-| [9-4](https://docs.oracle.com/cd/E57425_01/121/LNPLS/triggers.htm#GUID-B5E654D9-5875-40EC-AE24-E3A8CB37C9C5__CIHGJFAB) | 複合トリガーによる、別の表にある表に対する変更のログへの記録 | 出力が違う | 実行して比較 | 流せない | REDESIGN | {'routine': 'maintain_employee_salaries.maintain_employee_salaries', 'verdict': 'REVIEW', 'reason': 'no ScalarDB capture'} |
+| [9-4](https://docs.oracle.com/cd/E57425_01/121/LNPLS/triggers.htm#GUID-B5E654D9-5875-40EC-AE24-E3A8CB37C9C5__CIHGJFAB) | 複合トリガーによる、別の表にある表に対する変更のログへの記録 | 出力が違う | 実行して比較 | 流せない | REDESIGN | {'routine': 'ex_9_4.ex_9_4', 'verdict': 'REVIEW', 'reason': 'no ScalarDB capture'} |
 | [9-5](https://docs.oracle.com/cd/E57425_01/121/LNPLS/triggers.htm#GUID-E1150933-9B5F-4AA3-9F49-C222A1618BE5__CHDFGDAH) | 複合トリガーによる変更表エラーの回避 | 結果なし | ユニットだけ（呼び出し無し） |  | REDESIGN | javac 可 |
 | [9-6](https://docs.oracle.com/cd/E57425_01/121/LNPLS/triggers.htm#GUID-2DC16B21-35B1-4D09-BD4E-02797AA278EA__BCFGAHIB) | 子表に対する外部キー・トリガー | 結果なし | Oracle が断る例 |  | REDESIGN | Oracle: emp_dept_check: ORA-00904: "DEPTNO": invalid identifier / 変換: 生成で落ちる |
 | [9-7](https://docs.oracle.com/cd/E57425_01/121/LNPLS/triggers.htm#GUID-DB24A169-3CB1-427E-AA2B-646B878FA20C__BCFCCBAF) | 親表に対するUPDATEおよびDELETE RESTRICTトリガー | 結果なし | Oracle が断る例 |  | REDESIGN | Oracle: dept_restrict: ORA-00942: table or view "PLSQLDOC"."DEPT" does not exi / 変換: 生成で落ちる |
@@ -378,8 +378,8 @@
 | [11-18](https://docs.oracle.com/cd/E57425_01/121/LNPLS/errors.htm#GUID-1E7585F0-74BA-4D39-B168-2BE979CB8314__BABHJJAF) | 例外ハンドラの中で呼び出された例外が処理されない場合 | 一致 | 実行して比較 | 一致 | REVIEW（AUTO） |  |
 | [11-19](https://docs.oracle.com/cd/E57425_01/121/LNPLS/errors.htm#GUID-1E7585F0-74BA-4D39-B168-2BE979CB8314__BABDJDGH) | 例外ハンドラの中で呼び出された例外が起動元で処理される場合 | 一致 | 実行して比較 | 一致 | REVIEW（AUTO） |  |
 | [11-20](https://docs.oracle.com/cd/E57425_01/121/LNPLS/errors.htm#GUID-1E7585F0-74BA-4D39-B168-2BE979CB8314__BABHBEGA) | 例外ハンドラの中で呼び出された例外が外側のブロックで処理される場合 | 一致 | 実行して比較 | 一致 | REVIEW（AUTO） |  |
-| [11-21](https://docs.oracle.com/cd/E57425_01/121/LNPLS/errors.htm#GUID-1E7585F0-74BA-4D39-B168-2BE979CB8314__BABEGCDH) | 例外ハンドラの中で呼び出された例外が処理されない場合 | 一致 | 実行して比較 | 値が違う | REVIEW（AUTO） | output line 1: expected='Reciprocal of 3 is .3333333333333333333333333333333333333333' actual='Reciprocal of 3 is .333333333333333 |
-| [11-22](https://docs.oracle.com/cd/E57425_01/121/LNPLS/errors.htm#GUID-1E7585F0-74BA-4D39-B168-2BE979CB8314__BABDIHFC) | 例外ハンドラの中で呼び出された例外が外側のブロックで処理される場合 | 一致 | 実行して比較 | 値が違う | REVIEW（AUTO） | output line 1: expected='Reciprocal of 3 is .3333333333333333333333333333333333333333' actual='Reciprocal of 3 is .333333333333333 |
+| [11-21](https://docs.oracle.com/cd/E57425_01/121/LNPLS/errors.htm#GUID-1E7585F0-74BA-4D39-B168-2BE979CB8314__BABEGCDH) | 例外ハンドラの中で呼び出された例外が処理されない場合 | 一致 | 実行して比較 | 一致 | REVIEW（AUTO） |  |
+| [11-22](https://docs.oracle.com/cd/E57425_01/121/LNPLS/errors.htm#GUID-1E7585F0-74BA-4D39-B168-2BE979CB8314__BABDIHFC) | 例外ハンドラの中で呼び出された例外が外側のブロックで処理される場合 | 一致 | 実行して比較 | 一致 | REVIEW（AUTO） |  |
 | [11-23](https://docs.oracle.com/cd/E57425_01/121/LNPLS/errors.htm#GUID-7E0CDD98-D31C-4745-B819-B5C5E1DF90A8__CJAJBAJG) | SQLCODEおよびSQLERRMの値の表示 | 結果なし | ユニットだけ（呼び出し無し） |  | REDESIGN | javac 可 |
 | [11-24](https://docs.oracle.com/cd/E57425_01/121/LNPLS/errors.htm#GUID-E63131E7-4AE6-4C47-8D21-5EC1F6D3AA68__CHDGAJIF) | 例外ハンドラの実行と実行の終了 | 一致 | 実行して比較 | 未対応で止まる | REDESIGN | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in SqlOperation: execution plan result) |
 | [11-25](https://docs.oracle.com/cd/E57425_01/121/LNPLS/errors.htm#GUID-E63131E7-4AE6-4C47-8D21-5EC1F6D3AA68__BABJCEEC) | 例外ハンドラの実行と実行の継続 | 一致 | 実行して比較 | 未対応で止まる | REDESIGN | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in SqlOperation: execution plan result) |
