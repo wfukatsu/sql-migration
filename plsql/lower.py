@@ -460,6 +460,10 @@ class _Lowerer:
                                      cursor=_text(_child(context, "Variable_nameContext")),
                                      query_sql=_text(_child(context, "Select_statementContext")))
             return node
+        if name == "Open_for_statementContext":
+            opened = self._open_for_constant(context, ids, source)
+            if opened is not None:
+                return opened
         if name in ("Exit_statementContext", "Continue_statementContext",
                     "Goto_statementContext", "Null_statementContext"):
             return self._control(context, ids, text, source)
@@ -675,6 +679,15 @@ class _Lowerer:
                 for name in _names_after(_text(clause), "INTO")]
         using = [name for clause in _descend(context, {"Using_clauseContext"})
                  for name in _names_after(_text(clause), "USING")]
+        returning = _child(context, "Dynamic_returning_clauseContext") is not None
+        if constant is not None and DYNAMIC_BLOCK.match(constant):
+            inlined = self._dynamic_block(constant, context, ids, source)
+            if inlined is not None:
+                return inlined
+        if constant is not None and returning and into:
+            static = self._dynamic_returning(constant, into, using, ids, source)
+            if static is not None:
+                return static
         node = M.DynamicSql(id=ids.next("stmt"), kind="DynamicSql", source_range=source,
                             expression=expression, constant_sql=constant, into_targets=into,
                             using=[M.BindVariable(name=name, direction="IN", plsql_variable=name)
@@ -685,6 +698,100 @@ class _Lowerer:
         return node
 
 
+    def _open_for_constant(self, context, ids, source) -> M.Statement | None:
+        """`OPEN rc FOR 'SELECT ... :s' USING 15000` (#52): a constant string is the static `OPEN rc FOR SELECT`
+        (#44) with its binds put back by position. Anything built at run time stays unsupported."""
+        expression = _text(_child(context, "ExpressionContext")).strip()
+        literal = re.fullmatch(r"'((?:[^']|'')*)'", expression)
+        if not literal:
+            return None
+        query = literal.group(1).replace("''", "'")
+        if not re.match(r"\s*(SELECT|WITH)\b", query, re.IGNORECASE):
+            return None
+        using = [name for clause in _descend(context, {"Using_clauseContext"}) for name in _names_after(_text(clause), "USING")]
+        from .dynamic import bind_using
+
+        node = M.CursorStatement(id=ids.next("stmt"), kind="OpenCursor", source_range=source,
+                                 cursor=_text(_child(context, "Variable_nameContext")),
+                                 query_sql=bind_using(query, [M.BindVariable(name=n, direction="IN", plsql_variable=n)
+                                                              for n in using]))
+        node.add("INFO", "DYN_STATIC", "OPEN FOR の問合せは定数の文字列なので、USING を位置で戻して静的な OPEN FOR SELECT "
+                                       "として下ろした（#52）")
+        return node
+
+    def _dynamic_returning(self, constant: str, into: list[str], using: list[str], ids, source) -> M.Statement | None:
+        """`EXECUTE IMMEDIATE 'UPDATE ... RETURNING c INTO :n' USING x RETURNING INTO v` (#52).
+
+        The string is a constant, so the statement is the static `UPDATE ... RETURNING c INTO v` with `x` in
+        place of the first placeholder -- and as a static statement it takes the static path: the read-modify-
+        write split and the RETURNING it hoists (`rmw`, `identity`). Oracle binds `USING` to the placeholders
+        before RETURNING by position, and `RETURNING INTO` to the ones after it.
+        """
+        from .dynamic import PLACEHOLDER, bind_using
+
+        match = re.search(r"\bRETURNING\b(?P<columns>.+?)\bINTO\b(?P<targets>.+?)\s*;?\s*$", constant,
+                          re.IGNORECASE | re.DOTALL)
+        kind = re.match(r"\s*(INSERT|UPDATE|DELETE)\b", constant, re.IGNORECASE)
+        if not match or not kind:
+            return None
+        placeholders = [t.strip() for t in match.group("targets").split(",")]
+        if len(placeholders) != len(into) or not all(PLACEHOLDER.fullmatch(p) for p in placeholders):
+            return None
+        head = constant[:match.start()]
+        if len(PLACEHOLDER.findall(head)) != len(using):
+            return None   # the binds do not line up; leave it dynamic, and refused with its reason
+        sql = (bind_using(head, [M.BindVariable(name=n, direction="IN", plsql_variable=n) for n in using]).rstrip()
+               + f" RETURNING{match.group('columns')}INTO {', '.join(into)}")
+        node = M.SqlOperation(id=ids.next("stmt"), kind="SqlOperation", source_range=source,
+                              sql_kind=kind.group(1).upper(), original_sql=sql)
+        node.add("INFO", "DYN_STATIC", "定数の動的 DML で RETURNING INTO を持つので、USING を位置で戻して静的な文として"
+                                       "下ろした。RETURNING は静的な文と同じ経路で扱う（#52）")
+        node.add("WARN", "DYN_PRIVILEGE", "EXECUTE IMMEDIATE runs with the privileges of the executing user, which a "
+                                          "static statement may not have; confirm the caller is allowed to run this")
+        return node
+
+    def _dynamic_block(self, constant: str, context, ids, source) -> M.Statement | None:
+        """`EXECUTE IMMEDIATE 'BEGIN :x := :x * 10; END;' USING IN OUT v_cnt` (#52).
+
+        A constant anonymous block is PL/SQL the routine could have written in place. In a dynamic PL/SQL block
+        Oracle binds **by name**: each distinct placeholder, in order of first appearance, takes one `USING`
+        argument, and a placeholder written twice is the same argument. Put back that way, the block is parsed
+        and lowered where it stands. A placeholder bound to something other than a variable may only be read.
+        """
+        from .dynamic import PLACEHOLDER
+        from .frontend import parse_text
+
+        elements = [_text(e).strip() for clause in _descend(context, {"Using_clauseContext"})
+                    for e in _descend(clause, {"Using_elementContext"})]
+        values = [re.sub(r"^(?:IN\s+OUT|IN|OUT)\s+", "", e, flags=re.IGNORECASE).strip() for e in elements]
+        names = list(dict.fromkeys(m.lower() for m in PLACEHOLDER.findall(_strip_literals(constant))))
+        if len(names) != len(values):
+            return None
+        bound = dict(zip(names, values))
+        for name, value in bound.items():
+            if not re.fullmatch(r"[\w$#]+", value) and re.search(rf":{re.escape(name)}\s*:=", constant, re.IGNORECASE):
+                return None   # an expression cannot be assigned to
+        text = _substitute_outside_literals(constant, lambda m: bound[m.group("name").lower()])
+        parsed = parse_text(f"CREATE OR REPLACE PROCEDURE dyn_block__ AS\nBEGIN\n{text.rstrip().rstrip(';')};\nEND;\n")
+        if not parsed.ok or not parsed.units:
+            return None
+        tree = parsed.units[0].tree
+        # the procedure's own body is a BodyContext, and so is the `BEGIN ... END;` written inside it
+        outer = _descend(tree, {"BodyContext"})
+        blocks = _descend(outer[0], {"BlockContext", "BodyContext"}) if outer else []
+        inner = blocks[0] if blocks else None
+        if inner is None:
+            return None
+        saved = self._range
+        self._range = lambda _context: source   # the fragment's lines are not the file's
+        try:
+            node = self._block(inner, ids, _text(inner), source)
+        finally:
+            self._range = saved
+        node.add("INFO", "DYN_INLINED", "定数の動的 PL/SQL ブロックを、placeholder を USING の変数に名前で戻して、"
+                                        "その場の block として下ろした（#52）")
+        return node
+
     # -- effects ---------------------------------------------------------------------------------------------
     def _effects(self, routine: M.Routine, text: str) -> None:
         for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
@@ -694,6 +801,8 @@ class _Lowerer:
                 routine.transaction_effects.rollbacks += 1
             elif statement.kind == "Savepoint":
                 routine.transaction_effects.savepoints += 1
+            elif any(d.code in ("DYN_STATIC", "DYN_INLINED") for d in statement.diagnostics):
+                routine.external_effects.dynamic_sql = True   # written as dynamic SQL, lowered as static (#52)
             elif statement.kind == "DynamicSql":
                 routine.external_effects.dynamic_sql = True
                 # `EXECUTE IMMEDIATE 'BEGIN ... COMMIT; END;'` commits as surely as a COMMIT statement does
@@ -746,6 +855,26 @@ def mark_row_lock(node: M.SqlOperation, text: str) -> None:
     node.locking_mode = " ".join(locking.group(0).split()).upper()
     node.add("WARN", "ROW_LOCK",
              f"{node.locking_mode} is row locking; the target has to provide the same guarantee another way")
+
+
+DYNAMIC_BLOCK = re.compile(r"^\s*(BEGIN|DECLARE)\b", re.IGNORECASE)
+
+
+def _strip_literals(text: str) -> str:
+    return re.sub(r"'(?:[^']|'')*'", "''", text)
+
+
+def _substitute_outside_literals(text: str, replace) -> str:
+    """Replace `:name` placeholders, leaving string literals (where `:x` is text) alone."""
+    from .dynamic import PLACEHOLDER
+
+    out, last = [], 0
+    for literal in re.finditer(r"'(?:[^']|'')*'", text):
+        out.append(PLACEHOLDER.sub(replace, text[last:literal.start()]))
+        out.append(literal.group(0))
+        last = literal.end()
+    out.append(PLACEHOLDER.sub(replace, text[last:]))
+    return "".join(out)
 
 
 def _cursor_for_parts(cursor: str) -> tuple[str | None, str | None]:

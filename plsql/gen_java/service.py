@@ -1358,6 +1358,8 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
             next((r for r in (module.routines if module else []) if r.id == statement.resolved_to), None)
     else:
         callee = None
+    if callee is None and not statement.resolved_to and _builtin_call(file, statement, routine, result):
+        return
     ordered = _positional(statement, callee)
     if callee is not None and any(p.direction in ("OUT", "IN OUT") for p in callee.parameters):
         # the callee hands its OUT / IN OUT arguments back in its result record (#40): the values go in
@@ -1428,18 +1430,31 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
                        f"{_coerce(f, f'{holder}.returned()', _local_type(routine, statement.into))};")
     elif _collection_call(file, statement, routine, result):
         return
-    elif (statement.callee or "").upper() in ("DBMS_OUTPUT.PUT_LINE", "DBMS_OUTPUT.PUT", "DBMS_OUTPUT.NEW_LINE"):
-        # the session's output buffer: no row is written, so the helper keeps the text per thread and the
-        # caller reads it back (analysis.HARMLESS_CALLEES already treats it as harmless). Throwing here made
-        # every sample block that prints a line unrunnable (2026-09-24, samples/oracle-samples)
-        file.add_import("com.scalar.migrate.plsql.Plsql")
-        helper = {"DBMS_OUTPUT.PUT_LINE": "putLine", "DBMS_OUTPUT.PUT": "put", "DBMS_OUTPUT.NEW_LINE": "newLine"}
-        file.line(f"Plsql.{helper[statement.callee.upper()]}({arguments});")
     else:
         file.comment(f"external call: {statement.callee}")
         file.line(f'throw new UnsupportedOperationException("external call: {statement.callee}");')
         if statement.id not in result.untranslated:
             result.untranslated.append(statement.id)   # it throws, so what follows in the block is unreachable
+
+
+def _builtin_call(file: JavaFile, statement: M.Call, routine: M.Routine, result: ServiceFile) -> bool:
+    """An Oracle-supplied procedure the generator knows (plsql/builtins.py, #55): its arguments in Oracle's order,
+    named ones placed by name, and the target's counterpart -- a helper, or nothing, with the reason as a comment."""
+    from .. import builtins
+
+    builtin = builtins.lookup(statement.callee)
+    if builtin is None or builtin.function:
+        return False
+    try:
+        arguments = builtins.ordered(builtin, list(statement.arguments))
+    except builtins.BuiltinArgumentError as e:
+        raise Untranslatable([str(e)], statement.callee)
+    if builtin.java is None:
+        file.comment(f"{builtin.name}: {builtin.note}（#55）")
+        return True
+    file.add_import("com.scalar.migrate.plsql.Plsql")
+    file.line(f"{builtin.java}({', '.join(_expr(file, a, routine, result) for a in arguments)});")
+    return True
 
 
 def _collection_call(file: JavaFile, statement: M.Call, routine: M.Routine, result: ServiceFile) -> bool:
@@ -1664,9 +1679,26 @@ def _dynamic(file: JavaFile, statement: M.DynamicSql, routine: M.Routine,
                    f'（limits.yaml の dynamicTables に無い表名など）");')
 
 
+DDL = re.compile(r"^\s*(CREATE|DROP|ALTER|RENAME|GRANT|REVOKE|COMMENT|ANALYZE|PURGE|FLASHBACK)\b", re.IGNORECASE)
+
+
 def _variant(file: JavaFile, operation: M.SqlOperation, statement: M.DynamicSql,
              routine: M.Routine) -> None:
     """畳んだ 1 つの variant。INTO は元の `EXECUTE IMMEDIATE ... INTO` が言っている。"""
+    ddl = DDL.match(operation.original_sql or "")
+    if ddl:
+        from ..dynamic import omitted_ddl
+
+        why = omitted_ddl(routine.id)
+        if why:
+            file.comment(f"{ddl.group(1).upper()}: 移行先では実行しない（limits.yaml ddl.omit: {why}）。"
+                         f"元の文: {' '.join((operation.original_sql or '').split())}")
+            return
+        # `EXECUTE IMMEDIATE 'CREATE TABLE ...'`: the schema of the target is Schema Loader's, and ScalarDB runs no
+        # DDL inside a transaction. Emitting it would run a DROP TABLE from application code (#52)
+        raise Untranslatable([f"routine の中の DDL（{ddl.group(1).upper()}）は移行先で実行しない。スキーマは Schema Loader "
+                              f"が持つ。一時表の作成と削除なら、その用途を再設計するか、省くと決める"],
+                             statement.expression or "")
     if statement.into_targets and (operation.sql_kind or "").upper() != "SELECT":
         # `EXECUTE IMMEDIATE 'UPDATE ... RETURNING x INTO :n' ... RETURNING INTO v`: ScalarDB SQL has no RETURNING,
         # and the repository returns the row count, which is not the value (samples/oracle-samples b06_3, 2026-09-25)
@@ -1712,7 +1744,8 @@ def _first_row(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, me
     already, and a sequence with no `%NOTFOUND` branch relies on exactly that.
     """
     row = f"{method}Row"
-    file.comment(f"FETCH {statement.not_found_flag} INTO {', '.join(targets)}")
+    file.comment(f"FETCH {statement.not_found_flag} INTO {', '.join(targets)}" if statement.not_found_flag
+                 else f"SELECT INTO {', '.join(targets)}（行が無ければ元の値のまま）")
     file.line(f"Object[] {row} = repository.{method}({arguments});")
     if statement.not_found_flag:
         file.line(f"{_flag_name(statement.not_found_flag)} = {row} == null;")

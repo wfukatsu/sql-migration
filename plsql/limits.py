@@ -167,6 +167,36 @@ class DynamicTables:
 
 
 @dataclass
+class DynamicDdl:
+    """routine の中の DDL（`EXECUTE IMMEDIATE 'CREATE TABLE ...'`）を移行先で実行しないと決めた routine（#52）。
+
+    ScalarDB はトランザクションの中で DDL を流さず、スキーマは Schema Loader が持つ。作ってすぐ消す一時表の
+    ように、データに何も残さない DDL なら省いても意味は変わらない——それを確かめて決めるのは人である。書いて
+    いない routine の DDL は、生成器が理由つきで断る。
+    """
+
+    omit: dict[str, str] = field(default_factory=dict)
+    source: str | None = None
+
+    @classmethod
+    def load(cls, path: str | Path | None) -> "DynamicDdl":
+        if path is None:
+            return cls()
+        file = Path(path)
+        if not file.exists():
+            raise FileNotFoundError(f"{file} が無い")
+        data = yaml.safe_load(file.read_text(encoding="utf-8")) or {}
+        section = (data.get("ddl") or {}).get("omit") or {}
+        for routine, why in section.items():
+            if not str(why or "").strip():
+                raise ValueError(f"{file}: ddl.omit.{routine} には理由が要る")
+        return cls(omit={str(k): " ".join(str(v).split()) for k, v in section.items()}, source=str(file))
+
+    def why(self, routine: str) -> str | None:
+        return self.omit.get(routine)
+
+
+@dataclass
 class Limits:
     """走査行数の上限。既定 1 つと、routine ごとの上書き。"""
 

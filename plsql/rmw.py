@@ -152,16 +152,24 @@ def _split(statement: M.Statement, routine: M.Routine,
     if keyed and len(reads) != 1:
         return None   # 複数列の RMW。読みが複数要るので、まずは 1 つだけを扱う
     after: list[M.Statement] = []
+    unwritten: list[tuple[str, str]] = []   # RETURNING of a column the UPDATE does not write: (column, target)
     if returning is not None:
         columns = [c.strip().lower() for c in returning.group("columns").split(",")]
         targets = [t.strip() for t in returning.group("targets").split(",")]
         written = {a.this.name.lower(): a for a in assignments if isinstance(a.this, exp.Column)}
-        if len(columns) != len(targets) or any(c not in written for c in columns):
-            return None   # RETURNING of a column the statement does not write: the read would not hold it
+        if len(columns) != len(targets) or not all(re.fullmatch(r"[\w$#]+", c) for c in columns):
+            return None
         for column, target in zip(columns, targets):
-            after.append(M.Assignment(id=f"{statement.id}returned_{column}", kind="Assignment",
-                                      source_range=statement.source_range, target=target,
-                                      expression=written[column].expression.sql(dialect="oracle")))
+            if column in written:
+                after.append(M.Assignment(id=f"{statement.id}returned_{column}", kind="Assignment",
+                                          source_range=statement.source_range, target=target,
+                                          expression=written[column].expression.sql(dialect="oracle")))
+            else:
+                # a column the statement does not write has the same value after it as before, so the read that
+                # precedes the write can return it (#52, samples/oracle-samples b06_3: `RETURNING last_name`)
+                unwritten.append((column, target))
+        if unwritten and not keyed:
+            return None   # a multi-row UPDATE ... RETURNING INTO is ORA-01422 in Oracle anyway
     if keyed:
         column, variable = reads[0]
         routine.declarations.append(_declaration(routine, variable, table, column, schema, statement))
@@ -170,11 +178,13 @@ def _split(statement: M.Statement, routine: M.Routine,
                       f"{table}.{column} を読んでから書く 2 文に割った。ScalarDB SQL は列を読む式を"
                       f"受け付けないので、値はアプリで計算する。**同じトランザクションの中で読んで書く**"
                       f"ので、衝突は commit で弾かれる（再試行は呼び出し側の責務・#9）")
-        read = f"SELECT {column} FROM {table} {where.sql(dialect='oracle')} FETCH FIRST 1 ROWS ONLY"
+        selected = ", ".join([column] + [c for c, _ in unwritten])
+        read = f"SELECT {selected} FROM {table} {where.sql(dialect='oracle')} FETCH FIRST 1 ROWS ONLY"
         # 生成される method 名は `<routine>Stmt<id の末尾>` である。書きの文と並べて読めるように、
         # その番号に `read` を足した形にする（`cancelStmt6` の相方が `cancelStmt6read`）
         return [M.SqlOperation(id=f"{statement.id}read", kind="SqlOperation", source_range=statement.source_range,
-                               sql_kind="SELECT", original_sql=read, into_targets=[variable], cardinality="AT_MOST_ONE"),
+                               sql_kind="SELECT", original_sql=read, into_targets=[variable] + [t for _, t in unwritten],
+                               cardinality="AT_MOST_ONE"),
                 statement] + after
     columns = list(dict.fromkeys(list(key) + [c for c, _ in reads]))
     query = f"SELECT {', '.join(columns)} FROM {table} {where.sql(dialect='oracle')}"

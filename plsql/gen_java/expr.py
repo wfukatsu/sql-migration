@@ -64,6 +64,13 @@ COLLECTION_METHODS = {"COUNT": "count", "FIRST": "first", "LAST": "last", "NEXT"
                       "EXISTS": "exists", "DELETE": "delete", "EXTEND": "extend", "TRIM": "trimTable"}
 
 
+def _builtin_function(upper: str):
+    from ..builtins import lookup
+
+    builtin = lookup(upper)
+    return builtin if builtin is not None and builtin.function else None
+
+
 @dataclass
 class Expression:
     java: str
@@ -603,6 +610,12 @@ class _Parser:
             # a routine the scope knows but an expression cannot call (OUT arguments); say why (#48)
             self.result.unknown.append(f"{value}: {refused}")
             return value
+        builtin = _builtin_function(upper)
+        if builtin is not None and value.lower() not in self.scope:
+            # an Oracle-supplied function the generator knows (plsql/builtins.py, #55). Written without
+            # parentheses (`DBMS_UTILITY.GET_TIME`) it is a call all the same
+            self.result.imports.add(HELPER_IMPORT)
+            return builtin.java if following == "(" else f"{builtin.java}()"
         if following == "(" or upper in FUNCTIONS:
             # a sibling routine is a call too, and the scope knows its Java name; checking FUNCTIONS first
             # would report every local function call as unknown
