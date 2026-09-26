@@ -1951,6 +1951,10 @@ def _coerce(file: JavaFile, value: str, target_type: str) -> str:
     if target_type in ("Integer", "Long") and value.startswith("Plsql.") and not value.startswith(("Plsql.fit", "Plsql.to")):
         file.add_import("com.scalar.migrate.plsql.Plsql")
         return f"Plsql.{'toInt' if target_type == 'Integer' else 'toLong'}({value})"
+    # COALESCE / NVL2 / GREATEST / LEAST hand back whichever argument won, as Object (#84)
+    if target_type in ("String", "LocalDateTime", "Boolean") and value.startswith(
+            tuple(f"Plsql.{f}(" for f in ("coalesce", "nvl2", "greatest", "least"))):
+        return f"({target_type}) {value}"
     # `v_row := v_list(i)`: an element of a collection comes back as Object; a record local needs its class (#54)
     from .types import object_class
     if value.startswith("Plsql.at(") and target_type and any(object_class(n) == target_type for n in _object_names()):

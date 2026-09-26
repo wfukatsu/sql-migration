@@ -42,7 +42,16 @@ FUNCTIONS = {
     "INITCAP": f"{HELPER}.initcap", "TRIM": f"{HELPER}.trim",
     # text that is not a number raises Plsql.ValueError, which a VALUE_ERROR handler catches (as ORA-06502 does)
     "TO_NUMBER": f"{HELPER}.toNumber",
+    # #84: the SQL functions PL/SQL calls most, each with Oracle's NULL / empty-string rules (Plsql)
+    "LENGTH": f"{HELPER}.length", "LOWER": f"{HELPER}.lower", "SUBSTR": f"{HELPER}.substr",
+    "INSTR": f"{HELPER}.instr", "REPLACE": f"{HELPER}.replace", "LPAD": f"{HELPER}.lpad", "RPAD": f"{HELPER}.rpad",
+    "CONCAT": f"{HELPER}.concat", "COALESCE": f"{HELPER}.coalesce", "NVL2": f"{HELPER}.nvl2",
+    "GREATEST": f"{HELPER}.greatest", "LEAST": f"{HELPER}.least", "POWER": f"{HELPER}.power",
+    "SQRT": f"{HELPER}.sqrt", "CEIL": f"{HELPER}.ceil", "FLOOR": f"{HELPER}.floor", "SIGN": f"{HELPER}.sign",
+    "CHR": f"{HELPER}.chr", "ASCII": f"{HELPER}.ascii", "TO_DATE": f"{HELPER}.toDate",
+    "ADD_MONTHS": f"{HELPER}.addMonths", "LAST_DAY": f"{HELPER}.lastDay",
 }
+
 # Values, not calls. SYSDATE is the database clock, which is not the JVM clock -- the helper takes it from the
 # caller so that a generated routine is testable and the difference stays visible.
 VALUES = {"SYSDATE": f"{HELPER}.sysdate()"}
@@ -372,7 +381,7 @@ class _Parser:
                 return left
             operator = self.take()[1]
             if operator == "*" and self.peek() is not None and self.peek()[1] == "*":
-                # `**` はべき乗。ヘルパに無いので、掛け算 2 つとして読まずに拒む
+                # `**` は parse_unary が読む。ここに来るのは読めなかったときだけ
                 self.take()
                 self.result.unknown.append("**")
             start = self.position
@@ -394,7 +403,16 @@ class _Parser:
         rewrote `-v_qtys(i)` into `-r.qty`, which did)."""
         token = self.peek()
         if token is None or token[0] != "op" or token[1] not in ("-", "+"):
-            return self.parse_primary()
+            base = self.parse_primary()
+            # `x ** n` binds tighter than * and / and than a sign (`-2 ** 2` is -(2 ** 2)): #84
+            while (self.peek() is not None and self.peek()[1] == "*" and self.position + 1 < len(self.tokens)
+                   and self.tokens[self.position + 1][1] == "*"):
+                self.take()
+                self.take()
+                exponent = self.parse_unary()
+                self.result.imports.add(HELPER_IMPORT)
+                base = f"{HELPER}.power({base}, {exponent})"
+            return base
         operator = self.take()[1]
         operand = self.parse_unary()
         if operator == "+":

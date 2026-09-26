@@ -37,6 +37,15 @@ public final class OracleNumbers {
     return q.scale() < 0 ? q.setScale(0) : q;
   }
 
+  /** A computed value rounded the way a NUMBER stores it (see divide): SQRT, POWER with a fractional exponent. */
+  public static BigDecimal round40(BigDecimal n) {
+    if (n == null || n.signum() == 0) return n == null ? null : BigDecimal.ZERO;
+    BigDecimal q = n.setScale(scaleFor(leadingPower(n)), RoundingMode.HALF_UP);
+    if (leadingPower(q) != leadingPower(n)) q = n.setScale(scaleFor(leadingPower(q)), RoundingMode.HALF_UP);
+    q = q.stripTrailingZeros();
+    return q.scale() < 0 ? q.setScale(0) : q;
+  }
+
   private static int leadingPower(BigDecimal n) {
     return n.precision() - n.scale() - 1;
   }
