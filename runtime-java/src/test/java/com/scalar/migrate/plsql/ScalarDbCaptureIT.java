@@ -458,6 +458,11 @@ class ScalarDbCaptureIT {
           // SnakeYAML reads an unquoted `2026-01-15` as a Date; the generated signature for an Oracle DATE is
           // LocalDateTime, and the scenario means midnight on that day, which is what Oracle bound too.
           out[i] = java.time.LocalDateTime.ofInstant(d.toInstant(), java.time.ZoneOffset.UTC);
+        } else if (type == java.time.LocalDateTime.class && value instanceof String text) {
+          // plsql_setup.py writes a date argument it filled or passed on as ISO text (`2026-01-01`, or with a time)
+          out[i] = text.length() == 10
+              ? java.time.LocalDate.parse(text).atStartOfDay()
+              : java.time.LocalDateTime.parse(text.replace(' ', 'T'));
         } else if (type == String.class) {
           out[i] = String.valueOf(value);
         } else {

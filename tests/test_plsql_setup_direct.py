@@ -89,3 +89,14 @@ def test_omitted_arguments_are_filled_from_literal_defaults():
     assert with_defaults(call("stamp", {"p_id": 1}), routines) is None        # SYSDATE is not a literal
     assert with_defaults(call("unknown", {"p_id": 1}), routines) is None
     assert with_defaults({"call": {"kind": "block", "body": "BEGIN NULL; END;"}}, routines) is None
+
+
+def test_a_date_argument_is_written_as_iso_text():
+    """fixtures `dynamic_purge` (`p_before: 2026-01-01`, a date to YAML) stopped the corpus capture from #41 on."""
+    import datetime
+    import json
+
+    from difftest.plsql_setup import _json_value
+
+    assert json.dumps({"p_before": datetime.date(2026, 1, 1)}, default=_json_value) == '{"p_before": "2026-01-01"}'
+    assert json.dumps(datetime.datetime(2026, 1, 1, 9, 30), default=_json_value) == '"2026-01-01T09:30:00"'

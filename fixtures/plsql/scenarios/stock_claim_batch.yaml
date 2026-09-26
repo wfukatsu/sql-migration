@@ -21,3 +21,11 @@ mask:
   audit_log:
   - changed_at
 note: FOR UPDATE SKIP LOCKED と WHERE CURRENT OF。ROWNUM で 1 件に絞る
+nondeterministic:
+  reason: >-
+    ROWNUM <= p_limit に ORDER BY が無いので、NEW の注文のどれを CLAIMED にするかは Oracle でも決まらない（heap の順。
+    移行先では走査の順）。確かめるのは「NEW の注文のうち p_limit 件が CLAIMED になり、その件数の監査行が残る」こと
+  decided: '2026-09-26'
+  ignore_columns:
+    orders: [order_id, ordered_at]
+    audit_log: [key_value]

@@ -347,3 +347,26 @@ def test_rows_a_function_returned_are_compared_as_a_multiset():
     assert difference(decode(oracle), decode(other)) == "value"
     assert difference(decode(oracle), decode({"$rows": oracle["$rows"][:1]})) == "value"
     assert difference(decode(oracle), None) == "type"
+
+
+def test_a_declared_nondeterministic_column_is_left_out_of_both_tables(tmp_path, monkeypatch):
+    """fixtures `stock_claim_batch`: ROWNUM without ORDER BY claims *some* NEW order; which one is not fixed."""
+    import difftest.plsql_compare as compare
+
+    (tmp_path / "scenarios").mkdir()
+    (tmp_path / "scenarios" / "claim.yaml").write_text(
+        "nondeterministic:\n  reason: ROWNUM に ORDER BY が無い\n  ignore_columns:\n    orders: [order_id]\n", encoding="utf-8")
+    monkeypatch.setattr(compare, "FIXTURES", tmp_path)
+    declared = compare._nondeterministic("claim")
+    oracle = {"tables": {"orders": {"columns": ["order_id", "status"], "rows": [[1001, "CLAIMED"], [1002, "NEW"]]}}}
+    target = {"tables": {"orders": {"columns": ["order_id", "status"], "rows": [[1001, "NEW"], [1002, "CLAIMED"]]}}}
+    assert compare_capture(oracle, target), "without the declaration, the rows differ"
+    left, right = (compare._without(c, declared["ignore_columns"]) for c in (oracle, target))
+    assert compare_capture(left, right) == []
+    wrong = {"tables": {"orders": {"columns": ["order_id", "status"], "rows": [[1001, "CLAIMED"], [1002, "CLAIMED"]]}}}
+    assert compare_capture(left, compare._without(wrong, declared["ignore_columns"])), "how many were claimed still counts"
+
+    (tmp_path / "scenarios" / "bad.yaml").write_text("nondeterministic:\n  ignore_columns:\n    orders: [order_id]\n",
+                                                     encoding="utf-8")
+    with pytest.raises(SystemExit, match="reason"):
+        compare._nondeterministic("bad")

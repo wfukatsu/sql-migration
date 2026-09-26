@@ -271,6 +271,17 @@ def with_defaults(spec: dict, routines: dict) -> dict | None:
     return out
 
 
+def _json_value(value):
+    """A scenario argument YAML read as a date (`p_before: 2026-01-01`) goes to the Java side as ISO text, which
+    ScalarDbCaptureIT turns back into the LocalDateTime the generated signature takes. The corpus capture failed on
+    `dynamic_purge` from #41 (2026-09-25), when the filled arguments started to be written here."""
+    import datetime
+
+    if isinstance(value, (datetime.datetime, datetime.date)):
+        return value.isoformat()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--schema", default=str(SCHEMA), help="Schema Loader JSON the setup rows must fit")
@@ -314,7 +325,7 @@ def main(argv=None) -> int:
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"scenarios": scenarios, "unconvertible": unconvertible},
-                             ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+                             ensure_ascii=False, indent=1, default=_json_value) + "\n", encoding="utf-8")
     print(f"{len(scenarios)} scenario(s) converted, {len(unconvertible)} not -> {out}")
     for name, reason in sorted(unconvertible.items()):
         print(f"  {name:<34} {reason}")
