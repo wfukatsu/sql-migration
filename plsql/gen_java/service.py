@@ -770,11 +770,41 @@ def _always_throws(statement: M.Statement, result: ServiceFile) -> bool:
     """
     if statement.id in result.untranslated or statement.kind == "Raise":
         return True
+    if statement.kind == "Loop" and statement.loop_kind == "basic":
+        # `while (true)` whose body throws before any EXIT never completes, so javac rejects what follows the
+        # loop (samples/oracle-plsql-docs 12-30: an untranslated FETCH at the top of the loop, #77)
+        for s in statement.body:
+            if s.kind == "Exit" or (s.kind in ("If", "Case", "Block", "Loop") and _mentions_exit(s)):
+                return False
+            if _always_throws(s, result):
+                return True
+        return False
     if statement.kind in ("If", "Case"):
         branches = all(any(_always_throws(s, result) for s in b.body) for b in statement.branches)
         if statement.else_body:
             return branches and any(_always_throws(s, result) for s in statement.else_body)
         return branches and statement.kind == "Case"
+    return False
+
+
+def _mentions_exit(statement: M.Statement) -> bool:
+    """Whether an EXIT is anywhere under this statement (it may leave the enclosing loop)."""
+    for child in list(getattr(statement, "body", None) or []) + [s for b in getattr(statement, "branches", None) or []
+                                                              for s in b.body] + list(getattr(statement, "else_body", None) or []):
+        if child.kind == "Exit" or _mentions_exit(child):
+            return True
+    return False
+
+
+def _always_leaves(statement: M.Statement) -> bool:
+    """Does this statement always leave the block it is in without falling through: RETURN, an EXIT or CONTINUE
+    without WHEN, or a nested block that returns (a RETURN is not an exception, so no handler stops it)?"""
+    if statement.kind == "Return":
+        return True
+    if statement.kind in ("Exit", "Continue"):
+        return not getattr(statement, "condition", None)
+    if statement.kind == "Block":
+        return any(s.kind == "Return" or (s.kind == "Block" and _always_leaves(s)) for s in statement.body)
     return False
 
 
@@ -788,8 +818,10 @@ def _always_exits(routine: M.Routine, result: ServiceFile) -> bool:
         if not statements:
             return False
         for statement in statements:
-            if statement.id in result.untranslated:
+            if statement.id in result.untranslated or _always_throws(statement, result):
                 return True   # the refusal throws, and the rest of the block was dropped
+            if statement.kind == "Loop" and statement.loop_kind == "basic" and not _mentions_exit(statement):
+                return True   # `LOOP ... END LOOP` with no EXIT is `while (true)` with no break (12-34, #77)
         last = statements[-1]
         if last.kind == "Loop" and getattr(last, "returns_rows", False):
             return True   # `OPEN rc FOR q; RETURN rc;` became `return repository...(...)`
@@ -883,12 +915,18 @@ def _statements(file: JavaFile, statements: list[M.Statement], routine: M.Routin
     if not statements:
         file.line("// the PL/SQL body is empty")
         return
-    for statement in statements:
+    for index, statement in enumerate(statements):
         _statement(file, statement, routine, result)
         if _always_throws(statement, result):
             # Java rejects a statement after one that always throws. Stopping here is also honest: the rest of
             # the block cannot run, and pretending otherwise would hide how much of the routine is missing.
             file.comment("the rest of this block is unreachable while the statement above is unresolved")
+            break
+        if index + 1 < len(statements) and _always_leaves(statement):
+            # PL/SQL compiles a statement after RETURN / EXIT and never runs it; Java refuses to compile it (#77,
+            # samples/oracle-plsql-docs 8-7). Left out, with a note, the method does what the routine did
+            file.comment(f"{len(statements) - index - 1} statement(s) after this one never run in PL/SQL either "
+                         "(unreachable); not emitted")
             break
 
 
