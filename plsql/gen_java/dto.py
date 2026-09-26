@@ -12,6 +12,8 @@ Two shapes come out of here:
 
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass
 
 from ..ir import model as M
@@ -74,6 +76,12 @@ def loop_row_record(routine: M.Routine, loop, package: str, source: str = "") ->
 
     query = loop.query
     columns = list(zip(query.into_columns or [], query.into_oracle_types or []))
+    if any(name is None for name, _ in columns):
+        # an expression in the select list (`(salary * .05) raise`) has no table column but has a name; its
+        # value is typed by what the query computes, so the component is left untyped (Object) -- #73
+        from ..columns import select_names
+        names = select_names(query.original_sql)
+        columns = [(name or (names[i] if i < len(names) else None), oracle) for i, (name, oracle) in enumerate(columns)]
     if not columns or any(name is None for name, _ in columns):
         return None
     file = JavaFile(package=package, name=loop_record(routine, loop), source=source)
@@ -138,6 +146,25 @@ def dtos_for(module: M.Module, package: str) -> list[Dto]:
                                     note=f"PL/SQL record type {base}. Components follow the field names.")
                 if record is not None:
                     out.append(record)
+        # `SELECT * INTO emp_tab(1)` with `emp_tab TABLE OF employees%ROWTYPE`: the repository builds the table's
+        # row class for the element, which nothing else generates (samples/oracle-plsql-docs 12-6, #73)
+        from ..lower import _walk
+        collections = {d.name.lower(): d for d in routine.declarations
+                       if d.type is not None and d.type.origin == "collection"}
+        for statement in _walk(routine.body):
+            targets = getattr(statement, "into_targets", None) or []
+            if statement.kind != "SqlOperation" or len(targets) != 1 or len(statement.into_columns or []) < 2:
+                continue
+            holder = collections.get(targets[0].partition("(")[0].strip().lower()) if "(" in targets[0] else None
+            table = (statement.read_set or [None])[0]
+            element = re.sub(r"^\s*(?:TABLE|VARRAY\s*\(\s*\d+\s*\))\s+OF\s+", "", holder.type.resolved or "",
+                             flags=re.IGNORECASE) if holder is not None else ""
+            if not table or not element.upper().startswith("RECORD(") or table.lower() in seen:
+                continue
+            seen.add(table.lower())
+            record = row_record(table, element, package, source)
+            if record is not None:
+                out.append(record)
         # a schema object type the routine uses, directly or as the element of a collection (#54)
         from .types import object_types
         used = [routine.return_type] + [d.type for d in routine.declarations] + [p.type for p in routine.parameters]

@@ -295,8 +295,13 @@ def loop_record(routine: M.Routine, loop: M.Loop) -> str:
     return _record_for(loop_method(routine, loop))
 
 
+# the routine whose statements are being generated: `_row` reads the INTO target's declared type off it (#73)
+_ROUTINE: "contextvars.ContextVar[M.Routine | None]" = contextvars.ContextVar("repository_routine", default=None)
+
+
 def _method(file: JavaFile, routine: M.Routine, statement: M.SqlOperation,
             result: RepositoryFile) -> None:
+    _ROUTINE.set(routine)
     name = f"{java_name(routine_stem(routine))}{sql_suffix(statement)}"
     if statement.source_range is not None:
         file.comment(f"{statement.source_range.file}:{statement.source_range.start_line}")
@@ -510,6 +515,14 @@ def _row(file: JavaFile, statement: M.SqlOperation) -> str:
     """
     table = (statement.read_set or [None])[0]
     record = java_class_name(table) + "Row"
+    # `rec1 RecordTyp` (a `TYPE ... IS RECORD`) is built as its own class, which `dto` generates; the table's
+    # `EmployeesRow` exists only for a %ROWTYPE and did not compile here (samples/oracle-plsql-docs 5-48, #73)
+    routine = _ROUTINE.get()
+    target = (statement.into_targets or [""])[0].lower()
+    declared = next((d for d in (routine.declarations if routine is not None else [])
+                     if d.name.lower() == target and d.type is not None), None)
+    if declared is not None and declared.type.origin == "record":
+        record = java_class_name(declared.type.oracle.rpartition(".")[2])
     file.add_import(f"{getattr(file, 'domain_package', '')}.{record}")
     arguments = []
     for i, oracle in enumerate(statement.into_oracle_types or [], start=1):
