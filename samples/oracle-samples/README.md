@@ -11,7 +11,7 @@ Oracle 公式ドキュメントの構成に沿った **構文カタログ**（SQ
 | | 数 | 2026-09-24（初回） | 2026-09-25（Issue #30〜#42 の修正後） |
 |---|---|---|---|
 | SQL 文（6 ファイル） | 175 文 | OK 27 / WARN 54 / PLANNED 27 / ERROR 69 | OK 27 / WARN 54 / PLANNED 20 / ERROR 74。H2 で動かない 7 文が PLANNED から ERROR に、WITH FUNCTION が 1 文に |
-| SQL の実 DB 比較（02 の読み取り文 + JSON 3 文 + 修正版 1 文） | 40 文 | PASS 19 / FAIL 10 / SKIP 9 / CASE_ERROR 2 | **PASS 19 / FAIL 5 / SKIP 14 / CASE_ERROR 2**。FAIL 5 はすべて同順位・非決定。JSON_OBJECT は PASS に |
+| SQL の実 DB 比較（02 の読み取り文 + JSON 3 文 + 修正版 1 文） | 40 文 | PASS 19 / FAIL 10 / SKIP 9 / CASE_ERROR 2 | **PASS 19 / FAIL 5 / SKIP 14 / CASE_ERROR 2**。FAIL 5 はすべて同順位・非決定。JSON_OBJECT は PASS に。#57 #58 のあと **PASS 24（宣言つき 5）/ FAIL 0 / SKIP 16（移行元が拒否 2）/ CASE_ERROR 0** |
 | PL/SQL routine（05・06 の全ユニット + 04 の無名ブロック 10 個） | 41 routine | AUTO 候補 7 / REVIEW 10 / REDESIGN 24 | 同じ（判定のルールは変えていない） |
 | PL/SQL の Java 生成 | 41 routine | javac エラー 15 件（8 routine） | **javac エラー 0**（41 routine 全部がコンパイルできる） |
 | PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 16 / 相違 15**（全 36 ユニット、31 シナリオ。#44〜#46 と 4 つの決定のあと）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて） |
@@ -419,6 +419,28 @@ trigger を全部配備したので、employees を書くシナリオでは Orac
 | `b06_4_collection_in_sql` | オブジェクト型のコンストラクタ、`TABLE()`（#54） |
 | `b06_5_builtin_packages` | 外部 package の名前付き引数（#55） |
 
+### 6 回目の対応（2026-09-26、Issue #57 #58、SQL の実 DB 比較）
+
+SQL の実 DB 比較に残っていた FAIL 5 本と CASE_ERROR 2 本は、毎回目で見て「非決定」「サンプルの側の事情」と判断していた。
+ケースファイルの文の上に、比べ方と理由を宣言できるようにした（`difftest/case_notes.py`）。宣言は理由が無いと読まない。
+
+| 宣言 | 意味 | この記録で使った文 |
+|---|---|---|
+| `-- @nondeterministic: count; reason=…` | 行数だけを比べる | A-1（`SYSDATE` / `USER`）、A-4（ORDER BY の無い `ROWNUM <= 5`） |
+| `-- @nondeterministic: unordered; reason=…` | ORDER BY があっても集合として比べる | F-1 の `WITH TIES`（同順位の 2 人の並び） |
+| `-- @nondeterministic: ignore=列; reason=…` | その列を両側から外して比べる（名前か 1 始まりの位置） | E-1'（`unordered; ignore=rn`。同順位の 2 人に `ROW_NUMBER` のどちらが付くか）、F-1 の `OFFSET`（`ignore=last_name`。7000 の社員がページの境目をまたぐ） |
+| `-- @source-rejects: sample; reason=…` | 移行元が拒否する。移行元の不備 | E-1（別名 `share` が 26ai の予約語、ORA-00923） |
+| `-- @source-rejects: harness; reason=…` | 移行元が拒否する。ハーネスの都合 | H-1（表を作った直後のフラッシュバック、ORA-01466） |
+
+緩めた比べ方で一致したものは PASS（`DECLARED` として件数を出す）、それでも違えば FAIL。移行元が宣言どおり拒否したものは理由つきの SKIP（`SOURCE_REJECTS`）で、
+宣言の無い拒否だけが CASE_ERROR に残る。H-1 は、表を作ってから 1 分以上あとに `--skip-setup` で流すと Oracle が答え、変換不可（SKIP）として数えられることも確かめた。
+
+```text
+PASS=24 FAIL=0 SKIP=16 CASE_ERROR=0 (of PASS, EMPTY=0 DECLARED=5; of SKIP, SOURCE_REJECTS=2)
+```
+
+**宣言の無い FAIL は 0 本**になり、`run.py` は終了コード 0 で終わる。
+
 ## 付録（`result/tables.md` と同じ。`make_tables.py` が結果ファイルから作る。**Issue 修正後の数字**）
 
 ### SQL 変換（文ごと）
@@ -631,10 +653,10 @@ trigger を全部配備したので、employees を書くシナリオでは Orac
 ### 実 DB 比較（SQL）
 | # | 元の SQL | 変換 | 実行 | 結果 | 差の内容 |
 |---|---|---|---|---|---|
-| 10 | `SELECT SYSDATE, SYSTIMESTAMP, USER FROM dual` | PLANNED | 実行計画 P1 | FAIL | result mismatch (no row of the actual result equals expected (datetime.datetime(2026, 9, 25, 1, 3, 21), dateti |
+| 10 | `SELECT SYSDATE, SYSTIMESTAMP, USER FROM dual` | PLANNED | 実行計画 P1 | PASS（宣言: count） | SYSDATE / SYSTIMESTAMP は実行した時刻、USER は接続したユーザで、両側で同じ値にならない。1 行返ることだけを見る |
 | 11 | `SELECT employee_id, last_name, salary, commission_pct FROM …` | WARN | ScalarDB SQL | PASS |  |
 | 12 | `SELECT last_name, salary, CASE WHEN salary >= 15000 THEN 'H…` | PLANNED | 実行計画 P1 | PASS |  |
-| 13 | `SELECT UPPER(last_name) AS upper_name, INITCAP(email) AS in…` | PLANNED | 実行計画 P1 | FAIL | result mismatch (no row of the actual result equals expected ('DE HAAN', 'Ldehaan', 'De ', 2, '000102', 'Lex D |
+| 13 | `SELECT UPPER(last_name) AS upper_name, INITCAP(email) AS in…` | PLANNED | 実行計画 P1 | PASS（宣言: count） | ORDER BY の無い ROWNUM <= 5 は任意の 5 行を返し、どの 5 行かは実行計画しだい。5 行返ることだけを見る |
 | 14 | `SELECT email, REGEXP_SUBSTR(email, '^[A-Z]') AS first_char,…` | PLANNED | 実行計画 P1 | PASS |  |
 | 15 | `SELECT e.last_name, d.department_name FROM employees e JOIN…` | WARN | ScalarDB SQL | PASS |  |
 | 16 | `SELECT e.last_name, d.department_name FROM employees e LEFT…` | WARN | ScalarDB SQL | PASS |  |
@@ -654,18 +676,18 @@ trigger を全部配備したので、employees を書くシナリオでは Orac
 | 30 | `SELECT department_id, LISTAGG(last_name, ', ') WITHIN GROUP…` | PLANNED | 実行計画 P1+P7 | PASS |  |
 | 31 | `SELECT * FROM (SELECT department_id, job_id, salary FROM em…` | ERROR | — | NOT_CONVERTIBLE | FROM must reference exactly one base table (no subqueries); main query: derived table in FROM -- evaluate it i |
 | 32 | `SELECT employee_id, pay_type, amount FROM (SELECT employee_…` | ERROR | — | NOT_CONVERTIBLE | FROM must reference exactly one base table (no subqueries); main query: derived table in FROM -- evaluate it i |
-| 33 | `SELECT department_id, last_name, salary, ROW_NUMBER() OVER …` | PLANNED | 実行計画 P1 | CASE_ERROR | source database rejected the statement: ORA-00923: FROM keyword not found where expected |
-| 34 | `SELECT department_id, last_name, salary, ROW_NUMBER() OVER …` | PLANNED | 実行計画 P1 | FAIL | result mismatch (row 13: expected (90, 'Kochhar', 17000.0, 2, 2, 2, 58000, 0.293, 24000, 'Hunold', 4), actual  |
+| 33 | `SELECT department_id, last_name, salary, ROW_NUMBER() OVER …` | PLANNED | 実行計画 P1 | SKIP（移行元の不備） | 別名 share は Oracle 26ai の予約語で ORA-00923 になる（サンプルの不備）。別名を変えた E-1' で比べる |
+| 34 | `SELECT department_id, last_name, salary, ROW_NUMBER() OVER …` | PLANNED | 実行計画 P1 | PASS（宣言: unordered; ignore=rn） | 部門 90 の salary 17000 の 2 人は同順位で、ROW_NUMBER の番号（と ORDER BY department_id, rn の並び）がどちらに付くかは決まらない |
 | 35 | `SELECT order_date, total, SUM(total) OVER (ORDER BY order_d…` | PLANNED | 実行計画 P1 | PASS |  |
 | 36 | `SELECT department_id, MAX(last_name) KEEP (DENSE_RANK FIRST…` | ERROR | — | NOT_CONVERTIBLE | projection 'MAX(last_name) KEEP (DENSE_RANK FIRST ORDER BY salary DESC)' is an expression; ScalarDB SQL only s |
-| 37 | `SELECT last_name, salary FROM employees ORDER BY salary DES…` | PLANNED | 実行計画 P1 | FAIL | result mismatch (row 2: expected ('Kochhar', 17000.0), actual ('De Haan', 17000)): expected [('King', 24000.0) |
-| 38 | `SELECT last_name, salary FROM employees ORDER BY salary DES…` | PLANNED | 実行計画 P4 | FAIL | result mismatch (row 5: expected ('Tuvault', 7000.0), actual ('Grant', 7000)): expected [('Partners', 13500.0) |
+| 37 | `SELECT last_name, salary FROM employees ORDER BY salary DES…` | PLANNED | 実行計画 P1 | PASS（宣言: unordered） | salary 17000 の 2 人は同順位で、WITH TIES で両方とも返るが並びは決まらない |
+| 38 | `SELECT last_name, salary FROM employees ORDER BY salary DES…` | PLANNED | 実行計画 P4 | PASS（宣言: ignore=last_name） | salary 7000 の社員が複数いてページの境目をまたぐので、5 行目にどの社員が来るかは決まらない。給与の並びだけを見る |
 | 39 | `SELECT * FROM (SELECT a.*, ROWNUM rnum FROM (SELECT last_na…` | PLANNED | 実行計画 P5 | PASS |  |
 | 40 | `WITH dept_stats AS ( SELECT department_id, AVG(salary) AS a…` | PLANNED | 実行計画 P1+P6 | PASS |  |
 | 41 | `SELECT LEVEL, LPAD(' ', 2 * (LEVEL - 1)) || last_name AS or…` | ERROR | — | NOT_CONVERTIBLE | main query: START WITH / CONNECT BY with CONNECT_BY_ISLEAF, CONNECT_BY_ROOT, LEVEL, SYS_CONNECT_BY_PATH -- wal |
 | 42 | `WITH org (employee_id, last_name, manager_id, lvl, path) AS…` | ERROR | — | NOT_CONVERTIBLE | WITH org: evaluate each common table expression in the application (fetch its base tables through ScalarDB SQL |
 | 43 | `SELECT DATE '2026-09-01' + LEVEL - 1 AS cal_date FROM dual …` | ERROR | — | NOT_CONVERTIBLE | main query: START WITH / CONNECT BY with LEVEL -- walk the tree in the application (appside.Hierarchy) or prec |
-| 44 | `SELECT employee_id, salary FROM employees AS OF TIMESTAMP (…` | ERROR | — | CASE_ERROR | source database rejected the statement: ORA-01466: unable to read data - table definition has changed |
+| 44 | `SELECT employee_id, salary FROM employees AS OF TIMESTAMP (…` | ERROR | — | SKIP（ハーネスの都合） | 表を作った直後は 1 分前の時点に表が無く ORA-01466 になる（ハーネスの都合）。--skip-setup で 1 分以上あとに流せば Oracle は答え、変換不可として数えられる |
 | 45 | `SELECT COUNT(*) FROM employees SAMPLE (50)` | ERROR | — | NOT_CONVERTIBLE | TABLESAMPLE on employees is not supported; it returns a random subset of the rows; the H2 residual engine cann |
 | 46 | `SELECT ROWID, employee_id FROM employees WHERE ROWNUM <= 3` | ERROR | — | NOT_CONVERTIBLE | pseudo-column ROWID does not exist in ScalarDB; use the primary key |
 | 47 | `SELECT JSON_VALUE(doc, '$.name') AS name, JSON_VALUE(doc, '…` | ERROR | — | NOT_CONVERTIBLE | Expecting ). Line 6, Col: 42. |

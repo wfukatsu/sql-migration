@@ -30,8 +30,8 @@ import psycopg
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "difftest"))
+import case_notes  # noqa: E402
 import rowcompare  # noqa: E402
-sys.path.insert(0, str(ROOT / "difftest"))
 from scalardb_migrate.converter import convert_script  # noqa: E402
 from backends import BACKENDS, restart_cluster, schema_loader  # noqa: E402
 from sources import PROFILES, ProfileError, jdbc_spec, parse_profile_args, source_config  # noqa: E402
@@ -59,6 +59,10 @@ class Source:
 
     def fetch(self, sql: str):
         return self.execute(sql).fetchall()
+
+    def fetch_with_columns(self, sql: str) -> tuple[list, list[str]]:
+        cur = self.execute(sql)
+        return cur.fetchall(), [d[0] for d in cur.description or []]
 
     def ddl(self, sql: str):
         m = re.search(r"CREATE\s+(TABLE|INDEX)\s+(\w+)", sql, re.I)
@@ -131,6 +135,22 @@ def compare(expected, actual, ordered: bool) -> bool:
     return rowcompare.same(expected, actual, ordered)
 
 
+def difference(expected, actual, ordered: bool, note, columns: list[str]) -> str | None:
+    """rowcompare.difference, weakened as the statement's @nondeterministic declaration says (Issue #57)."""
+    if note is None:
+        return rowcompare.difference(expected, actual, ordered)
+    e, a = case_notes.weaken(expected, actual, note, columns)
+    why = rowcompare.difference(e, a, ordered and not note.unordered and not note.count_only)
+    return None if why is None else f"{why} [declared nondeterministic: {note.describe()}]"
+
+
+def count_result(summary: dict, rec: dict, ok: bool, expected, note) -> None:
+    summary["PASS" if ok else "FAIL"] += 1
+    summary["EMPTY"] += int(ok and not expected)
+    summary["DECLARED"] += int(ok and note is not None)
+    rec["result"], rec["empty"] = "PASS" if ok else "FAIL", ok and not expected
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("case_file")
@@ -195,7 +215,9 @@ def main() -> int:
     # CASE_ERROR: the source database rejected the case. That is a broken case, not a skipped one -- counted as
     # SKIP it let a run "pass" on statements nobody had executed. EMPTY: both sides returned no row, which agrees
     # with any conversion at all; it passes, and is counted so that a reader can see how much of PASS it is.
-    summary = {"PASS": 0, "FAIL": 0, "SKIP": 0, "CASE_ERROR": 0, "EMPTY": 0}
+    # DECLARED: passed under a weaker comparison the case declared (@nondeterministic, Issue #57). SOURCE_REJECTS:
+    # skipped because the source rejected it and the case said it would, and why (@source-rejects, Issue #58).
+    summary = {"PASS": 0, "FAIL": 0, "SKIP": 0, "CASE_ERROR": 0, "EMPTY": 0, "DECLARED": 0, "SOURCE_REJECTS": 0}
     src = Source(args.dialect)
     for r in results:
         if r.kind not in ("SELECT", "UNION", "EXCEPT", "INTERSECT", "PARSE_ERROR") and not (r.kind == "COMMAND" and "SELECT" in r.source_sql.upper()):
@@ -209,12 +231,42 @@ def main() -> int:
         records.append(rec)
         ordered = rowcompare.is_ordered(body, args.dialect)
         try:
-            expected = src.fetch(body)
-        except Exception as e:  # noqa: BLE001
-            rec["result"], rec["error"] = "CASE_ERROR", f"source database rejected the statement: {str(e).splitlines()[0][:200]}"
+            notes = case_notes.parse(r.source_sql)
+        except case_notes.NoteError as e:
+            rec["result"], rec["error"] = "CASE_ERROR", f"declaration: {e}"
             summary["CASE_ERROR"] += 1
             print(f"CASE [{r.index}] {body[:70]}  ({rec['error']})")
             continue
+        note = notes.nondeterministic
+        if note:
+            rec["nondeterministic"] = {"compare": note.describe(), "reason": note.reason}
+        try:
+            expected, columns = src.fetch_with_columns(body)
+        except Exception as e:  # noqa: BLE001
+            message = f"source database rejected the statement: {str(e).splitlines()[0][:200]}"
+            if notes.source_rejects:
+                rej = notes.source_rejects
+                summary["SKIP"] += 1
+                summary["SOURCE_REJECTS"] += 1
+                rec["result"], rec["error"] = "SKIP", message
+                rec["source_rejects"] = {"kind": rej.kind, "label": rej.label(), "reason": rej.reason}
+                print(f"SKIP [{r.index}] {body[:70]}  ({rej.label()}: {rej.reason[:60]})")
+            else:
+                rec["result"], rec["error"] = "CASE_ERROR", message
+                summary["CASE_ERROR"] += 1
+                print(f"CASE [{r.index}] {body[:70]}  ({rec['error']})")
+            continue
+        if notes.source_rejects:
+            print(f"note [{r.index}] declared @source-rejects ({notes.source_rejects.kind}) but the source accepted it; "
+                  "compared as usual")
+        if note:
+            try:
+                case_notes.weaken(expected, expected, note, columns)
+            except case_notes.NoteError as e:
+                rec["result"], rec["error"] = "CASE_ERROR", f"declaration: {e}"
+                summary["CASE_ERROR"] += 1
+                print(f"CASE [{r.index}] {body[:70]}  ({rec['error']})")
+                continue
         if r.status == "PLANNED":
             plan = dict(r.plan)
             for f in plan["fetch"]:
@@ -230,13 +282,11 @@ def main() -> int:
                 rec["result"], rec["error"] = "FAIL", str(e)
                 print(f"FAIL [{r.index}] {body[:70]}\n      runner error: {e}")
                 continue
-            why = rowcompare.difference(expected, out["rows"], ordered)
+            why = difference(expected, out["rows"], ordered, note, columns)
             ok = why is None
-            summary["PASS" if ok else "FAIL"] += 1
-            summary["EMPTY"] += int(ok and not expected)
-            rec["result"], rec["fetched"] = "PASS" if ok else "FAIL", out["stats"]["fetched_rows"]
-            rec["empty"] = ok and not expected
-            print(f"{'PASS' if ok else 'FAIL'} [{r.index}] plan {plan['pattern']:<6} fetched={out['stats']['fetched_rows']:<3} {body[:70]}")
+            count_result(summary, rec, ok, expected, note)
+            rec["fetched"] = out["stats"]["fetched_rows"]
+            print(f"{'PASS' if ok else 'FAIL'}{'*' if ok and note else ''} [{r.index}] plan {plan['pattern']:<6} fetched={out['stats']['fetched_rows']:<3} {body[:70]}")
             if not ok:
                 rec["error"] = f"result mismatch ({why}): expected {expected[:5]} actual {out['rows'][:5]}"
                 print(f"      {why}\n      expected {expected}\n      actual   {out['rows']}")
@@ -249,14 +299,12 @@ def main() -> int:
                 rec["result"], rec["error"] = "FAIL", str(e)
                 print(f"FAIL [{r.index}] {body[:70]}\n      {e}")
                 continue
-            why = rowcompare.difference(expected, out["rows"], ordered)
+            why = difference(expected, out["rows"], ordered, note, columns)
             ok = why is None
-            summary["PASS" if ok else "FAIL"] += 1
-            summary["EMPTY"] += int(ok and not expected)
-            rec["result"], rec["empty"] = "PASS" if ok else "FAIL", ok and not expected
+            count_result(summary, rec, ok, expected, note)
             if not ok:
                 rec["error"] = f"result mismatch ({why}): expected {expected[:5]} actual {out['rows'][:5]}"
-            print(f"{'PASS' if ok else 'FAIL'} [{r.index}] scalardb-sql {body[:70]}")
+            print(f"{'PASS' if ok else 'FAIL'}{'*' if ok and note else ''} [{r.index}] scalardb-sql {body[:70]}")
         elif r.status in ("OK", "WARN"):
             summary["SKIP"] += 1
             rec["result"], rec["error"] = "SKIP", "ScalarDB SQL needs the licensed cluster (--fetcher jdbc)"
@@ -268,7 +316,8 @@ def main() -> int:
             print(f"SKIP [{r.index}] {r.status:<7} {body[:70]}  ({reason[:80]})")
     src.close()
     print(f"\nPASS={summary['PASS']} FAIL={summary['FAIL']} SKIP={summary['SKIP']} "
-          f"CASE_ERROR={summary['CASE_ERROR']} (of PASS, EMPTY={summary['EMPTY']})")
+          f"CASE_ERROR={summary['CASE_ERROR']} (of PASS, EMPTY={summary['EMPTY']} DECLARED={summary['DECLARED']}; "
+          f"of SKIP, SOURCE_REJECTS={summary['SOURCE_REJECTS']})")
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(records, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
     return exit_code(summary)

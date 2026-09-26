@@ -30,8 +30,11 @@ GAP_RULES = [
 
 
 def explain(rec: dict) -> str:
+    if rec.get("source_rejects"):  # Issue #58
+        return f"{rec['source_rejects']['label']}: {rec['source_rejects']['reason']}"
     if rec["result"] == "PASS":
-        return ""
+        nd = rec.get("nondeterministic")  # Issue #57
+        return f"宣言つき（{nd['compare']}）: {nd['reason']}" if nd else ""
     err = rec.get("error") or ""
     for key, text in GAP_RULES:
         if key in err or key in rec["sql"].upper():

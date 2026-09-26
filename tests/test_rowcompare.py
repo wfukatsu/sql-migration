@@ -98,11 +98,13 @@ def test_a_run_that_compared_nothing_does_not_pass():
     pytest.importorskip("psycopg")
     import run
 
-    base = {"PASS": 0, "FAIL": 0, "SKIP": 0, "CASE_ERROR": 0, "EMPTY": 0}
+    base = {"PASS": 0, "FAIL": 0, "SKIP": 0, "CASE_ERROR": 0, "EMPTY": 0, "DECLARED": 0, "SOURCE_REJECTS": 0}
     assert run.exit_code({**base, "PASS": 3, "SKIP": 2}) == 0
     assert run.exit_code({**base, "PASS": 3, "FAIL": 1}) == 1
     assert run.exit_code({**base, "PASS": 3, "CASE_ERROR": 1}) == 1, "a case the source rejected is a broken case"
     assert run.exit_code({**base, "SKIP": 9}) == 2, "everything skipped is not a pass"
+    assert run.exit_code({**base, "PASS": 3, "SKIP": 2, "SOURCE_REJECTS": 2}) == 0, "a declared rejection is a SKIP (#58)"
+    assert run.exit_code({**base, "PASS": 0, "SKIP": 2, "SOURCE_REJECTS": 2}) == 2
     assert run.compare([(Decimal("1.0"),)], [[1]], True) and not run.compare([(True,)], [[1]], True)
 
 
