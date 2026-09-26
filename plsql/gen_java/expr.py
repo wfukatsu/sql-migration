@@ -229,8 +229,22 @@ class _Parser:
                         or (following[0] == "name" and following[1].upper() in self.GROUP_END)
         return False
 
+    def _padded_operand(self, start: int) -> str | None:
+        """What the operand parsed from `start` is, when it is one token: "char" for a CHAR(n) local, "literal"
+        for a quoted string. Oracle compares those two kinds blank-padded (#62)."""
+        if self.position != start + 1:
+            return None
+        kind, value = self.tokens[start]
+        if kind == "string":
+            return "literal"
+        if kind == "name" and f"{value.lower()}#blank_padded" in self.scope:
+            return "char"
+        return None
+
     def parse_comparison(self, negate: bool = False) -> str:
+        start = self.position
         left = self.parse_concat()
+        left_kind = self._padded_operand(start)
         if self.at_word("IS"):
             self.take()
             self.logical = True
@@ -267,10 +281,16 @@ class _Parser:
         token = self.peek()
         if token is not None and token[0] == "op" and token[1] in COMPARISONS:
             operator = self.take()[1]
+            start = self.position
             right = self.parse_concat()
+            right_kind = self._padded_operand(start)
             self.logical = True
             self.result.imports.add(HELPER_IMPORT)
             method = COMPARISONS[operator]
+            if "char" in (left_kind, right_kind) and left_kind and right_kind:
+                # a CHAR(n) local against a literal or another CHAR: Oracle pads the shorter one with blanks, which
+                # is the same as ignoring trailing blanks on both (`first_name = 'John'` with 'John      ')
+                left, right = f"{HELPER}.unpad({left})", f"{HELPER}.unpad({right})"
             return f"{HELPER}.{self.NEGATED[method] if negate else method}({left}, {right})"
         if negate:
             # BOOLEAN の変数や関数の値。NULL のとき `NOT x` は UNKNOWN なので、FALSE のときだけ true にする
@@ -319,8 +339,17 @@ class _Parser:
     def parse_term(self) -> str:
         return self._binary(self.MULTIPLICATIVE, self.parse_unary)
 
+    def _pls_integer(self, start: int) -> bool:
+        """Whether the operand parsed from `start` is one PLS_INTEGER local (`p1`), marked `#pls_integer` in scope."""
+        if self.position != start + 1:
+            return False
+        kind, value = self.tokens[start]
+        return kind == "name" and f"{value.lower()}#pls_integer" in self.scope
+
     def _binary(self, operators: tuple[str, ...], operand) -> str:
+        start = self.position
         left = operand()
+        left_pls = self._pls_integer(start)
         while True:
             token = self.peek()
             if token is None or token[0] != "op" or token[1] not in operators:
@@ -330,9 +359,17 @@ class _Parser:
                 # `**` はべき乗。ヘルパに無いので、掛け算 2 つとして読まずに拒む
                 self.take()
                 self.result.unknown.append("**")
+            start = self.position
             right = operand()
+            right_pls = self._pls_integer(start)
             self.result.imports.add(HELPER_IMPORT)
             left = f"{HELPER}.{self.ARITHMETIC[operator]}({left}, {right})"
+            if left_pls and right_pls and operator != "/":
+                # PLS_INTEGER op PLS_INTEGER is computed in 32 bits: past the range it is ORA-01426 even when the
+                # result goes into a NUMBER (samples/oracle-plsql-docs 3-4, #60). Division yields a NUMBER
+                left = f"{HELPER}.plsInteger({left})"
+            else:
+                left_pls = False
 
     def parse_unary(self) -> str:
         """`-x` and `+x`. Without this the leading sign was read as a binary operator with nothing on its

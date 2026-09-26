@@ -39,7 +39,8 @@ _DEFS = {
                        "origin": {"enum": ["declared", "rowtype", "record", "collection", "column-type",
                                            "inferred", "unresolved"]},
                        "schemaSnapshot": {"type": ["string", "null"]},
-                       "nullable": {"type": ["boolean", "null"]}},
+                       "nullable": {"type": ["boolean", "null"]},
+                       "range": {"type": ["string", "null"]}},
         "additionalProperties": False},
     "bind": {
         "type": "object", "required": ["name"],

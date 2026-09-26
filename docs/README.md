@@ -51,7 +51,7 @@ docs/
 | [はじめに](guide/getting-started.md) | 準備、最初の SQL 変換、実行計画の確認、最初の PL/SQL 解析、テスト |
 | [チュートリアル](guide/tutorial.md) | サンプル（`samples/tutorial/`）を sql-transpile と migrate-flow で最後まで通した記録。断られた文、人の判断、承認の取り直し、実 DB の比較（SQL 9/10、PL/SQL 13/13）、見つけて直した不具合 |
 | [Oracle 構文カタログの検証](../samples/oracle-samples/README.md) | Oracle 公式ドキュメントの構成に沿った構文カタログ（SQL 4 本 + PL/SQL 3 本、約 1,700 行）を変換と実 DB 比較に通した記録（2026-09-24〜25）。構文ごとに「そのまま移る / 実行計画 / アプリへ / 人が決める」のどれになるか、実 DB の結果、直した不具合 22 件（Issue #30〜#45）、サンプル自体の不備 3 点 |
-| [Oracle PL/SQL 言語リファレンスの例の検証](../samples/oracle-plsql-docs/README.md) | Oracle PL/SQL 言語リファレンス 12c R1 の例 420 すべてを、Oracle 26ai で文書の結果と照合し、変換して実 DB（Oracle と ScalarDB Cluster）で比べた記録（2026-09-26）。実行した 282 例で一致 77、黙って結果が変わる 10 例（サブタイプの制約、IN の NULL、CHAR の空白埋めなど）、未対応で止まる構文と javac エラーの内訳、証拠つきの AUTO 55 例がすべて一致 |
+| [Oracle PL/SQL 言語リファレンスの例の検証](../samples/oracle-plsql-docs/README.md) | Oracle PL/SQL 言語リファレンス 12c R1 の例 420 すべてを、Oracle 26ai で文書の結果と照合し、変換して実 DB（Oracle と ScalarDB Cluster）で比べた記録（2026-09-26）。実行した 282 例で一致 77、黙って結果が変わる 10 例（サブタイプの制約、IN の NULL、CHAR の空白埋めなど。#59〜#64 で直して一致 87）、未対応で止まる構文と javac エラーの内訳、証拠つきの AUTO 55 例がすべて一致 |
 | [SQL の変換と実行計画](guide/sql-conversion.md) | `scalardb_migrate.cli` のオプション・出力・判定、`residual-runner` のサブコマンド |
 | [PL/SQL → Java 変換](guide/plsql-conversion.md) | 判定の考え方、コマンド、出力、corpus 上の現在地 |
 | [スキル](guide/skills.md) | migrate-flow / plsql-spec / plsql-migrate / sql-transpile の役割とコマンド、marketplace からのインストール（Claude Code / Codex）と、両者の違い |
