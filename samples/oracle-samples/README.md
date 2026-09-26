@@ -14,7 +14,7 @@ Oracle 公式ドキュメントの構成に沿った **構文カタログ**（SQ
 | SQL の実 DB 比較（02 の読み取り文 + JSON 3 文 + 修正版 1 文） | 40 文 | PASS 19 / FAIL 10 / SKIP 9 / CASE_ERROR 2 | **PASS 19 / FAIL 5 / SKIP 14 / CASE_ERROR 2**。FAIL 5 はすべて同順位・非決定。JSON_OBJECT は PASS に。#57 #58 のあと **PASS 24（宣言つき 5）/ FAIL 0 / SKIP 16（移行元が拒否 2）/ CASE_ERROR 0** |
 | PL/SQL routine（05・06 の全ユニット + 04 の無名ブロック 10 個） | 41 routine | AUTO 候補 7 / REVIEW 10 / REDESIGN 24 | 同じ（判定のルールは変えていない） |
 | PL/SQL の Java 生成 | 41 routine | javac エラー 15 件（8 routine） | **javac エラー 0**（41 routine 全部がコンパイルできる） |
-| PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 16 / 相違 15**（全 36 ユニット、31 シナリオ。#44〜#46 と 4 つの決定のあと）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて） |
+| PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 16 / 相違 15**（全 36 ユニット、31 シナリオ。#44〜#46 と 4 つの決定のあと）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて）。その後の回で一致 26 / 相違 5、#52 #55 のあと **一致 27 / 相違 4** |
 
 ## フォルダ
 
@@ -56,6 +56,7 @@ samples/oracle-samples/
 | 索引: employees の department_id / manager_id / job_id / email、orders の status / employee_id、departments の department_name | 原文の索引 2 本と、PL/SQL が WHERE に使う列 |
 | package 変数 `emp_api.g_calls` は呼び出し側が運ぶ（2026-09-25、利用者の決定、`plsql/limits.yaml`） | セッション単位の意味を保つ唯一の機械的な形。呼び出し側の signature が変わる |
 | 行ロックと RMW は楽観制御へ（6 routine）、routine の中の COMMIT / ROLLBACK は呼び出し側の境界へ（9 routine）、log_msg は別トランザクション、動的 SQL の表名は employees だけ（2026-09-25、利用者の決定、`plsql/limits.yaml`） | 「3 回目の修正」の節。trigger の掛け方（TRG-002）はまだ決めていない |
+| b06_3 の動的 UPDATE（`SET salary = salary … RETURNING last_name`）も楽観制御へ、b06_3 の一時表の DDL（CREATE / DROP TABLE dyn_tmp）は移行先で実行しない（2026-09-26、利用者の決定、`plsql/limits.yaml` の `rowLocks.optimistic` と新しいキー `ddl.omit`） | 「7 回目の対応」の節 |
 
 ---
 
@@ -441,6 +442,22 @@ PASS=24 FAIL=0 SKIP=16 CASE_ERROR=0 (of PASS, EMPTY=0 DECLARED=5; of SKIP, SOURC
 
 **宣言の無い FAIL は 0 本**になり、`run.py` は終了コード 0 で終わる。
 
+### 7 回目の対応（2026-09-26、Issue #52 #55）
+
+| Issue | 何を直したか | 取り直した結果 |
+|---|---|---|
+| #52 | 文字列が定数の動的 SQL を、静的な文と同じ経路に下ろす。`EXECUTE IMMEDIATE '… RETURNING c INTO :n' USING x RETURNING INTO v` は USING を位置で戻した静的な `UPDATE … RETURNING`（`DYN_STATIC`）。RMW の分割は、書かない列の RETURNING を先読みの値で返せるようにした。動的 PL/SQL ブロック（`'BEGIN :x := :x * 10; END;' USING IN OUT v`）は placeholder を名前で USING に戻し、その場の block として下ろす（`DYN_INLINED`）。`OPEN rc FOR '定数'` は静的な `OPEN FOR SELECT`（#44）と同じ形。routine の中の DDL は生成器が理由つきで断り、repository に DROP TABLE を出さない。`limits.yaml ddl.omit` に書いた routine だけ、元の文をコメントに残して省く | `b06_3_native_dynamic_sql` は 3-2（RETURNING）・3-3（DDL）・3-5（動的ブロック）を越え、3-4 の `OPEN FOR` のループで止まる。3-2 で書いた employees を同じトランザクションで走査するので、ScalarDB が断る（`ScanAfterWriteException`）。解析も実行前に同じ場所を `SCAN_AFTER_WRITE`（SCAN-001、REDESIGN）として断っている。直すにはトランザクションを割るか、読みをキーで引く形にする再設計が要る |
+| #55 | よく使う組み込み package の signature と移行先での扱いを対応表にした（`plsql/builtins.py`）。名前付き引数を Oracle の順に並べ替え、`DBMS_APPLICATION_INFO.SET_MODULE` / `SET_ACTION` / `SET_CLIENT_INFO` は何もしない（理由をコメントに残す）、`DBMS_SESSION.SLEEP` / `DBMS_LOCK.SLEEP` は `Plsql.sleep`、`DBMS_RANDOM.VALUE` / `STRING` と `DBMS_UTILITY.GET_TIME` は `Plsql` の helper。表にある呼び出しは「解析していないコードの呼び出し」（CALL-001）に数えない。表に無いもの（`DBMS_SESSION.SET_IDENTIFIER` など）は今までどおり断る。あわせて `ROUND(x)`（引数 1 個）の helper が無かったのを足した | `b06_5_builtin_packages` が **一致**、証拠を渡すと **AUTO** |
+
+**7 回目のあとの PL/SQL 実 DB 比較（31 シナリオ、一致 27 / 相違 4）**:
+
+| 相違 | 状態 |
+|---|---|
+| `b06_2_2_forall_returning` | FORALL … RETURNING BULK COLLECT（#51） |
+| `b06_3_native_dynamic_sql` | 書いた表の走査（SCAN-001）。ScalarDB の制約で、再設計の判断が要る |
+| `b06_3_6_dbms_sql` | DBMS_SQL（#53） |
+| `b06_4_collection_in_sql` | オブジェクト型のコンストラクタ、`TABLE()`（#54） |
+
 ## 付録（`result/tables.md` と同じ。`make_tables.py` が結果ファイルから作る。**Issue 修正後の数字**）
 
 ### SQL 変換（文ごと）
@@ -715,10 +732,10 @@ PASS=24 FAIL=0 SKIP=16 CASE_ERROR=0 (of PASS, EMPTY=0 DECLARED=5; of SKIP, SOURC
 | `b06_2_2_forall_returning` | REDESIGN | SQL-001, BULK-001, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b06_2_forall_save_exceptions` | REDESIGN | SCAN-002, CUR-OPT-002, BULK-OPT-003, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b06_3_6_dbms_sql` | REDESIGN | DYN-003, CALL-001 | DYN-003: DBMS_SQL は静的解析だけでは追えません。実行ログも使って query family を洗い出す必要があります; DYN-003: DB |
-| `b06_3_native_dynamic_sql` | REDESIGN | DYN-001, DYN-002, DYN-OPT-002, LOWER-001, CUR-001, TX-001 | DYN-001: 表名など識別子が実行時に決まる SQL です。allowlist か専用 Repository への再設計が要ります; TX-001: rou |
+| `b06_3_native_dynamic_sql` | REDESIGN | DYN-001, DYN-002, DYN-OPT-002, SCAN-001, CUR-003, CUR-002, SQL-004, SQL-002, TX-001, TX-004 | DYN-001: 表名など識別子が実行時に決まる SQL です。allowlist か専用 Repository への再設計が要ります; SCAN-001: 同 |
 | `b06_4_collection_in_sql` | REVIEW | SELECT-001, SEM-004, SQL-002, BULK-001 | SELECT-001: キーで届かない SELECT INTO で、ScalarDB がそのまま実行できる文ではありません。0 件と複数件の意味（NO_DATA |
 | `b06_5_2_scheduler_job` | REDESIGN | CALL-001, EXT-001 | EXT-001: UTL_* / DBMS_SCHEDULER / AQ などの外部副作用があります |
-| `b06_5_builtin_packages` | REVIEW | CALL-001 | CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません |
+| `b06_5_builtin_packages` | REVIEW |  | confidence factor testEvidence is 0 |
 | `b06_6_conditional_compilation` | REVIEW |  | confidence factor testEvidence is 0 |
 | `dept_name_of` | REVIEW |  | confidence factor testEvidence is 0 |
 | `dml_d_create_error_log` | REVIEW | CALL-001 | CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません |
@@ -761,9 +778,9 @@ PASS=24 FAIL=0 SKIP=16 CASE_ERROR=0 (of PASS, EMPTY=0 DECLARED=5; of SKIP, SOURC
 | `b06_2_2_forall_returning` | `b06_2_2_forall_returning.b06_2_2_forall_returning` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Loop: forall loop) |
 | `b06_2_forall_save_exceptions` | `b06_2_forall_save_exceptions.b06_2_forall_save_exceptions` | 一致 |  |
 | `b06_3_6_dbms_sql` | `b06_3_6_dbms_sql.b06_3_6_dbms_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration c: DBMS_SQL.OPEN_CURSOR) |
-| `b06_3_native_dynamic_sql` | `b06_3_native_dynamic_sql.b06_3_native_dynamic_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in DynamicSql: RETURNING INTO of a dynamic UPDATE) |
+| `b06_3_native_dynamic_sql` | `b06_3_native_dynamic_sql.b06_3_native_dynamic_sql` | 相違 | exception: expected=none actual=com.scalar.migrate.runtime.ScanAfterWriteException (plan fetch on 'employees' scans rows this transaction has already written or deleted;  |
 | `b06_4_collection_in_sql` | `b06_4_collection_in_sql.b06_4_collection_in_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in SqlOperation: execution plan result) |
-| `b06_5_builtin_packages` | `b06_5_builtin_packages.b06_5_builtin_packages` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Call: named arguments of a routine that is not in the program) |
+| `b06_5_builtin_packages` | `b06_5_builtin_packages.b06_5_builtin_packages` | 一致 |  |
 | `b06_6_conditional_compilation` | `b06_6_conditional_compilation.b06_6_conditional_compilation` | 一致 |  |
 | `dept_name_of_missing` | `dept_name_of.dept_name_of` | 一致 |  |
 | `dept_name_of_ok` | `dept_name_of.dept_name_of` | 一致 |  |

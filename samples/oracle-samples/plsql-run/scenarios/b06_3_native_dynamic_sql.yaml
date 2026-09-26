@@ -52,4 +52,5 @@ call:
 capture_tables:
 - employees
 - emp_audit
-note: '06-3: EXECUTE IMMEDIATE / OPEN FOR / 動的 PL/SQL。最後に ROLLBACK'
+note: '06-3: EXECUTE IMMEDIATE / OPEN FOR / 動的 PL/SQL。最後に ROLLBACK。呼び出し側（ハーネス）が ROLLBACK する（callerBoundary の決定）'
+boundary: rollback

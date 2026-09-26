@@ -1,14 +1,14 @@
 {
  "schemaVersion": "1.1.0",
  "counts": {
-  "AUTO": 7,
+  "AUTO": 8,
   "REDESIGN": 24,
-  "REVIEW": 10
+  "REVIEW": 9
  },
  "redesignStates": {
-  "undecided": 5,
-  "decided": 4,
-  "verified": 15
+  "undecided": 6,
+  "decided": 6,
+  "verified": 12
  },
  "scenariosMatchingNoRoutine": [],
  "staleEvidence": {},
@@ -1458,19 +1458,20 @@
    "ruleVerdict": "REDESIGN",
    "confidence": {
     "value": 0.0,
-    "ruleCoverage": 0.0,
+    "ruleCoverage": 1.0,
     "symbolResolution": 1.0,
     "typeResolution": 1.0,
-    "targetCapability": 1.0,
+    "targetCapability": 0.916667,
     "testEvidence": 0.0,
     "zeroFactors": [
-     "ruleCoverage",
      "testEvidence"
     ]
    },
    "reasons": [
     "DYN-001: 表名など識別子が実行時に決まる SQL です。allowlist か専用 Repository への再設計が要ります",
-    "TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません"
+    "SCAN-001: 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します",
+    "TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
+    "TX-004: 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します（P2-9 で実測）"
    ],
    "rules": [
     {
@@ -1495,20 +1496,6 @@
      "severity": "warning"
     },
     {
-     "id": "DYN-002",
-     "decision": "REVIEW",
-     "message": "動的 SQL です。とりうる文をすべて展開して ScalarDB がそのまま実行できる、とは確かめられていません。bind の復元と権限の確認が要ります",
-     "source": "dynamic_sql.yaml",
-     "severity": "warning"
-    },
-    {
-     "id": "DYN-002",
-     "decision": "REVIEW",
-     "message": "動的 SQL です。とりうる文をすべて展開して ScalarDB がそのまま実行できる、とは確かめられていません。bind の復元と権限の確認が要ります",
-     "source": "dynamic_sql.yaml",
-     "severity": "warning"
-    },
-    {
      "id": "DYN-OPT-002",
      "decision": "AUTO",
      "message": "動的 SQL は、とりうる文をすべて静的な文に展開して生成しました（どれも ScalarDB がそのまま実行できます）。Oracle で EXECUTE IMMEDIATE に与えていた権限に相当するものが移行先に要るかは、運用で確認することを推奨します",
@@ -1516,24 +1503,38 @@
      "severity": "info"
     },
     {
-     "id": "LOWER-001",
-     "decision": "REVIEW",
-     "message": "lowering がまだ模していない構文です。意味が保てる保証がありません",
-     "source": "lowering.yaml",
+     "id": "SCAN-001",
+     "decision": "REDESIGN",
+     "message": "同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します",
+     "source": "scalardb_capability.yaml",
      "severity": "critical"
     },
     {
-     "id": "CUR-001",
+     "id": "CUR-003",
      "decision": "REVIEW",
-     "message": "明示 cursor は寿命がトランザクション境界をまたぎます",
+     "message": "明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
      "source": "semantics.yaml",
      "severity": "warning"
     },
     {
-     "id": "CUR-001",
+     "id": "CUR-002",
      "decision": "REVIEW",
-     "message": "明示 cursor は寿命がトランザクション境界をまたぎます",
+     "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
      "source": "semantics.yaml",
+     "severity": "warning"
+    },
+    {
+     "id": "SQL-004",
+     "decision": "REVIEW",
+     "message": "SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です",
+     "source": "semantics.yaml",
+     "severity": "warning"
+    },
+    {
+     "id": "SQL-002",
+     "decision": "REVIEW",
+     "message": "実行計画（取得 + H2）に分解される文です。行数上限と性能を確認してください",
+     "source": "sql.yaml",
      "severity": "warning"
     },
     {
@@ -1542,37 +1543,53 @@
      "message": "routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
      "source": "transaction.yaml",
      "severity": "critical"
+    },
+    {
+     "id": "TX-004",
+     "decision": "REDESIGN",
+     "message": "同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します（P2-9 で実測）",
+     "source": "transaction.yaml",
+     "severity": "critical"
     }
    ],
    "remediation": [
     "allowlist 型の query builder にする",
     "有限 variant なら variant ごとに静的な query にする",
+    "耐久境界で routine を分割する",
+    "読み取りを主キーまたはパーティションキーのアクセスに変える",
+    "件数を返す形に呼び出し先を直すか、件数を読む位置を静的な DML の直後に寄せる",
     "use case の耐久境界で分割する",
-    "再試行と冪等性の方針を決める"
+    "再試行と冪等性の方針を決める",
+    "耐久境界で routine を分割する",
+    "読み取りをキーアクセスに変える"
    ],
    "requiredTests": [
     "bind_restoration",
     "cursor_lifetime",
     "dynamic_sql_variants",
-    "equivalent_result",
     "partial_failure",
-    "rollback_boundary"
+    "performance",
+    "rollback_boundary",
+    "row_count",
+    "row_limit",
+    "scan_after_write"
    ],
    "whyNotAuto": [
     "DYN-001 (REDESIGN): 表名など識別子が実行時に決まる SQL です。allowlist か専用 Repository への再設計が要ります",
     "DYN-002 (REVIEW): 動的 SQL です。とりうる文をすべて展開して ScalarDB がそのまま実行できる、とは確かめられていません。bind の復元と権限の確認が要ります",
     "DYN-002 (REVIEW): 動的 SQL です。とりうる文をすべて展開して ScalarDB がそのまま実行できる、とは確かめられていません。bind の復元と権限の確認が要ります",
-    "DYN-002 (REVIEW): 動的 SQL です。とりうる文をすべて展開して ScalarDB がそのまま実行できる、とは確かめられていません。bind の復元と権限の確認が要ります",
-    "DYN-002 (REVIEW): 動的 SQL です。とりうる文をすべて展開して ScalarDB がそのまま実行できる、とは確かめられていません。bind の復元と権限の確認が要ります",
-    "LOWER-001 (REVIEW): lowering がまだ模していない構文です。意味が保てる保証がありません",
-    "CUR-001 (REVIEW): 明示 cursor は寿命がトランザクション境界をまたぎます",
-    "CUR-001 (REVIEW): 明示 cursor は寿命がトランザクション境界をまたぎます",
+    "SCAN-001 (REDESIGN): 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します",
+    "CUR-003 (REVIEW): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
+    "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+    "SQL-004 (REVIEW): SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です",
+    "SQL-002 (REVIEW): 実行計画（取得 + H2）に分解される文です。行数上限と性能を確認してください",
     "TX-001 (REDESIGN): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません",
-    "確信度が 0: ruleCoverage, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+    "TX-004 (REDESIGN): 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します（P2-9 で実測）",
+    "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
    "redesign": {
-    "state": "decided",
-    "label": "決定済み（実 DB では未検証、または相違あり）",
+    "state": "undecided",
+    "label": "未決定",
     "decisions": [
      {
       "rule": "DYN-001",
@@ -1583,9 +1600,27 @@
       "rule": "TX-001",
       "decidedBy": "limits.yaml: transactions.callerBoundary",
       "why": "同上"
+     },
+     {
+      "rule": "calls emp_biu_trg.body",
+      "decidedBy": "#12 / #47: :NEW を書き換える代入は、書く側が書く値に畳み込む。検査（RAISE）は呼び出しで行う",
+      "why": "docs/plsql-migration/plsql-trigger-patterns.md C-2"
+     },
+     {
+      "rule": "calls emp_dept_cap_trg.body",
+      "decidedBy": "#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う",
+      "why": "docs/plsql-migration/plsql-trigger-patterns.md"
+     },
+     {
+      "rule": "calls emp_salary_audit_trg.body",
+      "decidedBy": "#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う",
+      "why": "docs/plsql-migration/plsql-trigger-patterns.md"
      }
     ],
-    "open": [],
+    "open": [
+     "SCAN-001",
+     "TX-004"
+    ],
     "evidence": {
      "agreed": 0,
      "compared": 1
@@ -1763,43 +1798,24 @@
   },
   {
    "routine": "b06_5_builtin_packages",
-   "verdict": "REVIEW",
-   "ruleVerdict": "REVIEW",
+   "verdict": "AUTO",
+   "ruleVerdict": "AUTO",
    "confidence": {
-    "value": 0.0,
+    "value": 1.0,
     "ruleCoverage": 1.0,
-    "symbolResolution": 0.0,
+    "symbolResolution": 1.0,
     "typeResolution": 1.0,
     "targetCapability": 1.0,
-    "testEvidence": 0.0,
-    "zeroFactors": [
-     "symbolResolution",
-     "testEvidence"
-    ]
+    "testEvidence": 1.0,
+    "zeroFactors": []
    },
    "reasons": [
-    "CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません"
+    "confidence 1.000 >= 0.95, no rule objected"
    ],
-   "rules": [
-    {
-     "id": "CALL-001",
-     "decision": "REVIEW",
-     "message": "解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません",
-     "source": "lowering.yaml",
-     "severity": "critical"
-    }
-   ],
-   "remediation": [
-    "呼び先のソースを解析対象に加える",
-    "加えられない（Oracle 提供のパッケージなど）なら、移行先での代替を決める"
-   ],
-   "requiredTests": [
-    "equivalent_result"
-   ],
-   "whyNotAuto": [
-    "CALL-001 (REVIEW): 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません",
-    "確信度が 0: symbolResolution, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
-   ],
+   "rules": [],
+   "remediation": [],
+   "requiredTests": [],
+   "whyNotAuto": [],
    "redesign": null,
    "source": {
     "file": "b06_5_builtin_packages.prc",
@@ -2459,8 +2475,8 @@
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
    "redesign": {
-    "state": "verified",
-    "label": "決定済み・実 DB で一致",
+    "state": "decided",
+    "label": "決定済み（実 DB では未検証、または相違あり）",
     "decisions": [
      {
       "rule": "TRG-001",
@@ -2470,14 +2486,7 @@
     ],
     "open": [],
     "evidence": null,
-    "verifiedThrough": [
-     "b04_3_implicit_cursor_attrs",
-     "b04_4_3_for_update_current_of",
-     "b04_6_2_user_exceptions",
-     "b05_4_call_log_msg",
-     "emp_api.give_raise~1",
-     "raise_salary"
-    ]
+    "verifiedThrough": []
    },
    "source": {
     "file": "emp_biu_trg.trg",
@@ -2530,8 +2539,8 @@
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
    "redesign": {
-    "state": "verified",
-    "label": "決定済み・実 DB で一致",
+    "state": "decided",
+    "label": "決定済み（実 DB では未検証、または相違あり）",
     "decisions": [
      {
       "rule": "TRG-001",
@@ -2541,13 +2550,7 @@
     ],
     "open": [],
     "evidence": null,
-    "verifiedThrough": [
-     "b04_3_implicit_cursor_attrs",
-     "b04_4_3_for_update_current_of",
-     "b05_4_call_log_msg",
-     "emp_api.give_raise~1",
-     "raise_salary"
-    ]
+    "verifiedThrough": []
    },
    "source": {
     "file": "emp_dept_cap_trg.trg",
@@ -2753,8 +2756,8 @@
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
    "redesign": {
-    "state": "verified",
-    "label": "決定済み・実 DB で一致",
+    "state": "decided",
+    "label": "決定済み（実 DB では未検証、または相違あり）",
     "decisions": [
      {
       "rule": "TRG-001",
@@ -2764,13 +2767,7 @@
     ],
     "open": [],
     "evidence": null,
-    "verifiedThrough": [
-     "b04_3_implicit_cursor_attrs",
-     "b04_4_3_for_update_current_of",
-     "b05_4_call_log_msg",
-     "emp_api.give_raise~1",
-     "raise_salary"
-    ]
+    "verifiedThrough": []
    },
    "source": {
     "file": "emp_salary_audit_trg.trg",

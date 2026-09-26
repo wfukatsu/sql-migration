@@ -220,15 +220,9 @@
        }
       },
       {
-       "id": "DYN_FOLDED",
+       "id": "DYN_STATIC",
        "shortDescription": {
-        "text": "DYN_FOLDED"
-       }
-      },
-      {
-       "id": "DYN_BIND",
-       "shortDescription": {
-        "text": "DYN_BIND"
+        "text": "DYN_STATIC"
        }
       },
       {
@@ -238,9 +232,15 @@
        }
       },
       {
-       "id": "UNSUPPORTED_CONSTRUCT",
+       "id": "DYN_FOLDED",
        "shortDescription": {
-        "text": "UNSUPPORTED_CONSTRUCT"
+        "text": "DYN_FOLDED"
+       }
+      },
+      {
+       "id": "DYN_INLINED",
+       "shortDescription": {
+        "text": "DYN_INLINED"
        }
       },
       {
@@ -295,6 +295,12 @@
        "id": "PRED",
        "shortDescription": {
         "text": "PRED"
+       }
+      },
+      {
+       "id": "UNSUPPORTED_CONSTRUCT",
+       "shortDescription": {
+        "text": "UNSUPPORTED_CONSTRUCT"
        }
       },
       {
@@ -3023,10 +3029,10 @@
      ]
     },
     {
-     "ruleId": "DYNAMIC_SQL",
+     "ruleId": "LIMIT",
      "level": "note",
      "message": {
-      "text": "the statement folds to a constant and can be analysed"
+      "text": "FETCH FIRST 1 ROWS ONLY rewritten to LIMIT 1"
      },
      "locations": [
       {
@@ -3044,10 +3050,10 @@
      ]
     },
     {
-     "ruleId": "DYN_FOLDED",
+     "ruleId": "ACCESS",
      "level": "note",
      "message": {
-      "text": "dynamic SQL resolved to 1 statement(s); each is converted and checked like static SQL"
+      "text": "SELECT: full primary key specified -> GET (single record)"
      },
      "locations": [
       {
@@ -3065,10 +3071,157 @@
      ]
     },
     {
-     "ruleId": "DYN_BIND",
-     "level": "warning",
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
      "message": {
-      "text": "USING binds (100) are restored positionally; confirm each lands on the placeholder it did before"
+      "text": "emp_biu_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYN_STATIC",
+     "level": "note",
+     "message": {
+      "text": "定数の動的 DML で RETURNING INTO を持つので、USING を位置で戻して静的な文として下ろした。RETURNING は静的な文と同じ経路で扱う（#52）"
      },
      "locations": [
       {
@@ -3090,6 +3243,195 @@
      "level": "warning",
      "message": {
       "text": "EXECUTE IMMEDIATE runs with the privileges of the executing user, which a static statement may not have; confirm the caller is allowed to run this"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "RMW_SPLIT",
+     "level": "note",
+     "message": {
+      "text": "employees.salary を読んでから書く 2 文に割った。ScalarDB SQL は列を読む式を受け付けないので、値はアプリで計算する。**同じトランザクションの中で読んで書く**ので、衝突は commit で弾かれる（再試行は呼び出し側の責務・#9）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONSTRAINT_GUARD",
+     "level": "note",
+     "message": {
+      "text": "employees の CHECK emp_salary_ck を書く前に評価する。移行先に制約は無く、違反は Oracle と同じ番号の例外になる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_FOLDED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg の代入を書く値に畳み込んだ: email = UPPER(v_trg_1)。検査は呼び出しで行う（#47）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg（BEFORE INSERT OR UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg（AFTER UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg（AFTER UPDATE OR DELETE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "UPDATE: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 17,
+         "endLine": 19,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
      },
      "locations": [
       {
@@ -3233,31 +3575,10 @@
      ]
     },
     {
-     "ruleId": "UNSUPPORTED_CONSTRUCT",
-     "level": "warning",
-     "message": {
-      "text": "Open_for_statement is not lowered yet; the routine cannot be AUTO while it is present"
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "b06_3_native_dynamic_sql.prc"
-        },
-        "region": {
-         "startLine": 27,
-         "endLine": 27,
-         "startColumn": 3
-        }
-       }
-      }
-     ]
-    },
-    {
-     "ruleId": "DYNAMIC_SQL",
+     "ruleId": "CUR_SCAN",
      "level": "note",
      "message": {
-      "text": "the statement folds to a constant and can be analysed"
+      "text": "cursor rc は読むだけのループだった。行を先に読んで回す形にした——移行先に跨トランザクションの cursor は無いので、動く行数はメモリで決まる（上限は --limits）。FETCH の代入先はそのまま残してあるので、ループの後でも Oracle と同じ値が入っている"
      },
      "locations": [
       {
@@ -3266,8 +3587,8 @@
          "uri": "b06_3_native_dynamic_sql.prc"
         },
         "region": {
-         "startLine": 37,
-         "endLine": 37,
+         "startLine": 28,
+         "endLine": 32,
          "startColumn": 3
         }
        }
@@ -3275,10 +3596,31 @@
      ]
     },
     {
-     "ruleId": "DYN_FOLDED",
+     "ruleId": "ORDER",
+     "level": "error",
+     "message": {
+      "text": "main query: ORDER BY expression 1 -- sort in the application"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 28,
+         "endLine": 32,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "PLAN_FETCH",
      "level": "note",
      "message": {
-      "text": "dynamic SQL resolved to 1 statement(s); each is converted and checked like static SQL"
+      "text": "CROSS_PARTITION: SELECT employee_id, last_name, salary FROM hr.employees WHERE salary > 15000"
      },
      "locations": [
       {
@@ -3287,8 +3629,8 @@
          "uri": "b06_3_native_dynamic_sql.prc"
         },
         "region": {
-         "startLine": 37,
-         "endLine": 37,
+         "startLine": 28,
+         "endLine": 32,
          "startColumn": 3
         }
        }
@@ -3296,10 +3638,10 @@
      ]
     },
     {
-     "ruleId": "DYN_BIND",
-     "level": "warning",
+     "ruleId": "PLAN_RESIDUAL",
+     "level": "note",
      "message": {
-      "text": "USING binds (v_cnt) are restored positionally; confirm each lands on the placeholder it did before"
+      "text": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
      },
      "locations": [
       {
@@ -3308,8 +3650,8 @@
          "uri": "b06_3_native_dynamic_sql.prc"
         },
         "region": {
-         "startLine": 37,
-         "endLine": 37,
+         "startLine": 28,
+         "endLine": 32,
          "startColumn": 3
         }
        }
@@ -3317,10 +3659,94 @@
      ]
     },
     {
-     "ruleId": "DYN_PRIVILEGE",
+     "ruleId": "PLAN_CROSS_PARTITION",
      "level": "warning",
      "message": {
-      "text": "EXECUTE IMMEDIATE runs with the privileges of the executing user, which a static statement may not have; confirm the caller is allowed to run this"
+      "text": "a fetch needs a cross-partition scan"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 28,
+         "endLine": 32,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONFIG",
+     "level": "note",
+     "message": {
+      "text": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 28,
+         "endLine": 32,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "COST",
+     "level": "note",
+     "message": {
+      "text": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 28,
+         "endLine": 32,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "SCAN_AFTER_WRITE",
+     "level": "error",
+     "message": {
+      "text": "employees was written earlier in this transaction; ScalarDB refuses to scan it"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_native_dynamic_sql.prc"
+        },
+        "region": {
+         "startLine": 28,
+         "endLine": 32,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DYN_INLINED",
+     "level": "note",
+     "message": {
+      "text": "定数の動的 PL/SQL ブロックを、placeholder を USING の変数に名前で戻して、その場の block として下ろした（#52）"
      },
      "locations": [
       {

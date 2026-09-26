@@ -1,8 +1,8 @@
 # PL/SQL 移行 インベントリ（Phase 1）
 
-- 解析対象: 36 モジュール / 41 routine / 317 文
+- 解析対象: 36 モジュール / 41 routine / 328 文
 - DDL スナップショット: `schema.sql@d6f64025`
-- 診断: 250 件（うち ERROR 7 件）
+- 診断: 270 件（うち ERROR 9 件）
 
 > この数値は**合成 corpus 上の値**であり、実案件の PL/SQL に対する耐性を示すものではない（実装計画 §9、docs/design/plsql-kpi.md §0）。
 
@@ -11,7 +11,7 @@
 | KPI | 値 | 目標 |
 |---|---|---|
 | parse 率 | 100.0%（37/37） | Phase 1 で 90% 以上 |
-| 型解決率 | 99.2%（132/133） | Phase 1 で 95% 以上 |
+| 型解決率 | 99.3%（138/139） | Phase 1 で 95% 以上 |
 
 ## AUTO を妨げる条件が既に見えている routine
 
@@ -27,7 +27,7 @@
 | `b05_4_call_log_msg` | transaction-control-in-routine |
 | `b06_2_2_forall_returning` | transaction-control-in-routine |
 | `b06_2_forall_save_exceptions` | transaction-control-in-routine |
-| `b06_3_native_dynamic_sql` | transaction-control-in-routine, dynamic-sql, unmodelled-construct |
+| `b06_3_native_dynamic_sql` | transaction-control-in-routine, dynamic-sql |
 | `setup_drop_objects` | dynamic-sql |
 | `emp_api.validate_pct` | package-state |
 | `emp_api.hire` | package-state |
@@ -50,6 +50,8 @@
   PDATE employees SET salary = salary + 10
     WHERE  department_id = v_depts(i)
     RETURNING salary [4mBULK COLLECT INTO[0m v_new_sal（b06_2_2_forall_returning.prc:8-10）
+- **ERROR** `ORDER` main query: ORDER BY expression 1 -- sort in the application（b06_3_native_dynamic_sql.prc:28-32）
+- **ERROR** `SCAN_AFTER_WRITE` employees was written earlier in this transaction; ScalarDB refuses to scan it（b06_3_native_dynamic_sql.prc:28-32）
 - **ERROR** `PROJECTION` main query: expressions in the select list (EMP_GRADE_T(employee_id, last_name, 'X')) -- compute them in the application（b06_4_collection_in_sql.prc:6-8）
 - **ERROR** `UNSUPPORTED` function TABLE is not supported by ScalarDB SQL（b06_4_collection_in_sql.prc:10）
 - **ERROR** `EXPR` SET last_name: only literals and bind markers are allowed, got ':NEW.last_name'（emp_dept_upd_v_trg.trg:6-10）
@@ -79,7 +81,7 @@
 | `b06_2_2_forall_returning` | procedure | 1 | 6 | — |
 | `b06_2_forall_save_exceptions` | procedure | 1 | 10 | — |
 | `b06_3_6_dbms_sql` | procedure | 1 | 11 | — |
-| `b06_3_native_dynamic_sql` | procedure | 1 | 16 | — |
+| `b06_3_native_dynamic_sql` | procedure | 1 | 27 | — |
 | `b06_4_collection_in_sql` | procedure | 1 | 3 | — |
 | `b06_5_2_scheduler_job` | procedure | 1 | 1 | — |
 | `b06_5_builtin_packages` | procedure | 1 | 5 | — |
@@ -102,20 +104,18 @@
 
 | 種別 | 件数 |
 |---|---|
-| Call | 94 |
-| SqlOperation | 64 |
-| If | 43 |
-| Assignment | 29 |
+| Call | 97 |
+| SqlOperation | 70 |
+| If | 47 |
+| Assignment | 31 |
 | Loop | 28 |
-| Raise | 19 |
+| Raise | 20 |
 | Rollback | 8 |
-| DynamicSql | 7 |
+| Block | 7 |
 | Return | 6 |
-| Block | 6 |
-| Exit | 4 |
+| DynamicSql | 5 |
+| Exit | 3 |
 | Commit | 3 |
-| Unsupported | 2 |
 | Case | 1 |
 | Continue | 1 |
-| Fetch | 1 |
-| CloseCursor | 1 |
+| Unsupported | 1 |

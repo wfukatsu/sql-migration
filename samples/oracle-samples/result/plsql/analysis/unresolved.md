@@ -349,48 +349,63 @@
 
 ## REDESIGN: `b06_3_native_dynamic_sql` — `b06_3_native_dynamic_sql.prc:2`
 
-**再設計の状態: 決定済み（実 DB では未検証、または相違あり）**
+**再設計の状態: 未決定**
 
 - `DYN-001` は決定済み（limits.yaml: dynamicTables）: 受け付ける表名を決めてある: employees。それ以外は実行時に拒否する
 - `TX-001` は決定済み（limits.yaml: transactions.callerBoundary）: 同上
+- `calls emp_biu_trg.body` は決定済み（#12 / #47: :NEW を書き換える代入は、書く側が書く値に畳み込む。検査（RAISE）は呼び出しで行う）: docs/plsql-migration/plsql-trigger-patterns.md C-2
+- `calls emp_dept_cap_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `calls emp_salary_audit_trg.body` は決定済み（#12: 書き込む側が trigger を呼ぶ。他の書き込み経路の網羅は照合（TriggerChecks）で追う）: docs/plsql-migration/plsql-trigger-patterns.md
+- `SCAN-001` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
+- `TX-004` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）
 - 実 DB の比較: まだ無い
-- 判定は REDESIGN のまま（AUTO 禁止条件）。同時実行での衝突と再試行など、呼び出し側に残る責務は決定の理由に書いてある
 
 **根拠**
 
 - DYN-001: 表名など識別子が実行時に決まる SQL です。allowlist か専用 Repository への再設計が要ります
+- SCAN-001: 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します
 - TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
+- TX-004: 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します（P2-9 で実測）
 
 **判定したルール**
 
 - `DYN-001` (REDESIGN, `dynamic_sql.yaml`): 表名など識別子が実行時に決まる SQL です。allowlist か専用 Repository への再設計が要ります
 - `DYN-002` (REVIEW, `dynamic_sql.yaml`): 動的 SQL です。とりうる文をすべて展開して ScalarDB がそのまま実行できる、とは確かめられていません。bind の復元と権限の確認が要ります
 - `DYN-002` (REVIEW, `dynamic_sql.yaml`): 動的 SQL です。とりうる文をすべて展開して ScalarDB がそのまま実行できる、とは確かめられていません。bind の復元と権限の確認が要ります
-- `DYN-002` (REVIEW, `dynamic_sql.yaml`): 動的 SQL です。とりうる文をすべて展開して ScalarDB がそのまま実行できる、とは確かめられていません。bind の復元と権限の確認が要ります
-- `DYN-002` (REVIEW, `dynamic_sql.yaml`): 動的 SQL です。とりうる文をすべて展開して ScalarDB がそのまま実行できる、とは確かめられていません。bind の復元と権限の確認が要ります
 - `DYN-OPT-002` (AUTO, `dynamic_sql.yaml`): 動的 SQL は、とりうる文をすべて静的な文に展開して生成しました（どれも ScalarDB がそのまま実行できます）。Oracle で EXECUTE IMMEDIATE に与えていた権限に相当するものが移行先に要るかは、運用で確認することを推奨します
-- `LOWER-001` (REVIEW, `lowering.yaml`): lowering がまだ模していない構文です。意味が保てる保証がありません
-- `CUR-001` (REVIEW, `semantics.yaml`): 明示 cursor は寿命がトランザクション境界をまたぎます
-- `CUR-001` (REVIEW, `semantics.yaml`): 明示 cursor は寿命がトランザクション境界をまたぎます
+- `SCAN-001` (REDESIGN, `scalardb_capability.yaml`): 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します
+- `CUR-003` (REVIEW, `semantics.yaml`): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
+- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
+- `SQL-004` (REVIEW, `semantics.yaml`): SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めうる routine です
+- `SQL-002` (REVIEW, `sql.yaml`): 実行計画（取得 + H2）に分解される文です。行数上限と性能を確認してください
 - `TX-001` (REDESIGN, `transaction.yaml`): routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません
+- `TX-004` (REDESIGN, `transaction.yaml`): 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します（P2-9 で実測）
 
 **代替案**
 
 - allowlist 型の query builder にする
 - 有限 variant なら variant ごとに静的な query にする
+- 耐久境界で routine を分割する
+- 読み取りを主キーまたはパーティションキーのアクセスに変える
+- 件数を返す形に呼び出し先を直すか、件数を読む位置を静的な DML の直後に寄せる
 - use case の耐久境界で分割する
 - 再試行と冪等性の方針を決める
+- 耐久境界で routine を分割する
+- 読み取りをキーアクセスに変える
 
 **受け入れに必要なテスト**
 
 - bind_restoration
 - cursor_lifetime
 - dynamic_sql_variants
-- equivalent_result
 - partial_failure
+- performance
 - rollback_boundary
+- row_count
+- row_limit
+- scan_after_write
 
-**確信度が 0 になっている要因**: ruleCoverage, testEvidence
+**確信度が 0 になっている要因**: testEvidence
 
 ## REDESIGN: `b06_5_2_scheduler_job` — `b06_5_2_scheduler_job.prc:2`
 
@@ -1073,22 +1088,17 @@
 
 **根拠**
 
-- CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません
-
-**判定したルール**
-
-- `CALL-001` (REVIEW, `lowering.yaml`): 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません
+- confidence factor testEvidence is 0
 
 **代替案**
 
-- 呼び先のソースを解析対象に加える
-- 加えられない（Oracle 提供のパッケージなど）なら、移行先での代替を決める
+- ルールに代替案が書かれていない。ルール側に足すべき。
 
 **受け入れに必要なテスト**
 
-- equivalent_result
+- ルールに必要テストが書かれていない。ルール側に足すべき。
 
-**確信度が 0 になっている要因**: symbolResolution, testEvidence
+**確信度が 0 になっている要因**: testEvidence
 
 ## REVIEW: `b06_6_conditional_compilation` — `b06_6_conditional_compilation.prc:2`
 

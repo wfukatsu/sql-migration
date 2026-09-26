@@ -479,7 +479,7 @@
     "routine": "b06_3_native_dynamic_sql.b06_3_native_dynamic_sql",
     "verdict": "REVIEW",
     "differences": [
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in DynamicSql: RETURNING INTO of a dynamic UPDATE)"
+     "exception: expected=none actual=com.scalar.migrate.runtime.ScanAfterWriteException (plan fetch on 'employees' scans rows this transaction has already written or deleted; ScalarDB does not allow that. Split the routine at a durable boundary, or serve the read by key access.)"
     ],
     "accepted": [],
     "scale_only": [
@@ -530,9 +530,7 @@
    "b06_5_builtin_packages": {
     "routine": "b06_5_builtin_packages.b06_5_builtin_packages",
     "verdict": "REVIEW",
-    "differences": [
-     "exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Call: named arguments of a routine that is not in the program)"
-    ],
+    "differences": [],
     "accepted": [],
     "scale_only": [
      "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
@@ -775,7 +773,7 @@
   },
   "not_compared": {},
   "fingerprints": {
-   "toolchain": "9d54bf82a2e90737fbc65751043f73ed9cb4aec10e781c9fbaff52432d8b5b00",
+   "toolchain": "eecd3d0ae962b6a5291ee4939a986cc9972b0ef077d0e0983f7b74bf311d3d8c",
    "sources": {
     "annual_comp": "a43e3576d8b1c2f648b65d5603c0001c0aaec44531a54d9bf47462ce3bb2ac15",
     "b04_1_variables": "22a5f4c43ce7bc93eb38ea67f54f4b00a202f151bf79b7773cc553c6a005fc03",

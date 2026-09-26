@@ -21,6 +21,9 @@ rowLocks:
     emp_api.give_raise~1: 昇給の UPDATE … SET salary = salary * (1 + p_pct / 100)。衝突は呼び出し側が再試行（同上）
     emp_api.give_raise~2: 部門ごとの昇給。同上
     raise_salary: 昇給の UPDATE … RETURNING。読んでから書き、RETURNING の値は計算した値を返す（同上）
+    b06_3_native_dynamic_sql: >-
+      06-3-2 の動的 UPDATE（SET salary = salary … RETURNING last_name）。定数なので静的な文として下ろし（#52）、読んでから
+      書く。RETURNING の last_name は書かない列なので先読みの値を返す（利用者の決定、2026-09-26）
 
 # routine の中の COMMIT / ROLLBACK / SAVEPOINT は呼び出し側の境界に移す。サンプルの ROLLBACK は「試したあと戻す」ためのもので、
 # 呼び出し側（テストハーネス）が戻せば同じ結果になる。途中の ROLLBACK が戻していた分は呼び出し側が戻さないかぎり残る（意味が変わる決定）。
@@ -53,3 +56,10 @@ constraints:
   enforce:
     bulk_target: bulk_target_sal_ck（salary < 15000）。06-2 の FORALL … SAVE EXCEPTIONS が弾かれる行を数えている（利用者の決定、2026-09-25）
     employees: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上）
+
+# routine の中の DDL（EXECUTE IMMEDIATE 'CREATE TABLE …'）を移行先で実行しない routine（#52、2026-09-26、利用者の決定）。
+# ScalarDB はトランザクションの中で DDL を流さず、スキーマは Schema Loader が持つ。書いていない routine の DDL は生成器が断る。
+ddl:
+  omit:
+    b06_3_native_dynamic_sql: >-
+      06-3-3 は一時表 dyn_tmp を作ってすぐ DROP … PURGE する例で、データに何も残さない。移行先では実行しない（利用者の決定、2026-09-26）

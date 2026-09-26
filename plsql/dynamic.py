@@ -82,6 +82,18 @@ def set_allowed_tables(allowed: dict[str, list[str]]) -> None:
     _ALLOWED.set(dict(allowed))
 
 
+_OMITTED_DDL: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("omitted_ddl", default={})
+
+
+def set_omitted_ddl(omit: dict[str, str]) -> None:
+    """limits.yaml `ddl.omit`: the routines whose DDL a person decided not to run on the target (#52)."""
+    _OMITTED_DDL.set(dict(omit))
+
+
+def omitted_ddl(routine_id: str) -> str | None:
+    return _OMITTED_DDL.get().get(routine_id)
+
+
 # `DBMS_ASSERT.SIMPLE_SQL_NAME(p)` は名前の**形**を確かめるだけで、**どの表か**は決めない。
 # 一覧で照合するなら同じ値である
 ASSERT = re.compile(r"^DBMS_ASSERT\s*\.\s*\w+\s*\(\s*(?P<name>[\w$#]+)\s*\)$", re.IGNORECASE)

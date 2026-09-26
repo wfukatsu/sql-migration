@@ -217,18 +217,29 @@ com/example/migrated/application/B0636DbmsSqlService.java,b0636DbmsSql @ b06_3_6
 com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql,b06_3_native_dynamic_sql.prc,2,40,routine,REDESIGN,not-generated
 com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:10,b06_3_native_dynamic_sql.prc,10,13,DynamicSql,REDESIGN,not-generated
 com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:14,b06_3_native_dynamic_sql.prc,14,14,Call,REDESIGN,not-generated
-com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:17,b06_3_native_dynamic_sql.prc,17,19,DynamicSql,REDESIGN,not-generated
+com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:17,b06_3_native_dynamic_sql.prc,17,19,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:17,b06_3_native_dynamic_sql.prc,17,19,If,REDESIGN,not-generated
+com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:17,b06_3_native_dynamic_sql.prc,17,19,Raise,REDESIGN,not-generated
+com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:17,b06_3_native_dynamic_sql.prc,17,19,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:17,b06_3_native_dynamic_sql.prc,17,19,If,REDESIGN,not-generated
+com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:17,b06_3_native_dynamic_sql.prc,17,19,Call,REDESIGN,not-generated
+com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:17,b06_3_native_dynamic_sql.prc,17,19,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:17,b06_3_native_dynamic_sql.prc,17,19,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:17,b06_3_native_dynamic_sql.prc,17,19,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:17,b06_3_native_dynamic_sql.prc,17,19,If,REDESIGN,not-generated
+com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:17,b06_3_native_dynamic_sql.prc,17,19,Call,REDESIGN,not-generated
+com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:17,b06_3_native_dynamic_sql.prc,17,19,If,REDESIGN,not-generated
+com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:17,b06_3_native_dynamic_sql.prc,17,19,Call,REDESIGN,not-generated
 com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:20,b06_3_native_dynamic_sql.prc,20,20,Call,REDESIGN,not-generated
 com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:23,b06_3_native_dynamic_sql.prc,23,23,DynamicSql,REDESIGN,not-generated
 com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:24,b06_3_native_dynamic_sql.prc,24,24,DynamicSql,REDESIGN,not-generated
-com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:27,b06_3_native_dynamic_sql.prc,27,27,Unsupported,REDESIGN,not-generated
 com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:28,b06_3_native_dynamic_sql.prc,28,32,Loop,REDESIGN,not-generated
-com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:29,b06_3_native_dynamic_sql.prc,29,29,Fetch,REDESIGN,not-generated
-com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:30,b06_3_native_dynamic_sql.prc,30,30,Exit,REDESIGN,not-generated
+com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:28,b06_3_native_dynamic_sql.prc,28,32,SqlOperation,REDESIGN,not-generated
+com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:29,b06_3_native_dynamic_sql.prc,29,29,Assignment,REDESIGN,not-generated
 com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:31,b06_3_native_dynamic_sql.prc,31,31,Call,REDESIGN,not-generated
-com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:33,b06_3_native_dynamic_sql.prc,33,33,CloseCursor,REDESIGN,not-generated
 com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:36,b06_3_native_dynamic_sql.prc,36,36,Assignment,REDESIGN,not-generated
-com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:37,b06_3_native_dynamic_sql.prc,37,37,DynamicSql,REDESIGN,not-generated
+com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:37,b06_3_native_dynamic_sql.prc,37,37,Block,REDESIGN,not-generated
+com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:37,b06_3_native_dynamic_sql.prc,37,37,Assignment,REDESIGN,not-generated
 com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:38,b06_3_native_dynamic_sql.prc,38,38,Call,REDESIGN,not-generated
 com/example/migrated/application/B063NativeDynamicSqlService.java,b063NativeDynamicSql @ b06_3_native_dynamic_sql.prc:39,b06_3_native_dynamic_sql.prc,39,39,Rollback,REDESIGN,not-generated
 com/example/migrated/application/B064CollectionInSqlService.java,b064CollectionInSql,b06_4_collection_in_sql.prc,2,12,routine,REVIEW,not-generated
