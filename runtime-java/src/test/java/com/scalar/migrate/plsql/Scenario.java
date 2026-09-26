@@ -20,11 +20,12 @@ import org.yaml.snakeyaml.Yaml;
  *               cannot run is a finding about the fixture, not something for the harness to paper over.
  * @param args   the call's arguments in declaration order -- SnakeYAML keeps the mapping's order, and the
  *               scenarios are written in that order because Oracle binds them by name.
+ * @param output `output: true` -- the DBMS_OUTPUT lines are part of the result and both captures carry them.
  */
 public record Scenario(String name, String unit, String routine, Map<String, Object> pinned, List<String> setup,
                        String call, String kind, String body, Map<String, Object> args,
                        List<String> captureTables, Map<String, List<String>> mask, String note,
-                       List<String> outs, String boundary) {
+                       List<String> outs, String boundary, boolean output) {
 
   /** `:o_status := v.status;` -- the field of a record a block scenario projects into an OUT bind. */
   private static final java.util.regex.Pattern PROJECTION =
@@ -75,7 +76,8 @@ public record Scenario(String name, String unit, String routine, Map<String, Obj
         spec.get("mask") == null ? Map.of() : (Map<String, List<String>>) spec.get("mask"),
         (String) spec.get("note"),
         call.get("out") == null ? List.of() : new ArrayList<>(((Map<String, Object>) call.get("out")).keySet()),
-        spec.get("boundary") == null ? "commit" : String.valueOf(spec.get("boundary")));
+        spec.get("boundary") == null ? "commit" : String.valueOf(spec.get("boundary")),
+        Boolean.TRUE.equals(spec.get("output")));
   }
 
   /**
@@ -174,7 +176,7 @@ public record Scenario(String name, String unit, String routine, Map<String, Obj
   /** The same scenario with its arguments replaced (the harness fills omitted DEFAULTs from the setup file, #41). */
   public Scenario withArgs(Map<String, Object> replaced) {
     return new Scenario(name, unit, routine, pinned, setup, call, kind, body, new java.util.LinkedHashMap<>(replaced),
-        captureTables, mask, note, outs, boundary);
+        captureTables, mask, note, outs, boundary, output);
   }
 
   /** The PL/SQL routine's arguments, in declaration order. */

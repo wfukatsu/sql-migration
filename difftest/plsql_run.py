@@ -252,6 +252,11 @@ def deploy(args) -> int:
 
         for stmt in split_sql((SRC / "schema.sql").read_text(encoding="utf-8")):
             cur.execute(stmt)
+        # the bodies of the schema's object types (CREATE TYPE BODY, '/'-separated): Oracle-only, like the types
+        # themselves -- the generator reads the types from schema.sql and never sees these (samples/oracle-plsql-docs)
+        if (SRC / "type_bodies.sql").is_file():
+            for stmt in split_plsql((SRC / "type_bodies.sql").read_text(encoding="utf-8")):
+                cur.execute(stmt)
         con.commit()
         print(f"schema: {len(TABLES)} tables, {len(SEQUENCES)} sequences")
 
@@ -420,6 +425,24 @@ def call_routine(cur, spec: dict) -> tuple[dict, dict | None]:
              "out": {n: encode(v.getvalue()) for n, v in out_vars.items()}}, None)
 
 
+def read_output(cur) -> list[str]:
+    """The DBMS_OUTPUT lines the call wrote, then the buffer is switched off again.
+
+    Only for a scenario that says `output: true`: what an example block prints is its result when it touches no
+    table (samples/oracle-plsql-docs). Lines written before an exception are kept, as SQL*Plus shows them.
+    """
+    import oracledb
+    lines = []
+    line, status = cur.var(oracledb.DB_TYPE_VARCHAR, 32767), cur.var(oracledb.DB_TYPE_NUMBER)
+    while True:
+        cur.callproc("DBMS_OUTPUT.GET_LINE", [line, status])
+        if status.getvalue() != 0:
+            break
+        lines.append(line.getvalue() or "")
+    cur.callproc("DBMS_OUTPUT.DISABLE")
+    return lines
+
+
 def _array_type(values: list):
     import oracledb
     return oracledb.DB_TYPE_VARCHAR if any(isinstance(v, str) for v in values) else oracledb.DB_TYPE_NUMBER
@@ -501,7 +524,10 @@ def run(args) -> int:
                 finally:
                     set_triggers(cur, enabled=True)
 
+                if spec.get("output"):
+                    cur.callproc("DBMS_OUTPUT.ENABLE", [None])
                 result, exception = call_routine(cur, spec)
+                printed = read_output(cur) if spec.get("output") else None
                 try:
                     con.commit()
                 except Exception as e:
@@ -530,6 +556,8 @@ def run(args) -> int:
                 "sessionUser": session_user,
                 "result": result, "exception": exception, "tables": tables, "masked": masked,
             }
+            if printed is not None:
+                capture["output"] = printed
             path = out_dir / f"{spec['name']}.json"
             path.write_text(json.dumps(capture, ensure_ascii=False, indent=1, sort_keys=False) + "\n",
                             encoding="utf-8")

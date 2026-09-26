@@ -370,3 +370,24 @@ def test_a_declared_nondeterministic_column_is_left_out_of_both_tables(tmp_path,
                                                      encoding="utf-8")
     with pytest.raises(SystemExit, match="reason"):
         compare._nondeterministic("bad")
+
+
+# ---------------------------------------------------------------- DBMS_OUTPUT (samples/oracle-plsql-docs)
+def test_output_is_compared_only_when_a_scenario_asked_for_it():
+    assert compare_capture(capture(), capture()) == []
+    assert compare_capture(capture(output=["a", "b"]), capture(output=["a", "b"])) == []
+
+
+def test_a_different_output_line_is_reported_with_its_number():
+    diffs = compare_capture(capture(output=["King", "Whalen"]), capture(output=["King", "Kochhar"]))
+    assert diffs == ["output line 2: expected='Whalen' actual='Kochhar'"]
+
+
+def test_missing_output_lines_are_reported_with_both_counts():
+    diffs = compare_capture(capture(output=["a", "b"]), capture(output=["a"]))
+    assert diffs == ["output line 2: expected='b' actual=None (2 vs 1 lines)"]
+
+
+def test_output_on_one_side_only_is_a_difference():
+    diffs = compare_capture(capture(output=["a"]), capture())
+    assert diffs == ["output: expected=1 line(s) actual=none line(s)"]

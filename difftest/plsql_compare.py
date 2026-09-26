@@ -194,6 +194,7 @@ def compare_capture(oracle: dict, target: dict) -> list[str]:
     _compare_pinned(oracle, target, diffs)
     _compare_result(oracle, target, diffs)
     _compare_exception(oracle, target, diffs)
+    _compare_output(oracle, target, diffs)
     _compare_masks(oracle, target, diffs)
     _compare_tables(oracle, target, diffs)
     return diffs
@@ -246,6 +247,24 @@ def _compare_exception(oracle: dict, target: dict, diffs: list[str]) -> None:
     if CLIENT_CODE_FOR_SQLCODE.get(left.get("code"), left.get("code")) != right.get("code"):
         diffs.append(f"exception code: expected={left.get('code')} actual={right.get('code')} "
                      f"({right.get('message')})")
+
+
+def _compare_output(oracle: dict, target: dict, diffs: list[str]) -> None:
+    """DBMS_OUTPUT, when a scenario asked for it (`output: true`): the lines in order, text for text."""
+    if "output" not in oracle and "output" not in target:
+        return
+    left, right = oracle.get("output"), target.get("output")
+    if left is None or right is None:
+        diffs.append(f"output: expected={'none' if left is None else len(left)} line(s) "
+                     f"actual={'none' if right is None else len(right)} line(s)")
+        return
+    for i in range(max(len(left), len(right))):
+        a = left[i] if i < len(left) else None
+        b = right[i] if i < len(right) else None
+        if a != b:
+            diffs.append(f"output line {i + 1}: expected={a!r} actual={b!r}"
+                         + (f" ({len(left)} vs {len(right)} lines)" if len(left) != len(right) else ""))
+            return
 
 
 def _compare_masks(oracle: dict, target: dict, diffs: list[str]) -> None:
