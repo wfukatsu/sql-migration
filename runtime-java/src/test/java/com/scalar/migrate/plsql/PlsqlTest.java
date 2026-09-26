@@ -465,4 +465,19 @@ class PlsqlTest {
     assertTrue(Plsql.eq(Plsql.unpad("John      "), Plsql.unpad("John")));
     assertEquals("", Plsql.unpad("   "), "all blanks is still a value, not NULL");
   }
+
+  @Test
+  void nestedTablesAreEqualAsMultisets() {
+    // dnames_tab('Shipping','Sales','Finance','Payroll') = dnames_tab('Sales','Finance','Shipping','Payroll') (#63)
+    var a = java.util.List.of("Shipping", "Sales", "Finance", "Payroll");
+    var b = java.util.List.of("Sales", "Finance", "Shipping", "Payroll");
+    var c = java.util.List.of("Sales", "Finance", "Payroll");
+    assertTrue(Plsql.eq(a, b));
+    assertFalse(Plsql.ne(a, b));
+    assertTrue(Plsql.ne(b, c));
+    assertFalse(Plsql.eq(java.util.List.of("a", "a", "b"), java.util.List.of("a", "b", "b")), "counts matter");
+    java.util.List<String> withNull = new java.util.ArrayList<>(java.util.Arrays.asList("a", null));
+    assertFalse(Plsql.eq(withNull, java.util.List.of("a", "b")), "a NULL element makes it unknown");
+    assertFalse(Plsql.ne(withNull, java.util.List.of("a", "b")));
+  }
 }

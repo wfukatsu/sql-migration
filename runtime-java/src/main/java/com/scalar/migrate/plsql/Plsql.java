@@ -37,12 +37,37 @@ public final class Plsql {
   public static boolean eq(Object a, Object b) {
     if (isNull(a) || isNull(b)) return false;
     if (a instanceof Number && b instanceof Number) return compare(a, b) == 0;
+    if (a instanceof java.util.List<?> x && b instanceof java.util.List<?> y) return Boolean.TRUE.equals(sameMultiset(x, y));
     return Objects.equals(a, b);
   }
 
   public static boolean ne(Object a, Object b) {
     if (isNull(a) || isNull(b)) return false;  // NULL <> x is unknown, not true
+    if (a instanceof java.util.List<?> x && b instanceof java.util.List<?> y) return Boolean.FALSE.equals(sameMultiset(x, y));
     return !eq(a, b);
+  }
+
+  /**
+   * {@code =} on two nested tables: the same elements the same number of times, in any order -- Oracle compares
+   * them as multisets. A NULL element makes it unknown unless the sizes already differ (samples/oracle-plsql-docs
+   * 5-15, #63). Only a nested table has {@code =}; a VARRAY or an associative array does not compile in PL/SQL.
+   */
+  static Boolean sameMultiset(java.util.List<?> a, java.util.List<?> b) {
+    if (a.size() != b.size()) return Boolean.FALSE;
+    if (a.stream().anyMatch(Plsql::isNull) || b.stream().anyMatch(Plsql::isNull)) return null;
+    java.util.List<Object> rest = new java.util.ArrayList<>(b);
+    for (Object element : a) {
+      int at = -1;
+      for (int i = 0; i < rest.size(); i++) {
+        if (eq(element, rest.get(i))) {
+          at = i;
+          break;
+        }
+      }
+      if (at < 0) return Boolean.FALSE;
+      rest.remove(at);
+    }
+    return Boolean.TRUE;
   }
 
   public static boolean lt(Object a, Object b) {
@@ -199,8 +224,9 @@ public final class Plsql {
   public static Object sub(Object a, Object b) {
     if (isTemporal(a) && isTemporal(b)) {
       // Oracle subtracts two DATEs into a number of days, fraction included
-      return BigDecimal.valueOf(java.time.Duration.between(castDate(b), castDate(a)).toSeconds())
-          .divide(BigDecimal.valueOf(86400), OracleNumbers.NUMBER);
+      // (the division rounds as Oracle's NUMBER does: #64)
+      return OracleNumbers.divide(BigDecimal.valueOf(java.time.Duration.between(castDate(b), castDate(a)).toSeconds()),
+          BigDecimal.valueOf(86400));
     }
     // `SYSTIMESTAMP - 30` は 30 日前の DATE である。日数として数値に直すと落ちる
     if (isTemporal(a) && b instanceof Number days) return shiftDays(a, days, -1);
