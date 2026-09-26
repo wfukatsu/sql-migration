@@ -202,6 +202,7 @@ fixtures/explorer/         Migration Explorer の fixture（FK・view・trigger 
 fixtures/plsql-external/   corpus の外から受け取った routine（KPI には入れない）。実 DB のハーネスを `--project` で向ける
 samples/                   変換の入力例。tutorial/ はチュートリアルのサンプル（Oracle の SQL と PL/SQL）と、通した結果（result/）。
                            oracle-samples/ は Oracle の構文カタログ（SQL 4 本 + PL/SQL 3 本、約 1,700 行）を SQL 変換・PL/SQL 変換・実 DB 比較に通した記録（2026-09-24、README.md）
+                           oracle-plsql-docs/ は Oracle PL/SQL 言語リファレンス 12c R1 の例 420 を PL/SQL 変換・実 DB 比較に通した記録（2026-09-26、README.md）
 spikes/                    残りの処理を H2 / SQLite / DuckDB で実行する初期の検証
 tests/                     変換ツールとスキルのテスト
 docs/                      文書。入口は docs/README.md（guide/ 使い方、design/ 設計、plsql-migration/ 人が決めること、
