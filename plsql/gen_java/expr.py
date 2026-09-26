@@ -637,9 +637,18 @@ class _Parser:
         if expected != [""] and len(expected) == len(arguments) and not any("=>" in a for a in arguments):
             # a sibling that declares NUMBER takes BigDecimal; the argument may be a Long / Integer local or a literal
             for i, java in enumerate(expected):
-                if java == "BigDecimal" and arguments[i] != "null" and not arguments[i].startswith(f"{HELPER}.dec("):
+                if i >= len(arguments) or arguments[i] == "null":
+                    continue
+                if java == "BigDecimal" and not arguments[i].startswith(f"{HELPER}.dec("):
                     self.result.imports.add(HELPER_IMPORT)
                     arguments[i] = f"{HELPER}.dec({arguments[i]})"
+                elif java in ("Integer", "Double", "Float") and not re.fullmatch(r"-?\d+", arguments[i]) \
+                        and (arguments[i].startswith(HELPER) or re.fullmatch(r"-?\d+\.\d+", arguments[i])):
+                    # `test(0.66)` / `fibonacci(n - 2)`: helper arithmetic is Object or BigDecimal, and an
+                    # Integer parameter rounds a NUMBER the way Plsql.toInt does (#75, 8-11 / 8-36)
+                    self.result.imports.add(HELPER_IMPORT)
+                    helper = {"Integer": "toInt", "Double": "toDouble", "Float": "toFloat"}[java]
+                    arguments[i] = f"{HELPER}.{helper}({arguments[i]})"
         arguments.extend(self._extras(plsql_name))
         return f"{name}({', '.join(arguments)})"
 

@@ -154,6 +154,30 @@ public final class Plsql {
     return value == null ? null : value.toLocalDate().atStartOfDay();
   }
 
+  /** TRUNC on a number, or on a value whose type is only known at run time (a date or a number): #75, 4-23. */
+  public static Object trunc(Object value) {
+    if (isNull(value)) return null;
+    if (isTemporal(value)) return trunc(castDate(value));
+    return num(value).setScale(0, java.math.RoundingMode.DOWN);
+  }
+
+  /** TRUNC(n, places): toward zero at that many decimals (a negative count truncates left of the point). */
+  public static BigDecimal trunc(Object value, Object places) {
+    if (isNull(value) || isNull(places)) return null;
+    BigDecimal cut = num(value).setScale(num(places).intValue(), java.math.RoundingMode.DOWN);
+    return cut.scale() < 0 ? cut.setScale(0) : cut;
+  }
+
+  /** A value going into a BINARY_DOUBLE / REAL / FLOAT local (a Double): #75, 2-13 `radius REAL := 1`. */
+  public static Double toDouble(Object value) {
+    return isNull(value) ? null : (value instanceof Double d ? d : num(value).doubleValue());
+  }
+
+  /** A value going into a BINARY_FLOAT local (a Float): #75, 8-14. */
+  public static Float toFloat(Object value) {
+    return isNull(value) ? null : (value instanceof Float f ? f : num(value).floatValue());
+  }
+
   /**
    * Arithmetic, with Oracle's NULL rule: any operand null makes the result null.
    *

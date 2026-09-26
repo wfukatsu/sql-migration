@@ -137,17 +137,23 @@ def java_type(oracle: str | None, *, money: bool = False) -> JavaType:
     if upper.startswith("DATE"):
         return JavaType("LocalDateTime", "TIMESTAMP",
                         note="Oracle DATE carries a time of day, so it is not LocalDate")
-    if upper.startswith(("BINARY_FLOAT",)):
+    if upper.startswith(("BINARY_FLOAT", "SIMPLE_FLOAT")):
         return JavaType("Float", "FLOAT")
-    if upper.startswith(("BINARY_DOUBLE",)):
+    if upper.startswith(("BINARY_DOUBLE", "SIMPLE_DOUBLE", "DOUBLE PRECISION")):
         return JavaType("Double", "DOUBLE")
+    decimal = re.match(r"^\s*(?:DEC|DECIMAL|NUMERIC)\b\s*(\(.*\))?\s*$", written, re.IGNORECASE)
+    if decimal:
+        # ANSI names of NUMBER (#75: `DEC(5,2)` came out Object)
+        return java_type(f"NUMBER{decimal.group(1) or ''}", money=money)
     if upper.startswith(("RAW", "LONG RAW", "BLOB")):
         return JavaType("byte[]", "BLOB", note="never round-trip through String")
     if upper.startswith(("CLOB", "NCLOB", "LONG")):
         return JavaType("String", "TEXT", note="size and streaming need a decision for large values")
     if upper.startswith("BOOLEAN"):
         return JavaType("Boolean", "BOOLEAN", note="PL/SQL BOOLEAN can be NULL, so not the primitive")
-    if upper.startswith(("PLS_INTEGER", "BINARY_INTEGER", "SIMPLE_INTEGER", "INTEGER", "INT", "SMALLINT")):
+    if re.match(r"(PLS_INTEGER|BINARY_INTEGER|SIMPLE_INTEGER|INTEGER|INT|SMALLINT|NATURALN?|POSITIVEN?|SIGNTYPE)\b",
+                upper):
+        # NATURAL(N) / POSITIVE(N) / SIGNTYPE are PLS_INTEGER with a range (#59); they were Object (#75)
         return JavaType("Integer", "INT")
     if upper.startswith(("FLOAT", "REAL")):
         return JavaType("Double", "DOUBLE")

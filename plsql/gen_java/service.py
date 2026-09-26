@@ -436,7 +436,8 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
         # `rank_of(v_balance)` with `v_balance members.balance%TYPE` (NUMBER(10) -> Long) did not compile: the
         # method takes BigDecimal (samples/tutorial, 2026-09-20). The key cannot clash with a PL/SQL name
         for r in module.routines:
-            if overload_of(r) is None and r.id != routine.id:
+            # the routine itself too: a recursive call (`fibonacci(n - 2)`) needs its own parameter types (#75)
+            if overload_of(r) is None:
                 names[f"{r.name.lower()}#parameters"] = ",".join(
                     java_type(p.type.resolved if p.type else None).name for p in r.parameters
                     if not (r.enclosing and p.carried))
@@ -944,6 +945,7 @@ def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
             # `Plsql.number` takes a long: `v NUMBER := 1.005` came out as Java that does not compile. The text
             # constructor keeps the literal exact, which a double would not
             rendered = f'new BigDecimal("{rendered}")'
+        rendered = _convert_variable(file, routine, declaration.initial, rendered, mapped.name)
         initial = f" = {_constrain(file, _coerce(file, rendered, mapped.name), declaration.type)}"
     file.line(f"{mapped.name} {_local(declaration.name)}{initial};")
 
@@ -1085,14 +1087,21 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
                 file.add_import(f"{_DOMAIN.get()}.{record}")
             value = _expr(file, statement.expression, routine, result)
             variable = java_name(holder.name)
-            components = [value if c.lower() == field_name.lower() else f"{variable}.{java_name(c)}()" for c, _ in columns]
+            # the new value takes the component's type: `default_week.week := i` put an int into a BigDecimal (5-53)
+            components = [_coerce(file, value, java_type(t).name) if c.lower() == field_name.lower()
+                          else f"{variable}.{java_name(c)}()" for c, t in columns]
             file.line(f"{variable} = new {record}({', '.join(components)});")
             return
         # the target goes through the translator too: `:NEW.col` is not a Java name, and rendering it anyway
         # produced code that did not compile
+        copied = _record_copy(file, routine, statement.target, statement.expression)
+        if copied is not None:
+            file.line(copied)
+            return
         target = _expr(file, statement.target, routine, result)
         target_type = _local_type(routine, statement.target)
         value = _expr(file, statement.expression, routine, result, boolean_value=target_type == "Boolean")
+        value = _convert_variable(file, routine, statement.expression, value, target_type)
         holder = _holder(routine, statement.target)
         file.line(f"{target} = {_constrain(file, _coerce(file, value, target_type), holder.type if holder else None)};")
     elif kind == "Return":
@@ -1710,6 +1719,9 @@ def _fit_argument(file: JavaFile, rendered: str, parameter: "M.Parameter | None"
     if parameter is None or parameter.type is None:
         return rendered
     expected = java_type(parameter.type.resolved or parameter.type.oracle).name
+    if expected in ("Integer", "Double", "Float") and rendered.startswith("Plsql.") \
+            and not rendered.startswith(("Plsql.toInt(", "Plsql.toDouble(", "Plsql.toFloat(")):
+        return _coerce(file, rendered, expected)   # `p(1, (bb + 3) * 4, ff)` to an INTEGER parameter (8-14, #75)
     literal = re.fullmatch(r"-?\d+(?:\.\d+)?", rendered)
     if expected == "BigDecimal" and not rendered.startswith("Plsql.dec("):
         file.add_import("com.scalar.migrate.plsql.Plsql")
@@ -1930,7 +1942,16 @@ def _arguments(file: JavaFile, statement: M.SqlOperation, routine: M.Routine,
         # 要素）も、名前として Java の変数に落ちるものである。`java_name` に渡すと `pIds(i)` という
         # 存在しない method 呼び出しになる
         plain = name.replace("_", "").replace("$", "").replace("#", "").isalnum()
-        out.append(java_name(name) if plain else _expr(file, name, routine, result))
+        rendered = _local(name) if plain else _expr(file, name, routine, result)
+        if rendered.startswith("Plsql.at(") and "." not in name:
+            # a collection element is Object; the repository parameter is typed from the bind's column the way
+            # `repository._parameters` types it (`FORALL ... VALUES (pnums(i), ...)`: 12-9, #75)
+            expected = java_type(bind.oracle_type).name
+            if expected == "String":
+                rendered = f"(String) {rendered}"
+            elif expected in ("Integer", "Long", "Double", "Float", "BigDecimal", "LocalDateTime"):
+                rendered = _coerce(file, rendered, expected)
+        out.append(rendered)
     return ", ".join(out)
 
 
@@ -2020,6 +2041,9 @@ def _record_shape(routine: M.Routine, holder: str) -> list[tuple[str, str]]:
 
 def _coerce(file: JavaFile, value: str, target_type: str) -> str:
     """A numeric literal or a ternary is not a BigDecimal; the helper makes it one."""
+    # `(Plsql.mul(pi, …))`: the parentheses PL/SQL wrote hide the helper call from the checks below (2-13, 8-3)
+    while value.startswith("(") and value.endswith(")") and _balanced(value[1:-1]):
+        value = value[1:-1]
     if target_type == "BigDecimal" and not value.startswith("Plsql.dec("):
         file.add_import("com.scalar.migrate.plsql.Plsql")
         return f"Plsql.dec({value})"
@@ -2028,6 +2052,16 @@ def _coerce(file: JavaFile, value: str, target_type: str) -> str:
     if target_type in ("Integer", "Long") and value.startswith("Plsql.") and not value.startswith(("Plsql.fit", "Plsql.to")):
         file.add_import("com.scalar.migrate.plsql.Plsql")
         return f"Plsql.{'toInt' if target_type == 'Integer' else 'toLong'}({value})"
+    # #75: a REAL / BINARY_DOUBLE / BINARY_FLOAT local takes a literal or helper arithmetic (int, BigDecimal,
+    # Object) only through a conversion -- `Double radius = 1;` and `Float d = Plsql.div(10, b);` did not compile
+    if target_type in ("Double", "Float") and (re.fullmatch(r"-?\d+(?:\.\d+)?", value) or value.startswith("Plsql.")) \
+            and not value.startswith(f"Plsql.to{target_type}("):
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        return f"Plsql.to{target_type}({value})"
+    # date arithmetic comes back as Object (`TRUNC(SYSDATE) - 1` is a DATE, `d1 - d2` a number): 11-14 / 11-15
+    if target_type == "LocalDateTime" and value.startswith(("Plsql.sub(", "Plsql.add(", "Plsql.trunc(", "Plsql.nvl(", "Plsql.at(")):
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        return f"Plsql.castDate({value})"
     # COALESCE / NVL2 / GREATEST / LEAST hand back whichever argument won, as Object (#84)
     if target_type in ("String", "LocalDateTime", "Boolean") and value.startswith(
             tuple(f"Plsql.{f}(" for f in ("coalesce", "nvl2", "greatest", "least"))):
@@ -2037,6 +2071,51 @@ def _coerce(file: JavaFile, value: str, target_type: str) -> str:
     if value.startswith("Plsql.at(") and target_type and any(object_class(n) == target_type for n in _object_names()):
         return f"({target_type}) {value}"
     return value
+
+
+def _record_copy(file: JavaFile, routine: M.Routine, target: str | None, source: str | None) -> str | None:
+    """`target := source` between two records of different types with the same number of fields: PL/SQL copies
+    field by field in order; the two Java records are different classes (`CRow` and `NameRec`: 5-46, #75)."""
+    if not target or not source or not re.fullmatch(r"\s*[A-Za-z][\w$#]*\s*", source) \
+            or not re.fullmatch(r"\s*[A-Za-z][\w$#]*\s*", target):
+        return None
+    to, of = _holder(routine, target.strip()), _holder(routine, source.strip())
+    if to is None or of is None:
+        return None
+    to_class = _row_type(to) if isinstance(to, M.Declaration) else record_class(to.type)
+    of_class = _row_type(of) if isinstance(of, M.Declaration) else record_class(of.type)
+    if to_class is None or of_class is None or to_class == of_class:
+        return None
+    to_columns = record_columns(to.type.resolved or "")
+    of_columns = record_columns(of.type.resolved or "")
+    if len(to_columns) != len(of_columns) or not to_columns:
+        return None
+    variable = _local(of.name)
+    parts = [_coerce(file, f"{variable}.{java_name(c)}()", java_type(t).name) for (c, _), (_, t) in zip(of_columns, to_columns)]
+    return f"{_local(to.name)} = {variable} == null ? null : new {to_class}({', '.join(parts)});"
+
+
+def _convert_variable(file: JavaFile, routine: M.Routine, written: str | None, value: str, target_type: str) -> str:
+    """`q INTEGER := p` with `p NUMBER`: one variable into another of a different Java type. PL/SQL converts
+    (rounding into an INTEGER); Java refuses `Integer q = p;` (8-12, #75)."""
+    if target_type not in ("Integer", "Long", "Double", "Float") or not written \
+            or not re.fullmatch(r"\s*[A-Za-z][\w$#]*\s*", written):
+        return value
+    source = _local_type(routine, written.strip())
+    if source in (target_type, "Object") or source not in ("BigDecimal", "Integer", "Long", "Double", "Float"):
+        return value
+    file.add_import("com.scalar.migrate.plsql.Plsql")
+    helper = {"Integer": "toInt", "Long": "toLong", "Double": "toDouble", "Float": "toFloat"}[target_type]
+    return f"Plsql.{helper}({value})"
+
+
+def _balanced(text: str) -> bool:
+    depth = 0
+    for c in text:
+        depth += {"(": 1, ")": -1}.get(c, 0)
+        if depth < 0:
+            return False
+    return depth == 0
 
 
 def _object_names() -> list[str]:
