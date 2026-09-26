@@ -246,3 +246,37 @@ def test_to_number_is_translated_and_its_failure_reaches_the_value_error_handler
     text = java(CONVERSION)
     assert "Plsql.toNumber(pText)" in text
     assert "catch (Plsql.ValueError" in text and "catch (ValueErrorException" in text
+
+
+def test_raise_application_error_throws_the_class_generated_for_its_code(tmp_path):
+    """2026-09-26 (the plugin run over samples/tutorial): `PkgPointsError20103Exception` was generated for callers to
+    catch, and the service threw `MigratedException` itself, so catching the subclass caught nothing."""
+    from plsql.gen_java.exception import collect
+    from plsql.gen_java.service import generate_module
+    from plsql.report import analyse
+
+    (tmp_path / "p.prc").write_text(
+        "CREATE OR REPLACE PROCEDURE p(p_n NUMBER) IS\nBEGIN\n"
+        "  IF p_n < 1 THEN RAISE_APPLICATION_ERROR(-20103, 'too few'); END IF;\nEND;\n/\n", encoding="utf-8")
+    analysis = analyse(str(tmp_path))
+    module = analysis.program.modules[0]
+    java = generate_module(module, "g.app", "g.infra", "g.domain", program=analysis.program).file.render()
+    name = collect(analysis.program).codes[-20103].class_name
+    assert name == "PError20103Exception"
+    assert f'throw new {name}("too few");' in java and f"import g.domain.{name};" in java
+    assert "new MigratedException(-20103" not in java
+
+
+def test_an_oracle_error_raised_by_number_is_named_after_the_number(tmp_path):
+    """A CHECK guard's -2290 means the same in every module; a business code (-20000..-20999) belongs to its module."""
+    from plsql.gen_java.exception import collect
+    from plsql.report import analyse
+
+    for name, code in (("a", -2290), ("b", -2290), ("c", -20001)):
+        (tmp_path / f"{name}.prc").write_text(
+            f"CREATE OR REPLACE PROCEDURE {name} IS\nBEGIN\n  RAISE_APPLICATION_ERROR({code}, 'x');\nEND;\n/\n",
+            encoding="utf-8")
+    registry = collect(analyse(str(tmp_path)).program)
+    assert registry.codes[-2290].class_name == "Ora02290Exception"
+    assert registry.codes[-20001].class_name == "CError20001Exception"
+    assert not registry.conflicts

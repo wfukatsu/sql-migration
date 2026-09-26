@@ -111,7 +111,7 @@ flowchart LR
 （[現行の仕様](../../../plsql-spec/examples/create_order/create_order.md)）。Java から見て違うのは次のとおり。
 
 - 受注番号は OUT 引数ではなく、戻り値 `CreateOrderResult.pOrderId()` で返る
-- 失敗は `MigratedException` で、`code()` が Oracle のコードを返す: -20001（数量が 0 以下）、-20002（在庫数 < 数量）、
+- 失敗は `MigratedException`（コードごとの subclass、`CreateOrderError20001Exception` など）で、`code()` が Oracle のコードを返す: -20001（数量が 0 以下）、-20002（在庫数 < 数量）、
   -20003（商品が無い）。-20004 は下の「制限と注意」を見ること
 - `audit` は元の PL/SQL に無い引数である。`audit.now()` が `products.updated_at` に入る
 - 書く表: `orders`（1 行）、`order_items`（1 行、行番号 1）、`products`（在庫数と `updated_at`）。確定は呼び出し側の commit

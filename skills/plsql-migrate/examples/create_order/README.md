@@ -153,8 +153,9 @@ try (Connection connection = DriverManager.getConnection(url)) {
 
 - **衝突の再試行は呼び出し側の仕事である。** やり直すときは `createOrder` を最初から呼び直す（在庫を読み直すため）。
   回数の上限と間隔は呼び出し側で決める（「生成コードの外で決めること」の CALL-5）
-- エラーコードは `e.code()` で見る。`CreateOrderError20001Exception` などの class も生成されるが、Service が投げるのは
-  `MigratedException` そのものなので、**subclass を `catch` しても掛からない**
+- エラーコードは `e.code()` で見る。Service はコードごとの subclass（`CreateOrderError20001Exception` など、どれも
+  `MigratedException` の subclass）を投げるので、特定のコードだけを `catch` することもできる（2026-09-26 まで Service は
+  `MigratedException` そのものを投げていて、subclass では掛からなかった）
 - 依存: `runtime-java`（`com.scalar.migrate.plsql` と `com.scalar.migrate.runtime`）、ScalarDB SQL JDBC 3.19.1
 
 ## 制限

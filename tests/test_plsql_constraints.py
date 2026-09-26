@@ -171,4 +171,6 @@ def test_the_generated_guard_raises_the_class_the_handler_catches(tmp_path):
     java = generate_module(module, "g.app", "g.infra", "g.domain", program=analysis.program).file.render()
     assert "throw new EFkViolationException(" in java, java
     assert "catch (EFkViolationException e)" in java
-    assert "MigratedException(-2290" in java, "the CHECK has no bound exception, so it is raised by number"
+    # the CHECK has no bound exception: it is raised by number, as the class the registry gave that number
+    checked = collect(analysis.program).codes[-2290].class_name
+    assert f"throw new {checked}(" in java and "MigratedException(-2290" not in java

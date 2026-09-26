@@ -36,7 +36,8 @@ def test_the_plsql_sample_generates_with_nothing_refused(tmp_path):
                            "--out-dir", str(tmp_path), "--no-verify-compile", "--limits-strict"],
                           cwd=ROOT, capture_output=True, text=True)
     assert done.returncode == 0, done.stdout + done.stderr
-    assert "routines: 4  AUTO 3  REVIEW 0  REDESIGN 1" in done.stdout
+    # the rules say AUTO for three; with no evidence yet their verdict is REVIEW, and the line says both
+    assert "routines: 4  rules: AUTO 3  REVIEW 0  REDESIGN 1  |  verdict: AUTO 0  REVIEW 3  REDESIGN 1" in done.stdout
     assert "SQL ScalarDB refuses 0" in done.stdout
 
 
