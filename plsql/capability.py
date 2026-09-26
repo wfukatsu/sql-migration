@@ -333,6 +333,8 @@ def annotate(program: M.Program, report: CapabilityReport) -> None:
     for statement in by_id.values():
         if statement.kind != "SqlOperation" or not statement.into_targets:
             continue
+        if statement.cardinality == "MANY":
+            continue   # BULK COLLECT reads every row into the collection; there is no TOO_MANY_ROWS to keep
         if is_key_access(report.access_paths.get(statement.id)):
             continue
         if statement.at_most_one_row:
