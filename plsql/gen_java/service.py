@@ -30,7 +30,7 @@ from . import split
 from .dto import loop_component_type
 from .emit import JavaFile
 from .expr import SEQUENCES_IMPORT, translate
-from .types import record_class, java_class_name, java_name, java_type, record_columns, routine_stem
+from .types import signature_type, record_class, java_class_name, java_name, java_type, record_columns, routine_stem
 
 # the module being generated, so an expression can resolve a sibling routine without threading it through
 # every statement helper
@@ -179,29 +179,32 @@ def _expression_callees(routine: M.Routine, module: "M.Module | None") -> dict[s
         return {}
     modules = {m.name.lower(): m for m in program.modules}
     found: dict[str, tuple[str, M.Routine]] = {}
-    for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
-        for text in _expression_texts(statement):
-            for owner, name in _QUALIFIED.findall(_STRING.sub("''", text or "")):
-                target = modules.get(owner.lower())
-                if target is None or (module is not None and target is module):
-                    continue
-                callee = next((r for r in target.routines if r.name.lower() == name.lower()
-                               and overload_of(r) is None), None)
-                if callee is not None:
-                    found.setdefault(f"{owner.lower()}.{name.lower()}", (target.name, callee))
-            # a standalone function called by its bare name, `i || '! = ' || factorial(i)` (8-35, #86): its
-            # module is itself. Not when the caller's own module or its locals already mean that name
-            own = {r.name.lower() for r in (module.routines if module is not None else [])} | \
-                {h.name.lower() for h in list(routine.parameters) + list(routine.declarations)}
-            for name in re.findall(r"(?<![\w$#.])([A-Za-z][\w$#]*)\s*\(", _STRING.sub("''", text or "")):
-                target = modules.get(name.lower())
-                if target is None or target is module or name.lower() in own \
-                        or target.module_kind not in ("function", "procedure"):
-                    continue
-                callee = next((r for r in target.routines if r.name.lower() == name.lower()
-                               and overload_of(r) is None), None)
-                if callee is not None:
-                    found.setdefault(name.lower(), (target.name, callee))
+    texts = [text for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
+             for text in _expression_texts(statement)]
+    # a declaration's initialiser calls too: `r My_Types.My_Rec := My_Types.Init_My_Rec();` (5-33)
+    texts += [d.initial for d in routine.declarations if d.initial and d.declaration_kind != "cursor"]
+    for text in texts:
+        for owner, name in _QUALIFIED.findall(_STRING.sub("''", text or "")):
+            target = modules.get(owner.lower())
+            if target is None or (module is not None and target is module):
+                continue
+            callee = next((r for r in target.routines if r.name.lower() == name.lower()
+                           and overload_of(r) is None), None)
+            if callee is not None:
+                found.setdefault(f"{owner.lower()}.{name.lower()}", (target.name, callee))
+        # a standalone function called by its bare name, `i || '! = ' || factorial(i)` (8-35, #86): its
+        # module is itself. Not when the caller's own module or its locals already mean that name
+        own = {r.name.lower() for r in (module.routines if module is not None else [])} | \
+            {h.name.lower() for h in list(routine.parameters) + list(routine.declarations)}
+        for name in re.findall(r"(?<![\w$#.])([A-Za-z][\w$#]*)\s*\(", _STRING.sub("''", text or "")):
+            target = modules.get(name.lower())
+            if target is None or target is module or name.lower() in own \
+                    or target.module_kind not in ("function", "procedure"):
+                continue
+            callee = next((r for r in target.routines if r.name.lower() == name.lower()
+                           and overload_of(r) is None), None)
+            if callee is not None:
+                found.setdefault(name.lower(), (target.name, callee))
     return found
 
 
@@ -452,7 +455,7 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
             # the routine itself too: a recursive call (`fibonacci(n - 2)`) needs its own parameter types (#75)
             if overload_of(r) is None:
                 names[f"{r.name.lower()}#parameters"] = ",".join(
-                    java_type(p.type.resolved if p.type else None).name for p in r.parameters
+                    signature_type(p.type).name for p in r.parameters
                     if not (r.enclosing and p.carried))
                 carried = [p.name for p in r.parameters if r.enclosing and p.carried]
                 if carried:
@@ -476,7 +479,7 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
             continue
         names[qualified] = f"{java_name(owner)}.{java_name(routine_stem(callee))}"
         names[f"{qualified}#parameters"] = ",".join(
-            java_type(p.type.resolved if p.type else None).name for p in callee.parameters)
+            signature_type(p.type).name for p in callee.parameters)
         if needs_audit(callee):
             names[f"{qualified}#extra"] = "audit"
     return names
@@ -509,8 +512,10 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
         returns = f"List<{loop_record(routine, returned_rows)}>"
         file.add_import("java.util.List", f"{domain_package}.{loop_record(routine, returned_rows)}")
     elif routine.return_type is not None:
-        mapped = java_type(routine.return_type.resolved or routine.return_type.oracle)
+        mapped = signature_type(routine.return_type)
         file.add_import(*mapped.imports)
+        if record_class(routine.return_type) is not None:
+            file.add_import(f"{domain_package}.{mapped.name}")
         returns = mapped.name
     outs = [p for p in routine.parameters if p.direction in ("OUT", "IN OUT")]
     if outs:
@@ -866,7 +871,7 @@ def _holder_java_type(file: JavaFile, type_ref: "M.TypeRef | None") -> str:
     if record is not None:
         file.add_import(f"{_DOMAIN.get()}.{record}" if _DOMAIN.get() else record)
         return record
-    mapped = java_type(type_ref.resolved if type_ref else None)
+    mapped = signature_type(type_ref)
     file.add_import(*mapped.imports)
     return mapped.name
 
@@ -915,6 +920,21 @@ def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
         file.add_import(f"{_DOMAIN.get()}.{row}" if _DOMAIN.get() else row)
         # a PL/SQL record is born with every field NULL, or the default its TYPE gave the field (#45); the
         # Java record is immutable, so it is built here and rebuilt on each field assignment
+        if declaration.initial:
+            # `r CONSTANT My_Types.My_Rec := My_Types.Init_My_Rec();`: the record the initialiser gives, not one
+            # of NULL fields (5-33)
+            try:
+                rendered = _expr(file, declaration.initial, routine, result)
+            except Untranslatable as e:
+                file.comment(f"not translated: {declaration.name} := {e.text.strip()[:120]}")
+                file.line(f"{row} {_local(declaration.name)} = null;")
+                file.line(f'if (true) throw new UnsupportedOperationException("unresolved in declaration '
+                          f'{declaration.name}: {", ".join(e.names)}");')
+                if routine.id not in result.untranslated:
+                    result.untranslated.append(routine.id)
+                return
+            file.line(f"{row} {_local(declaration.name)} = ({row}) {rendered};")
+            return
         components = []
         for field_name, declared in record_columns(declaration.type.resolved if declaration.type else ""):
             default = re.search(r":=\s*(.+)$", declared)
@@ -1137,7 +1157,7 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
         holder = _holder(routine, statement.target)
         file.line(f"{target} = {_constrain(file, _coerce(file, value, target_type), holder.type if holder else None)};")
     elif kind == "Return":
-        returns = java_type(routine.return_type.resolved or routine.return_type.oracle).name \
+        returns = signature_type(routine.return_type).name \
             if routine.return_type is not None else "void"
         outs = [java_name(p.name) for p in routine.parameters if p.direction in ("OUT", "IN OUT")]
         value = None
@@ -1750,7 +1770,7 @@ def _fit_argument(file: JavaFile, rendered: str, parameter: "M.Parameter | None"
     expressions; a call statement goes through here."""
     if parameter is None or parameter.type is None:
         return rendered
-    expected = java_type(parameter.type.resolved or parameter.type.oracle).name
+    expected = signature_type(parameter.type).name
     if expected in ("Integer", "Double", "Float") and rendered.startswith("Plsql.") \
             and not rendered.startswith(("Plsql.toInt(", "Plsql.toDouble(", "Plsql.toFloat(")):
         return _coerce(file, rendered, expected)   # `p(1, (bb + 3) * 4, ff)` to an INTEGER parameter (8-14, #75)

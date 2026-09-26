@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 from ..ir import model as M
 from .emit import JavaFile
-from .types import java_class_name, java_name, java_type, record_columns, routine_stem
+from .types import signature_type, java_class_name, java_name, java_type, record_columns, routine_stem
 
 
 @dataclass
@@ -106,7 +106,7 @@ def result_record(routine: M.Routine, package: str, source: str = "") -> Dto | N
     file = JavaFile(package=package, name=java_class_name(routine_stem(routine)) + "Result", source=source)
     components = []
     if routine.return_type is not None:
-        mapped = java_type(routine.return_type.resolved or routine.return_type.oracle)
+        mapped = signature_type(routine.return_type)
         file.add_import(*mapped.imports)
         components.append(f"{mapped.name} returned")
     for parameter in outs:
@@ -115,7 +115,7 @@ def result_record(routine: M.Routine, package: str, source: str = "") -> Dto | N
         if record is not None:
             components.append(f"{record} {java_name(parameter.name)}")
             continue
-        mapped = java_type(parameter.type.resolved if parameter.type else None)
+        mapped = signature_type(parameter.type)
         file.add_import(*mapped.imports)
         components.append(f"{mapped.name} {java_name(parameter.name)}")
     file.comment(

@@ -579,6 +579,12 @@ class _Parser:
             if self.peek() is not None and self.peek()[1] == ")":
                 self.take()
             self.result.imports.add(HELPER_IMPORT)
+            current = re.fullmatch(r"Plsql\.sqlerrm\((\w+)\.code\(\), \1\.getMessage\(\)\)", self.scope.get("sqlerrm") or "")
+            if current:
+                # inside a handler, the number of the error being handled gives its own message: SQLERRM(-20000)
+                # after RAISE_APPLICATION_ERROR(-20000, 'Account past due.') is that text (11-13)
+                caught = current.group(1)
+                return f"{HELPER}.sqlerrmOf({code}, {caught}.code(), {caught}.getMessage())"
             return f"{HELPER}.sqlerrmOf({code})"
         head, _, tail = plsql_name.partition(".")
         collection = self.scope.get(f"{head.lower()}#collection")

@@ -258,6 +258,22 @@ def java_name(identifier: str) -> str:
     return f"{name}_" if name in JAVA_KEYWORDS else name
 
 
+def signature_type(type_ref) -> JavaType:
+    """A parameter's or a function's return type. `INTEGER` / `INT` / `SMALLINT` there are subtypes of NUMBER
+    whose precision a formal parameter or a RETURN does not inherit: `test(p INTEGER)` called with 0.66 prints
+    .66 in Oracle. As Integer the value was rounded to 1 (samples/oracle-plsql-docs 8-11); it is a BigDecimal.
+    PLS_INTEGER is a type of its own and stays Integer."""
+    if type_ref is None:
+        return java_type(None)
+    if re.fullmatch(r"\s*(?:INTEGER|INT|SMALLINT)\s*", type_ref.oracle or "", re.IGNORECASE):
+        return java_type("NUMBER")
+    record = record_class(type_ref)
+    if record is not None:
+        # a function returning `My_Types.My_Rec` returns the generated record, not Object (5-33, #74)
+        return JavaType(record, "TEXT")
+    return java_type(type_ref.resolved or type_ref.oracle)
+
+
 def record_class(type_ref) -> str | None:
     """The generated class of a record-typed holder: `EmployeesRow` for a %ROWTYPE, the type's own name for a
     `TYPE ... IS RECORD` (`r_types.r_type_1` -> `RType1`). None for anything else (#74)."""

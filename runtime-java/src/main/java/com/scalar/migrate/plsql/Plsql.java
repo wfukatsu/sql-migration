@@ -638,6 +638,12 @@ public final class Plsql {
     return String.format("ORA-%05d: %s", -n, text);
   }
 
+  /** `SQLERRM(n)` inside a handler: the handled error's own message when n is its number (11-13). */
+  public static String sqlerrmOf(Object code, int current, String message) {
+    if (!isNull(code) && num(code).intValue() == current) return sqlerrm(current, message);
+    return sqlerrmOf(code);
+  }
+
   public static String sqlerrm(int code, String message) {
     if (code == 0) return "ORA-0000: normal, successful completion";
     if (code == 100) return "ORA-01403: no data found";

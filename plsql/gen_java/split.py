@@ -37,7 +37,7 @@ from ..ir import model as M
 from ..limits import Boundaries
 from ..lower import _walk
 from .emit import JavaFile
-from .types import java_name, routine_stem
+from .types import signature_type, java_name, routine_stem
 
 _BOUNDARIES: "contextvars.ContextVar[Boundaries]" = contextvars.ContextVar(
     "boundaries", default=Boundaries())
@@ -475,7 +475,7 @@ def _parameters(file: JavaFile, routine: M.Routine, statements: list[M.Statement
     for parameter in routine.parameters:
         if parameter.direction != "IN" or parameter.name.lower() not in used:
             continue
-        mapped = java_type(parameter.type.resolved if parameter.type else None)
+        mapped = signature_type(parameter.type)
         file.add_import(*mapped.imports)
         out.append((mapped.name, java_name(parameter.name)))
     return out
