@@ -410,6 +410,10 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
             if kind == "list" and holder.type is not None and "%" not in (holder.type.oracle or ""):
                 names[f"{(holder.type.oracle or '').strip().lower()}#constructor"] = kind
                 names[f"{(holder.type.oracle or '').strip().lower()}#element"] = element
+    # CHAR(n) locals hold blank-padded text (#62); comparing one with a literal or another CHAR is blank-padded too
+    for holder in list(routine.parameters) + list(routine.declarations) + trigger_locals:
+        if holder.type is not None and _CHAR_CONSTRAINT.fullmatch(((holder.type.resolved or holder.type.oracle) or "").strip()):
+            names[f"{holder.name.lower()}#blank_padded"] = "1"
     # a schema object type's constructor `emp_grade_t(a, b, 'X')` builds its record (#54)
     from .types import object_types
     for name, resolved in object_types().items():
@@ -1433,12 +1437,12 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
         for p, a in outs:
             if _holder(routine, a) is None and a.lower() not in _BLOCK_LOCALS.get():
                 raise Untranslatable([f"OUT argument {p.name} => {a} is not a local"], statement.callee)
-        arguments = ", ".join(_fit_argument(file, _expr(file, a, routine, result), p)
+        arguments = ", ".join(_fit_argument(file, _argument(file, a, routine, result), p)
                               for p, a in zip([p for p in callee.parameters if p.direction != "OUT"], ins))
     else:
         outs = []
         expected = list(callee.parameters) if callee is not None else []
-        arguments = ", ".join(_fit_argument(file, _expr(file, a, routine, result), expected[i] if i < len(expected) else None)
+        arguments = ", ".join(_fit_argument(file, _argument(file, a, routine, result), expected[i] if i < len(expected) else None)
                               for i, a in enumerate(ordered))
     if statement.resolved_to:
         if callee is not None and needs_audit(callee):
@@ -1533,6 +1537,14 @@ def _collection_call(file: JavaFile, statement: M.Call, routine: M.Routine, resu
     arguments = [java_name(holder.name)] + [_expr(file, a, routine, result) for a in statement.arguments]
     file.line(f"Plsql.{COLLECTION_METHODS[tail.upper()]}({', '.join(arguments)});")
     return True
+
+
+def _argument(file: JavaFile, text: str, routine: M.Routine, result: "ServiceFile") -> str:
+    """One argument of a call statement. A comparison can only be handed to a BOOLEAN parameter, and there it is a
+    value, not a branch: `print_boolean('x', 100 IN (a, b))` with a NULL `a` passes NULL, where the "is TRUE"
+    rendering passed FALSE (samples/oracle-plsql-docs 2-48, #61). `translate` wraps it in `Plsql.bool3` only when
+    the argument is a comparison or a logical operator, so every other argument is rendered as before."""
+    return _expr(file, text, routine, result, boolean_value=True)
 
 
 def _positional(statement: M.Call, callee: M.Routine | None) -> list[str]:
@@ -1943,6 +1955,8 @@ def _holder(routine: M.Routine, target: str):
 
 _NUMBER_CONSTRAINT = re.compile(r"(?:NUMBER|NUMERIC|DECIMAL|DEC)\s*\(\s*(\d+)\s*(?:,\s*(-?\d+)\s*)?\)", re.IGNORECASE)
 _TEXT_CONSTRAINT = re.compile(r"(?:VARCHAR2|VARCHAR|NVARCHAR2)\s*\(\s*(\d+)\s*(CHAR|BYTE)?\s*\)", re.IGNORECASE)
+# CHAR / NCHAR, with or without a length (CHAR alone is CHAR(1)). NCHAR counts characters whatever the setting
+_CHAR_CONSTRAINT = re.compile(r"(N?)CHAR(?:ACTER)?\s*(?:\(\s*(\d+)\s*(CHAR|BYTE)?\s*\))?", re.IGNORECASE)
 
 
 def _constrain(file: JavaFile, value: str, type_ref: "M.TypeRef | None") -> str:
@@ -1950,13 +1964,18 @@ def _constrain(file: JavaFile, value: str, type_ref: "M.TypeRef | None") -> str:
 
     The constraint is behaviour: Oracle rounds to the scale, and raises VALUE_ERROR past the precision or the
     length. BigDecimal and String hold anything, so without this 1.005 stayed 1.005 and 'abcd' fitted in three
-    bytes. A CHAR(n) pads instead, which is another rule, and is left alone here.
+    bytes. A CHAR(n) is checked the same way and then padded with blanks to n (#62).
     """
     declared = ((type_ref.resolved or type_ref.oracle) if type_ref is not None else "") or ""
     number = _NUMBER_CONSTRAINT.fullmatch(declared.strip())
     text = _TEXT_CONSTRAINT.fullmatch(declared.strip())
-    if value == "null" or not (number or text):
+    blank_padded = _CHAR_CONSTRAINT.fullmatch(declared.strip())
+    if value == "null" or not (number or text or blank_padded):
         return value
+    if blank_padded:
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        chars = bool(blank_padded.group(1)) or (blank_padded.group(3) or "").upper() == "CHAR"
+        return f"Plsql.pad({value}, {int(blank_padded.group(2) or 1)}, {'true' if chars else 'false'})"
     if number:
         # NUMBER(9) is an Integer and NUMBER(18) a Long in the generated code (types.java_type), and the helper
         # has to hand back that type: `Long v = Plsql.fit(...)` with a BigDecimal result did not compile

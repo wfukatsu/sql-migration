@@ -454,4 +454,15 @@ class PlsqlTest {
     Thread.sleep(30);
     assertTrue(Plsql.getTime().subtract(before).compareTo(BigDecimal.valueOf(2)) >= 0, "hundredths of a second");
   }
+
+  @Test
+  void aCharIsPaddedToItsSizeAndComparedWithoutTheBlanks() {
+    // CHAR(10) := 'John ' holds 'John      ' (samples/oracle-plsql-docs 3-1, #62)
+    assertEquals("John      ", Plsql.pad("John ", 10, true));
+    assertEquals("Y", Plsql.pad("Y", 1, false));
+    assertNull(Plsql.pad(null, 3, true));
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.ValueError.class, () -> Plsql.pad("See Tom run.", 6, true));
+    assertTrue(Plsql.eq(Plsql.unpad("John      "), Plsql.unpad("John")));
+    assertEquals("", Plsql.unpad("   "), "all blanks is still a value, not NULL");
+  }
 }

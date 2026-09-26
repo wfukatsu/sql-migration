@@ -328,6 +328,30 @@ public final class Plsql {
     return text;
   }
 
+  /**
+   * A value going into CHAR(size): refused past the size as {@link #fit(Object, int, boolean)} does, then padded
+   * with blanks up to it. {@code first_name CHAR(10) := 'John '} holds {@code 'John      '} in Oracle, and a
+   * concatenation or a LENGTH shows it (samples/oracle-plsql-docs 3-1, #62).
+   */
+  public static String pad(Object value, int size, boolean chars) {
+    String text = fit(value, size, chars);
+    if (text == null) return null;
+    int length = chars ? text.codePointCount(0, text.length())
+        : text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+    return length >= size ? text : text + " ".repeat(size - length);
+  }
+
+  /**
+   * One side of a blank-padded comparison (a CHAR(n) local against a literal or another CHAR): the trailing
+   * blanks do not count, and all blanks is still a value -- {@code rtrim} would make it NULL.
+   */
+  public static Object unpad(Object value) {
+    if (!(value instanceof String text)) return value;
+    int end = text.length();
+    while (end > 0 && text.charAt(end - 1) == ' ') end--;
+    return text.substring(0, end);
+  }
+
   // --- the bind boundary (P3-1) -------------------------------------------------------------------------
   //
   // PL/SQL NUMBER becomes BigDecimal in the generated code, and ScalarDB's JDBC driver refuses a BigDecimal
