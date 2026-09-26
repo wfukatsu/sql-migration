@@ -89,13 +89,16 @@ def analyse(operation: SqlOperation, scope: str, symbols: SymbolTable | None = N
         result.issues.append(_issue(issue))
         return result
 
+    # read before strip_into takes the INTO away: asked after, every `SELECT … BULK COLLECT INTO` that no FORALL
+    # pairs with came out a one-row SELECT INTO -- TOO_MANY_ROWS on the second row (oracle-plsql-docs 12-21, #66)
+    bulk = _is_bulk(tree)
     targets = strip_into(tree)
     # after strip_into, not before: `INTO v_row` parses as a table, and a star is only expandable when the
     # statement reads exactly one table
     expand_star(tree, symbols)
     if targets:
         operation.into_targets = list(targets)
-        operation.cardinality = "EXACTLY_ONE" if len(targets) >= 1 and not _is_bulk(tree) else "MANY"
+        operation.cardinality = "EXACTLY_ONE" if len(targets) >= 1 and not bulk else "MANY"
     # no INTO in the SQL does not mean no assignment targets: a cursor rewritten to the query it was (#11)
     # carries them on the node, because the INTO was never part of its text
     result.into_targets = [{"name": t} for t in operation.into_targets]
@@ -333,6 +336,9 @@ def _target_name(node: exp.Expression) -> str:
         return f"{node.table}.{node.name}"
     if isinstance(node, exp.Dot):
         return node.sql(dialect="oracle")
+    if isinstance(node, exp.Table) and node.db:
+        # one target, `INTO rec.dept_name`, parses as a table `dept_name` in schema `rec` (8-37, #74)
+        return f"{node.db}.{node.name}"
     return node.name or node.sql(dialect="oracle")
 
 
@@ -376,7 +382,10 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
     alone, so a real qualified column is untouched.
     """
     loop_fields = {name.lower(): fields for name, fields in (loop_variables or {}).items()}
-    if symbols is None and not loop_fields:
+    # a numeric FOR loop's index (`FOR i IN 1..n LOOP INSERT ... VALUES (i, ...)`) is a PLS_INTEGER no symbol table
+    # declares; capability passes the ones in scope under this key (#85, samples/oracle-plsql-docs 4-24)
+    indexes = {n.lower() for n in (loop_fields.pop("#indexes", None) or {})}
+    if symbols is None and not loop_fields and not indexes:
         return []
     _correlation_as_qualified(tree, loop_fields)
     found: dict[str, BindVariable] = {}
@@ -387,6 +396,17 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
     for column in list(tree.find_all(exp.Column)):
         if column.table:
             fields = loop_fields.get(column.table.lower())
+            routine_name = scope.rsplit(".", 1)[-1].lower() if scope else ""
+            if fields is None and symbols is not None and column.table.lower() == routine_name:
+                # `hire_employee.last_name`: a parameter qualified by its routine's name (10-9, #85)
+                symbol = symbols.resolve(scope, column.name)
+                if symbol is not None and symbol.kind in BIND_KINDS:
+                    placeholder = _unique(column.name, found)
+                    found[placeholder] = BindVariable(
+                        name=placeholder, direction=symbol.direction or "IN",
+                        oracle_type=symbol.type.oracle if symbol.type else None, plsql_variable=column.name)
+                    column.replace(exp.Placeholder(this=placeholder))
+                continue
             if fields is None:
                 continue  # qualified: it is a column of that table, not a variable
             variable = f"{column.table}.{column.name}"
@@ -396,9 +416,15 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
                 plsql_variable=variable)
             column.replace(exp.Placeholder(this=placeholder))
             continue
+        name = column.name
+        if name.lower() in indexes and name.lower() not in columns:
+            placeholder = _unique(name, found)
+            found[placeholder] = BindVariable(name=placeholder, direction="IN", oracle_type="PLS_INTEGER",
+                                              plsql_variable=name)
+            column.replace(exp.Placeholder(this=placeholder))
+            continue
         if symbols is None:
             continue
-        name = column.name
         symbol = symbols.resolve(scope, name)
         if symbol is None and "." in scope:
             # a trigger declares its locals on the trigger (`symbols._trigger`), and its body is the routine

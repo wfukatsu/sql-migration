@@ -462,6 +462,18 @@
             "null"
           ]
         },
+        "enclosing": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "call_spec": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "transactionEffects": {
           "type": "object",
           "additionalProperties": false,

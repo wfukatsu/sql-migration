@@ -137,17 +137,23 @@ def java_type(oracle: str | None, *, money: bool = False) -> JavaType:
     if upper.startswith("DATE"):
         return JavaType("LocalDateTime", "TIMESTAMP",
                         note="Oracle DATE carries a time of day, so it is not LocalDate")
-    if upper.startswith(("BINARY_FLOAT",)):
+    if upper.startswith(("BINARY_FLOAT", "SIMPLE_FLOAT")):
         return JavaType("Float", "FLOAT")
-    if upper.startswith(("BINARY_DOUBLE",)):
+    if upper.startswith(("BINARY_DOUBLE", "SIMPLE_DOUBLE", "DOUBLE PRECISION")):
         return JavaType("Double", "DOUBLE")
+    decimal = re.match(r"^\s*(?:DEC|DECIMAL|NUMERIC)\b\s*(\(.*\))?\s*$", written, re.IGNORECASE)
+    if decimal:
+        # ANSI names of NUMBER (#75: `DEC(5,2)` came out Object)
+        return java_type(f"NUMBER{decimal.group(1) or ''}", money=money)
     if upper.startswith(("RAW", "LONG RAW", "BLOB")):
         return JavaType("byte[]", "BLOB", note="never round-trip through String")
     if upper.startswith(("CLOB", "NCLOB", "LONG")):
         return JavaType("String", "TEXT", note="size and streaming need a decision for large values")
     if upper.startswith("BOOLEAN"):
         return JavaType("Boolean", "BOOLEAN", note="PL/SQL BOOLEAN can be NULL, so not the primitive")
-    if upper.startswith(("PLS_INTEGER", "BINARY_INTEGER", "SIMPLE_INTEGER", "INTEGER", "INT", "SMALLINT")):
+    if re.match(r"(PLS_INTEGER|BINARY_INTEGER|SIMPLE_INTEGER|INTEGER|INT|SMALLINT|NATURALN?|POSITIVEN?|SIGNTYPE)\b",
+                upper):
+        # NATURAL(N) / POSITIVE(N) / SIGNTYPE are PLS_INTEGER with a range (#59); they were Object (#75)
         return JavaType("Integer", "INT")
     if upper.startswith(("FLOAT", "REAL")):
         return JavaType("Double", "DOUBLE")
@@ -213,14 +219,71 @@ JAVA_KEYWORDS = {
 }
 
 
+_PLAIN_UPPER = re.compile(r"[A-Z][A-Z0-9_$#]*")
+
+
+def plsql_identity(identifier: str) -> str:
+    """What makes two PL/SQL names the same name, lower-cased for lookups: `Hello`, `HELLO` and `"HELLO"` are one
+    name; `"Hello"` and `"hello"` are two others (a quoted name keeps its case). A quoted name that is not plain
+    upper case gets a key no unquoted name can have (samples/oracle-plsql-docs 2-1〜2-5, #72)."""
+    name = identifier.strip()
+    if len(name) > 1 and name.startswith('"') and name.endswith('"'):
+        inner = name[1:-1]
+        if _PLAIN_UPPER.fullmatch(inner):
+            return inner.lower()
+        return "q:" + "".join(f"^{c.lower()}" if c.isupper() else c for c in inner)
+    return name.lower()
+
+
 def java_name(identifier: str) -> str:
-    """`v_order_id` -> `vOrderId`. Names come from PL/SQL, so they are snake_case and sometimes prefixed."""
+    """`v_order_id` -> `vOrderId`. Names come from PL/SQL, so they are snake_case and sometimes prefixed.
+
+    A quoted name (#72): `"HELLO"` is the plain name HELLO; `"Begin"` / `"begin"` / `"my col"` keep apart by a
+    suffix that spells their case, since Java would otherwise see one name (`begin_Ulllll`, `begin_lllll`)."""
+    stripped = identifier.strip()
+    if len(stripped) > 1 and stripped.startswith('"') and stripped.endswith('"'):
+        inner = stripped[1:-1]
+        if not _PLAIN_UPPER.fullmatch(inner):
+            base = java_name(re.sub(r"[^\w$#]+", "_", inner))
+            return f"{base}_{''.join('U' if c.isupper() else 'l' if c.islower() else 'x' for c in inner)}"
+        identifier = inner
     parts = [p for p in re.split(r"[_$#]+", identifier.strip()) if p]
     if not parts:
         return "value"
     head, *rest = parts
     name = head.lower() + "".join(p[:1].upper() + p[1:].lower() for p in rest)
+    if not name[:1].isalpha():
+        # a bind named by the literal it carries (`USING 110` in dynamic SQL: 7-20, #76) is not a Java name
+        name = "v" + re.sub(r"\W", "_", name)
     return f"{name}_" if name in JAVA_KEYWORDS else name
+
+
+def signature_type(type_ref) -> JavaType:
+    """A parameter's or a function's return type. `INTEGER` / `INT` / `SMALLINT` there are subtypes of NUMBER
+    whose precision a formal parameter or a RETURN does not inherit: `test(p INTEGER)` called with 0.66 prints
+    .66 in Oracle. As Integer the value was rounded to 1 (samples/oracle-plsql-docs 8-11); it is a BigDecimal.
+    PLS_INTEGER is a type of its own and stays Integer."""
+    if type_ref is None:
+        return java_type(None)
+    if re.fullmatch(r"\s*(?:INTEGER|INT|SMALLINT)\s*", type_ref.oracle or "", re.IGNORECASE):
+        return java_type("NUMBER")
+    record = record_class(type_ref)
+    if record is not None:
+        # a function returning `My_Types.My_Rec` returns the generated record, not Object (5-33, #74)
+        return JavaType(record, "TEXT")
+    return java_type(type_ref.resolved or type_ref.oracle)
+
+
+def record_class(type_ref) -> str | None:
+    """The generated class of a record-typed holder: `EmployeesRow` for a %ROWTYPE, the type's own name for a
+    `TYPE ... IS RECORD` (`r_types.r_type_1` -> `RType1`). None for anything else (#74)."""
+    if type_ref is None:
+        return None
+    if type_ref.origin == "rowtype":
+        return java_class_name(type_ref.oracle.split("%")[0]) + "Row"
+    if type_ref.origin == "record" and not object_class(type_ref.oracle or ""):
+        return java_class_name(type_ref.oracle.rpartition(".")[2])
+    return None
 
 
 def java_class_name(identifier: str) -> str:

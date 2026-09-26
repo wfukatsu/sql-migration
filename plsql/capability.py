@@ -99,8 +99,11 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
                                       f"（{(row_locks or RowLocks()).why(routine.id)}）。"
                                       f"**弾かれた衝突を再試行するのは呼び出し側の責務**である"
                                       f"（計画 §9 / #9）")
+            indexes = _numeric_indexes(routine.body)
             for statement, loops in scoped:
                 loop_variables = _loop_fields(loops)
+                if indexes.get(statement.id):
+                    loop_variables = {**loop_variables, "#indexes": {n: "PLS_INTEGER" for n in indexes[statement.id]}}
                 if routine.routine_kind == "trigger-body":
                     # `:NEW.status` / `:OLD.status` are the row the trigger fired on. The target has no
                     # trigger, so the row comes from whoever calls the generated method -- the same answer
@@ -154,6 +157,32 @@ def _correlation_fields(module: M.Module, schema: "OracleSchema | None") -> dict
         return {}
     fields = {name.lower(): oracle for name, oracle in columns.items()}
     return {"new": dict(fields), "old": dict(fields)}
+
+
+def _numeric_indexes(statements: list[M.Statement], enclosing: frozenset = frozenset()) -> dict[str, set[str]]:
+    """The numeric FOR loop indexes in scope at each statement, by statement id (#85). `walk_scoped` carries
+    only cursor FOR loops, whose variable is a row; an index is a PLS_INTEGER."""
+    import re
+
+    out: dict[str, set[str]] = {}
+    for statement in statements:
+        out[statement.id] = set(enclosing)
+        query = getattr(statement, "query", None)
+        if query is not None:
+            out[query.id] = set(enclosing)
+        inner = enclosing
+        if getattr(statement, "loop_kind", None) in ("for", "forall"):
+            found = re.match(r"\s*([A-Za-z][\w$#]*)\s+IN\b", getattr(statement, "cursor", None) or "", re.IGNORECASE)
+            name = getattr(statement, "variable", None) or (found.group(1) if found else None)
+            if name:
+                inner = enclosing | {name.lower()}
+        for branch in getattr(statement, "branches", []) or []:
+            out.update(_numeric_indexes(branch.body, inner))
+        out.update(_numeric_indexes(getattr(statement, "else_body", []) or [], inner))
+        out.update(_numeric_indexes(getattr(statement, "body", []) or [], inner))
+        for handler in getattr(statement, "exception_handlers", []) or []:
+            out.update(_numeric_indexes(handler.body, inner))
+    return out
 
 
 def _loop_fields(loops: dict[str, M.Loop]) -> dict[str, dict[str, str | None]]:
@@ -304,6 +333,8 @@ def annotate(program: M.Program, report: CapabilityReport) -> None:
     for statement in by_id.values():
         if statement.kind != "SqlOperation" or not statement.into_targets:
             continue
+        if statement.cardinality == "MANY":
+            continue   # BULK COLLECT reads every row into the collection; there is no TOO_MANY_ROWS to keep
         if is_key_access(report.access_paths.get(statement.id)):
             continue
         if statement.at_most_one_row:

@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from .types import java_name
+from .types import java_name, plsql_identity
 
 HELPER = "Plsql"
 HELPER_IMPORT = "com.scalar.migrate.plsql.Plsql"
@@ -24,15 +24,16 @@ AUDIT_IMPORT = "com.scalar.migrate.plsql.AuditContext"
 
 TOKEN = re.compile(r"""
     (?P<string>'(?:[^']|'')*')
+  | (?P<quoted>"[^"]+")
   | (?P<number>\d+(?:\.\d+)?)
   | (?P<bind>:[A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)?)
   | (?P<attribute>[A-Za-z][\w$#]*\s*%\s*[A-Za-z][\w$#]*)
   | (?P<name>[A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)*)
-  | (?P<op><=|>=|<>|!=|\|\||:=|[-+*/(),=<>%])
+  | (?P<op><=|>=|<>|!=|~=|\^=|\|\||:=|[-+*/(),=<>%])
   | (?P<space>\s+)
 """, re.VERBOSE)
 
-COMPARISONS = {"=": "eq", "<>": "ne", "!=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"}
+COMPARISONS = {"=": "eq", "<>": "ne", "!=": "ne", "~=": "ne", "^=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"}
 # Oracle built-ins the helper covers. Anything else is reported, not invented.
 FUNCTIONS = {
     "NVL": f"{HELPER}.nvl", "ROUND": f"{HELPER}.round", "TRUNC": f"{HELPER}.trunc",
@@ -41,7 +42,16 @@ FUNCTIONS = {
     "INITCAP": f"{HELPER}.initcap", "TRIM": f"{HELPER}.trim",
     # text that is not a number raises Plsql.ValueError, which a VALUE_ERROR handler catches (as ORA-06502 does)
     "TO_NUMBER": f"{HELPER}.toNumber",
+    # #84: the SQL functions PL/SQL calls most, each with Oracle's NULL / empty-string rules (Plsql)
+    "LENGTH": f"{HELPER}.length", "LOWER": f"{HELPER}.lower", "SUBSTR": f"{HELPER}.substr",
+    "INSTR": f"{HELPER}.instr", "REPLACE": f"{HELPER}.replace", "LPAD": f"{HELPER}.lpad", "RPAD": f"{HELPER}.rpad",
+    "CONCAT": f"{HELPER}.concat", "COALESCE": f"{HELPER}.coalesce", "NVL2": f"{HELPER}.nvl2",
+    "GREATEST": f"{HELPER}.greatest", "LEAST": f"{HELPER}.least", "POWER": f"{HELPER}.power",
+    "SQRT": f"{HELPER}.sqrt", "CEIL": f"{HELPER}.ceil", "FLOOR": f"{HELPER}.floor", "SIGN": f"{HELPER}.sign",
+    "CHR": f"{HELPER}.chr", "ASCII": f"{HELPER}.ascii", "TO_DATE": f"{HELPER}.toDate",
+    "ADD_MONTHS": f"{HELPER}.addMonths", "LAST_DAY": f"{HELPER}.lastDay",
 }
+
 # Values, not calls. SYSDATE is the database clock, which is not the JVM clock -- the helper takes it from the
 # caller so that a generated routine is testable and the difference stays visible.
 VALUES = {"SYSDATE": f"{HELPER}.sysdate()"}
@@ -86,7 +96,8 @@ class Expression:
         return not self.unknown
 
 
-def translate(text: str | None, names: dict[str, str] | None = None, boolean_value: bool = False) -> Expression:
+def translate(text: str | None, names: dict[str, str] | None = None, boolean_value: bool = False,
+              condition: bool = False) -> Expression:
     """Render one PL/SQL expression as Java. `names` maps PL/SQL identifiers to the Java ones in scope.
 
     `boolean_value`: the result lands in a PL/SQL BOOLEAN (an assignment, a RETURN, an initialiser) rather than
@@ -96,10 +107,12 @@ def translate(text: str | None, names: dict[str, str] | None = None, boolean_val
     """
     if text is None or not text.strip():
         return Expression("")
-    scope = {k.lower(): v for k, v in (names or {}).items()}
+    scope = {plsql_identity(k): v for k, v in (names or {}).items()}
     tokens = _tokens(text.strip())
     result = Expression("")
-    rendered, logical = _render(tokens, scope, result)
+    # `condition`: an IF / ELSIF / WHILE / EXIT WHEN condition. A bare BOOLEAN there is branched on, and a NULL one
+    # is not TRUE: `if (done)` unboxed a null and threw (samples/oracle-plsql-docs 4-31, #65)
+    rendered, logical = _render(tokens, scope, result, strict=condition)
     if boolean_value and logical:
         is_true, _ = _render(tokens, scope, Expression(""), strict=True)
         is_false, _ = _render(tokens, scope, Expression(""), negate=True, strict=True)
@@ -120,7 +133,10 @@ def _tokens(text: str) -> list[tuple[str, str]]:
             position += 1
             continue
         kind = match.lastgroup
-        if kind != "space":
+        if kind == "quoted":
+            # a quoted identifier is a name: under the key that says which name it is (#72)
+            out.append(("name", plsql_identity(match.group())))
+        elif kind != "space":
             out.append((kind, match.group()))
         position = match.end()
     return out
@@ -296,11 +312,20 @@ class _Parser:
             # BOOLEAN の変数や関数の値。NULL のとき `NOT x` は UNKNOWN なので、FALSE のときだけ true にする
             self.result.imports.add(HELPER_IMPORT)
             return f"{HELPER}.isFalse({left})"
-        if self.strict:
+        if self.strict and not self._primitive(start, left):
             # bool3 の引数は boolean。BOOLEAN の変数をそのまま渡すと、NULL のとき unboxing で落ちる
             self.result.imports.add(HELPER_IMPORT)
             return f"{HELPER}.isTrue({left})"
         return left
+
+    def _primitive(self, start: int, rendered: str) -> bool:
+        """An operand that is already a Java `boolean`, never null: a cursor attribute (`c%NOTFOUND` is a flag the
+        generator keeps) or a comparison it spelled out (`(rowCount == 0)` for SQL%NOTFOUND), or a literal."""
+        if rendered in ("true", "false"):
+            return True
+        if self.position == start + 1 and self.tokens[start][0] == "attribute":
+            return True
+        return rendered.startswith("(") and rendered.endswith(")") and any(op in rendered for op in ("==", "!=", " > "))
 
     def _predicate(self, negated: bool, plain: str, opposite: str, arguments: str) -> str:
         """`NOT IN` / `NOT BETWEEN` / `NOT LIKE` は、NULL が絡むと TRUE にならない。`!` では表せない。"""
@@ -356,7 +381,7 @@ class _Parser:
                 return left
             operator = self.take()[1]
             if operator == "*" and self.peek() is not None and self.peek()[1] == "*":
-                # `**` はべき乗。ヘルパに無いので、掛け算 2 つとして読まずに拒む
+                # `**` は parse_unary が読む。ここに来るのは読めなかったときだけ
                 self.take()
                 self.result.unknown.append("**")
             start = self.position
@@ -378,7 +403,16 @@ class _Parser:
         rewrote `-v_qtys(i)` into `-r.qty`, which did)."""
         token = self.peek()
         if token is None or token[0] != "op" or token[1] not in ("-", "+"):
-            return self.parse_primary()
+            base = self.parse_primary()
+            # `x ** n` binds tighter than * and / and than a sign (`-2 ** 2` is -(2 ** 2)): #84
+            while (self.peek() is not None and self.peek()[1] == "*" and self.position + 1 < len(self.tokens)
+                   and self.tokens[self.position + 1][1] == "*"):
+                self.take()
+                self.take()
+                exponent = self.parse_unary()
+                self.result.imports.add(HELPER_IMPORT)
+                base = f"{HELPER}.power({base}, {exponent})"
+            return base
         operator = self.take()[1]
         operand = self.parse_unary()
         if operator == "+":
@@ -516,6 +550,15 @@ class _Parser:
         return f"{HELPER}.{mapped}({value})"
 
     def _call(self) -> str:
+        """A call's arguments are values, not the spine of a condition: `IF f(p_id) = 0` must pass `p_id`, not
+        `Plsql.isTrue(p_id)` (#65 turned strict on for conditions; corpus pkg_shipment showed the leak)."""
+        strict, self.strict = self.strict, False
+        try:
+            return self._call_body()
+        finally:
+            self.strict = strict
+
+    def _call_body(self) -> str:
         """A function call: the name, then each argument parsed as a full expression.
 
         まず**丸ごと名前として**引く。`p_ids(i)` はコレクションの要素で、生成コードは文が走る前から
@@ -528,6 +571,21 @@ class _Parser:
         plsql_name = self.peek()[1]
         if plsql_name.upper() == "UPDATING":
             return self._event_of_column()
+        if plsql_name.upper() == "SQLERRM":
+            # `SQLERRM(n)`: the message of an error number, not the handler's own SQLERRM called (#76, 11-13)
+            self.take()
+            self.take()   # (
+            code = self.parse_or()
+            if self.peek() is not None and self.peek()[1] == ")":
+                self.take()
+            self.result.imports.add(HELPER_IMPORT)
+            current = re.fullmatch(r"Plsql\.sqlerrm\((\w+)\.code\(\), \1\.getMessage\(\)\)", self.scope.get("sqlerrm") or "")
+            if current:
+                # inside a handler, the number of the error being handled gives its own message: SQLERRM(-20000)
+                # after RAISE_APPLICATION_ERROR(-20000, 'Account past due.') is that text (11-13)
+                caught = current.group(1)
+                return f"{HELPER}.sqlerrmOf({code}, {caught}.code(), {caught}.getMessage())"
+            return f"{HELPER}.sqlerrmOf({code})"
         head, _, tail = plsql_name.partition(".")
         collection = self.scope.get(f"{head.lower()}#collection")
         constructor = self.scope.get(f"{plsql_name.lower()}#constructor")
@@ -585,7 +643,15 @@ class _Parser:
             self.result.imports.add(HELPER_IMPORT)
             java = self.scope[head.lower()]
             if not tail:
-                return f"{HELPER}.at({java}, {', '.join(arguments)})"       # `v(i)`: an element
+                element = f"{HELPER}.at({java}, {', '.join(arguments)})"   # `v(i)`: an element
+                # `nva(2)(3)`: an element of an element (#76, 5-11)
+                while self.peek() is not None and self.peek()[1] == "(":
+                    self.take()
+                    index = self.parse_or()
+                    if self.peek() is not None and self.peek()[1] == ")":
+                        self.take()
+                    element = f"{HELPER}.at({element}, {index})"
+                return element
             method = COLLECTION_METHODS.get(tail.upper())
             if method is None:
                 self.result.unknown.append(plsql_name)
@@ -594,9 +660,18 @@ class _Parser:
         if expected != [""] and len(expected) == len(arguments) and not any("=>" in a for a in arguments):
             # a sibling that declares NUMBER takes BigDecimal; the argument may be a Long / Integer local or a literal
             for i, java in enumerate(expected):
-                if java == "BigDecimal" and arguments[i] != "null" and not arguments[i].startswith(f"{HELPER}.dec("):
+                if i >= len(arguments) or arguments[i] == "null":
+                    continue
+                if java == "BigDecimal" and not arguments[i].startswith(f"{HELPER}.dec("):
                     self.result.imports.add(HELPER_IMPORT)
                     arguments[i] = f"{HELPER}.dec({arguments[i]})"
+                elif java in ("Integer", "Double", "Float") and not re.fullmatch(r"-?\d+", arguments[i]) \
+                        and (arguments[i].startswith(HELPER) or re.fullmatch(r"-?\d+\.\d+", arguments[i])):
+                    # `test(0.66)` / `fibonacci(n - 2)`: helper arithmetic is Object or BigDecimal, and an
+                    # Integer parameter rounds a NUMBER the way Plsql.toInt does (#75, 8-11 / 8-36)
+                    self.result.imports.add(HELPER_IMPORT)
+                    helper = {"Integer": "toInt", "Double": "toDouble", "Float": "toFloat"}[java]
+                    arguments[i] = f"{HELPER}.{helper}({arguments[i]})"
         arguments.extend(self._extras(plsql_name))
         return f"{name}({', '.join(arguments)})"
 
@@ -608,7 +683,9 @@ class _Parser:
         if extra == "audit":
             self.result.imports.add(AUDIT_IMPORT)
             self.result.audit = True
-        return [extra]
+            return [extra]
+        # a lifted local subprogram (#80): the enclosing routine's variables it reads, by their PL/SQL names
+        return [self.scope.get(n.lower(), n) for n in extra.split(",")]
 
     def _subscript(self) -> str | None:
         """`name(index)` が丸ごと scope にあればそれを返し、トークンを読み進める。"""

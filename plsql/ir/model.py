@@ -342,6 +342,12 @@ class Routine(Node):
     auth_id: str | None = None        # DEFINER | CURRENT_USER
     deterministic: bool = False
     visibility: str = "public"        # public when declared in the package spec
+    # the routine whose declare section this one was written in (`DECLARE PROCEDURE p IS ...`), lifted to a private
+    # routine of the same module (#80). Only the enclosing routine can call it, so it is not a program-wide name
+    enclosing: str | None = None
+    # `AS LANGUAGE JAVA NAME '...'` / `LANGUAGE C` / `EXTERNAL`: a call specification, whose body is code outside
+    # PL/SQL (#69). Nothing here can be migrated from the source; the rules say REDESIGN
+    call_spec: str | None = None
     transaction_effects: TransactionEffects = field(default_factory=TransactionEffects)
     external_effects: ExternalEffects = field(default_factory=ExternalEffects)
 

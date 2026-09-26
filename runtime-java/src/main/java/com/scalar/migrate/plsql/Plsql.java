@@ -154,6 +154,30 @@ public final class Plsql {
     return value == null ? null : value.toLocalDate().atStartOfDay();
   }
 
+  /** TRUNC on a number, or on a value whose type is only known at run time (a date or a number): #75, 4-23. */
+  public static Object trunc(Object value) {
+    if (isNull(value)) return null;
+    if (isTemporal(value)) return trunc(castDate(value));
+    return num(value).setScale(0, java.math.RoundingMode.DOWN);
+  }
+
+  /** TRUNC(n, places): toward zero at that many decimals (a negative count truncates left of the point). */
+  public static BigDecimal trunc(Object value, Object places) {
+    if (isNull(value) || isNull(places)) return null;
+    BigDecimal cut = num(value).setScale(num(places).intValue(), java.math.RoundingMode.DOWN);
+    return cut.scale() < 0 ? cut.setScale(0) : cut;
+  }
+
+  /** A value going into a BINARY_DOUBLE / REAL / FLOAT local (a Double): #75, 2-13 `radius REAL := 1`. */
+  public static Double toDouble(Object value) {
+    return isNull(value) ? null : (value instanceof Double d ? d : num(value).doubleValue());
+  }
+
+  /** A value going into a BINARY_FLOAT local (a Float): #75, 8-14. */
+  public static Float toFloat(Object value) {
+    return isNull(value) ? null : (value instanceof Float f ? f : num(value).floatValue());
+  }
+
   /**
    * Arithmetic, with Oracle's NULL rule: any operand null makes the result null.
    *
@@ -589,6 +613,37 @@ public final class Plsql {
   }
 
   /** `SQLERRM` inside a handler: Oracle's text is `ORA-nnnnn: message` (the code is negative in PL/SQL). */
+  /** `SQLERRM(n)`: the message Oracle gives for an error number, outside any handler (#76, 11-13). Texts measured on 26ai. */
+  public static String sqlerrmOf(Object code) {
+    if (isNull(code)) return null;
+    int n = num(code).intValue();
+    if (n == 0) return "ORA-0000: normal, successful completion";
+    if (n == 100 || n == -1403) return "ORA-01403: no data found";
+    if (n > 0) return "User-Defined Exception";
+    if (n <= -20000 && n >= -20999) return String.format("ORA-%05d: ", -n);
+    String text = switch (n) {
+      case -1 -> "unique constraint (.) violated on table . columns ()";
+      case -1001 -> "cursor number is invalid or does not exist";
+      case -1422 -> "exact fetch returned more than the requested number of rows ";
+      case -1476 -> "divisor is equal to zero";
+      case -1722 -> "unable to convert string value containing  to a number: ";
+      case -6502 -> "PL/SQL: value or conversion error";
+      case -6511 -> "PL/SQL: cursor already open";
+      case -6530 -> "Reference to uninitialized composite";
+      case -6531 -> "Reference to uninitialized collection";
+      case -6532 -> "subscript outside of limit";
+      case -6533 -> "Subscript beyond count";
+      default -> "Message " + (-n) + " not found";
+    };
+    return String.format("ORA-%05d: %s", -n, text);
+  }
+
+  /** `SQLERRM(n)` inside a handler: the handled error's own message when n is its number (11-13). */
+  public static String sqlerrmOf(Object code, int current, String message) {
+    if (!isNull(code) && num(code).intValue() == current) return sqlerrm(current, message);
+    return sqlerrmOf(code);
+  }
+
   public static String sqlerrm(int code, String message) {
     if (code == 0) return "ORA-0000: normal, successful completion";
     if (code == 100) return "ORA-01403: no data found";
@@ -753,6 +808,41 @@ public final class Plsql {
     ((java.util.Map<?, ?>) collection).remove(key(collection, at));
   }
 
+  /** `v.EXTEND(n, i)`: n copies of element i at the end (#78, samples/oracle-plsql-docs 5-20). */
+  @SuppressWarnings("unchecked")
+  public static void extend(Object collection, Object n, Object i) {
+    if (collection == null) throw collectionIsNull();
+    if (!(collection instanceof java.util.List<?>)) throw new IllegalStateException("EXTEND on an associative array");
+    java.util.List<Object> list = (java.util.List<Object>) collection;
+    int from = num(i).intValueExact();
+    if (from < 1 || from > list.size() || list.get(from - 1) == GAP) {
+      throw new IllegalStateException("SUBSCRIPT_BEYOND_COUNT (ORA-06533): EXTEND copies element " + from);
+    }
+    Object copy = list.get(from - 1);
+    for (int k = num(n).intValueExact(); k > 0; k--) list.add(copy);
+  }
+
+  /**
+   * `v.DELETE(m, n)`: every element whose index is from m to n. Nothing when m is after n, and a missing one is
+   * skipped, as for DELETE(i). A nested table keeps the gaps; an associative array loses the keys (#78, 5-17, 5-18).
+   */
+  @SuppressWarnings("unchecked")
+  public static void delete(Object collection, Object from, Object to) {
+    if (collection == null) throw collectionIsNull();
+    if (isNull(from) || isNull(to)) return;
+    if (collection instanceof java.util.List<?> list) {
+      int low = Math.max(num(from).intValueExact(), 1);
+      int high = Math.min(num(to).intValueExact(), list.size());
+      for (int k = low; k <= high; k++) ((java.util.List<Object>) list).set(k - 1, GAP);
+      return;
+    }
+    java.util.NavigableMap<Object, Object> map = (java.util.NavigableMap<Object, Object>) collection;
+    Object low = key(collection, from);
+    Object high = key(collection, to);
+    if (compare(low, high) > 0) return;
+    map.subMap(low, true, high, true).clear();
+  }
+
   /** `v.TRIM` / `v.TRIM(n)` on a nested table (`trim` itself is the string function). */
   public static void trimTable(Object collection) {
     trimTable(collection, 1);
@@ -883,6 +973,301 @@ public final class Plsql {
 
   public static BigDecimal abs(Object value) {
     return isNull(value) ? null : num(value).abs();
+  }
+
+  // --- SQL functions PL/SQL calls directly (#84). Each keeps Oracle's rules: a NULL argument gives NULL, text
+  // that comes out empty is NULL, positions count from 1 and characters, not bytes.
+
+  public static BigDecimal length(Object value) {
+    if (isNull(value)) return null;
+    String text = text(value);
+    return text.isEmpty() ? null : BigDecimal.valueOf(text.codePointCount(0, text.length()));
+  }
+
+  public static String lower(Object value) {
+    return isNull(value) ? null : emptyIsNull(text(value).toLowerCase(java.util.Locale.ROOT));
+  }
+
+  /** SUBSTR(s, position[, length]): position 0 is 1, a negative one counts from the end; a length below 1 is NULL. */
+  public static String substr(Object value, Object position) {
+    return substr(value, position, null, false);
+  }
+
+  public static String substr(Object value, Object position, Object length) {
+    return substr(value, position, length, true);
+  }
+
+  private static String substr(Object value, Object position, Object length, boolean bounded) {
+    if (isNull(value) || isNull(position) || (bounded && isNull(length))) return null;
+    int[] points = text(value).codePoints().toArray();
+    int start = num(position).setScale(0, java.math.RoundingMode.DOWN).intValue();
+    if (start == 0) start = 1;
+    if (start < 0) start = points.length + start + 1;
+    if (start < 1 || start > points.length) return null;
+    int end = points.length;
+    if (bounded) {
+      BigDecimal n = num(length).setScale(0, java.math.RoundingMode.DOWN);
+      if (n.signum() <= 0) return null;
+      end = (int) Math.min((long) start - 1 + n.longValue(), points.length);
+    }
+    return emptyIsNull(new String(points, start - 1, end - start + 1));
+  }
+
+  /** INSTR(s, search[, position[, occurrence]]): 0 when not found; a negative position searches backward from there. */
+  public static BigDecimal instr(Object value, Object search) {
+    return instr(value, search, 1, 1);
+  }
+
+  public static BigDecimal instr(Object value, Object search, Object position) {
+    return instr(value, search, position, 1);
+  }
+
+  public static BigDecimal instr(Object value, Object search, Object position, Object occurrence) {
+    if (isNull(value) || isNull(search) || isNull(position) || isNull(occurrence)) return null;
+    String text = text(value);
+    String needle = text(search);
+    int start = num(position).intValue();
+    int nth = num(occurrence).intValue();
+    if (start == 0 || nth < 1) return BigDecimal.ZERO;
+    int found = -1;
+    if (start > 0) {
+      int from = start - 1;
+      for (int k = 0; k < nth; k++) {
+        found = text.indexOf(needle, from);
+        if (found < 0) return BigDecimal.ZERO;
+        from = found + 1;
+      }
+    } else {
+      int from = text.length() + start;
+      for (int k = 0; k < nth; k++) {
+        found = text.lastIndexOf(needle, from);
+        if (found < 0) return BigDecimal.ZERO;
+        from = found - 1;
+      }
+    }
+    return BigDecimal.valueOf(text.codePointCount(0, found) + 1L);
+  }
+
+  /** REPLACE(s, from[, to]): a NULL `from` leaves s as it is; a NULL or missing `to` removes the matches. */
+  public static String replace(Object value, Object from) {
+    return replace(value, from, null);
+  }
+
+  public static String replace(Object value, Object from, Object to) {
+    if (isNull(value)) return null;
+    if (isNull(from)) return emptyIsNull(text(value));
+    return emptyIsNull(text(value).replace(text(from), isNull(to) ? "" : text(to)));
+  }
+
+  public static String lpad(Object value, Object length) {
+    return padTo(value, length, " ", true);
+  }
+
+  public static String lpad(Object value, Object length, Object fill) {
+    return isNull(fill) ? null : padTo(value, length, text(fill), true);
+  }
+
+  public static String rpad(Object value, Object length) {
+    return padTo(value, length, " ", false);
+  }
+
+  public static String rpad(Object value, Object length, Object fill) {
+    return isNull(fill) ? null : padTo(value, length, text(fill), false);
+  }
+
+  /** LPAD / RPAD: cut to the length when longer, padded with the fill repeated when shorter. */
+  private static String padTo(Object value, Object length, String fill, boolean left) {
+    if (isNull(value) || isNull(length) || fill.isEmpty()) return null;
+    int size = num(length).setScale(0, java.math.RoundingMode.DOWN).intValue();
+    if (size < 1) return null;
+    int[] points = text(value).codePoints().toArray();
+    if (points.length >= size) return emptyIsNull(new String(points, 0, size));
+    StringBuilder filler = new StringBuilder();
+    int[] fillPoints = fill.codePoints().toArray();
+    for (int k = 0; k < size - points.length; k++) filler.appendCodePoint(fillPoints[k % fillPoints.length]);
+    String body = new String(points, 0, points.length);
+    return left ? filler + body : body + filler;
+  }
+
+  /** COALESCE: the first argument that is not NULL. */
+  public static Object coalesce(Object... values) {
+    for (Object value : values) {
+      if (!isNull(value)) return value;
+    }
+    return null;
+  }
+
+  /** NVL2(x, if not null, if null). */
+  public static Object nvl2(Object value, Object ifNotNull, Object ifNull) {
+    return isNull(value) ? ifNull : ifNotNull;
+  }
+
+  /** GREATEST / LEAST: NULL when any argument is NULL. */
+  public static Object greatest(Object... values) {
+    return extreme(values, 1);
+  }
+
+  public static Object least(Object... values) {
+    return extreme(values, -1);
+  }
+
+  private static Object extreme(Object[] values, int sign) {
+    Object best = null;
+    for (Object value : values) {
+      if (isNull(value)) return null;
+      if (best == null || Integer.signum(compare(value, best)) == sign) best = value;
+    }
+    return best;
+  }
+
+  public static BigDecimal power(Object base, Object exponent) {
+    if (isNull(base) || isNull(exponent)) return null;
+    BigDecimal b = num(base);
+    BigDecimal e = num(exponent);
+    if (e.stripTrailingZeros().scale() <= 0 && e.abs().compareTo(BigDecimal.valueOf(999)) <= 0) {
+      int n = e.intValue();
+      BigDecimal raised = b.pow(Math.abs(n));
+      return n >= 0 ? raised : OracleNumbers.divide(BigDecimal.ONE, raised);
+    }
+    // x ** 0.5 as √x: Oracle's own result differs from it in the last digit or two (it uses exp and ln)
+    if (e.compareTo(new BigDecimal("0.5")) == 0) return sqrt(b);
+    // other fractional exponents in double precision: about 16 digits, where Oracle keeps 39-40
+    return OracleNumbers.round40(new BigDecimal(Math.pow(b.doubleValue(), e.doubleValue())));
+  }
+
+  /** SQRT: rounded as a NUMBER is stored (40 or 39 digits, OracleNumbers.divide). */
+  public static BigDecimal sqrt(Object value) {
+    if (isNull(value)) return null;
+    BigDecimal n = num(value);
+    if (n.signum() < 0) throw new ValueError("argument of SQRT is negative");
+    return OracleNumbers.round40(n.sqrt(new java.math.MathContext(50)));
+  }
+
+  public static BigDecimal ceil(Object value) {
+    return isNull(value) ? null : num(value).setScale(0, java.math.RoundingMode.CEILING);
+  }
+
+  public static BigDecimal floor(Object value) {
+    return isNull(value) ? null : num(value).setScale(0, java.math.RoundingMode.FLOOR);
+  }
+
+  public static BigDecimal sign(Object value) {
+    return isNull(value) ? null : BigDecimal.valueOf(num(value).signum());
+  }
+
+  public static String chr(Object code) {
+    return isNull(code) ? null : new String(Character.toChars(num(code).intValue()));
+  }
+
+  public static BigDecimal ascii(Object value) {
+    if (isNull(value) || text(value).isEmpty()) return null;
+    return BigDecimal.valueOf(text(value).codePointAt(0));
+  }
+
+  /** TO_DATE(text[, format]). Without a format the session's NLS_DATE_FORMAT, DD-MON-RR in English. */
+  public static LocalDateTime toDate(Object value) {
+    return toDate(value, "DD-MON-RR");
+  }
+
+  public static LocalDateTime toDate(Object value, Object format) {
+    if (isNull(value) || isNull(format)) return null;
+    if (value instanceof LocalDateTime d) return d;
+    java.time.format.DateTimeFormatterBuilder builder = new java.time.format.DateTimeFormatterBuilder().parseCaseInsensitive();
+    appendOracleFormat(builder, text(format));
+    java.time.format.DateTimeFormatter formatter = builder
+        .parseDefaulting(java.time.temporal.ChronoField.HOUR_OF_DAY, 0)
+        .parseDefaulting(java.time.temporal.ChronoField.MINUTE_OF_HOUR, 0)
+        .parseDefaulting(java.time.temporal.ChronoField.SECOND_OF_MINUTE, 0)
+        .parseDefaulting(java.time.temporal.ChronoField.DAY_OF_MONTH, 1)
+        .toFormatter(java.util.Locale.ENGLISH);
+    try {
+      return LocalDateTime.parse(text(value).trim(), formatter);
+    } catch (java.time.format.DateTimeParseException e) {
+      throw new ValueError("date " + text(value) + " does not match format " + text(format));
+    }
+  }
+
+  /**
+   * An Oracle date format model, element by element: the elements the examples and the corpus use. RR / YY take a
+   * two-digit year into the century around the current one (1950-2049 today), as Oracle's RR does -- java.time's
+   * `uu` would read 99 as 2099.
+   */
+  private static void appendOracleFormat(java.time.format.DateTimeFormatterBuilder builder, String oracle) {
+    String f = oracle.toUpperCase(java.util.Locale.ROOT);
+    int pivot = java.time.Year.now().getValue() / 100 * 100 - 50;
+    int i = 0;
+    while (i < f.length()) {
+      String rest = f.substring(i);
+      if (rest.startsWith("RRRR") || rest.startsWith("YYYY")) {
+        builder.appendPattern("uuuu");
+        i += 4;
+      } else if (rest.startsWith("RR") || rest.startsWith("YY")) {
+        builder.appendValueReduced(java.time.temporal.ChronoField.YEAR, 2, 2, pivot);
+        i += 2;
+      } else {
+        String[][] elements = {{"HH24", "HH"}, {"HH12", "hh"}, {"MONTH", "MMMM"}, {"MON", "MMM"}, {"MM", "MM"},
+            {"DD", "dd"}, {"MI", "mm"}, {"SS", "ss"}, {"AM", "a"}, {"PM", "a"}};
+        String[] hit = null;
+        for (String[] element : elements) {
+          if (rest.startsWith(element[0])) {
+            hit = element;
+            break;
+          }
+        }
+        if (hit != null) {
+          builder.appendPattern(hit[1]);
+          i += hit[0].length();
+        } else if (Character.isLetter(f.charAt(i))) {
+          throw new UnsupportedOperationException("TO_DATE format element not mapped: " + oracle.substring(i));
+        } else {
+          builder.appendLiteral(oracle.charAt(i++));
+        }
+      }
+    }
+  }
+
+  /** ADD_MONTHS: the last day of a month stays the last day (31-JAN + 1 month is 28/29-FEB, 28-FEB + 1 is 31-MAR). */
+  public static LocalDateTime addMonths(Object value, Object months) {
+    if (isNull(value) || isNull(months)) return null;
+    LocalDateTime date = castDate(value);
+    LocalDateTime moved = date.plusMonths(num(months).intValue());
+    if (date.toLocalDate().equals(date.toLocalDate().withDayOfMonth(date.toLocalDate().lengthOfMonth()))) {
+      moved = moved.withDayOfMonth(moved.toLocalDate().lengthOfMonth());
+    }
+    return moved;
+  }
+
+  public static LocalDateTime lastDay(Object value) {
+    if (isNull(value)) return null;
+    LocalDateTime date = castDate(value);
+    return date.withDayOfMonth(date.toLocalDate().lengthOfMonth());
+  }
+
+  /**
+   * `SELECT a, b BULK COLLECT INTO va, vb` (#66): column `index` of every row, as a nested table of `type` -- a
+   * NUMBER column read as BigDecimal, an INTEGER one as Integer. No row is an empty collection, not NULL.
+   */
+  public static <T> java.util.List<T> column(java.util.List<Object[]> rows, int index, Class<T> type) {
+    java.util.List<T> out = new java.util.ArrayList<>(rows.size());
+    for (Object[] row : rows) {
+      Object value = row[index];
+      if (value == null || type.isInstance(value)) {
+        out.add(type.cast(value));
+      } else if (type == BigDecimal.class) {
+        out.add(type.cast(num(value)));
+      } else if (type == Integer.class) {
+        out.add(type.cast(toInt(value)));
+      } else if (type == Long.class) {
+        out.add(type.cast(num(value).longValueExact()));
+      } else if (type == String.class) {
+        out.add(type.cast(text(value)));
+      } else if (type == LocalDateTime.class) {
+        out.add(type.cast(castDate(value)));
+      } else {
+        out.add(type.cast(value));
+      }
+    }
+    return out;
   }
 
   /** Oracle's {@code IN}: false when the left side is null, since the comparison is unknown. */

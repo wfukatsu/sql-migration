@@ -54,3 +54,15 @@ rules:
       - timeout・再試行・冪等性を決める
     requiredTests:
       - external_failure
+
+  - id: EXT-002
+    match: {callSpec: true}
+    decision: REDESIGN
+    severity: critical
+    message: 呼び出し仕様（LANGUAGE JAVA / C、EXTERNAL）です。本体はデータベースの中の Java や C で、PL/SQL からは移せません
+    remediation:
+      - 本体（Java ストアド・プロシージャ、外部ライブラリ）をアプリケーションへ移す
+      - 呼び出し側から見た振る舞い（引数・例外・副作用）をテストで固定する
+    requiredTests:
+      - equivalent_result
+

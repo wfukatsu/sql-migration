@@ -406,10 +406,17 @@ class Decomposer:
         except Exception:  # noqa: BLE001
             return []
         out: list = []
+        meta = self.registry.get(table.name) if getattr(self, "registry", None) is not None else None
+        known = {c.lower() for c in meta.columns} if meta is not None and meta.columns else None
         for conjunct in _flatten(cond, exp.And):
             group = []
             for leaf in _flatten(conjunct, exp.Or):
                 p = self._leaf_predicate(_unparen(leaf), scope, alias)
+                if p is not None and known is not None and p.column.lower() not in known:
+                    # an unqualified name the scope gave this table although the table has no such column -- a
+                    # derived table's `staff` (`COUNT(*) AS staff`): pushed into the fetch, ScalarDB said "column
+                    # staff does not exist" (samples/oracle-plsql-docs 6-22, #68). The residual engine keeps it
+                    p = None
                 if p is None:
                     group = None
                     break

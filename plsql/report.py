@@ -107,6 +107,33 @@ class Analysis:
         return [(m, r) for m in self.program.modules for r in m.routines]
 
 
+def _resolve_package_types(program: M.Program, table: SymbolTable) -> None:
+    """`x OUT r_types.r_type_1`: a RECORD or collection type another package declares. Each file's symbol table
+    sees only its own scopes, so the type stayed `declared` as written and the generator typed the variable
+    Object -- `x.f()` did not compile (samples/oracle-plsql-docs 8-16 / 8-18 / 8-21, #74). With every file's
+    scopes merged, the package's own declaration answers it."""
+    import re as _re
+
+    def resolve(type_: "M.TypeRef | None") -> "M.TypeRef | None":
+        if type_ is None or type_.origin != "declared":
+            return type_
+        qualified = _re.fullmatch(r"\s*([A-Za-z][\w$#]*)\s*\.\s*([A-Za-z][\w$#]*)\s*", type_.oracle or "")
+        scope = table.scopes.get(qualified.group(1).lower()) if qualified else None
+        declared = scope.symbols.get(qualified.group(2).lower()) if scope is not None else None
+        if declared is None or declared.kind != "type" or declared.type is None \
+                or declared.type.origin not in ("record", "collection"):
+            return type_
+        return M.TypeRef(type_.oracle, declared.type.resolved, declared.type.origin, type_.schema_snapshot)
+
+    for module in program.modules:
+        for holder in module.declarations:
+            holder.type = resolve(holder.type)
+        for routine in module.routines:
+            routine.return_type = resolve(routine.return_type)
+            for holder in list(routine.parameters) + list(routine.declarations):
+                holder.type = resolve(holder.type)
+
+
 def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: str = "corpus",
             scalardb_schema: str | Path | None = None,
             row_locks: "RowLocks | None" = None, boundaries=None, limits=None, db_links=None,
@@ -153,8 +180,11 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
             continue
         parsed = parse_file(spec)
         analysis.parsed.append(parsed)
+        # its scope too: the RECORD types it declares are what other units' variables are typed with (#74)
+        analysis.symbols.append(build(parsed, schema, set()))
         program.modules.extend(lower_file(parsed, None, schema, set()))
 
+    _resolve_package_types(program, analysis.symbol_table())
     # #12: 移行先に trigger は無いので、**書き込む側が呼ぶ**。移行先のスキーマが渡っているかに
     # 関わらず行う——「その更新が 1 行に絞れるか」は Oracle の主キーの話である
     # #26 の続き: 記録された routine の MERGE を「読んでから UPDATE か INSERT を選ぶ」へ割る。

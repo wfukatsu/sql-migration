@@ -120,7 +120,8 @@ class Decision:
         return sorted({test for m in self.matches for test in m.rule.required_tests})
 
     def remediation(self) -> list[str]:
-        return [step for m in self.matches for step in m.rule.remediation]
+        # a rule that fires at two statements offers the same alternatives twice; say them once
+        return list(dict.fromkeys(step for m in self.matches for step in m.rule.remediation))
 
 
 @dataclass
@@ -348,6 +349,8 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
         "authId": lambda v: routine.auth_id in _as_set(v),
         "dbLink": lambda v: bool(effects and effects.external.db_links) is v,
         "externalPackage": lambda v: bool(effects and effects.external.packages) is v,
+        # a call specification (`AS LANGUAGE JAVA NAME ...`): its body is Java or C inside the database (#69)
+        "callSpec": lambda v: bool(routine.call_spec) is v,
         "writeThenScan": lambda v: (routine.id in {r for r, _ in analysis.write_then_scan()}) is v,
         "recursive": lambda v: any(routine.id in cycle for cycle in analysis.call_graph.cycles()) is v,
         # a call that resolves to no routine in the program: code nobody analysed, which may commit, send mail,
@@ -554,8 +557,8 @@ def _verdict(routine: M.Routine, matches: list[Match], confidence: Confidence,
 
     if floor != "AUTO":
         decision.verdict = floor
-        decision.reasons = [f"{m.rule.id}: {m.rule.message}" for m in matches
-                            if m.rule.decision == floor]
+        decision.reasons = list(dict.fromkeys(f"{m.rule.id}: {m.rule.message}" for m in matches
+                                              if m.rule.decision == floor))
         return decision
 
     # no rule objected: confidence decides between AUTO and REVIEW

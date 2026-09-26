@@ -227,17 +227,93 @@ class _Lowerer:
             context, ids, name, stop={"Procedure_bodyContext", "Function_bodyContext"}))
         if not spec:
             bodies = list(_descend(context, {"Procedure_bodyContext", "Function_bodyContext"}))
+            self.module_routines = {_routine_name(b).lower() for b in bodies}
+            self.lifted = []
             for body, ordinal in zip(bodies, overload_ordinals([_routine_name(b) for b in bodies])):
                 module.routines.append(self._routine(body, module=name, ordinal=ordinal))
+            module.routines.extend(self.lifted)
+            self.lifted, self.module_routines = [], set()
         return module
 
     def _standalone(self, context: ParserRuleContext) -> M.Module:
+        self.lifted = []
         routine = self._routine(context, module=None)
         self.module_name = routine.name
         module = M.Module(id=routine.name, kind="Module", name=routine.name,
                           module_kind=routine.routine_kind, source_range=self._range(context),
-                          routines=[routine])
+                          routines=[routine] + self.lifted)
+        self.lifted = []
         return module
+
+    def _lift(self, nested: ParserRuleContext, outer: M.Routine, module: str) -> str | None:
+        """Lower a subprogram from `outer`'s declare section as `<module>.<name>`, private, into `self.lifted`.
+        Returns why it cannot be lifted instead: it reads `outer`'s own names, or the module already has one of
+        its name."""
+        name = _routine_name(nested)
+        taken = {r.name.lower() for r in self.__dict__.get("lifted", [])} | self.__dict__.get("module_routines", set())
+        if name.lower() in taken or name.lower() == outer.name.lower():
+            return f"shares its name with another routine of the module ({name})"
+        lifted = self._routine(nested, module=module)
+        own = {p.name.lower() for p in lifted.parameters} | {d.name.lower() for d in lifted.declarations}
+        holders = {h.name.lower(): h for h in list(outer.parameters) + list(outer.declarations)
+                   if h.name.lower() not in own}
+        text = re.sub(r"'(?:[^']|'')*'|--[^\n]*", " ", _text(nested))
+        used = {w.lower() for w in re.findall(r"[A-Za-z][\w$#]*", text)}
+        # the enclosing routine's TYPEs resolve through the symbol table (the nested scope sits inside the outer
+        # one); its variables and parameters are what the lifted routine needs handed to it
+        qualified = sorted({m.lower() for m in re.findall(rf"\b{re.escape(outer.name)}\s*\.\s*([A-Za-z][\w$#]*)", text, re.I)})
+        if qualified:
+            # `check_credit.rating` reaches past a local of the same name to the enclosing one: an argument named
+            # `rating` cannot stand for both (2-19)
+            return f"qualifies the enclosing routine's {', '.join(qualified)} by its name"
+        captured = sorted(n for n in holders.keys() & used if getattr(holders[n], "declaration_kind", None) != "type")
+        cursors = [n for n in captured if getattr(holders[n], "declaration_kind", None) in ("cursor", "exception")]
+        if cursors:
+            return f"uses the enclosing routine's cursor or exception {', '.join(cursors)}"
+        assigned = [n for n in captured if not self._carriable(holders[n], text, n)]
+        if assigned:
+            return f"assigns the enclosing routine's {', '.join(assigned)}"
+        lifted.visibility = "private"
+        lifted.enclosing = outer.id
+        lifted.__dict__["captured"] = {n: holders[n] for n in captured}
+        self.__dict__.setdefault("lifted", []).append(lifted)
+        return None
+
+    @staticmethod
+    def _carriable(holder, text: str, name: str) -> bool:
+        """Whether the enclosing routine's `name` can be handed to the lifted routine as an argument (#80). It
+        can when the lifted routine only reads it, or changes a collection in place (`v(i) := x`, `v.EXTEND`: the
+        List or Map is the same object on both sides). Assigning the whole variable, a record field (the Java
+        record is rebuilt, not changed), or fetching INTO it would change a copy the caller never sees."""
+        word = rf"\b{re.escape(name)}\b"
+        if re.search(word + r"\s*:=", text, re.I) or re.search(word + r"\s*\.\s*[A-Za-z][\w$#]*\s*:=", text, re.I):
+            return False
+        if re.search(r"\bINTO\b[^;]*" + word, text, re.I):
+            return False
+        return True
+
+    def _carry_captured(self, outer: M.Routine) -> None:
+        """Give each routine lifted out of `outer` the enclosing variables it reads as trailing IN parameters the
+        caller carries (the #46 mechanism: a call passes its own variable of the same name). A lifted routine that
+        calls another one needs that one's too, so the sets are closed over the calls between them first."""
+        mine = [r for r in self.__dict__.get("lifted", []) if r.enclosing == outer.id and "captured" in r.__dict__]
+        texts = {r.id: self._source_text.get(r.id, "") for r in mine}
+        changed = True
+        while changed:
+            changed = False
+            for caller in mine:
+                for callee in mine:
+                    if callee is caller or not re.search(rf"\b{re.escape(callee.name)}\b", texts[caller.id], re.I):
+                        continue
+                    missing = {n: h for n, h in callee.__dict__["captured"].items() if n not in caller.__dict__["captured"]}
+                    if missing:
+                        caller.__dict__["captured"].update(missing)
+                        changed = True
+        for r in mine:
+            for name, holder in r.__dict__.pop("captured").items():
+                r.parameters.append(M.Parameter(
+                    id=f"{r.id}#param-carried-{name}", kind="Parameter", name=holder.name, direction="IN",
+                    type=holder.type, carried=True, source_range=holder.source_range))
 
     def _trigger(self, context: ParserRuleContext) -> M.Module:
         name = _text(_child(context, "Trigger_nameContext")).split(".")[-1].lower() or "<trigger>"
@@ -325,6 +401,9 @@ class _Lowerer:
         elif re.search(r"\bAUTHID\s+DEFINER\b", text, re.IGNORECASE):
             routine.auth_id = "DEFINER"
         routine.deterministic = bool(re.search(r"\bDETERMINISTIC\b", text, re.IGNORECASE))
+        spec = re.search(r"\b(?:AS|IS)\s+(?:LANGUAGE\s+(JAVA|C)\b|(EXTERNAL)\b)", text, re.IGNORECASE)
+        if spec and _child(context, "BodyContext") is None:
+            routine.call_spec = (spec.group(1) or spec.group(2)).upper()
 
         body = _child(context, "BodyContext")
         if body is not None:
@@ -332,13 +411,23 @@ class _Lowerer:
             # 宣言部に書かれた入れ子の procedure / function は、まだ routine として下ろしていない。以前は
             # 黙って消えていて、中の COMMIT も見えず、引数は外側の引数に混ざっていた。下ろせないものは
             # Unsupported として残す——LOWER-001 が AUTO を止め、生成側は本体ごと拒む
+            # #80: one that reads nothing of this routine's own is lifted to a private routine of the module --
+            # the shape of a package's private procedure, which every later stage already handles. One that
+            # reads this routine's variables, parameters or types would need them carried and stays Unsupported
             for nested in _descend(context, NESTED_SUBPROGRAMS, stop={"BodyContext"}):
+                self.__dict__.setdefault("_source_text", {})[routine_id_of(module or name, _routine_name(nested))] = \
+                    re.sub(r"'(?:[^']|'')*'|--[^\n]*", " ", _text(nested))
+                reason = self._lift(nested, routine, module or name)
+                if reason is None:
+                    continue
                 node = M.Unsupported(id=ids.next("stmt"), kind="Unsupported", source_range=self._range(nested),
                                      text=_text(nested), construct="NestedSubprogram")
                 node.add("WARN", "UNSUPPORTED_CONSTRUCT",
-                         "a nested subprogram is not lowered yet; whatever it does (COMMIT included) is "
+                         f"a nested subprogram that {reason} is not lowered; whatever it does (COMMIT included) is "
                          "invisible to the rules, so the routine cannot be AUTO while it is present")
                 routine.body.insert(0, node)
+            self._carry_captured(routine)
+            self.routine_id = routine_id   # lowering a nested one moved it
             # the routine's own handlers, not every handler inside it: a nested block keeps its own (#18)
             for handler in _descend(body, {"Exception_handlerContext"},
                                     stop={"BodyContext", "BlockContext"}):
@@ -442,8 +531,21 @@ class _Lowerer:
         body = inner or context
         node = M.Block(id=ids.next("stmt"), kind="Block", source_range=source)
         if inner is not None:   # a `DECLARE` of its own; without one the body is the whole block
-            node.declarations = self._declarations(context, ids, self.routine_id, stop={"BodyContext"})
+            # not into a subprogram declared here: its locals are its own, not the block's (2-22 read the nested
+            # procedure's `x` as a second `x` of the block)
+            node.declarations = self._declarations(context, ids, self.routine_id,
+                                                   stop={"BodyContext"} | NESTED_SUBPROGRAMS)
         node.body = self._statements(_child(body, "Seq_of_statementsContext") or body, ids)
+        if inner is not None:
+            # a subprogram in a nested block's DECLARE is not lifted (#80 lifts the routine's own); it is kept
+            # visible as Unsupported rather than dropped, so a call to it is not mistaken for an external one
+            for nested in _descend(context, NESTED_SUBPROGRAMS, stop={"BodyContext"}):
+                unsupported = M.Unsupported(id=ids.next("stmt"), kind="Unsupported", source_range=self._range(nested),
+                                            text=_text(nested), construct="NestedSubprogram")
+                unsupported.add("WARN", "UNSUPPORTED_CONSTRUCT",
+                                "a subprogram declared in a nested block is not lowered; the routine cannot be AUTO "
+                                "while it is present")
+                node.body.insert(0, unsupported)
         for handler in _descend(body, {"Exception_handlerContext"},
                                 stop={"BodyContext", "BlockContext"}):
             node.exception_handlers.append(self._handler(handler, ids))

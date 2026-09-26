@@ -53,6 +53,23 @@ def selects_star(tree: exp.Expression) -> bool:
                                            for e in select.expressions))
 
 
+def select_names(sql: str | None) -> list[str | None]:
+    """The name each select item goes by in the result: its alias, else its column. `(salary * .05) raise` is
+    `raise` -- a cursor's %ROWTYPE field, which `select_columns` (the table column behind the item) has no name
+    for (samples/oracle-plsql-docs 6-10, #73). None where the item has neither."""
+    import sqlglot
+
+    try:
+        tree = sqlglot.parse_one(sql or "", read="oracle")
+    except Exception:  # noqa: BLE001  an unparsable query has no names to offer
+        return []
+    select = tree if isinstance(tree, exp.Select) else tree.find(exp.Select)
+    if select is None:
+        return []
+    return [item.alias_or_name or None if isinstance(item, (exp.Alias, exp.Column)) else None
+            for item in select.expressions]
+
+
 def select_columns(tree: exp.Expression) -> list[str | None]:
     """The column behind each select item, or None where there is not exactly one."""
     select = tree if isinstance(tree, exp.Select) else tree.find(exp.Select)

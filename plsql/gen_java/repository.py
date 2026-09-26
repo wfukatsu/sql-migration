@@ -89,8 +89,8 @@ def _loop_rows(file: JavaFile, name: str, loop: M.Loop, result: RepositoryFile, 
         f.line("String bound = Residual.bindNamed(sql, params, values);")
         f.line(f"List<{record}> rows = new ArrayList<>();")
         with f.block("try (PreparedStatement statement = connection.prepareStatement(bound))") as g:
-            with g.block("for (int i = 0; i < values.size(); i++)") as h:
-                h.line("statement.setObject(i + 1, values.get(i));")
+            with g.block("for (int i_ = 0; i_ < values.size(); i_++)") as h:
+                h.line("statement.setObject(i_ + 1, values.get(i_));")
             with g.block("try (ResultSet rows_ = statement.executeQuery())") as g2:
                 with g2.block("while (rows_.next())") as g3:
                     if limit is not None:
@@ -295,8 +295,13 @@ def loop_record(routine: M.Routine, loop: M.Loop) -> str:
     return _record_for(loop_method(routine, loop))
 
 
+# the routine whose statements are being generated: `_row` reads the INTO target's declared type off it (#73)
+_ROUTINE: "contextvars.ContextVar[M.Routine | None]" = contextvars.ContextVar("repository_routine", default=None)
+
+
 def _method(file: JavaFile, routine: M.Routine, statement: M.SqlOperation,
             result: RepositoryFile) -> None:
+    _ROUTINE.set(routine)
     name = f"{java_name(routine_stem(routine))}{sql_suffix(statement)}"
     if statement.source_range is not None:
         file.comment(f"{statement.source_range.file}:{statement.source_range.start_line}")
@@ -344,12 +349,14 @@ def _direct(file: JavaFile, name: str, statement: M.SqlOperation, result: Reposi
         f.line("List<Object> values = new ArrayList<>();")
         f.line("String bound = Residual.bindNamed(sql, params, values);")
         with f.block("try (PreparedStatement statement = connection.prepareStatement(bound))") as g:
-            with g.block("for (int i = 0; i < values.size(); i++)") as h:
-                h.line("statement.setObject(i + 1, values.get(i));")
+            with g.block("for (int i_ = 0; i_ < values.size(); i_++)") as h:
+                h.line("statement.setObject(i_ + 1, values.get(i_));")
             if returns == "int":
                 g.line("return statement.executeUpdate();")
             elif statement.cardinality == "AT_MOST_ONE":
                 _first_row(g, reader)
+            elif statement.cardinality == "MANY" and statement.into_targets:
+                _all_rows(g, reader)
             elif statement.into_targets:
                 _select_into(g, reader, statement)
             else:
@@ -381,6 +388,16 @@ def _first_row(file: JavaFile, reader: str) -> None:
         with f.block("if (!rows.next())") as g:
             g.line("return null;   // %NOTFOUND")
         f.line(f"return {reader};")
+
+
+def _all_rows(file: JavaFile, reader: str) -> None:
+    """BULK COLLECT (#66): every row, none of them an error -- no row is an empty collection, as in Oracle."""
+    file.add_import("java.util.ArrayList", "java.util.List")
+    with file.block("try (ResultSet rows = statement.executeQuery())") as f:
+        f.line("List<Object[]> all = new ArrayList<>();")
+        with f.block("while (rows.next())") as g:
+            g.line(f"all.add({reader});")
+        f.line("return all;")
 
 
 def _select_into(file: JavaFile, reader: str, statement: M.SqlOperation) -> None:
@@ -510,6 +527,14 @@ def _row(file: JavaFile, statement: M.SqlOperation) -> str:
     """
     table = (statement.read_set or [None])[0]
     record = java_class_name(table) + "Row"
+    # `rec1 RecordTyp` (a `TYPE ... IS RECORD`) is built as its own class, which `dto` generates; the table's
+    # `EmployeesRow` exists only for a %ROWTYPE and did not compile here (samples/oracle-plsql-docs 5-48, #73)
+    routine = _ROUTINE.get()
+    target = (statement.into_targets or [""])[0].lower()
+    declared = next((d for d in (routine.declarations if routine is not None else [])
+                     if d.name.lower() == target and d.type is not None), None)
+    if declared is not None and declared.type.origin == "record":
+        record = java_class_name(declared.type.oracle.rpartition(".")[2])
     file.add_import(f"{getattr(file, 'domain_package', '')}.{record}")
     arguments = []
     for i, oracle in enumerate(statement.into_oracle_types or [], start=1):
@@ -568,6 +593,11 @@ def _return(file: JavaFile, statement: M.SqlOperation) -> tuple[str, str]:
     if (statement.sql_kind or "").upper() in ("INSERT", "UPDATE", "DELETE", "MERGE"):
         return "int", ""   # SQL%ROWCOUNT is part of the behaviour
     if statement.into_targets:
+        if statement.cardinality == "MANY":
+            # BULK COLLECT (#66): every row, each as its columns; the service hands column i to collection i
+            return "List<Object[]>", "new Object[] {" + ", ".join(
+                _read(file, statement, i)
+                for i in range(1, max(len(statement.into_targets), len(statement.into_columns or [])) + 1)) + "}"
         if statement.cardinality == "AT_MOST_ONE":
             # always an array, even for one target: `null` has to mean "no row", and a one-value return could
             # not tell that apart from a row whose only column is NULL
