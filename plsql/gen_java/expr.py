@@ -87,7 +87,8 @@ class Expression:
         return not self.unknown
 
 
-def translate(text: str | None, names: dict[str, str] | None = None, boolean_value: bool = False) -> Expression:
+def translate(text: str | None, names: dict[str, str] | None = None, boolean_value: bool = False,
+              condition: bool = False) -> Expression:
     """Render one PL/SQL expression as Java. `names` maps PL/SQL identifiers to the Java ones in scope.
 
     `boolean_value`: the result lands in a PL/SQL BOOLEAN (an assignment, a RETURN, an initialiser) rather than
@@ -100,7 +101,9 @@ def translate(text: str | None, names: dict[str, str] | None = None, boolean_val
     scope = {plsql_identity(k): v for k, v in (names or {}).items()}
     tokens = _tokens(text.strip())
     result = Expression("")
-    rendered, logical = _render(tokens, scope, result)
+    # `condition`: an IF / ELSIF / WHILE / EXIT WHEN condition. A bare BOOLEAN there is branched on, and a NULL one
+    # is not TRUE: `if (done)` unboxed a null and threw (samples/oracle-plsql-docs 4-31, #65)
+    rendered, logical = _render(tokens, scope, result, strict=condition)
     if boolean_value and logical:
         is_true, _ = _render(tokens, scope, Expression(""), strict=True)
         is_false, _ = _render(tokens, scope, Expression(""), negate=True, strict=True)

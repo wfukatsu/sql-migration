@@ -1057,7 +1057,7 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
             if statement.label.lower() not in _LOOP_LABELS.get():
                 raise Untranslatable([f"{kind.upper()} {statement.label}"], statement.label)
             jump = f"{jump} {java_name(statement.label)}"
-        file.line(f"if ({_expr(file, statement.condition, routine, result)}) {jump};"
+        file.line(f"if ({_expr(file, statement.condition, routine, result, condition=True)}) {jump};"
                   if statement.condition else f"{jump};")
     elif kind == "Null":
         file.line("// NULL;")
@@ -1089,7 +1089,7 @@ def _trigger_when(file: JavaFile, routine: M.Routine, result: ServiceFile) -> bo
         return False
     file.comment(f"WHEN ({condition})")
     try:
-        file.line(f"if (!({_expr(file, condition, routine, result)})) return;")
+        file.line(f"if (!({_expr(file, condition, routine, result, condition=True)})) return;")
     except Untranslatable as e:
         # 条件が読めないまま本体を動かすと、**元より多く実行する**。拒むほうを選ぶ。
         file.comment(f"    unresolved: {', '.join(e.names)}")
@@ -1172,7 +1172,7 @@ def _block(file: JavaFile, statement: M.Block, routine: M.Routine, result: Servi
 def _if(file: JavaFile, statement: M.If, routine: M.Routine, result: ServiceFile) -> None:
     for index, branch in enumerate(statement.branches):
         keyword = "if" if index == 0 else "} else if"
-        condition = _expr(file, branch.condition, routine, result)
+        condition = _expr(file, branch.condition, routine, result, condition=True)
         with file.block(("if" if index == 0 else "else if") + f" ({condition})") as f:
             _statements(f, branch.body, routine, result)
     if statement.else_body:
@@ -1184,7 +1184,8 @@ def _case(file: JavaFile, statement: M.Case, routine: M.Routine, result: Service
     file.comment("CASE lowered to if/else: PL/SQL CASE without ELSE raises CASE_NOT_FOUND, "
                  "which the final else preserves")
     for index, branch in enumerate(statement.branches):
-        condition = _expr(file, branch.condition, routine, result)
+        # a searched CASE branches on its WHEN like an IF (#65); a simple CASE's WHEN is a value to compare
+        condition = _expr(file, branch.condition, routine, result, condition=not statement.selector)
         if statement.selector:
             condition = f"Plsql.eq({_expr(file, statement.selector, routine, result)}, {condition})"
             file.add_import("com.scalar.migrate.plsql.Plsql")
@@ -1201,7 +1202,7 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
     label = f"{java_name(statement.label)}: " if statement.label else ""
     index_name = None   # a numeric FOR loop's index: a local of the body only
     if statement.loop_kind == "while":
-        opening = f"{label}while ({_expr(file, statement.condition, routine, result)})"
+        opening = f"{label}while ({_expr(file, statement.condition, routine, result, condition=True)})"
     elif statement.loop_kind == "cursor-for" and statement.query is not None:
         _cursor_for(file, statement, routine, result)
         return
@@ -2112,7 +2113,7 @@ def _flag_name(cursor: str) -> str:
 
 
 def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "ServiceFile | None",
-          module: M.Module | None = None, boolean_value: bool = False) -> str:
+          module: M.Module | None = None, boolean_value: bool = False, condition: bool = False) -> str:
     """Translate an expression, or refuse.
 
     An unrecognised name reaching the output would either fail to compile or, worse, resolve to something with
@@ -2122,7 +2123,7 @@ def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "Service
     names = {**_scope(routine, module or _MODULE.get()), **_BLOCK_LOCALS.get(), **_LOOP_ROWS.get(),
              **_HANDLER_ERROR.get()}
     names.update({f"{flag}%notfound": _flag_name(flag) for flag in _not_found_flags(routine)})
-    rendered = translate(text, names, boolean_value=boolean_value)
+    rendered = translate(text, names, boolean_value=boolean_value, condition=condition)
     for name in rendered.unknown:
         if result is not None and name not in result.unknown_names:
             result.unknown_names.append(name)
