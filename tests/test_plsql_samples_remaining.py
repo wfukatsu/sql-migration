@@ -233,3 +233,13 @@ def test_an_object_constructor_is_not_a_call_into_unanalysed_code(tmp_path):
     decision = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(),
                       Evidence(captures={"grades": (1, 1)}))["grades"]
     assert "CALL-001" not in {m.rule.id for m in decision.matches}
+
+
+def test_a_cursor_rowtype_is_the_cursor_select_list(tmp_path):
+    body = "OPEN c;\n  FETCH c INTO r;\n  CLOSE c;"
+    declare = "  CURSOR c IS SELECT o.order_id, c.name AS customer FROM orders o JOIN customers c ON c.customer_id = o.customer_id;\n  r c%ROWTYPE;"
+    analysis = _analyse(tmp_path, {"p.prc": _proc("p", body, declare)})
+    routine = _routine(analysis, "p")
+    row = next(d for d in routine.declarations if d.name == "r")
+    assert row.type.origin == "rowtype"
+    assert row.type.resolved == "RECORD(order_id NUMBER(19), customer VARCHAR2(100))"

@@ -2035,7 +2035,8 @@
        },
        "type": {
         "oracle": "c_emp%ROWTYPE",
-        "origin": "unresolved",
+        "resolved": "RECORD(employee_id NUMBER(6), last_name VARCHAR2(25), salary NUMBER(8, 2))",
+        "origin": "rowtype",
         "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "r",
@@ -6737,7 +6738,7 @@
        },
        "type": {
         "oracle": "t_rows",
-        "resolved": "TABLE OF c%ROWTYPE",
+        "resolved": "TABLE OF RECORD(employee_id NUMBER(6), last_name VARCHAR2(25), salary NUMBER(8, 2))",
         "origin": "collection",
         "schemaSnapshot": "schema.sql@d6f64025"
        },
@@ -16696,32 +16697,6 @@
      }
     }
    ]
-  }
- ],
- "unresolved": [
-  {
-   "severity": "WARN",
-   "code": "UNRESOLVED_TYPE",
-   "message": "c_emp%ROWTYPE: no table c_emp in the DDL snapshot",
-   "range": {
-    "file": "b04_4_1_explicit_cursor.prc",
-    "startLine": 1,
-    "endLine": 16,
-    "startColumn": 1,
-    "endColumn": 2
-   }
-  },
-  {
-   "severity": "WARN",
-   "code": "UNRESOLVED_TYPE",
-   "message": "c%ROWTYPE: no table c in the DDL snapshot",
-   "range": {
-    "file": "b06_1_bulk_collect_limit.prc",
-    "startLine": 1,
-    "endLine": 18,
-    "startColumn": 1,
-    "endColumn": 2
-   }
   }
  ],
  "schemaSnapshot": "schema.sql@d6f64025"

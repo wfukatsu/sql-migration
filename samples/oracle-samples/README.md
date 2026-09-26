@@ -14,7 +14,7 @@ Oracle 公式ドキュメントの構成に沿った **構文カタログ**（SQ
 | SQL の実 DB 比較（02 の読み取り文 + JSON 3 文 + 修正版 1 文） | 40 文 | PASS 19 / FAIL 10 / SKIP 9 / CASE_ERROR 2 | **PASS 19 / FAIL 5 / SKIP 14 / CASE_ERROR 2**。FAIL 5 はすべて同順位・非決定。JSON_OBJECT は PASS に。#57 #58 のあと **PASS 24（宣言つき 5）/ FAIL 0 / SKIP 16（移行元が拒否 2）/ CASE_ERROR 0** |
 | PL/SQL routine（05・06 の全ユニット + 04 の無名ブロック 10 個） | 41 routine | AUTO 候補 7 / REVIEW 10 / REDESIGN 24 | 同じ（判定のルールは変えていない） |
 | PL/SQL の Java 生成 | 41 routine | javac エラー 15 件（8 routine） | **javac エラー 0**（41 routine 全部がコンパイルできる） |
-| PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 16 / 相違 15**（全 36 ユニット、31 シナリオ。#44〜#46 と 4 つの決定のあと）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて）。その後の回で一致 26 / 相違 5、#52 #55 のあと 一致 27 / 相違 4、残りを対応して **一致 30 / 相違 1**（b06_3 は再設計として記録）。行数上限を決めて証拠つき **AUTO 12** |
+| PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 16 / 相違 15**（全 36 ユニット、31 シナリオ。#44〜#46 と 4 つの決定のあと）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて）。その後の回で一致 26 / 相違 5、#52 #55 のあと 一致 27 / 相違 4、残りを対応して **一致 30 / 相違 1**（b06_3 は再設計として記録）。行数上限を決めて AUTO 12、CUR-003 を絞って証拠つき **AUTO 14** |
 
 ## フォルダ
 
@@ -500,6 +500,26 @@ REVIEW 10 本のうち 8 本は、走査する行数の上限（CUR-002 / BULK-0
 | emp_grades | 実 DB のシナリオが無い（証拠が無い） |
 | dml_d_create_error_log、setup_gather_stats | CALL-001: 解析していない routine（DBMS_ERRLOG、DBMS_STATS）を呼ぶ |
 
+### 10 回目の対応（2026-09-26、CUR-003 を絞る）
+
+9 回目のあとに残った REVIEW のうち、b04_4_1 と b04_4_4 は CUR-003（「明示 cursor を先読みの走査に置き換えた。cursor が
+COMMIT をまたいでいたなら読む時点が変わる」）だけが理由だった。読む時点が変わりうるのは cursor を開いている間に COMMIT が
+あるときだけなので、ルールを「routine か呼び先が COMMIT / ROLLBACK / SAVEPOINT を持つとき」に絞った
+（`plsql/rules/semantics.yaml`、新しい条件 `routineControlsTransaction`）。合成 corpus の 67 routine は判定もルールも
+変わらない（CUR-003 が当たる corpus の routine はどれも COMMIT する）。
+
+b04_4_1 は CUR-003 が消えたあと、型の解決率が 0 で REVIEW に残った。cursor の行型 `r c_emp%ROWTYPE` を解決して
+いなかった（初回から「未解決の 1 つ」として記録していたもの）。cursor の問合せの select list と元の表の型から解決する
+ようにした（`plsql/symbols.py`）。生成物は変わらない（使われない record `CEmpRow` が 1 つ増えるだけ）。解析の型解決率は 100%（147/147）になった。
+
+証拠つきの判定は **AUTO 12 → 14**（b04_4_1、b04_4_4）、REVIEW 6 → 4。実 DB の比較は一致 30 / 相違 1 のまま。残る REVIEW:
+
+| routine | 理由 |
+|---|---|
+| b04_4_2 | SQL-002: 実行計画（取得 + H2）に分解される文（`ORDER BY 1`） |
+| emp_grades | 実 DB のシナリオが無い（証拠が無い） |
+| dml_d_create_error_log、setup_gather_stats | CALL-001: 解析していない組み込み package（DBMS_ERRLOG、DBMS_STATS）を呼ぶ |
+
 ## 付録（`result/tables.md` と同じ。`make_tables.py` が結果ファイルから作る。**Issue 修正後の数字**）
 
 ### SQL 変換（文ごと）
@@ -760,10 +780,10 @@ REVIEW 10 本のうち 8 本は、走査する行数の上限（CUR-002 / BULK-0
 | `b04_1_variables` | REVIEW |  | confidence factor testEvidence is 0 |
 | `b04_2_control_flow` | REVIEW |  | confidence factor testEvidence is 0 |
 | `b04_3_implicit_cursor_attrs` | REDESIGN | CUR-002, SQL-004, TX-001, TX-004 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
-| `b04_4_1_explicit_cursor` | REVIEW | SCAN-002, CUR-003, CUR-OPT-002 | CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります |
+| `b04_4_1_explicit_cursor` | REVIEW | SCAN-002, CUR-OPT-002 | confidence factor testEvidence is 0 |
 | `b04_4_2_cursor_for_loop` | REVIEW | CUR-OPT-002, SQL-002 | SQL-002: 実行計画（取得 + H2）に分解される文です。行数上限と性能を確認してください |
 | `b04_4_3_for_update_current_of` | REDESIGN | CUR-002, SQL-004, LOCK-001, LOCK-002, TX-001 | LOCK-001: 行ロックです。ターゲットで同じ保証を別の方法で与える設計が要ります; LOCK-002: cursor の宣言で行ロックしています。文だけを |
-| `b04_4_4_ref_cursor` | REVIEW | SCAN-002, CUR-003, CUR-OPT-002 | CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります; CUR-003 |
+| `b04_4_4_ref_cursor` | REVIEW | SCAN-002, CUR-OPT-002 | confidence factor testEvidence is 0 |
 | `b04_5_records_collections` | REVIEW | CUR-OPT-002 | confidence factor testEvidence is 0 |
 | `b04_6_1_predefined_exceptions` | REVIEW | SELECT-OPT-001 | confidence factor testEvidence is 0 |
 | `b04_6_2_user_exceptions` | REDESIGN | TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |

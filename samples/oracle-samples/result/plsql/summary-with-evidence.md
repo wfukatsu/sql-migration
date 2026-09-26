@@ -2,7 +2,7 @@
 
 - 解析対象: 36 モジュール / 41 routine / 362 文
 - DDL スナップショット: `schema.sql@d6f64025`
-- 診断: 299 件（うち ERROR 5 件）
+- 診断: 297 件（うち ERROR 5 件）
 
 > この数値は**合成 corpus 上の値**であり、実案件の PL/SQL に対する耐性を示すものではない（実装計画 §9、docs/design/plsql-kpi.md §0）。
 
@@ -11,7 +11,7 @@
 | KPI | 値 | 目標 |
 |---|---|---|
 | parse 率 | 100.0%（37/37） | Phase 1 で 90% 以上 |
-| 型解決率 | 99.3%（146/147） | Phase 1 で 95% 以上 |
+| 型解決率 | 100.0%（147/147） | Phase 1 で 95% 以上 |
 
 ## AUTO を妨げる条件が既に見えている routine
 
@@ -48,8 +48,6 @@
 - **ERROR** `SCAN_AFTER_WRITE` employees was written earlier in this transaction; ScalarDB refuses to scan it（b06_2_2_forall_returning.prc:8-10）
 - **ERROR** `ORDER` main query: ORDER BY expression 1 -- sort in the application（b06_3_native_dynamic_sql.prc:28-32）
 - **ERROR** `SCAN_AFTER_WRITE` employees was written earlier in this transaction; ScalarDB refuses to scan it（b06_3_native_dynamic_sql.prc:28-32）
-- **WARN** `UNRESOLVED_TYPE` c_emp%ROWTYPE: no table c_emp in the DDL snapshot（b04_4_1_explicit_cursor.prc:1-16）
-- **WARN** `UNRESOLVED_TYPE` c%ROWTYPE: no table c in the DDL snapshot（b06_1_bulk_collect_limit.prc:1-18）
 
 ## 資産
 

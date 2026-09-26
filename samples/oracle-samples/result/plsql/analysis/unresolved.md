@@ -851,12 +851,11 @@
 
 **根拠**
 
-- CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
+- confidence factor testEvidence is 0
 
 **判定したルール**
 
 - `SCAN-002` (AUTO, `scalardb_capability.yaml`): パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります
-- `CUR-003` (REVIEW, `semantics.yaml`): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
 - `CUR-OPT-002` (AUTO, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します
 
 **代替案**
@@ -867,10 +866,8 @@
 **受け入れに必要なテスト**
 
 - cross_partition_scan
-- cursor_lifetime
-- row_limit
 
-**確信度が 0 になっている要因**: symbolResolution, typeResolution, testEvidence
+**確信度が 0 になっている要因**: testEvidence
 
 ## REVIEW: `b04_4_2_cursor_for_loop` — `b04_4_2_cursor_for_loop.prc:2`
 
@@ -899,15 +896,12 @@
 
 **根拠**
 
-- CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
-- CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
+- confidence factor testEvidence is 0
 
 **判定したルール**
 
 - `SCAN-002` (AUTO, `scalardb_capability.yaml`): パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります
 - `SCAN-002` (AUTO, `scalardb_capability.yaml`): パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります
-- `CUR-003` (REVIEW, `semantics.yaml`): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
-- `CUR-003` (REVIEW, `semantics.yaml`): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
 - `CUR-OPT-002` (AUTO, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します
 - `CUR-OPT-002` (AUTO, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します
 
@@ -921,8 +915,6 @@
 **受け入れに必要なテスト**
 
 - cross_partition_scan
-- cursor_lifetime
-- row_limit
 
 **確信度が 0 になっている要因**: testEvidence
 

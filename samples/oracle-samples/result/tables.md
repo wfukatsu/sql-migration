@@ -256,10 +256,10 @@
 | `b04_1_variables` | REVIEW |  | confidence factor testEvidence is 0 |
 | `b04_2_control_flow` | REVIEW |  | confidence factor testEvidence is 0 |
 | `b04_3_implicit_cursor_attrs` | REDESIGN | CUR-002, SQL-004, TX-001, TX-004 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
-| `b04_4_1_explicit_cursor` | REVIEW | SCAN-002, CUR-003, CUR-OPT-002 | CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります |
+| `b04_4_1_explicit_cursor` | REVIEW | SCAN-002, CUR-OPT-002 | confidence factor testEvidence is 0 |
 | `b04_4_2_cursor_for_loop` | REVIEW | CUR-OPT-002, SQL-002 | SQL-002: 実行計画（取得 + H2）に分解される文です。行数上限と性能を確認してください |
 | `b04_4_3_for_update_current_of` | REDESIGN | CUR-002, SQL-004, LOCK-001, LOCK-002, TX-001 | LOCK-001: 行ロックです。ターゲットで同じ保証を別の方法で与える設計が要ります; LOCK-002: cursor の宣言で行ロックしています。文だけを |
-| `b04_4_4_ref_cursor` | REVIEW | SCAN-002, CUR-003, CUR-OPT-002 | CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります; CUR-003 |
+| `b04_4_4_ref_cursor` | REVIEW | SCAN-002, CUR-OPT-002 | confidence factor testEvidence is 0 |
 | `b04_5_records_collections` | REVIEW | CUR-OPT-002 | confidence factor testEvidence is 0 |
 | `b04_6_1_predefined_exceptions` | REVIEW | SELECT-OPT-001 | confidence factor testEvidence is 0 |
 | `b04_6_2_user_exceptions` | REDESIGN | TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |

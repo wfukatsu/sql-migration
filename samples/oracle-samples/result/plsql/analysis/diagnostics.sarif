@@ -10,12 +10,6 @@
      "informationUri": "https://github.com/wfukatsu/sql-migration",
      "rules": [
       {
-       "id": "UNRESOLVED_TYPE",
-       "shortDescription": {
-        "text": "UNRESOLVED_TYPE"
-       }
-      },
-      {
        "id": "ACCESS",
        "shortDescription": {
         "text": "ACCESS"
@@ -319,48 +313,6 @@
     }
    },
    "results": [
-    {
-     "ruleId": "UNRESOLVED_TYPE",
-     "level": "warning",
-     "message": {
-      "text": "c_emp%ROWTYPE: no table c_emp in the DDL snapshot"
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "b04_4_1_explicit_cursor.prc"
-        },
-        "region": {
-         "startLine": 1,
-         "endLine": 16,
-         "startColumn": 1
-        }
-       }
-      }
-     ]
-    },
-    {
-     "ruleId": "UNRESOLVED_TYPE",
-     "level": "warning",
-     "message": {
-      "text": "c%ROWTYPE: no table c in the DDL snapshot"
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "b06_1_bulk_collect_limit.prc"
-        },
-        "region": {
-         "startLine": 1,
-         "endLine": 18,
-         "startColumn": 1
-        }
-       }
-      }
-     ]
-    },
     {
      "ruleId": "ACCESS",
      "level": "note",
