@@ -852,13 +852,12 @@
 **根拠**
 
 - CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
-- CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
 
 **判定したルール**
 
 - `SCAN-002` (AUTO, `scalardb_capability.yaml`): パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります
 - `CUR-003` (REVIEW, `semantics.yaml`): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
-- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
+- `CUR-OPT-002` (AUTO, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します
 
 **代替案**
 
@@ -869,7 +868,6 @@
 
 - cross_partition_scan
 - cursor_lifetime
-- performance
 - row_limit
 
 **確信度が 0 になっている要因**: symbolResolution, typeResolution, testEvidence
@@ -878,14 +876,12 @@
 
 **根拠**
 
-- CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
-- CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
 - SQL-002: 実行計画（取得 + H2）に分解される文です。行数上限と性能を確認してください
 
 **判定したルール**
 
-- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
-- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
+- `CUR-OPT-002` (AUTO, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します
+- `CUR-OPT-002` (AUTO, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します
 - `SQL-002` (REVIEW, `sql.yaml`): 実行計画（取得 + H2）に分解される文です。行数上限と性能を確認してください
 
 **代替案**
@@ -905,8 +901,6 @@
 
 - CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
 - CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
-- CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
-- CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
 
 **判定したルール**
 
@@ -914,8 +908,8 @@
 - `SCAN-002` (AUTO, `scalardb_capability.yaml`): パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります
 - `CUR-003` (REVIEW, `semantics.yaml`): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
 - `CUR-003` (REVIEW, `semantics.yaml`): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります
-- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
-- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
+- `CUR-OPT-002` (AUTO, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します
+- `CUR-OPT-002` (AUTO, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します
 
 **代替案**
 
@@ -928,7 +922,6 @@
 
 - cross_partition_scan
 - cursor_lifetime
-- performance
 - row_limit
 
 **確信度が 0 になっている要因**: testEvidence
@@ -937,11 +930,11 @@
 
 **根拠**
 
-- CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
+- confidence factor testEvidence is 0
 
 **判定したルール**
 
-- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
+- `CUR-OPT-002` (AUTO, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します
 
 **代替案**
 
@@ -949,8 +942,7 @@
 
 **受け入れに必要なテスト**
 
-- performance
-- row_limit
+- ルールに必要テストが書かれていない。ルール側に足すべき。
 
 **確信度が 0 になっている要因**: testEvidence
 
@@ -979,14 +971,13 @@
 
 **根拠**
 
-- CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
-- BULK-003: 分割読みは行をまとめて読む形になりました。メモリを守るのは LIMIT ではなく走査行数の上限です
+- confidence factor testEvidence is 0
 
 **判定したルール**
 
 - `SCAN-002` (AUTO, `scalardb_capability.yaml`): パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります
-- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
-- `BULK-003` (REVIEW, `semantics.yaml`): 分割読みは行をまとめて読む形になりました。メモリを守るのは LIMIT ではなく走査行数の上限です
+- `CUR-OPT-002` (AUTO, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します
+- `BULK-OPT-003` (AUTO, `semantics.yaml`): 分割読みは行をまとめて読む形になりました。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります
 
 **代替案**
 
@@ -996,8 +987,6 @@
 **受け入れに必要なテスト**
 
 - cross_partition_scan
-- performance
-- row_limit
 
 **確信度が 0 になっている要因**: testEvidence
 
@@ -1005,12 +994,12 @@
 
 **根拠**
 
-- CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
+- confidence factor testEvidence is 0
 
 **判定したルール**
 
 - `SCAN-002` (AUTO, `scalardb_capability.yaml`): パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります
-- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
+- `CUR-OPT-002` (AUTO, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します
 
 **代替案**
 
@@ -1020,8 +1009,6 @@
 **受け入れに必要なテスト**
 
 - cross_partition_scan
-- performance
-- row_limit
 
 **確信度が 0 になっている要因**: testEvidence
 
@@ -1029,11 +1016,11 @@
 
 **根拠**
 
-- CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
+- confidence factor testEvidence is 0
 
 **判定したルール**
 
-- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
+- `CUR-OPT-002` (AUTO, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します
 
 **代替案**
 
@@ -1041,8 +1028,7 @@
 
 **受け入れに必要なテスト**
 
-- performance
-- row_limit
+- ルールに必要テストが書かれていない。ルール側に足すべき。
 
 **確信度が 0 になっている要因**: testEvidence
 
@@ -1119,14 +1105,13 @@
 
 **根拠**
 
-- CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
-- CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
+- confidence factor testEvidence is 0
 
 **判定したルール**
 
 - `SCAN-002` (AUTO, `scalardb_capability.yaml`): パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります
-- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
-- `CUR-002` (REVIEW, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります
+- `CUR-OPT-002` (AUTO, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します
+- `CUR-OPT-002` (AUTO, `semantics.yaml`): Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します
 
 **代替案**
 
@@ -1136,8 +1121,6 @@
 **受け入れに必要なテスト**
 
 - cross_partition_scan
-- performance
-- row_limit
 
 **確信度が 0 になっている要因**: testEvidence
 

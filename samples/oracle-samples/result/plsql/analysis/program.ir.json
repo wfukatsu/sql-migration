@@ -2084,6 +2084,18 @@
           "startColumn": 3,
           "endColumn": 7
          }
+        },
+        {
+         "severity": "INFO",
+         "code": "ROW_LIMIT_DECIDED",
+         "message": "samples/oracle-samples/plsql/limits.yaml で b04_4_1_explicit_cursor に指定された値",
+         "range": {
+          "file": "b04_4_1_explicit_cursor.prc",
+          "startLine": 9,
+          "endLine": 13,
+          "startColumn": 3,
+          "endColumn": 7
+         }
         }
        ],
        "readSet": [
@@ -2268,6 +2280,20 @@
         "startColumn": 3,
         "endColumn": 7
        },
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "ROW_LIMIT_DECIDED",
+         "message": "samples/oracle-samples/plsql/limits.yaml で b04_4_2_cursor_for_loop に指定された値",
+         "range": {
+          "file": "b04_4_2_cursor_for_loop.prc",
+          "startLine": 7,
+          "endLine": 9,
+          "startColumn": 3,
+          "endColumn": 7
+         }
+        }
+       ],
        "loopKind": "cursor-for",
        "cursor": "r IN c_dept_emp(80, 9000)",
        "query": {
@@ -2350,6 +2376,20 @@
         "startColumn": 3,
         "endColumn": 7
        },
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "ROW_LIMIT_DECIDED",
+         "message": "samples/oracle-samples/plsql/limits.yaml で b04_4_2_cursor_for_loop に指定された値",
+         "range": {
+          "file": "b04_4_2_cursor_for_loop.prc",
+          "startLine": 12,
+          "endLine": 14,
+          "startColumn": 3,
+          "endColumn": 7
+         }
+        }
+       ],
        "readSet": [
         "departments"
        ],
@@ -3568,6 +3608,18 @@
               "startColumn": 3,
               "endColumn": 7
              }
+            },
+            {
+             "severity": "INFO",
+             "code": "ROW_LIMIT_DECIDED",
+             "message": "samples/oracle-samples/plsql/limits.yaml で b04_4_4_ref_cursor に指定された値",
+             "range": {
+              "file": "b04_4_4_ref_cursor.prc",
+              "startLine": 12,
+              "endLine": 16,
+              "startColumn": 3,
+              "endColumn": 7
+             }
             }
            ],
            "readSet": [
@@ -3698,6 +3750,18 @@
            "severity": "INFO",
            "code": "CUR_SCAN",
            "message": "cursor rc は読むだけのループだった。行を先に読んで回す形にした——移行先に跨トランザクションの cursor は無いので、動く行数はメモリで決まる（上限は --limits）。FETCH の代入先はそのまま残してあるので、ループの後でも Oracle と同じ値が入っている",
+           "range": {
+            "file": "b04_4_4_ref_cursor.prc",
+            "startLine": 12,
+            "endLine": 16,
+            "startColumn": 3,
+            "endColumn": 7
+           }
+          },
+          {
+           "severity": "INFO",
+           "code": "ROW_LIMIT_DECIDED",
+           "message": "samples/oracle-samples/plsql/limits.yaml で b04_4_4_ref_cursor に指定された値",
            "range": {
             "file": "b04_4_4_ref_cursor.prc",
             "startLine": 12,
@@ -4061,6 +4125,20 @@
         "startColumn": 3,
         "endColumn": 7
        },
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "ROW_LIMIT_DECIDED",
+         "message": "samples/oracle-samples/plsql/limits.yaml で b04_5_records_collections に指定された値",
+         "range": {
+          "file": "b04_5_records_collections.prc",
+          "startLine": 27,
+          "endLine": 29,
+          "startColumn": 3,
+          "endColumn": 7
+         }
+        }
+       ],
        "readSet": [
         "employees"
        ],
@@ -4157,6 +4235,20 @@
         "startColumn": 3,
         "endColumn": 7
        },
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "ROW_LIMIT_DECIDED",
+         "message": "samples/oracle-samples/plsql/limits.yaml で b04_5_records_collections に指定された値",
+         "range": {
+          "file": "b04_5_records_collections.prc",
+          "startLine": 31,
+          "endLine": 34,
+          "startColumn": 3,
+          "endColumn": 7
+         }
+        }
+       ],
        "loopKind": "while",
        "condition": "k IS NOT NULL",
        "returns_rows": false,
@@ -6695,6 +6787,18 @@
           "startColumn": 3,
           "endColumn": 7
          }
+        },
+        {
+         "severity": "INFO",
+         "code": "ROW_LIMIT_DECIDED",
+         "message": "samples/oracle-samples/plsql/limits.yaml で b06_1_bulk_collect_limit に指定された値",
+         "range": {
+          "file": "b06_1_bulk_collect_limit.prc",
+          "startLine": 9,
+          "endLine": 14,
+          "startColumn": 3,
+          "endColumn": 7
+         }
         }
        ],
        "loopKind": "cursor-for",
@@ -8543,6 +8647,18 @@
           "startColumn": 3,
           "endColumn": 7
          }
+        },
+        {
+         "severity": "INFO",
+         "code": "ROW_LIMIT_DECIDED",
+         "message": "samples/oracle-samples/plsql/limits.yaml で b06_3_6_dbms_sql に指定された値",
+         "range": {
+          "file": "b06_3_6_dbms_sql.prc",
+          "startLine": 15,
+          "endLine": 21,
+          "startColumn": 3,
+          "endColumn": 7
+         }
         }
        ],
        "readSet": [
@@ -8655,6 +8771,20 @@
           "startColumn": 5,
           "endColumn": 9
          },
+         "diagnostics": [
+          {
+           "severity": "INFO",
+           "code": "ROW_LIMIT_DECIDED",
+           "message": "samples/oracle-samples/plsql/limits.yaml で b06_3_6_dbms_sql に指定された値",
+           "range": {
+            "file": "b06_3_6_dbms_sql.prc",
+            "startLine": 16,
+            "endLine": 19,
+            "startColumn": 5,
+            "endColumn": 9
+           }
+          }
+         ],
          "loopKind": "for",
          "cursor": "i IN 1 .. ncols",
          "returns_rows": false,
@@ -10135,6 +10265,18 @@
           "startColumn": 3,
           "endColumn": 42
          }
+        },
+        {
+         "severity": "INFO",
+         "code": "ROW_LIMIT_DECIDED",
+         "message": "samples/oracle-samples/plsql/limits.yaml で b06_4_collection_in_sql に指定された値",
+         "range": {
+          "file": "b06_4_collection_in_sql.prc",
+          "startLine": 6,
+          "endLine": 8,
+          "startColumn": 3,
+          "endColumn": 42
+         }
         }
        ],
        "readSet": [
@@ -10250,6 +10392,18 @@
          "severity": "INFO",
          "code": "TABLE_COLLECTION",
          "message": "TABLE(v_list) はアプリが持つコレクションなので、SQL ではなくその要素を回して数える（#54）",
+         "range": {
+          "file": "b06_4_collection_in_sql.prc",
+          "startLine": 10,
+          "endLine": 10,
+          "startColumn": 3,
+          "endColumn": 70
+         }
+        },
+        {
+         "severity": "INFO",
+         "code": "ROW_LIMIT_DECIDED",
+         "message": "samples/oracle-samples/plsql/limits.yaml で b06_4_collection_in_sql に指定された値",
          "range": {
           "file": "b06_4_collection_in_sql.prc",
           "startLine": 10,
@@ -14887,6 +15041,20 @@
             "startColumn": 3,
             "endColumn": 7
            },
+           "diagnostics": [
+            {
+             "severity": "INFO",
+             "code": "ROW_LIMIT_DECIDED",
+             "message": "samples/oracle-samples/plsql/limits.yaml で emp_grades に指定された値",
+             "range": {
+              "file": "emp_grades.fnc",
+              "startLine": 6,
+              "endLine": 11,
+              "startColumn": 3,
+              "endColumn": 7
+             }
+            }
+           ],
            "readSet": [
             "employees"
            ],
@@ -15013,6 +15181,20 @@
           "startColumn": 3,
           "endColumn": 7
          },
+         "diagnostics": [
+          {
+           "severity": "INFO",
+           "code": "ROW_LIMIT_DECIDED",
+           "message": "samples/oracle-samples/plsql/limits.yaml で emp_grades に指定された値",
+           "range": {
+            "file": "emp_grades.fnc",
+            "startLine": 6,
+            "endLine": 11,
+            "startColumn": 3,
+            "endColumn": 7
+           }
+          }
+         ],
          "readSet": [
           "employees"
          ],

@@ -70,6 +70,12 @@
        }
       },
       {
+       "id": "ROW_LIMIT_DECIDED",
+       "shortDescription": {
+        "text": "ROW_LIMIT_DECIDED"
+       }
+      },
+      {
        "id": "CROSS_PARTITION",
        "shortDescription": {
         "text": "CROSS_PARTITION"
@@ -181,12 +187,6 @@
        "id": "BULK_COLLECT",
        "shortDescription": {
         "text": "BULK_COLLECT"
-       }
-      },
-      {
-       "id": "ROW_LIMIT_DECIDED",
-       "shortDescription": {
-        "text": "ROW_LIMIT_DECIDED"
        }
       },
       {
@@ -929,6 +929,27 @@
      ]
     },
     {
+     "ruleId": "ROW_LIMIT_DECIDED",
+     "level": "note",
+     "message": {
+      "text": "samples/oracle-samples/plsql/limits.yaml で b04_4_1_explicit_cursor に指定された値"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_1_explicit_cursor.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 13,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "CROSS_PARTITION",
      "level": "warning",
      "message": {
@@ -992,6 +1013,27 @@
      ]
     },
     {
+     "ruleId": "ROW_LIMIT_DECIDED",
+     "level": "note",
+     "message": {
+      "text": "samples/oracle-samples/plsql/limits.yaml で b04_4_2_cursor_for_loop に指定された値"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_2_cursor_for_loop.prc"
+        },
+        "region": {
+         "startLine": 7,
+         "endLine": 9,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "ACCESS",
      "level": "note",
      "message": {
@@ -1006,6 +1048,27 @@
         "region": {
          "startLine": 7,
          "endLine": 9,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ROW_LIMIT_DECIDED",
+     "level": "note",
+     "message": {
+      "text": "samples/oracle-samples/plsql/limits.yaml で b04_4_2_cursor_for_loop に指定された値"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_2_cursor_for_loop.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 14,
          "startColumn": 3
         }
        }
@@ -1685,6 +1748,27 @@
      ]
     },
     {
+     "ruleId": "ROW_LIMIT_DECIDED",
+     "level": "note",
+     "message": {
+      "text": "samples/oracle-samples/plsql/limits.yaml で b04_4_4_ref_cursor に指定された値"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_4_ref_cursor.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 16,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "CROSS_PARTITION",
      "level": "warning",
      "message": {
@@ -1769,6 +1853,27 @@
      ]
     },
     {
+     "ruleId": "ROW_LIMIT_DECIDED",
+     "level": "note",
+     "message": {
+      "text": "samples/oracle-samples/plsql/limits.yaml で b04_4_4_ref_cursor に指定された値"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_4_4_ref_cursor.prc"
+        },
+        "region": {
+         "startLine": 12,
+         "endLine": 16,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "CROSS_PARTITION",
      "level": "warning",
      "message": {
@@ -1832,6 +1937,27 @@
      ]
     },
     {
+     "ruleId": "ROW_LIMIT_DECIDED",
+     "level": "note",
+     "message": {
+      "text": "samples/oracle-samples/plsql/limits.yaml で b04_5_records_collections に指定された値"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_5_records_collections.prc"
+        },
+        "region": {
+         "startLine": 27,
+         "endLine": 29,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "ACCESS",
      "level": "note",
      "message": {
@@ -1846,6 +1972,27 @@
         "region": {
          "startLine": 27,
          "endLine": 29,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ROW_LIMIT_DECIDED",
+     "level": "note",
+     "message": {
+      "text": "samples/oracle-samples/plsql/limits.yaml で b04_5_records_collections に指定された値"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b04_5_records_collections.prc"
+        },
+        "region": {
+         "startLine": 31,
+         "endLine": 34,
          "startColumn": 3
         }
        }
@@ -2630,6 +2777,27 @@
      ]
     },
     {
+     "ruleId": "ROW_LIMIT_DECIDED",
+     "level": "note",
+     "message": {
+      "text": "samples/oracle-samples/plsql/limits.yaml で b06_1_bulk_collect_limit に指定された値"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_1_bulk_collect_limit.prc"
+        },
+        "region": {
+         "startLine": 9,
+         "endLine": 14,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "CROSS_PARTITION",
      "level": "warning",
      "message": {
@@ -3365,6 +3533,27 @@
      ]
     },
     {
+     "ruleId": "ROW_LIMIT_DECIDED",
+     "level": "note",
+     "message": {
+      "text": "samples/oracle-samples/plsql/limits.yaml で b06_3_6_dbms_sql に指定された値"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_6_dbms_sql.prc"
+        },
+        "region": {
+         "startLine": 15,
+         "endLine": 21,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "ROWNUM",
      "level": "warning",
      "message": {
@@ -3443,6 +3632,27 @@
          "startLine": 15,
          "endLine": 21,
          "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ROW_LIMIT_DECIDED",
+     "level": "note",
+     "message": {
+      "text": "samples/oracle-samples/plsql/limits.yaml で b06_3_6_dbms_sql に指定された値"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_6_dbms_sql.prc"
+        },
+        "region": {
+         "startLine": 16,
+         "endLine": 19,
+         "startColumn": 5
         }
        }
       }
@@ -4247,6 +4457,27 @@
      ]
     },
     {
+     "ruleId": "ROW_LIMIT_DECIDED",
+     "level": "note",
+     "message": {
+      "text": "samples/oracle-samples/plsql/limits.yaml で b06_4_collection_in_sql に指定された値"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_4_collection_in_sql.prc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 8,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "ACCESS",
      "level": "note",
      "message": {
@@ -4272,6 +4503,27 @@
      "level": "note",
      "message": {
       "text": "TABLE(v_list) はアプリが持つコレクションなので、SQL ではなくその要素を回して数える（#54）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_4_collection_in_sql.prc"
+        },
+        "region": {
+         "startLine": 10,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ROW_LIMIT_DECIDED",
+     "level": "note",
+     "message": {
+      "text": "samples/oracle-samples/plsql/limits.yaml で b06_4_collection_in_sql に指定された値"
      },
      "locations": [
       {
@@ -5738,6 +5990,27 @@
      ]
     },
     {
+     "ruleId": "ROW_LIMIT_DECIDED",
+     "level": "note",
+     "message": {
+      "text": "samples/oracle-samples/plsql/limits.yaml で emp_grades に指定された値"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_grades.fnc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "CROSS_PARTITION",
      "level": "warning",
      "message": {
@@ -5784,6 +6057,27 @@
      "level": "note",
      "message": {
       "text": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_grades.fnc"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 11,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ROW_LIMIT_DECIDED",
+     "level": "note",
+     "message": {
+      "text": "samples/oracle-samples/plsql/limits.yaml で emp_grades に指定された値"
      },
      "locations": [
       {
