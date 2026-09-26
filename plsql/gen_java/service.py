@@ -189,6 +189,19 @@ def _expression_callees(routine: M.Routine, module: "M.Module | None") -> dict[s
                                and overload_of(r) is None), None)
                 if callee is not None:
                     found.setdefault(f"{owner.lower()}.{name.lower()}", (target.name, callee))
+            # a standalone function called by its bare name, `i || '! = ' || factorial(i)` (8-35, #86): its
+            # module is itself. Not when the caller's own module or its locals already mean that name
+            own = {r.name.lower() for r in (module.routines if module is not None else [])} | \
+                {h.name.lower() for h in list(routine.parameters) + list(routine.declarations)}
+            for name in re.findall(r"(?<![\w$#.])([A-Za-z][\w$#]*)\s*\(", _STRING.sub("''", text or "")):
+                target = modules.get(name.lower())
+                if target is None or target is module or name.lower() in own \
+                        or target.module_kind not in ("function", "procedure"):
+                    continue
+                callee = next((r for r in target.routines if r.name.lower() == name.lower()
+                               and overload_of(r) is None), None)
+                if callee is not None:
+                    found.setdefault(name.lower(), (target.name, callee))
     return found
 
 
