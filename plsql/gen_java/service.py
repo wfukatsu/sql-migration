@@ -1362,16 +1362,37 @@ def _locked_and_decided(query: M.SqlOperation) -> bool:
     return bool(query.locking_mode) and any(d.code == "OPTIMISTIC" for d in query.diagnostics)
 
 
+_CODE_CLASSES: dict[int, dict[int, str]] = {}
+
+
+def _code_class(code: int) -> str | None:
+    """The class the exception registry gave `code` for this program (the first name wins; exception.collect)."""
+    from .exception import collect
+
+    program = _PROGRAM.get()
+    if program is None:
+        return None
+    classes = _CODE_CLASSES.get(id(program))
+    if classes is None:
+        classes = {c: entry.class_name for c, entry in collect(program).codes.items()}
+        _CODE_CLASSES.clear()
+        _CODE_CLASSES[id(program)] = classes
+    return classes.get(code)
+
+
 def _raise(file: JavaFile, statement: M.Raise, routine: M.Routine, result: ServiceFile) -> None:
     from .exception import bound_class, class_of
 
     if statement.error_code is not None:
         message = _expr(file, statement.message, routine, result) if statement.message else '""'
         bound = bound_class(statement.error_code, _PROGRAM.get())
-        if bound and _DOMAIN.get():
-            # a number some routine bound with PRAGMA EXCEPTION_INIT: throw that class, so `WHEN e_x` catches it
-            file.add_import(f"{_DOMAIN.get()}.{bound}")
-            file.line(f"throw new {bound}({message or chr(34) * 2});")
+        coded = bound or _code_class(statement.error_code)
+        if coded and _DOMAIN.get():
+            # the class generated for this number: one bound with PRAGMA EXCEPTION_INIT (so `WHEN e_x` catches it),
+            # or the one RAISE_APPLICATION_ERROR's number got (`PkgPointsError20103Exception`). Throwing the base
+            # class left that class in the domain package for callers to catch, and nothing ever threw it
+            file.add_import(f"{_DOMAIN.get()}.{coded}")
+            file.line(f"throw new {coded}({message or chr(34) * 2});")
         else:
             file.line(f"throw new MigratedException({statement.error_code}, {message or chr(34) * 2});")
     elif not statement.exception:

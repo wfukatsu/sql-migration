@@ -198,7 +198,11 @@ def test_an_instead_of_trigger_on_a_view_compiles_on_its_own(tmp_path):
     java = _java(analysis, "order_customer_v_trg")
     # :NEW / :OLD typed from the view's columns (NUMBER(19) is passed as a NUMBER, like any trigger row)
     assert "public void body(String newName, String newStatus, BigDecimal oldOrderId)" in java
-    assert "catch (NoDataFoundException e)" in java and "-1427" in java, "a subquery with 0 rows is NULL, with 2 an error"
+    from plsql.gen_java.exception import collect
+
+    too_many = collect(analysis.program).codes[-1427].class_name
+    assert "catch (NoDataFoundException e)" in java and f"throw new {too_many}(" in java, \
+        "a subquery with 0 rows is NULL, with 2 an error (ORA-01427)"
     repository = _repository(analysis, "order_customer_v_trg")
     assert "UnsupportedOperationException" not in repository
     assert "SELECT customer_id FROM customers WHERE name = " in repository
