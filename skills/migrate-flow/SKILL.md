@@ -106,6 +106,16 @@ AskUserQuestion を使うときは、推奨を先頭に置いて「（推奨）�
 まだ無いファイル（`limits.yaml`、記録）も、作る予定の場所を渡しておく。SQL は
 `--kind sql --src <入力.sql> --source-dialect oracle --target-dialect scalardb`。
 
+**plsql-spec / plsql-migrate / sql-transpile を単独で先に流してある**ときは、その成果物は別の場所にある。
+手で写さず、`adopt` で置き場所に取り込む（写すだけで、承認はしない。置き場所に違う中身があれば断る。置き換えるなら `--replace`）:
+
+```bash
+.venv/bin/python skills/migrate-flow/scripts/flow.py adopt --out <out> --spec <spec のディレクトリ> --spec-analysis <plsql-spec の解析> --generated <plsql-migrate の out> --docs <plsql-migrate の out>/docs
+```
+
+`--generated` の中に `--docs` があれば、docs は `<out>/docs` にだけ写る。`status` が「まだ無い」と言う段階では、
+どの引数で取り込めるかも案内する。
+
 `status` の標準エラーの最終行 `STAGE=` が、いまの段階である。その Step から続ける。
 
 ### Step 1: 現行の仕様を調べる → 承認 `spec`
