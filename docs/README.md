@@ -82,6 +82,7 @@ REVIEW / REDESIGN を塞いでいるのは、変換できない構文ではな�
 | [行ロックとトランザクション境界](plsql-migration/plsql-transaction-patterns.md) | 7 つの形。実 ScalarDB Cluster での同時更新の実測から始まる（`LOCK-*` / `TX-*`） |
 | [trigger と外部副作用](plsql-migration/plsql-trigger-patterns.md) | 5 つの形。書込経路の網羅性が先（`TRG-*`） |
 | [生成コードの外で決めること](plsql-migration/plsql-decisions-outside-generator.md) | 運用（OPS）・呼び出し側（CALL）・業務ロジックとの整合（BIZ）の項目。選択肢・推奨・代償 |
+| [移行の判断ポイント早見表](plsql-migration/plsql-decision-guide.md) | これまでに判断した 17 のポイントを 1 か所に。選択肢の Pros / Cons と「どういうときに何を選ぶか」、`limits.yaml` の記録の形 |
 | [業務ロジックとの整合の問い](plsql-migration/plsql-biz-alignment-questions.md) | corpus の BIZ 項目を、routine ごとの具体的な問いにしたもの |
 
 書き上がった文書の例: [現行の仕様（plsql-spec）](../skills/plsql-spec/examples/create_order/README.md)、[変換後の文書（plsql-migrate）](../skills/plsql-migrate/examples/create_order/README.md)。
