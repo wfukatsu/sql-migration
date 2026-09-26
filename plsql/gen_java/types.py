@@ -252,6 +252,9 @@ def java_name(identifier: str) -> str:
         return "value"
     head, *rest = parts
     name = head.lower() + "".join(p[:1].upper() + p[1:].lower() for p in rest)
+    if not name[:1].isalpha():
+        # a bind named by the literal it carries (`USING 110` in dynamic SQL: 7-20, #76) is not a Java name
+        name = "v" + re.sub(r"\W", "_", name)
     return f"{name}_" if name in JAVA_KEYWORDS else name
 
 

@@ -1081,10 +1081,20 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
             if holder is None or not _collection_kind(holder):
                 raise Untranslatable([f"assignment to collection element {written}"], written)
             file.add_import("com.scalar.migrate.plsql.Plsql")
-            key = _expr(file, subscript.rstrip()[:-1], routine, result)
+            subscripts = _subscripts("(" + subscript)
+            if subscripts is None:
+                raise Untranslatable([f"assignment to collection element {written}"], written)
+            # `nva(4)(4) := 1`: an element of an element (a varray of varrays, 5-11 / 5-13, #76). The outer ones
+            # are read; the innermost is set -- the inner collection is the same object inside the outer one
+            container = _local(holder.name)
+            for inner in subscripts[:-1]:
+                container = f"Plsql.at({container}, {_expr(file, inner, routine, result)})"
+            key = _expr(file, subscripts[-1], routine, result)
             element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
-            value = _coerce(file, _expr(file, statement.expression, routine, result), element)
-            file.line(f"Plsql.set({_local(holder.name)}, {key}, {value});")
+            value = _expr(file, statement.expression, routine, result)
+            if len(subscripts) == 1:
+                value = _coerce(file, value, element)
+            file.line(f"Plsql.set({container}, {key}, {value});")
             return
         if "." in written and (_holder(routine, written.partition(".")[0]) is not None
                                or written.partition(".")[0].lower() in {k.lower() for k in _LOOP_ROWS.get()}):
@@ -1954,7 +1964,8 @@ def _arguments(file: JavaFile, statement: M.SqlOperation, routine: M.Routine,
         # 素の識別子でないものは翻訳に通す: `r.order_id`（ループの行）も `p_ids(i)`（コレクションの
         # 要素）も、名前として Java の変数に落ちるものである。`java_name` に渡すと `pIds(i)` という
         # 存在しない method 呼び出しになる
-        plain = name.replace("_", "").replace("$", "").replace("#", "").isalnum()
+        # a literal the dynamic SQL's USING wrote (`USING 110, 'DEPARTMENT_ID'`, 7-20) goes as its value
+        plain = name.replace("_", "").replace("$", "").replace("#", "").isalnum() and name[:1].isalpha()
         rendered = _local(name) if plain else _expr(file, name, routine, result)
         if rendered.startswith("Plsql.at(") and "." not in name:
             # a collection element is Object; the repository parameter is typed from the bind's column the way
@@ -2120,6 +2131,32 @@ def _convert_variable(file: JavaFile, routine: M.Routine, written: str | None, v
     file.add_import("com.scalar.migrate.plsql.Plsql")
     helper = {"Integer": "toInt", "Long": "toLong", "Double": "toDouble", "Float": "toFloat"}[target_type]
     return f"Plsql.{helper}({value})"
+
+
+def _subscripts(text: str) -> "list[str] | None":
+    """`(4)(5)` -> ["4", "5"]: the top-level parenthesised groups, in order. None when anything else is there
+    (`(1).f1` -- a field of an element -- is not a chain of subscripts)."""
+    out, depth, current = [], 0, ""
+    for c in text.strip():
+        if c == "(":
+            if depth > 0:
+                current += c
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                out.append(current.strip())
+                current = ""
+            elif depth < 0:
+                return None
+            else:
+                current += c
+        elif depth == 0:
+            if not c.isspace():
+                return None
+        else:
+            current += c
+    return out if out and depth == 0 else None
 
 
 def _balanced(text: str) -> bool:

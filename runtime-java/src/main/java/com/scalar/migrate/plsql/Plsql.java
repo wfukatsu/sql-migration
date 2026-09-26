@@ -613,6 +613,31 @@ public final class Plsql {
   }
 
   /** `SQLERRM` inside a handler: Oracle's text is `ORA-nnnnn: message` (the code is negative in PL/SQL). */
+  /** `SQLERRM(n)`: the message Oracle gives for an error number, outside any handler (#76, 11-13). Texts measured on 26ai. */
+  public static String sqlerrmOf(Object code) {
+    if (isNull(code)) return null;
+    int n = num(code).intValue();
+    if (n == 0) return "ORA-0000: normal, successful completion";
+    if (n == 100 || n == -1403) return "ORA-01403: no data found";
+    if (n > 0) return "User-Defined Exception";
+    if (n <= -20000 && n >= -20999) return String.format("ORA-%05d: ", -n);
+    String text = switch (n) {
+      case -1 -> "unique constraint (.) violated on table . columns ()";
+      case -1001 -> "cursor number is invalid or does not exist";
+      case -1422 -> "exact fetch returned more than the requested number of rows ";
+      case -1476 -> "divisor is equal to zero";
+      case -1722 -> "unable to convert string value containing  to a number: ";
+      case -6502 -> "PL/SQL: value or conversion error";
+      case -6511 -> "PL/SQL: cursor already open";
+      case -6530 -> "Reference to uninitialized composite";
+      case -6531 -> "Reference to uninitialized collection";
+      case -6532 -> "subscript outside of limit";
+      case -6533 -> "Subscript beyond count";
+      default -> "Message " + (-n) + " not found";
+    };
+    return String.format("ORA-%05d: %s", -n, text);
+  }
+
   public static String sqlerrm(int code, String message) {
     if (code == 0) return "ORA-0000: normal, successful completion";
     if (code == 100) return "ORA-01403: no data found";

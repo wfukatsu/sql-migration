@@ -29,11 +29,11 @@ TOKEN = re.compile(r"""
   | (?P<bind>:[A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)?)
   | (?P<attribute>[A-Za-z][\w$#]*\s*%\s*[A-Za-z][\w$#]*)
   | (?P<name>[A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)*)
-  | (?P<op><=|>=|<>|!=|\|\||:=|[-+*/(),=<>%])
+  | (?P<op><=|>=|<>|!=|~=|\^=|\|\||:=|[-+*/(),=<>%])
   | (?P<space>\s+)
 """, re.VERBOSE)
 
-COMPARISONS = {"=": "eq", "<>": "ne", "!=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"}
+COMPARISONS = {"=": "eq", "<>": "ne", "!=": "ne", "~=": "ne", "^=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"}
 # Oracle built-ins the helper covers. Anything else is reported, not invented.
 FUNCTIONS = {
     "NVL": f"{HELPER}.nvl", "ROUND": f"{HELPER}.round", "TRUNC": f"{HELPER}.trunc",
@@ -571,6 +571,15 @@ class _Parser:
         plsql_name = self.peek()[1]
         if plsql_name.upper() == "UPDATING":
             return self._event_of_column()
+        if plsql_name.upper() == "SQLERRM":
+            # `SQLERRM(n)`: the message of an error number, not the handler's own SQLERRM called (#76, 11-13)
+            self.take()
+            self.take()   # (
+            code = self.parse_or()
+            if self.peek() is not None and self.peek()[1] == ")":
+                self.take()
+            self.result.imports.add(HELPER_IMPORT)
+            return f"{HELPER}.sqlerrmOf({code})"
         head, _, tail = plsql_name.partition(".")
         collection = self.scope.get(f"{head.lower()}#collection")
         constructor = self.scope.get(f"{plsql_name.lower()}#constructor")
@@ -628,7 +637,15 @@ class _Parser:
             self.result.imports.add(HELPER_IMPORT)
             java = self.scope[head.lower()]
             if not tail:
-                return f"{HELPER}.at({java}, {', '.join(arguments)})"       # `v(i)`: an element
+                element = f"{HELPER}.at({java}, {', '.join(arguments)})"   # `v(i)`: an element
+                # `nva(2)(3)`: an element of an element (#76, 5-11)
+                while self.peek() is not None and self.peek()[1] == "(":
+                    self.take()
+                    index = self.parse_or()
+                    if self.peek() is not None and self.peek()[1] == ")":
+                        self.take()
+                    element = f"{HELPER}.at({element}, {index})"
+                return element
             method = COLLECTION_METHODS.get(tail.upper())
             if method is None:
                 self.result.unknown.append(plsql_name)
