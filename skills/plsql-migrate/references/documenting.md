@@ -43,6 +43,10 @@
 | `TRIGGER_INLINED` / trigger の織り込み | trigger は、生成コードが書く経路でだけ動く。PL/SQL の外からの書き込みには掛からない（照合で追う） |
 | `dynamicTables` | 動的 SQL の表名は一覧にあるものだけ。それ以外は実行時に拒否する |
 | `DYN_STATIC` / `DYN_INLINED` | 文字列が定数の動的 SQL を静的な文として下ろした（#52）。`RETURNING INTO` 付きの DML、`OPEN FOR '定数'`、動的 PL/SQL ブロック。`EXECUTE IMMEDIATE` の権限で走っていたことは `DYN_PRIVILEGE` に残る |
+| `OBJECT_BUILT` / `TABLE_COLLECTION` / `PIPELINED` | スキーマのオブジェクト型は Java の record。コンストラクタを選ぶ SELECT は列を読んでアプリで組み、`TABLE(コレクション)` への COUNT(*) は List を回し、PIPELINED 関数は List をまとめて返す（行が出るそばから読むのではない、#54） |
+| `DBMS_SQL_STATIC` | 定数の問合せを PARSE する DBMS_SQL を静的な cursor FOR ループにした（#53） |
+| `SUBQUERY_READ_FIRST` | SET の相関の無いスカラ副問合せを UPDATE の前に読む。0 行は NULL、2 行以上は ORA-01427（#56） |
+| `OPTIONAL_FILTER` | `WHERE p IS NULL OR col = p` を 2 つの問合せに分け、p の値で選ぶ |
 | `ddl.omit` | routine の中の DDL（一時表の CREATE / DROP など）を移行先で実行しない。元の文はコメントに残る。書いていない routine の DDL は生成器が断る |
 | 組み込み package（`plsql/builtins.py`） | `DBMS_APPLICATION_INFO.SET_MODULE` などは何もしない（理由をコメントに残す）、`DBMS_SESSION.SLEEP` / `DBMS_RANDOM` / `DBMS_UTILITY.GET_TIME` は `Plsql` の helper（#55）。乱数と時計は Oracle と同じ値にならない。表に無い package は今までどおり断る |
 | `constraints.enforce.<table>` | 移行先に無い CHECK / FOREIGN KEY を書く側で評価する表（#50）。CHECK は書く値で式を評価、FOREIGN KEY は親を先に読み、違反は Oracle と同じ番号（-2290 / -2291）の例外。書かない表は `CONSTRAINT_UNDECIDED` でアプリ側の検証に任せたことが見える |

@@ -138,6 +138,22 @@ def dtos_for(module: M.Module, package: str) -> list[Dto]:
                                     note=f"PL/SQL record type {base}. Components follow the field names.")
                 if record is not None:
                     out.append(record)
+        # a schema object type the routine uses, directly or as the element of a collection (#54)
+        from .types import object_types
+        used = [routine.return_type] + [d.type for d in routine.declarations] + [p.type for p in routine.parameters]
+        for type_ in used:
+            if type_ is None:
+                continue
+            name = type_.oracle.strip() if type_.origin == "record" else \
+                (type_.resolved or "").removeprefix("TABLE OF ").strip() if type_.origin == "collection" else ""
+            resolved = object_types().get(name.lower())
+            if not resolved or name.lower() in seen:
+                continue
+            seen.add(name.lower())
+            record = row_record(name, resolved, package, source, suffix="",
+                                note=f"Oracle のオブジェクト型 {name}（CREATE TYPE … AS OBJECT）。コンストラクタは new {java_class_name(name)}(…)")
+            if record is not None:
+                out.append(record)
         for loop in _loops(routine):
             record = loop_row_record(routine, loop, package, source)
             if record is not None:

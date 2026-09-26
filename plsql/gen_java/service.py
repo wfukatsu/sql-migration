@@ -90,6 +90,8 @@ def generate_module(module: M.Module, package: str, repository_package: str,
 
     _MODULE.set(module)
     _DOMAIN.set(domain_package)
+    from .types import set_object_package
+    set_object_package(domain_package)
     _INFRA.set(repository_package)
     # #12: この module が呼ぶ trigger。**呼ぶ側に注入する**——移行先に trigger は無いので、
     # 掛けるには書き込む側が呼ぶしかない。誰が呼んでいるかが constructor に出るのは、
@@ -376,7 +378,9 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
     names = {"SQL%ROWCOUNT": "rowCount", "sql%rowcount": "rowCount",
              # the implicit cursor's other attributes: the last DML touched no row / some row
              "SQL%NOTFOUND": "(rowCount == 0)", "sql%notfound": "(rowCount == 0)",
-             "SQL%FOUND": "(rowCount > 0)", "sql%found": "(rowCount > 0)"}
+             "SQL%FOUND": "(rowCount > 0)", "sql%found": "(rowCount > 0)",
+             # SQL%BULK_ROWCOUNT(i): a collection the FORALL fills, element by element (#51)
+             "sql%bulk_rowcount#collection": "bulkRowCount"}
     # trigger の相関名。`:NEW.status` は文が走る前から Java が値として持っているもので、
     # cursor FOR ループの行と同じ扱いになる（#10 / #12）
     for variable, bind in correlation_row(routine).items():
@@ -402,6 +406,13 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
             if kind == "list" and holder.type is not None and "%" not in (holder.type.oracle or ""):
                 names[f"{(holder.type.oracle or '').strip().lower()}#constructor"] = kind
                 names[f"{(holder.type.oracle or '').strip().lower()}#element"] = element
+    # a schema object type's constructor `emp_grade_t(a, b, 'X')` builds its record (#54)
+    from .types import object_types
+    for name, resolved in object_types().items():
+        names[f"{name}#record"] = java_class_name(name)
+        names[f"{name}#fields"] = ",".join(java_type(t).name for _, t in record_columns(resolved))
+        if _DOMAIN.get():
+            names[f"{name}#import"] = f"{_DOMAIN.get()}.{java_class_name(name)}"
     if module is not None:
         # an overloaded name is several Java methods (`put1`, `put2`); which one an expression means is not
         # resolved, so the name is left out and the expression is reported instead of compiled against nothing
@@ -537,6 +548,11 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
                 or (_READS_ROWCOUNT.get() and any(_sets_rowcount_to_one(s) for s in written)):
             # one declaration per method: a routine may hold several DML statements, in different blocks
             f.line("int rowCount = 0;")
+            if _reads_bulk_rowcount(routine):
+                f.add_import("java.util.List")
+                f.add_import("java.util.ArrayList")
+                f.add_import("java.math.BigDecimal")
+                f.line("List<BigDecimal> bulkRowCount = new ArrayList<>();")
         for parameter in outs:
             # an OUT argument becomes a local, and comes back in the result record rather than through the
             # signature: a caller must not see a half-updated set when an exception interrupts the routine
@@ -1188,7 +1204,7 @@ def _forall_collection(statement: M.Loop, routine: M.Routine) -> tuple[str, str]
     if bound is None:
         return None
     collection = bound.group("collection").lower()
-    for inner in _walk(statement.body):
+    for inner in _forall_statements(statement):
         for bind in getattr(inner, "binds", None) or []:
             reference = COLLECTION_ELEMENT.match(bind.plsql_variable or "")
             if reference and reference.group("collection").lower() == collection:
@@ -1197,6 +1213,17 @@ def _forall_collection(statement: M.Loop, routine: M.Routine) -> tuple[str, str]
 
 
 COLLECTION_ELEMENT = re.compile(r"^(?P<collection>[\w$#]+)\s*\(\s*(?P<index>[\w$#]+)\s*\)$")
+
+
+def _forall_statements(statement: M.Loop) -> list[M.Statement]:
+    """The FORALL body's statements, and the query of a loop inside it: the RMW split of a multi-row UPDATE (#9)
+    turns the DML into a loop over the rows it touches, whose query is where `v_depts(i)` is read (#51)."""
+    out = []
+    for inner in _walk(statement.body):
+        out.append(inner)
+        if getattr(inner, "query", None) is not None:
+            out.append(inner.query)
+    return out
 
 
 def _forall(file: JavaFile, statement: M.Loop, routine: M.Routine, result: ServiceFile) -> None:
@@ -1213,7 +1240,7 @@ def _forall(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Servi
     # 本体が読むコレクションは 1 つとは限らない（`p_ids(i)` と `p_names(i)` が並ぶ）。回す長さは
     # 境界が名指したものから採り、要素の読み方は**本体が読んでいるすべて**について用意する
     scope = {}
-    for inner in _walk(statement.body):
+    for inner in _forall_statements(statement):
         for bind in getattr(inner, "binds", None) or []:
             reference = COLLECTION_ELEMENT.match(bind.plsql_variable or "")
             if reference is None or reference.group("index").lower() != index.lower():
@@ -1225,11 +1252,23 @@ def _forall(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Servi
     _LOOP_ROWS.set({**outer, **scope})
     try:
         file.comment("FORALL は 1 往復、ここでは要素ごとに 1 回。答えは同じで、性能が変わる")
+        counted = _reads_bulk_rowcount(routine)
+        if counted:
+            # SQL%BULK_ROWCOUNT(i): the rows the i-th element's statement touched, for the last FORALL (#51)
+            file.line("bulkRowCount.clear();")
         with file.block(f"for (int {java_name(index)} = 0; {java_name(index)} < {java}.size(); "
                         f"{java_name(index)}++)") as f:
+            if counted:
+                f.line("rowCount = 0;")
             _statements(f, statement.body, routine, result)
+            if counted:
+                f.line("bulkRowCount.add(Plsql.dec(rowCount));")
     finally:
         _LOOP_ROWS.set(outer)
+
+
+def _reads_bulk_rowcount(routine: M.Routine) -> bool:
+    return bool(re.search(r"SQL\s*%\s*BULK_ROWCOUNT", repr(routine), re.IGNORECASE))
 
 
 def _cursor_for(file: JavaFile, statement: M.Loop, routine: M.Routine, result: ServiceFile) -> None:
@@ -1825,7 +1864,16 @@ def _coerce(file: JavaFile, value: str, target_type: str) -> str:
     if target_type in ("Integer", "Long") and value.startswith("Plsql.") and not value.startswith(("Plsql.fit", "Plsql.to")):
         file.add_import("com.scalar.migrate.plsql.Plsql")
         return f"Plsql.{'toInt' if target_type == 'Integer' else 'toLong'}({value})"
+    # `v_row := v_list(i)`: an element of a collection comes back as Object; a record local needs its class (#54)
+    from .types import object_class
+    if value.startswith("Plsql.at(") and target_type and any(object_class(n) == target_type for n in _object_names()):
+        return f"({target_type}) {value}"
     return value
+
+
+def _object_names() -> list[str]:
+    from .types import object_types
+    return list(object_types())
 
 
 def _local_type(routine: M.Routine, target: str) -> str:

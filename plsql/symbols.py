@@ -73,6 +73,18 @@ class OracleSchema:
     # (`limits.yaml` constraints.enforce, #50). `REFERENCES parent` without columns means the parent's primary key
     checks: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
     foreign_keys: dict[str, list["ForeignKey"]] = field(default_factory=dict)
+    # `CREATE TYPE t AS OBJECT (a NUMBER, b VARCHAR2(25))` -> {t: [(a, NUMBER), (b, VARCHAR2(25))]}, and
+    # `CREATE TYPE ts AS TABLE OF t` -> {ts: t}. A local of such a type is a record / a collection of records in
+    # the generated code (#54, samples/oracle-samples b06_4)
+    object_types: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
+    table_types: dict[str, str] = field(default_factory=dict)
+    # `CREATE VIEW v AS SELECT e.a, d.b FROM ...`: the view's columns, typed from the tables they come from. A
+    # view is not a table of the target, but an INSTEAD OF trigger on it reads :NEW / :OLD by these (#56)
+    views: dict[str, dict[str, str]] = field(default_factory=dict)
+
+    def object_record(self, name: str) -> str | None:
+        fields = self.object_types.get((name or "").strip().lower())
+        return f"RECORD({', '.join(f'{f} {t}' for f, t in fields)})" if fields else None
 
     @classmethod
     def from_ddl(cls, path: str | Path) -> "OracleSchema":
@@ -83,7 +95,12 @@ class OracleSchema:
         text = path.read_text(encoding="utf-8")
         digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
         schema = cls(snapshot=f"{path.name}@{digest}")
+        _object_types(schema, text)
+        views = []
         for statement in sqlglot.parse(text, dialect="oracle"):
+            if isinstance(statement, exp.Create) and statement.kind == "VIEW":
+                views.append(statement)
+                continue
             if not isinstance(statement, exp.Create) or statement.kind != "TABLE":
                 continue
             table = statement.find(exp.Table)
@@ -112,6 +129,8 @@ class OracleSchema:
                             int(start.group(1)) if start else 1, int(increment.group(1)) if increment else 1)
             schema.tables[table.name.lower()] = columns
             schema.keys[table.name.lower()] = _primary_key(statement)
+        for view in views:
+            _view_columns(schema, view)
         # `REFERENCES jobs` names the parent's primary key, and the parent may be defined later (or be the
         # table itself), so the columns are filled in once every table is known
         for table_name, keys in schema.foreign_keys.items():
@@ -125,10 +144,55 @@ class OracleSchema:
         return self.tables.get(table.lower(), {}).get(column.lower())
 
     def columns(self, table: str) -> dict[str, str] | None:
-        return self.tables.get(table.lower())
+        return self.tables.get(table.lower()) or self.views.get(table.lower())
 
     def primary_key(self, table: str) -> list[str]:
         return self.keys.get(table.lower(), [])
+
+
+_CREATE_OBJECT = re.compile(r"CREATE\s+(?:OR\s+REPLACE\s+)?TYPE\s+(?P<name>[\w$#]+)(?:\s+FORCE)?\s+(?:AS|IS)\s+OBJECT\s*"
+                            r"\((?P<fields>.*?)\)\s*;", re.IGNORECASE | re.DOTALL)
+_CREATE_TABLE_TYPE = re.compile(r"CREATE\s+(?:OR\s+REPLACE\s+)?TYPE\s+(?P<name>[\w$#]+)(?:\s+FORCE)?\s+(?:AS|IS)\s+"
+                                r"(?:TABLE|VARRAY\s*\(\s*\d+\s*\))\s+OF\s+(?P<element>[\w$#]+)\s*;", re.IGNORECASE)
+
+
+def _view_columns(schema: "OracleSchema", view) -> None:
+    """The columns of `CREATE VIEW v AS SELECT ...`, when each is a column of a table the DDL declares."""
+    from sqlglot import exp
+
+    name = view.this.name if hasattr(view.this, "name") else None
+    select = view.expression
+    if not name or not isinstance(select, exp.Select):
+        return
+    aliases = {}
+    for table in select.find_all(exp.Table):
+        aliases[(table.alias or table.name).lower()] = table.name.lower()
+    columns: dict[str, str] = {}
+    for projection in select.expressions:
+        column = projection.unalias() if isinstance(projection, exp.Alias) else projection
+        if not isinstance(column, exp.Column):
+            return   # a computed column: its type is not a column's, and guessing it is not this function's job
+        sources = [aliases[column.table.lower()]] if column.table else list(aliases.values())
+        found = [schema.tables.get(t, {}).get(column.name.lower()) for t in sources]
+        found = [f for f in found if f]
+        if len(found) != 1:
+            return
+        columns[projection.alias_or_name.lower()] = found[0]
+    schema.views[name.lower()] = columns
+
+
+def _object_types(schema: "OracleSchema", text: str) -> None:
+    """The object and collection types the DDL creates. sqlglot reads `CREATE TYPE` as an opaque command."""
+    text = re.sub(r"--[^\n]*", "", text)
+    for match in _CREATE_OBJECT.finditer(text):
+        fields = []
+        for part in re.split(r",(?![^()]*\))", match.group("fields")):
+            name, _, type_ = part.strip().partition(" ")
+            if name and type_.strip():
+                fields.append((name.strip().lower(), type_.strip()))
+        schema.object_types[match.group("name").lower()] = fields
+    for match in _CREATE_TABLE_TYPE.finditer(text):
+        schema.table_types[match.group("name").lower()] = match.group("element").lower()
 
 
 @dataclass(frozen=True)
@@ -482,6 +546,13 @@ class _Builder:
             if declared is not None and declared.kind == "type" and declared.type is not None \
                     and declared.type.origin in ("record", "collection"):
                 return TypeRef(written, declared.type.resolved, declared.type.origin,
+                               self.table.schema_snapshot)
+            # a schema object type is a record, and a schema collection type a collection of it (#54)
+            bare = re.sub(r"\s+PIPELINED$", "", written, flags=re.IGNORECASE).strip()
+            if self.schema is not None and self.schema.object_record(bare):
+                return TypeRef(bare, self.schema.object_record(bare), "record", self.table.schema_snapshot)
+            if self.schema is not None and bare.lower() in self.schema.table_types:
+                return TypeRef(bare, f"TABLE OF {self.schema.table_types[bare.lower()]}", "collection",
                                self.table.schema_snapshot)
             return TypeRef(oracle=written, resolved=written, origin="declared")
 
