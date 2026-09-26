@@ -480,4 +480,19 @@ class PlsqlTest {
     assertFalse(Plsql.eq(withNull, java.util.List.of("a", "b")), "a NULL element makes it unknown");
     assertFalse(Plsql.ne(withNull, java.util.List.of("a", "b")));
   }
+
+  @Test
+  void plsIntegerRangesAndNotNullRaiseWhatOracleRaises() {
+    // #59 #60 (samples/oracle-plsql-docs 3-4, 3-6, 3-9)
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.NumericOverflow.class,
+        () -> Plsql.plsInteger(Plsql.add(2147483647, 1)));
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.NumericOverflow.class, () -> Plsql.toInt(new BigDecimal("2147483648")));
+    assertEquals(3, Plsql.toInt(new BigDecimal("2.5")), "a fraction into a PLS_INTEGER rounds half away from zero");
+    assertEquals(-3, Plsql.toInt(new BigDecimal("-2.5")));
+    assertEquals(35, Plsql.inRange(35, 10L, 99L));
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.ValueError.class, () -> Plsql.inRange(4, 10L, 99L));
+    assertNull(Plsql.inRange(null, 10L, 99L), "a range does not forbid NULL");
+    org.junit.jupiter.api.Assertions.assertThrows(Plsql.ValueError.class, () -> Plsql.notNull(null));
+    assertEquals(1, Plsql.notNull(1));
+  }
 }

@@ -339,8 +339,17 @@ class _Parser:
     def parse_term(self) -> str:
         return self._binary(self.MULTIPLICATIVE, self.parse_unary)
 
+    def _pls_integer(self, start: int) -> bool:
+        """Whether the operand parsed from `start` is one PLS_INTEGER local (`p1`), marked `#pls_integer` in scope."""
+        if self.position != start + 1:
+            return False
+        kind, value = self.tokens[start]
+        return kind == "name" and f"{value.lower()}#pls_integer" in self.scope
+
     def _binary(self, operators: tuple[str, ...], operand) -> str:
+        start = self.position
         left = operand()
+        left_pls = self._pls_integer(start)
         while True:
             token = self.peek()
             if token is None or token[0] != "op" or token[1] not in operators:
@@ -350,9 +359,17 @@ class _Parser:
                 # `**` はべき乗。ヘルパに無いので、掛け算 2 つとして読まずに拒む
                 self.take()
                 self.result.unknown.append("**")
+            start = self.position
             right = operand()
+            right_pls = self._pls_integer(start)
             self.result.imports.add(HELPER_IMPORT)
             left = f"{HELPER}.{self.ARITHMETIC[operator]}({left}, {right})"
+            if left_pls and right_pls and operator != "/":
+                # PLS_INTEGER op PLS_INTEGER is computed in 32 bits: past the range it is ORA-01426 even when the
+                # result goes into a NUMBER (samples/oracle-plsql-docs 3-4, #60). Division yields a NUMBER
+                left = f"{HELPER}.plsInteger({left})"
+            else:
+                left_pls = False
 
     def parse_unary(self) -> str:
         """`-x` and `+x`. Without this the leading sign was read as a binary operator with nothing on its

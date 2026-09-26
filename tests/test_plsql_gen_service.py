@@ -733,3 +733,23 @@ def test_a_char_local_is_blank_padded_and_compared_blank_padded(tmp_path):
     assert 'flag = Plsql.pad("Y", 1, false);' in java
     assert 'Plsql.eq(Plsql.unpad(firstName), Plsql.unpad("John"))' in java
     assert 'Plsql.eq(lastName, "Chen")' in java
+
+
+def test_a_subtype_carries_its_constraint_range_and_not_null(tmp_path):
+    """`SUBTYPE Balance IS NUMBER(8,2)` / `RANGE 10..99` / `CHAR(6)` / SIMPLE_INTEGER: the variables were `Object`
+    and nothing was checked (samples/oracle-plsql-docs 3-6, 3-8〜3-10, #59 #60). Two PLS_INTEGERs add in 32 bits."""
+    program = _project(tmp_path, "CREATE TABLE t (id NUMBER(4) PRIMARY KEY);\n",
+        **{"p.prc": ("CREATE OR REPLACE PROCEDURE p IS\n"
+                     "  SUBTYPE Balance IS NUMBER(8,2);\n"
+                     "  SUBTYPE Double_digit IS PLS_INTEGER RANGE 10..99;\n  SUBTYPE Word IS CHAR(6);\n"
+                     "  savings Balance;\n  dd Double_digit := 35;\n  verb Word := 'run';\n"
+                     "  a SIMPLE_INTEGER := 1;\n  p1 PLS_INTEGER := 2147483647;\n  p2 PLS_INTEGER := 1;\n  n NUMBER;\n"
+                     "BEGIN\n  savings := 1000000.00;\n  dd := 4;\n  verb := 'See Tom run.';\n"
+                     "  a := NULL;\n  n := p1 + p2;\nEND;\n/\n")})
+    java = rendered(program, "p")
+    assert "savings = Plsql.fit(" in java and ", 8, 2)" in java
+    assert "dd = Plsql.inRange(4, 10L, 99L);" in java
+    assert 'verb = Plsql.pad("See Tom run.", 6, false);' in java
+    assert "a = Plsql.notNull(null)" in java or "a = Plsql.notNull(" in java
+    assert "Plsql.plsInteger(Plsql.add(p1, p2))" in java
+    assert "Object " not in java

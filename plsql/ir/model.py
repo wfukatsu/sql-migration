@@ -46,6 +46,9 @@ class TypeRef:
                                      # inferred | unresolved
     schema_snapshot: str | None = None  # which DDL snapshot resolved it (design doc §5.3)
     nullable: bool | None = None
+    # `SUBTYPE Digit IS PLS_INTEGER RANGE 0..9`: the bounds as written ("0..9"). The value is checked on every
+    # assignment, as the NUMBER(p,s) / VARCHAR2(n) of `resolved` is (#59)
+    range: str | None = None
 
     def is_resolved(self) -> bool:
         return self.resolved is not None

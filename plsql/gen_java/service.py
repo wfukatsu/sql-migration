@@ -410,10 +410,14 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
             if kind == "list" and holder.type is not None and "%" not in (holder.type.oracle or ""):
                 names[f"{(holder.type.oracle or '').strip().lower()}#constructor"] = kind
                 names[f"{(holder.type.oracle or '').strip().lower()}#element"] = element
-    # CHAR(n) locals hold blank-padded text (#62); comparing one with a literal or another CHAR is blank-padded too
+    # CHAR(n) locals hold blank-padded text (#62); comparing one with a literal or another CHAR is blank-padded too.
+    # PLS_INTEGER locals: arithmetic between two of them is 32-bit (#60)
     for holder in list(routine.parameters) + list(routine.declarations) + trigger_locals:
-        if holder.type is not None and _CHAR_CONSTRAINT.fullmatch(((holder.type.resolved or holder.type.oracle) or "").strip()):
+        declared = ((holder.type.resolved or holder.type.oracle) or "").strip() if holder.type is not None else ""
+        if _CHAR_CONSTRAINT.fullmatch(declared):
             names[f"{holder.name.lower()}#blank_padded"] = "1"
+        if declared.upper() in _PLS_INTEGER_TYPES:
+            names[f"{holder.name.lower()}#pls_integer"] = "1"
     # a schema object type's constructor `emp_grade_t(a, b, 'X')` builds its record (#54)
     from .types import object_types
     for name, resolved in object_types().items():
@@ -1955,11 +1959,37 @@ def _holder(routine: M.Routine, target: str):
 
 _NUMBER_CONSTRAINT = re.compile(r"(?:NUMBER|NUMERIC|DECIMAL|DEC)\s*\(\s*(\d+)\s*(?:,\s*(-?\d+)\s*)?\)", re.IGNORECASE)
 _TEXT_CONSTRAINT = re.compile(r"(?:VARCHAR2|VARCHAR|NVARCHAR2)\s*\(\s*(\d+)\s*(CHAR|BYTE)?\s*\)", re.IGNORECASE)
+# PL/SQL's 32-bit integers and their predefined subtypes: the range and NOT NULL each carries (#59, #60).
+# SIMPLE_INTEGER is NOT NULL but wraps on overflow instead of raising, so it has no range here
+_PLS_INTEGER_TYPES = {"PLS_INTEGER", "BINARY_INTEGER", "NATURAL", "NATURALN", "POSITIVE", "POSITIVEN", "SIGNTYPE"}
+_PREDEFINED_RANGES = {"NATURAL": "0..2147483647", "NATURALN": "0..2147483647", "POSITIVE": "1..2147483647",
+                      "POSITIVEN": "1..2147483647", "SIGNTYPE": "-1..1"}
+_NOT_NULL_TYPES = {"SIMPLE_INTEGER", "NATURALN", "POSITIVEN", "SIMPLE_FLOAT", "SIMPLE_DOUBLE"}
+_BOUNDS = re.compile(r"\s*(-?\d+)\s*\.\.\s*(-?\d+)\s*")
+
 # CHAR / NCHAR, with or without a length (CHAR alone is CHAR(1)). NCHAR counts characters whatever the setting
 _CHAR_CONSTRAINT = re.compile(r"(N?)CHAR(?:ACTER)?\s*(?:\(\s*(\d+)\s*(CHAR|BYTE)?\s*\))?", re.IGNORECASE)
 
 
 def _constrain(file: JavaFile, value: str, type_ref: "M.TypeRef | None") -> str:
+    """The declared type's checks on a value going into a variable: the size (`_fit`), then a RANGE and NOT NULL,
+    each VALUE_ERROR as in Oracle (#59, #60). A PLS_INTEGER's 32 bits are checked by `Plsql.toInt`, which every
+    assignment to one already goes through."""
+    fitted = _fit(file, value, type_ref)
+    if type_ref is None:
+        return fitted
+    declared = ((type_ref.resolved or type_ref.oracle) or "").strip().upper()
+    bounds = _BOUNDS.fullmatch(type_ref.range or _PREDEFINED_RANGES.get(declared, ""))
+    if bounds and fitted != "null":
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        fitted = f"Plsql.inRange({fitted}, {bounds.group(1)}L, {bounds.group(2)}L)"
+    if type_ref.nullable is False or declared in _NOT_NULL_TYPES:
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        fitted = f"Plsql.notNull({fitted})"
+    return fitted
+
+
+def _fit(file: JavaFile, value: str, type_ref: "M.TypeRef | None") -> str:
     """A value on its way into a variable declared `NUMBER(5,2)` or `VARCHAR2(3)`.
 
     The constraint is behaviour: Oracle rounds to the scale, and raises VALUE_ERROR past the precision or the
