@@ -292,7 +292,7 @@
 | `normalize_name` | REVIEW |  | confidence factor testEvidence is 0 |
 | `raise_salary` | REDESIGN | SQL-004 | SQL-004: SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めう |
 | `setup_drop_objects` | REDESIGN | DYN-001, DYN-002, CUR-002 | DYN-001: 表名など識別子が実行時に決まる SQL です。allowlist か専用 Repository への再設計が要ります |
-| `setup_gather_stats` | REVIEW | CALL-001 | CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません |
+| `setup_gather_stats` | REVIEW |  | confidence factor testEvidence is 0 |
 
 ### PL/SQL 実 DB 比較
 | シナリオ | routine | 結果 | 差の内容 |
@@ -324,7 +324,10 @@
 | `dept_name_of_ok` | `dept_name_of.dept_name_of` | 一致 |  |
 | `emp_api_give_raise_invalid` | `emp_api.give_raise~1` | 一致 |  |
 | `emp_api_give_raise_ok` | `emp_api.give_raise~1` | 一致 |  |
+| `emp_grades_all` | `emp_grades.emp_grades` | 一致 |  |
+| `emp_grades_dept60` | `emp_grades.emp_grades` | 一致 |  |
 | `log_msg_ok` | `log_msg.log_msg` | 一致 |  |
 | `normalize_name_ok` | `normalize_name.normalize_name` | 一致 |  |
 | `raise_salary_missing` | `raise_salary.raise_salary` | 一致 |  |
 | `raise_salary_ok` | `raise_salary.raise_salary` | 一致 |  |
+| `setup_gather_stats` | `setup_gather_stats.setup_gather_stats` | 一致 |  |

@@ -212,3 +212,34 @@ def test_routines_without_a_capture_are_only_the_documented_ones():
         "trg_payments_guard.trg_payments_guard",
     }
     assert uncovered == documented, f"undocumented gap: {sorted(uncovered - documented)}"
+
+
+def test_a_table_function_and_an_object_collection_are_encoded_as_rows():
+    """#54: `SELECT * FROM TABLE(f(...))` rows, and a collection of an object type, both become `$rows` with
+    NUMBER attributes as decimals -- the shape the ScalarDB capture writes for a List of records."""
+    rows = runner._Rows([(103, "Hunold", "B")])
+    assert runner.encode(rows) == {"$rows": [[{"$dec": "103"}, "Hunold", "B"]]}
+
+    class Attribute:
+        def __init__(self, name):
+            self.name = name
+
+    class ObjectType:
+        iscollection = False
+        attributes = [Attribute("EMPLOYEE_ID"), Attribute("LAST_NAME")]
+
+    class Element:
+        type = ObjectType()
+        EMPLOYEE_ID = 104
+        LAST_NAME = "Ernst"
+
+    class CollectionType:
+        iscollection = True
+
+    class Collection:
+        type = CollectionType()
+
+        def aslist(self):
+            return [Element()]
+
+    assert runner.encode(Collection()) == {"$rows": [[{"$dec": "104"}, "Ernst"]]}

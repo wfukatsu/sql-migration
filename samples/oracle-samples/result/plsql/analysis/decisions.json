@@ -2922,41 +2922,26 @@
   {
    "routine": "setup_gather_stats",
    "verdict": "REVIEW",
-   "ruleVerdict": "REVIEW",
+   "ruleVerdict": "AUTO",
    "confidence": {
     "value": 0.0,
     "ruleCoverage": 1.0,
-    "symbolResolution": 0.0,
+    "symbolResolution": 1.0,
     "typeResolution": 1.0,
     "targetCapability": 1.0,
     "testEvidence": 0.0,
     "zeroFactors": [
-     "symbolResolution",
      "testEvidence"
     ]
    },
    "reasons": [
-    "CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません"
+    "confidence factor testEvidence is 0"
    ],
-   "rules": [
-    {
-     "id": "CALL-001",
-     "decision": "REVIEW",
-     "message": "解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません",
-     "source": "lowering.yaml",
-     "severity": "critical"
-    }
-   ],
-   "remediation": [
-    "呼び先のソースを解析対象に加える",
-    "加えられない（Oracle 提供のパッケージなど）なら、移行先での代替を決める"
-   ],
-   "requiredTests": [
-    "equivalent_result"
-   ],
+   "rules": [],
+   "remediation": [],
+   "requiredTests": [],
    "whyNotAuto": [
-    "CALL-001 (REVIEW): 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません",
-    "確信度が 0: symbolResolution, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
+    "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
    "redesign": null,
    "source": {

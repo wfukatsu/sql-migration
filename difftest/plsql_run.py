@@ -137,7 +137,18 @@ def use_project(directory: str | Path) -> Path:
 # canonical encoding (same shapes as difftest/golden.py)
 # --------------------------------------------------------------------------------------------------
 
+class _Rows(list):
+    """Rows a table function returned, read through `SELECT * FROM TABLE(f(...))`."""
+
+
 def encode(v):
+    if isinstance(v, _Rows):
+        return {"$rows": [[encode(_number(x)) for x in row] for row in v]}
+    if hasattr(v, "type") and hasattr(v, "aslist") and getattr(v.type, "iscollection", False):
+        # a collection of an object type (`RETURN emp_grade_tab`, #54): its elements as rows of attributes. The
+        # order is the function's, which a query without ORDER BY does not fix; plsql_compare compares the rows
+        # as a multiset
+        return {"$rows": [_object_row(e) for e in v.aslist()]}
     if isinstance(v, decimal.Decimal):
         return {"$dec": str(v)}
     if isinstance(v, datetime.datetime):  # before date: datetime is a date subclass
@@ -149,6 +160,19 @@ def encode(v):
     if v is None or isinstance(v, (str, int, float, bool)):
         return v
     return {"$str": str(v)}  # LOB handles and the like: keep the text, never guess a type
+
+
+def _object_row(element) -> list:
+    if hasattr(element, "type") and getattr(element.type, "attributes", None):
+        return [encode(_number(getattr(element, a.name))) for a in element.type.attributes]
+    return [encode(_number(element))]
+
+
+def _number(value):
+    """An object attribute's NUMBER comes back as int / float; everything else in the capture is a Decimal."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return value
+    return decimal.Decimal(str(value))
 
 
 def canonical_rows(rows: list[list]) -> list[list]:
@@ -359,6 +383,12 @@ def call_routine(cur, spec: dict) -> tuple[dict, dict | None]:
         binds[name] = out_vars[name]
 
     def invoke():
+        if call["kind"] == "function" and call.get("via") == "table":
+            # a PIPELINED function cannot be called from PL/SQL (PLS-00653); SQL reads it as a table. The Java
+            # side calls the generated method, which returns the rows as a List (#54)
+            named = ", ".join(f"{k} => :{k}" for k in binds)
+            cur.execute(f"SELECT * FROM TABLE({call['name']}({named}))", binds)
+            return _Rows(cur.fetchall())
         if call["kind"] == "function":
             return cur.callfunc(call["name"], _oracle_type(cur, call["returns"]), keyword_parameters=binds)
         if call["kind"] == "block":
@@ -397,13 +427,17 @@ def _array_type(values: list):
 
 def _oracle_type(cur, name: str):
     import oracledb
-    return {
+    known = {
         "NUMBER": oracledb.DB_TYPE_NUMBER,
         "VARCHAR2": oracledb.DB_TYPE_VARCHAR,
         "DATE": oracledb.DB_TYPE_DATE,
         "TIMESTAMP": oracledb.DB_TYPE_TIMESTAMP,
         "TIMESTAMP WITH TIME ZONE": oracledb.DB_TYPE_TIMESTAMP_TZ,
-    }[name.upper()]
+    }
+    if name.upper() in known:
+        return known[name.upper()]
+    # a schema type (`EMP_GRADE_TAB`): what a function returning an object collection hands back (#54)
+    return cur.connection.gettype(name.upper())
 
 
 def dump_tables(cur, tables: list[str], mask: dict) -> tuple[dict, dict]:
