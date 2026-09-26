@@ -77,7 +77,12 @@ def checks(program: M.Program, schema: OracleSchema | None) -> list[Check]:
     for table, triggers in sorted(registry(program).items()):
         key = schema.primary_key(table) if schema is not None else []
         for trigger in triggers:
-            out.extend(_for(trigger, table, key))
+            for check in _for(trigger, table, key):
+                if not check.key and check.refused is None:
+                    # the table is not in the DDL snapshot (SCOTT's emp / dept in oracle-plsql-docs 9-6): the check
+                    # reads rows by their key, and indexing an empty one stopped the whole generation (#70)
+                    check.refused = f"{table} の主キーが分からない（スキーマの DDL に無い表）。行を照合できない"
+                out.append(check)
     return out
 
 
@@ -109,8 +114,9 @@ def _for(trigger, table: str, key: list[str]) -> list[Check]:
             found.append(Check(name, "B", table, HOURLY, key=key, audit=audit, condition=condition,
                                refused=None if audit else
                                "拒否の条件はあるが、前の値を知る監査が無い。比べる相手が無い"))
-        elif not writes:
-            # D: 書かない本体。生成した本体を、今ある行ごとに呼べばよい
+        elif not writes and not any(c.kind == "D" for c in found):
+            # D: 書かない本体。生成した本体を、今ある行ごとに呼べばよい。本体を丸ごと呼ぶので、RAISE を持つ IF が
+            # いくつあっても 1 つで足りる（2 つ作るとメソッド名が重なり javac が断った: oracle-plsql-docs 9-12、#79）
             # the body takes one argument per correlation in name order (`gen_java.service.correlation_row`):
             # a stored row is both its OLD and its NEW state for this check, so OLD.x is read from the same
             # column as NEW.x (#40: passing NEW only left the call one argument short and javac refused it)

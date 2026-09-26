@@ -866,9 +866,20 @@ def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
         # a PL/SQL record is born with every field NULL, or the default its TYPE gave the field (#45); the
         # Java record is immutable, so it is built here and rebuilt on each field assignment
         components = []
-        for _, declared in record_columns(declaration.type.resolved if declaration.type else ""):
+        for field_name, declared in record_columns(declaration.type.resolved if declaration.type else ""):
             default = re.search(r":=\s*(.+)$", declared)
-            components.append(_expr(file, default.group(1).strip(), routine, result) if default else "null")
+            try:
+                components.append(_expr(file, default.group(1).strip(), routine, result) if default else "null")
+            except Untranslatable as e:
+                # a field default the translator has no Java for stopped the whole generation (#70, 5-36); it
+                # gets the initialiser's treatment: the record is declared, the routine stops here
+                file.comment(f"not translated: default of {declaration.name}.{field_name}: {e.text.strip()[:120]}")
+                file.line(f"{row} {_local(declaration.name)} = null;")
+                file.line(f'if (true) throw new UnsupportedOperationException("unresolved in declaration '
+                          f'{declaration.name}.{field_name}: {", ".join(e.names)}");')
+                if routine.id not in result.untranslated:
+                    result.untranslated.append(routine.id)
+                return
         file.line(f"{row} {_local(declaration.name)} = new {row}({', '.join(components)});")
         return
     if _collection_kind(declaration) and not declaration.initial \
