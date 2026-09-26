@@ -381,3 +381,65 @@ def test_the_skill_asks_before_it_approves_and_before_it_tests():
     approval = (SKILLS / "migrate-flow" / "references" / "approval.md").read_text(encoding="utf-8")
     for part in ("何を決めるか", "推奨", "理由", "影響", "決めないと"):
         assert f"**{part}**" in approval, part
+
+
+# --- adopting what the skills made on their own (2026-09-26) ------------------------------------------------------
+
+
+@pytest.fixture()
+def standalone(tmp_path):
+    """plsql-spec and plsql-migrate run on their own, first: their outputs are where the user put them."""
+    elsewhere = tmp_path / "elsewhere"
+    limits = tmp_path / "limits.yaml"
+    shutil.copy(PROJECT / "limits.yaml", limits)
+    common = [str(PROJECT / "src"), "--scalardb-schema", str(PROJECT / "scalardb-schema.json"), "--limits", str(limits)]
+    assert analyse([str(PROJECT / "src"), "--out-dir", str(elsewhere / "spec-analysis"), "--quiet"]) in (0, 1)
+    shutil.copytree(SPEC_EXAMPLE, elsewhere / "spec", ignore=shutil.ignore_patterns("*.json"))
+    assert generate([*common, "--out-dir", str(elsewhere / "plsql"), "--quiet", "--no-verify-compile"]) == 0
+    assert analyse([*common, "--out-dir", str(elsewhere / "plsql" / "analysis"), "--quiet"]) in (0, 1)
+    shutil.copytree(DOCS_EXAMPLE, elsewhere / "plsql" / "docs", ignore=shutil.ignore_patterns("*.json"))
+    out = tmp_path / "flow"
+    assert run("init", out, "--kind", "plsql", "--src", str(PROJECT / "src"), "--limits", str(limits)) == 0
+    return out, elsewhere
+
+
+def test_adopt_brings_standalone_outputs_into_the_flow(standalone, capsys):
+    out, elsewhere = standalone
+    run("status", out)
+    assert "flow.py adopt --spec <dir> --spec-analysis <dir>" in capsys.readouterr().out, "status says how"
+    assert run("adopt", out, "--spec", str(elsewhere / "spec"), "--spec-analysis", str(elsewhere / "spec-analysis"),
+               "--generated", str(elsewhere / "plsql"), "--docs", str(elsewhere / "plsql" / "docs")) == 0
+    assert sorted(p.name for p in (out / "spec").glob("*.md")) == sorted(p.name for p in (elsewhere / "spec").glob("*.md"))
+    assert (out / "generated" / "generation-report.json").exists()
+    assert not (out / "generated" / "docs").exists(), "the docs go to docs/, not twice"
+    assert (out / "docs" / "README.md").exists()
+    state = yaml.safe_load((out / "flow.yaml").read_text(encoding="utf-8"))
+    assert state["adopted"]["spec"]["from"] == str((elsewhere / "spec").resolve())
+    assert not state.get("approvals"), "adopting is not approving"
+    capsys.readouterr()
+    run("status", out)
+    assert "がまだ無い" not in capsys.readouterr().out
+    # the same content again is fine; different content is refused unless --replace
+    assert run("adopt", out, "--spec", str(elsewhere / "spec")) == 0
+    (elsewhere / "spec" / "README.md").write_text("changed\n", encoding="utf-8")
+    capsys.readouterr()
+    assert run("adopt", out, "--spec", str(elsewhere / "spec")) == 2
+    assert "--replace" in capsys.readouterr().err
+    assert run("adopt", out, "--spec", str(elsewhere / "spec"), "--replace") == 0
+    assert (out / "spec" / "README.md").read_text(encoding="utf-8") == "changed\n"
+
+
+def test_adopt_refuses_a_directory_that_is_not_what_it_says(standalone, capsys):
+    out, elsewhere = standalone
+    assert run("adopt", out, "--generated", str(elsewhere / "spec")) == 2
+    assert "generation-report.json" in capsys.readouterr().err
+    assert run("adopt", out) == 2
+    assert "取り込むものが無い" in capsys.readouterr().err
+
+
+def test_status_reports_a_missing_analysis_instead_of_failing(standalone, capsys):
+    out, elsewhere = standalone
+    (out / "spec").mkdir()
+    shutil.copy(SPEC_EXAMPLE / "README.md", out / "spec" / "README.md")
+    assert run("status", out) == 0
+    assert "program.ir.json が無い" in capsys.readouterr().out

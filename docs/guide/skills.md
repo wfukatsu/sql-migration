@@ -52,7 +52,7 @@ Claude Code と Codex での違い:
 | `model` / `effort`（sql-transpile） | 効く | 無視される |
 | Java のコンパイル（`plsql.generate --verify-compile`）と実 DB の比較 | そのまま動く | Gradle の依存の取得と DB への接続にネットワークが要る。サンドボックスがネットワークを閉じていると止まるので、その段階は承認つきで動かすか、手で回す |
 
-確かめてあること: Claude Code はプラグインを入れて、ほかのプロジェクトのディレクトリから sql-transpile を最後まで（仮想環境の作成、変換、レポート）。Codex はこのリポジトリで sql-transpile を最後までと、marketplace の追加・プラグインのインストール。PL/SQL の 3 つも、2026-09-26 に公開の GitHub から取った版を `claude -p --plugin-dir` で読み込み、チェックアウトの無いプロジェクト（samples/tutorial の PL/SQL だけを置いたもの）で最後まで通しました: plsql-spec は仮想環境の作成から仕様の検査 0 件まで、plsql-migrate は Java の生成と `--verify-compile`（Java 17 と Gradle がある環境）、判断の記録、変換後の文書の検査 0 件まで、migrate-flow は段階 1 の承認待ちで止まり、承認を求める内容を書くところまで。実 DB の比較は、コンテナとライセンスが要るのでチェックアウトから流します（[検証環境](verification.md)）。スキルを 1 つずつ先に流した成果物は、migrate-flow の置き場所（`out/migrate/<名前>/`）とは別の場所に出るので、migrate-flow から始めるほうが写し直しが要りません。
+確かめてあること: Claude Code はプラグインを入れて、ほかのプロジェクトのディレクトリから sql-transpile を最後まで（仮想環境の作成、変換、レポート）。Codex はこのリポジトリで sql-transpile を最後までと、marketplace の追加・プラグインのインストール。PL/SQL の 3 つも、2026-09-26 に公開の GitHub から取った版を `claude -p --plugin-dir` で読み込み、チェックアウトの無いプロジェクト（samples/tutorial の PL/SQL だけを置いたもの）で最後まで通しました: plsql-spec は仮想環境の作成から仕様の検査 0 件まで、plsql-migrate は Java の生成と `--verify-compile`（Java 17 と Gradle がある環境）、判断の記録、変換後の文書の検査 0 件まで、migrate-flow は段階 1 の承認待ちで止まり、承認を求める内容を書くところまで。実 DB の比較は、コンテナとライセンスが要るのでチェックアウトから流します（[検証環境](verification.md)）。スキルを 1 つずつ先に流した成果物は、migrate-flow の置き場所（`out/migrate/<名前>/`）とは別の場所に出ます。そのときは `flow.py adopt` で取り込みます（写すだけで、承認はしません）。
 マニフェスト（`.claude-plugin/`、`.codex-plugin/`、`.agents/plugins/marketplace.json`）がそろっていること、スキルが `.agents/skills` から読めること、`description` が共通の形式（64 字以内の名前、1024 字以内の説明、きっかけと対象外）に収まっていることは、
 `tests/test_skills_portability.py` が確かめます。
 
