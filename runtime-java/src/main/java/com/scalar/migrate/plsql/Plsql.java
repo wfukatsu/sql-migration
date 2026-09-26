@@ -753,6 +753,41 @@ public final class Plsql {
     ((java.util.Map<?, ?>) collection).remove(key(collection, at));
   }
 
+  /** `v.EXTEND(n, i)`: n copies of element i at the end (#78, samples/oracle-plsql-docs 5-20). */
+  @SuppressWarnings("unchecked")
+  public static void extend(Object collection, Object n, Object i) {
+    if (collection == null) throw collectionIsNull();
+    if (!(collection instanceof java.util.List<?>)) throw new IllegalStateException("EXTEND on an associative array");
+    java.util.List<Object> list = (java.util.List<Object>) collection;
+    int from = num(i).intValueExact();
+    if (from < 1 || from > list.size() || list.get(from - 1) == GAP) {
+      throw new IllegalStateException("SUBSCRIPT_BEYOND_COUNT (ORA-06533): EXTEND copies element " + from);
+    }
+    Object copy = list.get(from - 1);
+    for (int k = num(n).intValueExact(); k > 0; k--) list.add(copy);
+  }
+
+  /**
+   * `v.DELETE(m, n)`: every element whose index is from m to n. Nothing when m is after n, and a missing one is
+   * skipped, as for DELETE(i). A nested table keeps the gaps; an associative array loses the keys (#78, 5-17, 5-18).
+   */
+  @SuppressWarnings("unchecked")
+  public static void delete(Object collection, Object from, Object to) {
+    if (collection == null) throw collectionIsNull();
+    if (isNull(from) || isNull(to)) return;
+    if (collection instanceof java.util.List<?> list) {
+      int low = Math.max(num(from).intValueExact(), 1);
+      int high = Math.min(num(to).intValueExact(), list.size());
+      for (int k = low; k <= high; k++) ((java.util.List<Object>) list).set(k - 1, GAP);
+      return;
+    }
+    java.util.NavigableMap<Object, Object> map = (java.util.NavigableMap<Object, Object>) collection;
+    Object low = key(collection, from);
+    Object high = key(collection, to);
+    if (compare(low, high) > 0) return;
+    map.subMap(low, true, high, true).clear();
+  }
+
   /** `v.TRIM` / `v.TRIM(n)` on a nested table (`trim` itself is the string function). */
   public static void trimTable(Object collection) {
     trimTable(collection, 1);
