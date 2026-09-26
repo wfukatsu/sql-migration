@@ -63,3 +63,14 @@ rules:
     message: 再帰です。スタックと DB ラウンドトリップの深さを確認してください
     requiredTests:
       - recursion_depth
+
+  - id: DICT-001
+    match: {statementKind: SqlOperation, textMatches: '(?i)\b(?:USER|ALL|DBA|CDB)_(?:OBJECTS|TABLES|TAB_COLUMNS|TAB_COLS|SOURCE|ERRORS|CONSTRAINTS|CONS_COLUMNS|INDEXES|IND_COLUMNS|SEQUENCES|TRIGGERS|PROCEDURES|ARGUMENTS|VIEWS|SYNONYMS|DEPENDENCIES|TYPES|PLSQL_OBJECT_SETTINGS|IDENTIFIERS|USERS|TAB_PRIVS|ROLE_PRIVS|SYS_PRIVS|SCHEDULER_JOBS|JOBS|LOBS|SEGMENTS|TAB_PARTITIONS|PART_TABLES)\b|\bG?V\$\w+'}
+    decision: REDESIGN
+    severity: critical
+    message: Oracle のデータ辞書（USER_* / ALL_* / DBA_* / V$*）を読んでいます。移行先にはありません
+    remediation:
+      - 何を知るための問合せかを決め、移行先のメタデータ（ScalarDB の Admin API など）か設定値に置き換える
+    requiredTests:
+      - equivalent_result
+

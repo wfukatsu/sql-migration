@@ -468,6 +468,12 @@
             "null"
           ]
         },
+        "call_spec": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "transactionEffects": {
           "type": "object",
           "additionalProperties": false,

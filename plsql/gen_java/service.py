@@ -559,6 +559,15 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
                 # 出したところで動かない
                 f.comment("the body is not emitted while the firing condition is unresolved")
                 return
+        if routine.call_spec:
+            # the body is Java or C inside the database (`AS LANGUAGE JAVA NAME ...`): nothing to translate, and an
+            # empty method would return as if it had done its work (8-43, #69)
+            f.comment(f"not translated: a call specification (LANGUAGE {routine.call_spec}); its body is outside PL/SQL")
+            f.line(f'throw new UnsupportedOperationException("call specification (LANGUAGE {routine.call_spec}): '
+                   f'move its body into the application");')
+            if routine.id not in result.untranslated:
+                result.untranslated.append(routine.id)
+            return
         clashes = _name_clashes(routine)
         if clashes:
             # `p_id` and `p__id`, or a local called `row_count` beside the generated `rowCount`: two declarations

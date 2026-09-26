@@ -401,6 +401,9 @@ class _Lowerer:
         elif re.search(r"\bAUTHID\s+DEFINER\b", text, re.IGNORECASE):
             routine.auth_id = "DEFINER"
         routine.deterministic = bool(re.search(r"\bDETERMINISTIC\b", text, re.IGNORECASE))
+        spec = re.search(r"\b(?:AS|IS)\s+(?:LANGUAGE\s+(JAVA|C)\b|(EXTERNAL)\b)", text, re.IGNORECASE)
+        if spec and _child(context, "BodyContext") is None:
+            routine.call_spec = (spec.group(1) or spec.group(2)).upper()
 
         body = _child(context, "BodyContext")
         if body is not None:

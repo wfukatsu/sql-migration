@@ -348,6 +348,8 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
         "authId": lambda v: routine.auth_id in _as_set(v),
         "dbLink": lambda v: bool(effects and effects.external.db_links) is v,
         "externalPackage": lambda v: bool(effects and effects.external.packages) is v,
+        # a call specification (`AS LANGUAGE JAVA NAME ...`): its body is Java or C inside the database (#69)
+        "callSpec": lambda v: bool(routine.call_spec) is v,
         "writeThenScan": lambda v: (routine.id in {r for r, _ in analysis.write_then_scan()}) is v,
         "recursive": lambda v: any(routine.id in cycle for cycle in analysis.call_graph.cycles()) is v,
         # a call that resolves to no routine in the program: code nobody analysed, which may commit, send mail,
