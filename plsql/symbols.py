@@ -439,6 +439,11 @@ class _Builder:
         for declaration in _descend(context, {"Declare_specContext"}, stop={"BodyContext"}):
             self._declaration(scope, declaration)
 
+        # a subprogram written in this one's declare section (#80): its own scope, inside this one's, under the id
+        # the lowering lifts it to -- `<module>.<name>`, the module of a standalone routine being the routine itself
+        for nested in _descend(context, ROUTINE_BODIES, stop={"BodyContext"}):
+            self._routine(nested, parent=scope, module=module or name)
+
         routine_symbol = Symbol(
             name=name, kind="routine", scope=module or "", type=returns, source_range=self._range(context),
             visibility="public" if (module is None or name in self.public) else "private",

@@ -230,6 +230,8 @@ def _names(program: M.Program) -> dict[str, str]:
                     by_name[qualified] = routine.id
     for module in program.modules:
         for routine in module.routines:
+            if routine.enclosing:
+                continue   # a lifted local subprogram (#80) is reached through its module, never by a bare name
             bare = routine.name.lower()
             if by_name.get(bare, routine.id) != routine.id:
                 by_name[bare] = AMBIGUOUS

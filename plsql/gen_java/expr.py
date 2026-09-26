@@ -608,7 +608,9 @@ class _Parser:
         if extra == "audit":
             self.result.imports.add(AUDIT_IMPORT)
             self.result.audit = True
-        return [extra]
+            return [extra]
+        # a lifted local subprogram (#80): the enclosing routine's variables it reads, by their PL/SQL names
+        return [self.scope.get(n.lower(), n) for n in extra.split(",")]
 
     def _subscript(self) -> str | None:
         """`name(index)` が丸ごと scope にあればそれを返し、トークンを読み進める。"""

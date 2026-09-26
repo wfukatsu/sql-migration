@@ -436,7 +436,12 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
         for r in module.routines:
             if overload_of(r) is None and r.id != routine.id:
                 names[f"{r.name.lower()}#parameters"] = ",".join(
-                    java_type(p.type.resolved if p.type else None).name for p in r.parameters)
+                    java_type(p.type.resolved if p.type else None).name for p in r.parameters
+                    if not (r.enclosing and p.carried))
+                carried = [p.name for p in r.parameters if r.enclosing and p.carried]
+                if carried:
+                    # a lifted local subprogram takes the enclosing variables it reads after its own (#80)
+                    names[f"{r.name.lower()}#extra"] = ",".join(carried)
         # a trigger declares its locals on the module, not on the body, and a package-level cursor is visible
         # to every routine; leaving them out reports real names as unknown
         # a package-level variable is session state (STATE-001): there is no field to assign, so a reference

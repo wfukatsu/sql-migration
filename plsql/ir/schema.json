@@ -462,6 +462,12 @@
             "null"
           ]
         },
+        "enclosing": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "transactionEffects": {
           "type": "object",
           "additionalProperties": false,
