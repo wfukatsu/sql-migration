@@ -2,7 +2,7 @@
 
 - 解析対象: 36 モジュール / 41 routine / 362 文
 - DDL スナップショット: `schema.sql@d6f64025`
-- 診断: 285 件（うち ERROR 5 件）
+- 診断: 299 件（うち ERROR 5 件）
 
 > この数値は**合成 corpus 上の値**であり、実案件の PL/SQL に対する耐性を示すものではない（実装計画 §9、docs/design/plsql-kpi.md §0）。
 

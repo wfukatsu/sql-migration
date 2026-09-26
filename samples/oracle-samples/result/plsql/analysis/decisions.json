@@ -298,8 +298,7 @@
     ]
    },
    "reasons": [
-    "CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
-    "CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります"
+    "CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります"
    ],
    "rules": [
     {
@@ -317,11 +316,11 @@
      "severity": "warning"
     },
     {
-     "id": "CUR-002",
-     "decision": "REVIEW",
-     "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+     "id": "CUR-OPT-002",
+     "decision": "AUTO",
+     "message": "Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します",
      "source": "semantics.yaml",
-     "severity": "warning"
+     "severity": "info"
     }
    ],
    "remediation": [
@@ -331,12 +330,10 @@
    "requiredTests": [
     "cross_partition_scan",
     "cursor_lifetime",
-    "performance",
     "row_limit"
    ],
    "whyNotAuto": [
     "CUR-003 (REVIEW): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
-    "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
     "確信度が 0: symbolResolution, typeResolution, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
    "redesign": null,
@@ -367,24 +364,22 @@
     ]
    },
    "reasons": [
-    "CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
-    "CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
     "SQL-002: 実行計画（取得 + H2）に分解される文です。行数上限と性能を確認してください"
    ],
    "rules": [
     {
-     "id": "CUR-002",
-     "decision": "REVIEW",
-     "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+     "id": "CUR-OPT-002",
+     "decision": "AUTO",
+     "message": "Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します",
      "source": "semantics.yaml",
-     "severity": "warning"
+     "severity": "info"
     },
     {
-     "id": "CUR-002",
-     "decision": "REVIEW",
-     "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+     "id": "CUR-OPT-002",
+     "decision": "AUTO",
+     "message": "Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します",
      "source": "semantics.yaml",
-     "severity": "warning"
+     "severity": "info"
     },
     {
      "id": "SQL-002",
@@ -400,8 +395,6 @@
     "row_limit"
    ],
    "whyNotAuto": [
-    "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
-    "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
     "SQL-002 (REVIEW): 実行計画（取得 + H2）に分解される文です。行数上限と性能を確認してください",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
@@ -567,9 +560,7 @@
    },
    "reasons": [
     "CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
-    "CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
-    "CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
-    "CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります"
+    "CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります"
    ],
    "rules": [
     {
@@ -601,18 +592,18 @@
      "severity": "warning"
     },
     {
-     "id": "CUR-002",
-     "decision": "REVIEW",
-     "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+     "id": "CUR-OPT-002",
+     "decision": "AUTO",
+     "message": "Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します",
      "source": "semantics.yaml",
-     "severity": "warning"
+     "severity": "info"
     },
     {
-     "id": "CUR-002",
-     "decision": "REVIEW",
-     "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+     "id": "CUR-OPT-002",
+     "decision": "AUTO",
+     "message": "Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します",
      "source": "semantics.yaml",
-     "severity": "warning"
+     "severity": "info"
     }
    ],
    "remediation": [
@@ -624,14 +615,11 @@
    "requiredTests": [
     "cross_partition_scan",
     "cursor_lifetime",
-    "performance",
     "row_limit"
    ],
    "whyNotAuto": [
     "CUR-003 (REVIEW): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
     "CUR-003 (REVIEW): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
-    "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
-    "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
    "redesign": null,
@@ -649,7 +637,7 @@
   {
    "routine": "b04_5_records_collections",
    "verdict": "REVIEW",
-   "ruleVerdict": "REVIEW",
+   "ruleVerdict": "AUTO",
    "confidence": {
     "value": 0.0,
     "ruleCoverage": 1.0,
@@ -662,24 +650,20 @@
     ]
    },
    "reasons": [
-    "CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります"
+    "confidence factor testEvidence is 0"
    ],
    "rules": [
     {
-     "id": "CUR-002",
-     "decision": "REVIEW",
-     "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+     "id": "CUR-OPT-002",
+     "decision": "AUTO",
+     "message": "Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します",
      "source": "semantics.yaml",
-     "severity": "warning"
+     "severity": "info"
     }
    ],
    "remediation": [],
-   "requiredTests": [
-    "performance",
-    "row_limit"
-   ],
+   "requiredTests": [],
    "whyNotAuto": [
-    "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
    "redesign": null,
@@ -1074,7 +1058,7 @@
   {
    "routine": "b06_1_bulk_collect_limit",
    "verdict": "REVIEW",
-   "ruleVerdict": "REVIEW",
+   "ruleVerdict": "AUTO",
    "confidence": {
     "value": 0.0,
     "ruleCoverage": 1.0,
@@ -1087,8 +1071,7 @@
     ]
    },
    "reasons": [
-    "CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
-    "BULK-003: 分割読みは行をまとめて読む形になりました。メモリを守るのは LIMIT ではなく走査行数の上限です"
+    "confidence factor testEvidence is 0"
    ],
    "rules": [
     {
@@ -1099,18 +1082,18 @@
      "severity": "info"
     },
     {
-     "id": "CUR-002",
-     "decision": "REVIEW",
-     "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+     "id": "CUR-OPT-002",
+     "decision": "AUTO",
+     "message": "Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します",
      "source": "semantics.yaml",
-     "severity": "warning"
+     "severity": "info"
     },
     {
-     "id": "BULK-003",
-     "decision": "REVIEW",
-     "message": "分割読みは行をまとめて読む形になりました。メモリを守るのは LIMIT ではなく走査行数の上限です",
+     "id": "BULK-OPT-003",
+     "decision": "AUTO",
+     "message": "分割読みは行をまとめて読む形になりました。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります",
      "source": "semantics.yaml",
-     "severity": "warning"
+     "severity": "info"
     }
    ],
    "remediation": [
@@ -1118,13 +1101,9 @@
     "全行を取得してアプリ側で絞る・並べる（docs/design/app-side-processing-plan.md）"
    ],
    "requiredTests": [
-    "cross_partition_scan",
-    "performance",
-    "row_limit"
+    "cross_partition_scan"
    ],
    "whyNotAuto": [
-    "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
-    "BULK-003 (REVIEW): 分割読みは行をまとめて読む形になりました。メモリを守るのは LIMIT ではなく走査行数の上限です",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
    "redesign": null,
@@ -1343,7 +1322,7 @@
   {
    "routine": "b06_3_6_dbms_sql",
    "verdict": "REVIEW",
-   "ruleVerdict": "REVIEW",
+   "ruleVerdict": "AUTO",
    "confidence": {
     "value": 0.0,
     "ruleCoverage": 1.0,
@@ -1356,7 +1335,7 @@
     ]
    },
    "reasons": [
-    "CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります"
+    "confidence factor testEvidence is 0"
    ],
    "rules": [
     {
@@ -1367,11 +1346,11 @@
      "severity": "info"
     },
     {
-     "id": "CUR-002",
-     "decision": "REVIEW",
-     "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+     "id": "CUR-OPT-002",
+     "decision": "AUTO",
+     "message": "Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します",
      "source": "semantics.yaml",
-     "severity": "warning"
+     "severity": "info"
     }
    ],
    "remediation": [
@@ -1379,12 +1358,9 @@
     "全行を取得してアプリ側で絞る・並べる（docs/design/app-side-processing-plan.md）"
    ],
    "requiredTests": [
-    "cross_partition_scan",
-    "performance",
-    "row_limit"
+    "cross_partition_scan"
    ],
    "whyNotAuto": [
-    "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
    "redesign": null,
@@ -1585,7 +1561,7 @@
   {
    "routine": "b06_4_collection_in_sql",
    "verdict": "REVIEW",
-   "ruleVerdict": "REVIEW",
+   "ruleVerdict": "AUTO",
    "confidence": {
     "value": 0.0,
     "ruleCoverage": 1.0,
@@ -1598,24 +1574,20 @@
     ]
    },
    "reasons": [
-    "CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります"
+    "confidence factor testEvidence is 0"
    ],
    "rules": [
     {
-     "id": "CUR-002",
-     "decision": "REVIEW",
-     "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+     "id": "CUR-OPT-002",
+     "decision": "AUTO",
+     "message": "Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します",
      "source": "semantics.yaml",
-     "severity": "warning"
+     "severity": "info"
     }
    ],
    "remediation": [],
-   "requiredTests": [
-    "performance",
-    "row_limit"
-   ],
+   "requiredTests": [],
    "whyNotAuto": [
-    "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
    "redesign": null,
@@ -2548,7 +2520,7 @@
   {
    "routine": "emp_grades",
    "verdict": "REVIEW",
-   "ruleVerdict": "REVIEW",
+   "ruleVerdict": "AUTO",
    "confidence": {
     "value": 0.0,
     "ruleCoverage": 1.0,
@@ -2561,8 +2533,7 @@
     ]
    },
    "reasons": [
-    "CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
-    "CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります"
+    "confidence factor testEvidence is 0"
    ],
    "rules": [
     {
@@ -2573,18 +2544,18 @@
      "severity": "info"
     },
     {
-     "id": "CUR-002",
-     "decision": "REVIEW",
-     "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+     "id": "CUR-OPT-002",
+     "decision": "AUTO",
+     "message": "Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します",
      "source": "semantics.yaml",
-     "severity": "warning"
+     "severity": "info"
     },
     {
-     "id": "CUR-002",
-     "decision": "REVIEW",
-     "message": "Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
+     "id": "CUR-OPT-002",
+     "decision": "AUTO",
+     "message": "Cursor FOR LOOP です。走査する行数の上限は limits.yaml で決めてあり、生成コードがそれを守ります。N+1 の往復と fetch size は、性能試験で確かめることを推奨します",
      "source": "semantics.yaml",
-     "severity": "warning"
+     "severity": "info"
     }
    ],
    "remediation": [
@@ -2592,13 +2563,9 @@
     "全行を取得してアプリ側で絞る・並べる（docs/design/app-side-processing-plan.md）"
    ],
    "requiredTests": [
-    "cross_partition_scan",
-    "performance",
-    "row_limit"
+    "cross_partition_scan"
    ],
    "whyNotAuto": [
-    "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
-    "CUR-002 (REVIEW): Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size を確認する必要があります",
     "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
    ],
    "redesign": null,

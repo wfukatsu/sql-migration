@@ -14,7 +14,7 @@ Oracle 公式ドキュメントの構成に沿った **構文カタログ**（SQ
 | SQL の実 DB 比較（02 の読み取り文 + JSON 3 文 + 修正版 1 文） | 40 文 | PASS 19 / FAIL 10 / SKIP 9 / CASE_ERROR 2 | **PASS 19 / FAIL 5 / SKIP 14 / CASE_ERROR 2**。FAIL 5 はすべて同順位・非決定。JSON_OBJECT は PASS に。#57 #58 のあと **PASS 24（宣言つき 5）/ FAIL 0 / SKIP 16（移行元が拒否 2）/ CASE_ERROR 0** |
 | PL/SQL routine（05・06 の全ユニット + 04 の無名ブロック 10 個） | 41 routine | AUTO 候補 7 / REVIEW 10 / REDESIGN 24 | 同じ（判定のルールは変えていない） |
 | PL/SQL の Java 生成 | 41 routine | javac エラー 15 件（8 routine） | **javac エラー 0**（41 routine 全部がコンパイルできる） |
-| PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 16 / 相違 15**（全 36 ユニット、31 シナリオ。#44〜#46 と 4 つの決定のあと）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて）。その後の回で一致 26 / 相違 5、#52 #55 のあと 一致 27 / 相違 4、残りを対応して **一致 30 / 相違 1**（b06_3 は再設計として記録） |
+| PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 16 / 相違 15**（全 36 ユニット、31 シナリオ。#44〜#46 と 4 つの決定のあと）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて）。その後の回で一致 26 / 相違 5、#52 #55 のあと 一致 27 / 相違 4、残りを対応して **一致 30 / 相違 1**（b06_3 は再設計として記録）。行数上限を決めて証拠つき **AUTO 12** |
 
 ## フォルダ
 
@@ -58,6 +58,7 @@ samples/oracle-samples/
 | 行ロックと RMW は楽観制御へ（6 routine）、routine の中の COMMIT / ROLLBACK は呼び出し側の境界へ（9 routine）、log_msg は別トランザクション、動的 SQL の表名は employees だけ（2026-09-25、利用者の決定、`plsql/limits.yaml`） | 「3 回目の修正」の節。trigger の掛け方（TRG-002）はまだ決めていない |
 | b06_3 の動的 UPDATE（`SET salary = salary … RETURNING last_name`）も楽観制御へ、b06_3 の一時表の DDL（CREATE / DROP TABLE dyn_tmp）は移行先で実行しない（2026-09-26、利用者の決定、`plsql/limits.yaml` の `rowLocks.optimistic` と新しいキー `ddl.omit`） | 「7 回目の対応」の節 |
 | b06_2_2 の FORALL の RMW も楽観制御へ（2026-09-26、利用者の決定、`rowLocks.optimistic`）。b06_3 の 3-4（書いた表の走査）は生成器では直さず、再設計として記録する（同日、`plsql/limits.yaml` のコメント） | 「8 回目の対応」の節 |
+| 走査する行数の上限（2026-09-26、利用者の決定、`scanRows.routines`）: 1 部門の社員を読む routine と部門の一覧を読む routine は 1000、全社員を読む routine は 100000 | 「9 回目の対応」の節 |
 
 ---
 
@@ -477,6 +478,28 @@ PASS=24 FAIL=0 SKIP=16 CASE_ERROR=0 (of PASS, EMPTY=0 DECLARED=5; of SKIP, SOURC
 |---|---|
 | `b06_3_native_dynamic_sql` | 書いた表の走査（SCAN-001）。ScalarDB の制約で、再設計として記録した |
 
+### 9 回目の対応（2026-09-26、走査する行数の上限）
+
+REVIEW 10 本のうち 8 本は、走査する行数の上限（CUR-002 / BULK-003）を誰も決めていないことが理由だった。利用者が次のように決めた
+（`plsql/limits.yaml` の `scanRows.routines`、理由つき）。生成コードは行を先に全部読むので、上限がメモリを守る。超えると
+`RowLimitExceededException` で止まる（Oracle では止まらなかった）ので、実際の最大より十分上の値にした。
+
+| 読むもの | routine | 上限 |
+|---|---|---|
+| 1 部門の社員 | b04_4_1、b04_5、b06_4 | 1000 |
+| 部門の一覧（と 1 部門の社員） | b04_4_2、b06_3_6 | 1000 |
+| 全社員 | b04_4_4、b06_1、emp_grades | 100000 |
+
+実 DB の比較は一致 30 / 相違 1 のまま。証拠つきの判定は **AUTO 8 → 12**（b04_5、b06_1、b06_3_6、b06_4）、REVIEW 10 → 6。
+残る REVIEW は上限では消えない理由による:
+
+| routine | 理由 |
+|---|---|
+| b04_4_1、b04_4_4 | CUR-003: 明示 cursor を先読みの走査に置き換えた。cursor が COMMIT をまたいでいたなら読む時点が変わる（どちらも routine の中に COMMIT は無い） |
+| b04_4_2 | SQL-002: 実行計画（取得 + H2）に分解される文（`ORDER BY 1`） |
+| emp_grades | 実 DB のシナリオが無い（証拠が無い） |
+| dml_d_create_error_log、setup_gather_stats | CALL-001: 解析していない routine（DBMS_ERRLOG、DBMS_STATS）を呼ぶ |
+
 ## 付録（`result/tables.md` と同じ。`make_tables.py` が結果ファイルから作る。**Issue 修正後の数字**）
 
 ### SQL 変換（文ごと）
@@ -737,22 +760,22 @@ PASS=24 FAIL=0 SKIP=16 CASE_ERROR=0 (of PASS, EMPTY=0 DECLARED=5; of SKIP, SOURC
 | `b04_1_variables` | REVIEW |  | confidence factor testEvidence is 0 |
 | `b04_2_control_flow` | REVIEW |  | confidence factor testEvidence is 0 |
 | `b04_3_implicit_cursor_attrs` | REDESIGN | CUR-002, SQL-004, TX-001, TX-004 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
-| `b04_4_1_explicit_cursor` | REVIEW | SCAN-002, CUR-003, CUR-002 | CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります; CUR-002 |
-| `b04_4_2_cursor_for_loop` | REVIEW | CUR-002, SQL-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
+| `b04_4_1_explicit_cursor` | REVIEW | SCAN-002, CUR-003, CUR-OPT-002 | CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります |
+| `b04_4_2_cursor_for_loop` | REVIEW | CUR-OPT-002, SQL-002 | SQL-002: 実行計画（取得 + H2）に分解される文です。行数上限と性能を確認してください |
 | `b04_4_3_for_update_current_of` | REDESIGN | CUR-002, SQL-004, LOCK-001, LOCK-002, TX-001 | LOCK-001: 行ロックです。ターゲットで同じ保証を別の方法で与える設計が要ります; LOCK-002: cursor の宣言で行ロックしています。文だけを |
-| `b04_4_4_ref_cursor` | REVIEW | SCAN-002, CUR-003, CUR-002 | CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります; CUR-003 |
-| `b04_5_records_collections` | REVIEW | CUR-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
+| `b04_4_4_ref_cursor` | REVIEW | SCAN-002, CUR-003, CUR-OPT-002 | CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります; CUR-003 |
+| `b04_5_records_collections` | REVIEW | CUR-OPT-002 | confidence factor testEvidence is 0 |
 | `b04_6_1_predefined_exceptions` | REVIEW | SELECT-OPT-001 | confidence factor testEvidence is 0 |
 | `b04_6_2_user_exceptions` | REDESIGN | TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b05_1_call_raise_salary` | REDESIGN | TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b05_3_call_emp_api` | REDESIGN | SCAN-001, TX-001 | SCAN-001: 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します; TX-001: routine 内の COMMIT  |
 | `b05_4_call_log_msg` | REDESIGN | SQL-004, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
-| `b06_1_bulk_collect_limit` | REVIEW | SCAN-002, CUR-002, BULK-003 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
+| `b06_1_bulk_collect_limit` | REVIEW | SCAN-002, CUR-OPT-002, BULK-OPT-003 | confidence factor testEvidence is 0 |
 | `b06_2_2_forall_returning` | REDESIGN | SCAN-001, CUR-002, SQL-004, TX-001 | SCAN-001: 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します; TX-001: routine 内の COMMIT  |
 | `b06_2_forall_save_exceptions` | REDESIGN | SCAN-002, CUR-OPT-002, BULK-OPT-003, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
-| `b06_3_6_dbms_sql` | REVIEW | SCAN-002, CUR-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
+| `b06_3_6_dbms_sql` | REVIEW | SCAN-002, CUR-OPT-002 | confidence factor testEvidence is 0 |
 | `b06_3_native_dynamic_sql` | REDESIGN | DYN-001, DYN-002, DYN-OPT-002, SCAN-001, CUR-003, CUR-002, SQL-004, SQL-002, TX-001, TX-004 | DYN-001: 表名など識別子が実行時に決まる SQL です。allowlist か専用 Repository への再設計が要ります; SCAN-001: 同 |
-| `b06_4_collection_in_sql` | REVIEW | CUR-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
+| `b06_4_collection_in_sql` | REVIEW | CUR-OPT-002 | confidence factor testEvidence is 0 |
 | `b06_5_2_scheduler_job` | REDESIGN | CALL-001, EXT-001 | EXT-001: UTL_* / DBMS_SCHEDULER / AQ などの外部副作用があります |
 | `b06_5_builtin_packages` | REVIEW |  | confidence factor testEvidence is 0 |
 | `b06_6_conditional_compilation` | REVIEW |  | confidence factor testEvidence is 0 |
@@ -767,7 +790,7 @@ PASS=24 FAIL=0 SKIP=16 CASE_ERROR=0 (of PASS, EMPTY=0 DECLARED=5; of SKIP, SOURC
 | `emp_biu_trg.body` | REDESIGN | TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
 | `emp_dept_cap_trg.body` | REDESIGN | TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
 | `emp_dept_upd_v_trg.body` | REDESIGN | SELECT-OPT-001, TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
-| `emp_grades` | REVIEW | SCAN-002, CUR-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
+| `emp_grades` | REVIEW | SCAN-002, CUR-OPT-002 | confidence factor testEvidence is 0 |
 | `emp_salary_audit_trg.body` | REDESIGN | SEM-010, TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
 | `log_msg` | REDESIGN | SEM-010, TX-001, TX-002 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `normalize_name` | REVIEW |  | confidence factor testEvidence is 0 |
