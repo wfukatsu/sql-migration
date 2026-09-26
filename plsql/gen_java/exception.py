@@ -188,7 +188,13 @@ def _class_for(statement: M.Raise, module: M.Module, program: M.Program | None =
         # a code Oracle already names (-6502 is VALUE_ERROR) is that exception, not a business error of the
         # module: a second class for the code would keep the predefined one from being written at all
         return predefined
-    return f"{java_class_name(module.name)}Error{abs(statement.error_code or 0)}Exception"
+    code = statement.error_code or 0
+    if not -20999 <= code <= -20000:
+        # an Oracle error, not a business one (a CHECK guard's -2290, a scalar subquery's -1427): it means the same
+        # whichever module raises it, so it is named after the number. Named after the first module that raised it,
+        # every other module threw `B043ImplicitCursorAttrsError2290Exception` (samples/oracle-samples, 2026-09-26)
+        return f"Ora{abs(code):05d}Exception"
+    return f"{java_class_name(module.name)}Error{abs(code)}Exception"
 
 
 def _user_code(name: str) -> int:

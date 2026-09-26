@@ -176,7 +176,7 @@ P=samples/tutorial/plsql; O=out/migrate/tutorial-points
 **生成物を手で直さず、生成器を直しました**（兄弟の routine の NUMBER 引数には `Plsql.dec(…)` で渡す。回帰テストつき）。
 
 ```text
-routines: 4  AUTO 3  REVIEW 0  REDESIGN 1
+routines: 4  rules: AUTO 3  REVIEW 0  REDESIGN 1  |  verdict: AUTO 0  REVIEW 3  REDESIGN 1
 untranslated statements 0  SQL ScalarDB refuses 0  planned 0
   compile check: gradle compileJava succeeded over the generated tree
 ```
