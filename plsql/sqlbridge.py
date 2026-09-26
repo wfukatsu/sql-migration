@@ -89,13 +89,16 @@ def analyse(operation: SqlOperation, scope: str, symbols: SymbolTable | None = N
         result.issues.append(_issue(issue))
         return result
 
+    # read before strip_into takes the INTO away: asked after, every `SELECT … BULK COLLECT INTO` that no FORALL
+    # pairs with came out a one-row SELECT INTO -- TOO_MANY_ROWS on the second row (oracle-plsql-docs 12-21, #66)
+    bulk = _is_bulk(tree)
     targets = strip_into(tree)
     # after strip_into, not before: `INTO v_row` parses as a table, and a star is only expandable when the
     # statement reads exactly one table
     expand_star(tree, symbols)
     if targets:
         operation.into_targets = list(targets)
-        operation.cardinality = "EXACTLY_ONE" if len(targets) >= 1 and not _is_bulk(tree) else "MANY"
+        operation.cardinality = "EXACTLY_ONE" if len(targets) >= 1 and not bulk else "MANY"
     # no INTO in the SQL does not mean no assignment targets: a cursor rewritten to the query it was (#11)
     # carries them on the node, because the INTO was never part of its text
     result.into_targets = [{"name": t} for t in operation.into_targets]

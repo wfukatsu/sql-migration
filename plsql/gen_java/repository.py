@@ -355,6 +355,8 @@ def _direct(file: JavaFile, name: str, statement: M.SqlOperation, result: Reposi
                 g.line("return statement.executeUpdate();")
             elif statement.cardinality == "AT_MOST_ONE":
                 _first_row(g, reader)
+            elif statement.cardinality == "MANY" and statement.into_targets:
+                _all_rows(g, reader)
             elif statement.into_targets:
                 _select_into(g, reader, statement)
             else:
@@ -386,6 +388,16 @@ def _first_row(file: JavaFile, reader: str) -> None:
         with f.block("if (!rows.next())") as g:
             g.line("return null;   // %NOTFOUND")
         f.line(f"return {reader};")
+
+
+def _all_rows(file: JavaFile, reader: str) -> None:
+    """BULK COLLECT (#66): every row, none of them an error -- no row is an empty collection, as in Oracle."""
+    file.add_import("java.util.ArrayList", "java.util.List")
+    with file.block("try (ResultSet rows = statement.executeQuery())") as f:
+        f.line("List<Object[]> all = new ArrayList<>();")
+        with f.block("while (rows.next())") as g:
+            g.line(f"all.add({reader});")
+        f.line("return all;")
 
 
 def _select_into(file: JavaFile, reader: str, statement: M.SqlOperation) -> None:
@@ -581,6 +593,11 @@ def _return(file: JavaFile, statement: M.SqlOperation) -> tuple[str, str]:
     if (statement.sql_kind or "").upper() in ("INSERT", "UPDATE", "DELETE", "MERGE"):
         return "int", ""   # SQL%ROWCOUNT is part of the behaviour
     if statement.into_targets:
+        if statement.cardinality == "MANY":
+            # BULK COLLECT (#66): every row, each as its columns; the service hands column i to collection i
+            return "List<Object[]>", "new Object[] {" + ", ".join(
+                _read(file, statement, i)
+                for i in range(1, max(len(statement.into_targets), len(statement.into_columns or [])) + 1)) + "}"
         if statement.cardinality == "AT_MOST_ONE":
             # always an array, even for one target: `null` has to mean "no row", and a one-value return could
             # not tell that apart from a row whose only column is NULL

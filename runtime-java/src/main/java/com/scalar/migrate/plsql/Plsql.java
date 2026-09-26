@@ -1237,6 +1237,33 @@ public final class Plsql {
     return date.withDayOfMonth(date.toLocalDate().lengthOfMonth());
   }
 
+  /**
+   * `SELECT a, b BULK COLLECT INTO va, vb` (#66): column `index` of every row, as a nested table of `type` -- a
+   * NUMBER column read as BigDecimal, an INTEGER one as Integer. No row is an empty collection, not NULL.
+   */
+  public static <T> java.util.List<T> column(java.util.List<Object[]> rows, int index, Class<T> type) {
+    java.util.List<T> out = new java.util.ArrayList<>(rows.size());
+    for (Object[] row : rows) {
+      Object value = row[index];
+      if (value == null || type.isInstance(value)) {
+        out.add(type.cast(value));
+      } else if (type == BigDecimal.class) {
+        out.add(type.cast(num(value)));
+      } else if (type == Integer.class) {
+        out.add(type.cast(toInt(value)));
+      } else if (type == Long.class) {
+        out.add(type.cast(num(value).longValueExact()));
+      } else if (type == String.class) {
+        out.add(type.cast(text(value)));
+      } else if (type == LocalDateTime.class) {
+        out.add(type.cast(castDate(value)));
+      } else {
+        out.add(type.cast(value));
+      }
+    }
+    return out;
+  }
+
   /** Oracle's {@code IN}: false when the left side is null, since the comparison is unknown. */
   public static boolean in(Object value, Object... candidates) {
     if (isNull(value)) return false;

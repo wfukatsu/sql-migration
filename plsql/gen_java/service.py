@@ -1849,10 +1849,21 @@ def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine
         raise Untranslatable(["execution plan result"], statement.original_sql)
     targets = statement.into_targets
     if targets and statement.cardinality == "MANY":
-        # BULK COLLECT fills collections from every matching row. Treating it as a one-row SELECT INTO, which
-        # is what the shape otherwise looks like, turns "no rows" and "many rows" into exceptions the original
-        # never raised -- and quietly loses every row after the first when it does not.
-        raise Untranslatable([f"BULK COLLECT INTO {', '.join(targets)}"], statement.original_sql)
+        # BULK COLLECT fills collections from every matching row (#66). Treating it as a one-row SELECT INTO turns
+        # "no rows" and "many rows" into exceptions the original never raised. The repository returns every row;
+        # collection i takes column i. A collection of records, or a target that is not a local collection, is
+        # refused rather than guessed.
+        holders = [_holder(routine, t) for t in targets]
+        if len(targets) != len(statement.into_columns or targets) or any(
+                h is None or not _collection_kind(h) or "RECORD(" in (h.type.resolved or "").upper() for h in holders):
+            raise Untranslatable([f"BULK COLLECT INTO {', '.join(targets)}"], statement.original_sql)
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        with file.block("") as f:   # its own scope: a routine may BULK COLLECT more than once
+            f.line(f"var bulk_ = repository.{method}({arguments});")
+            for index, (target, holder) in enumerate(zip(targets, holders)):
+                element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
+                f.line(f"{_local(target)} = Plsql.column(bulk_, {index}, {element}.class);")
+        return
     if targets and statement.cardinality == "AT_MOST_ONE":
         _first_row(file, statement, routine, method, arguments, targets)
     elif targets and len(targets) == 1 and "." not in targets[0]:
