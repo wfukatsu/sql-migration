@@ -48,13 +48,15 @@
 | `SUBQUERY_READ_FIRST` | SET の相関の無いスカラ副問合せを UPDATE の前に読む。0 行は NULL、2 行以上は ORA-01427（#56） |
 | `OPTIONAL_FILTER` | `WHERE p IS NULL OR col = p` を 2 つの問合せに分け、p の値で選ぶ |
 | `ddl.omit` | routine の中の DDL（一時表の CREATE / DROP など）を移行先で実行しない。元の文はコメントに残る。書いていない routine の DDL は生成器が断る |
-| 組み込み package（`plsql/builtins.py`） | `DBMS_APPLICATION_INFO.SET_MODULE` などは何もしない（理由をコメントに残す）、`DBMS_SESSION.SLEEP` / `DBMS_RANDOM` / `DBMS_UTILITY.GET_TIME` は `Plsql` の helper（#55）。乱数と時計は Oracle と同じ値にならない。表に無い package は今までどおり断る |
+| 組み込み package（`plsql/builtins.py`） | `DBMS_APPLICATION_INFO.SET_MODULE` などは何もしない（理由をコメントに残す）、`DBMS_SESSION.SLEEP` / `DBMS_RANDOM` / `DBMS_UTILITY.GET_TIME` は `Plsql` の helper（#55）。`DBMS_STATS.GATHER_*_STATS` も何もしない（オプティマイザ統計）。乱数と時計は Oracle と同じ値にならない。表に無い package は今までどおり断る |
 | `constraints.enforce.<table>` | 移行先に無い CHECK / FOREIGN KEY を書く側で評価する表（#50）。CHECK は書く値で式を評価、FOREIGN KEY は親を先に読み、違反は Oracle と同じ番号（-2290 / -2291）の例外。書かない表は `CONSTRAINT_UNDECIDED` でアプリ側の検証に任せたことが見える |
 | `transactions.callerBoundary` | routine の中の COMMIT / ROLLBACK / SAVEPOINT は出さず、呼び出し側が commit / rollback する。途中の ROLLBACK が戻していた分は呼び出し側が戻さないかぎり残る（意味が変わる決定） |
 
 `transactions.separate` の routine を呼ぶ側は、`SeparateTransactions`（runtime-java）の口を constructor で受け取り、その口が開いた connection の上に呼び先の Service を組み立てて呼ぶ（#49）。移行先の配線では、この口にトランザクションマネージャから新しい transaction を取る実装を渡す。検証ハーネスは同じ properties でもう 1 本 connection を開く。
 
 `callerBoundary` の routine を実 DB で比べるときは、元の routine が自分でしていた終わり方をシナリオに書く（`boundary: rollback`）。ScalarDB 側のハーネスが呼び出し側としてそのとおりに終え、Oracle 側は原文が自分で戻すのでこの鍵を無視する。書かなければ、Oracle が戻した行（trigger の監査行、FK 違反にならなかった行）が ScalarDB 側に残って相違になる。
+
+PIPELINED 関数は PL/SQL から呼べない（PLS-00653）ので、シナリオの `call` に `via: table` を書く。Oracle 側は `SELECT * FROM TABLE(f(p => :p))` で読み、ScalarDB 側は生成した method が返す List を読む。戻り値は両側とも行の集合（`$rows`）として比べる。
 | `packageState.carried` | package 変数（セッション状態）は呼び出し側が運ぶ。その変数を読み書きする routine（呼び先経由も含む）は IN OUT 引数として受け取り、結果で返す（#46） |
 | `dbLinks` | DB link の先の表は、別の namespace として同じトランザクションで書く |
 | `EXC-001` | DB 自身が上げていた例外（一意制約違反など）の handler は走らない。重複は commit 時の衝突になる |
