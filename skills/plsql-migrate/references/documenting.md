@@ -42,6 +42,9 @@
 | `scanRows` | 先に全部読む routine に行数の上限が付いた。超えると例外で止まる（Oracle では止まらなかった） |
 | `TRIGGER_INLINED` / trigger の織り込み | trigger は、生成コードが書く経路でだけ動く。PL/SQL の外からの書き込みには掛からない（照合で追う） |
 | `dynamicTables` | 動的 SQL の表名は一覧にあるものだけ。それ以外は実行時に拒否する |
+| `DYN_STATIC` / `DYN_INLINED` | 文字列が定数の動的 SQL を静的な文として下ろした（#52）。`RETURNING INTO` 付きの DML、`OPEN FOR '定数'`、動的 PL/SQL ブロック。`EXECUTE IMMEDIATE` の権限で走っていたことは `DYN_PRIVILEGE` に残る |
+| `ddl.omit` | routine の中の DDL（一時表の CREATE / DROP など）を移行先で実行しない。元の文はコメントに残る。書いていない routine の DDL は生成器が断る |
+| 組み込み package（`plsql/builtins.py`） | `DBMS_APPLICATION_INFO.SET_MODULE` などは何もしない（理由をコメントに残す）、`DBMS_SESSION.SLEEP` / `DBMS_RANDOM` / `DBMS_UTILITY.GET_TIME` は `Plsql` の helper（#55）。乱数と時計は Oracle と同じ値にならない。表に無い package は今までどおり断る |
 | `constraints.enforce.<table>` | 移行先に無い CHECK / FOREIGN KEY を書く側で評価する表（#50）。CHECK は書く値で式を評価、FOREIGN KEY は親を先に読み、違反は Oracle と同じ番号（-2290 / -2291）の例外。書かない表は `CONSTRAINT_UNDECIDED` でアプリ側の検証に任せたことが見える |
 | `transactions.callerBoundary` | routine の中の COMMIT / ROLLBACK / SAVEPOINT は出さず、呼び出し側が commit / rollback する。途中の ROLLBACK が戻していた分は呼び出し側が戻さないかぎり残る（意味が変わる決定） |
 

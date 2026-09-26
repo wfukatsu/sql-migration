@@ -412,9 +412,11 @@ def _untracked_row_count(routine: M.Routine) -> list[str]:
 
 def _unresolved_callees(routine: M.Routine, analysis: ProgramAnalysis) -> list[str]:
     from ..analysis import HARMLESS_CALLEES
+    from ..builtins import lookup
 
+    # an Oracle-supplied routine in plsql/builtins.py has a known signature and a known counterpart (#55)
     return sorted(c for c in analysis.call_graph.external.get(routine.id, ())
-                  if not HARMLESS_CALLEES.match(c))
+                  if not HARMLESS_CALLEES.match(c) and lookup(c) is None)
 
 
 def _interpolates_identifier(statement: M.Statement, routine: M.Routine | None = None) -> bool:

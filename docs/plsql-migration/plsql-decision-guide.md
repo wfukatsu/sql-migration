@@ -25,7 +25,7 @@ Oracle の SQL / PL/SQL を ScalarDB へ移すとき、**生成器が決めら�
 | 6 | trigger の掛け方 | `TRG-001` `TRG-002` | 書く側が呼ぶ（生成コードの経路だけ）/ 手で Service へ移す / 捨てる | 書く側が呼び、網羅は照合で追う | trigger-patterns、TriggerChecks |
 | 7 | package 変数（セッション状態） | `STATE-001` | 呼び出し側が運ぶ / トランザクション context / Singleton の field | 呼び出し側が運ぶ | `packageState.carried` |
 | 8 | CHECK / FOREIGN KEY の代わり | `CONSTRAINT_UNDECIDED` | 表ごとに guard を生成 / 全表で生成 / アプリの検証に任せる | 表ごとに決めて guard | `constraints.enforce` |
-| 9 | 動的 SQL の表名 | `DYN-001` | 受け付ける表名を列挙 / 断る | 列挙できるなら列挙 | `dynamicTables` |
+| 9 | 動的 SQL の表名と DDL | `DYN-001`、DDL の拒否 | 受け付ける表名を列挙 / 断る。routine の中の DDL は省く / 断る | 列挙できるなら列挙。データに残らない DDL は省く | `dynamicTables` / `ddl.omit` |
 | 10 | DB link 越しの操作 | `LINK-001` | 別 namespace として同じトランザクション / 分散トランザクションの設計 | 同じクラスタに載るなら namespace | `dbLinks` |
 | 11 | `USER` / `SYSTIMESTAMP` / `SYSDATE` | `NOW` `AuditContext` | 呼び出し側が渡す / 実行環境から黙って取る | 呼び出し側が渡す | 呼び出し側の設計書 |
 | 12 | `''` と NULL | `EMPTY_STRING` | Oracle と同じく同一視 / 移行後は区別 | 同一視のまま | 設計書 |
@@ -157,15 +157,28 @@ view への INSTEAD OF trigger は view ごと設計し直す（#56）。
 **選び方。** 表ごとに決める。データの整合が DB 側の責務だった表（他システムも書く表）は guard、アプリが唯一の
 書き手で検証を持つ表は任せる。決めていない表は `CONSTRAINT_UNDECIDED` で見える。
 
-## 9. 動的 SQL の表名
+## 9. 動的 SQL の表名と DDL
 
 | 選択肢 | Pros | Cons |
 |---|---|---|
 | 受け付ける表名を列挙（`dynamicTables`） | 有限の変種に畳めて静的な SQL と同じ経路に乗る。それ以外は実行時に拒否 | 列挙できない（表名が入力で決まる）なら使えない |
 | 断る（REDESIGN） | 推測しない | 動かない |
 
-**選び方。** 表名が定数の集合から選ばれているなら列挙する。`DBMS_SQL`、動的な RETURNING、動的 PL/SQL ブロックは
-まだ模していない（#52 / #53）。
+文字列が定数の動的 SQL は決めなくても静的な文として下ろす（#52）。`RETURNING INTO` 付きの DML は静的な
+`UPDATE … RETURNING` と同じ経路（RMW の分割は `rowLocks.optimistic` の決定が要る）、動的 PL/SQL ブロックは
+placeholder を名前で戻してその場の block に、`OPEN rc FOR '定数'` は静的な `OPEN FOR SELECT` になる。`DBMS_SQL` は
+まだ模していない（#53）。
+
+routine の中の DDL（`EXECUTE IMMEDIATE 'CREATE TABLE …'`）は、ScalarDB がトランザクションの中で流さず、スキーマは
+Schema Loader が持つので、生成器は理由つきで断る。
+
+| 選択肢 | Pros | Cons |
+|---|---|---|
+| 省く（`ddl.omit`） | 作ってすぐ消す一時表のように、データに何も残さない DDL なら意味は変わらない。元の文はコメントに残る | 一時表に書いて読む処理があるなら、その処理ごと作り直しになる（省くだけでは動かない） |
+| 断る（REDESIGN） | 推測しない | 動かない |
+
+**選び方。** 表名が定数の集合から選ばれているなら列挙する。DDL は、その表がデータとして使われていない
+（作って消すだけ）と確かめられたときだけ省く。使われているなら、一時表の用途を再設計する。
 
 ## 10. DB link
 
@@ -268,6 +281,9 @@ constraints:
     employees: emp_job_fk / emp_dept_fk / emp_salary_ck。FK 違反（-2291）を handler が受ける（2026-09-25）
 dynamicTables:
   b06_3_native_dynamic_sql: [employees]
+ddl:
+  omit:
+    b06_3_native_dynamic_sql: 一時表 dyn_tmp を作ってすぐ DROP … PURGE する。データに何も残さない（2026-09-26）
 ```
 
 ## 関連

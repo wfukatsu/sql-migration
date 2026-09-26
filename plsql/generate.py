@@ -94,6 +94,11 @@ def main(argv: list[str] | None = None) -> int:
     from .limits import DynamicTables
 
     set_allowed_tables((DynamicTables.load(args.limits) if args.limits else DynamicTables()).allowed)
+    # #52: routine の中の DDL を移行先で実行しないと決めた routine。書いていなければ理由つきで断る
+    from .dynamic import set_omitted_ddl
+    from .limits import DynamicDdl
+
+    set_omitted_ddl((DynamicDdl.load(args.limits) if args.limits else DynamicDdl()).omit)
 
     from .limits import DbLinks
 
