@@ -35,6 +35,31 @@ IMPORTS = {
 }
 
 
+import contextvars
+
+# Schema object types (`CREATE TYPE t AS OBJECT`, #54): {name: "RECORD(...)"}, and the package their records are
+# generated in. Set by the analysis (the DDL knows them) and by the generator (it knows the package)
+_OBJECT_TYPES: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("object_types", default={})
+_OBJECT_PACKAGE: "contextvars.ContextVar[str | None]" = contextvars.ContextVar("object_package", default=None)
+
+
+def set_object_types(types: dict[str, str]) -> None:
+    _OBJECT_TYPES.set({k.lower(): v for k, v in types.items()})
+
+
+def object_types() -> dict[str, str]:
+    return _OBJECT_TYPES.get()
+
+
+def set_object_package(package: str | None) -> None:
+    _OBJECT_PACKAGE.set(package)
+
+
+def object_class(name: str | None) -> str | None:
+    """The Java record for a schema object type, or None when `name` is not one."""
+    return java_class_name(name.strip()) if name and name.strip().lower() in _OBJECT_TYPES.get() else None
+
+
 @dataclass(frozen=True)
 class JavaType:
     """A Java type, plus how it is stored and why that was chosen."""
@@ -48,7 +73,12 @@ class JavaType:
     @property
     def imports(self) -> set[str]:
         """`List<BigDecimal>` は 2 つ要る。名前をそのまま引くだけだと、総称型のときに 0 個になる。"""
-        return {IMPORTS[part] for part in re.findall(r"\w+", self.name) if part in IMPORTS}
+        out = {IMPORTS[part] for part in re.findall(r"\w+", self.name) if part in IMPORTS}
+        package = _OBJECT_PACKAGE.get()
+        if package:
+            classes = {java_class_name(n) for n in _OBJECT_TYPES.get()}
+            out |= {f"{package}.{part}" for part in re.findall(r"\w+", self.name) if part in classes}
+        return out
 
     @property
     def is_scaled(self) -> bool:
@@ -67,6 +97,9 @@ def java_type(oracle: str | None, *, money: bool = False) -> JavaType:
     if not oracle:
         return UNKNOWN
     written = oracle.strip()
+    record = object_class(written)
+    if record is not None:
+        return JavaType(record, "TEXT", note="Oracle のオブジェクト型。record として生成する（#54）")
 
     number = NUMBER.match(written)
     if number:
