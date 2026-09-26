@@ -8,11 +8,15 @@
       "PROJECTION"
     ],
     "pattern": "P1",
-    "result": "FAIL",
-    "error": "result mismatch (no row of the actual result equals expected (datetime.datetime(2026, 9, 25, 1, 3, 21), datetime.datetime(2026, 9, 25, 1, 3, 21, 529278), 'SOURCE')): expected [(datetime.datetime(2026, 9, 25, 1, 3, 21), datetime.datetime(2026, 9, 25, 1, 3, 21, 529278), 'SOURCE')] actual [['2026-09-25T10:03:22', '2026-09-25T10:03:22.140940+09:00', 'RESIDUAL_READER']]",
+    "result": "PASS",
+    "error": null,
     "fetched": 0,
     "fetch_sql": [],
     "unresolved": [],
+    "nondeterministic": {
+      "compare": "count",
+      "reason": "SYSDATE / SYSTIMESTAMP は実行した時刻、USER は接続したユーザで、両側で同じ値にならない。1 行返ることだけを見る"
+    },
     "empty": false
   },
   {
@@ -61,13 +65,17 @@
       "PROJECTION"
     ],
     "pattern": "P1",
-    "result": "FAIL",
-    "error": "result mismatch (no row of the actual result equals expected ('DE HAAN', 'Ldehaan', 'De ', 2, '000102', 'Lex De Haan', 1416.67, datetime.datetime(2011, 1, 1, 0, 0), datetime.datetime(2011, 7, 13, 0, 0), 15, '2011年01月13日', '17,000')): expected [('KING', 'Sking', 'Kin', 0, '000100', 'Steven King', 2000, datetime.datetime(2013, 6, 1, 0, 0), datetime.datetime(2013, 12, 17, 0, 0), 13, '2013年06月17日', '24,000'), ('KOCHHAR', 'Nkochhar', 'Koc', 0, '000101', 'Neena Kochhar', 1416.67, datetime.datetime(2015, 9, 1, 0, 0), datetime.datetime(2016, 3, 21, 0, 0), 11, '2015年09月21日', '17,000'), ('DE HAAN', 'Ldehaan', 'De ', 2, '000102', 'Lex De Haan', 1416.67, datetime.datetime(2011, 1, 1, 0, 0), datetime.datetime(2011, 7, 13, 0, 0), 15, '2011年01月13日', '17,000'), ('HUNOLD', 'Ahunold', 'Hun', 0, '000103', 'Alexander Hunold', 750, datetime.datetime(2016, 1, 1, 0, 0), datetime.datetime(2016, 7, 3, 0, 0), 10, '2016年01月03日', '9,000'), ('ERNST', 'Bernst', 'Ern', 0, '000104', 'Bruce Ernst', 500, datetime.datetime(2017, 5, 1, 0, 0), datetime.datetime(2017, 11, 21, 0, 0), 9, '2017年05月21日', '6,000')] actual [['TUVAULT', 'Otuvault', 'Tuv', 0, '000155', 'Oliver Tuvault', Decimal('583.33'), '2017-11-01T00:00', '2018-05-23T00:00', 8, '2017年11月23日', '7,000'], ['NAYER', 'Jnayer', 'Nay', 4, '000125', 'Julia Nayer', Decimal('266.67'), '2015-07-01T00:00', '2016-01-16T00:00', 11, '2015年07月16日', '3,200'], ['WEISS', 'Mweiss', 'Wei', 2, '000120', 'Matthew Weiss', Decimal('400.00'), '2014-07-01T00:00', '2015-01-18T00:00', 12, '2014年07月18日', '4,800'], ['BERNSTEIN', 'Dbernste', 'Ber', 2, '000151', 'David Bernstein', Decimal('791.67'), '2015-03-01T00:00', '2015-09-24T00:00', 11, '2015年03月24日', '9,500'], ['TUCKER', 'Ptucker', 'Tuc', 5, '000150', 'Peter Tucker', Decimal('833.33'), '2015-01-01T00:00', '2015-07-30T00:00', 11, '2015年01月30日', '10,000']]",
+    "result": "PASS",
+    "error": null,
     "fetched": 15,
     "fetch_sql": [
       "SELECT employee_id, first_name, last_name, email, hire_date, salary FROM employees"
     ],
     "unresolved": [],
+    "nondeterministic": {
+      "compare": "count",
+      "reason": "ORDER BY の無い ROWNUM <= 5 は任意の 5 行を返し、どの 5 行かは実行計画しだい。5 行返ることだけを見る"
+    },
     "empty": false
   },
   {
@@ -430,7 +438,7 @@
       "WINDOW"
     ],
     "pattern": "P1",
-    "result": "CASE_ERROR",
+    "result": "SKIP",
     "error": "source database rejected the statement: ORA-00923: FROM keyword not found where expected",
     "fetched": null,
     "fetch_sql": [
@@ -438,7 +446,12 @@
     ],
     "unresolved": [
       "employees: columns ['rn'] not in schema"
-    ]
+    ],
+    "source_rejects": {
+      "kind": "sample",
+      "label": "移行元の不備",
+      "reason": "別名 share は Oracle 26ai の予約語で ORA-00923 になる（サンプルの不備）。別名を変えた E-1' で比べる"
+    }
   },
   {
     "index": 34,
@@ -452,8 +465,8 @@
       "WINDOW"
     ],
     "pattern": "P1",
-    "result": "FAIL",
-    "error": "result mismatch (row 13: expected (90, 'Kochhar', 17000.0, 2, 2, 2, 58000, 0.293, 24000, 'Hunold', 4), actual (90, 'De Haan', 17000, 2, 2, 2, 58000, Decimal('0.293'), None, 'King', 4)): expected [(10, 'Whalen', 15000.0, 1, 1, 3, 15000, 1, None, 'Weiss', 3), (50, 'Weiss', 4800.0, 1, 1, 11, 8000, 0.6, None, 'Russell', 1), (50, 'Nayer', 3200.0, 2, 2, 13, 8000, 0.4, 4800, 'Kochhar', 1), (60, 'Hunold', 9000.0, 1, 1, 8, 19200, 0.469, None, 'Ernst', 2), (60, 'Ernst', 6000.0, 2, 2, 10, 19200, 0.313, 9000, 'Grant', 1)] actual [[10, 'Whalen', 15000, 1, 1, 3, 15000, Decimal('1.0'), None, 'Weiss', 3], [50, 'Weiss', 4800, 1, 1, 11, 8000, Decimal('0.6'), None, 'Russell', 1], [50, 'Nayer', 3200, 2, 2, 13, 8000, Decimal('0.4'), 4800, 'Kochhar', 1], [60, 'Hunold', 9000, 1, 1, 8, 19200, Decimal('0.469'), None, 'Ernst', 2], [60, 'Ernst', 6000, 2, 2, 10, 19200, Decimal('0.313'), 9000, 'Grant', 1]]",
+    "result": "PASS",
+    "error": null,
     "fetched": 15,
     "fetch_sql": [
       "SELECT employee_id, last_name, hire_date, salary, department_id FROM employees"
@@ -461,6 +474,10 @@
     "unresolved": [
       "employees: columns ['rn'] not in schema"
     ],
+    "nondeterministic": {
+      "compare": "unordered; ignore=rn",
+      "reason": "部門 90 の salary 17000 の 2 人は同順位で、ROW_NUMBER の番号（と ORDER BY department_id, rn の並び）がどちらに付くかは決まらない"
+    },
     "empty": false
   },
   {
@@ -511,13 +528,17 @@
       "PLAN_CROSS_PARTITION"
     ],
     "pattern": "P1",
-    "result": "FAIL",
-    "error": "result mismatch (row 2: expected ('Kochhar', 17000.0), actual ('De Haan', 17000)): expected [('King', 24000.0), ('Kochhar', 17000.0), ('De Haan', 17000.0)] actual [['King', 24000], ['De Haan', 17000], ['Kochhar', 17000]]",
+    "result": "PASS",
+    "error": null,
     "fetched": 15,
     "fetch_sql": [
       "SELECT employee_id, last_name, salary FROM employees"
     ],
     "unresolved": [],
+    "nondeterministic": {
+      "compare": "unordered",
+      "reason": "salary 17000 の 2 人は同順位で、WITH TIES で両方とも返るが並びは決まらない"
+    },
     "empty": false
   },
   {
@@ -530,13 +551,17 @@
       "PLAN_CROSS_PARTITION"
     ],
     "pattern": "P4",
-    "result": "FAIL",
-    "error": "result mismatch (row 5: expected ('Tuvault', 7000.0), actual ('Grant', 7000)): expected [('Partners', 13500.0), ('Tucker', 10000.0), ('Bernstein', 9500.0), ('Hunold', 9000.0), ('Tuvault', 7000.0)] actual [['Partners', 13500], ['Tucker', 10000], ['Bernstein', 9500], ['Hunold', 9000], ['Grant', 7000]]",
+    "result": "PASS",
+    "error": null,
     "fetched": 15,
     "fetch_sql": [
       "SELECT employee_id, last_name, salary FROM employees"
     ],
     "unresolved": [],
+    "nondeterministic": {
+      "compare": "ignore=last_name",
+      "reason": "salary 7000 の社員が複数いてページの境目をまたぐので、5 行目にどの社員が来るかは決まらない。給与の並びだけを見る"
+    },
     "empty": false
   },
   {
@@ -646,11 +671,16 @@
       "PARSE"
     ],
     "pattern": null,
-    "result": "CASE_ERROR",
+    "result": "SKIP",
     "error": "source database rejected the statement: ORA-01466: unable to read data - table definition has changed",
     "fetched": null,
     "fetch_sql": [],
-    "unresolved": []
+    "unresolved": [],
+    "source_rejects": {
+      "kind": "harness",
+      "label": "ハーネスの都合",
+      "reason": "表を作った直後は 1 分前の時点に表が無く ORA-01466 になる（ハーネスの都合）。--skip-setup で 1 分以上あとに流せば Oracle は答え、変換不可として数えられる"
+    }
   },
   {
     "index": 45,

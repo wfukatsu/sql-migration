@@ -69,6 +69,7 @@ CREATE TABLE products_json (
 -- A. 基本
 --==============================================================================
 -- A-1. DUAL 表 [ORA]（23ai 以降は FROM 句省略も可）
+-- @nondeterministic: count; reason=SYSDATE / SYSTIMESTAMP は実行した時刻、USER は接続したユーザで、両側で同じ値にならない。1 行返ることだけを見る
 SELECT SYSDATE, SYSTIMESTAMP, USER FROM dual;
 
 -- A-2. 絞り込み・並べ替え（NULL の並び順指定）
@@ -93,6 +94,7 @@ SELECT last_name,
 FROM   employees;
 
 -- A-4. 文字列・数値・日付関数
+-- @nondeterministic: count; reason=ORDER BY の無い ROWNUM <= 5 は任意の 5 行を返し、どの 5 行かは実行計画しだい。5 行返ることだけを見る
 SELECT UPPER(last_name)                         AS upper_name,
        INITCAP(email)                           AS initcap_email,
        SUBSTR(last_name, 1, 3)                  AS short_name,
@@ -230,6 +232,7 @@ UNPIVOT (amount FOR pay_type IN (salary AS 'SALARY', commission AS 'COMMISSION')
 --==============================================================================
 -- E. 分析関数（ウィンドウ関数）
 --==============================================================================
+-- @source-rejects: sample; reason=別名 share は Oracle 26ai の予約語で ORA-00923 になる（サンプルの不備）。別名を変えた E-1' で比べる
 SELECT department_id, last_name, salary,
        ROW_NUMBER() OVER (PARTITION BY department_id ORDER BY salary DESC) AS rn,
        RANK()       OVER (PARTITION BY department_id ORDER BY salary DESC) AS rnk,
@@ -244,6 +247,7 @@ ORDER  BY department_id, rn;
 
 -- E-1'. 上の文は、この検証環境の Oracle（26ai Free）では `AS share` が予約語に当たって ORA-00923 になる（サンプル自体の不備）。
 --       別名だけを share_pct に変えたもの。分析関数の比較はこちらで行う
+-- @nondeterministic: unordered; ignore=rn; reason=部門 90 の salary 17000 の 2 人は同順位で、ROW_NUMBER の番号（と ORDER BY department_id, rn の並び）がどちらに付くかは決まらない
 SELECT department_id, last_name, salary,
        ROW_NUMBER() OVER (PARTITION BY department_id ORDER BY salary DESC) AS rn,
        RANK()       OVER (PARTITION BY department_id ORDER BY salary DESC) AS rnk,
@@ -274,10 +278,12 @@ GROUP  BY department_id;
 -- F. Top-N / ページング
 --==============================================================================
 -- F-1. 12c+ 標準構文
+-- @nondeterministic: unordered; reason=salary 17000 の 2 人は同順位で、WITH TIES で両方とも返るが並びは決まらない
 SELECT last_name, salary FROM employees
 ORDER  BY salary DESC
 FETCH  FIRST 3 ROWS WITH TIES;
 
+-- @nondeterministic: ignore=last_name; reason=salary 7000 の社員が複数いてページの境目をまたぐので、5 行目にどの社員が来るかは決まらない。給与の並びだけを見る
 SELECT last_name, salary FROM employees
 ORDER  BY salary DESC
 OFFSET 5 ROWS FETCH NEXT 5 ROWS ONLY;
@@ -336,6 +342,7 @@ CONNECT BY LEVEL <= 7;
 -- H. その他 Oracle 固有の問合せ
 --==============================================================================
 -- H-1. フラッシュバック問合せ [ORA]（UNDO 保持期間内の過去データ参照）
+-- @source-rejects: harness; reason=表を作った直後は 1 分前の時点に表が無く ORA-01466 になる（ハーネスの都合）。--skip-setup で 1 分以上あとに流せば Oracle は答え、変換不可として数えられる
 SELECT employee_id, salary
 FROM   employees AS OF TIMESTAMP (SYSTIMESTAMP - INTERVAL '1' MINUTE)
 WHERE  department_id = 60;

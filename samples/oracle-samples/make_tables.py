@@ -59,9 +59,14 @@ def check_table() -> str:
     out = ["| # | 元の SQL | 変換 | 実行 | 結果 | 差の内容 |", "|---|---|---|---|---|---|"]
     for x in json.loads(p.read_text()):
         how = "ScalarDB SQL" if x["convert_status"] in ("OK", "WARN") else (f"実行計画 {x['pattern']}" if x["convert_status"] == "PLANNED" else "—")
-        err = (x.get("error") or "").replace("|", "\\|").replace("\n", " ")
+        result, err = x["result"], x.get("error") or ""
+        if x.get("source_rejects"):  # Issue #58: the source rejected it, as the case declared
+            result, err = f"SKIP（{x['source_rejects']['label']}）", x["source_rejects"]["reason"]
+        elif x.get("nondeterministic") and result == "PASS":  # Issue #57: passed under the declared comparison
+            result, err = f"PASS（宣言: {x['nondeterministic']['compare']}）", x["nondeterministic"]["reason"]
+        err = err.replace("|", "\\|").replace("\n", " ")
         err = re.sub(r"\s+", " ", err)[:110]
-        out.append(f"| {x['index']} | `{body(x['sql'], 60)}` | {x['convert_status']} | {how} | {x['result']} | {err} |")
+        out.append(f"| {x['index']} | `{body(x['sql'], 60)}` | {x['convert_status']} | {how} | {result} | {err} |")
     return "\n".join(out)
 
 

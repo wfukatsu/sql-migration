@@ -18,6 +18,8 @@ flowchart LR
 
 結果集合の比較は、どのハーネスも `difftest/rowcompare.py` で行います。値はペアで比べます: 整数は桁数によらず厳密に、小数は有効 15 桁で（ScalarDB に DECIMAL が無く、`NUMBER(10,2)` は double を通って返るため）、文字列を日付として読むのは相手が日付型のときだけ、日時はミリ秒まで、真偽値は真偽値とだけ一致し、NULL は空文字と一致しません。`ORDER BY` の有無は構文木で見ます。`run.py` は、比較できた文が 1 つも無い回を終了コード 2、移行元 DB がケースを拒否した回（`CASE_ERROR`）を 1 で終えます。両側が 0 行の一致は PASS ですが、`EMPTY` として件数を出します。
 
+ケースファイルでは、文の上のコメントで比べ方を宣言できます（`difftest/case_notes.py`、理由は必須）。`-- @nondeterministic: unordered | ignore=列 | count; reason=…` は、同順位の並び・時刻・接続ユーザのように移行元の答えそのものが一つに決まらない文を、集合として・その列を外して・行数だけで比べます。緩めた比べ方で一致すれば PASS で、`DECLARED` として件数を出します。`-- @source-rejects: sample | harness; reason=…` は、移行元が拒否すると分かっている文（ケースの不備か、ハーネスの都合）を CASE_ERROR ではなく理由つきの SKIP（`SOURCE_REJECTS`）にします。宣言の無い不一致と拒否だけが FAIL と CASE_ERROR に残ります。例は `samples/oracle-samples/sql/queries-check.sql` にあります。
+
 移行元 DB の接続情報は、値ではなく**環境変数の名前**を書いたプロファイル（`difftest/conf/sources/<方言>-local.json`、`difftest/sources.py`）で受け取ります。既定のプロファイルは Docker Compose のコンテナを指すので、そのままで動きます。ほかの DB を使うときは `--profile oracle=path.json` か環境変数 `DIFFTEST_PROFILE_ORACLE` で指定します。プロファイルの `environment` は必須で、表の作成とデータ投入を行うハーネスは `local` / `dev` / `test` / `ci` 以外を拒否します。`environment` は人が書いたラベルにすぎないので、**解決したホストと一致することも確かめます**: `local` は localhost / 127.0.0.1 / ::1 だけ（`SRC_ORACLE_HOST` などでほかのホストを指すと拒否）、`dev` / `test` / `ci` に書き込むには、プロファイルの `hosts`（`"*.ci.example.internal"` のようなパターンの一覧）にそのホストが要ります。メッセージには接続先のホストとポートを出します（ユーザーとパスワードは出しません）。本番の移行元から正解データを一度だけ取るときは、`golden.py capture --no-setup --allow-production`（読み取り専用トランザクション）を使います。
 
 ```bash
