@@ -1,9 +1,9 @@
 {
  "schemaVersion": "1.1.0",
  "counts": {
-  "AUTO": 12,
+  "AUTO": 14,
   "REDESIGN": 23,
-  "REVIEW": 6
+  "REVIEW": 4
  },
  "redesignStates": {
   "undecided": 6,
@@ -271,22 +271,19 @@
   },
   {
    "routine": "b04_4_1_explicit_cursor",
-   "verdict": "REVIEW",
-   "ruleVerdict": "REVIEW",
+   "verdict": "AUTO",
+   "ruleVerdict": "AUTO",
    "confidence": {
-    "value": 0.0,
+    "value": 1.0,
     "ruleCoverage": 1.0,
-    "symbolResolution": 0.0,
-    "typeResolution": 0.0,
+    "symbolResolution": 1.0,
+    "typeResolution": 1.0,
     "targetCapability": 1.0,
     "testEvidence": 1.0,
-    "zeroFactors": [
-     "symbolResolution",
-     "typeResolution"
-    ]
+    "zeroFactors": []
    },
    "reasons": [
-    "CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります"
+    "confidence 1.000 >= 0.95, no rule objected"
    ],
    "rules": [
     {
@@ -295,13 +292,6 @@
      "message": "パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります",
      "source": "scalardb_capability.yaml",
      "severity": "info"
-    },
-    {
-     "id": "CUR-003",
-     "decision": "REVIEW",
-     "message": "明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
-     "source": "semantics.yaml",
-     "severity": "warning"
     },
     {
      "id": "CUR-OPT-002",
@@ -316,14 +306,9 @@
     "全行を取得してアプリ側で絞る・並べる（docs/design/app-side-processing-plan.md）"
    ],
    "requiredTests": [
-    "cross_partition_scan",
-    "cursor_lifetime",
-    "row_limit"
+    "cross_partition_scan"
    ],
-   "whyNotAuto": [
-    "CUR-003 (REVIEW): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
-    "確信度が 0: symbolResolution, typeResolution"
-   ],
+   "whyNotAuto": [],
    "redesign": null,
    "source": {
     "file": "b04_4_1_explicit_cursor.prc",
@@ -530,8 +515,8 @@
   },
   {
    "routine": "b04_4_4_ref_cursor",
-   "verdict": "REVIEW",
-   "ruleVerdict": "REVIEW",
+   "verdict": "AUTO",
+   "ruleVerdict": "AUTO",
    "confidence": {
     "value": 1.0,
     "ruleCoverage": 1.0,
@@ -542,8 +527,7 @@
     "zeroFactors": []
    },
    "reasons": [
-    "CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
-    "CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります"
+    "confidence 1.000 >= 0.95, no rule objected"
    ],
    "rules": [
     {
@@ -559,20 +543,6 @@
      "message": "パーティションキーで絞れない走査です。JDBC バックエンドでは実行できますが、フィルタも順序もパーティションをまたぐため、JDBC 以外（Cassandra など）では同じ問い合わせが通りません。そこへ移すときは、キーで届く読み取りに直す必要があります",
      "source": "scalardb_capability.yaml",
      "severity": "info"
-    },
-    {
-     "id": "CUR-003",
-     "decision": "REVIEW",
-     "message": "明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
-     "source": "semantics.yaml",
-     "severity": "warning"
-    },
-    {
-     "id": "CUR-003",
-     "decision": "REVIEW",
-     "message": "明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
-     "source": "semantics.yaml",
-     "severity": "warning"
     },
     {
      "id": "CUR-OPT-002",
@@ -596,14 +566,9 @@
     "全行を取得してアプリ側で絞る・並べる（docs/design/app-side-processing-plan.md）"
    ],
    "requiredTests": [
-    "cross_partition_scan",
-    "cursor_lifetime",
-    "row_limit"
+    "cross_partition_scan"
    ],
-   "whyNotAuto": [
-    "CUR-003 (REVIEW): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります",
-    "CUR-003 (REVIEW): 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります"
-   ],
+   "whyNotAuto": [],
    "redesign": null,
    "source": {
     "file": "b04_4_4_ref_cursor.prc",

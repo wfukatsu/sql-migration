@@ -196,6 +196,35 @@ def test_the_expected_rule_fires(decisions, routine_id: str, rule_id: str):
     assert rule_id in matched(decisions, routine_id), sorted(matched(decisions, routine_id))
 
 
+def test_an_explicit_cursor_without_a_commit_has_no_lifetime_question(tmp_path):
+    """CUR-003 asks whether reading first moves the point in time a cursor reads at. That only happens when a
+    COMMIT falls while the cursor is open; with none in the routine or anything it reaches, it is the same read
+    (2026-09-26, samples/oracle-samples b04_4_1_explicit_cursor)."""
+    from plsql.analysis import analyse as analyse_program
+    from plsql.report import analyse
+    from plsql.rules.engine import Evidence, RuleSet, decide
+
+    body = """  OPEN c;
+  LOOP
+    FETCH c INTO v_id;
+    EXIT WHEN c%NOTFOUND;
+    DBMS_OUTPUT.PUT_LINE(v_id);
+  END LOOP;
+  CLOSE c;{commit}"""
+    found = {}
+    for label, commit in (("plain", ""), ("commits", "\n  COMMIT;")):
+        root = tmp_path / label
+        root.mkdir()
+        (root / "p.prc").write_text(
+            "CREATE OR REPLACE PROCEDURE p IS\n  CURSOR c IS SELECT product_id FROM products;\n  v_id NUMBER;\n"
+            f"BEGIN\n{body.format(commit=commit)}\nEND;\n/\n", encoding="utf-8")
+        analysis = analyse(str(root), "fixtures/plsql/src/schema.sql")
+        found[label] = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(),
+                              Evidence(captures={"p": (1, 1)}))["p"]
+    assert "CUR-003" not in {m.rule.id for m in found["plain"].matches}
+    assert "CUR-003" in {m.rule.id for m in found["commits"].matches}
+
+
 def test_a_finite_variant_dynamic_sql_is_review_not_redesign(decisions):
     """The design document separates the two dynamic-SQL cases; only identifier interpolation is a redesign."""
     assert "DYN-001" not in matched(decisions, "pkg_dynamic_search.count_orders")

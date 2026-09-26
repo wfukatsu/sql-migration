@@ -9,15 +9,15 @@
   "parsedFiles": 37,
   "totalFiles": 37,
   "failedFiles": [],
-  "typeResolutionRate": 0.9932,
+  "typeResolutionRate": 1.0,
   "typedSymbols": 147,
-  "resolvedSymbols": 146
+  "resolvedSymbols": 147
  },
  "totals": {
   "modules": 36,
   "routines": 41,
   "statements": 362,
-  "issues": 299,
+  "issues": 297,
   "errors": 5
  },
  "statementKinds": {

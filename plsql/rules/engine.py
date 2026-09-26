@@ -311,6 +311,13 @@ def _extra(criteria: dict, statement: M.Statement, module: M.Module, routine: M.
         has = bool(getattr(statement, "into_targets", None))
         if has is not criteria["intoTargets"]:
             return False
+    # `routineControlsTransaction`: the statement's routine, or something it reaches, has a COMMIT / ROLLBACK /
+    # SAVEPOINT. The same test as the routine-level `controlsTransaction`, for a rule about one statement
+    if "routineControlsTransaction" in criteria:
+        effects = analysis.effective.get(routine.id)
+        controls = (effects.controls_transaction if effects else False) or routine.transaction_effects.controls_transaction
+        if controls is not criteria["routineControlsTransaction"]:
+            return False
     return True
 
 
