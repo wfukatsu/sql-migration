@@ -7,6 +7,8 @@
     python ... approve --out out/migrate/shop spec --by 業務担当 --date 2026-09-20
     python ... gate    --out out/migrate/shop                  # 0 = テストしてよい / 1 = まだ
     python ... tested  --out out/migrate/shop --result pass --report difftest/work/plsql-diff.json
+    python ... adopt   --out out/migrate/shop --spec spec --spec-analysis out/spec-analysis \
+                       --generated out/plsql --docs out/plsql/docs   # 先にスキルを単独で流して作ったものを取り込む
 
 承認は 3 つある: `spec`（現行の仕様）、`decisions`（人の判断）、`converted`（変換後の仕様）。承認には
 **承認した人と日付**が要り、その段階の検査（未記入が無い、図が入っている、事実の欄が古くない、など）が
@@ -132,16 +134,21 @@ def problems_of(state: dict, out: Path, stage: str) -> list[str]:
     if stage == "spec":
         pages = [f for f in files if f.parent == out / "spec"]
         if not pages:
-            return ["現行の仕様（spec/*.md）がまだ無い"]
+            return ["現行の仕様（spec/*.md）がまだ無い" + ADOPT_HINT.format(what="--spec <dir> --spec-analysis <dir>")]
         found = _mermaid_problems(pages, "現行の仕様")
         if inputs["kind"] == "plsql":
             facts = _script("plsql-spec", "spec_facts")
-            modules, routines, inventory = facts.load(out / "spec-analysis")
+            try:
+                modules, routines, inventory = facts.load(out / "spec-analysis")
+            except facts.InputError as e:
+                # a missing analysis is a problem to report, not a crash of `status`
+                return [str(e) + ADOPT_HINT.format(what="--spec-analysis <dir>")]
             found = facts.check(modules, routines, inventory, out / "spec")[0] + [f for f in found if "未記入" not in f]
         return found
     if stage == "decisions":
         if not files or not any(f.name.endswith("report.json") for f in files):
-            return ["変換がまだ済んでいない（変換の報告が無い）"]
+            return ["変換がまだ済んでいない（変換の報告が無い）" + ADOPT_HINT.format(
+                what="--generated <dir>" if inputs["kind"] == "plsql" else "--converted <dir>")]
         found, record = [], _record(inputs)
         if inputs["kind"] == "plsql":
             report = json.loads((out / "generated" / "generation-report.json").read_text(encoding="utf-8"))
@@ -161,13 +168,17 @@ def problems_of(state: dict, out: Path, stage: str) -> list[str]:
                 found.append(f"記録の {item} は「決定」だが、決めた人か日付が無い")
         return found
     if not files:
-        return ["変換後の仕様（docs/*.md）がまだ無い"]
+        return ["変換後の仕様（docs/*.md）がまだ無い" + ADOPT_HINT.format(what="--docs <dir>")]
     found = _mermaid_problems(files, "変換後の仕様")
     if inputs["kind"] == "plsql":
         doc = _script("plsql-migrate", "migration_doc")
         args = argparse.Namespace(src=inputs.get("src"), generated=str(out / "generated"), analysis=str(out / "generated" / "analysis"),
                                   limits=inputs.get("limits"), evidence=inputs.get("evidence"), record=inputs.get("record"))
-        found = doc.check(doc.load(args), out / "docs")[0] + [f for f in found if "未記入" not in f]
+        try:
+            loaded = doc.load(args)
+        except doc.InputError as e:
+            return [str(e) + ADOPT_HINT.format(what="--generated <dir>")] + found
+        found = doc.check(loaded, out / "docs")[0] + [f for f in found if "未記入" not in f]
     return found
 
 
@@ -244,6 +255,75 @@ def cmd_init(args) -> int:
     save(out, {"inputs": inputs, "approvals": (existing or {}).get("approvals") or {}, "test": (existing or {}).get("test")})
     print(f"{_state_path(out)} を書いた。次: 現行の仕様を調べる（status で確かめられる）")
     return 0
+
+
+# 置き場所のどこに何が入るか、と、入っていなければ取り込めない印のファイル
+ADOPTABLE = {
+    "spec": ("spec", "*.md", "現行の仕様の Markdown"),
+    "spec_analysis": ("spec-analysis", "program.ir.json", "plsql.cli の解析（program.ir.json）"),
+    "generated": ("generated", "generation-report.json", "plsql.generate の出力（generation-report.json）"),
+    "docs": ("docs", "*.md", "変換後の仕様の Markdown"),
+    "converted": ("converted", "*.report.json", "sql-transpile の出力（*.report.json）"),
+}
+ADOPT_HINT = "（スキルを単独で先に流して作ってあるなら、flow.py adopt {what} で取り込める）"
+
+
+def cmd_adopt(args) -> int:
+    """先にスキルを単独で流して作ったもの（別の場所にある）を、この流れの置き場所に写す。
+
+    スキルを 1 つずつ先に流すと、成果物は利用者が選んだ場所に出る。この流れは `<out>/spec` などを見るので、
+    写さないと「まだ無い」になる（2026-09-26、プラグインで PL/SQL の 3 スキルを通したときに、モデルが手で写した）。
+    写すだけで、承認はしない。置き場所に違う中身が既にあれば、承認した中身を黙って変えないよう断る（--replace で上書き）。
+    """
+    import shutil
+
+    out = Path(args.out)
+    state = load(out)
+    given = {key: getattr(args, key) for key in ADOPTABLE if getattr(args, key)}
+    if not given:
+        raise FlowError("取り込むものが無い（--spec / --spec-analysis / --generated / --docs / --converted）")
+    plan = []
+    for key, source in given.items():
+        folder, marker, what = ADOPTABLE[key]
+        source = Path(source).resolve()
+        target = out / folder
+        if not source.is_dir():
+            raise FlowError(f"{source} がディレクトリでない")
+        if not list(source.glob(marker)):
+            raise FlowError(f"{source} に {marker} が無い（{what}であるべき）")
+        if source == target.resolve():
+            continue
+        ignore = None
+        if key == "generated" and given.get("docs") and Path(given["docs"]).resolve().parent == source:
+            # plsql-migrate の既定は <out>/docs。変換後の仕様は docs の置き場所へ写すので、generated に二重に置かない
+            docs_name = Path(given["docs"]).resolve().name
+            ignore = shutil.ignore_patterns(docs_name)
+        if target.exists() and _tree_digest(target) != _tree_digest(source, ignore) and not args.replace:
+            raise FlowError(f"{target} に違う中身が既にある。承認した中身を変えることになるので、置き換えるなら --replace を付ける")
+        plan.append((key, source, target, ignore))
+    for key, source, target, ignore in plan:
+        if target.exists():
+            shutil.rmtree(target)
+        shutil.copytree(source, target, ignore=ignore)
+        state.setdefault("adopted", {})[key] = {"from": str(source), "日付": datetime.date.today().isoformat()}
+        print(f"{source} → {target}")
+    save(out, state)
+    print("取り込んだ。承認はしていない。次: status で段階ごとの状態を確かめる")
+    return 0
+
+
+def _tree_digest(root: Path, ignore=None) -> str:
+    digest = hashlib.sha256()
+    skipped = set()
+    if ignore is not None:
+        skipped = set(ignore(str(root), [p.name for p in root.iterdir()]))
+    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+        relative = path.relative_to(root)
+        if relative.parts[0] in skipped:
+            continue
+        digest.update(str(relative).encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
 
 
 def cmd_status(args) -> int:
@@ -375,6 +455,14 @@ def main(argv: list[str] | None = None) -> int:
     init.add_argument("--target-dialect", dest="target_dialect")
     init.set_defaults(func=cmd_init)
     sub.add_parser("status", help="段階ごとの状態と、次にすること").set_defaults(func=cmd_status)
+    adopt = sub.add_parser("adopt", help="スキルを単独で先に流して作ったものを、置き場所に写す（承認はしない）")
+    adopt.add_argument("--spec", help="現行の仕様（*.md）のディレクトリ")
+    adopt.add_argument("--spec-analysis", dest="spec_analysis", help="仕様の調査で作った解析（program.ir.json）")
+    adopt.add_argument("--generated", help="plsql.generate の出力（generation-report.json のあるディレクトリ）")
+    adopt.add_argument("--docs", help="変換後の仕様（*.md）のディレクトリ")
+    adopt.add_argument("--converted", help="sql-transpile の出力（*.report.json のあるディレクトリ）")
+    adopt.add_argument("--replace", action="store_true", help="置き場所に違う中身があっても置き換える（承認は古くなる）")
+    adopt.set_defaults(func=cmd_adopt)
     approve = sub.add_parser("approve", help="1 つの段階の承認を記録する")
     approve.add_argument("stage", choices=STAGES)
     approve.add_argument("--by", required=True, help="承認した人（役割）")
