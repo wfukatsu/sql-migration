@@ -2113,6 +2113,11 @@ def _coerce(file: JavaFile, value: str, target_type: str) -> str:
         return f"Plsql.dec({value})"
     # `i := i + 1` on a PLS_INTEGER: the arithmetic helpers return Object (date arithmetic returns a date), and
     # `Integer i = Plsql.add(i, 1)` did not compile (2026-09-24, samples/oracle-samples b04_2_control_flow)
+    # a call of a routine that returns an INTEGER (a BigDecimal since signature_type) into an INTEGER local rounds,
+    # as Oracle does on the assignment (`x := f(2)`: 8-3)
+    if target_type in ("Integer", "Long") and re.match(r"[A-Za-z_][\w.]*\(", value) and not value.startswith("Plsql."):
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        return f"Plsql.{'toInt' if target_type == 'Integer' else 'toLong'}({value})"
     if target_type in ("Integer", "Long") and value.startswith("Plsql.") and not value.startswith(("Plsql.fit", "Plsql.to")):
         file.add_import("com.scalar.migrate.plsql.Plsql")
         return f"Plsql.{'toInt' if target_type == 'Integer' else 'toLong'}({value})"
@@ -2227,7 +2232,9 @@ def _local_type(routine: M.Routine, target: str) -> str:
         row = _row_type(holder)
         if row is not None:
             return row
-    return java_type(holder.type.resolved or holder.type.oracle).name
+        return java_type(holder.type.resolved or holder.type.oracle).name
+    # a parameter has the Java type its signature gave it: an INTEGER one is a BigDecimal (types.signature_type)
+    return signature_type(holder.type).name
 
 
 def _name_clashes(routine: M.Routine) -> list[str]:
