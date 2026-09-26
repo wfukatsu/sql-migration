@@ -333,6 +333,9 @@ def _target_name(node: exp.Expression) -> str:
         return f"{node.table}.{node.name}"
     if isinstance(node, exp.Dot):
         return node.sql(dialect="oracle")
+    if isinstance(node, exp.Table) and node.db:
+        # one target, `INTO rec.dept_name`, parses as a table `dept_name` in schema `rec` (8-37, #74)
+        return f"{node.db}.{node.name}"
     return node.name or node.sql(dialect="oracle")
 
 

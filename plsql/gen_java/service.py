@@ -30,7 +30,7 @@ from . import split
 from .dto import loop_component_type
 from .emit import JavaFile
 from .expr import SEQUENCES_IMPORT, translate
-from .types import java_class_name, java_name, java_type, record_columns, routine_stem
+from .types import record_class, java_class_name, java_name, java_type, record_columns, routine_stem
 
 # the module being generated, so an expression can resolve a sibling routine without threading it through
 # every statement helper
@@ -507,9 +507,7 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
     for parameter in routine.parameters:
         if parameter.direction == "OUT":
             continue  # an OUT argument comes back in the result, not through the signature
-        mapped = java_type(parameter.type.resolved if parameter.type else None)
-        file.add_import(*mapped.imports)
-        parameters.append(f"{mapped.name} {java_name(parameter.name)}")
+        parameters.append(f"{_holder_java_type(file, parameter.type)} {java_name(parameter.name)}")
 
     for variable, bind in correlation_row(routine).items():
         # #12: trigger の行は呼び出し側が渡す。移行先に trigger は無いので、「この表へのすべての
@@ -579,9 +577,8 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
                 # the method parameter itself is the local: `String pName = pName;` redeclared it and javac
                 # refused the whole class (2026-09-24, samples/oracle-samples normalize_name)
                 continue
-            mapped = java_type(parameter.type.resolved if parameter.type else None)
-            file.add_import(*mapped.imports)
-            f.line(f"{mapped.name} {java_name(parameter.name)} = null;")
+            f.line(f"{_holder_java_type(file, parameter.type)} {java_name(parameter.name)} = "
+                   f"{_record_default(parameter.type) or 'null'};")
         chunked = {(loop.variable or "").lower() for loop in _walk(routine.body)
                    if loop.kind == "Loop" and getattr(loop, "chunk", None)}
         # a `%ROWTYPE` record that a rewritten scan made its loop variable (#39): the for declares it
@@ -838,6 +835,36 @@ def _always_exits(routine: M.Routine, result: ServiceFile) -> bool:
     if not routine.exception_handlers:
         return True
     return all(exits(h.body) for h in routine.exception_handlers)
+
+
+def _holder_java_type(file: JavaFile, type_ref: "M.TypeRef | None") -> str:
+    """A parameter's Java type: the generated record for a record type (#74), else the mapped type."""
+    record = record_class(type_ref)
+    if record is not None:
+        file.add_import(f"{_DOMAIN.get()}.{record}" if _DOMAIN.get() else record)
+        return record
+    mapped = java_type(type_ref.resolved if type_ref else None)
+    file.add_import(*mapped.imports)
+    return mapped.name
+
+
+def _record_default(type_ref: "M.TypeRef | None") -> str | None:
+    """An OUT record starts as a record with every field NULL (or its TYPE's default), as a PL/SQL one does:
+    `x.f` read before anything is assigned is 'abcde' for `RECORD (f VARCHAR2(5) := 'abcde')` (8-16)."""
+    record = record_class(type_ref)
+    if record is None:
+        return None
+    components = []
+    for _, declared in record_columns(type_ref.resolved or ""):
+        text = re.search(r":=\s*'((?:[^']|'')*)'\s*$", declared)
+        number = re.search(r":=\s*(-?\d+(?:\.\d+)?)\s*$", declared)
+        if text:
+            components.append('"' + text.group(1).replace("''", "'").replace('"', '\\"') + '"')
+        elif number:
+            components.append(f'new java.math.BigDecimal("{number.group(1)}")')
+        else:
+            components.append("null")
+    return f"new {record}({', '.join(components)})"
 
 
 def _row_type(declaration: M.Declaration) -> str | None:
@@ -1784,7 +1811,8 @@ def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine
         raise Untranslatable([f"BULK COLLECT INTO {', '.join(targets)}"], statement.original_sql)
     if targets and statement.cardinality == "AT_MOST_ONE":
         _first_row(file, statement, routine, method, arguments, targets)
-    elif targets and len(targets) == 1:
+    elif targets and len(targets) == 1 and "." not in targets[0]:
+        # (`INTO rec.dept_name` -- one field of a record -- goes the way of several fields below: 8-37, #74)
         holder = _holder(routine, targets[0])
         value = _into(file, f"repository.{method}({arguments})", _local_type(routine, targets[0]))
         file.line(f"{_local(targets[0])} = {_constrain(file, value, holder.type if holder else None)};")

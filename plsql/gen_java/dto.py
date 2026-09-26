@@ -110,6 +110,11 @@ def result_record(routine: M.Routine, package: str, source: str = "") -> Dto | N
         file.add_import(*mapped.imports)
         components.append(f"{mapped.name} returned")
     for parameter in outs:
+        from .types import record_class
+        record = record_class(parameter.type)   # an OUT record comes back as its generated class (#74)
+        if record is not None:
+            components.append(f"{record} {java_name(parameter.name)}")
+            continue
         mapped = java_type(parameter.type.resolved if parameter.type else None)
         file.add_import(*mapped.imports)
         components.append(f"{mapped.name} {java_name(parameter.name)}")
@@ -125,7 +130,7 @@ def dtos_for(module: M.Module, package: str) -> list[Dto]:
     seen: set[str] = set()
     for routine in module.routines:
         source = f"{module.name}.{routine.name}"
-        for declaration in routine.declarations:
+        for declaration in list(routine.declarations) + list(routine.parameters):   # parameters too (#74)
             if declaration.type is None or not declaration.type.resolved:
                 continue
             if declaration.type.origin == "rowtype":

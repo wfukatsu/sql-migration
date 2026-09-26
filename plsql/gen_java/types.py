@@ -249,6 +249,18 @@ def java_name(identifier: str) -> str:
     return f"{name}_" if name in JAVA_KEYWORDS else name
 
 
+def record_class(type_ref) -> str | None:
+    """The generated class of a record-typed holder: `EmployeesRow` for a %ROWTYPE, the type's own name for a
+    `TYPE ... IS RECORD` (`r_types.r_type_1` -> `RType1`). None for anything else (#74)."""
+    if type_ref is None:
+        return None
+    if type_ref.origin == "rowtype":
+        return java_class_name(type_ref.oracle.split("%")[0]) + "Row"
+    if type_ref.origin == "record" and not object_class(type_ref.oracle or ""):
+        return java_class_name(type_ref.oracle.rpartition(".")[2])
+    return None
+
+
 def java_class_name(identifier: str) -> str:
     parts = [p for p in re.split(r"[_$#.]+", identifier.strip()) if p]
     return "".join(p[:1].upper() + p[1:].lower() for p in parts) or "Generated"
