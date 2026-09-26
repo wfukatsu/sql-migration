@@ -229,8 +229,22 @@ class _Parser:
                         or (following[0] == "name" and following[1].upper() in self.GROUP_END)
         return False
 
+    def _padded_operand(self, start: int) -> str | None:
+        """What the operand parsed from `start` is, when it is one token: "char" for a CHAR(n) local, "literal"
+        for a quoted string. Oracle compares those two kinds blank-padded (#62)."""
+        if self.position != start + 1:
+            return None
+        kind, value = self.tokens[start]
+        if kind == "string":
+            return "literal"
+        if kind == "name" and f"{value.lower()}#blank_padded" in self.scope:
+            return "char"
+        return None
+
     def parse_comparison(self, negate: bool = False) -> str:
+        start = self.position
         left = self.parse_concat()
+        left_kind = self._padded_operand(start)
         if self.at_word("IS"):
             self.take()
             self.logical = True
@@ -267,10 +281,16 @@ class _Parser:
         token = self.peek()
         if token is not None and token[0] == "op" and token[1] in COMPARISONS:
             operator = self.take()[1]
+            start = self.position
             right = self.parse_concat()
+            right_kind = self._padded_operand(start)
             self.logical = True
             self.result.imports.add(HELPER_IMPORT)
             method = COMPARISONS[operator]
+            if "char" in (left_kind, right_kind) and left_kind and right_kind:
+                # a CHAR(n) local against a literal or another CHAR: Oracle pads the shorter one with blanks, which
+                # is the same as ignoring trailing blanks on both (`first_name = 'John'` with 'John      ')
+                left, right = f"{HELPER}.unpad({left})", f"{HELPER}.unpad({right})"
             return f"{HELPER}.{self.NEGATED[method] if negate else method}({left}, {right})"
         if negate:
             # BOOLEAN の変数や関数の値。NULL のとき `NOT x` は UNKNOWN なので、FALSE のときだけ true にする
