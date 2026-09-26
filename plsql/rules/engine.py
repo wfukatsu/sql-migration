@@ -120,7 +120,8 @@ class Decision:
         return sorted({test for m in self.matches for test in m.rule.required_tests})
 
     def remediation(self) -> list[str]:
-        return [step for m in self.matches for step in m.rule.remediation]
+        # a rule that fires at two statements offers the same alternatives twice; say them once
+        return list(dict.fromkeys(step for m in self.matches for step in m.rule.remediation))
 
 
 @dataclass
@@ -556,8 +557,8 @@ def _verdict(routine: M.Routine, matches: list[Match], confidence: Confidence,
 
     if floor != "AUTO":
         decision.verdict = floor
-        decision.reasons = [f"{m.rule.id}: {m.rule.message}" for m in matches
-                            if m.rule.decision == floor]
+        decision.reasons = list(dict.fromkeys(f"{m.rule.id}: {m.rule.message}" for m in matches
+                                              if m.rule.decision == floor))
         return decision
 
     # no rule objected: confidence decides between AUTO and REVIEW
