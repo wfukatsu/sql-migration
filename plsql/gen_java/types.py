@@ -213,8 +213,34 @@ JAVA_KEYWORDS = {
 }
 
 
+_PLAIN_UPPER = re.compile(r"[A-Z][A-Z0-9_$#]*")
+
+
+def plsql_identity(identifier: str) -> str:
+    """What makes two PL/SQL names the same name, lower-cased for lookups: `Hello`, `HELLO` and `"HELLO"` are one
+    name; `"Hello"` and `"hello"` are two others (a quoted name keeps its case). A quoted name that is not plain
+    upper case gets a key no unquoted name can have (samples/oracle-plsql-docs 2-1〜2-5, #72)."""
+    name = identifier.strip()
+    if len(name) > 1 and name.startswith('"') and name.endswith('"'):
+        inner = name[1:-1]
+        if _PLAIN_UPPER.fullmatch(inner):
+            return inner.lower()
+        return "q:" + "".join(f"^{c.lower()}" if c.isupper() else c for c in inner)
+    return name.lower()
+
+
 def java_name(identifier: str) -> str:
-    """`v_order_id` -> `vOrderId`. Names come from PL/SQL, so they are snake_case and sometimes prefixed."""
+    """`v_order_id` -> `vOrderId`. Names come from PL/SQL, so they are snake_case and sometimes prefixed.
+
+    A quoted name (#72): `"HELLO"` is the plain name HELLO; `"Begin"` / `"begin"` / `"my col"` keep apart by a
+    suffix that spells their case, since Java would otherwise see one name (`begin_Ulllll`, `begin_lllll`)."""
+    stripped = identifier.strip()
+    if len(stripped) > 1 and stripped.startswith('"') and stripped.endswith('"'):
+        inner = stripped[1:-1]
+        if not _PLAIN_UPPER.fullmatch(inner):
+            base = java_name(re.sub(r"[^\w$#]+", "_", inner))
+            return f"{base}_{''.join('U' if c.isupper() else 'l' if c.islower() else 'x' for c in inner)}"
+        identifier = inner
     parts = [p for p in re.split(r"[_$#]+", identifier.strip()) if p]
     if not parts:
         return "value"

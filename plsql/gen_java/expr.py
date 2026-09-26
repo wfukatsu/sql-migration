@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from .types import java_name
+from .types import java_name, plsql_identity
 
 HELPER = "Plsql"
 HELPER_IMPORT = "com.scalar.migrate.plsql.Plsql"
@@ -24,6 +24,7 @@ AUDIT_IMPORT = "com.scalar.migrate.plsql.AuditContext"
 
 TOKEN = re.compile(r"""
     (?P<string>'(?:[^']|'')*')
+  | (?P<quoted>"[^"]+")
   | (?P<number>\d+(?:\.\d+)?)
   | (?P<bind>:[A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)?)
   | (?P<attribute>[A-Za-z][\w$#]*\s*%\s*[A-Za-z][\w$#]*)
@@ -96,7 +97,7 @@ def translate(text: str | None, names: dict[str, str] | None = None, boolean_val
     """
     if text is None or not text.strip():
         return Expression("")
-    scope = {k.lower(): v for k, v in (names or {}).items()}
+    scope = {plsql_identity(k): v for k, v in (names or {}).items()}
     tokens = _tokens(text.strip())
     result = Expression("")
     rendered, logical = _render(tokens, scope, result)
@@ -120,7 +121,10 @@ def _tokens(text: str) -> list[tuple[str, str]]:
             position += 1
             continue
         kind = match.lastgroup
-        if kind != "space":
+        if kind == "quoted":
+            # a quoted identifier is a name: under the key that says which name it is (#72)
+            out.append(("name", plsql_identity(match.group())))
+        elif kind != "space":
             out.append((kind, match.group()))
         position = match.end()
     return out
