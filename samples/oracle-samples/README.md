@@ -14,7 +14,7 @@ Oracle 公式ドキュメントの構成に沿った **構文カタログ**（SQ
 | SQL の実 DB 比較（02 の読み取り文 + JSON 3 文 + 修正版 1 文） | 40 文 | PASS 19 / FAIL 10 / SKIP 9 / CASE_ERROR 2 | **PASS 19 / FAIL 5 / SKIP 14 / CASE_ERROR 2**。FAIL 5 はすべて同順位・非決定。JSON_OBJECT は PASS に。#57 #58 のあと **PASS 24（宣言つき 5）/ FAIL 0 / SKIP 16（移行元が拒否 2）/ CASE_ERROR 0** |
 | PL/SQL routine（05・06 の全ユニット + 04 の無名ブロック 10 個） | 41 routine | AUTO 候補 7 / REVIEW 10 / REDESIGN 24 | 同じ（判定のルールは変えていない） |
 | PL/SQL の Java 生成 | 41 routine | javac エラー 15 件（8 routine） | **javac エラー 0**（41 routine 全部がコンパイルできる） |
-| PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 16 / 相違 15**（全 36 ユニット、31 シナリオ。#44〜#46 と 4 つの決定のあと）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて）。その後の回で一致 26 / 相違 5、#52 #55 のあと 一致 27 / 相違 4、残りを対応して **一致 30 / 相違 1**（b06_3 は再設計として記録）。行数上限を決めて AUTO 12、CUR-003 を絞って証拠つき **AUTO 14** |
+| PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 16 / 相違 15**（全 36 ユニット、31 シナリオ。#44〜#46 と 4 つの決定のあと）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて）。その後の回で一致 26 / 相違 5、#52 #55 のあと 一致 27 / 相違 4、残りを対応して **一致 30 / 相違 1**（b06_3 は再設計として記録）。行数上限を決めて AUTO 12、CUR-003 を絞って AUTO 14、DBMS_STATS と emp_grades のシナリオで **AUTO 16**（34 シナリオで一致 33 / 相違 1） |
 
 ## フォルダ
 
@@ -520,6 +520,23 @@ b04_4_1 は CUR-003 が消えたあと、型の解決率が 0 で REVIEW に残�
 | emp_grades | 実 DB のシナリオが無い（証拠が無い） |
 | dml_d_create_error_log、setup_gather_stats | CALL-001: 解析していない組み込み package（DBMS_ERRLOG、DBMS_STATS）を呼ぶ |
 
+### 11 回目の対応（2026-09-26、DBMS_STATS と emp_grades のシナリオ）
+
+| 対応 | 内容 | 結果 |
+|---|---|---|
+| DBMS_STATS | `GATHER_SCHEMA_STATS` / `GATHER_TABLE_STATS` を組み込み package の対応表（`plsql/builtins.py`）に「何もしない」で入れた。オプティマイザ統計を集めるだけで、データにもトランザクションにも触れず、ScalarDB に相当するものが無い。何もしない呼び出しの引数（`ownname => USER`）は評価しないので、routine が AuditContext を受け取る必要も無い | `setup_gather_stats` にシナリオを足して **一致**、AUTO |
+| emp_grades のシナリオ | PIPELINED 関数は PL/SQL から呼べない（PLS-00653）ので、Oracle 側は `SELECT * FROM TABLE(emp_grades(p_dept => :p_dept))` で読む（シナリオの `call.via: table`）。ScalarDB 側は生成した method を呼び、List の record を行にする。両側とも `{"$rows": [[属性…], …]}` に符号化し、比較は行の集合で行う（問合せに ORDER BY が無く、行の順番はどちらも決めていない） | `emp_grades_dept60`（3 行）と `emp_grades_all`（p_dept が NULL、15 行）が **一致**、AUTO |
+
+`DBMS_ERRLOG.CREATE_ERROR_LOG`（`dml_d_create_error_log`）はエラーログ用の表を作る DDL で、対になる `LOG ERRORS INTO` にも移行先の
+相当物が無いので、対応表に入れず断ったままにした。
+
+**11 回目のあとの PL/SQL 実 DB 比較（34 シナリオ、一致 33 / 相違 1）**。証拠つきの判定は **AUTO 16** / REVIEW 2 / REDESIGN 23:
+
+| REVIEW | 理由 |
+|---|---|
+| b04_4_2 | SQL-002: 実行計画（取得 + H2）に分解される文。性能を人が見る問いで、仕組みどおり |
+| dml_d_create_error_log | CALL-001: DBMS_ERRLOG（移行先に相当物が無い） |
+
 ## 付録（`result/tables.md` と同じ。`make_tables.py` が結果ファイルから作る。**Issue 修正後の数字**）
 
 ### SQL 変換（文ごと）
@@ -816,7 +833,7 @@ b04_4_1 は CUR-003 が消えたあと、型の解決率が 0 で REVIEW に残�
 | `normalize_name` | REVIEW |  | confidence factor testEvidence is 0 |
 | `raise_salary` | REDESIGN | SQL-004 | SQL-004: SQL%ROWCOUNT を読んでいますが、静的な DML 以外（FORALL・動的 SQL・MERGE・呼び出し先の SQL）が件数を決めう |
 | `setup_drop_objects` | REDESIGN | DYN-001, DYN-002, CUR-002 | DYN-001: 表名など識別子が実行時に決まる SQL です。allowlist か専用 Repository への再設計が要ります |
-| `setup_gather_stats` | REVIEW | CALL-001 | CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません |
+| `setup_gather_stats` | REVIEW |  | confidence factor testEvidence is 0 |
 
 ### PL/SQL 実 DB 比較
 | シナリオ | routine | 結果 | 差の内容 |
@@ -848,7 +865,10 @@ b04_4_1 は CUR-003 が消えたあと、型の解決率が 0 で REVIEW に残�
 | `dept_name_of_ok` | `dept_name_of.dept_name_of` | 一致 |  |
 | `emp_api_give_raise_invalid` | `emp_api.give_raise~1` | 一致 |  |
 | `emp_api_give_raise_ok` | `emp_api.give_raise~1` | 一致 |  |
+| `emp_grades_all` | `emp_grades.emp_grades` | 一致 |  |
+| `emp_grades_dept60` | `emp_grades.emp_grades` | 一致 |  |
 | `log_msg_ok` | `log_msg.log_msg` | 一致 |  |
 | `normalize_name_ok` | `normalize_name.normalize_name` | 一致 |  |
 | `raise_salary_missing` | `raise_salary.raise_salary` | 一致 |  |
 | `raise_salary_ok` | `raise_salary.raise_salary` | 一致 |  |
+| `setup_gather_stats` | `setup_gather_stats.setup_gather_stats` | 一致 |  |

@@ -68,6 +68,8 @@ DDL = FIXTURES / "src" / "schema.sql"
 def decode(value):
     """The canonical encoding back into something comparable. Unknown tags stay as they are."""
     if isinstance(value, dict):
+        if "$rows" in value:
+            return Rows(tuple(decode(v) for v in row) for row in value["$rows"])
         if "$dec" in value:
             return Decimal(value["$dec"])
         if "$ts" in value or "$date" in value or "$raw" in value or "$str" in value:
@@ -75,6 +77,30 @@ def decode(value):
         if "$masked" in value:
             return MASKED
     return value
+
+
+class Rows(list):
+    """A collection a function returned, as rows (#54). Compared as a multiset: a query without ORDER BY does not
+    fix the order Oracle piped its rows in, and neither side is wrong about it."""
+
+
+def _row_key(row) -> str:
+    return repr(tuple(v.normalize() if isinstance(v, Decimal) else v for v in row))
+
+
+def _rows_difference(expected: "Rows", actual: "Rows") -> str | None:
+    if len(expected) != len(actual):
+        return "value"
+    worst = None
+    for left, right in zip(sorted(expected, key=_row_key), sorted(actual, key=_row_key)):
+        if len(left) != len(right):
+            return "type"
+        for a, b in zip(left, right):
+            kind = difference(a, b)
+            if kind in ("value", "type"):
+                return kind
+            worst = worst or kind
+    return worst
 
 
 class _Masked:
@@ -104,6 +130,9 @@ def difference(expected, actual) -> str | None:
     The distinction that earns its keep here is between a number that differs in value and one that differs only
     in how many decimals it was written with. Both are reported, but never as the same kind of thing.
     """
+    if isinstance(expected, Rows) or isinstance(actual, Rows):
+        return _rows_difference(expected, actual) if isinstance(expected, Rows) and isinstance(actual, Rows) \
+            else "type"
     if expected is MASKED or actual is MASKED:
         return None if expected is MASKED and actual is MASKED else "masked on one side only"
     if expected is None or actual is None:

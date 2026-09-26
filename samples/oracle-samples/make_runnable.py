@@ -47,8 +47,10 @@ def seeds() -> list[str]:
 def scenario(name: str, unit: str, kind: str, note: str, *, routine: str | None = None, args: dict | None = None,
              out: dict | None = None, returns: str | None = None, extra_setup: list[str] = (),
              mask: dict | None = None, capture: list[str] | None = None, name_override: str | None = None,
-             boundary: str | None = None) -> dict:
+             boundary: str | None = None, via: str | None = None) -> dict:
     call = {"kind": kind, "name": name_override or unit}
+    if via:
+        call["via"] = via   # `table`: Oracle reads a PIPELINED function with SELECT * FROM TABLE(f(...))
     if args:
         call["args"] = args
     if out:
@@ -76,6 +78,14 @@ SCENARIOS = [
     scenario("dept_name_of_ok", "dept_name_of", "function", "部門 60 → 'IT'", args={"p_dept_id": 60}, returns="VARCHAR2"),
     scenario("dept_name_of_missing", "dept_name_of", "function", "部門なし: NO_DATA_FOUND を NULL に言い換える",
              args={"p_dept_id": 42}, returns="VARCHAR2"),
+    scenario("emp_grades_dept60", "emp_grades", "function",
+             "PIPELINED 関数（#54）。部門 60 の社員を等級つきで返す。行の順番は問合せが決めないので集合として比べる",
+             args={"p_dept": 60}, returns="EMP_GRADE_TAB", via="table"),
+    scenario("emp_grades_all", "emp_grades", "function",
+             "p_dept が NULL なら全社員（WHERE p_dept IS NULL OR … を 2 つの問合せに分けた側）",
+             args={"p_dept": None}, returns="EMP_GRADE_TAB", via="table"),
+    scenario("setup_gather_stats", "setup_gather_stats", "procedure",
+             "00 の DBMS_STATS.GATHER_SCHEMA_STATS。移行先では何もしない（#55 の対応表）。表は変わらない"),
     scenario("normalize_name_ok", "normalize_name", "procedure", "IN OUT: '  john SMITH ' → 'John Smith'",
              args={"p_name": "  john SMITH "}, out={"p_name": "VARCHAR2"}),
     scenario("raise_salary_ok", "raise_salary", "procedure",

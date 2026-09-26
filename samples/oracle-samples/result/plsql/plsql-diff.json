@@ -666,6 +666,54 @@
     ],
     "direct": false
    },
+   "emp_grades_all": {
+    "routine": "emp_grades.emp_grades",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [
+     "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
+     "table employees row employee_id=101: salary: expected=17000 actual=17000.0 (scale)",
+     "table employees row employee_id=102: salary: expected=17000 actual=17000.0 (scale)",
+     "table employees row employee_id=103: salary: expected=9000 actual=9000.0 (scale)",
+     "table employees row employee_id=104: salary: expected=6000 actual=6000.0 (scale)",
+     "table employees row employee_id=107: salary: expected=4200 actual=4200.0 (scale)",
+     "table employees row employee_id=120: salary: expected=4800 actual=4800.0 (scale)",
+     "table employees row employee_id=125: salary: expected=3200 actual=3200.0 (scale)",
+     "table employees row employee_id=145: salary: expected=14000 actual=14000.0 (scale)",
+     "table employees row employee_id=146: salary: expected=13500 actual=13500.0 (scale)",
+     "table employees row employee_id=150: salary: expected=10000 actual=10000.0 (scale)",
+     "table employees row employee_id=151: salary: expected=9500 actual=9500.0 (scale)",
+     "table employees row employee_id=155: salary: expected=7000 actual=7000.0 (scale)",
+     "table employees row employee_id=178: salary: expected=7000 actual=7000.0 (scale)",
+     "table employees row employee_id=200: salary: expected=15000 actual=15000.0 (scale)"
+    ],
+    "direct": false
+   },
+   "emp_grades_dept60": {
+    "routine": "emp_grades.emp_grades",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [
+     "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
+     "table employees row employee_id=101: salary: expected=17000 actual=17000.0 (scale)",
+     "table employees row employee_id=102: salary: expected=17000 actual=17000.0 (scale)",
+     "table employees row employee_id=103: salary: expected=9000 actual=9000.0 (scale)",
+     "table employees row employee_id=104: salary: expected=6000 actual=6000.0 (scale)",
+     "table employees row employee_id=107: salary: expected=4200 actual=4200.0 (scale)",
+     "table employees row employee_id=120: salary: expected=4800 actual=4800.0 (scale)",
+     "table employees row employee_id=125: salary: expected=3200 actual=3200.0 (scale)",
+     "table employees row employee_id=145: salary: expected=14000 actual=14000.0 (scale)",
+     "table employees row employee_id=146: salary: expected=13500 actual=13500.0 (scale)",
+     "table employees row employee_id=150: salary: expected=10000 actual=10000.0 (scale)",
+     "table employees row employee_id=151: salary: expected=9500 actual=9500.0 (scale)",
+     "table employees row employee_id=155: salary: expected=7000 actual=7000.0 (scale)",
+     "table employees row employee_id=178: salary: expected=7000 actual=7000.0 (scale)",
+     "table employees row employee_id=200: salary: expected=15000 actual=15000.0 (scale)"
+    ],
+    "direct": false
+   },
    "log_msg_ok": {
     "routine": "log_msg.log_msg",
     "verdict": "REVIEW",
@@ -763,11 +811,35 @@
      "table employees row employee_id=200: salary: expected=15000 actual=15000.0 (scale)"
     ],
     "direct": false
+   },
+   "setup_gather_stats": {
+    "routine": "setup_gather_stats.setup_gather_stats",
+    "verdict": "REVIEW",
+    "differences": [],
+    "accepted": [],
+    "scale_only": [
+     "table employees row employee_id=100: salary: expected=24000 actual=24000.0 (scale)",
+     "table employees row employee_id=101: salary: expected=17000 actual=17000.0 (scale)",
+     "table employees row employee_id=102: salary: expected=17000 actual=17000.0 (scale)",
+     "table employees row employee_id=103: salary: expected=9000 actual=9000.0 (scale)",
+     "table employees row employee_id=104: salary: expected=6000 actual=6000.0 (scale)",
+     "table employees row employee_id=107: salary: expected=4200 actual=4200.0 (scale)",
+     "table employees row employee_id=120: salary: expected=4800 actual=4800.0 (scale)",
+     "table employees row employee_id=125: salary: expected=3200 actual=3200.0 (scale)",
+     "table employees row employee_id=145: salary: expected=14000 actual=14000.0 (scale)",
+     "table employees row employee_id=146: salary: expected=13500 actual=13500.0 (scale)",
+     "table employees row employee_id=150: salary: expected=10000 actual=10000.0 (scale)",
+     "table employees row employee_id=151: salary: expected=9500 actual=9500.0 (scale)",
+     "table employees row employee_id=155: salary: expected=7000 actual=7000.0 (scale)",
+     "table employees row employee_id=178: salary: expected=7000 actual=7000.0 (scale)",
+     "table employees row employee_id=200: salary: expected=15000 actual=15000.0 (scale)"
+    ],
+    "direct": false
    }
   },
   "not_compared": {},
   "fingerprints": {
-   "toolchain": "c27911a2d9783ee600370a8df5544361f5ec5923cc74668727b295922abd296e",
+   "toolchain": "a581b1f24caeef15fadf6570ae683a096e9309f6d2c5a1b01dd4ca34927a42d4",
    "sources": {
     "annual_comp": "a43e3576d8b1c2f648b65d5603c0001c0aaec44531a54d9bf47462ce3bb2ac15",
     "b04_1_variables": "22a5f4c43ce7bc93eb38ea67f54f4b00a202f151bf79b7773cc553c6a005fc03",

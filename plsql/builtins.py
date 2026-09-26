@@ -46,10 +46,27 @@ class Builtin:
 _NOOP_SESSION = ("V$SESSION に出る値を変えるだけで、データにもトランザクションにも触れない。移行先に相当するものが無いので、"
                  "何もしない（監視で使っていたなら、アプリのログや tracing に置き換える）")
 
+_NOOP_STATS = ("Oracle のオプティマイザ統計を集めるだけで、データにもトランザクションにも触れない。ScalarDB に"
+               "オプティマイザ統計は無いので、何もしない（バックエンドの統計は運用で取る）")
+
 BUILTINS: dict[str, Builtin] = {b.name: b for b in [
     Builtin("DBMS_APPLICATION_INFO.SET_MODULE", ("module_name", "action_name"), None, _NOOP_SESSION),
     Builtin("DBMS_APPLICATION_INFO.SET_ACTION", ("action_name",), None, _NOOP_SESSION),
     Builtin("DBMS_APPLICATION_INFO.SET_CLIENT_INFO", ("client_info",), None, _NOOP_SESSION),
+    Builtin("DBMS_STATS.GATHER_SCHEMA_STATS",
+            ("ownname", "estimate_percent", "block_sample", "method_opt", "degree", "granularity", "cascade",
+             "stattab", "statid", "options", "statown", "no_invalidate", "gather_temp", "gather_fixed",
+             "stattype", "force", "obj_filter_list"), None, _NOOP_STATS,
+            defaults={p: "NULL" for p in ("estimate_percent", "block_sample", "method_opt", "degree", "granularity",
+                                           "cascade", "stattab", "statid", "options", "statown", "no_invalidate",
+                                           "gather_temp", "gather_fixed", "stattype", "force", "obj_filter_list")}),
+    Builtin("DBMS_STATS.GATHER_TABLE_STATS",
+            ("ownname", "tabname", "partname", "estimate_percent", "block_sample", "method_opt", "degree",
+             "granularity", "cascade", "stattab", "statid", "statown", "no_invalidate", "stattype", "force"),
+            None, _NOOP_STATS,
+            defaults={p: "NULL" for p in ("partname", "estimate_percent", "block_sample", "method_opt", "degree",
+                                           "granularity", "cascade", "stattab", "statid", "statown", "no_invalidate",
+                                           "stattype", "force")}),
     Builtin("DBMS_SESSION.SLEEP", ("seconds",), "Plsql.sleep",
             "指定した秒数だけ待つ（小数可）。トランザクションは開いたまま待つのも Oracle と同じ"),
     Builtin("DBMS_LOCK.SLEEP", ("seconds",), "Plsql.sleep",

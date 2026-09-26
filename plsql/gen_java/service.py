@@ -276,7 +276,11 @@ def _needs_audit(routine: M.Routine, visiting: set[str]) -> bool:
     if routine.id in visiting:
         return False   # recursion: the answer comes from the rest of the body
     visiting.add(routine.id)
+    from .. import builtins
     for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
+        mapped = builtins.lookup(statement.callee) if statement.kind == "Call" and not statement.resolved_to else None
+        if mapped is not None and mapped.java is None:
+            continue   # a no-op built-in (DBMS_STATS, SET_MODULE, #55): its arguments are never evaluated
         for text in _expression_texts(statement):
             if translate(text).audit:
                 return True

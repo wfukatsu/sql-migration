@@ -1,9 +1,9 @@
 {
  "schemaVersion": "1.1.0",
  "counts": {
-  "AUTO": 14,
+  "AUTO": 16,
   "REDESIGN": 23,
-  "REVIEW": 4
+  "REVIEW": 2
  },
  "redesignStates": {
   "undecided": 6,
@@ -2445,21 +2445,19 @@
   },
   {
    "routine": "emp_grades",
-   "verdict": "REVIEW",
+   "verdict": "AUTO",
    "ruleVerdict": "AUTO",
    "confidence": {
-    "value": 0.0,
+    "value": 1.0,
     "ruleCoverage": 1.0,
     "symbolResolution": 1.0,
     "typeResolution": 1.0,
     "targetCapability": 1.0,
-    "testEvidence": 0.0,
-    "zeroFactors": [
-     "testEvidence"
-    ]
+    "testEvidence": 1.0,
+    "zeroFactors": []
    },
    "reasons": [
-    "confidence factor testEvidence is 0"
+    "confidence 1.000 >= 0.95, no rule objected"
    ],
    "rules": [
     {
@@ -2491,9 +2489,7 @@
    "requiredTests": [
     "cross_partition_scan"
    ],
-   "whyNotAuto": [
-    "確信度が 0: testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
-   ],
+   "whyNotAuto": [],
    "redesign": null,
    "source": {
     "file": "emp_grades.fnc",
@@ -2874,43 +2870,24 @@
   },
   {
    "routine": "setup_gather_stats",
-   "verdict": "REVIEW",
-   "ruleVerdict": "REVIEW",
+   "verdict": "AUTO",
+   "ruleVerdict": "AUTO",
    "confidence": {
-    "value": 0.0,
+    "value": 1.0,
     "ruleCoverage": 1.0,
-    "symbolResolution": 0.0,
+    "symbolResolution": 1.0,
     "typeResolution": 1.0,
     "targetCapability": 1.0,
-    "testEvidence": 0.0,
-    "zeroFactors": [
-     "symbolResolution",
-     "testEvidence"
-    ]
+    "testEvidence": 1.0,
+    "zeroFactors": []
    },
    "reasons": [
-    "CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません"
+    "confidence 1.000 >= 0.95, no rule objected"
    ],
-   "rules": [
-    {
-     "id": "CALL-001",
-     "decision": "REVIEW",
-     "message": "解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません",
-     "source": "lowering.yaml",
-     "severity": "critical"
-    }
-   ],
-   "remediation": [
-    "呼び先のソースを解析対象に加える",
-    "加えられない（Oracle 提供のパッケージなど）なら、移行先での代替を決める"
-   ],
-   "requiredTests": [
-    "equivalent_result"
-   ],
-   "whyNotAuto": [
-    "CALL-001 (REVIEW): 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません",
-    "確信度が 0: symbolResolution, testEvidence（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて いないから。P3-2 の比較結果を --evidence で渡す）"
-   ],
+   "rules": [],
+   "remediation": [],
+   "requiredTests": [],
+   "whyNotAuto": [],
    "redesign": null,
    "source": {
     "file": "setup_gather_stats.prc",

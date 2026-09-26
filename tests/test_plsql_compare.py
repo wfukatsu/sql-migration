@@ -335,3 +335,15 @@ def test_an_oracle_date_at_midnight_equals_the_target_date_column():
     assert difference("2013-06-17", "2013-06-17T00:00:00") is None
     assert difference("2013-06-17T09:30:00", "2013-06-17") == "value"
     assert difference("2013-06-17T00:00:00", "2013-06-18") == "value"
+
+
+def test_rows_a_function_returned_are_compared_as_a_multiset():
+    """#54: a PIPELINED function read without ORDER BY; neither side fixes the order of its rows."""
+    oracle = {"$rows": [[{"$dec": "103"}, "Hunold", "B"], [{"$dec": "104"}, "Ernst", "B"]]}
+    same_rows = {"$rows": [[{"$dec": "104"}, "Ernst", "B"], [{"$dec": "103.0"}, "Hunold", "B"]]}
+    other = {"$rows": [[{"$dec": "104"}, "Ernst", "C"], [{"$dec": "103"}, "Hunold", "B"]]}
+    assert difference(decode(oracle), decode({"$rows": list(reversed(oracle["$rows"]))})) is None
+    assert difference(decode(oracle), decode(same_rows)) == "scale"
+    assert difference(decode(oracle), decode(other)) == "value"
+    assert difference(decode(oracle), decode({"$rows": oracle["$rows"][:1]})) == "value"
+    assert difference(decode(oracle), None) == "type"

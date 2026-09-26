@@ -1,0 +1,55 @@
+name: setup_gather_stats
+unit: setup_gather_stats
+routine: setup_gather_stats
+pinned:
+  sysdate: '2026-09-24 09:30:00'
+setup:
+- INSERT INTO jobs (job_id, job_title, min_salary, max_salary) VALUES ('AD_PRES', 'President', 20000, 40000)
+- INSERT INTO jobs (job_id, job_title, min_salary, max_salary) VALUES ('AD_VP', 'Vice President', 15000, 30000)
+- INSERT INTO jobs (job_id, job_title, min_salary, max_salary) VALUES ('IT_PROG', 'Programmer', 4000, 10000)
+- INSERT INTO jobs (job_id, job_title, min_salary, max_salary) VALUES ('SA_MAN', 'Sales Manager', 10000, 20000)
+- INSERT INTO jobs (job_id, job_title, min_salary, max_salary) VALUES ('SA_REP', 'Sales Representative', 6000, 12000)
+- INSERT INTO jobs (job_id, job_title, min_salary, max_salary) VALUES ('ST_CLERK', 'Stock Clerk', 2000, 5000)
+- INSERT INTO departments (department_id, department_name, manager_id, location) VALUES (10, 'Administration', 200, 'Tokyo')
+- INSERT INTO departments (department_id, department_name, manager_id, location) VALUES (60, 'IT', 103, 'Osaka')
+- INSERT INTO departments (department_id, department_name, manager_id, location) VALUES (80, 'Sales', 145, 'Tokyo')
+- INSERT INTO departments (department_id, department_name, manager_id, location) VALUES (50, 'Shipping', 120, 'Nagoya')
+- INSERT INTO departments (department_id, department_name, manager_id, location) VALUES (90, 'Executive', 100, 'Tokyo')
+- INSERT INTO departments (department_id, department_name, manager_id, location) VALUES (99, 'Research', NULL, 'Fukuoka')
+- INSERT INTO employees (employee_id, first_name, last_name, email, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (100, 'Steven', 'King', 'SKING', DATE '2013-06-17', 'AD_PRES',
+  24000, NULL, NULL, 90)
+- INSERT INTO employees (employee_id, first_name, last_name, email, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (101, 'Neena', 'Kochhar', 'NKOCHHAR', DATE '2015-09-21',
+  'AD_VP', 17000, NULL, 100, 90)
+- INSERT INTO employees (employee_id, first_name, last_name, email, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (102, 'Lex', 'De Haan', 'LDEHAAN', DATE '2011-01-13', 'AD_VP',
+  17000, NULL, 100, 90)
+- INSERT INTO employees (employee_id, first_name, last_name, email, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (103, 'Alexander', 'Hunold', 'AHUNOLD', DATE '2016-01-03',
+  'IT_PROG', 9000, NULL, 102, 60)
+- INSERT INTO employees (employee_id, first_name, last_name, email, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (104, 'Bruce', 'Ernst', 'BERNST', DATE '2017-05-21', 'IT_PROG',
+  6000, NULL, 103, 60)
+- INSERT INTO employees (employee_id, first_name, last_name, email, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (107, 'Diana', 'Lorentz', 'DLORENTZ', DATE '2019-02-07',
+  'IT_PROG', 4200, NULL, 103, 60)
+- INSERT INTO employees (employee_id, first_name, last_name, email, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (145, 'John', 'Russell', 'JRUSSEL', DATE '2014-10-01', 'SA_MAN',
+  14000, 0.4, 100, 80)
+- INSERT INTO employees (employee_id, first_name, last_name, email, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (146, 'Karen', 'Partners', 'KPARTNER', DATE '2015-01-05',
+  'SA_MAN', 13500, 0.3, 100, 80)
+- INSERT INTO employees (employee_id, first_name, last_name, email, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (150, 'Peter', 'Tucker', 'PTUCKER', DATE '2015-01-30', 'SA_REP',
+  10000, 0.3, 145, 80)
+- INSERT INTO employees (employee_id, first_name, last_name, email, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (151, 'David', 'Bernstein', 'DBERNSTE', DATE '2015-03-24',
+  'SA_REP', 9500, 0.25, 145, 80)
+- INSERT INTO employees (employee_id, first_name, last_name, email, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (155, 'Oliver', 'Tuvault', 'OTUVAULT', DATE '2017-11-23',
+  'SA_REP', 7000, 0.15, 146, 80)
+- INSERT INTO employees (employee_id, first_name, last_name, email, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (120, 'Matthew', 'Weiss', 'MWEISS', DATE '2014-07-18', 'ST_CLERK',
+  4800, NULL, 100, 50)
+- INSERT INTO employees (employee_id, first_name, last_name, email, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (125, 'Julia', 'Nayer', 'JNAYER', DATE '2015-07-16', 'ST_CLERK',
+  3200, NULL, 120, 50)
+- INSERT INTO employees (employee_id, first_name, last_name, email, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (178, 'Kimberely', 'Grant', 'KGRANT', DATE '2017-05-24',
+  'SA_REP', 7000, 0.15, 145, NULL)
+- INSERT INTO employees (employee_id, first_name, last_name, email, hire_date, job_id, salary, commission_pct, manager_id, department_id) VALUES (200, 'Jennifer', 'Whalen', 'JWHALEN', DATE '2013-09-17',
+  'AD_VP', 15000, NULL, 101, 10)
+call:
+  kind: procedure
+  name: setup_gather_stats
+capture_tables:
+- employees
+- emp_audit
+note: 00 の DBMS_STATS.GATHER_SCHEMA_STATS。移行先では何もしない（#55 の対応表）。表は変わらない

@@ -89,3 +89,13 @@ def test_every_helper_the_table_names_exists_in_the_runtime():
         if builtin.java:
             method = builtin.java.split(".")[1]
             assert f" {method}(" in runtime, f"{builtin.name}: Plsql.{method} is not in runtime-java"
+
+
+def test_gathering_optimizer_statistics_does_nothing_on_the_target(tmp_path):
+    java, decision = _generate(tmp_path, "DBMS_STATS.GATHER_SCHEMA_STATS(ownname => USER);\n"
+                                          "DBMS_STATS.GATHER_TABLE_STATS(USER, 'ORDERS', cascade => TRUE);")
+    assert "UnsupportedOperationException" not in java
+    assert "// DBMS_STATS.GATHER_SCHEMA_STATS: Oracle のオプティマイザ統計" in java
+    assert "// DBMS_STATS.GATHER_TABLE_STATS: Oracle のオプティマイザ統計" in java
+    assert "audit" not in java.split("public void p(")[1].split(")")[0], "USER is not evaluated: nothing is done"
+    assert "CALL-001" not in {m.rule.id for m in decision.matches}

@@ -440,7 +440,30 @@ public final class ScalarDbRunner implements AutoCloseable {
     if (value instanceof java.sql.Timestamp t) return Map.of("$ts", isoformat(t.toLocalDateTime()));
     if (value instanceof byte[] b) return Map.of("$raw", java.util.HexFormat.of().formatHex(b));
     if (value instanceof Number || value instanceof String || value instanceof Boolean) return value;
+    if (value instanceof java.util.List<?> list) {
+      // a collection of records (`List<EmpGradeT>` for `RETURN emp_grade_tab`, #54): rows of components, the
+      // same shape the Oracle capture writes. plsql_compare compares them as a multiset
+      java.util.List<Object> rows = new java.util.ArrayList<>();
+      for (Object element : list) rows.add(row(element));
+      return Map.of("$rows", rows);
+    }
     return Map.of("$str", String.valueOf(value));
+  }
+
+  private static java.util.List<Object> row(Object element) {
+    java.util.List<Object> out = new java.util.ArrayList<>();
+    if (element != null && element.getClass().isRecord()) {
+      for (java.lang.reflect.RecordComponent component : element.getClass().getRecordComponents()) {
+        try {
+          out.add(encode(component.getAccessor().invoke(element)));
+        } catch (ReflectiveOperationException e) {
+          throw new IllegalStateException(e);
+        }
+      }
+    } else {
+      out.add(encode(element));
+    }
+    return out;
   }
 
   /**
