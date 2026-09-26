@@ -303,11 +303,20 @@ class _Parser:
             # BOOLEAN の変数や関数の値。NULL のとき `NOT x` は UNKNOWN なので、FALSE のときだけ true にする
             self.result.imports.add(HELPER_IMPORT)
             return f"{HELPER}.isFalse({left})"
-        if self.strict:
+        if self.strict and not self._primitive(start, left):
             # bool3 の引数は boolean。BOOLEAN の変数をそのまま渡すと、NULL のとき unboxing で落ちる
             self.result.imports.add(HELPER_IMPORT)
             return f"{HELPER}.isTrue({left})"
         return left
+
+    def _primitive(self, start: int, rendered: str) -> bool:
+        """An operand that is already a Java `boolean`, never null: a cursor attribute (`c%NOTFOUND` is a flag the
+        generator keeps) or a comparison it spelled out (`(rowCount == 0)` for SQL%NOTFOUND), or a literal."""
+        if rendered in ("true", "false"):
+            return True
+        if self.position == start + 1 and self.tokens[start][0] == "attribute":
+            return True
+        return rendered.startswith("(") and rendered.endswith(")") and any(op in rendered for op in ("==", "!=", " > "))
 
     def _predicate(self, negated: bool, plain: str, opposite: str, arguments: str) -> str:
         """`NOT IN` / `NOT BETWEEN` / `NOT LIKE` は、NULL が絡むと TRUE にならない。`!` では表せない。"""
@@ -523,6 +532,15 @@ class _Parser:
         return f"{HELPER}.{mapped}({value})"
 
     def _call(self) -> str:
+        """A call's arguments are values, not the spine of a condition: `IF f(p_id) = 0` must pass `p_id`, not
+        `Plsql.isTrue(p_id)` (#65 turned strict on for conditions; corpus pkg_shipment showed the leak)."""
+        strict, self.strict = self.strict, False
+        try:
+            return self._call_body()
+        finally:
+            self.strict = strict
+
+    def _call_body(self) -> str:
         """A function call: the name, then each argument parsed as a full expression.
 
         まず**丸ごと名前として**引く。`p_ids(i)` はコレクションの要素で、生成コードは文が走る前から
