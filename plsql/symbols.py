@@ -558,7 +558,7 @@ class _Builder:
 
         base, kind = attribute.group("base"), attribute.group("attr").upper()
         if kind == "ROWTYPE":
-            return self._rowtype(base, written)
+            return self._rowtype(base, written, scope)
         return self._coltype(scope, base, written)
 
     def _coltype(self, scope: Scope, base: str, written: str) -> TypeRef:
@@ -577,13 +577,50 @@ class _Builder:
         self._unresolved("UNRESOLVED_TYPE", f"{written}: {base} is not a declared variable in scope", scope)
         return TypeRef(written, None, "unresolved", self.table.schema_snapshot)
 
-    def _rowtype(self, base: str, written: str) -> TypeRef:
+    def _rowtype(self, base: str, written: str, scope: "Scope | None" = None) -> TypeRef:
         columns = self.schema.columns(base.rpartition(".")[2]) if self.schema else None
+        if columns is None and scope is not None:
+            # `r c_emp%ROWTYPE`: the row of a cursor is its select list, typed from the tables it reads
+            cursor = scope.resolve(base)
+            if cursor is not None and cursor.kind == "cursor" and cursor.query:
+                columns = self._query_columns(cursor.query)
         if columns is None:
             self._unresolved("UNRESOLVED_TYPE", f"{written}: no table {base} in the DDL snapshot", None)
             return TypeRef(written, None, "unresolved", self.table.schema_snapshot)
         shape = ", ".join(f"{name} {type_}" for name, type_ in columns.items())
         return TypeRef(written, f"RECORD({shape})", "rowtype", self.table.schema_snapshot)
+
+    def _query_columns(self, query: str) -> dict[str, str] | None:
+        """The select list of `query` as {name: Oracle type}, when every item is a column of a table the DDL has."""
+        if self.schema is None:
+            return None
+        import sqlglot
+        from sqlglot import exp
+
+        try:
+            tree = sqlglot.parse_one(query, dialect="oracle")
+        except Exception:  # noqa: BLE001
+            return None
+        if not isinstance(tree, exp.Select):
+            return None
+        aliases = {(t.alias or t.name).lower(): t.name.lower() for t in tree.find_all(exp.Table)}
+        out: dict[str, str] = {}
+        for projection in tree.expressions:
+            if isinstance(projection, exp.Star):
+                if len(aliases) != 1:
+                    return None
+                out.update(self.schema.columns(next(iter(aliases.values()))) or {})
+                continue
+            column = projection.unalias() if isinstance(projection, exp.Alias) else projection
+            if not isinstance(column, exp.Column):
+                return None
+            sources = [aliases.get(column.table.lower())] if column.table else list(aliases.values())
+            found = [(self.schema.columns(t) or {}).get(column.name.lower()) for t in sources if t]
+            found = [f for f in found if f]
+            if len(found) != 1:
+                return None
+            out[projection.alias_or_name.lower()] = found[0]
+        return out or None
 
     # -- helpers --------------------------------------------------------------------------------------------
     def _scope(self, scope_id: str, kind: str, parent: Scope | None) -> Scope:
