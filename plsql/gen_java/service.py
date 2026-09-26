@@ -42,6 +42,8 @@ _PROGRAM: "contextvars.ContextVar[M.Program | None]" = contextvars.ContextVar("p
 # names a nested block declares (#18). They are in scope for its body and nowhere else, which is what the
 # PL/SQL says -- reading them off the routine would make a block-local visible to the whole method.
 _BLOCK_LOCALS: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("block_locals", default={})
+# the declarations of the enclosing nested blocks, innermost last: what `_holder` finds before the routine's (#71)
+_BLOCK_HOLDERS: "contextvars.ContextVar[tuple]" = contextvars.ContextVar("block_holders", default=())
 _ROWCOUNT_SEEN: "contextvars.ContextVar[bool]" = contextvars.ContextVar("rowcount", default=False)
 _READS_ROWCOUNT: "contextvars.ContextVar[bool]" = contextvars.ContextVar("reads_rowcount", default=False)
 # この routine が途中で拒否することが分かっているか（#25）。採番の前で止めるために要る
@@ -362,7 +364,7 @@ def _constants(file: JavaFile, module: M.Module) -> None:
             value = f"Plsql.dec({value})"
         elif mapped.name == "Long" and "." not in value:
             value = f"{value}L"
-        file.line(f"private static final {mapped.name} {java_name(declaration.name)} = {value.lower() if value.upper() in ('TRUE', 'FALSE', 'NULL') else value};")
+        file.line(f"private static final {mapped.name} {_local(declaration.name)} = {value.lower() if value.upper() in ('TRUE', 'FALSE', 'NULL') else value};")
 
 
 def _collection_kind(holder) -> str | None:
@@ -835,7 +837,7 @@ def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
         for _, declared in record_columns(declaration.type.resolved if declaration.type else ""):
             default = re.search(r":=\s*(.+)$", declared)
             components.append(_expr(file, default.group(1).strip(), routine, result) if default else "null")
-        file.line(f"{row} {java_name(declaration.name)} = new {row}({', '.join(components)});")
+        file.line(f"{row} {_local(declaration.name)} = new {row}({', '.join(components)});")
         return
     if _collection_kind(declaration) and not declaration.initial \
             and "INDEX BY" in (declaration.type.resolved or "").upper():
@@ -843,7 +845,7 @@ def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
         mapped = java_type(declaration.type.resolved)
         file.add_import(*mapped.imports, "com.scalar.migrate.plsql.Plsql")
         constructor = "Plsql.indexBy()" if _collection_kind(declaration) == "map" else "Plsql.table()"
-        file.line(f"{mapped.name} {java_name(declaration.name)} = {constructor};")
+        file.line(f"{mapped.name} {_local(declaration.name)} = {constructor};")
         return
     mapped = java_type(declaration.type.resolved if declaration.type else None)
     file.add_import(*mapped.imports)
@@ -859,7 +861,7 @@ def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
             # (2026-09-24, samples/oracle-samples). Same treatment: the variable is declared, the routine stops here.
             file.comment(f"not translated: {declaration.name} := {e.text.strip()[:120]}")
             file.comment(f"    unresolved: {', '.join(e.names)}")
-            file.line(f"{mapped.name} {java_name(declaration.name)}{initial};")
+            file.line(f"{mapped.name} {_local(declaration.name)}{initial};")
             file.line(f'if (true) throw new UnsupportedOperationException("unresolved in declaration '
                       f'{declaration.name}: {", ".join(e.names)}");')
             if routine.id not in result.untranslated:
@@ -873,7 +875,7 @@ def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
             # constructor keeps the literal exact, which a double would not
             rendered = f'new BigDecimal("{rendered}")'
         initial = f" = {_constrain(file, _coerce(file, rendered, mapped.name), declaration.type)}"
-    file.line(f"{mapped.name} {java_name(declaration.name)}{initial};")
+    file.line(f"{mapped.name} {_local(declaration.name)}{initial};")
 
 
 def _statements(file: JavaFile, statements: list[M.Statement], routine: M.Routine,
@@ -991,7 +993,7 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
             key = _expr(file, subscript.rstrip()[:-1], routine, result)
             element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
             value = _coerce(file, _expr(file, statement.expression, routine, result), element)
-            file.line(f"Plsql.set({java_name(holder.name)}, {key}, {value});")
+            file.line(f"Plsql.set({_local(holder.name)}, {key}, {value});")
             return
         if "." in written and (_holder(routine, written.partition(".")[0]) is not None
                                or written.partition(".")[0].lower() in {k.lower() for k in _LOOP_ROWS.get()}):
@@ -1100,6 +1102,36 @@ def _trigger_when(file: JavaFile, routine: M.Routine, result: ServiceFile) -> bo
     return False
 
 
+def _local(name: str) -> str:
+    """The Java name of a PL/SQL variable where it is used: the block's own when a nested `DECLARE` (or a FOR
+    loop's index) gave it a new one because the name was taken further out (#71), else the plain one."""
+    for plsql_name, java in _BLOCK_LOCALS.get().items():
+        if plsql_name.lower() == name.lower():
+            return java
+    return java_name(name)
+
+
+def _taken(routine: M.Routine) -> set[str]:
+    """Java names already declared in the method at this point: the routine's parameters and declarations, a
+    trigger's locals, and every enclosing block's and loop's."""
+    module = _MODULE.get()
+    names = [p.name for p in routine.parameters] + [d.name for d in routine.declarations]
+    if module is not None and module.module_kind == "trigger":
+        names += [d.name for d in module.declarations]
+    return {java_name(n) for n in names} | set(_BLOCK_LOCALS.get().values())
+
+
+def _fresh(java: str, taken: set[str]) -> str:
+    """`a` when free, else `a_2`, `a_3`... Java cannot declare a name its enclosing scope already has, which PL/SQL
+    allows in a nested block; generated names are camelCase, so one with an underscore is never among them."""
+    if java not in taken:
+        return java
+    n = 2
+    while f"{java}_{n}" in taken:
+        n += 1
+    return f"{java}_{n}"
+
+
 def _block(file: JavaFile, statement: M.Block, routine: M.Routine, result: ServiceFile) -> None:
     """A nested `BEGIN ... EXCEPTION ... END` (#18), as the Java block it is.
 
@@ -1114,7 +1146,13 @@ def _block(file: JavaFile, statement: M.Block, routine: M.Routine, result: Servi
     visible from `catch`.
     """
     outer = _BLOCK_LOCALS.get()
-    _BLOCK_LOCALS.set({**outer, **{d.name: java_name(d.name) for d in statement.declarations}})
+    taken, renamed = _taken(routine), {}
+    for d in statement.declarations:
+        renamed[d.name] = _fresh(java_name(d.name), taken)
+        taken.add(renamed[d.name])
+    _BLOCK_LOCALS.set({**outer, **renamed})
+    outer_holders = _BLOCK_HOLDERS.get()
+    _BLOCK_HOLDERS.set(outer_holders + tuple(statement.declarations))
     try:
         with file.block("") as scope:
             for declaration in statement.declarations:
@@ -1128,6 +1166,7 @@ def _block(file: JavaFile, statement: M.Block, routine: M.Routine, result: Servi
             _handlers(scope, statement.exception_handlers, routine, result, _DOMAIN.get() or "")
     finally:
         _BLOCK_LOCALS.set(outer)
+        _BLOCK_HOLDERS.set(outer_holders)
 
 
 def _if(file: JavaFile, statement: M.If, routine: M.Routine, result: ServiceFile) -> None:
@@ -1174,7 +1213,8 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
         # loop variable; the index is a PLS_INTEGER (#37, samples/oracle-samples b04_2_control_flow)
         file.add_import("com.scalar.migrate.plsql.Plsql")
         index_name = numeric.group("index")
-        index = java_name(index_name)
+        # `FOR i IN ...` where the routine also declares an `i`: the loop's own i hides it in PL/SQL (4-20, #71)
+        index = _fresh(java_name(index_name), _taken(routine))
         low = _expr(file, numeric.group("low"), routine, result)
         high = _expr(file, numeric.group("high"), routine, result)
         if numeric.group("reverse"):
@@ -1195,7 +1235,7 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
     if statement.label:
         _LOOP_LABELS.set(outer | {statement.label.lower()})
     if index_name:
-        _BLOCK_LOCALS.set({**outer_locals, index_name: java_name(index_name)})
+        _BLOCK_LOCALS.set({**outer_locals, index_name: index})
     try:
         with file.block(opening) as f:
             _statements(f, statement.body, routine, result)
@@ -1697,7 +1737,7 @@ def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine
     elif targets and len(targets) == 1:
         holder = _holder(routine, targets[0])
         value = _into(file, f"repository.{method}({arguments})", _local_type(routine, targets[0]))
-        file.line(f"{java_name(targets[0])} = {_constrain(file, value, holder.type if holder else None)};")
+        file.line(f"{_local(targets[0])} = {_constrain(file, value, holder.type if holder else None)};")
     elif targets:
         # the repository returns the columns positionally, in the order the SELECT names them
         if any("." in target for target in targets):
@@ -1708,7 +1748,7 @@ def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine
         for index, target in enumerate(targets):
             holder = _holder(routine, target)
             value = _into(file, f"row[{index}]", _local_type(routine, target))
-            file.line(f"{java_name(target)} = {_constrain(file, value, holder.type if holder else None)};")
+            file.line(f"{_local(target)} = {_constrain(file, value, holder.type if holder else None)};")
     elif (statement.sql_kind or "").upper() in ("INSERT", "UPDATE", "DELETE", "MERGE"):
         # SQL%ROWCOUNT is part of the behaviour: `update_email` raises when it is zero. One variable per
         # statement, because a routine may hold several DML statements in one scope.
@@ -1837,7 +1877,7 @@ def _first_row(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, me
     with file.block(f"if ({row} != null)") as f:
         for index, target in enumerate(targets):
             value = _into(f, f"{row}[{index}]", _local_type(routine, target))
-            f.line(f"{java_name(target)} = {value};")
+            f.line(f"{_local(target)} = {value};")
 
 
 def _into(file: JavaFile, value: str, target_type: str) -> str:
@@ -1953,6 +1993,10 @@ def _name_clashes(routine: M.Routine) -> list[str]:
 
 
 def _holder(routine: M.Routine, target: str):
+    # a nested block's own declaration first: it hides the routine's of the same name (#71)
+    for holder in reversed(_BLOCK_HOLDERS.get()):
+        if holder.name.lower() == (target or "").lower() and holder.type is not None:
+            return holder
     module = _MODULE.get()
     module_locals = list(module.declarations) if module is not None \
         and routine.routine_kind == "trigger-body" else []

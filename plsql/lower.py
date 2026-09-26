@@ -528,8 +528,21 @@ class _Lowerer:
         body = inner or context
         node = M.Block(id=ids.next("stmt"), kind="Block", source_range=source)
         if inner is not None:   # a `DECLARE` of its own; without one the body is the whole block
-            node.declarations = self._declarations(context, ids, self.routine_id, stop={"BodyContext"})
+            # not into a subprogram declared here: its locals are its own, not the block's (2-22 read the nested
+            # procedure's `x` as a second `x` of the block)
+            node.declarations = self._declarations(context, ids, self.routine_id,
+                                                   stop={"BodyContext"} | NESTED_SUBPROGRAMS)
         node.body = self._statements(_child(body, "Seq_of_statementsContext") or body, ids)
+        if inner is not None:
+            # a subprogram in a nested block's DECLARE is not lifted (#80 lifts the routine's own); it is kept
+            # visible as Unsupported rather than dropped, so a call to it is not mistaken for an external one
+            for nested in _descend(context, NESTED_SUBPROGRAMS, stop={"BodyContext"}):
+                unsupported = M.Unsupported(id=ids.next("stmt"), kind="Unsupported", source_range=self._range(nested),
+                                            text=_text(nested), construct="NestedSubprogram")
+                unsupported.add("WARN", "UNSUPPORTED_CONSTRUCT",
+                                "a subprogram declared in a nested block is not lowered; the routine cannot be AUTO "
+                                "while it is present")
+                node.body.insert(0, unsupported)
         for handler in _descend(body, {"Exception_handlerContext"},
                                 stop={"BodyContext", "BlockContext"}):
             node.exception_handlers.append(self._handler(handler, ids))
