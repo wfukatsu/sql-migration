@@ -57,6 +57,8 @@
 `callerBoundary` の routine を実 DB で比べるときは、元の routine が自分でしていた終わり方をシナリオに書く（`boundary: rollback`）。ScalarDB 側のハーネスが呼び出し側としてそのとおりに終え、Oracle 側は原文が自分で戻すのでこの鍵を無視する。書かなければ、Oracle が戻した行（trigger の監査行、FK 違反にならなかった行）が ScalarDB 側に残って相違になる。
 
 PIPELINED 関数は PL/SQL から呼べない（PLS-00653）ので、シナリオの `call` に `via: table` を書く。Oracle 側は `SELECT * FROM TABLE(f(p => :p))` で読み、ScalarDB 側は生成した method が返す List を読む。戻り値は両側とも行の集合（`$rows`）として比べる。
+
+Oracle 自身が結果を決めていないシナリオ（`ROWNUM <= n` に `ORDER BY` が無い更新など）は、`nondeterministic` に理由と比べない列（`ignore_columns: {表: [列, …]}`）を書く。その列を両側から外した行の集合で比べるので、何件がどう変わったかは確かめ続ける。比較の報告には「非決定として比べない列」として理由つきで出る。理由の無い宣言は拒否される
 | `packageState.carried` | package 変数（セッション状態）は呼び出し側が運ぶ。その変数を読み書きする routine（呼び先経由も含む）は IN OUT 引数として受け取り、結果で返す（#46） |
 | `dbLinks` | DB link の先の表は、別の namespace として同じトランザクションで書く |
 | `EXC-001` | DB 自身が上げていた例外（一意制約違反など）の handler は走らない。重複は commit 時の衝突になる |
