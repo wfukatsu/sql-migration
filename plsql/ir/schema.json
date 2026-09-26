@@ -98,6 +98,12 @@
             "boolean",
             "null"
           ]
+        },
+        "range": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false

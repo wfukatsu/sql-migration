@@ -378,6 +378,43 @@ public final class Plsql {
     return text.substring(0, end);
   }
 
+  /** ORA-01426. A PLS_INTEGER computation or assignment past 32 bits; its own type, like {@link ZeroDivide}. */
+  public static final class NumericOverflow extends ArithmeticException {
+    public NumericOverflow() {
+      super("ORA-01426: numeric overflow");
+    }
+  }
+
+  /**
+   * A value that has to fit PLS_INTEGER: {@code p1 + p2} of two PLS_INTEGERs is computed in 32 bits, and
+   * 2147483647 + 1 is ORA-01426 even on its way into a NUMBER (samples/oracle-plsql-docs 3-4, #60). The value
+   * comes back as it was given, so the caller's type does not change.
+   */
+  public static <T> T plsInteger(T value) {
+    if (isNull(value)) return value;
+    BigDecimal n = num(value);
+    if (n.compareTo(BigDecimal.valueOf(Integer.MIN_VALUE)) < 0 || n.compareTo(BigDecimal.valueOf(Integer.MAX_VALUE)) > 0) {
+      throw new NumericOverflow();
+    }
+    return value;
+  }
+
+  /** {@code SUBTYPE Digit IS PLS_INTEGER RANGE 0..9}, NATURAL, POSITIVE, SIGNTYPE: VALUE_ERROR outside the range (#59). */
+  public static <T> T inRange(T value, long low, long high) {
+    if (isNull(value)) return value;
+    BigDecimal n = num(value);
+    if (n.compareTo(BigDecimal.valueOf(low)) < 0 || n.compareTo(BigDecimal.valueOf(high)) > 0) {
+      throw new ValueError("value " + n.toPlainString() + " is outside " + low + ".." + high);
+    }
+    return value;
+  }
+
+  /** A NOT NULL variable, SIMPLE_INTEGER, NATURALN, POSITIVEN: assigning NULL is VALUE_ERROR (3-6, #60). */
+  public static <T> T notNull(T value) {
+    if (isNull(value)) throw new ValueError("NULL assigned to a NOT NULL variable");
+    return value;
+  }
+
   // --- the bind boundary (P3-1) -------------------------------------------------------------------------
   //
   // PL/SQL NUMBER becomes BigDecimal in the generated code, and ScalarDB's JDBC driver refuses a BigDecimal
@@ -538,8 +575,13 @@ public final class Plsql {
   }
 
   /** A PLS_INTEGER target: `i := i + 1` goes through {@link #add} (which returns Object) and lands in an Integer. */
+  /**
+   * A value going into a PLS_INTEGER (an Integer here): Oracle rounds a fraction half away from zero, and a value
+   * past 32 bits is ORA-01426 -- not Java's ArithmeticException, which no handler of the migrated code names (#60).
+   */
   public static Integer toInt(Object value) {
-    return isNull(value) ? null : num(value).intValueExact();
+    if (isNull(value)) return null;
+    return plsInteger(num(value).setScale(0, java.math.RoundingMode.HALF_UP)).intValue();
   }
 
   public static Long toLong(Object value) {
