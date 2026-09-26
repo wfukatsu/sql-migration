@@ -9,42 +9,41 @@
   "parsedFiles": 37,
   "totalFiles": 37,
   "failedFiles": [],
-  "typeResolutionRate": 0.9928,
-  "typedSymbols": 139,
-  "resolvedSymbols": 138
+  "typeResolutionRate": 0.9932,
+  "typedSymbols": 147,
+  "resolvedSymbols": 146
  },
  "totals": {
   "modules": 36,
   "routines": 41,
-  "statements": 328,
-  "issues": 270,
-  "errors": 9
+  "statements": 362,
+  "issues": 285,
+  "errors": 5
  },
  "statementKinds": {
-  "Call": 97,
-  "SqlOperation": 70,
-  "If": 47,
-  "Assignment": 31,
-  "Loop": 28,
-  "Raise": 20,
+  "Call": 99,
+  "SqlOperation": 77,
+  "If": 54,
+  "Assignment": 43,
+  "Loop": 31,
+  "Raise": 23,
   "Rollback": 8,
-  "Block": 7,
+  "Block": 8,
   "Return": 6,
   "DynamicSql": 5,
   "Exit": 3,
   "Commit": 3,
   "Case": 1,
-  "Continue": 1,
-  "Unsupported": 1
+  "Continue": 1
  },
  "targetCapability": {
   "statuses": {
-   "OK": 56,
-   "WARN": 8,
-   "PLANNED": 5,
-   "ERROR": 3
+   "OK": 66,
+   "WARN": 10,
+   "PLANNED": 2,
+   "ERROR": 1
   },
-  "runnableRate": 0.8889
+  "runnableRate": 0.962
  },
  "modules": [
   {
@@ -671,9 +670,9 @@
      "name": "b06_2_2_forall_returning",
      "kind": "procedure",
      "visibility": "public",
-     "statements": 6,
+     "statements": 22,
      "parameters": 0,
-     "declarations": 3,
+     "declarations": 8,
      "handlers": 0,
      "transactionEffects": {
       "commits": 0,
@@ -755,9 +754,9 @@
      "name": "b06_3_6_dbms_sql",
      "kind": "procedure",
      "visibility": "public",
-     "statements": 11,
+     "statements": 8,
      "parameters": 0,
-     "declarations": 5,
+     "declarations": 4,
      "handlers": 0,
      "transactionEffects": {
       "commits": 0,
@@ -838,9 +837,9 @@
      "name": "b06_4_collection_in_sql",
      "kind": "procedure",
      "visibility": "public",
-     "statements": 3,
+     "statements": 11,
      "parameters": 0,
-     "declarations": 2,
+     "declarations": 3,
      "handlers": 0,
      "transactionEffects": {
       "commits": 0,
@@ -1433,9 +1432,9 @@
      "name": "body",
      "kind": "trigger-body",
      "visibility": "public",
-     "statements": 1,
+     "statements": 8,
      "parameters": 0,
-     "declarations": 0,
+     "declarations": 2,
      "handlers": 0,
      "transactionEffects": {
       "commits": 0,
@@ -1475,9 +1474,9 @@
      "name": "emp_grades",
      "kind": "function",
      "visibility": "public",
-     "statements": 4,
+     "statements": 10,
      "parameters": 1,
-     "declarations": 0,
+     "declarations": 1,
      "handlers": 0,
      "transactionEffects": {
       "commits": 0,
@@ -1490,9 +1489,7 @@
       "packages": [],
       "dynamicSql": false
      },
-     "autoBlockers": [
-      "unmodelled-construct"
-     ],
+     "autoBlockers": [],
      "sourceRange": {
       "file": "emp_grades.fnc",
       "startLine": 2,

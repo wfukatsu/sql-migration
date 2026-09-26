@@ -260,18 +260,18 @@
 | `b04_4_2_cursor_for_loop` | REVIEW | CUR-002, SQL-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
 | `b04_4_3_for_update_current_of` | REDESIGN | CUR-002, SQL-004, LOCK-001, LOCK-002, TX-001 | LOCK-001: 行ロックです。ターゲットで同じ保証を別の方法で与える設計が要ります; LOCK-002: cursor の宣言で行ロックしています。文だけを |
 | `b04_4_4_ref_cursor` | REVIEW | SCAN-002, CUR-003, CUR-002 | CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります; CUR-003 |
-| `b04_5_records_collections` | REVIEW | CALL-001, CUR-002 | CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません; CUR |
+| `b04_5_records_collections` | REVIEW | CUR-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
 | `b04_6_1_predefined_exceptions` | REVIEW | SELECT-OPT-001 | confidence factor testEvidence is 0 |
 | `b04_6_2_user_exceptions` | REDESIGN | TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b05_1_call_raise_salary` | REDESIGN | TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b05_3_call_emp_api` | REDESIGN | SCAN-001, TX-001 | SCAN-001: 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します; TX-001: routine 内の COMMIT  |
 | `b05_4_call_log_msg` | REDESIGN | SQL-004, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b06_1_bulk_collect_limit` | REVIEW | SCAN-002, CUR-002, BULK-003 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
-| `b06_2_2_forall_returning` | REDESIGN | SQL-001, BULK-001, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
+| `b06_2_2_forall_returning` | REDESIGN | SCAN-001, CUR-002, SQL-004, TX-001 | SCAN-001: 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します; TX-001: routine 内の COMMIT  |
 | `b06_2_forall_save_exceptions` | REDESIGN | SCAN-002, CUR-OPT-002, BULK-OPT-003, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
-| `b06_3_6_dbms_sql` | REDESIGN | DYN-003, CALL-001 | DYN-003: DBMS_SQL は静的解析だけでは追えません。実行ログも使って query family を洗い出す必要があります; DYN-003: DB |
+| `b06_3_6_dbms_sql` | REVIEW | SCAN-002, CUR-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
 | `b06_3_native_dynamic_sql` | REDESIGN | DYN-001, DYN-002, DYN-OPT-002, SCAN-001, CUR-003, CUR-002, SQL-004, SQL-002, TX-001, TX-004 | DYN-001: 表名など識別子が実行時に決まる SQL です。allowlist か専用 Repository への再設計が要ります; SCAN-001: 同 |
-| `b06_4_collection_in_sql` | REVIEW | SELECT-001, SEM-004, SQL-002, BULK-001 | SELECT-001: キーで届かない SELECT INTO で、ScalarDB がそのまま実行できる文ではありません。0 件と複数件の意味（NO_DATA |
+| `b06_4_collection_in_sql` | REVIEW | CUR-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
 | `b06_5_2_scheduler_job` | REDESIGN | CALL-001, EXT-001 | EXT-001: UTL_* / DBMS_SCHEDULER / AQ などの外部副作用があります |
 | `b06_5_builtin_packages` | REVIEW |  | confidence factor testEvidence is 0 |
 | `b06_6_conditional_compilation` | REVIEW |  | confidence factor testEvidence is 0 |
@@ -285,8 +285,8 @@
 | `emp_api.validate_pct` | REDESIGN | STATE-001 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります |
 | `emp_biu_trg.body` | REDESIGN | TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
 | `emp_dept_cap_trg.body` | REDESIGN | TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
-| `emp_dept_upd_v_trg.body` | REDESIGN | SQL-001, TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
-| `emp_grades` | REVIEW | LOWER-001, CUR-002, SQL-002 | LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません; CUR-002: Cursor FOR LOOP です。走査 |
+| `emp_dept_upd_v_trg.body` | REDESIGN | SELECT-OPT-001, TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
+| `emp_grades` | REVIEW | SCAN-002, CUR-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
 | `emp_salary_audit_trg.body` | REDESIGN | SEM-010, TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
 | `log_msg` | REDESIGN | SEM-010, TX-001, TX-002 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `normalize_name` | REVIEW |  | confidence factor testEvidence is 0 |
@@ -313,11 +313,11 @@
 | `b05_3_call_emp_api` | `b05_3_call_emp_api.b05_3_call_emp_api` | 一致 |  |
 | `b05_4_call_log_msg` | `b05_4_call_log_msg.b05_4_call_log_msg` | 一致 |  |
 | `b06_1_bulk_collect_limit` | `b06_1_bulk_collect_limit.b06_1_bulk_collect_limit` | 一致 |  |
-| `b06_2_2_forall_returning` | `b06_2_2_forall_returning.b06_2_2_forall_returning` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Loop: forall loop) |
+| `b06_2_2_forall_returning` | `b06_2_2_forall_returning.b06_2_2_forall_returning` | 一致 |  |
 | `b06_2_forall_save_exceptions` | `b06_2_forall_save_exceptions.b06_2_forall_save_exceptions` | 一致 |  |
-| `b06_3_6_dbms_sql` | `b06_3_6_dbms_sql.b06_3_6_dbms_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration c: DBMS_SQL.OPEN_CURSOR) |
+| `b06_3_6_dbms_sql` | `b06_3_6_dbms_sql.b06_3_6_dbms_sql` | 一致 |  |
 | `b06_3_native_dynamic_sql` | `b06_3_native_dynamic_sql.b06_3_native_dynamic_sql` | 相違 | exception: expected=none actual=com.scalar.migrate.runtime.ScanAfterWriteException (plan fetch on 'employees' scans rows this transaction has already written or deleted;  |
-| `b06_4_collection_in_sql` | `b06_4_collection_in_sql.b06_4_collection_in_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in SqlOperation: execution plan result) |
+| `b06_4_collection_in_sql` | `b06_4_collection_in_sql.b06_4_collection_in_sql` | 一致 |  |
 | `b06_5_builtin_packages` | `b06_5_builtin_packages.b06_5_builtin_packages` | 一致 |  |
 | `b06_6_conditional_compilation` | `b06_6_conditional_compilation.b06_6_conditional_compilation` | 一致 |  |
 | `dept_name_of_missing` | `dept_name_of.dept_name_of` | 一致 |  |

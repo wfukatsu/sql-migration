@@ -413,10 +413,12 @@ def _untracked_row_count(routine: M.Routine) -> list[str]:
 def _unresolved_callees(routine: M.Routine, analysis: ProgramAnalysis) -> list[str]:
     from ..analysis import HARMLESS_CALLEES
     from ..builtins import lookup
+    from ..gen_java.types import object_types
 
-    # an Oracle-supplied routine in plsql/builtins.py has a known signature and a known counterpart (#55)
+    # an Oracle-supplied routine in plsql/builtins.py has a known signature and a known counterpart (#55), and a
+    # schema object type's constructor builds a record (#54): neither is code nobody analysed
     return sorted(c for c in analysis.call_graph.external.get(routine.id, ())
-                  if not HARMLESS_CALLEES.match(c) and lookup(c) is None)
+                  if not HARMLESS_CALLEES.match(c) and lookup(c) is None and c.lower() not in object_types())
 
 
 def _interpolates_identifier(statement: M.Statement, routine: M.Routine | None = None) -> bool:

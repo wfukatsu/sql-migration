@@ -65,10 +65,7 @@
    "routine": "b04_5_records_collections",
    "calls": [],
    "external": [
-    "DBMS_OUTPUT.PUT_LINE",
-    "v_names.DELETE",
-    "v_names.EXTEND",
-    "v_top3.EXTEND"
+    "DBMS_OUTPUT.PUT_LINE"
    ]
   },
   {
@@ -127,7 +124,11 @@
   },
   {
    "routine": "b06_2_2_forall_returning",
-   "calls": [],
+   "calls": [
+    "emp_biu_trg.body",
+    "emp_dept_cap_trg.body",
+    "emp_salary_audit_trg.body"
+   ],
    "external": [
     "DBMS_OUTPUT.PUT_LINE"
    ]
@@ -144,14 +145,7 @@
    "calls": [],
    "external": [
     "DBMS_OUTPUT.NEW_LINE",
-    "DBMS_OUTPUT.PUT",
-    "DBMS_SQL.CLOSE_CURSOR",
-    "DBMS_SQL.COLUMN_VALUE",
-    "DBMS_SQL.DEFINE_COLUMN",
-    "DBMS_SQL.DESCRIBE_COLUMNS2",
-    "DBMS_SQL.EXECUTE",
-    "DBMS_SQL.FETCH_ROWS",
-    "DBMS_SQL.PARSE"
+    "DBMS_OUTPUT.PUT"
    ]
   },
   {

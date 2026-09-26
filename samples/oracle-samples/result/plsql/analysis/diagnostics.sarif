@@ -184,18 +184,6 @@
        }
       },
       {
-       "id": "CONSTRAINT_NOT_GUARDED",
-       "shortDescription": {
-        "text": "CONSTRAINT_NOT_GUARDED"
-       }
-      },
-      {
-       "id": "SQL_PARSE",
-       "shortDescription": {
-        "text": "SQL_PARSE"
-       }
-      },
-      {
        "id": "ROW_LIMIT_DECIDED",
        "shortDescription": {
         "text": "ROW_LIMIT_DECIDED"
@@ -211,6 +199,18 @@
        "id": "INSERT_COLS",
        "shortDescription": {
         "text": "INSERT_COLS"
+       }
+      },
+      {
+       "id": "DBMS_SQL_STATIC",
+       "shortDescription": {
+        "text": "DBMS_SQL_STATIC"
+       }
+      },
+      {
+       "id": "ROWNUM",
+       "shortDescription": {
+        "text": "ROWNUM"
        }
       },
       {
@@ -244,33 +244,27 @@
        }
       },
       {
-       "id": "PROJECTION",
+       "id": "OBJECT_BUILT",
        "shortDescription": {
-        "text": "PROJECTION"
+        "text": "OBJECT_BUILT"
        }
       },
       {
-       "id": "SCHEMA",
+       "id": "TABLE_COLLECTION",
        "shortDescription": {
-        "text": "SCHEMA"
-       }
-      },
-      {
-       "id": "UNSUPPORTED",
-       "shortDescription": {
-        "text": "UNSUPPORTED"
-       }
-      },
-      {
-       "id": "DESIGN",
-       "shortDescription": {
-        "text": "DESIGN"
+        "text": "TABLE_COLLECTION"
        }
       },
       {
        "id": "IN",
        "shortDescription": {
         "text": "IN"
+       }
+      },
+      {
+       "id": "SCHEMA",
+       "shortDescription": {
+        "text": "SCHEMA"
        }
       },
       {
@@ -286,21 +280,27 @@
        }
       },
       {
-       "id": "EXPR",
+       "id": "SUBQUERY_READ_FIRST",
        "shortDescription": {
-        "text": "EXPR"
+        "text": "SUBQUERY_READ_FIRST"
        }
       },
       {
-       "id": "PRED",
+       "id": "CONSTRAINT_NOT_GUARDED",
        "shortDescription": {
-        "text": "PRED"
+        "text": "CONSTRAINT_NOT_GUARDED"
        }
       },
       {
-       "id": "UNSUPPORTED_CONSTRUCT",
+       "id": "PIPELINED",
        "shortDescription": {
-        "text": "UNSUPPORTED_CONSTRUCT"
+        "text": "PIPELINED"
+       }
+      },
+      {
+       "id": "OPTIONAL_FILTER",
+       "shortDescription": {
+        "text": "OPTIONAL_FILTER"
        }
       },
       {
@@ -2693,6 +2693,195 @@
      ]
     },
     {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: equality on secondary index -> index SCAN"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "SCAN_AFTER_WRITE",
+     "level": "error",
+     "message": {
+      "text": "employees was written earlier in this transaction; ScalarDB refuses to scan it"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_OLD",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "BULK_COLLECT",
      "level": "warning",
      "message": {
@@ -2714,10 +2903,10 @@
      ]
     },
     {
-     "ruleId": "CONSTRAINT_NOT_GUARDED",
-     "level": "warning",
+     "ruleId": "RMW_SPLIT",
+     "level": "note",
      "message": {
-      "text": "CHECK emp_salary_ck の値が表の値を読む式である（RMW を割っていない）。書く前に評価できない"
+      "text": "employees.salary を読んでから 1 行ずつ書くループにした（WHERE が主キーを決めていない）。ScalarDB SQL は列を読む式を受け付けないので、値はアプリで計算する。**同じトランザクションの中で読んで書く**ので、衝突は commit で弾かれる（再試行は呼び出し側の責務・#9）"
      },
      "locations": [
       {
@@ -2735,10 +2924,157 @@
      ]
     },
     {
-     "ruleId": "SQL_PARSE",
-     "level": "error",
+     "ruleId": "CONSTRAINT_GUARD",
+     "level": "note",
      "message": {
-      "text": "ParseError: Invalid expression / Unexpected token. Line 3, Col: 38.\n  PDATE employees SET salary = salary + 10\n    WHERE  department_id = v_depts(i)\n    RETURNING salary \u001b[4mBULK COLLECT INTO\u001b[0m v_new_sal"
+      "text": "employees の CHECK emp_salary_ck を書く前に評価する。移行先に制約は無く、違反は Oracle と同じ番号の例外になる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_FOLDED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg の代入を書く値に畳み込んだ: email = UPPER(v_trg_1)。検査は呼び出しで行う（#47）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_biu_trg（BEFORE INSERT OR UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg（AFTER UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_APPLIED",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg（AFTER UPDATE OR DELETE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "UPDATE: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_dept_cap_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_2_2_forall_returning.prc"
+        },
+        "region": {
+         "startLine": 8,
+         "endLine": 10,
+         "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "TRIGGER_CALL",
+     "level": "note",
+     "message": {
+      "text": "emp_salary_audit_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）"
      },
      "locations": [
       {
@@ -3002,6 +3338,111 @@
          "startLine": 27,
          "endLine": 27,
          "startColumn": 5
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "DBMS_SQL_STATIC",
+     "level": "note",
+     "message": {
+      "text": "DBMS_SQL の一連（OPEN_CURSOR〜CLOSE_CURSOR）を、PARSE の文字列が定数の問合せなので静的な cursor FOR ループにした（#53）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_6_dbms_sql.prc"
+        },
+        "region": {
+         "startLine": 15,
+         "endLine": 21,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ROWNUM",
+     "level": "warning",
+     "message": {
+      "text": "'ROWNUM <= 2' rewritten to LIMIT 2. Note: Oracle applies ROWNUM before ORDER BY, ScalarDB LIMIT applies after ORDER BY"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_6_dbms_sql.prc"
+        },
+        "region": {
+         "startLine": 15,
+         "endLine": 21,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CROSS_PARTITION",
+     "level": "warning",
+     "message": {
+      "text": "SELECT: predicates do not cover the partition key ['department_id'] of departments -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_6_dbms_sql.prc"
+        },
+        "region": {
+         "startLine": 15,
+         "endLine": 21,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONFIG",
+     "level": "note",
+     "message": {
+      "text": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_6_dbms_sql.prc"
+        },
+        "region": {
+         "startLine": 15,
+         "endLine": 21,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "COST",
+     "level": "note",
+     "message": {
+      "text": "full scan of departments (~25 us per row); pass --expected-rows table=N for an estimate"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "b06_3_6_dbms_sql.prc"
+        },
+        "region": {
+         "startLine": 15,
+         "endLine": 21,
+         "startColumn": 3
         }
        }
       }
@@ -3785,10 +4226,10 @@
      ]
     },
     {
-     "ruleId": "BULK_COLLECT",
-     "level": "warning",
+     "ruleId": "OBJECT_BUILT",
+     "level": "note",
      "message": {
-      "text": "BULK COLLECT needs a row limit and a memory bound"
+      "text": "emp_grade_t(…) は ScalarDB SQL の select list で組めないので、列を読んでアプリで record を組み、v_list に足す（#54）"
      },
      "locations": [
       {
@@ -3806,10 +4247,10 @@
      ]
     },
     {
-     "ruleId": "PROJECTION",
-     "level": "error",
+     "ruleId": "ACCESS",
+     "level": "note",
      "message": {
-      "text": "main query: expressions in the select list (EMP_GRADE_T(employee_id, last_name, 'X')) -- compute them in the application"
+      "text": "SELECT: equality on secondary index -> index SCAN"
      },
      "locations": [
       {
@@ -3827,220 +4268,10 @@
      ]
     },
     {
-     "ruleId": "PLAN_FETCH",
+     "ruleId": "TABLE_COLLECTION",
      "level": "note",
      "message": {
-      "text": "INDEX_SCAN: SELECT employee_id, last_name, department_id FROM hr.employees WHERE department_id = 60"
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "b06_4_collection_in_sql.prc"
-        },
-        "region": {
-         "startLine": 6,
-         "endLine": 8,
-         "startColumn": 3
-        }
-       }
-      }
-     ]
-    },
-    {
-     "ruleId": "PLAN_RESIDUAL",
-     "level": "note",
-     "message": {
-      "text": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "b06_4_collection_in_sql.prc"
-        },
-        "region": {
-         "startLine": 6,
-         "endLine": 8,
-         "startColumn": 3
-        }
-       }
-      }
-     ]
-    },
-    {
-     "ruleId": "CONFIG",
-     "level": "note",
-     "message": {
-      "text": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "b06_4_collection_in_sql.prc"
-        },
-        "region": {
-         "startLine": 6,
-         "endLine": 8,
-         "startColumn": 3
-        }
-       }
-      }
-     ]
-    },
-    {
-     "ruleId": "MULTI_ROW_INTO",
-     "level": "warning",
-     "message": {
-      "text": "SELECT INTO does not reach its row by key, so it can match several and raise TOO_MANY_ROWS"
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "b06_4_collection_in_sql.prc"
-        },
-        "region": {
-         "startLine": 6,
-         "endLine": 8,
-         "startColumn": 3
-        }
-       }
-      }
-     ]
-    },
-    {
-     "ruleId": "SCHEMA",
-     "level": "note",
-     "message": {
-      "text": "SELECT: table definition unknown, access path (GET / SCAN / cross-partition) not analysed"
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "b06_4_collection_in_sql.prc"
-        },
-        "region": {
-         "startLine": 10,
-         "endLine": 10,
-         "startColumn": 3
-        }
-       }
-      }
-     ]
-    },
-    {
-     "ruleId": "UNSUPPORTED",
-     "level": "error",
-     "message": {
-      "text": "function TABLE is not supported by ScalarDB SQL"
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "b06_4_collection_in_sql.prc"
-        },
-        "region": {
-         "startLine": 10,
-         "endLine": 10,
-         "startColumn": 3
-        }
-       }
-      }
-     ]
-    },
-    {
-     "ruleId": "PLAN_FETCH",
-     "level": "note",
-     "message": {
-      "text": "UNKNOWN: SELECT * FROM \"\" WHERE last_name LIKE 'H%'"
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "b06_4_collection_in_sql.prc"
-        },
-        "region": {
-         "startLine": 10,
-         "endLine": 10,
-         "startColumn": 3
-        }
-       }
-      }
-     ]
-    },
-    {
-     "ruleId": "PLAN_RESIDUAL",
-     "level": "note",
-     "message": {
-      "text": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)"
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "b06_4_collection_in_sql.prc"
-        },
-        "region": {
-         "startLine": 10,
-         "endLine": 10,
-         "startColumn": 3
-        }
-       }
-      }
-     ]
-    },
-    {
-     "ruleId": "CONFIG",
-     "level": "note",
-     "message": {
-      "text": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node"
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "b06_4_collection_in_sql.prc"
-        },
-        "region": {
-         "startLine": 10,
-         "endLine": 10,
-         "startColumn": 3
-        }
-       }
-      }
-     ]
-    },
-    {
-     "ruleId": "COST",
-     "level": "note",
-     "message": {
-      "text": "full scan of  (~25 us per row); pass --expected-rows table=N for an estimate"
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "b06_4_collection_in_sql.prc"
-        },
-        "region": {
-         "startLine": 10,
-         "endLine": 10,
-         "startColumn": 3
-        }
-       }
-      }
-     ]
-    },
-    {
-     "ruleId": "DESIGN",
-     "level": "note",
-     "message": {
-      "text": "table definitions unknown for : include CREATE TABLE or pass --schema to get access-path checks and key-design advice"
+      "text": "TABLE(v_list) はアプリが持つコレクションなので、SQL ではなくその要素を回して数える（#54）"
      },
      "locations": [
       {
@@ -5297,6 +5528,111 @@
      ]
     },
     {
+     "ruleId": "SUBQUERY_READ_FIRST",
+     "level": "note",
+     "message": {
+      "text": "SET department_id の副問合せは更新する行を読まないので、UPDATE の前に同じトランザクションで読む。0 行は NULL、2 行以上は ORA-01427（Oracle と同じ）"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_dept_upd_v_trg.trg"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: equality on secondary index -> index SCAN"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_dept_upd_v_trg.trg"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "MULTI_ROW_INTO",
+     "level": "warning",
+     "message": {
+      "text": "SELECT INTO does not reach its row by key, so it can match several and raise TOO_MANY_ROWS"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_dept_upd_v_trg.trg"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CONSTRAINT_GUARD",
+     "level": "note",
+     "message": {
+      "text": "FOREIGN KEY emp_dept_fk の親（departments）を書く前に読む。無ければ ORA-02291 を投げる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_dept_upd_v_trg.trg"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "ACCESS",
+     "level": "note",
+     "message": {
+      "text": "SELECT: full primary key specified -> GET (single record)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "emp_dept_upd_v_trg.trg"
+        },
+        "region": {
+         "startLine": 6,
+         "endLine": 10,
+         "startColumn": 3
+        }
+       }
+      }
+     ]
+    },
+    {
      "ruleId": "CONSTRAINT_NOT_GUARDED",
      "level": "warning",
      "message": {
@@ -5318,10 +5654,10 @@
      ]
     },
     {
-     "ruleId": "CONSTRAINT_NOT_GUARDED",
-     "level": "warning",
+     "ruleId": "CONSTRAINT_GUARD",
+     "level": "note",
      "message": {
-      "text": "FOREIGN KEY emp_dept_fk の値が表の値を読む式である。書く前に親を読めない"
+      "text": "employees の FOREIGN KEY emp_dept_fk を書く前に評価する。移行先に制約は無く、違反は Oracle と同じ番号の例外になる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））"
      },
      "locations": [
       {
@@ -5339,10 +5675,10 @@
      ]
     },
     {
-     "ruleId": "EXPR",
-     "level": "error",
+     "ruleId": "ACCESS",
+     "level": "note",
      "message": {
-      "text": "SET last_name: only literals and bind markers are allowed, got ':NEW.last_name'"
+      "text": "UPDATE: full primary key specified -> GET (single record)"
      },
      "locations": [
       {
@@ -5360,31 +5696,10 @@
      ]
     },
     {
-     "ruleId": "PRED",
-     "level": "error",
-     "message": {
-      "text": "WHERE: IS is only supported as IS [NOT] NULL on a column"
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "emp_grades.fnc"
-        },
-        "region": {
-         "startLine": 6,
-         "endLine": 11,
-         "startColumn": 3
-        }
-       }
-      }
-     ]
-    },
-    {
-     "ruleId": "PLAN_FETCH",
+     "ruleId": "PIPELINED",
      "level": "note",
      "message": {
-      "text": "CROSS_PARTITION: SELECT employee_id, last_name, salary, department_id FROM hr.employees"
+      "text": "PIPELINED 関数は、PIPE ROW で足した行をまとめて List で返す形にした。呼び出し側は行が出るそばから読むのではなく、全部そろってから受け取る（#54）"
      },
      "locations": [
       {
@@ -5393,19 +5708,19 @@
          "uri": "emp_grades.fnc"
         },
         "region": {
-         "startLine": 6,
-         "endLine": 11,
-         "startColumn": 3
+         "startLine": 2,
+         "endLine": 13,
+         "startColumn": 1
         }
        }
       }
      ]
     },
     {
-     "ruleId": "PLAN_RESIDUAL",
+     "ruleId": "OPTIONAL_FILTER",
      "level": "note",
      "message": {
-      "text": "H2 Oracle mode runs the original SQL (pattern P2, H2 indexes off)"
+      "text": "`p_dept IS NULL OR …` は ScalarDB SQL で書けないので、p_dept が NULL のときの問合せ（絞らない）とそれ以外（等号で絞る）に分けた"
      },
      "locations": [
       {
@@ -5423,10 +5738,10 @@
      ]
     },
     {
-     "ruleId": "PLAN_CROSS_PARTITION",
+     "ruleId": "CROSS_PARTITION",
      "level": "warning",
      "message": {
-      "text": "a fetch needs a cross-partition scan"
+      "text": "SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)"
      },
      "locations": [
       {
@@ -5486,10 +5801,10 @@
      ]
     },
     {
-     "ruleId": "UNSUPPORTED_CONSTRUCT",
-     "level": "warning",
+     "ruleId": "ACCESS",
+     "level": "note",
      "message": {
-      "text": "Pipe_row_statement is not lowered yet; the routine cannot be AUTO while it is present"
+      "text": "SELECT: equality on secondary index -> index SCAN"
      },
      "locations": [
       {
@@ -5498,9 +5813,9 @@
          "uri": "emp_grades.fnc"
         },
         "region": {
-         "startLine": 8,
-         "endLine": 10,
-         "startColumn": 5
+         "startLine": 6,
+         "endLine": 11,
+         "startColumn": 3
         }
        }
       }

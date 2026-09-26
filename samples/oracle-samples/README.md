@@ -14,7 +14,7 @@ Oracle 公式ドキュメントの構成に沿った **構文カタログ**（SQ
 | SQL の実 DB 比較（02 の読み取り文 + JSON 3 文 + 修正版 1 文） | 40 文 | PASS 19 / FAIL 10 / SKIP 9 / CASE_ERROR 2 | **PASS 19 / FAIL 5 / SKIP 14 / CASE_ERROR 2**。FAIL 5 はすべて同順位・非決定。JSON_OBJECT は PASS に。#57 #58 のあと **PASS 24（宣言つき 5）/ FAIL 0 / SKIP 16（移行元が拒否 2）/ CASE_ERROR 0** |
 | PL/SQL routine（05・06 の全ユニット + 04 の無名ブロック 10 個） | 41 routine | AUTO 候補 7 / REVIEW 10 / REDESIGN 24 | 同じ（判定のルールは変えていない） |
 | PL/SQL の Java 生成 | 41 routine | javac エラー 15 件（8 routine） | **javac エラー 0**（41 routine 全部がコンパイルできる） |
-| PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 16 / 相違 15**（全 36 ユニット、31 シナリオ。#44〜#46 と 4 つの決定のあと）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて）。その後の回で一致 26 / 相違 5、#52 #55 のあと **一致 27 / 相違 4** |
+| PL/SQL の実 DB 比較 | 23 → 31 シナリオ | 一致 10 / 相違 13（コンパイルできる 24 routine だけ） | **一致 16 / 相違 15**（全 36 ユニット、31 シナリオ。#44〜#46 と 4 つの決定のあと）。証拠を渡すと **AUTO 7**（ルール上 AUTO の 7 本すべて）。その後の回で一致 26 / 相違 5、#52 #55 のあと 一致 27 / 相違 4、残りを対応して **一致 30 / 相違 1**（b06_3 は再設計として記録） |
 
 ## フォルダ
 
@@ -57,6 +57,7 @@ samples/oracle-samples/
 | package 変数 `emp_api.g_calls` は呼び出し側が運ぶ（2026-09-25、利用者の決定、`plsql/limits.yaml`） | セッション単位の意味を保つ唯一の機械的な形。呼び出し側の signature が変わる |
 | 行ロックと RMW は楽観制御へ（6 routine）、routine の中の COMMIT / ROLLBACK は呼び出し側の境界へ（9 routine）、log_msg は別トランザクション、動的 SQL の表名は employees だけ（2026-09-25、利用者の決定、`plsql/limits.yaml`） | 「3 回目の修正」の節。trigger の掛け方（TRG-002）はまだ決めていない |
 | b06_3 の動的 UPDATE（`SET salary = salary … RETURNING last_name`）も楽観制御へ、b06_3 の一時表の DDL（CREATE / DROP TABLE dyn_tmp）は移行先で実行しない（2026-09-26、利用者の決定、`plsql/limits.yaml` の `rowLocks.optimistic` と新しいキー `ddl.omit`） | 「7 回目の対応」の節 |
+| b06_2_2 の FORALL の RMW も楽観制御へ（2026-09-26、利用者の決定、`rowLocks.optimistic`）。b06_3 の 3-4（書いた表の走査）は生成器では直さず、再設計として記録する（同日、`plsql/limits.yaml` のコメント） | 「8 回目の対応」の節 |
 
 ---
 
@@ -458,6 +459,24 @@ PASS=24 FAIL=0 SKIP=16 CASE_ERROR=0 (of PASS, EMPTY=0 DECLARED=5; of SKIP, SOURC
 | `b06_3_6_dbms_sql` | DBMS_SQL（#53） |
 | `b06_4_collection_in_sql` | オブジェクト型のコンストラクタ、`TABLE()`（#54） |
 
+### 8 回目の対応（2026-09-26、Issue #51 #53 #54 #56 と b06_3）
+
+| Issue | 何を直したか | 取り直した結果 |
+|---|---|---|
+| #51 | RMW の分割が `RETURNING c BULK COLLECT INTO v` を読む。1 行書くごとに書いた値を List に足し（`v.EXTEND; v(v.LAST) := …`）、FORALL の前で List を空にする。書かない列は読みの行から返す。FORALL の本体が RMW のループになっても添字の束縛を見つける。`SQL%BULK_ROWCOUNT(i)` は、生成器が要素ごとの件数を `bulkRowCount` に溜めて返す | `b06_2_2_forall_returning` が **一致**（利用者の決定で `rowLocks.optimistic`）。静的解析は SCAN-001 を付けたまま（同じ部門が 2 回渡されると、書いた行を走査して ScalarDB が断る。データしだいで落ちる形なので警告は正しい） |
+| #53 | PARSE の文字列が定数の問合せなら、DBMS_SQL の一連（OPEN_CURSOR〜CLOSE_CURSOR）を静的な cursor FOR ループにする（`plsql/dbms_sql.py`、`DBMS_SQL_STATIC`）。`SELECT *` は DDL の列に展開し、列番号で読む `COLUMN_VALUE(c, i, v)` と `cols(i).col_name` は列ごとの CASE にする。文字列が実行時に決まるもの・DML・BIND_VARIABLE などは `DBMS_SQL_DYNAMIC` で理由つきに断る | `b06_3_6_dbms_sql` が **一致**（`ROWNUM <= 2` は `LIMIT 2`） |
+| #54 | スキーマの `CREATE TYPE … AS OBJECT` を Java の record に、`AS TABLE OF` をその List にする（`plsql/objects.py`）。コンストラクタを選ぶ `SELECT t(a, b, 'X') BULK COLLECT INTO v` は列を読むループにしてアプリで record を組む（`OBJECT_BUILT`）。`SELECT COUNT(*) INTO n FROM TABLE(v) WHERE …` は List を回して数える（`TABLE_COLLECTION`）。PIPELINED 関数は PIPE ROW で足した行を List で返す。あわせて `WHERE p IS NULL OR col = p` を 2 つの問合せに分ける書き換え（`plsql/optional_filter.py`、`OPTIONAL_FILTER`）を足した（emp_grades の問合せが ScalarDB SQL で書けなかった） | `b06_4_collection_in_sql` が **一致**。`emp_grades` はシナリオが無いが、List を返す関数として生成でき、問合せは両方とも ScalarDB SQL で流せる |
+| #56 | DDL の `CREATE VIEW` から view の列を元の表の型で引き、INSTEAD OF trigger の :NEW / :OLD をその型の引数で受け取る。SET の相関の無いスカラ副問合せは UPDATE の前に読む（`plsql/subquery.py`、`SUBQUERY_READ_FIRST`。0 行は NULL、2 行以上は ORA-01427） | `emp_dept_upd_v_trg` の本体が単体で生成できる（FK の guard も掛かる）。view へ書く routine はサンプルに無く、移行先に view は無いので、書く側への織り込みは作っていない |
+| b06_3 | 利用者の決定で再設計として記録（生成器は断ったまま）。3-4 の読みを書き込みの前に移すか、読みだけを別の読み取り専用トランザクションで行うのが直し方 | 相違のまま |
+
+新しい書き換えが合成 corpus と tutorial の生成物を変えていないことは、main の版と生成物を突き合わせて確かめた（差分 0）。
+
+**8 回目のあとの PL/SQL 実 DB 比較（31 シナリオ、一致 30 / 相違 1）**。証拠を渡した判定は AUTO 8 / REVIEW 10 / REDESIGN 23:
+
+| 相違 | 状態 |
+|---|---|
+| `b06_3_native_dynamic_sql` | 書いた表の走査（SCAN-001）。ScalarDB の制約で、再設計として記録した |
+
 ## 付録（`result/tables.md` と同じ。`make_tables.py` が結果ファイルから作る。**Issue 修正後の数字**）
 
 ### SQL 変換（文ごと）
@@ -722,18 +741,18 @@ PASS=24 FAIL=0 SKIP=16 CASE_ERROR=0 (of PASS, EMPTY=0 DECLARED=5; of SKIP, SOURC
 | `b04_4_2_cursor_for_loop` | REVIEW | CUR-002, SQL-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
 | `b04_4_3_for_update_current_of` | REDESIGN | CUR-002, SQL-004, LOCK-001, LOCK-002, TX-001 | LOCK-001: 行ロックです。ターゲットで同じ保証を別の方法で与える設計が要ります; LOCK-002: cursor の宣言で行ロックしています。文だけを |
 | `b04_4_4_ref_cursor` | REVIEW | SCAN-002, CUR-003, CUR-002 | CUR-003: 明示 cursor を先読みの走査に置き換えました。cursor が COMMIT をまたいでいたなら、読む時点が変わります; CUR-003 |
-| `b04_5_records_collections` | REVIEW | CALL-001, CUR-002 | CALL-001: 解析した範囲に無い routine を呼んでいます。呼び先が COMMIT するか、外へ何かを送るか、ロックを取るかは分かりません; CUR |
+| `b04_5_records_collections` | REVIEW | CUR-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
 | `b04_6_1_predefined_exceptions` | REVIEW | SELECT-OPT-001 | confidence factor testEvidence is 0 |
 | `b04_6_2_user_exceptions` | REDESIGN | TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b05_1_call_raise_salary` | REDESIGN | TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b05_3_call_emp_api` | REDESIGN | SCAN-001, TX-001 | SCAN-001: 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します; TX-001: routine 内の COMMIT  |
 | `b05_4_call_log_msg` | REDESIGN | SQL-004, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `b06_1_bulk_collect_limit` | REVIEW | SCAN-002, CUR-002, BULK-003 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
-| `b06_2_2_forall_returning` | REDESIGN | SQL-001, BULK-001, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
+| `b06_2_2_forall_returning` | REDESIGN | SCAN-001, CUR-002, SQL-004, TX-001 | SCAN-001: 同一トランザクションで書いた表を走査しています。ScalarDB はこれを拒否します; TX-001: routine 内の COMMIT  |
 | `b06_2_forall_save_exceptions` | REDESIGN | SCAN-002, CUR-OPT-002, BULK-OPT-003, TX-001 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
-| `b06_3_6_dbms_sql` | REDESIGN | DYN-003, CALL-001 | DYN-003: DBMS_SQL は静的解析だけでは追えません。実行ログも使って query family を洗い出す必要があります; DYN-003: DB |
+| `b06_3_6_dbms_sql` | REVIEW | SCAN-002, CUR-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
 | `b06_3_native_dynamic_sql` | REDESIGN | DYN-001, DYN-002, DYN-OPT-002, SCAN-001, CUR-003, CUR-002, SQL-004, SQL-002, TX-001, TX-004 | DYN-001: 表名など識別子が実行時に決まる SQL です。allowlist か専用 Repository への再設計が要ります; SCAN-001: 同 |
-| `b06_4_collection_in_sql` | REVIEW | SELECT-001, SEM-004, SQL-002, BULK-001 | SELECT-001: キーで届かない SELECT INTO で、ScalarDB がそのまま実行できる文ではありません。0 件と複数件の意味（NO_DATA |
+| `b06_4_collection_in_sql` | REVIEW | CUR-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
 | `b06_5_2_scheduler_job` | REDESIGN | CALL-001, EXT-001 | EXT-001: UTL_* / DBMS_SCHEDULER / AQ などの外部副作用があります |
 | `b06_5_builtin_packages` | REVIEW |  | confidence factor testEvidence is 0 |
 | `b06_6_conditional_compilation` | REVIEW |  | confidence factor testEvidence is 0 |
@@ -747,8 +766,8 @@ PASS=24 FAIL=0 SKIP=16 CASE_ERROR=0 (of PASS, EMPTY=0 DECLARED=5; of SKIP, SOURC
 | `emp_api.validate_pct` | REDESIGN | STATE-001 | STATE-001: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります |
 | `emp_biu_trg.body` | REDESIGN | TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
 | `emp_dept_cap_trg.body` | REDESIGN | TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
-| `emp_dept_upd_v_trg.body` | REDESIGN | SQL-001, TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
-| `emp_grades` | REVIEW | LOWER-001, CUR-002, SQL-002 | LOWER-001: lowering がまだ模していない構文です。意味が保てる保証がありません; CUR-002: Cursor FOR LOOP です。走査 |
+| `emp_dept_upd_v_trg.body` | REDESIGN | SELECT-OPT-001, TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
+| `emp_grades` | REVIEW | SCAN-002, CUR-002 | CUR-002: Cursor FOR LOOP です。走査する行数の上限が決まっていません（limits.yaml）。N+1 とメモリ、fetch size  |
 | `emp_salary_audit_trg.body` | REDESIGN | SEM-010, TRG-001 | TRG-001: Trigger は隠れた副作用です。全書込経路を Service 側で統制する必要があります |
 | `log_msg` | REDESIGN | SEM-010, TX-001, TX-002 | TX-001: routine 内の COMMIT / ROLLBACK / SAVEPOINT は Service のトランザクション境界へ逐語変換できません |
 | `normalize_name` | REVIEW |  | confidence factor testEvidence is 0 |
@@ -775,11 +794,11 @@ PASS=24 FAIL=0 SKIP=16 CASE_ERROR=0 (of PASS, EMPTY=0 DECLARED=5; of SKIP, SOURC
 | `b05_3_call_emp_api` | `b05_3_call_emp_api.b05_3_call_emp_api` | 一致 |  |
 | `b05_4_call_log_msg` | `b05_4_call_log_msg.b05_4_call_log_msg` | 一致 |  |
 | `b06_1_bulk_collect_limit` | `b06_1_bulk_collect_limit.b06_1_bulk_collect_limit` | 一致 |  |
-| `b06_2_2_forall_returning` | `b06_2_2_forall_returning.b06_2_2_forall_returning` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in Loop: forall loop) |
+| `b06_2_2_forall_returning` | `b06_2_2_forall_returning.b06_2_2_forall_returning` | 一致 |  |
 | `b06_2_forall_save_exceptions` | `b06_2_forall_save_exceptions.b06_2_forall_save_exceptions` | 一致 |  |
-| `b06_3_6_dbms_sql` | `b06_3_6_dbms_sql.b06_3_6_dbms_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in declaration c: DBMS_SQL.OPEN_CURSOR) |
+| `b06_3_6_dbms_sql` | `b06_3_6_dbms_sql.b06_3_6_dbms_sql` | 一致 |  |
 | `b06_3_native_dynamic_sql` | `b06_3_native_dynamic_sql.b06_3_native_dynamic_sql` | 相違 | exception: expected=none actual=com.scalar.migrate.runtime.ScanAfterWriteException (plan fetch on 'employees' scans rows this transaction has already written or deleted;  |
-| `b06_4_collection_in_sql` | `b06_4_collection_in_sql.b06_4_collection_in_sql` | 相違 | exception: expected=none actual=java.lang.UnsupportedOperationException (unresolved in SqlOperation: execution plan result) |
+| `b06_4_collection_in_sql` | `b06_4_collection_in_sql.b06_4_collection_in_sql` | 一致 |  |
 | `b06_5_builtin_packages` | `b06_5_builtin_packages.b06_5_builtin_packages` | 一致 |  |
 | `b06_6_conditional_compilation` | `b06_6_conditional_compilation.b06_6_conditional_compilation` | 一致 |  |
 | `dept_name_of_missing` | `dept_name_of.dept_name_of` | 一致 |  |

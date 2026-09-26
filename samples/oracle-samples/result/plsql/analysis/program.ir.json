@@ -6929,9 +6929,112 @@
        },
        "name": "v_new_sal",
        "declarationKind": "variable"
+      },
+      {
+       "id": "b06_2_2_forall_returning#decl-v_trg_1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "b06_2_2_forall_returning.prc",
+        "startLine": 8,
+        "endLine": 10,
+        "startColumn": 5,
+        "endColumn": 40
+       },
+       "type": {
+        "oracle": "VARCHAR2(25)",
+        "resolved": "VARCHAR2(25)",
+        "origin": "column-type"
+       },
+       "name": "v_trg_1",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "b06_2_2_forall_returning#decl-v_trg_2",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "b06_2_2_forall_returning.prc",
+        "startLine": 8,
+        "endLine": 10,
+        "startColumn": 5,
+        "endColumn": 40
+       },
+       "type": {
+        "oracle": "NUMBER(8, 2)",
+        "resolved": "NUMBER(8, 2)",
+        "origin": "column-type"
+       },
+       "name": "v_trg_2",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "b06_2_2_forall_returning#decl-v_trg_3",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "b06_2_2_forall_returning.prc",
+        "startLine": 8,
+        "endLine": 10,
+        "startColumn": 5,
+        "endColumn": 40
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "column-type"
+       },
+       "name": "v_trg_3",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "b06_2_2_forall_returning#decl-v_trg_4",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "b06_2_2_forall_returning.prc",
+        "startLine": 8,
+        "endLine": 10,
+        "startColumn": 5,
+        "endColumn": 40
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "column-type"
+       },
+       "name": "v_trg_4",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "b06_2_2_forall_returning#decl-v_trg_5",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "b06_2_2_forall_returning.prc",
+        "startLine": 8,
+        "endLine": 10,
+        "startColumn": 5,
+        "endColumn": 40
+       },
+       "type": {
+        "oracle": "NUMBER(8, 2)",
+        "resolved": "NUMBER(8, 2)",
+        "origin": "column-type"
+       },
+       "name": "v_trg_5",
+       "declarationKind": "variable"
       }
      ],
      "body": [
+      {
+       "id": "b06_2_2_forall_returning#stmt-1init_v_new_sal",
+       "kind": "Assignment",
+       "sourceRange": {
+        "file": "b06_2_2_forall_returning.prc",
+        "startLine": 7,
+        "endLine": 10,
+        "startColumn": 3,
+        "endColumn": 40
+       },
+       "target": "v_new_sal",
+       "expression": "t_num()"
+      },
       {
        "id": "b06_2_2_forall_returning#stmt-1",
        "kind": "Loop",
@@ -6947,8 +7050,8 @@
        "returns_rows": false,
        "body": [
         {
-         "id": "b06_2_2_forall_returning#stmt-2",
-         "kind": "SqlOperation",
+         "id": "b06_2_2_forall_returning#stmt-2rmw",
+         "kind": "Loop",
          "sourceRange": {
           "file": "b06_2_2_forall_returning.prc",
           "startLine": 8,
@@ -6956,51 +7059,682 @@
           "startColumn": 5,
           "endColumn": 40
          },
-         "diagnostics": [
+         "loopKind": "cursor-for",
+         "cursor": "r_rmw_1 IN (SELECT employee_id, salary FROM employees WHERE department_id = V_DEPTS(i))",
+         "query": {
+          "id": "b06_2_2_forall_returning#stmt-2read",
+          "kind": "SqlOperation",
+          "sourceRange": {
+           "file": "b06_2_2_forall_returning.prc",
+           "startLine": 8,
+           "endLine": 10,
+           "startColumn": 5,
+           "endColumn": 40
+          },
+          "diagnostics": [
+           {
+            "severity": "INFO",
+            "code": "ACCESS",
+            "message": "SELECT: equality on secondary index -> index SCAN",
+            "range": {
+             "file": "b06_2_2_forall_returning.prc",
+             "startLine": 8,
+             "endLine": 10,
+             "startColumn": 5,
+             "endColumn": 40
+            }
+           },
+           {
+            "severity": "ERROR",
+            "code": "SCAN_AFTER_WRITE",
+            "message": "employees was written earlier in this transaction; ScalarDB refuses to scan it",
+            "range": {
+             "file": "b06_2_2_forall_returning.prc",
+             "startLine": 8,
+             "endLine": 10,
+             "startColumn": 5,
+             "endColumn": 40
+            }
+           }
+          ],
+          "readSet": [
+           "employees"
+          ],
+          "sqlKind": "SELECT",
+          "originalSql": "SELECT employee_id, salary FROM employees WHERE department_id = V_DEPTS(i)",
+          "binds": [
+           {
+            "name": "V_DEPTS_i",
+            "direction": "IN",
+            "oracleType": "NUMBER",
+            "plsqlVariable": "V_DEPTS(i)",
+            "column": "department_id",
+            "scalardbType": "INT",
+            "columnOracleType": "NUMBER(4)"
+           }
+          ],
+          "accumulates_rowcount": false,
+          "intoColumns": [
+           "employee_id",
+           "salary"
+          ],
+          "intoTypes": [
+           "INT",
+           "DOUBLE"
+          ],
+          "intoOracleTypes": [
+           "NUMBER(6)",
+           "NUMBER(8, 2)"
+          ],
+          "selectsStar": false,
+          "cardinality": "MANY",
+          "atMostOneRow": false,
+          "targetStatus": "OK",
+          "targetSql": [
+           "SELECT employee_id, salary FROM employees WHERE department_id = :V_DEPTS_i"
+          ]
+         },
+         "variable": "r_rmw_1",
+         "returns_rows": false,
+         "body": [
           {
-           "severity": "WARN",
-           "code": "BULK_COLLECT",
-           "message": "BULK COLLECT needs a row limit and a memory bound",
-           "range": {
+           "id": "b06_2_2_forall_returning#stmt-2ck1if",
+           "kind": "If",
+           "sourceRange": {
             "file": "b06_2_2_forall_returning.prc",
             "startLine": 8,
             "endLine": 10,
             "startColumn": 5,
             "endColumn": 40
-           }
+           },
+           "branches": [
+            {
+             "condition": "NOT (r_rmw_1.salary + 10 > 0)",
+             "body": [
+              {
+               "id": "b06_2_2_forall_returning#stmt-2ck1raise",
+               "kind": "Raise",
+               "sourceRange": {
+                "file": "b06_2_2_forall_returning.prc",
+                "startLine": 8,
+                "endLine": 10,
+                "startColumn": 5,
+                "endColumn": 40
+               },
+               "errorCode": -2290,
+               "message": "'ORA-02290: check constraint (EMP_SALARY_CK) violated'"
+              }
+             ]
+            }
+           ]
           },
           {
-           "severity": "WARN",
-           "code": "CONSTRAINT_NOT_GUARDED",
-           "message": "CHECK emp_salary_ck の値が表の値を読む式である（RMW を割っていない）。書く前に評価できない",
-           "range": {
+           "id": "b06_2_2_forall_returning#stmt-2trg0",
+           "kind": "SqlOperation",
+           "sourceRange": {
             "file": "b06_2_2_forall_returning.prc",
             "startLine": 8,
             "endLine": 10,
             "startColumn": 5,
             "endColumn": 40
-           }
+           },
+           "diagnostics": [
+            {
+             "severity": "INFO",
+             "code": "TRIGGER_OLD",
+             "message": "emp_biu_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである",
+             "range": {
+              "file": "b06_2_2_forall_returning.prc",
+              "startLine": 8,
+              "endLine": 10,
+              "startColumn": 5,
+              "endColumn": 40
+             }
+            },
+            {
+             "severity": "INFO",
+             "code": "ACCESS",
+             "message": "SELECT: full primary key specified -> GET (single record)",
+             "range": {
+              "file": "b06_2_2_forall_returning.prc",
+              "startLine": 8,
+              "endLine": 10,
+              "startColumn": 5,
+              "endColumn": 40
+             }
+            }
+           ],
+           "readSet": [
+            "employees"
+           ],
+           "sqlKind": "SELECT",
+           "originalSql": "SELECT email, salary FROM employees WHERE employee_id = r_rmw_1.employee_id",
+           "binds": [
+            {
+             "name": "r_rmw_1_employee_id",
+             "direction": "IN",
+             "oracleType": "NUMBER(6)",
+             "plsqlVariable": "r_rmw_1.employee_id",
+             "column": "employee_id",
+             "scalardbType": "INT",
+             "columnOracleType": "NUMBER(6)"
+            }
+           ],
+           "intoTargets": [
+            "v_trg_1",
+            "v_trg_2"
+           ],
+           "accumulates_rowcount": false,
+           "intoColumns": [
+            "email",
+            "salary"
+           ],
+           "intoTypes": [
+            "TEXT",
+            "DOUBLE"
+           ],
+           "intoOracleTypes": [
+            "VARCHAR2(25)",
+            "NUMBER(8, 2)"
+           ],
+           "selectsStar": false,
+           "cardinality": "AT_MOST_ONE",
+           "notFoundFlag": "trg0",
+           "atMostOneRow": false,
+           "targetStatus": "OK",
+           "targetSql": [
+            "SELECT email, salary FROM employees WHERE employee_id = :r_rmw_1_employee_id"
+           ]
           },
           {
-           "severity": "ERROR",
-           "code": "SQL_PARSE",
-           "message": "ParseError: Invalid expression / Unexpected token. Line 3, Col: 38.\n  PDATE employees SET salary = salary + 10\n    WHERE  department_id = v_depts(i)\n    RETURNING salary \u001b[4mBULK COLLECT INTO\u001b[0m v_new_sal",
-           "range": {
+           "id": "b06_2_2_forall_returning#stmt-2call0if",
+           "kind": "If",
+           "sourceRange": {
             "file": "b06_2_2_forall_returning.prc",
             "startLine": 8,
             "endLine": 10,
             "startColumn": 5,
             "endColumn": 40
-           }
+           },
+           "branches": [
+            {
+             "condition": "NOT trg0%NOTFOUND",
+             "body": [
+              {
+               "id": "b06_2_2_forall_returning#stmt-2call0",
+               "kind": "Call",
+               "sourceRange": {
+                "file": "b06_2_2_forall_returning.prc",
+                "startLine": 8,
+                "endLine": 10,
+                "startColumn": 5,
+                "endColumn": 40
+               },
+               "diagnostics": [
+                {
+                 "severity": "INFO",
+                 "code": "TRIGGER_CALL",
+                 "message": "emp_biu_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）",
+                 "range": {
+                  "file": "b06_2_2_forall_returning.prc",
+                  "startLine": 8,
+                  "endLine": 10,
+                  "startColumn": 5,
+                  "endColumn": 40
+                 }
+                }
+               ],
+               "callee": "emp_biu_trg.body",
+               "arguments": [
+                "NEW.email => v_trg_1",
+                "NEW.salary => r_rmw_1.salary + 10",
+                "OLD.salary => v_trg_2",
+                "UPDATING_SALARY => TRUE"
+               ],
+               "resolvedTo": "emp_biu_trg.body"
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "id": "b06_2_2_forall_returning#stmt-2trg1",
+           "kind": "SqlOperation",
+           "sourceRange": {
+            "file": "b06_2_2_forall_returning.prc",
+            "startLine": 8,
+            "endLine": 10,
+            "startColumn": 5,
+            "endColumn": 40
+           },
+           "diagnostics": [
+            {
+             "severity": "INFO",
+             "code": "TRIGGER_OLD",
+             "message": "emp_dept_cap_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである",
+             "range": {
+              "file": "b06_2_2_forall_returning.prc",
+              "startLine": 8,
+              "endLine": 10,
+              "startColumn": 5,
+              "endColumn": 40
+             }
+            },
+            {
+             "severity": "INFO",
+             "code": "ACCESS",
+             "message": "SELECT: full primary key specified -> GET (single record)",
+             "range": {
+              "file": "b06_2_2_forall_returning.prc",
+              "startLine": 8,
+              "endLine": 10,
+              "startColumn": 5,
+              "endColumn": 40
+             }
+            }
+           ],
+           "readSet": [
+            "employees"
+           ],
+           "sqlKind": "SELECT",
+           "originalSql": "SELECT department_id FROM employees WHERE employee_id = r_rmw_1.employee_id",
+           "binds": [
+            {
+             "name": "r_rmw_1_employee_id",
+             "direction": "IN",
+             "oracleType": "NUMBER(6)",
+             "plsqlVariable": "r_rmw_1.employee_id",
+             "column": "employee_id",
+             "scalardbType": "INT",
+             "columnOracleType": "NUMBER(6)"
+            }
+           ],
+           "intoTargets": [
+            "v_trg_3"
+           ],
+           "accumulates_rowcount": false,
+           "intoColumns": [
+            "department_id"
+           ],
+           "intoTypes": [
+            "INT"
+           ],
+           "intoOracleTypes": [
+            "NUMBER(4)"
+           ],
+           "selectsStar": false,
+           "cardinality": "AT_MOST_ONE",
+           "notFoundFlag": "trg1",
+           "atMostOneRow": false,
+           "targetStatus": "OK",
+           "targetSql": [
+            "SELECT department_id FROM employees WHERE employee_id = :r_rmw_1_employee_id"
+           ]
+          },
+          {
+           "id": "b06_2_2_forall_returning#stmt-2trg2",
+           "kind": "SqlOperation",
+           "sourceRange": {
+            "file": "b06_2_2_forall_returning.prc",
+            "startLine": 8,
+            "endLine": 10,
+            "startColumn": 5,
+            "endColumn": 40
+           },
+           "diagnostics": [
+            {
+             "severity": "INFO",
+             "code": "TRIGGER_OLD",
+             "message": "emp_salary_audit_trg が読む :OLD の値。**更新の前に**読む——後では元の値が無い（trigger-patterns A-1）。**行が無くても例外にしない**: 更新する行が無ければ trigger は掛からないので、これは「無い」が答えである",
+             "range": {
+              "file": "b06_2_2_forall_returning.prc",
+              "startLine": 8,
+              "endLine": 10,
+              "startColumn": 5,
+              "endColumn": 40
+             }
+            },
+            {
+             "severity": "INFO",
+             "code": "ACCESS",
+             "message": "SELECT: full primary key specified -> GET (single record)",
+             "range": {
+              "file": "b06_2_2_forall_returning.prc",
+              "startLine": 8,
+              "endLine": 10,
+              "startColumn": 5,
+              "endColumn": 40
+             }
+            }
+           ],
+           "readSet": [
+            "employees"
+           ],
+           "sqlKind": "SELECT",
+           "originalSql": "SELECT employee_id, salary FROM employees WHERE employee_id = r_rmw_1.employee_id",
+           "binds": [
+            {
+             "name": "r_rmw_1_employee_id",
+             "direction": "IN",
+             "oracleType": "NUMBER(6)",
+             "plsqlVariable": "r_rmw_1.employee_id",
+             "column": "employee_id",
+             "scalardbType": "INT",
+             "columnOracleType": "NUMBER(6)"
+            }
+           ],
+           "intoTargets": [
+            "v_trg_4",
+            "v_trg_5"
+           ],
+           "accumulates_rowcount": false,
+           "intoColumns": [
+            "employee_id",
+            "salary"
+           ],
+           "intoTypes": [
+            "INT",
+            "DOUBLE"
+           ],
+           "intoOracleTypes": [
+            "NUMBER(6)",
+            "NUMBER(8, 2)"
+           ],
+           "selectsStar": false,
+           "cardinality": "AT_MOST_ONE",
+           "notFoundFlag": "trg2",
+           "atMostOneRow": false,
+           "targetStatus": "OK",
+           "targetSql": [
+            "SELECT employee_id, salary FROM employees WHERE employee_id = :r_rmw_1_employee_id"
+           ]
+          },
+          {
+           "id": "b06_2_2_forall_returning#stmt-2",
+           "kind": "SqlOperation",
+           "sourceRange": {
+            "file": "b06_2_2_forall_returning.prc",
+            "startLine": 8,
+            "endLine": 10,
+            "startColumn": 5,
+            "endColumn": 40
+           },
+           "diagnostics": [
+            {
+             "severity": "WARN",
+             "code": "BULK_COLLECT",
+             "message": "BULK COLLECT needs a row limit and a memory bound",
+             "range": {
+              "file": "b06_2_2_forall_returning.prc",
+              "startLine": 8,
+              "endLine": 10,
+              "startColumn": 5,
+              "endColumn": 40
+             }
+            },
+            {
+             "severity": "INFO",
+             "code": "RMW_SPLIT",
+             "message": "employees.salary を読んでから 1 行ずつ書くループにした（WHERE が主キーを決めていない）。ScalarDB SQL は列を読む式を受け付けないので、値はアプリで計算する。**同じトランザクションの中で読んで書く**ので、衝突は commit で弾かれる（再試行は呼び出し側の責務・#9）",
+             "range": {
+              "file": "b06_2_2_forall_returning.prc",
+              "startLine": 8,
+              "endLine": 10,
+              "startColumn": 5,
+              "endColumn": 40
+             }
+            },
+            {
+             "severity": "INFO",
+             "code": "CONSTRAINT_GUARD",
+             "message": "employees の CHECK emp_salary_ck を書く前に評価する。移行先に制約は無く、違反は Oracle と同じ番号の例外になる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））",
+             "range": {
+              "file": "b06_2_2_forall_returning.prc",
+              "startLine": 8,
+              "endLine": 10,
+              "startColumn": 5,
+              "endColumn": 40
+             }
+            },
+            {
+             "severity": "INFO",
+             "code": "TRIGGER_FOLDED",
+             "message": "emp_biu_trg の代入を書く値に畳み込んだ: email = UPPER(v_trg_1)。検査は呼び出しで行う（#47）",
+             "range": {
+              "file": "b06_2_2_forall_returning.prc",
+              "startLine": 8,
+              "endLine": 10,
+              "startColumn": 5,
+              "endColumn": 40
+             }
+            },
+            {
+             "severity": "INFO",
+             "code": "TRIGGER_APPLIED",
+             "message": "emp_biu_trg（BEFORE INSERT OR UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）",
+             "range": {
+              "file": "b06_2_2_forall_returning.prc",
+              "startLine": 8,
+              "endLine": 10,
+              "startColumn": 5,
+              "endColumn": 40
+             }
+            },
+            {
+             "severity": "INFO",
+             "code": "TRIGGER_APPLIED",
+             "message": "emp_dept_cap_trg（AFTER UPDATE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）",
+             "range": {
+              "file": "b06_2_2_forall_returning.prc",
+              "startLine": 8,
+              "endLine": 10,
+              "startColumn": 5,
+              "endColumn": 40
+             }
+            },
+            {
+             "severity": "INFO",
+             "code": "TRIGGER_APPLIED",
+             "message": "emp_salary_audit_trg（AFTER UPDATE OR DELETE ON employees）をこの書き込みのところで呼ぶ。**掛かるのはこの経路だけ**で、他システムの直接 DML には掛からない——網羅性は検証で追う（#12 §0 の決定）",
+             "range": {
+              "file": "b06_2_2_forall_returning.prc",
+              "startLine": 8,
+              "endLine": 10,
+              "startColumn": 5,
+              "endColumn": 40
+             }
+            },
+            {
+             "severity": "INFO",
+             "code": "ACCESS",
+             "message": "UPDATE: full primary key specified -> GET (single record)",
+             "range": {
+              "file": "b06_2_2_forall_returning.prc",
+              "startLine": 8,
+              "endLine": 10,
+              "startColumn": 5,
+              "endColumn": 40
+             }
+            }
+           ],
+           "writeSet": [
+            "employees"
+           ],
+           "sqlKind": "UPDATE",
+           "originalSql": "UPDATE employees SET salary = r_rmw_1.salary + 10, email = UPPER(v_trg_1) WHERE employee_id = r_rmw_1.employee_id",
+           "binds": [
+            {
+             "name": "r_rmw_1_salary",
+             "direction": "IN",
+             "oracleType": "NUMBER(8, 2)",
+             "plsqlVariable": "r_rmw_1.salary"
+            },
+            {
+             "name": "v_trg_1",
+             "direction": "IN",
+             "oracleType": "VARCHAR2(25)",
+             "plsqlVariable": "v_trg_1"
+            },
+            {
+             "name": "r_rmw_1_employee_id",
+             "direction": "IN",
+             "oracleType": "NUMBER(6)",
+             "plsqlVariable": "r_rmw_1.employee_id",
+             "column": "employee_id",
+             "scalardbType": "INT",
+             "columnOracleType": "NUMBER(6)"
+            },
+            {
+             "name": "expr4",
+             "direction": "IN",
+             "column": "salary",
+             "scalardbType": "DOUBLE",
+             "columnOracleType": "NUMBER(8, 2)",
+             "expression": "r_rmw_1.salary + 10"
+            },
+            {
+             "name": "expr5",
+             "direction": "IN",
+             "column": "email",
+             "scalardbType": "TEXT",
+             "columnOracleType": "VARCHAR2(25)",
+             "expression": "UPPER(v_trg_1)"
+            }
+           ],
+           "accumulates_rowcount": true,
+           "selectsStar": false,
+           "cardinality": "MANY",
+           "atMostOneRow": false,
+           "targetStatus": "OK",
+           "targetSql": [
+            "UPDATE employees SET salary = :expr4, email = :expr5 WHERE employee_id = :r_rmw_1_employee_id"
+           ]
+          },
+          {
+           "id": "b06_2_2_forall_returning#stmt-2call1if",
+           "kind": "If",
+           "sourceRange": {
+            "file": "b06_2_2_forall_returning.prc",
+            "startLine": 8,
+            "endLine": 10,
+            "startColumn": 5,
+            "endColumn": 40
+           },
+           "branches": [
+            {
+             "condition": "SQL%ROWCOUNT > 0",
+             "body": [
+              {
+               "id": "b06_2_2_forall_returning#stmt-2call1",
+               "kind": "Call",
+               "sourceRange": {
+                "file": "b06_2_2_forall_returning.prc",
+                "startLine": 8,
+                "endLine": 10,
+                "startColumn": 5,
+                "endColumn": 40
+               },
+               "diagnostics": [
+                {
+                 "severity": "INFO",
+                 "code": "TRIGGER_CALL",
+                 "message": "emp_dept_cap_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）",
+                 "range": {
+                  "file": "b06_2_2_forall_returning.prc",
+                  "startLine": 8,
+                  "endLine": 10,
+                  "startColumn": 5,
+                  "endColumn": 40
+                 }
+                }
+               ],
+               "callee": "emp_dept_cap_trg.body",
+               "arguments": [
+                "NEW.department_id => v_trg_3"
+               ],
+               "resolvedTo": "emp_dept_cap_trg.body"
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "id": "b06_2_2_forall_returning#stmt-2call2if",
+           "kind": "If",
+           "sourceRange": {
+            "file": "b06_2_2_forall_returning.prc",
+            "startLine": 8,
+            "endLine": 10,
+            "startColumn": 5,
+            "endColumn": 40
+           },
+           "branches": [
+            {
+             "condition": "SQL%ROWCOUNT > 0",
+             "body": [
+              {
+               "id": "b06_2_2_forall_returning#stmt-2call2",
+               "kind": "Call",
+               "sourceRange": {
+                "file": "b06_2_2_forall_returning.prc",
+                "startLine": 8,
+                "endLine": 10,
+                "startColumn": 5,
+                "endColumn": 40
+               },
+               "diagnostics": [
+                {
+                 "severity": "INFO",
+                 "code": "TRIGGER_CALL",
+                 "message": "emp_salary_audit_trg を呼ぶ。Oracle では表への書き込みすべてに掛かっていたものが、**この経路にだけ**掛かる（#12 §0）",
+                 "range": {
+                  "file": "b06_2_2_forall_returning.prc",
+                  "startLine": 8,
+                  "endLine": 10,
+                  "startColumn": 5,
+                  "endColumn": 40
+                 }
+                }
+               ],
+               "callee": "emp_salary_audit_trg.body",
+               "arguments": [
+                "NEW.salary => r_rmw_1.salary + 10",
+                "OLD.employee_id => v_trg_4",
+                "OLD.salary => v_trg_5",
+                "DELETING => FALSE"
+               ],
+               "resolvedTo": "emp_salary_audit_trg.body"
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "id": "b06_2_2_forall_returning#stmt-2extend_salary",
+           "kind": "Call",
+           "sourceRange": {
+            "file": "b06_2_2_forall_returning.prc",
+            "startLine": 8,
+            "endLine": 10,
+            "startColumn": 5,
+            "endColumn": 40
+           },
+           "callee": "v_new_sal.EXTEND"
+          },
+          {
+           "id": "b06_2_2_forall_returning#stmt-2returned_salary",
+           "kind": "Assignment",
+           "sourceRange": {
+            "file": "b06_2_2_forall_returning.prc",
+            "startLine": 8,
+            "endLine": 10,
+            "startColumn": 5,
+            "endColumn": 40
+           },
+           "target": "v_new_sal(v_new_sal.LAST)",
+           "expression": "r_rmw_1.salary + 10"
           }
-         ],
-         "sqlKind": "UPDATE",
-         "originalSql": "UPDATE employees SET salary = salary + 10\n    WHERE  department_id = v_depts(i)\n    RETURNING salary BULK COLLECT INTO v_new_sal",
-         "accumulates_rowcount": false,
-         "selectsStar": false,
-         "cardinality": "MANY",
-         "atMostOneRow": false,
-         "targetStatus": "ERROR"
+         ]
         }
        ]
       },
@@ -7703,8 +8437,7 @@
         "origin": "declared"
        },
        "name": "c",
-       "declarationKind": "variable",
-       "initial": "DBMS_SQL.OPEN_CURSOR"
+       "declarationKind": "variable"
       },
       {
        "id": "b06_3_6_dbms_sql#decl-2",
@@ -7722,24 +8455,6 @@
         "origin": "declared"
        },
        "name": "n",
-       "declarationKind": "variable"
-      },
-      {
-       "id": "b06_3_6_dbms_sql#decl-3",
-       "kind": "Declaration",
-       "sourceRange": {
-        "file": "b06_3_6_dbms_sql.prc",
-        "startLine": 5,
-        "endLine": 5,
-        "startColumn": 3,
-        "endColumn": 28
-       },
-       "type": {
-        "oracle": "DBMS_SQL.DESC_TAB2",
-        "resolved": "DBMS_SQL.DESC_TAB2",
-        "origin": "declared"
-       },
-       "name": "cols",
        "declarationKind": "variable"
       },
       {
@@ -7781,25 +8496,8 @@
      ],
      "body": [
       {
-       "id": "b06_3_6_dbms_sql#stmt-1",
-       "kind": "Call",
-       "sourceRange": {
-        "file": "b06_3_6_dbms_sql.prc",
-        "startLine": 9,
-        "endLine": 9,
-        "startColumn": 3,
-        "endColumn": 83
-       },
-       "callee": "DBMS_SQL.PARSE",
-       "arguments": [
-        "c",
-        "'SELECT * FROM departments WHERE ROWNUM <= 2'",
-        "DBMS_SQL.NATIVE"
-       ]
-      },
-      {
-       "id": "b06_3_6_dbms_sql#stmt-2",
-       "kind": "Call",
+       "id": "b06_3_6_dbms_sql#stmt-2ncols",
+       "kind": "Assignment",
        "sourceRange": {
         "file": "b06_3_6_dbms_sql.prc",
         "startLine": 10,
@@ -7807,46 +8505,8 @@
         "startColumn": 3,
         "endColumn": 44
        },
-       "callee": "DBMS_SQL.DESCRIBE_COLUMNS2",
-       "arguments": [
-        "c",
-        "ncols",
-        "cols"
-       ]
-      },
-      {
-       "id": "b06_3_6_dbms_sql#stmt-3",
-       "kind": "Loop",
-       "sourceRange": {
-        "file": "b06_3_6_dbms_sql.prc",
-        "startLine": 11,
-        "endLine": 13,
-        "startColumn": 3,
-        "endColumn": 7
-       },
-       "loopKind": "for",
-       "cursor": "i IN 1 .. ncols",
-       "returns_rows": false,
-       "body": [
-        {
-         "id": "b06_3_6_dbms_sql#stmt-4",
-         "kind": "Call",
-         "sourceRange": {
-          "file": "b06_3_6_dbms_sql.prc",
-          "startLine": 12,
-          "endLine": 12,
-          "startColumn": 5,
-          "endColumn": 45
-         },
-         "callee": "DBMS_SQL.DEFINE_COLUMN",
-         "arguments": [
-          "c",
-          "i",
-          "v_val",
-          "4000"
-         ]
-        }
-       ]
+       "target": "ncols",
+       "expression": "4"
       },
       {
        "id": "b06_3_6_dbms_sql#stmt-5",
@@ -7859,7 +8519,7 @@
         "endColumn": 26
        },
        "target": "n",
-       "expression": "DBMS_SQL.EXECUTE(c)"
+       "expression": "0"
       },
       {
        "id": "b06_3_6_dbms_sql#stmt-6",
@@ -7871,8 +8531,118 @@
         "startColumn": 3,
         "endColumn": 7
        },
-       "loopKind": "while",
-       "condition": "DBMS_SQL.FETCH_ROWS(c) > 0",
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "DBMS_SQL_STATIC",
+         "message": "DBMS_SQL の一連（OPEN_CURSOR〜CLOSE_CURSOR）を、PARSE の文字列が定数の問合せなので静的な cursor FOR ループにした（#53）",
+         "range": {
+          "file": "b06_3_6_dbms_sql.prc",
+          "startLine": 15,
+          "endLine": 21,
+          "startColumn": 3,
+          "endColumn": 7
+         }
+        }
+       ],
+       "readSet": [
+        "departments"
+       ],
+       "loopKind": "cursor-for",
+       "cursor": "r_sql_1 IN (SELECT department_id, department_name, manager_id, location FROM departments WHERE ROWNUM <= 2)",
+       "query": {
+        "id": "b06_3_6_dbms_sql#stmt-6query",
+        "kind": "SqlOperation",
+        "sourceRange": {
+         "file": "b06_3_6_dbms_sql.prc",
+         "startLine": 15,
+         "endLine": 21,
+         "startColumn": 3,
+         "endColumn": 7
+        },
+        "diagnostics": [
+         {
+          "severity": "WARN",
+          "code": "ROWNUM",
+          "message": "'ROWNUM <= 2' rewritten to LIMIT 2. Note: Oracle applies ROWNUM before ORDER BY, ScalarDB LIMIT applies after ORDER BY",
+          "range": {
+           "file": "b06_3_6_dbms_sql.prc",
+           "startLine": 15,
+           "endLine": 21,
+           "startColumn": 3,
+           "endColumn": 7
+          }
+         },
+         {
+          "severity": "WARN",
+          "code": "CROSS_PARTITION",
+          "message": "SELECT: predicates do not cover the partition key ['department_id'] of departments -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)",
+          "range": {
+           "file": "b06_3_6_dbms_sql.prc",
+           "startLine": 15,
+           "endLine": 21,
+           "startColumn": 3,
+           "endColumn": 7
+          }
+         },
+         {
+          "severity": "INFO",
+          "code": "CONFIG",
+          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node",
+          "range": {
+           "file": "b06_3_6_dbms_sql.prc",
+           "startLine": 15,
+           "endLine": 21,
+           "startColumn": 3,
+           "endColumn": 7
+          }
+         },
+         {
+          "severity": "INFO",
+          "code": "COST",
+          "message": "full scan of departments (~25 us per row); pass --expected-rows table=N for an estimate",
+          "range": {
+           "file": "b06_3_6_dbms_sql.prc",
+           "startLine": 15,
+           "endLine": 21,
+           "startColumn": 3,
+           "endColumn": 7
+          }
+         }
+        ],
+        "readSet": [
+         "departments"
+        ],
+        "sqlKind": "SELECT",
+        "originalSql": "SELECT department_id, department_name, manager_id, location FROM departments WHERE ROWNUM <= 2",
+        "accumulates_rowcount": false,
+        "intoColumns": [
+         "department_id",
+         "department_name",
+         "manager_id",
+         "location"
+        ],
+        "intoTypes": [
+         "INT",
+         "TEXT",
+         "INT",
+         "TEXT"
+        ],
+        "intoOracleTypes": [
+         "NUMBER(4)",
+         "VARCHAR2(30)",
+         "NUMBER(6)",
+         "VARCHAR2(30)"
+        ],
+        "selectsStar": false,
+        "cardinality": "MANY",
+        "atMostOneRow": false,
+        "targetStatus": "WARN",
+        "targetSql": [
+         "SELECT department_id, department_name, manager_id, location FROM departments LIMIT 2"
+        ]
+       },
+       "variable": "r_sql_1",
        "returns_rows": false,
        "body": [
         {
@@ -7890,8 +8660,8 @@
          "returns_rows": false,
          "body": [
           {
-           "id": "b06_3_6_dbms_sql#stmt-8",
-           "kind": "Call",
+           "id": "b06_3_6_dbms_sql#stmt-8value",
+           "kind": "Assignment",
            "sourceRange": {
             "file": "b06_3_6_dbms_sql.prc",
             "startLine": 17,
@@ -7899,12 +8669,8 @@
             "startColumn": 7,
             "endColumn": 40
            },
-           "callee": "DBMS_SQL.COLUMN_VALUE",
-           "arguments": [
-            "c",
-            "i",
-            "v_val"
-           ]
+           "target": "v_val",
+           "expression": "CASE i WHEN 1 THEN TO_CHAR(r_sql_1.department_id) WHEN 2 THEN r_sql_1.department_name WHEN 3 THEN TO_CHAR(r_sql_1.manager_id) WHEN 4 THEN r_sql_1.location END"
           },
           {
            "id": "b06_3_6_dbms_sql#stmt-9",
@@ -7918,7 +8684,7 @@
            },
            "callee": "DBMS_OUTPUT.PUT",
            "arguments": [
-            "cols(i).col_name || '=' || v_val || '  '"
+            "CASE i WHEN 1 THEN 'DEPARTMENT_ID' WHEN 2 THEN 'DEPARTMENT_NAME' WHEN 3 THEN 'MANAGER_ID' WHEN 4 THEN 'LOCATION' END || '=' || v_val || '  '"
            ]
           }
          ]
@@ -7935,21 +8701,6 @@
          },
          "callee": "DBMS_OUTPUT.NEW_LINE"
         }
-       ]
-      },
-      {
-       "id": "b06_3_6_dbms_sql#stmt-11",
-       "kind": "Call",
-       "sourceRange": {
-        "file": "b06_3_6_dbms_sql.prc",
-        "startLine": 22,
-        "endLine": 22,
-        "startColumn": 3,
-        "endColumn": 26
-       },
-       "callee": "DBMS_SQL.CLOSE_CURSOR",
-       "arguments": [
-        "c"
        ]
       }
      ],
@@ -9304,8 +10055,9 @@
        },
        "type": {
         "oracle": "emp_grade_tab",
-        "resolved": "emp_grade_tab",
-        "origin": "declared"
+        "resolved": "TABLE OF emp_grade_t",
+        "origin": "collection",
+        "schemaSnapshot": "schema.sql@d6f64025"
        },
        "name": "v_list",
        "declarationKind": "variable"
@@ -9327,12 +10079,43 @@
        },
        "name": "v_cnt",
        "declarationKind": "variable"
+      },
+      {
+       "id": "b06_4_collection_in_sql#stmt-2row",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "b06_4_collection_in_sql.prc",
+        "startLine": 10,
+        "endLine": 10,
+        "startColumn": 3,
+        "endColumn": 70
+       },
+       "type": {
+        "oracle": "emp_grade_t",
+        "resolved": "RECORD(employee_id NUMBER, last_name VARCHAR2(25), grade VARCHAR2(1))",
+        "origin": "record"
+       },
+       "name": "v_obj_2",
+       "declarationKind": "variable"
       }
      ],
      "body": [
       {
-       "id": "b06_4_collection_in_sql#stmt-1",
-       "kind": "SqlOperation",
+       "id": "b06_4_collection_in_sql#stmt-1init",
+       "kind": "Assignment",
+       "sourceRange": {
+        "file": "b06_4_collection_in_sql.prc",
+        "startLine": 6,
+        "endLine": 8,
+        "startColumn": 3,
+        "endColumn": 42
+       },
+       "target": "v_list",
+       "expression": "emp_grade_tab()"
+      },
+      {
+       "id": "b06_4_collection_in_sql#stmt-1loop",
+       "kind": "Loop",
        "sourceRange": {
         "file": "b06_4_collection_in_sql.prc",
         "startLine": 6,
@@ -9342,69 +10125,9 @@
        },
        "diagnostics": [
         {
-         "severity": "WARN",
-         "code": "BULK_COLLECT",
-         "message": "BULK COLLECT needs a row limit and a memory bound",
-         "range": {
-          "file": "b06_4_collection_in_sql.prc",
-          "startLine": 6,
-          "endLine": 8,
-          "startColumn": 3,
-          "endColumn": 42
-         }
-        },
-        {
-         "severity": "ERROR",
-         "code": "PROJECTION",
-         "message": "main query: expressions in the select list (EMP_GRADE_T(employee_id, last_name, 'X')) -- compute them in the application",
-         "range": {
-          "file": "b06_4_collection_in_sql.prc",
-          "startLine": 6,
-          "endLine": 8,
-          "startColumn": 3,
-          "endColumn": 42
-         }
-        },
-        {
          "severity": "INFO",
-         "code": "PLAN_FETCH",
-         "message": "INDEX_SCAN: SELECT employee_id, last_name, department_id FROM hr.employees WHERE department_id = 60",
-         "range": {
-          "file": "b06_4_collection_in_sql.prc",
-          "startLine": 6,
-          "endLine": 8,
-          "startColumn": 3,
-          "endColumn": 42
-         }
-        },
-        {
-         "severity": "INFO",
-         "code": "PLAN_RESIDUAL",
-         "message": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)",
-         "range": {
-          "file": "b06_4_collection_in_sql.prc",
-          "startLine": 6,
-          "endLine": 8,
-          "startColumn": 3,
-          "endColumn": 42
-         }
-        },
-        {
-         "severity": "INFO",
-         "code": "CONFIG",
-         "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node",
-         "range": {
-          "file": "b06_4_collection_in_sql.prc",
-          "startLine": 6,
-          "endLine": 8,
-          "startColumn": 3,
-          "endColumn": 42
-         }
-        },
-        {
-         "severity": "WARN",
-         "code": "MULTI_ROW_INTO",
-         "message": "SELECT INTO does not reach its row by key, so it can match several and raise TOO_MANY_ROWS",
+         "code": "OBJECT_BUILT",
+         "message": "emp_grade_t(…) は ScalarDB SQL の select list で組めないので、列を読んでアプリで record を組み、v_list に足す（#54）",
          "range": {
           "file": "b06_4_collection_in_sql.prc",
           "startLine": 6,
@@ -9417,30 +10140,104 @@
        "readSet": [
         "employees"
        ],
-       "sqlKind": "SELECT",
-       "originalSql": "SELECT emp_grade_t(employee_id, last_name, 'X')\n  BULK   COLLECT INTO v_list\n  FROM   employees WHERE department_id = 60",
-       "intoTargets": [
-        "v_list"
-       ],
-       "accumulates_rowcount": false,
-       "intoColumns": [
-        null
-       ],
-       "intoTypes": [
-        null
-       ],
-       "intoOracleTypes": [
-        null
-       ],
-       "selectsStar": false,
-       "cardinality": "EXACTLY_ONE",
-       "atMostOneRow": false,
-       "targetStatus": "PLANNED",
-       "planId": "b06_4_collection_in_sql#stmt-1.plan.json"
+       "loopKind": "cursor-for",
+       "cursor": "r_obj_1 IN (SELECT employee_id, last_name FROM employees WHERE department_id = 60)",
+       "query": {
+        "id": "b06_4_collection_in_sql#stmt-1obj",
+        "kind": "SqlOperation",
+        "sourceRange": {
+         "file": "b06_4_collection_in_sql.prc",
+         "startLine": 6,
+         "endLine": 8,
+         "startColumn": 3,
+         "endColumn": 42
+        },
+        "diagnostics": [
+         {
+          "severity": "INFO",
+          "code": "ACCESS",
+          "message": "SELECT: equality on secondary index -> index SCAN",
+          "range": {
+           "file": "b06_4_collection_in_sql.prc",
+           "startLine": 6,
+           "endLine": 8,
+           "startColumn": 3,
+           "endColumn": 42
+          }
+         }
+        ],
+        "readSet": [
+         "employees"
+        ],
+        "sqlKind": "SELECT",
+        "originalSql": "SELECT employee_id, last_name FROM employees WHERE department_id = 60",
+        "accumulates_rowcount": false,
+        "intoColumns": [
+         "employee_id",
+         "last_name"
+        ],
+        "intoTypes": [
+         "INT",
+         "TEXT"
+        ],
+        "intoOracleTypes": [
+         "NUMBER(6)",
+         "VARCHAR2(25)"
+        ],
+        "selectsStar": false,
+        "cardinality": "MANY",
+        "atMostOneRow": false,
+        "targetStatus": "OK",
+        "targetSql": [
+         "SELECT employee_id, last_name FROM employees WHERE department_id = 60"
+        ]
+       },
+       "variable": "r_obj_1",
+       "returns_rows": false,
+       "body": [
+        {
+         "id": "b06_4_collection_in_sql#stmt-1extend",
+         "kind": "Call",
+         "sourceRange": {
+          "file": "b06_4_collection_in_sql.prc",
+          "startLine": 6,
+          "endLine": 8,
+          "startColumn": 3,
+          "endColumn": 42
+         },
+         "callee": "v_list.EXTEND"
+        },
+        {
+         "id": "b06_4_collection_in_sql#stmt-1element",
+         "kind": "Assignment",
+         "sourceRange": {
+          "file": "b06_4_collection_in_sql.prc",
+          "startLine": 6,
+          "endLine": 8,
+          "startColumn": 3,
+          "endColumn": 42
+         },
+         "target": "v_list(v_list.LAST)",
+         "expression": "emp_grade_t(r_obj_1.employee_id, r_obj_1.last_name, 'X')"
+        }
+       ]
       },
       {
-       "id": "b06_4_collection_in_sql#stmt-2",
-       "kind": "SqlOperation",
+       "id": "b06_4_collection_in_sql#stmt-2zero",
+       "kind": "Assignment",
+       "sourceRange": {
+        "file": "b06_4_collection_in_sql.prc",
+        "startLine": 10,
+        "endLine": 10,
+        "startColumn": 3,
+        "endColumn": 70
+       },
+       "target": "v_cnt",
+       "expression": "0"
+      },
+      {
+       "id": "b06_4_collection_in_sql#stmt-2loop",
+       "kind": "Loop",
        "sourceRange": {
         "file": "b06_4_collection_in_sql.prc",
         "startLine": 10,
@@ -9451,80 +10248,8 @@
        "diagnostics": [
         {
          "severity": "INFO",
-         "code": "SCHEMA",
-         "message": "SELECT: table definition unknown, access path (GET / SCAN / cross-partition) not analysed",
-         "range": {
-          "file": "b06_4_collection_in_sql.prc",
-          "startLine": 10,
-          "endLine": 10,
-          "startColumn": 3,
-          "endColumn": 70
-         }
-        },
-        {
-         "severity": "ERROR",
-         "code": "UNSUPPORTED",
-         "message": "function TABLE is not supported by ScalarDB SQL",
-         "range": {
-          "file": "b06_4_collection_in_sql.prc",
-          "startLine": 10,
-          "endLine": 10,
-          "startColumn": 3,
-          "endColumn": 70
-         }
-        },
-        {
-         "severity": "INFO",
-         "code": "PLAN_FETCH",
-         "message": "UNKNOWN: SELECT * FROM \"\" WHERE last_name LIKE 'H%'",
-         "range": {
-          "file": "b06_4_collection_in_sql.prc",
-          "startLine": 10,
-          "endLine": 10,
-          "startColumn": 3,
-          "endColumn": 70
-         }
-        },
-        {
-         "severity": "INFO",
-         "code": "PLAN_RESIDUAL",
-         "message": "H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)",
-         "range": {
-          "file": "b06_4_collection_in_sql.prc",
-          "startLine": 10,
-          "endLine": 10,
-          "startColumn": 3,
-          "endColumn": 70
-         }
-        },
-        {
-         "severity": "INFO",
-         "code": "CONFIG",
-         "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node",
-         "range": {
-          "file": "b06_4_collection_in_sql.prc",
-          "startLine": 10,
-          "endLine": 10,
-          "startColumn": 3,
-          "endColumn": 70
-         }
-        },
-        {
-         "severity": "INFO",
-         "code": "COST",
-         "message": "full scan of  (~25 us per row); pass --expected-rows table=N for an estimate",
-         "range": {
-          "file": "b06_4_collection_in_sql.prc",
-          "startLine": 10,
-          "endLine": 10,
-          "startColumn": 3,
-          "endColumn": 70
-         }
-        },
-        {
-         "severity": "INFO",
-         "code": "DESIGN",
-         "message": "table definitions unknown for : include CREATE TABLE or pass --schema to get access-path checks and key-design advice",
+         "code": "TABLE_COLLECTION",
+         "message": "TABLE(v_list) はアプリが持つコレクションなので、SQL ではなくその要素を回して数える（#54）",
          "range": {
           "file": "b06_4_collection_in_sql.prc",
           "startLine": 10,
@@ -9534,37 +10259,55 @@
          }
         }
        ],
-       "readSet": [
-        "v_cnt"
-       ],
-       "sqlKind": "SELECT",
-       "originalSql": "SELECT COUNT(*) INTO v_cnt FROM TABLE(v_list) WHERE last_name LIKE 'H%'",
-       "binds": [
+       "loopKind": "for",
+       "cursor": "i_obj_3 IN 1 .. v_list.COUNT",
+       "returns_rows": false,
+       "body": [
         {
-         "name": "v_list",
-         "direction": "IN",
-         "oracleType": "emp_grade_tab",
-         "plsqlVariable": "v_list"
+         "id": "b06_4_collection_in_sql#stmt-2row",
+         "kind": "Assignment",
+         "sourceRange": {
+          "file": "b06_4_collection_in_sql.prc",
+          "startLine": 10,
+          "endLine": 10,
+          "startColumn": 3,
+          "endColumn": 70
+         },
+         "target": "v_obj_2",
+         "expression": "v_list(i_obj_3)"
+        },
+        {
+         "id": "b06_4_collection_in_sql#stmt-2if",
+         "kind": "If",
+         "sourceRange": {
+          "file": "b06_4_collection_in_sql.prc",
+          "startLine": 10,
+          "endLine": 10,
+          "startColumn": 3,
+          "endColumn": 70
+         },
+         "branches": [
+          {
+           "condition": "v_obj_2.last_name LIKE 'H%'",
+           "body": [
+            {
+             "id": "b06_4_collection_in_sql#stmt-2count",
+             "kind": "Assignment",
+             "sourceRange": {
+              "file": "b06_4_collection_in_sql.prc",
+              "startLine": 10,
+              "endLine": 10,
+              "startColumn": 3,
+              "endColumn": 70
+             },
+             "target": "v_cnt",
+             "expression": "v_cnt + 1"
+            }
+           ]
+          }
+         ]
         }
-       ],
-       "intoTargets": [
-        "v_cnt"
-       ],
-       "accumulates_rowcount": false,
-       "intoColumns": [
-        null
-       ],
-       "intoTypes": [
-        null
-       ],
-       "intoOracleTypes": [
-        null
-       ],
-       "selectsStar": false,
-       "cardinality": "EXACTLY_ONE",
-       "atMostOneRow": true,
-       "targetStatus": "PLANNED",
-       "planId": "b06_4_collection_in_sql#stmt-2.plan.json"
+       ]
       },
       {
        "id": "b06_4_collection_in_sql#stmt-3",
@@ -13602,7 +14345,310 @@
      },
      "name": "body",
      "routineKind": "trigger-body",
+     "declarations": [
+      {
+       "id": "emp_dept_upd_v_trg.body#stmt-1v_sub_1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "emp_dept_upd_v_trg.trg",
+        "startLine": 6,
+        "endLine": 10,
+        "startColumn": 3,
+        "endColumn": 31
+       },
+       "type": {
+        "oracle": "NUMBER(4)",
+        "resolved": "NUMBER(4)",
+        "origin": "declared"
+       },
+       "name": "v_sub_1",
+       "declarationKind": "variable"
+      },
+      {
+       "id": "emp_dept_upd_v_trg.body#decl-v_fk_1",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "emp_dept_upd_v_trg.trg",
+        "startLine": 6,
+        "endLine": 10,
+        "startColumn": 3,
+        "endColumn": 31
+       },
+       "type": {
+        "oracle": "NUMBER",
+        "resolved": "NUMBER",
+        "origin": "column-type"
+       },
+       "name": "v_fk_1",
+       "declarationKind": "variable"
+      }
+     ],
      "body": [
+      {
+       "id": "emp_dept_upd_v_trg.body#stmt-1sub1block",
+       "kind": "Block",
+       "sourceRange": {
+        "file": "emp_dept_upd_v_trg.trg",
+        "startLine": 6,
+        "endLine": 10,
+        "startColumn": 3,
+        "endColumn": 31
+       },
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "SUBQUERY_READ_FIRST",
+         "message": "SET department_id の副問合せは更新する行を読まないので、UPDATE の前に同じトランザクションで読む。0 行は NULL、2 行以上は ORA-01427（Oracle と同じ）",
+         "range": {
+          "file": "emp_dept_upd_v_trg.trg",
+          "startLine": 6,
+          "endLine": 10,
+          "startColumn": 3,
+          "endColumn": 31
+         }
+        }
+       ],
+       "body": [
+        {
+         "id": "emp_dept_upd_v_trg.body#stmt-1sub1",
+         "kind": "SqlOperation",
+         "sourceRange": {
+          "file": "emp_dept_upd_v_trg.trg",
+          "startLine": 6,
+          "endLine": 10,
+          "startColumn": 3,
+          "endColumn": 31
+         },
+         "diagnostics": [
+          {
+           "severity": "INFO",
+           "code": "ACCESS",
+           "message": "SELECT: equality on secondary index -> index SCAN",
+           "range": {
+            "file": "emp_dept_upd_v_trg.trg",
+            "startLine": 6,
+            "endLine": 10,
+            "startColumn": 3,
+            "endColumn": 31
+           }
+          },
+          {
+           "severity": "WARN",
+           "code": "MULTI_ROW_INTO",
+           "message": "SELECT INTO does not reach its row by key, so it can match several and raise TOO_MANY_ROWS",
+           "range": {
+            "file": "emp_dept_upd_v_trg.trg",
+            "startLine": 6,
+            "endLine": 10,
+            "startColumn": 3,
+            "endColumn": 31
+           }
+          }
+         ],
+         "readSet": [
+          "departments"
+         ],
+         "sqlKind": "SELECT",
+         "originalSql": "SELECT department_id INTO v_sub_1 FROM departments WHERE department_name = :NEW.department_name",
+         "binds": [
+          {
+           "name": "NEW_department_name",
+           "direction": "IN",
+           "oracleType": "VARCHAR2(30)",
+           "plsqlVariable": "NEW.department_name",
+           "column": "department_name",
+           "scalardbType": "TEXT",
+           "columnOracleType": "VARCHAR2(30)"
+          }
+         ],
+         "intoTargets": [
+          "v_sub_1"
+         ],
+         "accumulates_rowcount": false,
+         "intoColumns": [
+          "department_id"
+         ],
+         "intoTypes": [
+          "INT"
+         ],
+         "intoOracleTypes": [
+          "NUMBER(4)"
+         ],
+         "selectsStar": false,
+         "cardinality": "EXACTLY_ONE",
+         "atMostOneRow": false,
+         "targetStatus": "OK",
+         "targetSql": [
+          "SELECT department_id FROM departments WHERE department_name = :NEW_department_name"
+         ]
+        }
+       ],
+       "exceptionHandlers": [
+        {
+         "id": "emp_dept_upd_v_trg.body#stmt-1sub1none",
+         "kind": "ExceptionHandler",
+         "sourceRange": {
+          "file": "emp_dept_upd_v_trg.trg",
+          "startLine": 6,
+          "endLine": 10,
+          "startColumn": 3,
+          "endColumn": 31
+         },
+         "exceptions": [
+          "NO_DATA_FOUND"
+         ],
+         "body": [
+          {
+           "id": "emp_dept_upd_v_trg.body#stmt-1sub1null",
+           "kind": "Assignment",
+           "sourceRange": {
+            "file": "emp_dept_upd_v_trg.trg",
+            "startLine": 6,
+            "endLine": 10,
+            "startColumn": 3,
+            "endColumn": 31
+           },
+           "target": "v_sub_1",
+           "expression": "NULL"
+          }
+         ]
+        },
+        {
+         "id": "emp_dept_upd_v_trg.body#stmt-1sub1many",
+         "kind": "ExceptionHandler",
+         "sourceRange": {
+          "file": "emp_dept_upd_v_trg.trg",
+          "startLine": 6,
+          "endLine": 10,
+          "startColumn": 3,
+          "endColumn": 31
+         },
+         "exceptions": [
+          "TOO_MANY_ROWS"
+         ],
+         "body": [
+          {
+           "id": "emp_dept_upd_v_trg.body#stmt-1sub1raise",
+           "kind": "Raise",
+           "sourceRange": {
+            "file": "emp_dept_upd_v_trg.trg",
+            "startLine": 6,
+            "endLine": 10,
+            "startColumn": 3,
+            "endColumn": 31
+           },
+           "errorCode": -1427,
+           "message": "'ORA-01427: single-row subquery returns more than one row'"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "emp_dept_upd_v_trg.body#stmt-1fk1",
+       "kind": "SqlOperation",
+       "sourceRange": {
+        "file": "emp_dept_upd_v_trg.trg",
+        "startLine": 6,
+        "endLine": 10,
+        "startColumn": 3,
+        "endColumn": 31
+       },
+       "diagnostics": [
+        {
+         "severity": "INFO",
+         "code": "CONSTRAINT_GUARD",
+         "message": "FOREIGN KEY emp_dept_fk の親（departments）を書く前に読む。無ければ ORA-02291 を投げる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））",
+         "range": {
+          "file": "emp_dept_upd_v_trg.trg",
+          "startLine": 6,
+          "endLine": 10,
+          "startColumn": 3,
+          "endColumn": 31
+         }
+        },
+        {
+         "severity": "INFO",
+         "code": "ACCESS",
+         "message": "SELECT: full primary key specified -> GET (single record)",
+         "range": {
+          "file": "emp_dept_upd_v_trg.trg",
+          "startLine": 6,
+          "endLine": 10,
+          "startColumn": 3,
+          "endColumn": 31
+         }
+        }
+       ],
+       "readSet": [
+        "departments"
+       ],
+       "sqlKind": "SELECT",
+       "originalSql": "SELECT department_id FROM departments WHERE department_id = v_sub_1",
+       "binds": [
+        {
+         "name": "v_sub_1",
+         "direction": "IN",
+         "oracleType": "NUMBER(4)",
+         "plsqlVariable": "v_sub_1",
+         "column": "department_id",
+         "scalardbType": "INT",
+         "columnOracleType": "NUMBER(4)"
+        }
+       ],
+       "intoTargets": [
+        "v_fk_1"
+       ],
+       "accumulates_rowcount": false,
+       "intoColumns": [
+        "department_id"
+       ],
+       "intoTypes": [
+        "INT"
+       ],
+       "intoOracleTypes": [
+        "NUMBER(4)"
+       ],
+       "selectsStar": false,
+       "cardinality": "AT_MOST_ONE",
+       "notFoundFlag": "fk1",
+       "atMostOneRow": false,
+       "targetStatus": "OK",
+       "targetSql": [
+        "SELECT department_id FROM departments WHERE department_id = :v_sub_1"
+       ]
+      },
+      {
+       "id": "emp_dept_upd_v_trg.body#stmt-1fk1if",
+       "kind": "If",
+       "sourceRange": {
+        "file": "emp_dept_upd_v_trg.trg",
+        "startLine": 6,
+        "endLine": 10,
+        "startColumn": 3,
+        "endColumn": 31
+       },
+       "branches": [
+        {
+         "condition": "v_sub_1 IS NOT NULL AND fk1%NOTFOUND",
+         "body": [
+          {
+           "id": "emp_dept_upd_v_trg.body#stmt-1fk1raise",
+           "kind": "Raise",
+           "sourceRange": {
+            "file": "emp_dept_upd_v_trg.trg",
+            "startLine": 6,
+            "endLine": 10,
+            "startColumn": 3,
+            "endColumn": 31
+           },
+           "errorCode": -2291,
+           "message": "'ORA-02291: integrity constraint (EMP_DEPT_FK) violated - parent key not found'"
+          }
+         ]
+        }
+       ]
+      },
       {
        "id": "emp_dept_upd_v_trg.body#stmt-1",
        "kind": "SqlOperation",
@@ -13627,9 +14673,9 @@
          }
         },
         {
-         "severity": "WARN",
-         "code": "CONSTRAINT_NOT_GUARDED",
-         "message": "FOREIGN KEY emp_dept_fk の値が表の値を読む式である。書く前に親を読めない",
+         "severity": "INFO",
+         "code": "CONSTRAINT_GUARD",
+         "message": "employees の FOREIGN KEY emp_dept_fk を書く前に評価する。移行先に制約は無く、違反は Oracle と同じ番号の例外になる（limits.yaml constraints.enforce: emp_job_fk / emp_dept_fk / emp_mgr_fk と emp_salary_ck。04-6-2 の FK 違反（-2291）を handler が受ける（同上））",
          "range": {
           "file": "emp_dept_upd_v_trg.trg",
           "startLine": 6,
@@ -13639,9 +14685,9 @@
          }
         },
         {
-         "severity": "ERROR",
-         "code": "EXPR",
-         "message": "SET last_name: only literals and bind markers are allowed, got ':NEW.last_name'",
+         "severity": "INFO",
+         "code": "ACCESS",
+         "message": "UPDATE: full primary key specified -> GET (single record)",
          "range": {
           "file": "emp_dept_upd_v_trg.trg",
           "startLine": 6,
@@ -13651,28 +14697,48 @@
          }
         }
        ],
-       "readSet": [
-        "departments"
-       ],
        "writeSet": [
         "employees"
        ],
        "sqlKind": "UPDATE",
-       "originalSql": "UPDATE employees\n  SET    last_name     = :NEW.last_name,\n         department_id = (SELECT department_id FROM departments\n                          WHERE  department_name = :NEW.department_name)\n  WHERE  employee_id   = :OLD.employee_id",
+       "originalSql": "UPDATE employees SET last_name = :NEW.last_name, department_id = v_sub_1 WHERE employee_id = :OLD.employee_id",
+       "binds": [
+        {
+         "name": "NEW_last_name",
+         "direction": "IN",
+         "oracleType": "VARCHAR2(25)",
+         "plsqlVariable": "NEW.last_name",
+         "column": "last_name",
+         "scalardbType": "TEXT",
+         "columnOracleType": "VARCHAR2(25)"
+        },
+        {
+         "name": "v_sub_1",
+         "direction": "IN",
+         "oracleType": "NUMBER(4)",
+         "plsqlVariable": "v_sub_1",
+         "column": "department_id",
+         "scalardbType": "INT",
+         "columnOracleType": "NUMBER(4)"
+        },
+        {
+         "name": "OLD_employee_id",
+         "direction": "IN",
+         "oracleType": "NUMBER(6)",
+         "plsqlVariable": "OLD.employee_id",
+         "column": "employee_id",
+         "scalardbType": "INT",
+         "columnOracleType": "NUMBER(6)"
+        }
+       ],
        "accumulates_rowcount": false,
-       "intoColumns": [
-        "department_id"
-       ],
-       "intoTypes": [
-        "INT"
-       ],
-       "intoOracleTypes": [
-        "NUMBER(4)"
-       ],
        "selectsStar": false,
        "cardinality": "UNKNOWN",
        "atMostOneRow": false,
-       "targetStatus": "ERROR"
+       "targetStatus": "OK",
+       "targetSql": [
+        "UPDATE employees SET last_name = :NEW_last_name, department_id = :v_sub_1 WHERE employee_id = :OLD_employee_id"
+       ]
       }
      ],
      "deterministic": false,
@@ -13715,6 +14781,20 @@
       "startColumn": 1,
       "endColumn": 1
      },
+     "diagnostics": [
+      {
+       "severity": "INFO",
+       "code": "PIPELINED",
+       "message": "PIPELINED 関数は、PIPE ROW で足した行をまとめて List で返す形にした。呼び出し側は行が出るそばから読むのではなく、全部そろってから受け取る（#54）",
+       "range": {
+        "file": "emp_grades.fnc",
+        "startLine": 2,
+        "endLine": 13,
+        "startColumn": 1,
+        "endColumn": 1
+       }
+      }
+     ],
      "name": "emp_grades",
      "routineKind": "function",
      "parameters": [
@@ -13742,13 +14822,36 @@
      ],
      "returnType": {
       "oracle": "emp_grade_tab",
-      "resolved": "emp_grade_tab",
-      "origin": "declared"
+      "resolved": "TABLE OF emp_grade_t",
+      "origin": "collection",
+      "schemaSnapshot": "schema.sql@d6f64025"
      },
+     "declarations": [
+      {
+       "id": "emp_grades#piped",
+       "kind": "Declaration",
+       "sourceRange": {
+        "file": "emp_grades.fnc",
+        "startLine": 2,
+        "endLine": 13,
+        "startColumn": 1,
+        "endColumn": 1
+       },
+       "type": {
+        "oracle": "emp_grade_tab",
+        "resolved": "TABLE OF emp_grade_t",
+        "origin": "collection",
+        "schemaSnapshot": "schema.sql@d6f64025"
+       },
+       "name": "v_piped",
+       "declarationKind": "variable",
+       "initial": "emp_grade_tab()"
+      }
+     ],
      "body": [
       {
-       "id": "emp_grades#stmt-1",
-       "kind": "Loop",
+       "id": "emp_grades#stmt-1opt",
+       "kind": "If",
        "sourceRange": {
         "file": "emp_grades.fnc",
         "startLine": 6,
@@ -13756,162 +14859,258 @@
         "startColumn": 3,
         "endColumn": 7
        },
-       "readSet": [
-        "employees"
-       ],
-       "loopKind": "cursor-for",
-       "cursor": "r IN (SELECT employee_id, last_name, salary FROM employees\n            WHERE  p_dept IS NULL OR department_id = p_dept)",
-       "query": {
-        "id": "emp_grades#stmt-1#query",
-        "kind": "SqlOperation",
-        "sourceRange": {
-         "file": "emp_grades.fnc",
-         "startLine": 6,
-         "endLine": 11,
-         "startColumn": 3,
-         "endColumn": 7
-        },
-        "diagnostics": [
-         {
-          "severity": "ERROR",
-          "code": "PRED",
-          "message": "WHERE: IS is only supported as IS [NOT] NULL on a column",
-          "range": {
-           "file": "emp_grades.fnc",
-           "startLine": 6,
-           "endLine": 11,
-           "startColumn": 3,
-           "endColumn": 7
-          }
-         },
-         {
-          "severity": "INFO",
-          "code": "PLAN_FETCH",
-          "message": "CROSS_PARTITION: SELECT employee_id, last_name, salary, department_id FROM hr.employees",
-          "range": {
-           "file": "emp_grades.fnc",
-           "startLine": 6,
-           "endLine": 11,
-           "startColumn": 3,
-           "endColumn": 7
-          }
-         },
-         {
-          "severity": "INFO",
-          "code": "PLAN_RESIDUAL",
-          "message": "H2 Oracle mode runs the original SQL (pattern P2, H2 indexes off)",
-          "range": {
-           "file": "emp_grades.fnc",
-           "startLine": 6,
-           "endLine": 11,
-           "startColumn": 3,
-           "endColumn": 7
-          }
-         },
-         {
-          "severity": "WARN",
-          "code": "PLAN_CROSS_PARTITION",
-          "message": "a fetch needs a cross-partition scan",
-          "range": {
-           "file": "emp_grades.fnc",
-           "startLine": 6,
-           "endLine": 11,
-           "startColumn": 3,
-           "endColumn": 7
-          }
-         },
-         {
-          "severity": "INFO",
-          "code": "CONFIG",
-          "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node",
-          "range": {
-           "file": "emp_grades.fnc",
-           "startLine": 6,
-           "endLine": 11,
-           "startColumn": 3,
-           "endColumn": 7
-          }
-         },
-         {
-          "severity": "INFO",
-          "code": "COST",
-          "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate",
-          "range": {
-           "file": "emp_grades.fnc",
-           "startLine": 6,
-           "endLine": 11,
-           "startColumn": 3,
-           "endColumn": 7
-          }
-         }
-        ],
-        "readSet": [
-         "employees"
-        ],
-        "sqlKind": "SELECT",
-        "originalSql": "SELECT employee_id, last_name, salary FROM employees\n            WHERE  p_dept IS NULL OR department_id = p_dept",
-        "binds": [
-         {
-          "name": "p_dept",
-          "direction": "IN",
-          "oracleType": "NUMBER",
-          "plsqlVariable": "p_dept",
-          "column": "department_id",
-          "scalardbType": "INT",
-          "columnOracleType": "NUMBER(4)"
-         }
-        ],
-        "accumulates_rowcount": false,
-        "intoColumns": [
-         "employee_id",
-         "last_name",
-         "salary"
-        ],
-        "intoTypes": [
-         "INT",
-         "TEXT",
-         "DOUBLE"
-        ],
-        "intoOracleTypes": [
-         "NUMBER(6)",
-         "VARCHAR2(25)",
-         "NUMBER(8, 2)"
-        ],
-        "selectsStar": false,
-        "cardinality": "MANY",
-        "atMostOneRow": false,
-        "targetStatus": "PLANNED",
-        "planId": "emp_grades#stmt-1#query.plan.json"
-       },
-       "variable": "r",
-       "returns_rows": false,
-       "body": [
+       "diagnostics": [
         {
-         "id": "emp_grades#stmt-2",
-         "kind": "Unsupported",
+         "severity": "INFO",
+         "code": "OPTIONAL_FILTER",
+         "message": "`p_dept IS NULL OR …` は ScalarDB SQL で書けないので、p_dept が NULL のときの問合せ（絞らない）とそれ以外（等号で絞る）に分けた",
+         "range": {
+          "file": "emp_grades.fnc",
+          "startLine": 6,
+          "endLine": 11,
+          "startColumn": 3,
+          "endColumn": 7
+         }
+        }
+       ],
+       "branches": [
+        {
+         "condition": "p_dept IS NULL",
+         "body": [
+          {
+           "id": "emp_grades#stmt-1all",
+           "kind": "Loop",
+           "sourceRange": {
+            "file": "emp_grades.fnc",
+            "startLine": 6,
+            "endLine": 11,
+            "startColumn": 3,
+            "endColumn": 7
+           },
+           "readSet": [
+            "employees"
+           ],
+           "loopKind": "cursor-for",
+           "cursor": "r IN (SELECT employee_id, last_name, salary FROM employees)",
+           "query": {
+            "id": "emp_grades#stmt-1#queryall",
+            "kind": "SqlOperation",
+            "sourceRange": {
+             "file": "emp_grades.fnc",
+             "startLine": 6,
+             "endLine": 11,
+             "startColumn": 3,
+             "endColumn": 7
+            },
+            "diagnostics": [
+             {
+              "severity": "WARN",
+              "code": "CROSS_PARTITION",
+              "message": "SELECT: predicates do not cover the partition key ['employee_id'] of employees -> cross-partition SCAN (requires scalar.db.cross_partition_scan.enabled; filtering/ordering across partitions is only recommended on JDBC backends)",
+              "range": {
+               "file": "emp_grades.fnc",
+               "startLine": 6,
+               "endLine": 11,
+               "startColumn": 3,
+               "endColumn": 7
+              }
+             },
+             {
+              "severity": "INFO",
+              "code": "CONFIG",
+              "message": "read-only (DistributedTransactionManager.beginReadOnly / SqlSession.beginReadOnly, 3.16+); scalar.db.scan_fetch_size=1000; scalar.db.cluster.client.scan_fetch_size=1000; scalar.db.cross_partition_scan.enabled=True; SERIALIZABLE re-executes every scan at commit; SNAPSHOT or READ_COMMITTED avoids it but applies to the whole node",
+              "range": {
+               "file": "emp_grades.fnc",
+               "startLine": 6,
+               "endLine": 11,
+               "startColumn": 3,
+               "endColumn": 7
+              }
+             },
+             {
+              "severity": "INFO",
+              "code": "COST",
+              "message": "full scan of employees (~25 us per row); pass --expected-rows table=N for an estimate",
+              "range": {
+               "file": "emp_grades.fnc",
+               "startLine": 6,
+               "endLine": 11,
+               "startColumn": 3,
+               "endColumn": 7
+              }
+             }
+            ],
+            "readSet": [
+             "employees"
+            ],
+            "sqlKind": "SELECT",
+            "originalSql": "SELECT employee_id, last_name, salary FROM employees",
+            "accumulates_rowcount": false,
+            "intoColumns": [
+             "employee_id",
+             "last_name",
+             "salary"
+            ],
+            "intoTypes": [
+             "INT",
+             "TEXT",
+             "DOUBLE"
+            ],
+            "intoOracleTypes": [
+             "NUMBER(6)",
+             "VARCHAR2(25)",
+             "NUMBER(8, 2)"
+            ],
+            "selectsStar": false,
+            "cardinality": "MANY",
+            "atMostOneRow": false,
+            "targetStatus": "WARN",
+            "targetSql": [
+             "SELECT employee_id, last_name, salary FROM employees"
+            ]
+           },
+           "variable": "r",
+           "returns_rows": false,
+           "body": [
+            {
+             "id": "emp_grades#stmt-2extendall",
+             "kind": "Call",
+             "sourceRange": {
+              "file": "emp_grades.fnc",
+              "startLine": 8,
+              "endLine": 10,
+              "startColumn": 5,
+              "endColumn": 77
+             },
+             "callee": "v_piped.EXTEND"
+            },
+            {
+             "id": "emp_grades#stmt-2pipeall",
+             "kind": "Assignment",
+             "sourceRange": {
+              "file": "emp_grades.fnc",
+              "startLine": 8,
+              "endLine": 10,
+              "startColumn": 5,
+              "endColumn": 77
+             },
+             "target": "v_piped(v_piped.LAST)",
+             "expression": "emp_grade_t(r.employee_id, r.last_name,\n                          CASE WHEN r.salary >= 10000 THEN 'A'\n                               WHEN r.salary >=  5000 THEN 'B' ELSE 'C' END)"
+            }
+           ]
+          }
+         ]
+        }
+       ],
+       "elseBody": [
+        {
+         "id": "emp_grades#stmt-1eq",
+         "kind": "Loop",
          "sourceRange": {
           "file": "emp_grades.fnc",
-          "startLine": 8,
-          "endLine": 10,
-          "startColumn": 5,
-          "endColumn": 77
+          "startLine": 6,
+          "endLine": 11,
+          "startColumn": 3,
+          "endColumn": 7
          },
-         "diagnostics": [
+         "readSet": [
+          "employees"
+         ],
+         "loopKind": "cursor-for",
+         "cursor": "r IN (SELECT employee_id, last_name, salary FROM employees WHERE department_id = p_dept)",
+         "query": {
+          "id": "emp_grades#stmt-1#queryeq",
+          "kind": "SqlOperation",
+          "sourceRange": {
+           "file": "emp_grades.fnc",
+           "startLine": 6,
+           "endLine": 11,
+           "startColumn": 3,
+           "endColumn": 7
+          },
+          "diagnostics": [
+           {
+            "severity": "INFO",
+            "code": "ACCESS",
+            "message": "SELECT: equality on secondary index -> index SCAN",
+            "range": {
+             "file": "emp_grades.fnc",
+             "startLine": 6,
+             "endLine": 11,
+             "startColumn": 3,
+             "endColumn": 7
+            }
+           }
+          ],
+          "readSet": [
+           "employees"
+          ],
+          "sqlKind": "SELECT",
+          "originalSql": "SELECT employee_id, last_name, salary FROM employees WHERE department_id = p_dept",
+          "binds": [
+           {
+            "name": "p_dept",
+            "direction": "IN",
+            "oracleType": "NUMBER",
+            "plsqlVariable": "p_dept",
+            "column": "department_id",
+            "scalardbType": "INT",
+            "columnOracleType": "NUMBER(4)"
+           }
+          ],
+          "accumulates_rowcount": false,
+          "intoColumns": [
+           "employee_id",
+           "last_name",
+           "salary"
+          ],
+          "intoTypes": [
+           "INT",
+           "TEXT",
+           "DOUBLE"
+          ],
+          "intoOracleTypes": [
+           "NUMBER(6)",
+           "VARCHAR2(25)",
+           "NUMBER(8, 2)"
+          ],
+          "selectsStar": false,
+          "cardinality": "MANY",
+          "atMostOneRow": false,
+          "targetStatus": "OK",
+          "targetSql": [
+           "SELECT employee_id, last_name, salary FROM employees WHERE department_id = :p_dept"
+          ]
+         },
+         "variable": "r",
+         "returns_rows": false,
+         "body": [
           {
-           "severity": "WARN",
-           "code": "UNSUPPORTED_CONSTRUCT",
-           "message": "Pipe_row_statement is not lowered yet; the routine cannot be AUTO while it is present",
-           "range": {
+           "id": "emp_grades#stmt-2extendeq",
+           "kind": "Call",
+           "sourceRange": {
             "file": "emp_grades.fnc",
             "startLine": 8,
             "endLine": 10,
             "startColumn": 5,
             "endColumn": 77
-           }
+           },
+           "callee": "v_piped.EXTEND"
+          },
+          {
+           "id": "emp_grades#stmt-2pipeeq",
+           "kind": "Assignment",
+           "sourceRange": {
+            "file": "emp_grades.fnc",
+            "startLine": 8,
+            "endLine": 10,
+            "startColumn": 5,
+            "endColumn": 77
+           },
+           "target": "v_piped(v_piped.LAST)",
+           "expression": "emp_grade_t(r.employee_id, r.last_name,\n                          CASE WHEN r.salary >= 10000 THEN 'A'\n                               WHEN r.salary >=  5000 THEN 'B' ELSE 'C' END)"
           }
-         ],
-         "text": "PIPE ROW (emp_grade_t(r.employee_id, r.last_name,\n                          CASE WHEN r.salary >= 10000 THEN 'A'\n                               WHEN r.salary >=  5000 THEN 'B' ELSE 'C' END))",
-         "construct": "Pipe_row_statement"
+         ]
         }
        ]
       },
@@ -13924,7 +15123,8 @@
         "endLine": 12,
         "startColumn": 3,
         "endColumn": 3
-       }
+       },
+       "expression": "v_piped"
       }
      ],
      "deterministic": false,

@@ -128,7 +128,7 @@ IDENTITY 列と DDL の `DEFAULT` 句は生成器が INSERT に足す（省く�
 
 **選び方。** まず生成器に掛けさせ、`TRIGGER_NOT_APPLIED` / `TRIGGER_REDESIGN` が残る所（1 行に絞れない更新、
 MERGE、条件つきの `:NEW` の代入）だけを手で設計する。直接の書き込みを権限で禁じ、照合ジョブで差を追う。
-view への INSTEAD OF trigger は view ごと設計し直す（#56）。
+view への INSTEAD OF trigger は、本体は単体で生成できる（:NEW / :OLD は view の列の型で受け取る、#56）。view へ書く経路は移行先に view が無いので、書く側を表への書き込みとして設計し直す。
 
 ## 7. package 変数（セッション状態）
 
@@ -166,8 +166,8 @@ view への INSTEAD OF trigger は view ごと設計し直す（#56）。
 
 文字列が定数の動的 SQL は決めなくても静的な文として下ろす（#52）。`RETURNING INTO` 付きの DML は静的な
 `UPDATE … RETURNING` と同じ経路（RMW の分割は `rowLocks.optimistic` の決定が要る）、動的 PL/SQL ブロックは
-placeholder を名前で戻してその場の block に、`OPEN rc FOR '定数'` は静的な `OPEN FOR SELECT` になる。`DBMS_SQL` は
-まだ模していない（#53）。
+placeholder を名前で戻してその場の block に、`OPEN rc FOR '定数'` は静的な `OPEN FOR SELECT` になる。`DBMS_SQL` も
+PARSE の文字列が定数の問合せなら静的な cursor FOR ループになる（#53）。文字列が実行時に決まる DBMS_SQL は断る。
 
 routine の中の DDL（`EXECUTE IMMEDIATE 'CREATE TABLE …'`）は、ScalarDB がトランザクションの中で流さず、スキーマは
 Schema Loader が持つので、生成器は理由つきで断る。

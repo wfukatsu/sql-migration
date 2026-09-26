@@ -286,6 +286,12 @@ _QUALIFIED_CALL = re.compile(r"\b([A-Za-z][\w$#]*)\.([A-Za-z][\w$#]*)\s*\(")
 _COLLECTION_METHODS = {"count", "exists", "first", "last", "next", "prior", "delete", "extend", "trim", "limit"}
 
 
+def _collection_method(callee: str | None, declared: set[str]) -> bool:
+    """`v_list.EXTEND;` on a local collection is a method of the variable, not a call into another routine."""
+    head, _, tail = (callee or "").strip().partition(".")
+    return head.lower() in declared and tail.lower() in _COLLECTION_METHODS
+
+
 def _declared_names(module: M.Module, routine: M.Routine) -> set[str]:
     names = {d.name.lower() for d in list(routine.declarations) + list(module.declarations)}
     names |= {p.name.lower() for p in routine.parameters}
@@ -322,7 +328,7 @@ def build_call_graph(program: M.Program) -> CallGraph:
                         statement.resolved_to = resolved
                     elif overloaded(statement.callee, by_name, module.name):
                         _unresolved_overload(statement, statement.callee.strip())
-                    elif resolved is None:
+                    elif resolved is None and not _collection_method(statement.callee, declared):
                         graph.external[routine.id].add(statement.callee.strip())
                 # A function call is usually not a statement: `v := order_total(id)` is an assignment, and a
                 # condition may call one too. Looking only at Call nodes found one edge in the whole corpus and

@@ -1,8 +1,8 @@
 # PL/SQL 移行 インベントリ（Phase 1）
 
-- 解析対象: 36 モジュール / 41 routine / 328 文
+- 解析対象: 36 モジュール / 41 routine / 362 文
 - DDL スナップショット: `schema.sql@d6f64025`
-- 診断: 270 件（うち ERROR 9 件）
+- 診断: 285 件（うち ERROR 5 件）
 
 > この数値は**合成 corpus 上の値**であり、実案件の PL/SQL に対する耐性を示すものではない（実装計画 §9、docs/design/plsql-kpi.md §0）。
 
@@ -11,11 +11,11 @@
 | KPI | 値 | 目標 |
 |---|---|---|
 | parse 率 | 100.0%（37/37） | Phase 1 で 90% 以上 |
-| 型解決率 | 99.3%（138/139） | Phase 1 で 95% 以上 |
+| 型解決率 | 99.3%（146/147） | Phase 1 で 95% 以上 |
 
 ## AUTO を妨げる条件が既に見えている routine
 
-22 / 41 routine。判定そのものは P2-2 のルールが行う。ここは IR に既にある証拠を並べただけである。
+21 / 41 routine。判定そのものは P2-2 のルールが行う。ここは IR に既にある証拠を並べただけである。
 
 | routine | 条件 |
 |---|---|
@@ -38,7 +38,6 @@
 | `emp_biu_trg.body` | trigger |
 | `emp_dept_cap_trg.body` | trigger |
 | `emp_dept_upd_v_trg.body` | trigger |
-| `emp_grades` | unmodelled-construct |
 | `emp_salary_audit_trg.body` | trigger |
 | `log_msg` | transaction-control-in-routine, autonomous-transaction |
 
@@ -46,16 +45,9 @@
 
 - **ERROR** `ORDER` main query: ORDER BY expression 1 -- sort in the application（b04_4_2_cursor_for_loop.prc:12-14）
 - **ERROR** `SCAN_AFTER_WRITE` employees was written earlier in this transaction; ScalarDB refuses to scan it（b05_3_call_emp_api.prc:8）
-- **ERROR** `SQL_PARSE` ParseError: Invalid expression / Unexpected token. Line 3, Col: 38.
-  PDATE employees SET salary = salary + 10
-    WHERE  department_id = v_depts(i)
-    RETURNING salary [4mBULK COLLECT INTO[0m v_new_sal（b06_2_2_forall_returning.prc:8-10）
+- **ERROR** `SCAN_AFTER_WRITE` employees was written earlier in this transaction; ScalarDB refuses to scan it（b06_2_2_forall_returning.prc:8-10）
 - **ERROR** `ORDER` main query: ORDER BY expression 1 -- sort in the application（b06_3_native_dynamic_sql.prc:28-32）
 - **ERROR** `SCAN_AFTER_WRITE` employees was written earlier in this transaction; ScalarDB refuses to scan it（b06_3_native_dynamic_sql.prc:28-32）
-- **ERROR** `PROJECTION` main query: expressions in the select list (EMP_GRADE_T(employee_id, last_name, 'X')) -- compute them in the application（b06_4_collection_in_sql.prc:6-8）
-- **ERROR** `UNSUPPORTED` function TABLE is not supported by ScalarDB SQL（b06_4_collection_in_sql.prc:10）
-- **ERROR** `EXPR` SET last_name: only literals and bind markers are allowed, got ':NEW.last_name'（emp_dept_upd_v_trg.trg:6-10）
-- **ERROR** `PRED` WHERE: IS is only supported as IS [NOT] NULL on a column（emp_grades.fnc:6-11）
 - **WARN** `UNRESOLVED_TYPE` c_emp%ROWTYPE: no table c_emp in the DDL snapshot（b04_4_1_explicit_cursor.prc:1-16）
 - **WARN** `UNRESOLVED_TYPE` c%ROWTYPE: no table c in the DDL snapshot（b06_1_bulk_collect_limit.prc:1-18）
 
@@ -78,11 +70,11 @@
 | `b05_3_call_emp_api` | procedure | 1 | 10 | — |
 | `b05_4_call_log_msg` | procedure | 1 | 15 | — |
 | `b06_1_bulk_collect_limit` | procedure | 1 | 6 | — |
-| `b06_2_2_forall_returning` | procedure | 1 | 6 | — |
+| `b06_2_2_forall_returning` | procedure | 1 | 22 | — |
 | `b06_2_forall_save_exceptions` | procedure | 1 | 10 | — |
-| `b06_3_6_dbms_sql` | procedure | 1 | 11 | — |
+| `b06_3_6_dbms_sql` | procedure | 1 | 8 | — |
 | `b06_3_native_dynamic_sql` | procedure | 1 | 27 | — |
-| `b06_4_collection_in_sql` | procedure | 1 | 3 | — |
+| `b06_4_collection_in_sql` | procedure | 1 | 11 | — |
 | `b06_5_2_scheduler_job` | procedure | 1 | 1 | — |
 | `b06_5_builtin_packages` | procedure | 1 | 5 | — |
 | `b06_6_conditional_compilation` | procedure | 1 | 2 | — |
@@ -93,8 +85,8 @@
 | `emp_api` | package | 6 | 49 | あり |
 | `emp_biu_trg` | trigger | 1 | 3 | — |
 | `emp_dept_cap_trg` | trigger | 1 | 2 | — |
-| `emp_dept_upd_v_trg` | trigger | 1 | 1 | — |
-| `emp_grades` | function | 1 | 4 | — |
+| `emp_dept_upd_v_trg` | trigger | 1 | 8 | — |
+| `emp_grades` | function | 1 | 10 | — |
 | `emp_salary_audit_trg` | trigger | 1 | 4 | — |
 | `log_msg` | procedure | 1 | 2 | — |
 | `normalize_name` | procedure | 1 | 1 | — |
@@ -104,18 +96,17 @@
 
 | 種別 | 件数 |
 |---|---|
-| Call | 97 |
-| SqlOperation | 70 |
-| If | 47 |
-| Assignment | 31 |
-| Loop | 28 |
-| Raise | 20 |
+| Call | 99 |
+| SqlOperation | 77 |
+| If | 54 |
+| Assignment | 43 |
+| Loop | 31 |
+| Raise | 23 |
 | Rollback | 8 |
-| Block | 7 |
+| Block | 8 |
 | Return | 6 |
 | DynamicSql | 5 |
 | Exit | 3 |
 | Commit | 3 |
 | Case | 1 |
 | Continue | 1 |
-| Unsupported | 1 |

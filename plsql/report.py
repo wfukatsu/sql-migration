@@ -166,6 +166,21 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
 
         build_call_graph(program)
         carry(program, package_state)
+    # #54: schema object types. The generator types a record / a collection of records from them, and the SQL
+    # that builds or reads them (a constructor in the select list, TABLE(collection), PIPE ROW) becomes code
+    from .gen_java.types import set_object_types
+    set_object_types({name: schema.object_record(name) for name in schema.object_types} if schema else {})
+    from . import objects
+    objects.rewrite(program, schema, analysis.symbol_table())
+    # #53: DBMS_SQL over a constant query is a static cursor FOR loop
+    from . import dbms_sql
+    dbms_sql.rewrite(program, schema)
+    # #56: an uncorrelated scalar subquery in SET is read before the UPDATE (same transaction, same answer)
+    from . import subquery
+    subquery.rewrite(program, schema, analysis.symbol_table())
+    # `WHERE p IS NULL OR col = p`: two queries, chosen by the value of p
+    from . import optional_filter
+    optional_filter.rewrite(program)
     # #48: a function with OUT / IN OUT arguments (a carried package variable included) called inside an
     # expression becomes a call statement of its own, so the generator can unpack its result record
     from . import hoist
