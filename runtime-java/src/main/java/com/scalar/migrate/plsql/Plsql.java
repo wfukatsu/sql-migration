@@ -922,6 +922,76 @@ public final class Plsql {
     for (int i = num(n).intValueExact(); i > 0 && !list.isEmpty(); i--) list.remove(list.size() - 1);
   }
 
+  /**
+   * An explicit cursor opened in a shape the generator does not rewrite to a loop or a single read (#81). OPEN
+   * reads every row -- Oracle's cursor is read-consistent as of its OPEN too, and ScalarDB holds no cursor across
+   * statements -- and each FETCH takes the next. The attributes are Oracle's: %FOUND / %NOTFOUND are NULL before
+   * the first FETCH, %ROWCOUNT counts the rows fetched so far, and every one but %ISOPEN raises INVALID_CURSOR on a
+   * cursor that is not open.
+   */
+  public static final class Cursor {
+    private final boolean variable;
+    private java.util.List<Object[]> rows;
+    private int position;
+    private Boolean found;
+
+    /** {@code variable}: a cursor variable ({@code OPEN cv FOR ...}), which OPEN may reopen without a CLOSE. */
+    public Cursor(boolean variable) {
+      this.variable = variable;
+    }
+
+    /** The rows of the query: {@code Object[]} from a direct read, a {@code List} per row from a plan. */
+    public void open(java.util.List<?> rows) {
+      if (this.rows != null && !variable) {
+        throw new IllegalStateException("CURSOR_ALREADY_OPEN (ORA-06511): cursor already open");
+      }
+      java.util.List<Object[]> out = new java.util.ArrayList<>(rows.size());
+      for (Object row : rows) out.add(row instanceof Object[] a ? a : ((java.util.List<?>) row).toArray());
+      this.rows = out;
+      this.position = 0;
+      this.found = null;
+    }
+
+    /** The next row, or null -- the FETCH then leaves its targets as they were, as Oracle's does. */
+    public Object[] fetch() {
+      open();
+      if (position < rows.size()) {
+        found = true;
+        return rows.get(position++);
+      }
+      found = false;
+      return null;
+    }
+
+    public void close() {
+      open();
+      rows = null;
+    }
+
+    public Boolean found() {
+      open();
+      return found;
+    }
+
+    public Boolean notFound() {
+      open();
+      return found == null ? null : !found;
+    }
+
+    public BigDecimal rowCount() {
+      open();
+      return BigDecimal.valueOf(position);
+    }
+
+    public boolean isOpen() {
+      return rows != null;
+    }
+
+    private void open() {
+      if (rows == null) throw new IllegalStateException("INVALID_CURSOR (ORA-01001): invalid cursor");
+    }
+  }
+
   // DBMS_OUTPUT: the session's output buffer. Per thread here; nothing is written to a table, so a comparison
   // of table state never sees it. `output()` hands the lines back and clears the buffer.
   private static final ThreadLocal<java.util.List<String>> OUTPUT = ThreadLocal.withInitial(java.util.ArrayList::new);

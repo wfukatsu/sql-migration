@@ -293,7 +293,11 @@ class Scope:
     symbols: dict[str, Symbol] = field(default_factory=dict)
 
     def declare(self, symbol: Symbol) -> None:
-        self.symbols.setdefault(symbol.name.lower(), symbol)
+        known = self.symbols.setdefault(symbol.name.lower(), symbol)
+        if known is not symbol and known.kind == symbol.kind == "cursor" and not known.query and symbol.query:
+            # `CURSOR c RETURN t;` in the specification, `CURSOR c RETURN t IS SELECT ...` in the body: the query
+            # is the body's (oracle-plsql-docs 10-9, #81)
+            known.query, known.parameters = symbol.query, symbol.parameters
 
     def resolve(self, name: str) -> Symbol | None:
         scope: Scope | None = self
@@ -390,9 +394,13 @@ class _Builder:
         # a body declares under Declare_spec, a specification under Package_obj_spec. Walking only the first
         # means a package's own RECORD type -- declared in the specification, used throughout the body -- is
         # never recorded, and every reference to it resolves to an opaque name.
-        for declaration in _descend(context, {"Declare_specContext", "Package_obj_specContext"},
-                                    stop=ROUTINE_BODIES):
-            self._declaration(scope, declaration)
+        # a body's `CURSOR c RETURN t IS SELECT ...` -- defining the cursor its specification declared -- sits
+        # directly under the body, in neither (oracle-plsql-docs 10-9, #81)
+        for declaration in _descend(context, {"Declare_specContext", "Package_obj_specContext",
+                                              "Cursor_declarationContext"}, stop=ROUTINE_BODIES):
+            # `_declaration` looks below what it is given, so a cursor definition goes in by its parent
+            self._declaration(scope, declaration.parentCtx
+                              if type(declaration).__name__ == "Cursor_declarationContext" else declaration)
         from .lower import _routine_name, overload_ordinals
 
         bodies = list(_descend(context, ROUTINE_BODIES))

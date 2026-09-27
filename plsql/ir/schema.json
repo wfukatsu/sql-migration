@@ -1406,6 +1406,15 @@
             "string",
             "null"
           ]
+        },
+        "opens_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cursor_variable": {
+          "type": "boolean"
         }
       }
     },

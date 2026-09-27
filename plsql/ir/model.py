@@ -240,6 +240,11 @@ class SqlOperation(Statement):
     # `SET ROW = rec` / `SET key = v` whose WHERE pins the key to `w`: the key left the SET, and the generated code
     # checks v = w before the UPDATE -- ScalarDB cannot move a row to another key (#92). {column, value, where}
     key_guards: list[dict] = field(default_factory=list)
+    # #81: an explicit cursor's OPEN in no shape cursors.py rewrites. The query's rows are read here -- a cursor
+    # is read-consistent as of its OPEN in Oracle too -- and each FETCH of the cursor takes the next one.
+    # `cursor_variable`: `OPEN cv FOR ...`, which Oracle lets reopen without a CLOSE
+    opens_cursor: str | None = None
+    cursor_variable: bool | None = None
 
 
 @dataclass

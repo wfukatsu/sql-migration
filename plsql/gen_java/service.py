@@ -623,6 +623,10 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
                 # が for の変数になる。ここでも宣言すると同じ名前が 2 つになる
                 continue
             _declaration(f, declaration, routine, result)
+        for cursor, variable in _general_cursors(routine).items():
+            f.add_import("com.scalar.migrate.plsql.Plsql")
+            f.line(f"Plsql.Cursor {_cursor_state(cursor)} = new Plsql.Cursor({'true' if variable else 'false'});"
+                   f"   // {cursor}")
         for flag in _not_found_flags(routine):
             # `c%NOTFOUND` after an explicit cursor's first FETCH (#11). It is declared with the locals, not at
             # the read, because the branch that asks may sit in a different block from the read that answers.
@@ -1203,6 +1207,12 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
         file.line("// NULL;")
     elif kind == "Call":
         _call(file, statement, routine, result)
+    elif kind in ("Fetch", "CloseCursor") and \
+            (statement.cursor or "").split("(")[0].strip().lower() in _general_cursors(routine):
+        if kind == "Fetch":
+            _fetch(file, statement, routine)
+        else:
+            file.line(f"{_cursor_state((statement.cursor or '').split('(')[0].strip().lower())}.close();")
     elif kind == "SqlOperation":
         _sql(file, statement, routine)
     elif kind == "DynamicSql":
@@ -1883,6 +1893,14 @@ def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine
     # a bind lifted out of the SQL (P4-4) is computed inside the repository from the other binds, so it is not
     # passed in. The repository's parameter list is built from the same rule; the two have to agree.
     arguments = _arguments(file, statement, routine, None)
+    if getattr(statement, "opens_cursor", None):
+        # an explicit cursor's OPEN (#81): its rows are read now, and each FETCH takes the next. A plan hands its
+        # rows back as lists; the cursor takes either
+        planned = statement.plan_id or statement.target_status == "PLANNED"
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        file.line(f"{_cursor_state(statement.opens_cursor)}.open(repository.{method}({arguments})"
+                  f"{'.rows()' if planned else ''});")
+        return
     if statement.plan_id or statement.target_status == "PLANNED":
         # the plan hands back rows, and turning them into the PL/SQL variables is a decision (which row? what
         # when there are none?), so it is left to the reviewer rather than guessed
@@ -2068,9 +2086,49 @@ def _first_row(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, me
     if statement.not_found_flag:
         file.line(f"{_flag_name(statement.not_found_flag)} = {row} == null;")
     with file.block(f"if ({row} != null)") as f:
-        for index, target in enumerate(targets):
-            value = _into(f, f"{row}[{index}]", _local_type(routine, target))
-            f.line(f"{_local(target)} = {value};")
+        _assign_row(f, routine, targets, row)
+
+
+def _assign_row(file: JavaFile, routine: M.Routine, targets: list[str], row: str) -> None:
+    """FETCH a row INTO its targets: one value per scalar target, or -- when the only target is a record -- the
+    record built from every column. Casting column 0 to the record (`job1 = (CRow) row[0]`) compiled and threw at
+    run time (#81)."""
+    holder = _holder(routine, targets[0]) if len(targets) == 1 else None
+    record = record_class(holder.type) if holder is not None else None
+    if record is not None:
+        fields = record_columns(holder.type.resolved or "")
+        for _, kind in fields:
+            file.add_import(*java_type(kind).imports)
+        values = ", ".join(_into(file, f"{row}[{index}]", java_type(kind).name) for index, (_, kind) in enumerate(fields))
+        file.line(f"{_local(targets[0])} = new {record}({values});")
+        return
+    for index, target in enumerate(targets):
+        value = _into(file, f"{row}[{index}]", _local_type(routine, target))
+        file.line(f"{_local(target)} = {value};")
+
+
+def _cursor_state(cursor: str) -> str:
+    return java_name(f"{cursor}_cursor")
+
+
+def _general_cursors(routine: M.Routine) -> dict[str, bool]:
+    """The cursors whose OPEN reads the rows its FETCHes take (#81), each with whether it is a cursor variable."""
+    out: dict[str, bool] = {}
+    for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
+        cursor = getattr(statement, "opens_cursor", None)
+        if cursor:
+            out[cursor.lower()] = out.get(cursor.lower(), False) or bool(getattr(statement, "cursor_variable", False))
+    return out
+
+
+def _fetch(file: JavaFile, statement: M.CursorStatement, routine: M.Routine) -> None:
+    """`FETCH c INTO ...` of a cursor whose OPEN read its rows (#81). No row leaves the targets as they were."""
+    cursor = (statement.cursor or "").split("(")[0].strip().lower()
+    file.add_import("com.scalar.migrate.plsql.Plsql")
+    with file.block("") as f:   # its own scope: a routine fetches more than once
+        f.line(f"Object[] row_ = {_cursor_state(cursor)}.fetch();")
+        with f.block("if (row_ != null)") as g:
+            _assign_row(g, routine, list(statement.into_targets), "row_")
 
 
 def _into(file: JavaFile, value: str, target_type: str) -> str:
@@ -2088,6 +2146,12 @@ def _into(file: JavaFile, value: str, target_type: str) -> str:
         # ScalarDB の TIMESTAMPTZ 列は Instant で返る。cast すると落ちる（`last_paid_at` / 2026-09-19）
         file.add_import("com.scalar.migrate.plsql.Plsql")
         return f"Plsql.zoned({value})"
+    helper = {"Integer": "toInt", "Long": "toLong", "Double": "toDouble", "Float": "toFloat"}.get(target_type)
+    if helper:
+        # a column read comes back as whatever JDBC or the plan's H2 hands over -- a BigDecimal for an Integer
+        # local cast and threw (#81, a cursor read through a plan)
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        return f"Plsql.{helper}({value})"
     return f"({target_type}) {value}"
 
 
@@ -2432,6 +2496,10 @@ def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "Service
     names = {**_scope(routine, module or _MODULE.get()), **_BLOCK_LOCALS.get(), **_LOOP_ROWS.get(),
              **_HANDLER_ERROR.get()}
     names.update({f"{flag}%notfound": _flag_name(flag) for flag in _not_found_flags(routine)})
+    for cursor in _general_cursors(routine):
+        state = _cursor_state(cursor)
+        names.update({f"{cursor}%found": f"{state}.found()", f"{cursor}%notfound": f"{state}.notFound()",
+                      f"{cursor}%rowcount": f"{state}.rowCount()", f"{cursor}%isopen": f"{state}.isOpen()"})
     rendered = translate(text, names, boolean_value=boolean_value, condition=condition, as_text=as_text)
     for name in rendered.unknown:
         if result is not None and name not in result.unknown_names:

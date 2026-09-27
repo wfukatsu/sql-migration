@@ -355,7 +355,7 @@ def _direct(file: JavaFile, name: str, statement: M.SqlOperation, result: Reposi
                 g.line("return statement.executeUpdate();")
             elif statement.cardinality == "AT_MOST_ONE":
                 _first_row(g, reader)
-            elif statement.cardinality == "MANY" and statement.into_targets:
+            elif statement.cardinality == "MANY" and (statement.into_targets or getattr(statement, "opens_cursor", None)):
                 _all_rows(g, reader)
             elif statement.into_targets:
                 _select_into(g, reader, statement)
@@ -592,6 +592,10 @@ def _parameters(file: JavaFile, statement: M.SqlOperation) -> tuple[list[str], l
 def _return(file: JavaFile, statement: M.SqlOperation) -> tuple[str, str]:
     if (statement.sql_kind or "").upper() in ("INSERT", "UPDATE", "DELETE", "MERGE"):
         return "int", ""   # SQL%ROWCOUNT is part of the behaviour
+    if getattr(statement, "opens_cursor", None):
+        # an explicit cursor's OPEN (#81): every row, each as the columns the query selects; FETCH takes them
+        return "List<Object[]>", "new Object[] {" + ", ".join(
+            _read(file, statement, i) for i in range(1, len(statement.into_columns or []) + 1)) + "}"
     if statement.into_targets:
         if statement.cardinality == "MANY":
             # BULK COLLECT (#66): every row, each as its columns; the service hands column i to collection i

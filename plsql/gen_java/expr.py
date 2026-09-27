@@ -327,7 +327,8 @@ class _Parser:
         if rendered in ("true", "false"):
             return True
         if self.position == start + 1 and self.tokens[start][0] == "attribute":
-            return True
+            # except a cursor read at OPEN (#81): its %FOUND / %NOTFOUND are NULL before the first FETCH
+            return not rendered.endswith((".found()", ".notFound()"))
         return rendered.startswith("(") and rendered.endswith(")") and any(op in rendered for op in ("==", "!=", " > "))
 
     def _predicate(self, negated: bool, plain: str, opposite: str, arguments: str) -> str:
