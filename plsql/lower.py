@@ -270,6 +270,9 @@ class _Lowerer:
         # Descending only into `Declare_spec` made package state invisible -- and STATE-001 unable to fire.
         module.declarations.extend(self._declarations(
             context, ids, name, stop={"Procedure_bodyContext", "Function_bodyContext"}))
+        # a package's own `e_dup EXCEPTION; PRAGMA EXCEPTION_INIT(e_dup, -1);`: only the routines' were bound, and
+        # `WHEN e_dup` caught a class nothing raised (#101). The PRAGMA sits outside every routine, in the package
+        _bind_exception_codes(module, _text(context))
         if not spec:
             bodies = list(_descend(context, {"Procedure_bodyContext", "Function_bodyContext"}))
             self.module_routines = {_routine_name(b).lower() for b in bodies}
@@ -621,6 +624,7 @@ class _Lowerer:
             # procedure's `x` as a second `x` of the block)
             node.declarations = self._declarations(context, ids, self.routine_id,
                                                    stop={"BodyContext"} | NESTED_SUBPROGRAMS)
+            _bind_exception_codes(node, _text(context))
         node.body = self._statements(_child(body, "Seq_of_statementsContext") or body, ids)
         if inner is not None:
             # a subprogram in a nested block's DECLARE is not lifted (#80 lifts the routine's own); it is kept
@@ -1279,7 +1283,7 @@ def walk_scoped(statements: list[M.Statement],
 EXCEPTION_INIT = r"\bPRAGMA\s+EXCEPTION_INIT\s*\(\s*{name}\s*,\s*(?P<code>-?\d+)\s*\)"
 
 
-def _bind_exception_codes(routine: M.Routine, text: str) -> None:
+def _bind_exception_codes(routine: "M.Routine | M.Module | M.Block", text: str) -> None:
     """`PRAGMA EXCEPTION_INIT(e_locked, -54)` の番号を、その例外の宣言に載せる。
 
     これが無いと、宣言した例外は**移行先で作った番号**を持つことになり、「Oracle のどの誤りを

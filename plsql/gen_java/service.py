@@ -30,7 +30,7 @@ from . import split
 from .dto import loop_component_type
 from .emit import JavaFile
 from .expr import SEQUENCES_IMPORT, translate
-from .types import signature_type, record_class, java_class_name, java_name, java_type, record_columns, result_record_name, routine_stem
+from .types import COLLECTION as _COLLECTION_TYPE, signature_type, record_class, java_class_name, java_name, java_type, record_columns, result_record_name, routine_stem
 
 # the module being generated, so an expression can resolve a sibling routine without threading it through
 # every statement helper
@@ -68,6 +68,9 @@ class ServiceFile:
     routines: list[str] = field(default_factory=list)
     untranslated: list[str] = field(default_factory=list)
     unknown_names: list[str] = field(default_factory=list)
+    # predefined exceptions a WHEN OTHERS turns a runtime error into (`_guarded`): their classes have to be written
+    # although no PL/SQL names them (#99)
+    predefined: set[str] = field(default_factory=set)
 
 
 def generate_module(module: M.Module, package: str, repository_package: str,
@@ -659,7 +662,8 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
             f.line(f"return new {returns}({', '.join(components)});")
         elif returns != "void" and not outs and not _always_exits(routine, result):
             f.line("// the PL/SQL falls through here; Oracle raises ORA-06503 when a function does")
-            f.line('throw new IllegalStateException("function reached its end without RETURN");')
+            f.add_import("com.scalar.migrate.plsql.Plsql")
+            f.line("throw new Plsql.NoReturn();")
     if routine.id not in result.routines:
         # 割った部品は同じ routine から出た複数の method である（#24）。数えるのは routine のほう
         result.routines.append(routine.id)
@@ -756,29 +760,57 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
 
 def _guarded(file: JavaFile, handlers: list[M.ExceptionHandler], body: list[M.Statement],
              routine: M.Routine, result: ServiceFile, domain_package: str) -> None:
-    """The body of a `try`. Where a handler could catch a division by zero -- ZERO_DIVIDE by name, or OTHERS --
-    the helper's `Plsql.ZeroDivide` becomes the migrated `ZeroDivideException` first, so that the catch is one it
-    can reach. `catch (ZeroDivideException e)` on its own was dead code: the helper threw ArithmeticException.
-    The same goes for VALUE_ERROR and the `Plsql.ValueError` a constrained declaration raises (`Plsql.fit`)."""
+    """The body of a `try`. The runtime raises Oracle's predefined errors as its own types (`Plsql.ZeroDivide`,
+    `Plsql.NoDataFound`, ...); where a handler could catch one -- by its name, by a name `PRAGMA EXCEPTION_INIT`
+    bound to its number, or OTHERS -- it becomes the migrated class first, so that the catch is one it can reach.
+    `catch (ZeroDivideException e)` on its own was dead code: the helper threw ArithmeticException. And a missing
+    element of a collection was an IllegalStateException that no handler caught at all (#99)."""
+    from .exception import PREDEFINED, class_of
+
     names = {e.upper() for h in handlers for e in h.exceptions}
-    raised = [(helper, migrated, variable) for oracle, helper, migrated, variable in _HELPER_ERRORS
-              if names & {oracle, "OTHERS"}]
+    classes = {name: class_of(name, routine, _MODULE.get(), program=_PROGRAM.get())
+               for name in names if name != "OTHERS"}
+    raised = []
+    for oracle, helper, code in _HELPER_ERRORS:
+        # the class the handler names for this number: the predefined one, or a declared exception bound to it
+        migrated = next((cls for name, (bound, cls) in sorted(classes.items()) if bound == code), None)
+        if migrated is None and "OTHERS" in names:
+            # an error without a predefined name (ORA-01426, ORA-06503) reaches OTHERS as the base class
+            migrated = PREDEFINED[oracle][0] if oracle else "MigratedException"
+            if oracle:
+                result.predefined.add(oracle)
+        if migrated is not None:
+            raised.append((helper, migrated, code))
     if not raised:
         _statements(file, body, routine, result)
         return
     file.add_import("com.scalar.migrate.plsql.Plsql")
     with file.block("try") as inner:
         _statements(inner, body, routine, result)
-    for helper, migrated, variable in raised:
+    for helper, migrated, code in raised:
         if domain_package:
             file.add_import(f"{domain_package}.{migrated}")
-        with file.block(f"catch (Plsql.{helper} {variable})") as translated:
-            translated.line(f"throw new {migrated}({variable}.getMessage());")
+        # one variable name for every translation: each catch is its own scope, and a name no PL/SQL identifier
+        # becomes cannot shadow a local (`size`, the old name for VALUE_ERROR, could)
+        with file.block(f"catch (Plsql.{helper} raised_)") as translated:
+            if migrated == "MigratedException":
+                translated.line(f"throw new MigratedException({code}, raised_.getMessage());")
+            else:
+                translated.line(f"throw new {migrated}(raised_.getMessage());")
 
 
-# Oracle's name, the runtime helper's own exception, the migrated class a handler names, the catch variable
-_HELPER_ERRORS = (("ZERO_DIVIDE", "ZeroDivide", "ZeroDivideException", "zero"),
-                  ("VALUE_ERROR", "ValueError", "ValueErrorException", "size"))
+# Oracle's predefined name (None when it has none), the runtime helper's own exception, the SQLCODE
+_HELPER_ERRORS = (("ZERO_DIVIDE", "ZeroDivide", -1476),
+                  ("VALUE_ERROR", "ValueError", -6502),
+                  ("NO_DATA_FOUND", "NoDataFound", 100),
+                  ("SUBSCRIPT_BEYOND_COUNT", "SubscriptBeyondCount", -6533),
+                  ("SUBSCRIPT_OUTSIDE_LIMIT", "SubscriptOutsideLimit", -6532),
+                  ("COLLECTION_IS_NULL", "CollectionIsNull", -6531),
+                  ("INVALID_CURSOR", "InvalidCursor", -1001),
+                  ("CURSOR_ALREADY_OPEN", "CursorAlreadyOpen", -6511),
+                  ("CASE_NOT_FOUND", "CaseNotFound", -6592),
+                  (None, "NumericOverflow", -1426),
+                  (None, "NoReturn", -6503))
 
 
 # 移行先では起こりえない Oracle の誤り。いまのところ行ロックが取れないこと（ORA-54）だけである
@@ -910,7 +942,7 @@ def _rebuilt(file: JavaFile, current: str, resolved: str, record: str, path: lis
             components.append(read)
         elif len(path) == 1:
             # the new value takes the component's type: `default_week.week := i` put an int into a BigDecimal
-            components.append(_coerce(file, value, java_type(declared).name))
+            components.append(_whole(file, _coerce(file, value, java_type(declared).name), declared))
         else:
             nested = java_type(declared).name
             if not RECORD_TEXT.match(declared) or nested == "Object":
@@ -933,9 +965,10 @@ def _element_record(resolved: str | None) -> str | None:
     return element.group(1) if element else None
 
 
-def _empty_record(resolved: str, record: str, file: "JavaFile | None" = None) -> str:
+def _empty_record(resolved: str, record: str, file: "JavaFile | None" = None, defaults: bool = True) -> str:
     """A record whose fields are all NULL -- and whose nested records are records of NULLs, as Oracle's are: a
-    nested field left null made `friend.name.first := 'John'` read a component of nothing (#82)."""
+    nested field left null made `friend.name.first := 'John'` read a component of nothing (#82). With `defaults`
+    a field's DEFAULT is its value, as in a declaration; `r := NULL` ignores them."""
     if file is not None:
         file.add_import(*java_type(resolved).imports)   # the record's own class, when it is a nested one (5-51)
     components = []
@@ -944,9 +977,9 @@ def _empty_record(resolved: str, record: str, file: "JavaFile | None" = None) ->
         if RECORD_TEXT.match(declared) and nested != "Object":
             if file is not None:
                 file.add_import(*java_type(declared).imports)
-            components.append(_empty_record(declared, nested, file))
+            components.append(_empty_record(declared, nested, file, defaults))
         else:
-            components.append(_literal_default(declared) or "null")
+            components.append((_literal_default(declared) if defaults else None) or "null")
     return f"new {record}({', '.join(components)})"
 
 
@@ -1248,7 +1281,8 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
             element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
             value = _expr(file, statement.expression, routine, result)
             if len(subscripts) == 1:
-                value = _coerce(file, value, element)
+                declared = _COLLECTION_TYPE.match((holder.type.resolved or "").strip())
+                value = _whole(file, _coerce(file, value, element), declared.group("element") if declared else "")
             file.line(f"Plsql.set({container}, {key}, {value});")
             return
         if "." in written and (_holder(routine, written.partition(".")[0]) is not None
@@ -1277,9 +1311,16 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
             return
         target = _expr(file, statement.target, routine, result)
         target_type = _local_type(routine, statement.target)
+        holder = _holder(routine, statement.target)
+        record = _row_type(holder) if holder is not None else None
+        if record and (statement.expression or "").strip().upper() == "NULL" \
+                and RECORD_TEXT.match(holder.type.resolved or ""):
+            # `name := NULL` on a record sets every field to NULL; the record itself is never null in PL/SQL. As
+            # `name = null` the next `name.first` was a NullPointerException (5-51)
+            file.line(f"{target} = {_empty_record(holder.type.resolved, record, file, defaults=False)};")
+            return
         value = _expr(file, statement.expression, routine, result, boolean_value=target_type == "Boolean")
         value = _convert_variable(file, routine, statement.expression, value, target_type)
-        holder = _holder(routine, statement.target)
         file.line(f"{target} = {_constrain(file, _coerce(file, value, target_type), holder.type if holder else None)};")
     elif kind == "Return":
         returns = signature_type(routine.return_type).name \
@@ -1463,7 +1504,11 @@ def _case(file: JavaFile, statement: M.Case, routine: M.Routine, result: Service
         if statement.else_body:
             _statements(f, statement.else_body, routine, result)
         else:
-            f.line('throw new IllegalStateException("CASE_NOT_FOUND");')
+            f.add_import("com.scalar.migrate.plsql.Plsql")
+            # `if (true)`: to javac an if / else whose every branch returns or throws ends the path, and a statement
+            # after the CASE (`CASE x WHEN 1 THEN RETURN 'one'; END CASE; RETURN 'none';`) did not compile.
+            # `_always_exits` does not count this else as leaving either
+            f.line("if (true) throw new Plsql.CaseNotFound();")
 
 
 def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: ServiceFile) -> None:
@@ -1487,10 +1532,11 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
         low = _expr(file, numeric.group("low"), routine, result)
         high = _expr(file, numeric.group("high"), routine, result)
         if numeric.group("reverse"):
-            opening = (f"{label}for (int {index} = Plsql.toInt({high}), {index}End = Plsql.toInt({low}); "
+            opening = (f"{label}for (int {index} = Plsql.loopBound({high}), {index}End = Plsql.loopBound({low}); "
                        f"{index} >= {index}End; {index}--)")
         else:
-            opening = (f"{label}for (int {index} = Plsql.toInt({low}), {index}End = Plsql.toInt({high}); "
+            # `loopBound`, not `toInt`: a NULL bound is VALUE_ERROR in Oracle, and unboxing it was an NPE (#99)
+            opening = (f"{label}for (int {index} = Plsql.loopBound({low}), {index}End = Plsql.loopBound({high}); "
                        f"{index} <= {index}End; {index}++)")
     elif statement.loop_kind in ("cursor-for", "forall", "for"):
         # A named cursor's query is still not modelled as a statement, so there is nothing to iterate. Emitting
@@ -2641,6 +2687,18 @@ def _constrain(file: JavaFile, value: str, type_ref: "M.TypeRef | None") -> str:
     return fitted
 
 
+def _whole(file: JavaFile, value: str, declared: str) -> str:
+    """A value going into an INTEGER field or element: a BigDecimal (NUMBER(38), #100) rounded to a whole number,
+    as a local's assignment is in `_fit`. An Integer rounded it before."""
+    if not _INTEGER_DECLARED.fullmatch(declared or "") or value == "null":
+        return value
+    file.add_import("com.scalar.migrate.plsql.Plsql")
+    return f"Plsql.fit({value}, 38, 0)"
+
+
+_INTEGER_DECLARED = re.compile(r"\s*(?:INTEGER|INT|SMALLINT)\s*", re.IGNORECASE)
+
+
 def _fit(file: JavaFile, value: str, type_ref: "M.TypeRef | None") -> str:
     """A value on its way into a variable declared `NUMBER(5,2)` or `VARCHAR2(3)`.
 
@@ -2649,6 +2707,8 @@ def _fit(file: JavaFile, value: str, type_ref: "M.TypeRef | None") -> str:
     bytes. A CHAR(n) is checked the same way and then padded with blanks to n (#62).
     """
     declared = ((type_ref.resolved or type_ref.oracle) if type_ref is not None else "") or ""
+    if _INTEGER_DECLARED.fullmatch(declared):
+        declared = "NUMBER(38)"   # `i INTEGER; i := 2.5` is 3 (#100)
     number = _NUMBER_CONSTRAINT.fullmatch(declared.strip())
     text = _TEXT_CONSTRAINT.fullmatch(declared.strip())
     blank_padded = _CHAR_CONSTRAINT.fullmatch(declared.strip())
@@ -2665,6 +2725,12 @@ def _fit(file: JavaFile, value: str, type_ref: "M.TypeRef | None") -> str:
         if helper is None:
             return value
         file.add_import("com.scalar.migrate.plsql.Plsql")
+        # the fit helpers take any number, and round before they check the precision. `_coerce` may already have
+        # wrapped the value in `Plsql.toInt` / `toLong`, which refuse a value the fit would round or report as
+        # VALUE_ERROR: `l NUMBER(12) := 2.5` was ArithmeticException, `n NUMBER(5) := 5e9` ORA-01426 (#100)
+        for wrapper in ("Plsql.toInt(", "Plsql.toLong("):
+            if value.startswith(wrapper) and value.endswith(")") and _balanced(value[len(wrapper):-1]):
+                value = value[len(wrapper):-1]
         scale = f", {int(number.group(2) or 0)}" if helper == "fit" else ""
         return f"Plsql.{helper}({value}, {int(number.group(1))}{scale})"
     file.add_import("com.scalar.migrate.plsql.Plsql")

@@ -188,7 +188,11 @@ def java_type(oracle: str | None, *, money: bool = False) -> JavaType:
         return JavaType("String", "TEXT", note="size and streaming need a decision for large values")
     if upper.startswith("BOOLEAN"):
         return JavaType("Boolean", "BOOLEAN", note="PL/SQL BOOLEAN can be NULL, so not the primitive")
-    if re.match(r"(PLS_INTEGER|BINARY_INTEGER|SIMPLE_INTEGER|INTEGER|INT|SMALLINT|NATURALN?|POSITIVEN?|SIGNTYPE)\b",
+    if re.fullmatch(r"(?:INTEGER|INT|SMALLINT)\s*", upper):
+        # ANSI integers are NUMBER(38) in Oracle, not PLS_INTEGER: `i INTEGER := 5000000000` holds it. As a Java
+        # Integer the assignment raised ORA-01426 (#100). The assignment rounds to a whole number (service._fit)
+        return java_type("NUMBER(38)")
+    if re.match(r"(PLS_INTEGER|BINARY_INTEGER|SIMPLE_INTEGER|NATURALN?|POSITIVEN?|SIGNTYPE)\b",
                 upper):
         # NATURAL(N) / POSITIVE(N) / SIGNTYPE are PLS_INTEGER with a range (#59); they were Object (#75)
         return JavaType("Integer", "INT")
