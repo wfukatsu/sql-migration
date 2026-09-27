@@ -95,7 +95,10 @@ def sources(program: M.Program, source_root: str | Path) -> dict[str, str]:
             continue
         parts = [text, shared.get(module_of[routine_id].name, "")]
         for callee in sorted(graph.reachable_from(routine_id) - {routine_id}):
-            if callee in own:   # an external callee is outside the program; nothing to hash
+            # an external callee is outside the program; nothing to hash. A trigger is in `common` already, and the
+            # edge to it exists only when the analysis was given the ScalarDB schema: the capture analyses without
+            # one and `plsql.cli` with one, and 9 routines of samples/oracle-samples read as stale
+            if callee in own and module_of[callee].module_kind != "trigger":
                 parts += [callee, own[callee], shared.get(module_of[callee].name, "")]
         if any(part is None for part in parts):
             continue   # a file it depends on is missing or ambiguous: stale rather than half-hashed
