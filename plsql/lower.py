@@ -105,6 +105,24 @@ def _cannot_be_auto(modules: list[M.Module], construct: str, code: str, message:
             routine.body.insert(0, node)
 
 
+def subtype_parts(context: ParserRuleContext,
+                  stop: set[str] | None = None) -> list[tuple[str, str, str | None, bool]]:
+    """Every `SUBTYPE name IS base [RANGE lo..hi] [NOT NULL]` under `context`, as (name, base as written,
+    "lo..hi" or None, NOT NULL). Shared with the symbol table, which keeps a package's for its body (#128)."""
+    out = []
+    for declaration in _descend(context, {"Subtype_declarationContext"}, stop=stop):
+        identifier = _child(declaration, "IdentifierContext")
+        spec = _child(declaration, "Type_specContext")
+        if identifier is None or spec is None:
+            continue
+        text = _text(declaration)
+        bounds = re.search(r"\bRANGE\s+(.+?)\s*\.\.\s*(.+?)(?:\s+NOT\s+NULL)?\s*;?\s*$", text, re.I | re.S)
+        out.append((_text(identifier).lower(), _text(spec).strip(),
+                    f"{bounds.group(1).strip()}..{bounds.group(2).strip()}" if bounds else None,
+                    bool(re.search(r"\bNOT\s+NULL\b", text, re.I))))
+    return out
+
+
 def _routine_name(context: ParserRuleContext) -> str:
     identifier = _child(context, "IdentifierContext") or _child(context, "Procedure_nameContext") \
         or _child(context, "Function_nameContext")
@@ -280,6 +298,9 @@ class _Lowerer:
         self.public = public
         self.module_name = ""
         self.routine_id: str | None = None   # whose scope a nested block's declarations resolve in (#18)
+        # the package's AUTHID, from its specification (#128), or a standalone routine's own: a subprogram lifted
+        # out of it (#80) runs with the same rights
+        self.auth_id: str | None = None
 
     # -- modules ------------------------------------------------------------------------------------------
     def modules(self, tree: ParserRuleContext) -> list[M.Module]:
@@ -302,6 +323,12 @@ class _Lowerer:
         module = M.Module(id=name, kind="Module", name=name, module_kind="package",
                           source_range=self._range(context))
         ids = M.IdFactory(name)
+        package_scope = self.symbols.scopes.get(name) if self.symbols is not None else None
+        # what the specification says for the whole package, which the body does not repeat (#128): its SUBTYPEs
+        # (a variable typed `kilo_t` was Object) and its AUTHID (`_routine` reads it off `self.auth_id`)
+        self.auth_id = package_scope.auth_id if package_scope is not None else None
+        for parts in package_scope.subtypes if package_scope is not None else []:
+            self._remember_subtype(*parts)
         # a package body declares its state directly under `Package_obj_body`, not inside a `Declare_spec`.
         # Descending only into `Declare_spec` made package state invisible -- and STATE-001 unable to fire.
         module.declarations.extend(self._declarations(
@@ -604,7 +631,7 @@ class _Lowerer:
         if is_function:
             spec = next(iter(_children(context, "Type_specContext")), None)
             if spec is not None:
-                routine.return_type = self._type(routine_id, _text(spec), "<return>")
+                routine.return_type = self._formal(self._type(routine_id, _text(spec), "<return>"))
 
         for declaration in _descend(context, {"Declare_specContext"}, stop={"BodyContext"}):
             routine.declarations.extend(self._declarations(declaration, ids, routine_id,
@@ -616,6 +643,12 @@ class _Lowerer:
             routine.auth_id = "CURRENT_USER"
         elif re.search(r"\bAUTHID\s+DEFINER\b", text, re.IGNORECASE):
             routine.auth_id = "DEFINER"
+        elif module is not None:
+            # a package's subprograms cannot say it themselves: the specification's clause holds for all of them
+            # (#128: `PACKAGE p AUTHID CURRENT_USER` never reached AUTHID-001)
+            routine.auth_id = self.auth_id
+        if module is None:
+            self.auth_id = routine.auth_id
         routine.deterministic = bool(re.search(r"\bDETERMINISTIC\b", text, re.IGNORECASE))
         spec = re.search(r"\b(?:AS|IS)\s+(?:LANGUAGE\s+(JAVA|C)\b|(EXTERNAL)\b)", text, re.IGNORECASE)
         if spec and _child(context, "BodyContext") is None:
@@ -675,7 +708,7 @@ class _Lowerer:
         return M.Parameter(
             id=ids.next("param"), kind="Parameter", name=name,
             direction=direction, source_range=self._range(context),
-            type=self._type(scope, _text(spec), name) if spec is not None else None,
+            type=self._formal(self._type(scope, _text(spec), name)) if spec is not None else None,
             default=default.strip() if default else None,
             nocopy=bool(re.search(r"\bNOCOPY\b", text, re.IGNORECASE)))
 
@@ -683,19 +716,14 @@ class _Lowerer:
         """`SUBTYPE Balance IS NUMBER(8,2)`, `SUBTYPE Digit IS PLS_INTEGER RANGE 0..9 [NOT NULL]`: remembered by
         name, so that a variable declared `Balance` gets NUMBER(8,2) -- and its check -- instead of an unknown
         type that became `Object` (samples/oracle-plsql-docs 3-8〜3-10, #59). A subtype of a subtype is followed."""
+        for parts in subtype_parts(context, stop):
+            self._remember_subtype(*parts)
+
+    def _remember_subtype(self, name: str, written: str, bounds: str | None, not_null: bool) -> None:
         subtypes = self.__dict__.setdefault("_subtypes", {})
-        for declaration in _descend(context, {"Subtype_declarationContext"}, stop=stop):
-            identifier = _child(declaration, "IdentifierContext")
-            spec = _child(declaration, "Type_specContext")
-            if identifier is None or spec is None:
-                continue
-            text = _text(declaration)
-            bounds = re.search(r"\bRANGE\s+(.+?)\s*\.\.\s*(.+?)(?:\s+NOT\s+NULL)?\s*;?\s*$", text, re.I | re.S)
-            base = self._subtype_of(M.TypeRef(oracle=_text(spec).strip(), resolved=_text(spec).strip()))
-            subtypes[_text(identifier).lower()] = M.TypeRef(
-                oracle=base.oracle, resolved=base.resolved, origin="declared",
-                nullable=False if re.search(r"\bNOT\s+NULL\b", text, re.I) else base.nullable,
-                range=f"{bounds.group(1).strip()}..{bounds.group(2).strip()}" if bounds else base.range)
+        base = self._subtype_of(M.TypeRef(oracle=written, resolved=written))
+        subtypes[name] = M.TypeRef(oracle=base.oracle, resolved=base.resolved, origin="declared",
+                                   nullable=False if not_null else base.nullable, range=bounds or base.range)
 
     def _subtype_of(self, written: M.TypeRef) -> M.TypeRef:
         """The type a declaration names, with a user subtype replaced by what it stands for. `Balance(6,2)` on a
@@ -710,6 +738,16 @@ class _Lowerer:
             resolved = f"{resolved}{named.group(2)}"
         return M.TypeRef(oracle=written.oracle, resolved=resolved, origin="declared", nullable=base.nullable,
                          range=base.range)
+
+    def _formal(self, written: M.TypeRef) -> M.TypeRef:
+        """A parameter's or a RETURN's type, with a user subtype replaced by its base (#128: `p kilo_t` from the
+        package specification was Object). What a formal parameter takes of a constrained subtype is less than a
+        variable does: its NOT NULL and a numeric RANGE, not the size, precision or scale (`PROCEDURE p (x License)`
+        on `SUBTYPE License IS VARCHAR2(7) NOT NULL` takes '1ABC123456789' and refuses NULL, oracle-plsql-docs 8-10)."""
+        based = self._subtype_of(written)
+        if based is written:
+            return written
+        return dataclasses.replace(based, resolved=re.sub(r"\s*\([^()]*\)\s*$", "", based.resolved or "") or None)
 
     def _declarations(self, context: ParserRuleContext, ids: M.IdFactory,
                       scope: str | None = None, stop: set[str] | None = None) -> list[M.Declaration]:

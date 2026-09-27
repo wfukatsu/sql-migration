@@ -1200,6 +1200,12 @@
         "returns_rows": {
           "type": "boolean"
         },
+        "rows_into": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "paged_key": {
           "type": [
             "string",

@@ -123,8 +123,15 @@ def result_record(routine: M.Routine, package: str, source: str = "") -> Dto | N
         mapped = signature_type(routine.return_type)
         file.add_import(*mapped.imports)
         components.append(f"{mapped.name} returned")
+    from .repository import out_rows
+    rows = out_rows(routine)
     for parameter in outs:
         from .types import record_class
+        if parameter.name.lower() in rows:
+            # `OPEN p_rc FOR q` of an OUT cursor (#125): the rows, as `RETURN rc` hands them back
+            file.add_import("java.util.List")
+            components.append(f"List<{rows[parameter.name.lower()]}> {java_name(parameter.name)}")
+            continue
         record = record_class(parameter.type)   # an OUT record comes back as its generated class (#74)
         if record is not None:
             components.append(f"{record} {java_name(parameter.name)}")

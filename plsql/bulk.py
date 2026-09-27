@@ -17,7 +17,11 @@ Oracle のこの形は「表から N 行を配列へ読み、その配列で N �
 
 **FORALL が 1 往復なのに対し、ループは N 回**である。これは性能の差であって答えの差ではないが、
 隠さずに `BULK_CHUNKED` として残す。`FORALL ... SAVE EXCEPTIONS`（部分失敗を許す原子性）は
-別の話なので、ここでは扱わない——`BULK-002` が REDESIGN として捕まえ続ける。
+別の話なので、ここでは扱わない——`BULK-002` が REDESIGN として捕まえ続ける。そのために、FORALL の
+`FORALL_SAVE_EXCEPTIONS` の診断は**まとめたループへ移す**。移さずにいたときは、FORALL と一緒に診断も消え、
+BULK-002 が当たらずに REVIEW で止まっていた（#127）。まとめること自体はやめない: 1 要素 = 1 トランザクション
+に割ると決めた routine（#117、`gen_java.split`）は、このループを割る。割ると決めれば BULK-002 は外れる
+（`redesign.py`）。
 """
 
 from __future__ import annotations
@@ -175,6 +179,8 @@ def _pair(statements: list[M.Statement], index: int, context: _Context,
                  "割ると、handler は失敗した 1 要素の記録になり、合計を読む文は出さない（合計は呼び出し側が数える）。"
                  "割らなければ BULK-002 で REDESIGN（#117）")
         context.handler_counts = False
+    # SAVE EXCEPTIONS goes with the FORALL into the loop: BULK-002 reads it off whichever loop carries it (#127)
+    loop.diagnostics.extend(d for d in forall.diagnostics if d.code == "FORALL_SAVE_EXCEPTIONS")
     loop.add("INFO", "BULK_CHUNKED",
              f"BULK COLLECT into {', '.join(targets)} と、それを回す FORALL を 1 つの走査ループに "
              f"した。FORALL は 1 往復、ループは行ごとに 1 回で、性能は変わるが答えは変わらない。"

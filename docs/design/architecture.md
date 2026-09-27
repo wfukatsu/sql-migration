@@ -548,8 +548,8 @@ flowchart TD
     W["INSERT / UPDATE / DELETE / MERGE"] --> A{"値はリテラル・バインドだけで<br/>条件は ScalarDB で書けるか"}
     A -- はい --> OK["ScalarDB SQL に変換<br/>OK / WARN<br/>例: 主キー指定の UPDATE、UPSERT"]
     A -- いいえ --> K{"原因"}
-    K -- "列を参照する式<br/>qty = qty - 5" --> RMW["ERROR RMW<br/>読む → 計算 → リテラルで書く"]
-    K -- "副問合せ・結合<br/>INSERT ... SELECT" --> SUB["ERROR SUBQUERY / UPDATE_JOIN<br/>対象のキーを読んでからキーで書く"]
+    K -- "列を参照する式<br/>qty = qty - 5<br/>SET col = (SELECT ...)" --> RMW["ERROR RMW<br/>読む → 計算 → リテラルで書く"]
+    K -- "WHERE の副問合せ・結合<br/>INSERT ... SELECT" --> SUB["ERROR SUBQUERY / UPDATE_JOIN<br/>対象のキーを読んでからキーで書く"]
     K -- "採番・現在時刻・DEFAULT" --> GEN["ERROR SEQUENCE / NOW / EXPR<br/>アプリで値を作ってバインド"]
     K -- "DO NOTHING / IGNORE / RETURNING" --> EX["ERROR<br/>存在確認と書き込みを 1 トランザクションに"]
 ```

@@ -192,6 +192,10 @@ def java_type(oracle: str | None, *, money: bool = False) -> JavaType:
         # ANSI integers are NUMBER(38) in Oracle, not PLS_INTEGER: `i INTEGER := 5000000000` holds it. As a Java
         # Integer the assignment raised ORA-01426 (#100). The assignment rounds to a whole number (service._fit)
         return java_type("NUMBER(38)")
+    if m := re.fullmatch(r"(?:INTEGER|INT|SMALLINT)\s*\(\s*(\d+)\s*\)\s*", upper):
+        # `acct_id INTEGER(4)` narrows the subtype to NUMBER(4, 0): Oracle rejects 10000 with ORA-06502. It was an
+        # undeclared name, so Object (#128)
+        return java_type(f"NUMBER({m.group(1)})")
     if re.match(r"(PLS_INTEGER|BINARY_INTEGER|SIMPLE_INTEGER|NATURALN?|POSITIVEN?|SIGNTYPE)\b",
                 upper):
         # NATURAL(N) / POSITIVE(N) / SIGNTYPE are PLS_INTEGER with a range (#59); they were Object (#75)

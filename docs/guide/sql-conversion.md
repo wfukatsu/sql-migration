@@ -15,8 +15,8 @@ SQL 文を ScalarDB SQL に変換し、変換できない読み取り文を実�
 |---|---|
 | `--source`（`--dialect`） | 移行元の方言 |
 | `--out-dir DIR` | 変換後 SQL・レポート・スキーマを書き出す |
-| `--plan-dir DIR` | 読み取りの ERROR 文を実行計画に分解し、`<name>.<n>.plan.json` を書く |
-| `--no-plan` | 実行計画に分解しない |
+| `--plan-dir DIR` | 実行計画を `<name>.<n>.plan.json` として書き出す。分解そのものは指定しなくても行う（判定 PLANNED とレポートの計画は `--plan-dir` が無くても出る） |
+| `--no-plan` | 実行計画に分解しない（読み取りの ERROR 文は ERROR のまま） |
 | `--schema FILE` | 既存の表定義（ScalarDB Schema Loader の JSON）。アクセスパス分析に使う |
 | `--keys t=p1,p2/c1` | 表のパーティションキー / クラスタリングキーを指定する |
 | `--storage jdbc\|cassandra` | ScalarDB のバックエンド。`cassandra` ではパーティションをまたぐ `ORDER BY` などを実行計画に回す |
@@ -60,13 +60,17 @@ SQL 文を ScalarDB SQL に変換し、変換できない読み取り文を実�
 | DECIMAL / NUMBER / NUMERIC(p, 0)、p > 18 | BIGINT | WARN | 64 ビットを超える値はあふれる |
 | DECIMAL / NUMBER / NUMERIC(p, s)、s > 0 | DOUBLE | WARN | ScalarDB に DECIMAL が無い。精度が落ちるので、金額は 10^s 倍した整数を BIGINT に入れることを提案する。実行計画（H2）ではこの列を `NUMERIC(p, s)` として扱い、`2450` が `2450.0` になるのを防ぐ |
 | 精度なしの NUMBER（Oracle）/ NUMERIC（PostgreSQL） | DOUBLE | WARN | 桁数も小数も無制限なので、正確な 10 進精度は保てない。MySQL の `DECIMAL` だけは既定の (10, 0) として読む |
-| FLOAT（Oracle） | DOUBLE | WARN | Oracle の FLOAT は最大 38 桁の 10 進 NUMBER。DOUBLE では約 15 桁 |
+| FLOAT / REAL（Oracle） | DOUBLE | WARN | Oracle の FLOAT は最大 38 桁の 10 進 NUMBER（REAL は `FLOAT(63)`）。DOUBLE では約 15 桁 |
+| BINARY_FLOAT（Oracle） | FLOAT | INFO | IEEE の単精度で、ScalarDB の FLOAT と同じ。DOUBLE にも入るが、`0.1` が `0.10000000149011612` と読める。NaN と無限大を持てるかは下のデータベース次第 |
 | FLOAT（PostgreSQL、精度なしか 25 以上） | DOUBLE | INFO | PostgreSQL では倍精度 |
-| FLOAT / REAL（その他） | FLOAT | INFO | |
+| REAL、FLOAT(p)、p ≤ 24（PostgreSQL） | FLOAT | INFO | PostgreSQL では単精度 |
+| FLOAT（MySQL） | FLOAT | INFO | |
 | DOUBLE / DOUBLE PRECISION / BINARY_DOUBLE | DOUBLE | INFO | |
+| MONEY（PostgreSQL） | DOUBLE | WARN | 通貨の固定小数点。DOUBLE では小数が正確に持てないので、セント単位などの整数を BIGINT に持つことを提案する |
 | CHAR(n) / NCHAR(n)、n > 1 | TEXT | WARN | CHAR は空白詰めで、比較は空白を無視する。TEXT は厳密に比較するので、移行時にデータを trim しないと同じ比較が一致しなくなる |
-| VARCHAR / VARCHAR2 / NVARCHAR / TEXT 系 | TEXT | INFO | 長さの上限は ScalarDB では強制されない |
-| BINARY / VARBINARY / BLOB / RAW / BYTEA | BLOB | INFO | |
+| VARCHAR / VARCHAR2 / NVARCHAR / TEXT 系、CLOB / NCLOB（Oracle） | TEXT | INFO | 長さの上限は ScalarDB では強制されない |
+| LONG（Oracle） | TEXT | WARN | 古い文字列の型（最大 2 GB）で、整数ではない。Oracle では WHERE や索引に使えず、取り出すには `TO_LOB` で CLOB にする |
+| BINARY / VARBINARY / BLOB / RAW(n) / BYTEA | BLOB | INFO | |
 | DATE（Oracle） | DATE | WARN | Oracle の DATE は時刻を持つ。時刻を使うなら TIMESTAMP にする |
 | DATE（その他） | DATE | INFO | |
 | TIME | TIME | INFO | マイクロ秒（6 桁）まで |
@@ -74,9 +78,11 @@ SQL 文を ScalarDB SQL に変換し、変換できない読み取り文を実�
 | TIMESTAMP / DATETIME、精度 3 以下 | TIMESTAMP | INFO | |
 | TIMESTAMP / DATETIME、精度 4 以上（Oracle・PostgreSQL の既定は 6） | TIMESTAMP | WARN | ScalarDB はミリ秒まで。MySQL だけは精度なしを 0 として読む |
 | TIMESTAMP WITH (LOCAL) TIME ZONE / TIMESTAMPTZ | TIMESTAMPTZ | INFO（精度 4 以上は WARN） | UTC で保存し、ミリ秒まで |
+| TIMESTAMP（MySQL） | TIMESTAMPTZ | INFO | MySQL の TIMESTAMP はセッションの時間帯から UTC に直して持つ瞬間の型。時差を持たない DATETIME は TIMESTAMP |
 | BOOLEAN / BIT(1) | BOOLEAN | INFO | |
 | BIT(n)、n > 1 | BLOB | WARN | 対応する型が無い |
-| JSON / JSONB / UUID / ENUM / SET / INET / XML | TEXT | WARN | 文字列として入る。JSON の演算子や列挙の検査は使えない |
+| JSON / JSONB / UUID / ENUM / SET / INET | TEXT | WARN | 文字列として入る。JSON の演算子や列挙の検査は使えない |
+| XML（PostgreSQL）/ XMLTYPE（Oracle） | TEXT | WARN | XML を文字列として持つ。XPath・XMLTABLE などの関数は使えない |
 | SERIAL / BIGSERIAL / SMALLSERIAL | INT / BIGINT | **ERROR** | 自動採番は無い。ID はアプリで生成する |
 | そのほか（INTERVAL、配列、ユーザ定義型など） | なし | **ERROR** | 対応する型が無い |
 

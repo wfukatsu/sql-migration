@@ -20,6 +20,7 @@ docs/
 4. 目的に合うガイド
    - SQL 文を移す → [SQL の変換と実行計画](guide/sql-conversion.md)
    - PL/SQL を移す → [PL/SQL → Java 変換](guide/plsql-conversion.md)
+   - ある構文・関数・型がどう変換されるかを引く → [SQL と PL/SQL の変換の一覧](guide/conversion-catalog.md)
    - Claude Code / Codex から手順どおりに進める → [スキル](guide/skills.md)
    - 実 DB で結果を突き合わせる・性能を測る → [検証環境](guide/verification.md)
    - 移行の前に、いまの姿（どの SQL がどのテーブルを触るか、制約、つながり、量）を調べる → [Migration Explorer](guide/explorer.md)
@@ -51,9 +52,10 @@ docs/
 | [はじめに](guide/getting-started.md) | 準備、最初の SQL 変換、実行計画の確認、最初の PL/SQL 解析、テスト |
 | [チュートリアル](guide/tutorial.md) | サンプル（`samples/tutorial/`）を sql-transpile と migrate-flow で最後まで通した記録。断られた文、人の判断、承認の取り直し、実 DB の比較（SQL 9/10、PL/SQL 13/13）、見つけて直した不具合 |
 | [Oracle 構文カタログの検証](../samples/oracle-samples/README.md) | Oracle 公式ドキュメントの構成に沿った構文カタログ（SQL 4 本 + PL/SQL 3 本、約 1,700 行）を変換と実 DB 比較に通した記録（2026-09-24〜25）。構文ごとに「そのまま移る / 実行計画 / アプリへ / 人が決める」のどれになるか、実 DB の結果、直した不具合 22 件（Issue #30〜#45）、サンプル自体の不備 3 点 |
-| [Oracle PL/SQL 言語リファレンスの例の検証](../samples/oracle-plsql-docs/README.md) | Oracle PL/SQL 言語リファレンス 12c R1 の例 420 すべてを、Oracle 26ai で文書の結果と照合し、変換して実 DB（Oracle と ScalarDB Cluster）で比べた記録（2026-09-26）。実行した 282 例で一致 77、黙って結果が変わる 10 例（サブタイプの制約、IN の NULL、CHAR の空白埋めなど。#59〜#64 で直して一致 87）、未対応で止まる構文と javac エラーの内訳、証拠つきの AUTO 55 例がすべて一致。2026-09-27 に #59〜#94 をすべて直して一致 170、変換の仕組みのレビューで見つけた #95〜#116 を直して一致 172（並びの決まらない 2 例で 170〜172 を行き来する）、証拠つきの AUTO 104 例がすべて一致。公開の PL/SQL（#15）で見つけた過適合も直した |
+| [Oracle PL/SQL 言語リファレンスの例の検証](../samples/oracle-plsql-docs/README.md) | Oracle PL/SQL 言語リファレンス 12c R1 の例 420 すべてを、Oracle 26ai で文書の結果と照合し、変換して実 DB（Oracle と ScalarDB Cluster）で比べた記録（2026-09-26）。実行した 282 例で一致 77、黙って結果が変わる 10 例（サブタイプの制約、IN の NULL、CHAR の空白埋めなど。#59〜#64 で直して一致 87）、未対応で止まる構文と javac エラーの内訳、証拠つきの AUTO 55 例がすべて一致。2026-09-27 に #59〜#94 をすべて直して一致 170、変換の仕組みのレビューで見つけた #95〜#116 を直して一致 172（並びの決まらない 2 例で 170〜172 を行き来する）、証拠つきの AUTO 104 例がすべて一致。公開の PL/SQL（#15）で見つけた過適合も直した。2026-09-28 に変換の一覧を作るときに見つけた #121〜#130 を直して一致 171、証拠つきの AUTO 103 例がすべて一致 |
 | [SQL の変換と実行計画](guide/sql-conversion.md) | `scalardb_migrate.cli` のオプション・出力・判定、`residual-runner` のサブコマンド |
 | [PL/SQL → Java 変換](guide/plsql-conversion.md) | 判定の考え方、コマンド、出力、corpus 上の現在地 |
+| [SQL と PL/SQL の変換の一覧](guide/conversion-catalog.md) | 構文・関数・データ型・文・例外などの項目ごとに、変換後の形、判定と指摘コード（ルール ID）、Oracle との違いを引ける表 |
 | [スキル](guide/skills.md) | migrate-flow / plsql-spec / plsql-migrate / sql-transpile の役割とコマンド、marketplace からのインストール（Claude Code / Codex）と、両者の違い |
 | [検証環境](guide/verification.md) | Docker Compose の DB 群、接続プロファイル、ハーネスの一覧と実行例 |
 | [Migration Explorer](guide/explorer.md) | 移行の前の調査のための、読むだけの HTML。テーブルの一覧を入口に、routine のコード（行ごとの印）、判定の中身、索引と統計、DB のコードとの食い違いを見る。snapshot の取り方（DB に何もしないこと、値とコードは明示したときだけ）、画面の作り方と見方、「分からない」の出し分け、限界 |

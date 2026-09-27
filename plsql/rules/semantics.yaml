@@ -227,7 +227,7 @@ rules:
       - row_limit
 
   # 行数とメモリは性能の問いで、答える場所は limits.yaml である（値を書くか、上限では守らない理由を書く）。決めてあれば
-  # 生成コードがその上限を守る（超えたら RowLimitExceededException）ので、問いは開いていない。既定値に落ちた routine は
+  # 生成コードがその上限を守る（超えたら IllegalStateException で止まる）ので、問いは開いていない。既定値に落ちた routine は
   # 誰も決めていないので REVIEW のまま
   - id: CUR-002
     match: {statementKind: Loop, loopKind: cursor-for, lacksDiagnostic: ROW_LIMIT_DECIDED}
