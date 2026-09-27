@@ -739,6 +739,23 @@ class Decomposer:
             if o.args.get("nulls_first") is None:
                 o.set("nulls_first", (self.dialect == "mysql") != bool(o.args.get("desc")))
             changed = True
+        if self.dialect == "oracle":
+            # Oracle's LIKE has no escape character unless ESCAPE names one; H2's default is `\`, as ScalarDB's is. So
+            # `name LIKE 'a\_%'` meant "a, a backslash, any character" in Oracle and "a, an underscore" in the residual
+            # (#116, measured on H2 2.5.250). `ESCAPE ''` does not help there: H2 then matches no row at all, for LIKE and
+            # NOT LIKE alike. The backslash is doubled instead -- in the literal, or with REPLACE around anything else.
+            for like in list(node.find_all(exp.Like)):
+                if isinstance(like.parent, exp.Escape):
+                    continue   # an explicit ESCAPE says what escapes
+                pattern = like.expression
+                if isinstance(pattern, exp.Literal) and pattern.is_string:
+                    if "\\" in pattern.this:
+                        pattern.replace(exp.Literal.string(pattern.this.replace("\\", "\\\\")))
+                        changed = True
+                elif not isinstance(pattern, exp.Null):
+                    pattern.replace(exp.Anonymous(this="REPLACE", expressions=[
+                        pattern.copy(), exp.Literal.string("\\"), exp.Literal.string("\\\\")]))
+                    changed = True
         for sub in list(node.find_all(exp.Sub)):  # date - date -> fractional days (Oracle) instead of an INTERVAL (H2)
             if self._is_datelike(sub.this) and self._is_datelike(sub.expression):
                 sub.replace(exp.Anonymous(this="DAYS_BETWEEN", expressions=[sub.this, sub.expression]))
