@@ -244,6 +244,9 @@ class SqlOperation(Statement):
     # is read-consistent as of its OPEN in Oracle too -- and each FETCH of the cursor takes the next one.
     # `cursor_variable`: `OPEN cv FOR ...`, which Oracle lets reopen without a CLOSE
     opens_cursor: str | None = None
+    # #87: the read that stands for `DELETE ... RETURNING ... INTO` of scalars. Oracle leaves the targets as they
+    # were when no row went, and raises TOO_MANY_ROWS for a second one -- neither SELECT INTO's nor a cursor's rule
+    returns_deleted: bool | None = None
     cursor_variable: bool | None = None
 
 

@@ -572,8 +572,19 @@ class _Parser:
         """A call's arguments are values, not the spine of a condition: `IF f(p_id) = 0` must pass `p_id`, not
         `Plsql.isTrue(p_id)` (#65 turned strict on for conditions; corpus pkg_shipment showed the leak)."""
         strict, self.strict = self.strict, False
+        head = (self.peek()[1] if self.peek() is not None else "").lower()
         try:
             rendered = self._call_body()
+            element = self.scope.get(f"{head}#element")
+            # `recs(i).last_name`: a field of an element that is a record (12-22, 12-23, #67). The element is an
+            # Object from Plsql.at; the collection's element class says which record it is
+            while (element and element not in ("Object", "BigDecimal", "String", "Integer", "Long", "Double", "Float")
+                   and self.peek() is not None and self.peek() == ("other", ".")
+                   and self.position + 1 < len(self.tokens) and self.tokens[self.position + 1][0] == "name"):
+                self.take()   # .
+                field = self.take()[1]
+                rendered = f"(({element}) {rendered}).{java_name(field)}()"
+                element = None   # a field of the field would need its type: not modelled
             # `get_sum_multiples(m, sn)(n)`: an element of the collection the call returns (5-2, #93)
             while (self.peek() is not None and self.peek()[1] == "(" and self.position > 0
                    and self.tokens[self.position - 1][1] == ")"):

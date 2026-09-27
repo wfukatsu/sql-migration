@@ -201,10 +201,17 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
     from .gen_java.types import set_object_types, set_record_types
     set_object_types({name: schema.object_record(name) for name in schema.object_types} if schema else {})
     # #82: a field or an element typed with a RECORD type is resolved without the type's name
-    set_record_types({symbol.name: symbol.type.resolved for scope in analysis.symbol_table().scopes.values()
-                      for symbol in scope.symbols.values()
-                      if symbol.kind == "type" and symbol.type is not None
-                      and (symbol.type.resolved or "").upper().startswith("RECORD(")})
+    types = [symbol for scope in analysis.symbol_table().scopes.values() for symbol in scope.symbols.values()
+             if symbol.kind == "type" and symbol.type is not None]
+    elements = {}
+    for symbol in types:
+        # a collection of records (`TABLE OF c1%ROWTYPE`) holds a record no TYPE names (#67)
+        held = re.match(r"^\s*TABLE\s+OF\s+(RECORD\(.*\))(?:\s+(?:INDEX\s+BY|LIMIT)\s+.+)?$",
+                        symbol.type.resolved or "", re.IGNORECASE | re.DOTALL)
+        if held:
+            elements.setdefault(symbol.name, held.group(1))
+    set_record_types({s.name: s.type.resolved for s in types if (s.type.resolved or "").upper().startswith("RECORD(")},
+                     elements)
     from . import objects
     objects.rewrite(program, schema, analysis.symbol_table())
     # #53: DBMS_SQL over a constant query is a static cursor FOR loop

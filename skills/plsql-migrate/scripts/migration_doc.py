@@ -313,6 +313,7 @@ CHANGES = {
     "DYN_FOLDED": (SHAPE, "動的 SQL を静的な文に畳んだ"),
     "TRIGGER_OLD": (SHAPE, "trigger が読む :OLD の値を、更新の前に読む"),
     "RECORD_DML": (SHAPE, "レコードをそのまま書く INSERT / UPDATE を、列を並べた形にした"),
+    "RETURNING_READ_FIRST": (SHAPE, "DELETE の RETURNING を、消す行を先に読んでから消す 2 文にした"),
     "SUBQUERY_READ_FIRST": (SHAPE, "SET の副問合せを UPDATE の前に同じトランザクションで読む。0 行は NULL、2 行以上は ORA-01427"),
     "OPTIONAL_FILTER": (SHAPE, "`p IS NULL OR 列 = p` を、p が NULL のときとそれ以外の 2 つの問合せに分けた"),
     "OBJECT_BUILT": (SHAPE, "オブジェクト型のコンストラクタを、列を読んでアプリで組む形にした"),
