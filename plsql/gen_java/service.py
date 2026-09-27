@@ -59,6 +59,9 @@ _LOOP_LABELS: "contextvars.ContextVar[frozenset[str]]" = contextvars.ContextVar(
 # `_HANDLER_ERROR` のキー。値は、いま中にいる catch の変数名（`e`、入れ子なら `e2` ...）。PL/SQL の名前と
 # ぶつからないよう、識別子にならない文字を入れてある
 _CAUGHT = "<caught>"
+# inside a loop whose DML adds to `rowCount` (a multi-row UPDATE split into a loop, a fused BULK COLLECT + FORALL):
+# the count was set to 0 where that loop starts, and a loop nested in it must not start it again (#109)
+_COUNTING: "contextvars.ContextVar[bool]" = contextvars.ContextVar("counting", default=False)
 _HANDLER_ERROR: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("handler", default={})
 
 
@@ -1472,7 +1475,16 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
     if statement.loop_kind == "while":
         opening = f"{label}while ({_expr(file, statement.condition, routine, result, condition=True)})"
     elif statement.loop_kind == "cursor-for" and statement.query is not None:
-        _cursor_for(file, statement, routine, result)
+        counting = _COUNTING.get()
+        if not counting and _accumulates(statement):
+            # SQL%ROWCOUNT after the loop is the rows of every iteration -- and 0 when it ran none, not what the
+            # statement before it left (#109)
+            file.line("rowCount = 0;")
+        token = _COUNTING.set(counting or _accumulates(statement))
+        try:
+            _cursor_for(file, statement, routine, result)
+        finally:
+            _COUNTING.reset(token)
         return
     elif statement.loop_kind == "forall" and _forall_collection(statement, routine) is not None:
         _forall(file, statement, routine, result)
@@ -1518,6 +1530,11 @@ NUMERIC_FOR = re.compile(r"^\s*(?P<index>[\w$#]+)\s+IN\s+(?P<reverse>REVERSE\s+)
                          re.IGNORECASE | re.DOTALL)
 
 FORALL_BOUND = re.compile(r"^\s*1\s*\.\.\s*(?P<collection>[\w$#]+)\s*\.\s*COUNT\s*$", re.IGNORECASE)
+
+
+def _accumulates(loop: M.Loop) -> bool:
+    """Whether the loop's own DML adds to `rowCount` rather than setting it."""
+    return any(getattr(s, "accumulates_rowcount", False) for s in _walk(loop.body))
 
 
 def _forall_collection(statement: M.Loop, routine: M.Routine) -> tuple[str, str] | None:
@@ -1597,12 +1614,22 @@ def _forall(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Servi
                    f"for (int {java_name(index)} = 0; {java_name(index)} < {java}.size(); {java_name(index)}++)")
         if keyed:
             file.add_import("com.scalar.migrate.plsql.Plsql")
-        with file.block(opening) as f:
-            if counted:
-                f.line("rowCount = 0;")
-            _statements(f, statement.body, routine, result)
-            if counted:
-                f.line("bulkRowCount.add(Plsql.dec(rowCount));")
+        # SQL%ROWCOUNT after a FORALL is the rows every element's statement touched, not the last one's (#109):
+        # each element's count starts at 0 and is added up here. A bare block, so two FORALLs can sit side by side
+        total = _fresh("forallRows", _taken(routine))
+        token = _COUNTING.set(False)
+        try:
+            with file.block("") as b:
+                b.line(f"int {total} = 0;")
+                with b.block(opening) as f:
+                    f.line("rowCount = 0;")
+                    _statements(f, statement.body, routine, result)
+                    if counted:
+                        f.line("bulkRowCount.add(Plsql.dec(rowCount));")
+                    f.line(f"{total} += rowCount;")
+                b.line(f"rowCount = {total};")
+        finally:
+            _COUNTING.reset(token)
     finally:
         _LOOP_ROWS.set(outer)
 

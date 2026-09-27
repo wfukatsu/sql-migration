@@ -38,9 +38,10 @@ ROW = "r"
 def rewrite(routine: M.Routine) -> None:
     """Replace every `BULK COLLECT` + `FORALL` pair in `routine` with the loop it is, in place."""
     mappings: list[dict[str, str]] = []
-    routine.body = _sequence(routine.body, mappings)
+    context = _Context(routine)
+    routine.body = _sequence(routine.body, mappings, context, ())
     for handler in routine.exception_handlers:
-        handler.body = _sequence(handler.body, mappings)
+        handler.body = _sequence(handler.body, mappings, context, ())
     for of_column in mappings:
         # `v_ids(SQL%BULK_EXCEPTIONS(j).ERROR_INDEX)` in a SAVE EXCEPTIONS handler is the failed element's
         # value. The collections are gone (the rows are streamed), and the failed element is the row the
@@ -75,21 +76,39 @@ def _walk(statements: list[M.Statement]) -> list[M.Statement]:
     return walk(statements)
 
 
-def _sequence(statements: list[M.Statement], mappings: list[dict[str, str]]) -> list[M.Statement]:
+class _Context:
+    """What `_pair` needs to know about the rest of the routine: the fused loop leaves the collections empty and
+    SQL%ROWCOUNT at what the loop made of it, so whatever reads either after the pair decides whether it may (#109)."""
+
+    def __init__(self, routine: M.Routine):
+        self.routine = routine
+        self.locals = {d.name.lower() for d in routine.declarations}
+        self.blocks: list[M.Block] = []   # the nested blocks around the statement being looked at
+
+
+def _sequence(statements: list[M.Statement], mappings: list[dict[str, str]], context: _Context,
+              loops: tuple[M.Loop, ...]) -> list[M.Statement]:
     for statement in statements:
-        for attribute in ("body", "else_body"):
-            nested = getattr(statement, attribute, None)
-            if nested:
-                setattr(statement, attribute, _sequence(nested, mappings))
-        for branch in getattr(statement, "branches", []) or []:
-            branch.body = _sequence(branch.body, mappings)
-        for handler in getattr(statement, "exception_handlers", []) or []:
-            handler.body = _sequence(handler.body, mappings)
+        inner = loops + (statement,) if statement.kind == "Loop" else loops
+        if statement.kind == "Block":
+            context.blocks.append(statement)
+        try:
+            for attribute in ("body", "else_body"):
+                nested = getattr(statement, attribute, None)
+                if nested:
+                    setattr(statement, attribute, _sequence(nested, mappings, context, inner))
+            for branch in getattr(statement, "branches", []) or []:
+                branch.body = _sequence(branch.body, mappings, context, inner)
+            for handler in getattr(statement, "exception_handlers", []) or []:
+                handler.body = _sequence(handler.body, mappings, context, loops)
+        finally:
+            if statement.kind == "Block":
+                context.blocks.pop()
 
     out: list[M.Statement] = []
     index = 0
     while index < len(statements):
-        paired = _pair(statements, index)
+        paired = _pair(statements, index, context, loops)
         if paired is None:
             out.append(statements[index])
             index += 1
@@ -101,7 +120,8 @@ def _sequence(statements: list[M.Statement], mappings: list[dict[str, str]]) -> 
     return out
 
 
-def _pair(statements: list[M.Statement], index: int) -> "tuple[M.Loop, dict[str, str]] | None":
+def _pair(statements: list[M.Statement], index: int, context: _Context,
+          loops: tuple[M.Loop, ...]) -> "tuple[M.Loop, dict[str, str]] | None":
     """`SELECT ... BULK COLLECT INTO a, b` の直後に `FORALL i IN 1 .. a.COUNT` が来る並び。"""
     run = statements[index:index + 2]
     if len(run) < 2 or run[0].kind != "SqlOperation" or run[1].kind != "Loop":
@@ -121,9 +141,21 @@ def _pair(statements: list[M.Statement], index: int) -> "tuple[M.Loop, dict[str,
     if columns is None or len(columns) != len(targets):
         return None   # 位置で対応させられない。射影が式で名前を持たないときなど
     of_column = {t.lower(): c for t, c in zip(targets, columns)}
+    refused = _read_after(context, select, forall, loops, of_column)
+    if refused:
+        # the pair stays as written: BULK-001 keeps the routine out of AUTO, and the generator reads every row into
+        # the collection, which is what the later reads need (#109). Decided before `_body` rewrites the FORALL
+        select.add("INFO", "BULK_NOT_FUSED", f"BULK COLLECT と FORALL を 1 つの走査ループにしなかった: {refused}")
+        return None
     body = _body(forall.body, of_column)
     if body is None:
         return None
+    for statement in _walk(body):
+        # SQL%ROWCOUNT after a FORALL is the rows of every element, not the last one's. `_read_after` refuses the
+        # pair when something reads it, and the loop still counts as FORALL does, for whatever it cannot see (#109)
+        if statement.kind == "SqlOperation" and (statement.sql_kind or "").upper() in ("INSERT", "UPDATE", "DELETE",
+                                                                                         "MERGE"):
+            statement.accumulates_rowcount = True
     operation = M.SqlOperation(id=f"{select.id}#query", kind="SqlOperation",
                                source_range=select.source_range, sql_kind="SELECT",
                                original_sql=query, cardinality="MANY")
@@ -135,6 +167,83 @@ def _pair(statements: list[M.Statement], index: int) -> "tuple[M.Loop, dict[str,
              f"した。FORALL は 1 往復、ループは行ごとに 1 回で、性能は変わるが答えは変わらない。"
              f"行数上限は cursor FOR ループとして決める（CUR-002）")
     return loop, of_column
+
+
+IMPLICIT_CURSOR = re.compile(r"\bSQL\s*%\s*(?:ROWCOUNT|BULK_ROWCOUNT|FOUND|NOTFOUND)\b", re.IGNORECASE)
+SAVE_EXCEPTIONS_ELEMENT = r"\s*\(\s*SQL%BULK_EXCEPTIONS\s*\(\s*[\w$#]+\s*\)\s*\.\s*ERROR_INDEX\s*\)"
+
+
+def _read_after(context: _Context, select: M.Statement, forall: M.Loop, loops: tuple[M.Loop, ...],
+                of_column: dict[str, str]) -> str | None:
+    """Why the pair may not become one loop, or None (#109).
+
+    The loop streams the rows: the collections are never filled, and SQL%ROWCOUNT is what the loop leaves. So the
+    pair is kept when anything else reads one of the collections -- `v_ids.COUNT` after it was COLLECTION_IS_NULL --
+    or when the implicit cursor's attributes are read after it. A collection that is not a local of the routine or
+    of a block around the pair (a parameter, a package variable) is read by someone this cannot see.
+    """
+    locals_ = set(context.locals)
+    for block in context.blocks:
+        locals_ |= {d.name.lower() for d in block.declarations}
+    foreign = sorted(t for t in of_column if t not in locals_)
+    if foreign:
+        return f"{', '.join(foreign)} は routine の局所変数ではない（呼び出し側や他の routine が読む）"
+    pair = {id(select), id(forall)} | {id(s) for s in _walk(forall.body)}
+    names = re.compile(r"(?<![\w$#.])(?:" + "|".join(re.escape(t) for t in of_column) + r")(?![\w$#])",
+                       re.IGNORECASE)
+    after = forall.source_range.end_line if forall.source_range else None
+    others = _walk(context.routine.body) + [s for h in context.routine.exception_handlers for s in _walk(h.body)]
+    # the next iteration of a loop around the pair runs the statements above the pair after it
+    in_loop = {id(s) for loop in loops for s in _walk(loop.body)}
+    readers, counted = [], False
+    for statement in others:
+        if id(statement) in pair:
+            continue
+        text = _text(statement)
+        for declaration in getattr(statement, "declarations", None) or []:
+            text += "\n" + (declaration.initial or "")   # `DECLARE n NUMBER := v_ids.COUNT;` in a later block
+        # `v_ids(SQL%BULK_EXCEPTIONS(j).ERROR_INDEX)` is the failed element, which `rewrite` turns into the row
+        text = re.sub(r"(?<![\w$#.])[\w$#]+" + SAVE_EXCEPTIONS_ELEMENT, "", text, flags=re.IGNORECASE)
+        if names.search(text):
+            readers.append(statement)
+        start = statement.source_range.start_line if statement.source_range else None
+        if IMPLICIT_CURSOR.search(text) and (after is None or start is None or start >= after
+                                             or id(statement) in in_loop):
+            counted = True
+    if readers:
+        return (f"{', '.join(of_column)} を組の外でも読んでいる（走査ループにすると配列は埋まらない。"
+                f"{readers[0].source_range or readers[0].id}）")
+    if counted:
+        return "組の後ろで SQL%ROWCOUNT / SQL%BULK_ROWCOUNT / SQL%FOUND / SQL%NOTFOUND を読んでいる"
+    return None
+
+
+def _text(node) -> str:
+    """Every string a statement (or declaration) holds, its own fields only: nested bodies are walked separately."""
+    import dataclasses
+
+    parts: list[str] = []
+
+    def collect(value) -> None:
+        if isinstance(value, str):
+            parts.append(value)
+        elif isinstance(value, M.BindVariable):
+            parts.extend(v for v in (value.plsql_variable, value.expression) if v)
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, (str, M.BindVariable)):
+                    collect(item)
+
+    for field in dataclasses.fields(node):
+        if field.name in ("id", "kind", "diagnostics", "body", "else_body", "query", "exception_handlers",
+                          "declarations", "source_range", "type", "variant_statements"):
+            continue
+        collect(getattr(node, field.name, None))
+    for branch in getattr(node, "branches", []) or []:
+        parts.append(branch.condition or "")
+    if getattr(node, "selector", None):
+        parts.append(node.selector)
+    return "\n".join(parts)
 
 
 def _without_bulk_into(sql: str, match: re.Match) -> str:

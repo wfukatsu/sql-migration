@@ -324,6 +324,7 @@ CHANGES = {
     "CUR_BRANCHED": (SHAPE, "分岐ごとに別の問合せで開く cursor 変数を、分岐ごとに行を読んで回す形にした"),
     "PLAN_FETCH": (SHAPE, "実行計画: ScalarDB から行を取得する"),
     "PLAN_RESIDUAL": (SHAPE, "実行計画: 取得した行に、H2 で元の SQL を実行する"),
+    "BULK_NOT_FUSED": (INFO, "BULK COLLECT + FORALL を走査ループにしなかった（組の後ろで配列か SQL%ROWCOUNT を読む・#109）"),
     "ACCESS": (INFO, "アクセスパス（GET / パーティション走査）"),
     "CONFIG": (INFO, "読み取り専用のトランザクションにできる"),
     "COST": (INFO, "取得コストの見積もり"),
