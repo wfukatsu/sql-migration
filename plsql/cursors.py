@@ -327,7 +327,8 @@ def _sequence(statements: list[M.Statement], routine: M.Routine, symbols: Symbol
             _chunks(statements, index, routine, symbols, module, schema) or \
             _scan(statements, index, routine, symbols, module, schema) or \
             _branched(statements, index, routine, symbols, module, schema) or \
-            _returned(statements, index, routine, symbols, module, schema)
+            _returned(statements, index, routine, symbols, module, schema) or \
+            _opened_out(statements, index, routine, symbols, module, schema)
         if match is None:
             out.append(statements[index])
             index += 1
@@ -695,6 +696,48 @@ def _returned(statements: list[M.Statement], index: int, routine: M.Routine, sym
              f"cursor 変数 {cursor} は呼び出し側へ返されていた。移行先に渡せる cursor は無いので、行を読んで List で返す"
              f"（呼び出し側は cursor から FETCH する代わりに List を受け取る）")
     return ([loop], 2, cursor)
+
+
+REF_CURSOR = re.compile(r"^\s*(?:SYS_REFCURSOR|REF\s+CURSOR\b.*)$", re.IGNORECASE | re.DOTALL)
+
+
+def _opened_out(statements: list[M.Statement], index: int, routine: M.Routine, symbols: SymbolTable,
+                module: str | None,
+                schema: OracleSchema | None) -> tuple[list[M.Statement], int, str] | None:
+    """`OPEN p_rc FOR q` of an OUT SYS_REFCURSOR argument -- a procedure that hands a cursor to its caller (#125).
+
+    The same thing as `_returned`, through an argument: the target has no cursor to hand over, so the argument
+    gets the rows, a List of the query's row record, and the result record carries it. Before this the OPEN read the
+    rows into a cursor state of the routine's own, and the argument stayed null -- the caller got nothing.
+
+    Only one OPEN of the argument, and no FETCH or CLOSE of it here: the routine that reads from the cursor it
+    hands over, or opens it on more than one query, is a different shape (each query would be its own row record).
+    """
+    statement = statements[index]
+    if statement.kind != "OpenCursor" or not getattr(statement, "query_sql", None):
+        return None
+    cursor = _cursor_name(statement.cursor)
+    parameter = next((p for p in routine.parameters if p.name.lower() == cursor), None)
+    if parameter is None or parameter.direction not in ("OUT", "IN OUT") or parameter.type is None \
+            or not any(REF_CURSOR.match(t or "") for t in (parameter.type.oracle, parameter.type.resolved)):
+        return None
+    everything = _walk_all(routine.body) + [s for h in routine.exception_handlers for s in _walk_all(h.body)]
+    uses = [s for s in everything if s.kind in ("OpenCursor", "Fetch", "CloseCursor")
+            and _cursor_name(s.cursor) == cursor]
+    if uses != [statement]:
+        return None
+    query = _query(cursor, [], routine, symbols, module, schema, opened=statement.query_sql)
+    if query is None or not _is_query(query):
+        return None
+    operation = _operation(statement, routine, query, [])
+    operation.cardinality = "MANY"
+    row = _row_name(routine)
+    loop = M.Loop(id=statement.id, kind="Loop", source_range=statement.source_range, loop_kind="cursor-for",
+                  variable=row, query=operation, body=[], cursor=f"{row} IN ({query})", rows_into=parameter.name)
+    loop.add("INFO", "CUR_RETURNED",
+             f"OUT 引数の cursor 変数 {parameter.name} は呼び出し側へ渡されていた。移行先に渡せる cursor は無いので、"
+             f"行を読んで List を結果の record に入れる（呼び出し側は cursor から FETCH する代わりに List を受け取る）")
+    return ([loop], 1, cursor)
 
 
 def _walk_all(statements: list[M.Statement]) -> list[M.Statement]:

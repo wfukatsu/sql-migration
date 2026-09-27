@@ -444,8 +444,8 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | IN 引数 | メソッドの引数 | なし | |
 | OUT / IN OUT 引数 | 結果の record `<Name>Result` を返す。IN OUT は引数でもある | なし | 例外で抜けたときは record を返さないので、呼び出し側に書きかけの値が見えません（生成で確認） |
 | function の戻り値 | メソッドの戻り値。OUT 引数もある function は `<Name>Result(returned, ...)` | なし | |
-| 引数の既定値（`DEFAULT`） | procedure の呼び出し文では既定値を補って渡す | なし | 式の中の function 呼び出しで既定値を省くと、引数が足りない Java になり javac で落ちます（生成で確認。まだ変換しないものを参照） |
-| 名前付き引数（`p_a => 1`） | procedure の呼び出し文では並べ替えて渡す | なし | 式の中の function 呼び出しでは断ります（生成で確認） |
+| 引数の既定値（`DEFAULT`） | 呼び出し文でも式の中の function 呼び出しでも、省いた引数に既定値を補って渡す | なし | 補えるのは既定値がリテラル（NULL・数・文字列・TRUE / FALSE）のときだけです。`DEFAULT SYSDATE` のような式を省くと、その文を断ります（生成で確認） |
+| 名前付き引数（`p_a => 1`） | 呼び出し文でも式の中の function 呼び出しでも、引数の順に並べ替えて渡す | なし | 式の中で並べ替えるのは、同じ package の routine と、ほかの module の routine（オーバーロードの無いもの）です（生成で確認） |
 | オーバーロード | 版ごとに番号を付けたメソッド（`fmt` → `fmt1`、`fmt2`） | 呼び出しがどの版か決まらないと CALL-002（REVIEW） | 引数の数と名前だけで選びます。型だけが違う版は選べません（生成で確認） |
 | 宣言部の入れ子の procedure / function | 外側の変数を引数で運ぶ private メソッドに持ち上げる | なし | 入れ子のブロックの DECLARE に書いたものは持ち上げず、LOWER-001（REVIEW） |
 | 別の package の routine の呼び出し | 呼ばれる側の Service をコンストラクタで受け取って呼ぶ | 呼び先の判定を引き継ぐ | 生成で確認 |
@@ -477,7 +477,7 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `SUBTYPE s IS 基底型`（routine の中） | 基底型の Java 型 | なし | `RANGE a..b` は `Plsql.inRange`、`NOT NULL` は `Plsql.notNull`（違反は ORA-06502） |
 | `SUBTYPE`（package の仕様） | `Object` になる | なし（型解決の因子も下がらない） | 下書き時点では解決されません（生成で確認） |
 | `変数 表.列%TYPE` | その列の Oracle の型に対応する Java 型 | なし | `schema.sql`（Oracle の DDL）から引きます |
-| `変数 表%ROWTYPE` / `cursor%ROWTYPE` | 生成した record（`EmpRow`、`CEmpRow`） | なし | 列名が record の要素名です。field への代入は record を作り直します（Java の record は不変） |
+| `変数 表%ROWTYPE` / `cursor%ROWTYPE` | 生成した record（`EmpRow`、`CEmpRow`） | なし | 列名が record の要素名です。field への代入は record を作り直します（Java の record は不変）。`NUMBER(p[,s])` の field へ入れる値は、同じ型の変数と同じく `Plsql.fit` / `fitLong` / `fitInt` で丸めて桁を検査し、field の Java の型（`NUMBER(10)` なら `Long`）にします（生成で確認） |
 | `TYPE t IS RECORD (...)` | 生成した record（`TPair`） | なし | 各 field は NULL か既定値で作ります（生成で確認） |
 | コレクション型 | コレクションの節を参照 | | |
 | `SYS_REFCURSOR` / `REF CURSOR` | cursor の節を参照 | | |
@@ -523,7 +523,7 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `TO_DATE(v, 書式)` | `Plsql.toDate(v, 書式)` | なし | 要素ごとに Oracle と同じ読み方をします（桁の少ない数字、RR の世紀、省いた年月は現在） |
 | `ADD_MONTHS`、`LAST_DAY` | `Plsql.addMonths`、`lastDay` | なし | |
 | `SYSDATE` | `Plsql.sysdate()` | 1 つの routine で時計を 2 回以上読むと SEM-007（REVIEW） | 時計は `Plsql.setClock` で差し替えられます。宣言部の初期値で読んだ分は SEM-007 の回数に入りません（生成で確認） |
-| `SYSTIMESTAMP` | `audit.now()`（引数に `AuditContext audit` が足される） | 列へ書くと SEM-010（REVIEW） | `OffsetDateTime` を返すので、TIMESTAMP を返す function の `RETURN SYSTIMESTAMP` は javac で落ちます（生成で確認） |
+| `SYSTIMESTAMP` | `audit.now()`（引数に `AuditContext audit` が足される） | 列へ書くと SEM-010（REVIEW） | `OffsetDateTime` を返します。TIMESTAMP の戻り値・変数へは `Plsql.moment(audit.now())`、DATE へは `Plsql.castDate(audit.now())` で入れます。Oracle と同じく、値の持つタイムゾーン（呼び出し側が渡す時計のもの。移行元ではデータベースサーバーの OS のもの）での日時を残してゾーンを落とし、DATE は秒未満も落とします。この向きの変換にはセッションのタイムゾーンは関わりません（生成で確認） |
 | `USER` | `audit.user()` | なし | 何を記録するかは業務の決定です（`AuditContext` は呼び出し側が渡します） |
 | `seq.NEXTVAL` | `sequences.next("seq")`（Repository が `Sequences` を受け取る） | なし | 採番は業務とは別のトランザクションで取ります。方式は DDL の `CACHE`（hi/lo）/ `NOCACHE`（counters 表と再試行）から決まります |
 | `SQLCODE`、`SQLERRM`、`SQLERRM(n)` | 例外の節を参照 | | |
@@ -596,7 +596,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `SYS_REFCURSOR` を `OPEN rc FOR SELECT ...; RETURN rc;` | 行の `List<...Row>` を返すメソッド | 行数上限は CUR-002 と同じ | 呼び出し側は FETCH の代わりに List を受け取ります（生成で確認） |
 | 局所の `SYS_REFCURSOR` を OPEN して FETCH するループ | cursor FOR ループ | CUR-002 | 生成で確認 |
 | `OPEN rc FOR '定数の文字列' USING p` | 静的な問合せとして生成 | なし | 生成で確認 |
-| OUT 引数の `SYS_REFCURSOR`（`OPEN p_rc FOR ...`） | 結果の record の値が `null` のまま返る | 判定は下がらない | 行が呼び出し側に渡りません（生成で確認。まだ変換しないものを参照） |
+| OUT 引数の `SYS_REFCURSOR`（`OPEN p_rc FOR SELECT ...`） | 行を読み、`List<...Row>` を結果の record の要素にして返す | 行数上限は CUR-002 と同じ | `RETURN rc` の形と同じく、呼び出し側は FETCH の代わりに List を受け取ります。routine の中でその cursor から FETCH する形や、2 回以上 OPEN する形はこの形にしません（生成で確認） |
 | `FOR UPDATE` の cursor、`WHERE CURRENT OF c` | 行ロックの節を参照 | LOCK-001 / LOCK-002（REDESIGN） | |
 
 ### コレクション
@@ -622,13 +622,13 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | PL/SQL の書き方 | 生成される Java | 判定への影響（ルール ID） | 注意 |
 |---|---|---|---|
 | `SELECT ... BULK COLLECT INTO v` | Repository が全行を `List<Object[]>` で返し、`Plsql.column(...)` で List にする | BULK-001（REVIEW） | この形には走査行数の上限の検査が付きません（生成で確認） |
-| `FETCH c BULK COLLECT INTO v LIMIT n` のループ | 行を先に全部読み、`Plsql.chunks(行, n)` で n 件ずつ配るループ | 上限を決めていなければ CUR-002 と BULK-003（REVIEW）。決めれば BULK-OPT-003（注記） | LIMIT はもうメモリを守りません。v の要素は行の record になります（下の注意） |
+| `FETCH c BULK COLLECT INTO v LIMIT n` のループ | 行を先に全部読み、`Plsql.chunks(行, n)` で n 件ずつ配るループ | 上限を決めていなければ CUR-002 と BULK-003（REVIEW）。決めれば BULK-OPT-003（注記） | LIMIT はもうメモリを守りません。v が数値などのコレクションなら要素は列の値、record（`c%ROWTYPE` など）のコレクションなら行の record です（生成で確認） |
 | 件数を数えるだけの分割読み | `COUNT(*)` の問合せ 1 回 | なし | 生成で確認 |
-| `SELECT ... BULK COLLECT INTO v` の直後の `FORALL i IN 1 .. v.COUNT <DML>` | 2 つを 1 つの cursor FOR ループにまとめる（診断 `BULK_CHUNKED`） | CUR-002、BULK-003 | 組の外で v や `SQL%ROWCOUNT` を読むと、まとめません（生成で確認） |
+| `SELECT ... BULK COLLECT INTO v` の直後の `FORALL i IN 1 .. v.COUNT <DML>` | 2 つを 1 つの cursor FOR ループにまとめる（診断 `BULK_CHUNKED`） | CUR-002、BULK-003。`SAVE EXCEPTIONS` 付きなら BULK-002（REDESIGN） | 組の外で v や `SQL%ROWCOUNT` を読むと、まとめません。`SAVE EXCEPTIONS` の診断はまとめたループに移すので、BULK-002 は当たり続けます（生成で確認） |
 | `FORALL i IN 1 .. v.COUNT <DML>` | 要素ごとに 1 回 DML する Java のループ。`rowCount` は合計 | なし | FORALL の 1 往復が要素ごとの往復になり、性能が変わります（生成で確認） |
 | `SQL%BULK_ROWCOUNT(i)` | `bulkRowCount` の List | なし | 生成で確認 |
 | `FORALL i IN INDICES OF v` / `VALUES OF v` | 変換しない | 判定は下がらない | 生成で確認 |
-| `FORALL ... SAVE EXCEPTIONS` | 部分失敗の意味は生成しない | BULK-002（REDESIGN） | `transactions.perIteration` で 1 要素 = 1 トランザクションに割る決定をすると、handler は失敗した 1 要素の記録になります |
+| `FORALL ... SAVE EXCEPTIONS` | 部分失敗の意味は生成しない | BULK-002（REDESIGN） | `SELECT ... BULK COLLECT` と組にしてループにまとめた形でも同じです。`transactions.perIteration` で 1 要素 = 1 トランザクションに割る決定をすると、handler は失敗した 1 要素の記録になります |
 | `SQL%BULK_EXCEPTIONS` | 変換しない（`UnsupportedOperationException`） | 判定は下がらない | 生成で確認 |
 | `FORALL ... RETURNING BULK COLLECT INTO` | 1 要素ごとに書いた値を List に足す | RMW なので `rowLocks.optimistic` の決定が要る | コード上の対応（#51）。生成では確かめていません |
 
@@ -835,17 +835,11 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `SQL%BULK_EXCEPTIONS` | 同上 | 判定は下がらない | |
 | `DBMS_SQL`（定数の問合せ以外） | 同上 | DYN-003 | |
 | とりうる文を数えられない `EXECUTE IMMEDIATE` | 同上 | DYN-002 / DYN-001 | 宣言部の初期値で組んだ文字列も含みます |
-| 式の中の function 呼び出しの名前付き引数 | 同上 | 判定は下がらない | 呼び出し文の名前付き引数は変換します |
-| 式の中の function 呼び出しで既定値の引数を省く | 引数の足りない Java（javac で落ちる） | 判定は下がらない | 生成で確認 |
 | 対応表に無い組み込み関数（`MONTHS_BETWEEN`、`SYS_GUID` など） | `UnsupportedOperationException` | 関数による | 組み込み関数の節を参照 |
 | `TO_CHAR` の 4 つ以外の書式、書式つき `TO_NUMBER` | 実行時に `UnsupportedOperationException` | 書式による | |
+| 式の中の function 呼び出しで、式の既定値（`DEFAULT SYSDATE` など）の引数を省く | 同上 | 判定は下がらない | リテラルの既定値は補います |
 | 別の package の変数の直接参照（`pkg.var`） | `UnsupportedOperationException` | STATE-001 | `packageState.carried` を書いても断ります |
 | package の仕様の `SUBTYPE` | 変数が `Object` になる | 判定は下がらない | |
-| OUT 引数の `SYS_REFCURSOR` | 結果の record に `null` が入る | 判定は下がらない | 生成で確認 |
-| TIMESTAMP を返す function の `RETURN SYSTIMESTAMP` | javac で落ちる | 判定は下がらない | 生成で確認 |
-| `FETCH ... BULK COLLECT INTO 数値のコレクション LIMIT n` の要素 | 要素が行の record になり、`PUT_LINE(v(i))` が record の文字列を出す | CUR-002、BULK-003 | 生成で確認 |
-| `%ROWTYPE` の field へ、型の違う NUMBER を代入（`NUMBER(10)` の列に NUMBER の引数） | javac で落ちる（`BigDecimal` と `Long`） | 判定は下がらない | 生成で確認 |
-| `FORALL ... SAVE EXCEPTIONS` を `SELECT ... BULK COLLECT` と組にした形 | 1 つのループにまとまり、失敗で止まる | BULK-002 が当たらず REVIEW | 部分失敗の意味が失われます（生成で確認） |
 | 入れ子ブロックの DECLARE の subprogram | 本体ごと断る | LOWER-001（REVIEW） | |
 | package 本体の初期化部 | 生成しない | STATE-002 | |
 | 呼び出し仕様（`LANGUAGE JAVA` など） | `UnsupportedOperationException` | EXT-002 | |

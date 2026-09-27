@@ -295,6 +295,15 @@ def loop_record(routine: M.Routine, loop: M.Loop) -> str:
     return _record_for(loop_method(routine, loop))
 
 
+def out_rows(routine: M.Routine) -> dict[str, str]:
+    """The OUT cursor arguments that carry rows (#125), each with the row record its List holds."""
+    from ..lower import _walk
+
+    return {loop.rows_into.lower(): loop_record(routine, loop)
+            for loop in _walk(routine.body) + [x for h in routine.exception_handlers for x in _walk(h.body)]
+            if loop.kind == "Loop" and getattr(loop, "rows_into", None) and loop.query is not None}
+
+
 # the routine whose statements are being generated: `_row` reads the INTO target's declared type off it (#73)
 _ROUTINE: "contextvars.ContextVar[M.Routine | None]" = contextvars.ContextVar("repository_routine", default=None)
 
