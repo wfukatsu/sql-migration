@@ -220,6 +220,24 @@ SqlOperation
 | `WHEN OTHERS` | catch最終段 | REVIEW | `SQLCODE/SQLERRM`依存を検出 |
 | exception後のOUT値 | Result/例外設計 | REVIEW | PL/SQLのobservable behaviorを確認 |
 
+実行時ヘルパが投げる Oracle の定義済み例外は、それぞれ SQLCODE を持つ専用の型で投げる（#99、2026-09-27）:
+
+- `Plsql.NoDataFound`（存在しない要素）
+- `SubscriptBeyondCount`、`SubscriptOutsideLimit`
+- `CollectionIsNull`、`InvalidCursor`、`CursorAlreadyOpen`、`CaseNotFound`
+- 名前の無い ORA-01426 / ORA-06503（`NumericOverflow`、`NoReturn`）
+
+ハンドラのある `try` は、これらを移行後の例外の型に置き換えてから投げ直す。名前の付いたハンドラ、
+`PRAGMA EXCEPTION_INIT` でその番号に結びつけた例外、`WHEN OTHERS` のどれにも届く。以前は `IllegalStateException`
+などで投げていたので、どのハンドラにも届かなかった。NULL の添字や NULL の FOR の範囲は VALUE_ERROR になる。
+
+`PRAGMA EXCEPTION_INIT` は、routine の宣言だけでなく、パッケージ（spec と body）と入れ子のブロックの宣言でも番号を
+結びつける（#101）。
+
+比較では、`RAISE_APPLICATION_ERROR`（-20000〜-20999）の例外を、番号とメッセージの両方で比べる。Oracle の
+`ORA-2xxxx: ` の前置きと `ORA-06512` の行は外して比べる。1 つの番号が複数の業務エラーを持つことがあるためである
+（#97）。
+
 ### 6.7 トランザクション
 
 | PL/SQL機能 | 推奨移行 | 判定 | 実装規則 |

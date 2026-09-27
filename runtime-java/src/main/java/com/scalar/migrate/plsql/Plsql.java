@@ -693,8 +693,21 @@ public final class Plsql {
     return plsInteger(num(value).setScale(0, java.math.RoundingMode.HALF_UP)).intValue();
   }
 
+  /** A bound of `FOR i IN low .. high`: a PLS_INTEGER, and NULL is ORA-06502 (measured on 26ai, #99). */
+  public static int loopBound(Object value) {
+    if (isNull(value)) throw new ValueError("FOR loop bound is NULL");
+    return toInt(value);
+  }
+
+  /** A NUMBER(10..18) value: rounded half away from zero as Oracle assigns it, not refused (#100). */
   public static Long toLong(Object value) {
-    return isNull(value) ? null : num(value).longValueExact();
+    if (isNull(value)) return null;
+    BigDecimal rounded = num(value).setScale(0, java.math.RoundingMode.HALF_UP);
+    try {
+      return rounded.longValueExact();
+    } catch (ArithmeticException tooLarge) {
+      throw new ValueError("number precision too large");
+    }
   }
 
   /** `SQLERRM` inside a handler: Oracle's text is `ORA-nnnnn: message` (the code is negative in PL/SQL). */
@@ -732,7 +745,10 @@ public final class Plsql {
   public static String sqlerrm(int code, String message) {
     if (code == 0) return "ORA-0000: normal, successful completion";
     if (code == 100) return "ORA-01403: no data found";
-    return String.format("ORA-%05d: %s", Math.abs(code), message == null ? "" : message);
+    String prefix = String.format("ORA-%05d: ", Math.abs(code));
+    // the runtime's own errors (Plsql.ZeroDivide, Plsql.NoDataFound, ...) already carry Oracle's whole text
+    if (message != null && message.startsWith(prefix)) return message;
+    return prefix + (message == null ? "" : message);
   }
 
   /** `DBMS_UTILITY.FORMAT_ERROR_BACKTRACE`: where the exception came from, one `ORA-06512: at` line per frame. */
@@ -764,7 +780,79 @@ public final class Plsql {
   }
 
   private static RuntimeException collectionIsNull() {
-    return new IllegalStateException("COLLECTION_IS_NULL (ORA-06531): the collection was never initialised");
+    return new CollectionIsNull();
+  }
+
+  /**
+   * A predefined Oracle error the runtime raises itself, with the SQLCODE a handler reads. Each is its own type so
+   * that the generated code can turn it into the migrated exception a PL/SQL handler names (service._guarded).
+   * They used to be IllegalStateException and IndexOutOfBoundsException, which neither `WHEN NO_DATA_FOUND` nor
+   * `WHEN OTHERS` caught: `BEGIN x := cache(k); EXCEPTION WHEN NO_DATA_FOUND THEN ...` escaped the routine (#99).
+   */
+  public abstract static class OracleError extends RuntimeException {
+    private final int code;
+
+    protected OracleError(int code, String message) {
+      super(message);
+      this.code = code;
+    }
+
+    public int code() {
+      return code;
+    }
+  }
+
+  // The messages are Oracle's own (26ai), because SQLERRM reads them.
+
+  /** NO_DATA_FOUND: SQLCODE +100, ORA-01403 to a client. */
+  public static final class NoDataFound extends OracleError {
+    public NoDataFound() {
+      super(100, "ORA-01403: no data found");
+    }
+  }
+
+  public static final class SubscriptBeyondCount extends OracleError {
+    public SubscriptBeyondCount() {
+      super(-6533, "ORA-06533: Subscript beyond count");
+    }
+  }
+
+  public static final class SubscriptOutsideLimit extends OracleError {
+    public SubscriptOutsideLimit() {
+      super(-6532, "ORA-06532: subscript outside of limit");
+    }
+  }
+
+  public static final class CollectionIsNull extends OracleError {
+    public CollectionIsNull() {
+      super(-6531, "ORA-06531: Reference to uninitialized collection");
+    }
+  }
+
+  public static final class InvalidCursor extends OracleError {
+    public InvalidCursor() {
+      super(-1001, "ORA-01001: cursor number is invalid or does not exist");
+    }
+  }
+
+  public static final class CursorAlreadyOpen extends OracleError {
+    public CursorAlreadyOpen() {
+      super(-6511, "ORA-06511: PL/SQL: cursor already open");
+    }
+  }
+
+  /** A CASE statement with no ELSE whose WHEN all failed. The generated final `else` throws it. */
+  public static final class CaseNotFound extends OracleError {
+    public CaseNotFound() {
+      super(-6592, "ORA-06592: CASE not found while executing CASE statement");
+    }
+  }
+
+  /** ORA-06503: a function reached its end without RETURN. It has no predefined name, only WHEN OTHERS sees it. */
+  public static final class NoReturn extends OracleError {
+    public NoReturn() {
+      super(-6503, "ORA-06503: PL/SQL: Function returned without value");
+    }
   }
 
   private static Object key(Object collection, Object key) {
@@ -832,28 +920,29 @@ public final class Plsql {
   @SuppressWarnings("unchecked")
   public static Object at(Object collection, Object at) {
     if (collection == null) throw collectionIsNull();
+    if (isNull(at)) throw new ValueError("NULL index table key value");
     if (collection instanceof java.util.List<?> list) {
       int i = num(at).intValueExact();
-      if (i < 1 || i > list.size()) {
-        throw new IndexOutOfBoundsException("SUBSCRIPT_BEYOND_COUNT (ORA-06533): element " + i + " of " + list.size());
-      }
+      if (i < 1) throw new SubscriptOutsideLimit();
+      if (i > list.size()) throw new SubscriptBeyondCount();
       Object element = list.get(i - 1);
-      if (element == GAP) throw new IllegalStateException("NO_DATA_FOUND (ORA-01403): element " + i + " was deleted");
+      if (element == GAP) throw new NoDataFound();
       return element;
     }
     java.util.Map<Object, ?> map = (java.util.Map<Object, ?>) collection;
     Object k = key(collection, at);
-    if (!map.containsKey(k)) throw new IllegalStateException("NO_DATA_FOUND (ORA-01403): no element at " + k);
+    if (!map.containsKey(k)) throw new NoDataFound();
     return map.get(k);
   }
 
   @SuppressWarnings("unchecked")
   public static void set(Object collection, Object at, Object value) {
     if (collection == null) throw collectionIsNull();
+    if (isNull(at)) throw new ValueError("NULL index table key value");
     if (collection instanceof java.util.List<?> raw) {
       java.util.List<Object> list = (java.util.List<Object>) raw;
       int i = num(at).intValueExact();
-      if (i < 1) throw new IndexOutOfBoundsException("SUBSCRIPT_OUTSIDE_LIMIT (ORA-06532): element " + i);
+      if (i < 1) throw new SubscriptOutsideLimit();
       // an INDEX BY PLS_INTEGER table takes any key: the List grows to it, the skipped slots being gaps. (A nested
       // table would raise SUBSCRIPT_BEYOND_COUNT here; both are Lists, so the lenient rule serves both)
       while (list.size() < i) list.add(GAP);
@@ -901,7 +990,7 @@ public final class Plsql {
     java.util.List<Object> list = (java.util.List<Object>) collection;
     int from = num(i).intValueExact();
     if (from < 1 || from > list.size() || list.get(from - 1) == GAP) {
-      throw new IllegalStateException("SUBSCRIPT_BEYOND_COUNT (ORA-06533): EXTEND copies element " + from);
+      throw new SubscriptBeyondCount();
     }
     Object copy = list.get(from - 1);
     for (int k = num(n).intValueExact(); k > 0; k--) list.add(copy);
@@ -960,7 +1049,7 @@ public final class Plsql {
     /** The rows of the query: {@code Object[]} from a direct read, a {@code List} per row from a plan. */
     public void open(java.util.List<?> rows) {
       if (this.rows != null && !variable) {
-        throw new IllegalStateException("CURSOR_ALREADY_OPEN (ORA-06511): cursor already open");
+        throw new CursorAlreadyOpen();
       }
       java.util.List<Object[]> out = new java.util.ArrayList<>(rows.size());
       for (Object row : rows) out.add(row instanceof Object[] a ? a : ((java.util.List<?>) row).toArray());
@@ -1019,7 +1108,7 @@ public final class Plsql {
     }
 
     private void open() {
-      if (rows == null) throw new IllegalStateException("INVALID_CURSOR (ORA-01001): invalid cursor");
+      if (rows == null) throw new InvalidCursor();
     }
   }
 

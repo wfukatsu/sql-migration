@@ -347,6 +347,62 @@ def build_call_graph(program: M.Program) -> CallGraph:
     return graph
 
 
+def unconditional_callees(program: M.Program) -> dict[str, set[str]]:
+    """Routine id -> the routines it calls on every run that gets past its first statement: from its declarations,
+    and from the statements before the first one that can leave or branch around a call. `IF c THEN ... END IF`
+    counts its condition, which always runs, and nothing inside it; a statement holding a RETURN, RAISE, EXIT or
+    GOTO ends the run of statements that always execute, since a scenario may have left there.
+
+    `review.credit_private_callees` gives a private routine its callers' evidence only when a caller reaches it
+    this way. Crediting it whenever its callers passed made `g` AUTO although the one scenario of `f` never took
+    the branch that calls it (#95)."""
+    by_name = _names(program)
+    out: dict[str, set[str]] = {}
+    for module in program.modules:
+        for routine in module.routines:
+            declared = _declared_names(module, routine)
+
+            def calls(expression: str) -> set[str]:
+                return _called_in(expression, by_name, module.name, routine.id, declared) if expression else set()
+
+            found: set[str] = set()
+            for declaration in routine.declarations:
+                if declaration.initial and declaration.declaration_kind != "cursor":
+                    found |= calls(declaration.initial)
+
+            def straight(statements: list[M.Statement]) -> bool:
+                """Collect the calls that always run; False once a statement may have left."""
+                for statement in statements:
+                    leaves = any(s.kind in ("Return", "Raise", "Exit", "Goto") for s in _walk([statement]))
+                    if statement.kind == "Call":
+                        resolved = getattr(statement, "resolved_to", None) or \
+                            _resolve(statement.callee, by_name, module.name, statement.arguments or [])
+                        if resolved is not None:
+                            found.add(resolved)
+                        for argument in statement.arguments or []:
+                            found.update(calls(argument))
+                    elif statement.kind == "Block":
+                        for declaration in getattr(statement, "declarations", []) or []:
+                            if declaration.initial and declaration.declaration_kind != "cursor":
+                                found.update(calls(declaration.initial))
+                        if not straight(statement.body):
+                            return False
+                        continue
+                    elif statement.kind in ("If", "Case"):
+                        first = (getattr(statement, "branches", None) or [None])[0]
+                        found.update(calls(getattr(statement, "selector", None) or (first.condition if first else "")))
+                    elif statement.kind not in ("Loop", "SqlOperation"):
+                        for expression in _expressions(statement):
+                            found.update(calls(expression))
+                    if leaves:
+                        return False
+                return True
+
+            straight(routine.body)
+            out[routine.id] = found
+    return out
+
+
 def _unresolved_overload(statement: M.Statement, name: str) -> None:
     if any(d.code == "OVERLOAD_UNRESOLVED" for d in statement.diagnostics):
         return

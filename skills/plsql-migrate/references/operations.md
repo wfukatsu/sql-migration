@@ -158,6 +158,6 @@ corpus の外のプロジェクト（`fixtures/plsql-external/<名前>/`、migra
 |---|---|
 | `boundary: rollback` | `transactions.callerBoundary` の routine で、元の routine が自分で ROLLBACK していたとき。ScalarDB 側のハーネスが呼び出し側として呼んだあとに rollback する。Oracle 側は原文が自分で戻すので無視する。書かないと、Oracle が戻した行が ScalarDB 側に残って相違になる |
 | `call` の `via: table` | PIPELINED 関数（PL/SQL から呼べない、PLS-00653）。Oracle 側は `SELECT * FROM TABLE(f(p => :p))` で読み、ScalarDB 側は生成した method が返す List を読む |
-| `nondeterministic`（`reason` と `ignore_columns: {表: [列, …]}`） | Oracle 自身が結果を決めていないとき（`ORDER BY` の無い `ROWNUM <= n` の更新など）。その列を両側から外した行の集合で比べる。理由の無い宣言は拒否される |
+| `nondeterministic`（`reason` と、`ignore_columns: {表: [列, …]}` または `unordered: true`） | Oracle 自身が結果を決めていないとき。`ignore_columns` は `ORDER BY` の無い `ROWNUM <= n` の更新などで、その列を両側から外した行の集合で比べる。`unordered` は、routine が返す行（BULK COLLECT、PIPELINED）に並びを決める `ORDER BY` が無いときで、行の集まりとして比べる。書かなければ、返す行は順序どおりに比べる。理由の無い宣言は拒否される |
 | `accepted_difference`（`exception: {oracle: …, target: …}`、`reason`、`decided`） | 移行先では同じ例外を上げられない差を、理由つきで受け入れたとき。その 2 つの例外コードの組だけを覆い、表や結果の差は相違のまま残る |
 | `mask` | ハーネスが固定できない時計から書かれる列 |

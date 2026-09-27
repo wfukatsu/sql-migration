@@ -168,7 +168,9 @@ def dtos_for(module: M.Module, package: str) -> list[Dto]:
         # a RECORD type met only as a field of another record or as an element of a collection (`friend.name`,
         # `v1(1)`) is a class too, or the component that names it would not compile (#82)
         from .types import _shape, record_types
-        for declaration in list(routine.declarations) + list(routine.parameters):
+        # a trigger's DECLARE sits on the module (lower._trigger): 9-4's `salaries_t` of %ROWTYPE was imported and
+        # never written
+        for declaration in list(routine.declarations) + list(routine.parameters) + list(module.declarations):
             resolved = _shape(declaration.type.resolved) if declaration.type is not None else ""
             for shape, cls in record_types().items():
                 if shape in resolved and cls.lower() not in seen:

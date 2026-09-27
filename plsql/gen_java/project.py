@@ -111,14 +111,11 @@ def generate(program: M.Program, root: str | Path, base_package: str = "com.exam
         project.restricted = sorted({f"{(namespaces or {}).get(c.table) or ''}.{c.table}".lstrip(".")
                                      for c in checks if c.kind in ("B", "D")})
 
-    exception_files, registry = generate_exceptions(program, project.domain_package)
-    project.files.extend(exception_files)
-    project.error_codes = registry.to_dict()
-
     # #12: trigger の本体は別の module にある。呼ぶ側がその routine を見られるようにする
     from .service import _PROGRAM
 
     _PROGRAM.set(program)
+    used: set[str] = set()
     for module in program.modules:
         project.files.extend(d.file for d in dtos_for(module, project.domain_package))
         service = generate_service(module, project.app_package, project.infra_package,
@@ -131,6 +128,11 @@ def generate(program: M.Program, root: str | Path, base_package: str = "com.exam
         project.unsupported_sql.extend(repository.unsupported)
         project.planned_sql.extend(repository.planned)
         project.undecided_limits.extend(repository.undecided_limits)
+        used |= service.predefined
+    # after the services: a WHEN OTHERS there may throw a predefined class no PL/SQL names (#99)
+    exception_files, registry = generate_exceptions(program, project.domain_package, used)
+    project.files.extend(exception_files)
+    project.error_codes = registry.to_dict()
     return project
 
 
@@ -220,6 +222,10 @@ def write(project: GeneratedProject, decisions: dict[str, Decision] | None = Non
     report = project.root / "generation-report.json"
     payload = {"summary": project.summary(), "errorCodes": project.error_codes}
     if decisions is not None:
+        # what the generator refused, per routine: the code that runs throws there. A scenario that does not reach
+        # the refusal passes all the same, so the capture carries this next to its fingerprint and the evidence
+        # does not count for such a routine (#95)
+        payload["refused"] = refused_by_routine(project, decisions)
         payload["verdicts"] = {
             routine: {"verdict": decision.verdict, "ruleVerdict": decision.rule_verdict,
                       "confidence": round(decision.confidence.value, 4),
@@ -232,6 +238,17 @@ def write(project: GeneratedProject, decisions: dict[str, Decision] | None = Non
     report.write_text(json.dumps(payload, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     written.append(report)
     return written
+
+
+def refused_by_routine(project: "GeneratedProject", routines) -> dict[str, list[str]]:
+    """routine id -> the statements (or the routine itself) the generator refused or ScalarDB cannot run. A
+    routine-level refusal is recorded under the bare id, a statement's under `<routine>#...`."""
+    out: dict[str, list[str]] = {}
+    for item in project.untranslated + project.unsupported_sql:
+        owner = next((r for r in routines if item == r or item.startswith(r + "#")), None)
+        if owner is not None:
+            out.setdefault(owner, []).append(item)
+    return {routine: sorted(set(items)) for routine, items in sorted(out.items())}
 
 
 def _diagnostic_codes(program: M.Program | None) -> dict[str, list[str]]:

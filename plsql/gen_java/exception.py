@@ -31,6 +31,14 @@ PREDEFINED = {
                        "a string could not be converted to a number"),
     "ZERO_DIVIDE": ("ZeroDivideException", -1476, "division by zero"),
     "VALUE_ERROR": ("ValueErrorException", -6502, "a conversion or size error"),
+    # the runtime raises these from collections and cursors (`Plsql.at`, `Plsql.Cursor`), and the generated code
+    # from a CASE statement without ELSE; service._guarded turns them into these classes (#99)
+    "SUBSCRIPT_BEYOND_COUNT": ("SubscriptBeyondCountException", -6533, "a subscript past the collection's count"),
+    "SUBSCRIPT_OUTSIDE_LIMIT": ("SubscriptOutsideLimitException", -6532, "a subscript outside the legal range"),
+    "COLLECTION_IS_NULL": ("CollectionIsNullException", -6531, "a collection that was never initialised"),
+    "INVALID_CURSOR": ("InvalidCursorException", -1001, "a cursor that is not open"),
+    "CURSOR_ALREADY_OPEN": ("CursorAlreadyOpenException", -6511, "OPEN of a cursor that is already open"),
+    "CASE_NOT_FOUND": ("CaseNotFoundException", -6592, "no WHEN of a CASE statement matched and it has no ELSE"),
 }
 
 
@@ -126,11 +134,23 @@ def declared_code(name: str, *holders) -> int | None:
     """The Oracle number `PRAGMA EXCEPTION_INIT(name, -2291)` bound to a declared exception, from the routine's
     or the package's declarations (`lower._bind_exception_codes` puts it in `initial`). None when unbound."""
     for holder in holders:
-        for declaration in getattr(holder, "declarations", None) or []:
-            if declaration.declaration_kind == "exception" and declaration.name.upper() == name.upper() \
-                    and declaration.initial and re.fullmatch(r"-?\d+", declaration.initial.strip()):
-                return int(declaration.initial)
+        for scope in _scopes(holder):
+            for declaration in getattr(scope, "declarations", None) or []:
+                if declaration.declaration_kind == "exception" and declaration.name.upper() == name.upper() \
+                        and declaration.initial and re.fullmatch(r"-?\d+", declaration.initial.strip()):
+                    return int(declaration.initial)
     return None
+
+
+def _scopes(holder) -> list:
+    """Where a name declared in `holder` may be: a routine's nested blocks first, then the routine. A block's own
+    `e_blk EXCEPTION; PRAGMA EXCEPTION_INIT(e_blk, -20078)` was never looked at, so `WHEN e_blk` caught a class
+    that the RAISE did not throw (#101). The blocks are not told apart: two blocks of one routine declaring the
+    same name with different numbers take the first."""
+    if not isinstance(holder, M.Routine):
+        return [holder]
+    statements = _walk(holder.body) + [s for h in holder.exception_handlers for s in _walk(h.body)]
+    return [s for s in statements if s.kind == "Block" and getattr(s, "declarations", None)] + [holder]
 
 
 def class_of(name: str, *holders, program=None) -> tuple[int, str]:
@@ -163,7 +183,7 @@ def bound_class(code: int, program) -> str | None:
     if program is None or any(code == k for _, k, _ in PREDEFINED.values()):
         return None
     for module in program.modules:
-        holders = [module] + list(module.routines)
+        holders = [module] + [scope for routine in module.routines for scope in _scopes(routine)]
         for holder in holders:
             for declaration in getattr(holder, "declarations", None) or []:
                 if declaration.declaration_kind == "exception" and declared_code(declaration.name, holder) == code:
@@ -241,6 +261,8 @@ def exception_class(entry: ErrorCode, package: str) -> JavaFile:
 # OTHERS handler turns it into this class on the way out (service._guarded). VALUE_ERROR likewise: a declaration
 # with a precision or a length raises `Plsql.ValueError` from `Plsql.fit`, and so does text that is not a number
 # wherever the helper reads a NUMBER (`Plsql.dec`, `Plsql.toNumber`, the arithmetic).
+# The collection, cursor and CASE errors are written when a handler names them or a WHEN OTHERS translates to
+# them (`generate`'s `used`, #99).
 ALWAYS = ("NO_DATA_FOUND", "TOO_MANY_ROWS", "ZERO_DIVIDE", "VALUE_ERROR")
 
 # Predefined exceptions nothing on the target raises by itself: the generated code has no unique-constraint
@@ -251,9 +273,10 @@ ALWAYS = ("NO_DATA_FOUND", "TOO_MANY_ROWS", "ZERO_DIVIDE", "VALUE_ERROR")
 NEVER_RAISED_BY_TARGET = ("DUP_VAL_ON_INDEX", "INVALID_NUMBER")
 
 
-def generate(program: M.Program, package: str) -> tuple[list[JavaFile], Registry]:
+def generate(program: M.Program, package: str, used=()) -> tuple[list[JavaFile], Registry]:
+    """`used`: predefined exceptions the generated services throw without the PL/SQL naming them."""
     registry = collect(program)
-    for name in ALWAYS:
+    for name in (*ALWAYS, *sorted(set(used) - set(ALWAYS))):
         class_name, code, message = PREDEFINED[name]
         registry.add(code, class_name, name, message, routine=None)
     files = [base_exception(package)]

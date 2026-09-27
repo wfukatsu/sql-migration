@@ -43,12 +43,20 @@ def evidence_from_diff(path: str | Path | None, variant: str | None = None,
     that is deliberate (rules/engine.py). So a decisions file written without this reports every routine as
     REVIEW or worse -- true, but only because nobody asked what the comparison found.
 
-    A routine is credited for the scenarios that agreed with Oracle out of those that were compared. Scenarios
-    that could not run at all are not counted either way: they are not evidence of agreement, and calling them
-    failures would blame a routine for a fixture the target could not seed.
+    A routine is credited for the scenarios that agreed with Oracle out of those that were compared. If one of its
+    scenarios could not be compared at all (the target refused its setup, the generated service has no such
+    method, no ScalarDB capture), the routine is not credited: it used to be left out, so a routine with one
+    passing scenario and two that never ran was 1/1, AUTO (#95). It is not blamed for a wrong result either --
+    `Evidence.stale` says which scenario was not compared and why.
 
     With no variant given, a routine must agree under *every* money convention reported. Agreeing under one and
-    not the other is not agreement -- it is a result that depends on a decision nobody has taken yet.
+    not the other is not agreement -- it is a result that depends on a decision nobody has taken yet. A variant
+    that has no scenario for a routine another variant compared is a convention nobody measured it under, and the
+    routine is not credited either.
+
+    The capture records what the generator refused in the code it ran (`refused`, next to the fingerprint). A
+    routine with a refusal is not credited however its scenarios came out: the refusal throws, and the scenarios
+    passed because none of them reached it (#95).
 
     `current` is `fingerprint.of(program, root)` for the program being judged. With it, a scenario only counts
     if the report says it was measured on this source, by this toolchain (#27-33). Without that check any file
@@ -62,18 +70,32 @@ def evidence_from_diff(path: str | Path | None, variant: str | None = None,
     wanted = [variant] if variant else sorted(report)
     tally: dict[str, list[int]] = {}
     stale: dict[str, str] = {}
+    seen: dict[str, set[str]] = {}
     for name in wanted:
         recorded = (report.get(name) or {}).get("fingerprints")
-        for scenario in (report.get(name) or {}).get("scenarios", {}).values():
+        entries = [(key, s, True) for key, s in (report.get(name) or {}).get("scenarios", {}).items()] + \
+            [(key, s, False) for key, s in (report.get(name) or {}).get("not_compared", {}).items()]
+        for key, scenario, compared in entries:
             routine = _resolve(scenario["routine"], known_ids)
+            seen.setdefault(routine, set()).add(name)
             reason = _stale(routine, recorded, current)
             if reason:
                 stale[routine] = reason
+                continue
+            refused = ((recorded or {}).get("refused") or {}).get(routine)
+            if refused:
+                stale[routine] = f"比較した生成コードに変換できなかった箇所がある（{', '.join(refused[:3])}）"
+                continue
+            if not compared:
+                stale[routine] = f"比べられなかったシナリオがある（{key}: {scenario.get('reason', '理由なし')}）"
                 continue
             counts = tally.setdefault(routine, [0, 0])
             counts[1] += 1
             if not scenario["differences"]:
                 counts[0] += 1
+    for routine, variants in seen.items():
+        if len(wanted) > 1 and variants != set(wanted) and routine not in stale:
+            stale[routine] = f"{', '.join(sorted(set(wanted) - variants))} の規約では比べていない"
     # stale under one variant is stale: the routine has not been shown to agree under every convention
     return Evidence(captures={routine: (passed, total) for routine, (passed, total) in tally.items()
                               if routine not in stale}, stale=stale)
@@ -86,9 +108,12 @@ def _stale(routine: str, recorded: dict | None, current: dict | None) -> str | N
         return "比較結果に fingerprint が無い（どのソース・どの生成器で測ったものか分からない）"
     if recorded.get("toolchain") != current.get("toolchain"):
         return "比較のあとで生成器か実行時ヘルパが変わった"
-    if routine in current.get("sources", {}) \
-            and recorded.get("sources", {}).get(routine) != current["sources"][routine]:
-        return "比較のあとで PL/SQL のソースが変わった"
+    if routine not in current.get("sources", {}):
+        # its file is missing or matches two files: nothing says the evidence is about this source (#96). It used
+        # to skip the check, so such a routine's evidence was never stale
+        return "今のソースを特定できない（ファイルが無いか、同じ名前のファイルが複数ある）"
+    if recorded.get("sources", {}).get(routine) != current["sources"][routine]:
+        return "比較のあとで PL/SQL のソースが変わった（呼ぶ routine、パッケージ、trigger、schema、limits を含む）"
     return None
 
 
@@ -119,9 +144,11 @@ def credit_private_callees(evidence: Evidence, program: M.Program, call_graph) -
     `pkg_shipment.is_shippable` was fully verified and still REVIEW because `line_count` was not.
 
     The comparison did run the whole call chain against Oracle, so the evidence is real; it is just indirect.
-    Two things keep that from becoming a way to inflate AUTO:
+    Three things keep that from becoming a way to inflate AUTO:
 
     * a private routine is credited only when **every** caller is verified, and never above the weakest of them
+    * at least one verified caller calls it on every run (`analysis.unconditional_callees`): a call inside an IF
+      the scenarios never took ran nothing, and crediting it made a helper that divides by zero AUTO (#95)
     * a rule that objects to the private routine still blocks it -- evidence is one factor of five, not a verdict
 
     Public routines are untouched: their evidence is their own.
@@ -133,6 +160,9 @@ def credit_private_callees(evidence: Evidence, program: M.Program, call_graph) -
         for callee in call_graph.callees(routine):
             callers.setdefault(callee, set()).add(routine)
 
+    from .analysis import unconditional_callees
+
+    always = unconditional_callees(program)
     captures = dict(evidence.captures)
     for routine in private:
         if routine in captures:
@@ -140,6 +170,8 @@ def credit_private_callees(evidence: Evidence, program: M.Program, call_graph) -
         mine = callers.get(routine, set())
         if not mine or any(c not in captures for c in mine):
             continue  # a caller nobody verified is not evidence about the callee
+        if not any(routine in always.get(c, set()) for c in mine):
+            continue  # no verified caller is sure to have run it
         rates = [captures[c][0] / captures[c][1] for c in mine if captures[c][1]]
         if not rates or min(rates) < 1.0:
             continue  # never above the weakest caller, and a caller that disagreed credits nothing
@@ -291,7 +323,8 @@ def _why_not_auto(decision, stale: dict[str, str] | None = None) -> list[str]:
     if zeros:
         old = (stale or {}).get(decision.routine)
         reasons.append("確信度が 0: " + ", ".join(zeros)
-                       + (f"（testEvidence が 0 なのは、渡された比較結果が古いから: {old}。capture を取り直す）"
+                       + (f"（testEvidence が 0 なのは、渡された比較結果を数えていないから: {old}。"
+                          f"直してから capture を取り直す）"
                           if "testEvidence" in zeros and old else
                           "（testEvidence が 0 なのは、この routine をまだ誰も Oracle と突き合わせて "
                           "いないから。P3-2 の比較結果を --evidence で渡す）"

@@ -59,10 +59,17 @@ python -m plsql.cli fixtures/plsql/src --evidence difftest/work/plsql-diff.json 
 python -m plsql.kpi --evidence difftest/work/plsql-diff.json --generated generated
 ```
 
-比較結果（`--evidence`）は、**いまのソースと生成器で測ったものだけ**が数えられます。capture の時点で PL/SQL の
-ソースとツールチェーン（生成器・SQL 変換器・実行時ヘルパ）のハッシュを記録し、判定のときに照らします
-（`plsql/fingerprint.py`、[KPI](../design/plsql-kpi.md) の「確信度」）。ソースか生成器を変えたら、その分は
-「古い証拠」として REVIEW に戻り、`decisions.json` の `staleEvidence` に理由が出ます。`plsql_capture.py` から取り直してください。
+比較結果（`--evidence`）は、**いまのソースと生成器で測ったものだけ**が数えられます。capture の時点で、2 つの
+ハッシュを記録し、判定のときに照らします（`plsql/fingerprint.py`、[KPI](../design/plsql-kpi.md) の「確信度」）:
+
+- PL/SQL のソースのハッシュ。呼ぶ routine、パッケージの状態、trigger、schema、`limits.yaml` を含む
+- ツールチェーンのハッシュ。生成器、パーサ、ルール、SQL 変換器、実行時ヘルパを含む
+
+ソースか生成器を変えたら、その分は「古い証拠」として REVIEW に戻り、`decisions.json` の `staleEvidence` に理由が
+出ます。`plsql_capture.py` から取り直してください。次の routine も数えず、同じ欄に理由が出ます:
+
+- 生成器が断った箇所がある routine
+- 比べられなかったシナリオがある routine
 
 ## 出力
 
@@ -90,7 +97,8 @@ PL/SQL の変数・引数・戻り値・`%TYPE` / `%ROWTYPE` の列は、`plsql/
 | NUMBER(p), p > 18 | BigDecimal | BIGINT | Java 側は正確に持つが、64 ビットを超える値は保存であふれる。SQL 変換側と同じ選択で、列の型を黙って変えない |
 | NUMBER(p, s), s > 0（金額を含む） | BigDecimal | BIGINT（10^s 倍した整数） | ScalarDB に DECIMAL が無く、DOUBLE では Oracle の四捨五入が保てない。`scale` を持ち、生成された repository が `Plsql.bind` / `Plsql.read` で往復させる |
 | 精度なしの NUMBER | BigDecimal | TEXT | 何桁でも入るので、今のデータが long に収まるからと long にはしない。精度が分からないことを見える形で残す |
-| PLS_INTEGER / BINARY_INTEGER / SIMPLE_INTEGER / INTEGER / INT / SMALLINT | Integer | INT | |
+| PLS_INTEGER / BINARY_INTEGER / SIMPLE_INTEGER | Integer | INT | 32 ビット。超えると ORA-01426 |
+| INTEGER / INT / SMALLINT | BigDecimal | BIGINT | Oracle では NUMBER(38) で、PLS_INTEGER ではない。代入で整数に丸める（`Plsql.fit(v, 38, 0)`）。Integer だった頃は 2^31 を超える値で ORA-01426 になった（#100） |
 | BINARY_FLOAT | Float | FLOAT | |
 | BINARY_DOUBLE / FLOAT / REAL | Double | DOUBLE | |
 | VARCHAR2 / NVARCHAR2 / CHAR / NCHAR / VARCHAR / STRING | String | TEXT | Oracle は `''` を NULL として扱う。この区別はアプリが保つ（`Plsql.bind` は `''` を NULL にして渡す） |
@@ -101,7 +109,7 @@ PL/SQL の変数・引数・戻り値・`%TYPE` / `%ROWTYPE` の列は、`plsql/
 | TIMESTAMP WITH (LOCAL) TIME ZONE | OffsetDateTime | TIMESTAMPTZ | UTC で保存、ミリ秒まで |
 | BOOLEAN | Boolean | BOOLEAN | PL/SQL の BOOLEAN は NULL を取るので primitive にしない |
 | TABLE OF x / VARRAY(n) OF x（コレクション） | `List<x の Java 型>` | x の保存形 | 1 始まり。コンストラクタ・要素の読み書き・COUNT / FIRST / LAST / NEXT / PRIOR / EXISTS / DELETE / EXTEND / TRIM / LIMIT は `Plsql` の helper。途中の `DELETE(i)` は隙間として持つ。要素の型が解決できなければ Object のまま（#45） |
-| TABLE OF x INDEX BY VARCHAR2 | `Map<String, x の Java 型>`（TreeMap） | — | キー順に FIRST / NEXT で回る。`INDEX BY PLS_INTEGER` は BULK COLLECT / FORALL / 配列 bind の使い方に合わせて List のまま（疎なキーは模していない） |
+| TABLE OF x INDEX BY VARCHAR2 / PLS_INTEGER | `Map<String, x の Java 型>` / `Map<Integer, x の Java 型>`（TreeMap） | — | キー順に FIRST / NEXT で回る。PLS_INTEGER のキーは 0 や負の数も取る（#93） |
 | RECORD（`TYPE t IS RECORD`） | 生成した record | 列ごと | field ごとに NULL か既定値で作り、field への代入は record を組み直す（Java の record は不変） |
 | SYS_REFCURSOR | routine の中: 行を先に読むループ。呼び出し側へ返す: `List<行の record>` | — | `OPEN rc FOR q` の問合せで読む。`RETURN rc` は行の List を返す method になり、呼び出し側は FETCH の代わりに List を受け取る（#44） |
 | `%ROWTYPE` | 生成した record | 列ごと | 列名で対応する（dto.py）。cursor FOR ループの行は列の幅にかかわらず数値を BigDecimal にする。ループ変数は PL/SQL では NUMBER で、NUMBER 引数の routine にそのまま渡されるため |

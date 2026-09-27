@@ -774,6 +774,9 @@ class _Parser:
         if kind == "string":
             return _string(value)
         if kind == "number":
+            if value.isdigit() and int(value) > 2147483647:
+                # a whole number past 32 bits is not a Java int literal: `i := 5000000000` did not compile (#100)
+                return f'new java.math.BigDecimal("{value}")'
             return value
         if kind == "op":
             return value if value in "()," else f" {value} "

@@ -299,7 +299,9 @@ def _dirty_auto(project, decisions) -> list[str]:
         if decision.rule_verdict != "AUTO":
             continue
         prefix = routine_id + "#"
-        if any(s.startswith(prefix) for s in project.untranslated + project.unsupported_sql):
+        # a refusal of the whole routine (an unresolved declaration, a construct with no translation) is recorded
+        # under the bare id. Looking only for `<id>#` let such a routine pass as clean (#95)
+        if any(s == routine_id or s.startswith(prefix) for s in project.untranslated + project.unsupported_sql):
             dirty.append(routine_id)
     return sorted(dirty)
 
