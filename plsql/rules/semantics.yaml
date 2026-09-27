@@ -192,6 +192,18 @@ rules:
     requiredTests:
       - caller_context_values
 
+  # #120（2026-09-27 の利用者の決定）: 乱数と GUID は実行ごとに値が変わる。Oracle と比べて一致を示せず、秘密の値に
+  # 使うなら乱数の出所（ThreadLocalRandom / SecureRandom / シード）は業務の決定である。時計を 2 回読む SEM-007 と同じ扱い
+  - id: SEM-014
+    match: {statementKind: [SqlOperation, Expression], textMatches: '\b(DBMS_RANDOM\s*\.|SYS_GUID\s*\()'}
+    decision: REVIEW
+    message: DBMS_RANDOM / SYS_GUID の値は実行ごとに変わり、Oracle と比べて同じだと示せません。乱数の出所も移行先で決める必要があります
+    remediation:
+      - 乱数の出所を決める（秘密の値なら SecureRandom、再現が要るならシードを渡す）
+      - テストでは乱数を固定するか、値ではなく性質（長さ、文字の種類、一意性）を確かめる
+    requiredTests:
+      - random_source_decided
+
   - id: CUR-001
     match: {statementKind: [OpenCursor, Fetch, CloseCursor]}
     decision: REVIEW
