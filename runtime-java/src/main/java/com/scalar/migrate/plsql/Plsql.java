@@ -1121,6 +1121,15 @@ public final class Plsql {
     if (value instanceof java.time.ZonedDateTime zoned) return zoned.toOffsetDateTime();
     if (value instanceof java.sql.Timestamp stamp) return stamp.toInstant().atOffset(java.time.ZoneOffset.UTC);
     if (value instanceof LocalDateTime local) return local.atOffset(java.time.ZoneOffset.UTC);
+    if (value instanceof CharSequence) {
+      // a plan runs the rest in H2 and hands text back: "2026-09-27 10:00:00+09", "...:00.5+09:00", or no offset
+      // at all (oracle-plsql-docs 12-5)
+      String text = value.toString().trim().replace(' ', 'T');
+      java.util.regex.Matcher short_ = java.util.regex.Pattern.compile("([+-]\\d{2})$").matcher(text);
+      if (short_.find()) text = text + ":00";
+      if (text.matches(".*([+-]\\d{2}:\\d{2}|Z)$")) return java.time.OffsetDateTime.parse(text);
+      return LocalDateTime.parse(text).atOffset(java.time.ZoneOffset.UTC);
+    }
     throw new IllegalArgumentException("TIMESTAMP WITH TIME ZONE として読めない値: " + value.getClass());
   }
 

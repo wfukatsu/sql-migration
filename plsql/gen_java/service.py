@@ -936,6 +936,8 @@ def _element_record(resolved: str | None) -> str | None:
 def _empty_record(resolved: str, record: str, file: "JavaFile | None" = None) -> str:
     """A record whose fields are all NULL -- and whose nested records are records of NULLs, as Oracle's are: a
     nested field left null made `friend.name.first := 'John'` read a component of nothing (#82)."""
+    if file is not None:
+        file.add_import(*java_type(resolved).imports)   # the record's own class, when it is a nested one (5-51)
     components = []
     for _, declared in record_columns(resolved):
         nested = java_type(declared).name
@@ -949,13 +951,24 @@ def _empty_record(resolved: str, record: str, file: "JavaFile | None" = None) ->
 
 
 def _literal_default(declared: str) -> str | None:
-    """A field's literal default (`:= 'abcde'` / `DEFAULT 0`) as Java, or None."""
+    """A field's literal default (`:= 'abcde'` / `DEFAULT 0`) as Java, in the field's own Java type: a
+    `years INTEGER DEFAULT 35` field is an Integer, and a BigDecimal there did not compile (5-51)."""
     text = re.search(r"(?::=|\bDEFAULT\b)\s*'((?:[^']|'')*)'\s*$", declared, re.IGNORECASE)
     number = re.search(r"(?::=|\bDEFAULT\b)\s*(-?\d+(?:\.\d+)?)\s*$", declared, re.IGNORECASE)
     if text:
         return '"' + text.group(1).replace("''", "'").replace('"', '\\"') + '"'
     if number:
-        return f'new java.math.BigDecimal("{number.group(1)}")'
+        literal = number.group(1)
+        kind = java_type(re.split(r"\s*(?::=|\bDEFAULT\b)", declared, maxsplit=1, flags=re.IGNORECASE)[0]).name
+        if kind == "Integer" and "." not in literal:
+            return literal
+        if kind == "Long" and "." not in literal:
+            return f"{literal}L"
+        if kind == "Double":
+            return f"{float(literal)!r}"
+        if kind == "Float":
+            return f"{float(literal)!r}f"
+        return f'new java.math.BigDecimal("{literal}")'
     return None
 
 
