@@ -387,11 +387,19 @@ _LITERAL = re.compile(r"^(?:-?\d+(?:\.\d+)?|'(?:[^']|'')*'|TRUE|FALSE|NULL)$", r
 
 def _constants(file: JavaFile, module: M.Module) -> None:
     """A package's constants (`c_max_raise_pct CONSTANT NUMBER := 20`, in the specification or the body) as
-    fields (#46). A constant is the same for every caller, so a static field keeps its meaning; a constant whose
-    value is an expression is left out and its name stays unknown, which the statement that reads it reports."""
+    fields (#46). A constant is the same for every caller, so a static field keeps its meaning. One whose value is
+    an expression over literals, earlier constants and the runtime's pure functions (`gc_timestamp_format CONSTANT
+    VARCHAR2(255) := gc_date_format || ':FF'`) is a field too (`_expression_constants`); any other is left out and
+    its name stays unknown, which the statement that reads it reports."""
     if module.module_kind != "package":
         return
+    computed = _expression_constants(module)
     for declaration in module.declarations:
+        if declaration.name in computed:
+            java_type_name, value, imports = computed[declaration.name]
+            file.add_import(*imports)
+            file.line(f"private static final {java_type_name} {_local(declaration.name)} = {value};")
+            continue
         if declaration.declaration_kind != "constant" or not declaration.initial \
                 or not _LITERAL.match(declaration.initial.strip()):
             continue
@@ -406,6 +414,37 @@ def _constants(file: JavaFile, module: M.Module) -> None:
         elif mapped.name == "Long" and "." not in value:
             value = f"{value}L"
         file.line(f"private static final {mapped.name} {_local(declaration.name)} = {value.lower() if value.upper() in ('TRUE', 'FALSE', 'NULL') else value};")
+
+
+# what a package constant's initialiser may not read: it is evaluated once per JVM here and once per session in
+# Oracle, so a clock, a random value or the caller's identity would differ
+_SESSION_DEPENDENT = re.compile(r"\b(?:sysdate|systimestamp|audit\.|random|sysGuid|sequences\.)", re.IGNORECASE)
+
+
+def _expression_constants(module: M.Module) -> dict[str, tuple[str, str, set[str]]]:
+    """Package constants whose value is an expression the runtime computes without a session: {name: (Java type,
+    Java initialiser, imports)}, in declaration order so a constant may read an earlier one. Only String and
+    BigDecimal ones: the expression helpers return those, and a narrower field would need a fit."""
+    if module.module_kind != "package":
+        return {}
+    known: dict[str, str] = {d.name: java_name(d.name) for d in module.declarations
+                             if d.declaration_kind == "constant" and d.initial and _LITERAL.match(d.initial.strip())}
+    out: dict[str, tuple[str, str, set[str]]] = {}
+    for declaration in module.declarations:
+        if declaration.declaration_kind != "constant" or not declaration.initial \
+                or _LITERAL.match(declaration.initial.strip()):
+            continue
+        mapped = java_type(declaration.type.resolved if declaration.type else None)
+        if mapped.name not in ("String", "BigDecimal"):
+            continue
+        rendered = translate(declaration.initial, known)
+        if not rendered.translatable or rendered.audit or rendered.sequences or _SESSION_DEPENDENT.search(rendered.java):
+            continue
+        helper = "text" if mapped.name == "String" else "dec"
+        imports = set(rendered.imports) | set(mapped.imports) | {"com.scalar.migrate.plsql.Plsql"}
+        out[declaration.name] = (mapped.name, f"Plsql.{helper}({rendered.java})", imports)
+        known[declaration.name] = java_name(declaration.name)
+    return out
 
 
 def _collection_kind(holder) -> str | None:
@@ -554,7 +593,8 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
                       if d.declaration_kind != "type"
                       and not (module.module_kind == "package" and d.declaration_kind == "variable")
                       and not (module.module_kind == "package" and d.declaration_kind == "constant"
-                               and not (d.initial and _LITERAL.match(d.initial.strip())))})
+                               and not (d.initial and _LITERAL.match(d.initial.strip()))
+                               and d.name not in _expression_constants(module))})
     # #48: a function of another module inside an expression: `emp_api.hire(...)` -> `empApi.hire(...)`. The
     # service is injected (trigger_services). One with OUT / IN OUT arguments -- a carried package variable
     # (#46) included -- hands values back in a result record, which an expression has nowhere to put, so it is
@@ -970,6 +1010,10 @@ def _always_throws(statement: M.Statement, result: ServiceFile) -> bool:
             if _always_throws(s, result):
                 return True
         return False
+    if statement.kind == "Block" and not statement.exception_handlers and not statement.jump_label:
+        # `{ throw ...; }` for a refused call in a nested block without handlers: nothing after the block runs, and
+        # javac rejects it as unreachable (Logger's sqlplus_format, `dbms_output.enable` outside the program)
+        return any(_always_throws(s, result) for s in statement.body)
     if statement.kind in ("If", "Case"):
         branches = all(any(_always_throws(s, result) for s in b.body) for b in statement.branches)
         if statement.else_body:
