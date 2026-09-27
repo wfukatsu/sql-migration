@@ -113,12 +113,41 @@ public final class Plsql {
       if (plain.startsWith("-0.")) return "-" + plain.substring(2);
       return plain;
     }
-    // a BINARY_DOUBLE / FLOAT value, or a Double a driver handed back: the same rule, not Java's "0.5"
-    if (value instanceof Double || value instanceof Float) {
-      double d = ((Number) value).doubleValue();
+    // a Float is only ever a BINARY_FLOAT / SIMPLE_FLOAT: Oracle writes those as 4.0E+000, not as a NUMBER (#91)
+    if (value instanceof Float f) return binaryText(f.doubleValue(), 9);
+    // a REAL / FLOAT / DOUBLE PRECISION local, or a NUMBER column a driver handed back as a Double: NUMBER's rule,
+    // not Java's "0.5". A BINARY_DOUBLE is also a Double, so the generator marks it and calls binaryDouble instead
+    if (value instanceof Double d) {
       if (!Double.isNaN(d) && !Double.isInfinite(d)) return text(BigDecimal.valueOf(d));
+      return binaryText(d, 17);
     }
     return String.valueOf(value);
+  }
+
+  /** TO_CHAR of a BINARY_DOUBLE / SIMPLE_DOUBLE, or `'...' || d` with one: 17 significant digits (#91). */
+  public static String binaryDouble(Object value) {
+    if (value == null) return "";
+    if (value instanceof Number n && !(value instanceof BigDecimal)) return binaryText(n.doubleValue(), 17);
+    return text(value);
+  }
+
+  /**
+   * Oracle's text for a binary floating-point value, as Oracle 26ai writes it: the exact binary value rounded to 9
+   * (BINARY_FLOAT) or 17 (BINARY_DOUBLE) significant digits, trailing zeros dropped but one kept after the point,
+   * and a signed three-digit exponent -- 4.0E+000, 1.00000001E-001, 3.3333333333333335E+000. Zero is "0", and
+   * NaN and the infinities are "Nan", "Inf", "-Inf".
+   */
+  static String binaryText(double value, int digits) {
+    if (Double.isNaN(value)) return "Nan";
+    if (Double.isInfinite(value)) return value > 0 ? "Inf" : "-Inf";
+    if (value == 0) return "0";
+    BigDecimal rounded = new BigDecimal(value).round(new java.math.MathContext(digits, java.math.RoundingMode.HALF_EVEN))
+        .stripTrailingZeros();
+    String unscaled = rounded.unscaledValue().abs().toString();
+    int exponent = rounded.precision() - rounded.scale() - 1;
+    String fraction = unscaled.length() > 1 ? unscaled.substring(1) : "0";
+    return (rounded.signum() < 0 ? "-" : "") + unscaled.charAt(0) + "." + fraction
+        + "E" + (exponent < 0 ? "-" : "+") + String.format("%03d", Math.abs(exponent));
   }
 
   public static <T> T nvl(T value, T fallback) {

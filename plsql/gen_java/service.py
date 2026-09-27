@@ -436,6 +436,8 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
             names[f"{holder.name.lower()}#blank_padded"] = "1"
         if declared.upper() in _PLS_INTEGER_TYPES:
             names[f"{holder.name.lower()}#pls_integer"] = "1"
+        if declared.upper() in ("BINARY_DOUBLE", "SIMPLE_DOUBLE"):
+            names[f"{holder.name.lower()}#binary_double"] = "1"   # written as 4.0E+000, not as a NUMBER (#91)
     # a schema object type's constructor `emp_grade_t(a, b, 'X')` builds its record (#54)
     from .types import object_types
     for name, resolved in object_types().items():

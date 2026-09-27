@@ -420,13 +420,26 @@ class _Parser:
         self.result.imports.add(HELPER_IMPORT)
         return f"{HELPER}.neg({operand})"
 
+    def _binary_double(self, start: int) -> bool:
+        """Whether the operand parsed from `start` is one BINARY_DOUBLE local. It is a Double like a REAL local or a
+        NUMBER column read as one, and only the declaration says Oracle writes it as 4.0E+000 (#91)."""
+        if self.position != start + 1:
+            return False
+        kind, value = self.tokens[start]
+        return kind == "name" and f"{value.lower()}#binary_double" in self.scope
+
     def parse_concat(self) -> str:
+        start = self.position
         parts = [self.parse_arithmetic()]
+        binary = [self._binary_double(start)]
         while self.peek() is not None and self.peek()[1] == "||":
             self.take()
+            start = self.position
             parts.append(self.parse_arithmetic())
+            binary.append(self._binary_double(start))
         if len(parts) == 1:
             return parts[0]
+        parts = [f"{HELPER}.binaryDouble({part})" if flag else part for part, flag in zip(parts, binary)]
         self.result.imports.add(HELPER_IMPORT)
         return f"{HELPER}.concat({', '.join(parts)})"
 
@@ -586,6 +599,16 @@ class _Parser:
                 caught = current.group(1)
                 return f"{HELPER}.sqlerrmOf({code}, {caught}.code(), {caught}.getMessage())"
             return f"{HELPER}.sqlerrmOf({code})"
+        if (plsql_name.upper() == "TO_CHAR" and self.position + 3 < len(self.tokens)
+                and self.tokens[self.position + 1][1] == "(" and self.tokens[self.position + 3][1] == ")"
+                and f"{self.tokens[self.position + 2][1].lower()}#binary_double" in self.scope):
+            # TO_CHAR(d) of a BINARY_DOUBLE local: 17 significant digits, 4.0E+000 (#91)
+            self.take()
+            self.take()   # (
+            value = self.parse_or()
+            self.take()   # )
+            self.result.imports.add(HELPER_IMPORT)
+            return f"{HELPER}.binaryDouble({value})"
         head, _, tail = plsql_name.partition(".")
         collection = self.scope.get(f"{head.lower()}#collection")
         constructor = self.scope.get(f"{plsql_name.lower()}#constructor")
