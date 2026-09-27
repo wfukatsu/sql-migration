@@ -47,7 +47,7 @@ flowchart LR
 
 - **作業ディレクトリは sql-migration リポジトリのルート**。1 つの移行につき作業ディレクトリ `<out>`
   （既定 `out/migrate/<名前>/`）を 1 つ持ち、状態は `<out>/flow.yaml` にある
-- **プラグインとして入れたとき（作業ディレクトリが sql-migration のチェックアウトでないとき）**: このスキルの場所は `${CLAUDE_SKILL_DIR}`（置き換わらない環境では、この SKILL.md のあるディレクトリ）で、その 2 つ上が `<root>`。下のコマンドは `.venv/bin/python` を `<root>/bin/python` に、`skills/…` で始まるスクリプトのパスと `fixtures/…`・`samples/…` を `<root>/` からのパスに読み替え、**利用者のプロジェクトを作業ディレクトリにしたまま**動かす（`-m plsql.cli` などはそのままでよい。`bin/python` が `<root>` を import の経路に入れる）。入力と `<out>` は利用者のプロジェクトの側に置き、`<root>` の中には書かない（プラグインの更新で消える）。初回は `bin/python` が仮想環境を作るので 1 分ほどかかる
+- **プラグインとして入れたとき（作業ディレクトリが sql-migration のチェックアウトでないとき）**: このスキルの場所は `${CLAUDE_SKILL_DIR}`（置き換わらない環境では、この SKILL.md のあるディレクトリ）で、その 2 つ上が `<root>`。下のコマンドは `.venv/bin/python` を `<root>/bin/python` に、`skills/…` で始まるスクリプトのパスを `<root>/` からのパスに読み替え、**利用者のプロジェクトを作業ディレクトリにしたまま**動かす（`-m plsql.cli` などはそのままでよい。`bin/python` が `<root>` を import の経路に入れる）。入力と `<out>` は利用者のプロジェクトの側に置き、`<root>` の中には書かない（プラグインの更新で消える）。初回は `bin/python` が仮想環境を作るので 1 分ほどかかる。`fixtures/…`・`samples/…`・`difftest/…` は sql-migration のリポジトリにだけあり、プラグインには含まれない。それを前提にした手順は、リポジトリで作業するときにだけ使う
 - **Claude Code 以外（Codex など）で動かすとき**: `allowed-tools` と `when_to_use`（sql-transpile では `model` / `effort` も）は Claude Code 用で、ほかでは無視される。Read / Grep / Bash などの道具の名前は、その環境の同じ働きの道具に読み替える。AskUserQuestion が無ければ、同じ内容（推奨を先頭に、選択肢ごとの影響つき）を本文で聞き、答えを待つ
 - **順番を飛ばさない。** 現行の仕様が承認される前に変換の判断を問わない（何が正しい動作かが決まっていない）。
   3 つの承認がそろう前にテストしない（`flow.py gate` が 0 を返してから）。利用者が「先にテストして」と
@@ -96,8 +96,9 @@ AskUserQuestion を使うときは、推奨を先頭に置いて「（推奨）�
 ```
 
 `flow.yaml が無い` と出たら、入力を確かめて始める。PL/SQL か SQL かは拡張子と中身で決める
-（`CREATE … PROCEDURE / FUNCTION / PACKAGE / TRIGGER` があれば PL/SQL）。会話に貼られたものは
-`fixtures/plsql-external/<名前>/src/` に置く。
+（`CREATE … PROCEDURE / FUNCTION / PACKAGE / TRIGGER` があれば PL/SQL）。会話に貼られたものは、利用者の
+プロジェクトの中で `<out>` の外のディレクトリ（例: `plsql/<名前>/src/`）に置く。`<out>` は消してよい場所なので、
+入力を置くと一緒に消える。sql-migration のリポジトリで作業するときは `fixtures/plsql-external/<名前>/src/` に置く。
 
 ```bash
 .venv/bin/python skills/migrate-flow/scripts/flow.py init --out <out> --kind plsql --src <src> --scalardb-schema <scalardb-schema.json> --limits <limits.yaml> --record <record.yaml>
@@ -196,8 +197,10 @@ commit で片方が弾かれる」）。
 標準エラーの最終行が `GATE=open`（終了コード 0）なら進む。`closed` なら、出た段階へ戻る。
 
 テストは 2 つある。**コンテナ（Oracle と ScalarDB Cluster）が要り、DB に書き込む**ので、始める前に利用者に
-確かめる（何を配備し、どの namespace / ユーザーに書くか）。手順は `skills/plsql-migrate/references/operations.md`
-と `fixtures/plsql-external/README.md` にある。
+確かめる（何を配備し、どの namespace / ユーザーに書くか）。実 DB での突き合わせの道具（`difftest/`）は
+sql-migration のリポジトリにだけあるので、2 のテストはリポジトリで作業するときにだけできる。手順は
+`skills/plsql-migrate/references/operations.md` の「sql-migration のリポジトリで作業するとき」にある。
+プラグインとして入れたときは、利用者が自分の環境で結果を比べ、`flow.py tested` で記録する。
 
 1. **コンパイル**: Step 2 の `--verify-compile` が通っていること
 2. **実 DB での比較**: シナリオ（`<src>/../scenarios/*.yaml`）を Oracle と ScalarDB の両側で流して比べる。
