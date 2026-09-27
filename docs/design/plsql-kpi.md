@@ -26,6 +26,17 @@ corpus は全件が合成である（計画 §9 の決定、2026-09-17）。し�
   証拠の独立性別（独立した holdout / 参照済みの holdout / 開発用）に、parse 率・判定一致・compile 率・意味的同等性・リスク密度を出す。
   実案件が無いうちは、その行を「0 unit — まだ測っていない」と出す。グループ分けは `manifest.yaml` の `origin`・`holdout`・`independent` から読む
   （`plsql/corpus.py`）。実案件のコードの入れ方は [匿名化の方針](plsql-corpus-anonymization.md)。
+- **公開の PL/SQL で代わりに測った**（2026-09-27、#15）。実案件のコードが無いので、業務で使われている公開の OSS
+  （Logger 3.1.1 と oos-utils、MIT）を出自 `public` として `fixtures/plsql-public/` に置いた。
+  - 期待判定（105 routine）は、ツールを走らせず、ルールも読まずに、方針の文書とソースだけから先に決めた（独立した holdout）。
+  - 最初の値: parse 87.5%、判定一致 54.3%（25/46）。
+  - 合成 corpus への過適合が 3 つ見つかり、直した。
+    - 条件付きコンパイルが読めない（#118）
+    - STATE-001 がパッケージ単位（#119）
+    - SYS_CONTEXT のルールが無い（SEM-013。唯一の AUTO 禁止条件の取りこぼし）
+  - 直したあと: parse 100%、判定一致 75.2%（79/105）、取りこぼし 0。DBMS_RANDOM / SYS_GUID は利用者の決定で REVIEW（SEM-014、#120）。
+  - 残る食い違いの多くは NLS 依存の扱いの違いで、方針の違いとして記録した（`fixtures/plsql-public/README.md`）。
+  - **顧客のコードではないので、実案件での耐性の証拠にはならない。**
 
 ---
 

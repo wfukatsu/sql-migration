@@ -901,7 +901,7 @@ rollback で行は戻らない——Oracle と同じ。違うのは、**Oracle �
 
 - 実案件 corpus の追加と、KPI の出自別再計測（合成 corpus 上の値は実案件耐性の証拠ではない）
   - **2026-09-20: 入れるための仕組みを先に作った（#15）。** 匿名化の方針と道具（`python -m plsql.anonymize`。名前・リテラル・コメントを置き換え、匿名化の前後で解析の結論が変わらないことを確かめる）、出自別と証拠の独立性別の KPI（`plsql/corpus.py`、`python -m plsql.kpi`）。方針は [plsql-corpus-anonymization.md](plsql-corpus-anonymization.md)
-  - **残り**: 実案件のコードの入手と、判定者（§9、#6）の決定。実案件の数字を出すのは、判定者が決まってから
+  - **残り**: 実案件のコードの入手。判定者は移行責任者に決めた（§9、#6、2026-09-27）。実案件の代わりに公開の PL/SQL を出自 `public` として足した（#15）
 - Migration Workbench（Web UI）と API（設計書 §12）
   - **2026-09-20: 調査の部分を先に切り出した。** 実際に手間がかかったのは REVIEW の消化ではなく、その手前の調査（対象の PL/SQL、SQL の一覧、触るテーブルとそのつながり、制約、データ量）だった。設計書 §12 の `GET /snapshots/{id}/inventory` に当たる部分を、サーバも DB も持たない読むだけの HTML（Migration Explorer、`plsql/explorer/`、[案内](../guide/explorer.md)）として作った。要件と計画は `docs/plans/2026-09-20-1831-feat-migration-explorer-plan.md` と `docs/plans/2026-09-20-1951-feat-explorer-code-and-statistics-plan.md`
   - **残り**（複数人での REVIEW の消化、承認の画面、課題と差分、再生成、監査ログ、API、PostgreSQL）は、判定者（§9）と、REVIEW の消化を誰がどう回すかが決まってから。承認と記録の一部は、すでに migrate-flow（`flow.yaml` の承認・人・日付・指紋）が持っている
@@ -1110,6 +1110,11 @@ P0-2 の manifest）に集計し直す。
 
   この基準は**合成 corpus 上の値**である（上記「corpus の入手元」の決定）。実案件コードでの達成は別問題で
   あり、完了報告には必ずそう書く。判定者が決まった時点で、この基準に同意するかを確認する。
+
+  **判定者は移行責任者に決めた**（2026-09-27、#6 を閉じた）。判定の前に、移行責任者がこの基準に同意するかを
+  確かめる。あわせて次の 2 点も確かめる:
+  - KPI は合成 corpus と公開 PL/SQL の上の値である
+  - 移行工数は測っていない（KPI-6、#17 は決定の記録として閉じた）
 
 - **再生成モデルは引き渡し時点で終了する**（2026-09-17）。
   移行完了後、生成 Java の所有権が顧客へ移ったら、以後は通常の Java コードとして手編集する。

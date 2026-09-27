@@ -84,6 +84,13 @@ class _Context:
         self.routine = routine
         self.locals = {d.name.lower() for d in routine.declarations}
         self.blocks: list[M.Block] = []   # the nested blocks around the statement being looked at
+        # the statements of the routine's handlers for ORA-24381 (`PRAGMA EXCEPTION_INIT(e, -24381)`): what
+        # `FORALL ... SAVE EXCEPTIONS` raises once every element has been tried
+        bulk_errors = {d.name.upper() for d in routine.declarations
+                       if d.declaration_kind == "exception" and (d.initial or "").strip() == "-24381"}
+        self.save_exceptions_handler = {id(s) for h in routine.exception_handlers
+                                        if {e.upper() for e in h.exceptions} & bulk_errors for s in _walk(h.body)}
+        self.handler_counts = False   # set by `_read_after`: that handler reads SQL%ROWCOUNT
 
 
 def _sequence(statements: list[M.Statement], mappings: list[dict[str, str]], context: _Context,
@@ -162,6 +169,12 @@ def _pair(statements: list[M.Statement], index: int, context: _Context,
     loop = M.Loop(id=select.id, kind="Loop", source_range=select.source_range,
                   loop_kind="cursor-for", variable=ROW, query=operation, body=body,
                   cursor=f"{ROW} IN ({query})")
+    if context.handler_counts:
+        loop.add("WARN", "BULK_HANDLER_ROWCOUNT",
+                 "SAVE EXCEPTIONS の handler が SQL%ROWCOUNT（成功した要素の合計）を読む。1 要素 = 1 トランザクションに"
+                 "割ると、handler は失敗した 1 要素の記録になり、合計を読む文は出さない（合計は呼び出し側が数える）。"
+                 "割らなければ BULK-002 で REDESIGN（#117）")
+        context.handler_counts = False
     loop.add("INFO", "BULK_CHUNKED",
              f"BULK COLLECT into {', '.join(targets)} と、それを回す FORALL を 1 つの走査ループに "
              f"した。FORALL は 1 往復、ループは行ごとに 1 回で、性能は変わるが答えは変わらない。"
@@ -209,6 +222,13 @@ def _read_after(context: _Context, select: M.Statement, forall: M.Loop, loops: t
         start = statement.source_range.start_line if statement.source_range else None
         if IMPLICIT_CURSOR.search(text) and (after is None or start is None or start >= after
                                              or id(statement) in in_loop):
+            if id(statement) in context.save_exceptions_handler:
+                # the pair's own SAVE EXCEPTIONS handler. It is BULK-002 (REDESIGN) unless the routine is split one
+                # element per transaction, and the split makes this handler the record of one failed element and
+                # leaves out its summary (the total is the caller's to count: gen_java.split). Keeping the pair made
+                # that split impossible (#117); the loop says what became of the read (BULK_HANDLER_ROWCOUNT)
+                context.handler_counts = True
+                continue
             counted = True
     if readers:
         return (f"{', '.join(of_column)} を組の外でも読んでいる（走査ループにすると配列は埋まらない。"

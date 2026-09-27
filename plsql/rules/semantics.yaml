@@ -178,6 +178,32 @@ rules:
     requiredTests:
       - equivalent_result
 
+  # 2026-09-27（#15 の公開の PL/SQL で見つけた）: SYS_CONTEXT を見るルールが無く、Logger の get_sys_context が AUTO に
+  # なった（期待は REDESIGN）。セッション・接続・インスタンスの情報で、移行先に相当するものが無い。USER は
+  # AuditContext で呼び出し側が渡すが、SYS_CONTEXT の名前空間と属性は開いていて、どれを渡すかは設計である
+  - id: SEM-013
+    match: {statementKind: [SqlOperation, Expression], textMatches: '\bSYS_CONTEXT\s*\('}
+    decision: REDESIGN
+    severity: critical
+    message: SYS_CONTEXT でセッション・接続・インスタンスの情報を読んでいます。移行先に同じものは無く、どの値をどこから得るかを決め直す必要があります
+    remediation:
+      - 必要な属性だけを呼び出し側が渡す（USER と同じく AuditContext を広げる）
+      - アプリケーションのコンテキスト（DBMS_SESSION.SET_CONTEXT）なら、それを使う理由ごと移行先の設計に移す
+    requiredTests:
+      - caller_context_values
+
+  # #120（2026-09-27 の利用者の決定）: 乱数と GUID は実行ごとに値が変わる。Oracle と比べて一致を示せず、秘密の値に
+  # 使うなら乱数の出所（ThreadLocalRandom / SecureRandom / シード）は業務の決定である。時計を 2 回読む SEM-007 と同じ扱い
+  - id: SEM-014
+    match: {statementKind: [SqlOperation, Expression], textMatches: '\b(DBMS_RANDOM\s*\.|SYS_GUID\s*\()'}
+    decision: REVIEW
+    message: DBMS_RANDOM / SYS_GUID の値は実行ごとに変わり、Oracle と比べて同じだと示せません。乱数の出所も移行先で決める必要があります
+    remediation:
+      - 乱数の出所を決める（秘密の値なら SecureRandom、再現が要るならシードを渡す）
+      - テストでは乱数を固定するか、値ではなく性質（長さ、文字の種類、一意性）を確かめる
+    requiredTests:
+      - random_source_decided
+
   - id: CUR-001
     match: {statementKind: [OpenCursor, Fetch, CloseCursor]}
     decision: REVIEW

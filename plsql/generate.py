@@ -82,6 +82,9 @@ def main(argv: list[str] | None = None) -> int:
     from .limits import Boundaries, Limits, RowLocks
 
     limits = Limits.load(args.limits) if args.limits else Limits()
+    from .limits import conditional_compilation
+
+    conditional_compilation(args.limits)   # before the parse: `$IF` is resolved there (#118)
     set_limits(limits)
     # #9: 行ロックを落として楽観制御へ移すと決めた routine。同じ config に書く——どちらも
     # 「生成器が推測してはならない、routine ごとの決定」である
