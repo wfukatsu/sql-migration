@@ -685,6 +685,66 @@ public final class Plsql {
   // `scale` is how many decimal places the column keeps when it is stored as an integer. Oracle NUMBER(12,2) in
   // a BIGINT column is scale 2 -- the column holds cents. Scale 0 means the column holds the value as it is.
 
+  /**
+   * ORA-12899: a value longer than its VARCHAR2 / CHAR column. Oracle names the column as "SCHEMA"."TABLE"."COLUMN";
+   * the schema is not known here, so the name is "TABLE"."COLUMN". It has no predefined name, so a WHEN OTHERS sees
+   * it as the base class with this number (service._HELPER_ERRORS, #115).
+   */
+  public static final class ValueTooLarge extends OracleError {
+    public ValueTooLarge(String column, long actual, int maximum) {
+      super(-12899, "ORA-12899: value too large for column " + column + " (actual: " + actual + ", maximum: " + maximum + ")");
+    }
+  }
+
+  /**
+   * ORA-01438: a value with more digits left of the point than its NUMBER(p,s) column allows. The text is the one
+   * Oracle 26ai gives for `CAST(123 AS NUMBER(2))`: "value 123 greater than specified precision (2, 0) for column",
+   * with the column's name after it (#115).
+   */
+  public static final class PrecisionTooLarge extends OracleError {
+    public PrecisionTooLarge(String value, int precision, int scale, String column) {
+      super(-1438, "ORA-01438: value " + value + " greater than specified precision (" + precision + ", " + scale
+          + ") for column " + column);
+    }
+  }
+
+  /**
+   * A value written into a VARCHAR2(size) / CHAR(size) column (#115): ORA-12899 when it is longer, counted in
+   * characters for a CHAR-semantics column ({@code chars}) and in UTF-8 bytes (AL32UTF8) otherwise. The value comes
+   * back as it was given, for {@link #bind} to convert. ScalarDB's TEXT has no length, so this is the only place
+   * the declaration is kept.
+   */
+  public static Object columnText(Object value, int size, boolean chars, String column) {
+    if (isNull(value)) return value;
+    String text = text(value);
+    long length = chars ? text.codePointCount(0, text.length())
+        : text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+    if (length > size) throw new ValueTooLarge(column, length, size);
+    return value;
+  }
+
+  /**
+   * A value written into a NUMBER(precision, scale) column (#115): rounded half-up to the scale, as the column
+   * stores it, and ORA-01438 when that needs more than precision - scale digits left of the point. Measured with
+   * CAST on Oracle 26ai: 12.345 into (4,2) is 12.35, 99.995 and -99.995 are ORA-01438, 123.5 into (3) is 124,
+   * 0.0123 into (2,3) is 0.012 and 0.123 is ORA-01438. The value comes back as it was given: {@link #bind} rounds
+   * it for the column's storage. Text that is not a number is left to the bind, as before.
+   */
+  public static Object columnNumber(Object value, int precision, int scale, String column) {
+    if (isNull(value) || !(value instanceof Number || value instanceof CharSequence)) return value;
+    BigDecimal number;
+    try {
+      number = OracleNumbers.toBigDecimal(value);
+    } catch (NumberFormatException notANumber) {
+      return value;
+    }
+    BigDecimal rounded = number.setScale(scale, java.math.RoundingMode.HALF_UP);
+    if (rounded.signum() != 0 && rounded.precision() - rounded.scale() > precision - scale) {
+      throw new PrecisionTooLarge(text(number), precision, scale, column);
+    }
+    return value;
+  }
+
   /** A PL/SQL value on its way into a ScalarDB column of the given type. */
   /**
    * A value whose column the analysis could not name, at the write boundary: '' goes in as NULL.

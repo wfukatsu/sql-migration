@@ -813,7 +813,10 @@ _HELPER_ERRORS = (("ZERO_DIVIDE", "ZeroDivide", -1476),
                   ("CURSOR_ALREADY_OPEN", "CursorAlreadyOpen", -6511),
                   ("CASE_NOT_FOUND", "CaseNotFound", -6592),
                   (None, "NumericOverflow", -1426),
-                  (None, "NoReturn", -6503))
+                  (None, "NoReturn", -6503),
+                  # a repository's write of a value too long or too precise for its column (#115)
+                  (None, "ValueTooLarge", -12899),
+                  (None, "PrecisionTooLarge", -1438))
 
 
 # 移行先では起こりえない Oracle の誤り。いまのところ行ロックが取れないこと（ORA-54）だけである

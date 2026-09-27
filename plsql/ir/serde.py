@@ -52,7 +52,7 @@ _CAMEL = {
     # P3-1: what each bind and each select item was attributed to
     "selects_star": "selectsStar", "into_columns": "intoColumns", "into_types": "intoTypes",
     "into_oracle_types": "intoOracleTypes", "scalardb_type": "scalardbType",
-    "column_oracle_type": "columnOracleType",
+    "column_oracle_type": "columnOracleType", "writes_column": "writesColumn",
     "expression": "expression",
     "variants": "variants",
 }
