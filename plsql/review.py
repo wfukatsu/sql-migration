@@ -77,6 +77,8 @@ def evidence_from_diff(path: str | Path | None, variant: str | None = None,
             [(key, s, False) for key, s in (report.get(name) or {}).get("not_compared", {}).items()]
         for key, scenario, compared in entries:
             routine = _resolve(scenario["routine"], known_ids)
+            if known_ids is not None and routine not in known_ids:
+                continue   # a scenario for no routine of the program: `unmatched_scenarios` reports it, not as stale
             seen.setdefault(routine, set()).add(name)
             reason = _stale(routine, recorded, current)
             if reason:
