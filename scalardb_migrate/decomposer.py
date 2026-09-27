@@ -44,6 +44,10 @@ class Predicate:
     column: str
     op: str  # = <> > >= < <= LIKE NOT LIKE IS NULL IS NOT NULL BETWEEN
     value: Any = None  # literal, {"param": name}, or [low, high] for BETWEEN
+    # LIKE / NOT LIKE only: the ESCAPE the fetch has to name. Oracle's LIKE has no escape character and ScalarDB's
+    # default is `\`, so an Oracle pattern that holds a backslash (or a bind that may) is fetched with ESCAPE '',
+    # as the converter writes it (#103). None everywhere else, and then left out of the plan
+    escape: str | None = None
 
 
 @dataclass
@@ -79,7 +83,14 @@ class Plan:
     transaction: dict = field(default_factory=lambda: {"read_only": True})
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        # `escape` is there only on the LIKE that needs it (#103): every other predicate reads as it did before
+        for f in d["fetch"]:
+            for g in f["predicates"]:
+                for p in g if isinstance(g, list) else [g]:
+                    if p.get("escape") is None:
+                        p.pop("escape", None)
+        return d
 
 
 class NotDecomposable(Exception):
@@ -195,7 +206,7 @@ def _fit_temporal(p: Predicate, types: dict[str, str], zone=None) -> Predicate:
         # a real time of day against a DATE column is left alone: rounding it would move the bound of a fetch
         return v if change == "time" else fitted
 
-    return Predicate(p.column, p.op, [fit(v) for v in p.value] if isinstance(p.value, list) else fit(p.value))
+    return replace(p, value=[fit(v) for v in p.value] if isinstance(p.value, list) else fit(p.value))
 
 
 def _pred_sql(p: Predicate) -> str:
@@ -204,7 +215,24 @@ def _pred_sql(p: Predicate) -> str:
         return f"{column} {p.op}"
     if p.op == "BETWEEN":
         return f"{column} BETWEEN {_sql_value(p.value[0])} AND {_sql_value(p.value[1])}"
-    return f"{column} {p.op} {_sql_value(p.value)}"
+    escape = f" ESCAPE {_sql_value(p.escape)}" if p.escape is not None else ""
+    return f"{column} {p.op} {_sql_value(p.value)}{escape}"
+
+
+def split_negate(e: exp.Expression) -> tuple[exp.Expression, bool]:
+    """(`e` without a NOT it carries itself, whether it carried one).
+
+    sqlglot reads `x NOT LIKE p` and `x NOT ILIKE p` in every dialect, and PostgreSQL's `x IS NOT NULL`, as the
+    node with negate=True, not as Not(node) -- Oracle and MySQL give Not(Is) for IS NOT NULL. Code that looks for
+    Not(...) took `x NOT LIKE p` for `x LIKE p`: a plan fetched the opposite rows, and `NOT (x NOT LIKE p)` came
+    out as `x NOT LIKE p` (#102). The flag is taken off here so that the NOT is pushed like any other. An ESCAPE
+    wraps the LIKE that carries it."""
+    target = e.this if isinstance(e, exp.Escape) else e
+    if not (isinstance(target, (exp.Like, exp.ILike, exp.Is)) and target.args.get("negate")):
+        return e, False
+    e = e.copy()
+    (e.this if isinstance(e, exp.Escape) else e).set("negate", None)
+    return e, True
 
 
 class Scope:
@@ -442,13 +470,15 @@ class Decomposer:
                 if isinstance(inner, exp.Is) and isinstance(inner.expression, exp.Null) and isinstance(inner.this, exp.Column):
                     return self._own(inner.this, scope, alias, "IS NOT NULL")
                 if isinstance(inner, exp.Like) and isinstance(inner.this, exp.Column):
-                    return self._own(inner.this, scope, alias, "NOT LIKE", _literal_value(inner.expression))
+                    return self._like(inner, scope, alias, "NOT LIKE")
                 return None
             if isinstance(leaf, exp.Is) and isinstance(leaf.expression, exp.Null) and isinstance(leaf.this, exp.Column):
                 return self._own(leaf.this, scope, alias, "IS NULL")
             if isinstance(leaf, exp.Like) and isinstance(leaf.this, exp.Column):
-                return self._own(leaf.this, scope, alias, "LIKE", _literal_value(leaf.expression))
-            if isinstance(leaf, exp.Between) and isinstance(leaf.this, exp.Column):
+                return self._like(leaf, scope, alias, "LIKE")
+            # BETWEEN SYMMETRIC 10 AND 1 is also true between 1 and 10; fetched as `BETWEEN 10 AND 1` it read no
+            # row (#103). The residual SQL applies it, so it is not pushed down
+            if isinstance(leaf, exp.Between) and isinstance(leaf.this, exp.Column) and not leaf.args.get("symmetric"):
                 return self._own(leaf.this, scope, alias, "BETWEEN",
                                  [_literal_value(leaf.args["low"]), _literal_value(leaf.args["high"])])
             if type(leaf) in COMPARE_OPS:
@@ -468,8 +498,18 @@ class Decomposer:
             return None
         return Predicate(col.name, op, value)
 
+    def _like(self, like: exp.Like, scope: Scope, alias: str, op: str) -> Predicate | None:
+        p = self._own(like.this, scope, alias, op, _literal_value(like.expression))
+        # Oracle has no default LIKE escape character, ScalarDB's is `\`: `name LIKE 'a\_%'` fetched as written
+        # did not read the row 'a\xb' (#103). ESCAPE '' where the converter's _oracle_like adds it
+        if p is not None and self.dialect == "oracle" and (not isinstance(p.value, str) or "\\" in p.value):
+            p.escape = ""
+        return p
+
     def _push_not(self, e: exp.Expression, negate: bool) -> exp.Expression:
-        e = _unparen(e)
+        e, flagged = split_negate(_unparen(e))   # `x NOT LIKE p` is Like(negate=True), not Not(Like) (#102)
+        if flagged:
+            negate = not negate
         if isinstance(e, exp.Not):
             return self._push_not(e.this, not negate)
         if isinstance(e, (exp.And, exp.Or)):

@@ -21,7 +21,7 @@ from sqlglot.tokens import TokenType
 from sqlglot.transforms import eliminate_join_marks
 
 from . import appside
-from .decomposer import DEFAULT_ROW_LIMIT, ORDERED_SCAN_STORAGES, Decomposer, NotDecomposable, PlanBlocked
+from .decomposer import DEFAULT_ROW_LIMIT, ORDERED_SCAN_STORAGES, Decomposer, NotDecomposable, PlanBlocked, split_negate
 from .dialect import Upsert, to_scalardb_sql
 from .schema import SQL_KEYWORDS, SchemaRegistry, TableMeta, needs_quotes, quoted
 from .types import fit_temporal_literal, iso_temporal_literal, map_type, session_zone
@@ -383,6 +383,9 @@ class StatementConverter:
             return
         res.plan = plan.to_dict()
         res.status = "PLANNED"
+        collation = appside.collation_note(fresh, self.dialect, planned=True)   # as for a converted statement (#103)
+        if collation:
+            res.issues.append(Issue("INFO", "SEMANTICS", collation))
         for f in plan.fetch:
             res.issues.append(Issue("INFO", "PLAN_FETCH", f"{f.access_path}: {f.scalardb_sql}"))
         res.issues.append(Issue("INFO", "PLAN_RESIDUAL", f"H2 {plan.residual['java']['mode']} mode runs the original SQL "
@@ -622,7 +625,9 @@ class StatementConverter:
 
     # -- predicates ---------------------------------------------------------------------------------
     def _push_not(self, e: exp.Expression, negate: bool) -> exp.Expression:
-        e = _unparen(e)
+        e, flagged = split_negate(_unparen(e))   # `x NOT LIKE p` is Like(negate=True), not Not(Like) (#102)
+        if flagged:
+            negate = not negate
         if isinstance(e, exp.Not):
             return self._push_not(e.this, not negate)
         if isinstance(e, exp.And):
@@ -631,6 +636,14 @@ class StatementConverter:
         if isinstance(e, exp.Or):
             l, r = self._push_not(e.this, negate), self._push_not(e.expression, negate)
             return exp.And(this=l, expression=r) if negate else exp.Or(this=l, expression=r)
+        if isinstance(e, exp.Between) and e.args.get("symmetric"):
+            # BETWEEN SYMMETRIC is either order of the bounds. The negation took them as written: NOT (amt BETWEEN
+            # SYMMETRIC 10 AND 1) became `amt < 10 OR amt > 1`, true for every non-NULL amt (#103). Both orders
+            # are spelt out, and the NOT goes through them as through any OR
+            low, high = e.args["low"], e.args["high"]
+            either = exp.Or(this=exp.Between(this=e.this.copy(), low=low.copy(), high=high.copy()),
+                            expression=exp.Between(this=e.this.copy(), low=high.copy(), high=low.copy()))
+            return self._push_not(either, negate)
         if not negate:
             return e
         if type(e) in NEGATE:
@@ -670,7 +683,7 @@ class StatementConverter:
             inner = _unparen(leaf.this)
             if isinstance(inner, exp.Is) and isinstance(inner.expression, exp.Null) and isinstance(inner.this, exp.Column):
                 return leaf
-            if isinstance(inner, (exp.Like, exp.ILike)):
+            if isinstance(inner, (exp.Like, exp.ILike, exp.Escape)):
                 return exp.Not(this=self._check_leaf(inner, ctx, allow_agg))
             self.fail("PRED", f"{ctx}: unsupported predicate '{leaf.sql(dialect=self.dialect)}'")
         if isinstance(leaf, exp.Is):
@@ -683,7 +696,8 @@ class StatementConverter:
             return exp.Escape(this=like, expression=leaf.expression)
         if isinstance(leaf, exp.ILike):
             self.warn("ILIKE", f"{ctx}: ILIKE converted to LIKE (case-insensitive matching is lost)")
-            leaf = exp.Like(this=leaf.this, expression=leaf.expression)
+            # the NOT of `x NOT ILIKE p` is on the node itself; rebuilt without it, NOT ILIKE became LIKE (#102)
+            leaf = exp.Like(this=leaf.this, expression=leaf.expression, negate=leaf.args.get("negate"))
         if isinstance(leaf, exp.Like):
             if not isinstance(leaf.this, exp.Column):
                 self.fail("PRED", f"{ctx}: LIKE left-hand side must be a column")

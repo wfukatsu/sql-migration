@@ -23,10 +23,16 @@ def _not_sql(self: Generator, e: exp.Not) -> str:
     inner = e.this
     if isinstance(inner, exp.Paren):
         inner = inner.this
+    escape = ""
+    if isinstance(inner, exp.Escape) and isinstance(inner.this, exp.Like):   # NOT (x LIKE p ESCAPE '')
+        escape, inner = f" ESCAPE {self.sql(inner, 'expression')}", inner.this
+    # `x NOT LIKE p` and PostgreSQL's `x IS NOT NULL` carry their NOT as negate=True: a NOT over one of them is
+    # the positive form. It was written as a second NOT LIKE / IS NOT NULL (#102)
+    negated = not inner.args.get("negate")
     if isinstance(inner, exp.Is) and isinstance(inner.expression, exp.Null):
-        return f"{self.sql(inner, 'this')} IS NOT NULL"
+        return f"{self.sql(inner, 'this')} {'IS NOT NULL' if negated else 'IS NULL'}"
     if isinstance(inner, exp.Like):
-        return f"{self.sql(inner, 'this')} NOT LIKE {self.sql(inner, 'expression')}"
+        return f"{self.sql(inner, 'this')} {'NOT LIKE' if negated else 'LIKE'} {self.sql(inner, 'expression')}{escape}"
     raise UnsupportedError(f"NOT is only supported as IS NOT NULL / NOT LIKE: {e.sql()}")
 
 

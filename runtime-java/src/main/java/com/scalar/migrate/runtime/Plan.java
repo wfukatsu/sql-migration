@@ -40,5 +40,6 @@ public class Plan {
     public String column;
     public String op;
     public Object value;
+    public String escape;  // LIKE / NOT LIKE: "" for an Oracle pattern (no escape character); null = ScalarDB's `\`
   }
 }

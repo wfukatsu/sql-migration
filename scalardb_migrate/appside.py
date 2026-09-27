@@ -289,15 +289,30 @@ def converted_notes(node: exp.Expression, dialect: str) -> list[tuple[str, str]]
     if dialect == "oracle" and any(n.name == "" for n in strings):
         notes.append(("WARN", "'' is NULL in Oracle: it is stored as NULL, and `= ''` is never true. ScalarDB keeps "
                               "an empty string as an empty string -- write NULL / IS NULL if that is what was meant"))
+    collation = collation_note(node, dialect)
+    if collation:
+        notes.append(("INFO", collation))
+    return notes
+
+
+def collation_note(node: exp.Expression, dialect: str, planned: bool = False) -> str | None:
+    """The note that a MySQL string comparison loses its case-insensitive collation, or None.
+
+    A converted statement runs on ScalarDB, which compares exactly. A plan does too: its fetch runs on ScalarDB and
+    the residual SQL on H2, and neither folds case -- `name = 'abc'` read no 'ABC' row, and nothing said so (#103).
+    """
+    if dialect != "mysql":
+        return None
     # `SET status = 'SHIPPED'` writes the value; nothing is compared
     assignments = {id(eq) for eq in node.expressions} if isinstance(node, exp.Update) else set()
     compared = [n for n in node.find_all(exp.EQ, exp.NEQ, exp.Like, exp.In)
                 if id(n) not in assignments
                 and any(isinstance(x, exp.Literal) and x.is_string for x in n.iter_expressions())]
-    if dialect == "mysql" and compared:
-        notes.append(("INFO", "MySQL compares strings by the column's collation, case-insensitively by default "
-                              "('abc' = 'ABC'); ScalarDB compares exactly. Check the collation of the compared columns"))
-    return notes
+    if not compared:
+        return None
+    where = "the plan's fetch (ScalarDB) and residual SQL (H2) compare" if planned else "ScalarDB compares"
+    return (f"MySQL compares strings by the column's collation, case-insensitively by default ('abc' = 'ABC'); "
+            f"{where} exactly. Check the collation of the compared columns")
 
 
 # --------------------------------------------------------------------------------------------------
