@@ -285,6 +285,7 @@ CHANGES = {
     "TRIGGER_NOT_APPLIED": (MEANING, "trigger が掛かる書き込みだが、生成コードでは掛けていない"),
     "TRIGGER_REDESIGN": (MEANING, "書き込む行を書き換える trigger を書く値に畳み込めない。trigger の再設計が要る"),
     "OVERLOAD_UNRESOLVED": (MEANING, "引数の数と名前からオーバーロードの版を決められない呼び出し。どの版かを確かめる"),
+    "CALL_NOT_HOISTED": (MEANING, "OUT 引数のある関数を、条件で評価されるかが変わる位置（AND / OR の右辺、CASE の分岐、ELSIF の条件）で呼んでいる。生成コードは断っているので、if に分けて書き直す"),
     "GOTO": (MEANING, "GOTO は生成しない。制御の流れを組み直す"),
     "UNSUPPORTED_CONSTRUCT": (MEANING, "下ろせない構文（入れ子のサブプログラムなど）がある。この routine は生成されない"),
     "DBMS_SQL_DYNAMIC": (MEANING, "DBMS_SQL の文が実行時に決まるので下ろせない。流れた文を集めて専用の Repository にする"),

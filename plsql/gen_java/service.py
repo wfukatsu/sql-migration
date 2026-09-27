@@ -465,6 +465,14 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
         # resolved, so the name is left out and the expression is reported instead of compiled against nothing
         from ..lower import overload_of
         names.update({r.name: java_name(r.name) for r in module.routines if overload_of(r) is None})
+        # a sibling function with OUT / IN OUT arguments returns its Result record, which an expression cannot
+        # compare or add: one left in an expression (plsql.hoist would not move it, #104) is refused with the reason
+        # instead of compiling into `Plsql.gt(bump(c), 0)` against a record
+        for r in module.routines:
+            if overload_of(r) is None and r.return_type is not None \
+                    and any(p.direction in ("OUT", "IN OUT") for p in r.parameters):
+                names[f"{r.name.lower()}#refused"] = ("OUT / IN OUT 引数のある関数は式の中では呼べない。"
+                                                      "文に分けて Result record から受ける")
         # the Java types of a sibling's IN parameters, so that a call can hand a NUMBER parameter a BigDecimal.
         # `rank_of(v_balance)` with `v_balance members.balance%TYPE` (NUMBER(10) -> Long) did not compile: the
         # method takes BigDecimal (samples/tutorial, 2026-09-20). The key cannot clash with a PL/SQL name
