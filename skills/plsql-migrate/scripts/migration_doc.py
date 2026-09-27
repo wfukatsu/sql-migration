@@ -295,6 +295,7 @@ CHANGES = {
     # ファイル単位の問題。文には付かないが、付いたときに「未分類」で埋もれないよう表に置く
     "PARSE": (MEANING, "ファイルを PL/SQL として解析できなかった"),
     "PARSE_INTERNAL": (MEANING, "解析器の内部エラーで、ファイルを読めなかった"),
+    "ORA_04085": (MEANING, "trigger が :OLD に代入している。Oracle でも作れない（ORA-04085）ので変換していない。ソースを直す"),
     "PREPROCESS_INTERNAL": (MEANING, "前処理の内部エラーで、ファイルを読めなかった"),
     "READ": (MEANING, "ファイルを読めなかった"),
     "EMPTY": (MEANING, "ファイルに PL/SQL が無い"),

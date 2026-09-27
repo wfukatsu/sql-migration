@@ -59,8 +59,11 @@ class Decided:
                    DbLinks.load(path), PackageState.load(path), Constraints.load(path))
 
     def for_analysis(self) -> dict:
+        # dynamic_tables: the report has to judge the statements the generator writes, one per accepted table name.
+        # Left out, `plsql.cli` still reported DYN-002 on a statement `plsql.generate` had already expanded (#133)
         return {"row_locks": self.row_locks, "boundaries": self.boundaries, "limits": self.limits,
-                "db_links": self.db_links, "package_state": self.package_state, "constraints": self.constraints}
+                "db_links": self.db_links, "package_state": self.package_state, "constraints": self.constraints,
+                "dynamic_tables": self.dynamic_tables}
 
 
 @dataclass

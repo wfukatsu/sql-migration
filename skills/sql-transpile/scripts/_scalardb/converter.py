@@ -309,6 +309,7 @@ class StatementConverter:
             res.issues.append(Issue("ERROR", "PLSQL_BLOCK", "a PL/SQL block (stored program or anonymous block) is not a SQL "
                                                             "statement; migrate it with the PL/SQL tooling (python -m plsql.generate)"))
             return res
+        src = self._long_raw(src)
         self._parsed = src
         try:
             node = sqlglot.parse_one(src, read=self.dialect)
@@ -363,6 +364,26 @@ class StatementConverter:
         if res.status == "WARN" and isinstance(node, exp.Select) and any(i.code == "CROSS_PARTITION" for i in res.issues):
             self._cost(res, [(_from(node).this.name, "CROSS_PARTITION")], row_limit=None)
         return res
+
+    def _long_raw(self, src: str) -> str:
+        """Oracle's `LONG RAW` spelled `LONG_RAW`, which SQLGlot reads as a user-defined type (types.py maps it to
+        BLOB). SQLGlot cannot parse the two words at all (`Expecting )`, #142). Read from the tokens, so a string
+        or a comment is left as it is, and padded to the same length: `_written_type` reads the source at the
+        offsets the parser recorded."""
+        if self.dialect != "oracle" or not re.search(r"\bLONG\s+RAW\b", src, re.I):
+            return src
+        try:
+            tokens = [t for t in sqlglot.tokenize(src, read=self.dialect)]
+        except TokenError:
+            return src
+        out = src
+        for first, second in zip(tokens, tokens[1:]):
+            if first.token_type == TokenType.STRING or second.token_type == TokenType.STRING:
+                continue
+            if first.text.upper() == "LONG" and second.text.upper() == "RAW":
+                span = second.end - first.start + 1
+                out = out[:first.start] + "LONG_RAW".ljust(span) + out[second.end + 1:]
+        return out
 
     def _flashback(self, src: str) -> str | None:
         """`AS OF TIMESTAMP` / `AS OF SCN` / `VERSIONS BETWEEN` in an Oracle statement, read from its tokens (so

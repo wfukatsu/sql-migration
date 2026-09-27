@@ -75,6 +75,7 @@ SQL 文の各項目を、変換器（`scalardb_migrate/`）がどう扱うかの
 | `CHAR(n)` / `NCHAR(n)`、n > 1 | TEXT | WARN `TYPE` | 空白詰めの値は、移行時に trim しないと `=` で当たらなくなる |
 | Oracle の `NCLOB` | TEXT | OK | |
 | Oracle の `LONG` | TEXT | WARN `TYPE` | 古い文字列の型（最大 2 GB）。整数ではない。Oracle 側では WHERE や索引に使えず、表に 1 列だけ。取り出すときは `TO_LOB` で CLOB にする |
+| Oracle の `LONG RAW` | BLOB | WARN `TYPE` | 古いバイナリの型（最大 2 GB）。Oracle 側では WHERE や索引に使えず、表に 1 列だけ。取り出すときは `TO_LOB` で BLOB にする |
 | `BLOB` / `BYTEA` / `BINARY(n)` / `VARBINARY(n)` | BLOB | OK | |
 | Oracle の `RAW(n)` | BLOB | OK（INFO `TYPE`） | 長さの上限は ScalarDB では守られない |
 | `BOOLEAN`、`BIT(1)` | BOOLEAN | OK | |
@@ -359,7 +360,7 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 | Oracle | 空文字列 `''` | 変換できた文に WARN `SEMANTICS`。Oracle は NULL として持つ |
 | Oracle | `LIKE` のエスケープ | `ESCAPE ''` を補う（INFO `LIKE`）。実行計画の H2 では `\` を二重にする |
 | Oracle | 外部結合 `(+)`、`ROWNUM`、`CONNECT BY`、`KEEP`、`MINUS` | 上の各表 |
-| Oracle | 整数型、`FLOAT`、`DATE`、精度なし `NUMBER`、`LONG`、`XMLTYPE` | すべて WARN `TYPE`（上の「データ型」） |
+| Oracle | 整数型、`FLOAT`、`DATE`、精度なし `NUMBER`、`LONG`、`LONG RAW`、`XMLTYPE` | すべて WARN `TYPE`（上の「データ型」） |
 | Oracle | `/` だけの行 | 文の切れ目として扱う |
 | Oracle | PL/SQL のブロック（`CREATE PROCEDURE` など、`BEGIN` / `DECLARE` の無名ブロック） | ERROR `PLSQL_BLOCK`。PL/SQL の移行ツールで扱う |
 | Oracle | `WITH FUNCTION ...`（WITH 句の PL/SQL） | ERROR `WITH_PLSQL`。関数をアプリに移せば、問い合わせは変換か実行計画にできる |
@@ -577,7 +578,7 @@ PL/SQL の中の SQL 文は、Repository のメソッドになります。SQL �
 | CHECK 制約・外部キーのある表への書き込み | `constraints.enforce` に書いた表だけ、書く前に検査（ORA-02290 / ORA-02291 の例外） | 書いていない表は診断 `CONSTRAINT_UNDECIDED`（判定は下がらない） | 外部キーは親の行をキーで読みます。`CREATE TABLE` の中の制約と、`ALTER TABLE ... ADD [CONSTRAINT 名前] CHECK / FOREIGN KEY` で足した制約を読みます。名前の無い制約は `<表>_check<n>` / `<表>_fk<n>` と呼びます |
 | PL/SQL の変数と表の列が同じ名前 | そのまま生成 | SQL-003（REVIEW） | Oracle は列として読みます |
 | データ辞書（`USER_*`、`ALL_*`、`DBA_*`、`V$*`）を読む | SQL をそのまま生成 | DICT-001（REDESIGN） | 移行先には無い表です |
-| 同じトランザクションで書いた表を走査する | 生成はするが、ScalarDB が実行時に拒否 | TX-004 / SCAN-001（REDESIGN） | `ScanAfterWriteException` になります |
+| 同じトランザクションで書いた表を走査する | 生成はするが、ScalarDB が実行時に拒否 | TX-004 / SCAN-001（REDESIGN） | `ScanAfterWriteException` になります。数えるのは走査（キーで届かない読み）だけで、キーで読むのは数えません。`COMMIT` と `ROLLBACK`（`ROLLBACK TO` を除く）のあとの読みは新しいトランザクションなので数えません。どの道でも通る `COMMIT` だけが効き、IF の片方の枝や、回らないかもしれないループの中の `COMMIT` は効きません。ScalarDB のスキーマ（`--scalardb-schema`）が無いときは読み方が分からないので、書いた表の読みをすべて TX-004 にします |
 | パーティションキーで絞れない走査 | そのまま生成 | SCAN-002（注記） | JDBC バックエンドでは通り、Cassandra などでは通りません |
 
 ### cursor
@@ -645,6 +646,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `PRAGMA EXCEPTION_INIT(e_x, -n)` | `CODE = -n` を持つ `EXException` | なし | 同じ番号の `RAISE_APPLICATION_ERROR` はこのクラスを投げるので、`WHEN e_x` で捕まります |
 | `PRAGMA EXCEPTION_INIT(e, -54)`（行ロックが取れない）の handler | catch を出さない | なし | ScalarDB は待たないので起こりません。衝突は commit で分かります |
 | `RAISE_APPLICATION_ERROR(-20001, msg)` | `throw new <Package>Error20001Exception(msg)` | なし | 番号を保ちます。同じ番号に 2 つの意味があると `generation-report.json` の `conflicts` に出ます（生成で確認） |
+| `RAISE_APPLICATION_ERROR(c_err, msg)`（番号を定数の名前や式で書く） | 変換しない（`UnsupportedOperationException`） | LOWER-001（REVIEW） | 例外のクラスを番号で決めるためです。番号を数字で書くか、`PRAGMA EXCEPTION_INIT` の例外を RAISE します。解析した範囲に無い routine の呼び出し（CALL-001）とは数えません |
 | `RAISE e_x` | `throw new EXException("e_x")` | なし | |
 | `RAISE;`（handler の中） | `throw e;`（捕まえた例外をそのまま） | なし | handler の外の `RAISE;` は断ります |
 | `SQLCODE` / `SQLERRM` / `SQLERRM(n)` | `Plsql.sqlcode(e.code())` / `Plsql.sqlerrm(e.code(), e.getMessage())` / `Plsql.sqlerrmOf(n)` | なし | 文言は Oracle 26ai で測ったものです（生成で確認） |
@@ -671,7 +673,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 |---|---|---|---|
 | `EXECUTE IMMEDIATE '定数' [INTO v] [USING p]` | 静的な文として Repository に生成 | ScalarDB がそのまま実行できれば DYN-OPT-002（注記）。できなければ DYN-002（REVIEW） | 生成で確認 |
 | 本体で定数を代入・連結した変数（`v_sql := '...'; v_sql := v_sql \|\| '...'`） | とりうる文（8 通りまで）を全部生成し、実行時に条件で選ぶ | 同上 | 宣言部の初期値で組んだ文字列はたどりません（生成で確認）。条件の変数を途中で書き換えると断ります |
-| 表名などの識別子を連結（`'... FROM ' \|\| p_tab`） | 決定が無ければ断る。`dynamicTables` に表名を書けば表ごとの文を生成し、`UPPER(p_tab)` で選ぶ | DYN-001（REDESIGN） | 書いていない表名は `IllegalArgumentException`（生成で確認） |
+| 表名などの識別子を連結（`'... FROM ' \|\| p_tab`） | 決定が無ければ断る。`dynamicTables` に表名を書けば表ごとの文を生成し、`UPPER(p_tab)` で選ぶ | DYN-001（REDESIGN） | 書いていない表名は `IllegalArgumentException`（生成で確認）。`plsql.cli --limits` の判定も表ごとの文を見るので、展開できた文に DYN-002 は付きません |
 | 動的な DDL（`'CREATE TABLE ...'`） | 断る。`ddl.omit` に書けば省く | DYN-002（REVIEW） | スキーマは Schema Loader が持ちます（生成で確認） |
 | 動的な PL/SQL ブロック（`'BEGIN ... END;'` の定数） | ブロックを展開して生成 | 中身の判定しだい | 生成で確認 |
 | `DBMS_SQL` で `PARSE` の文字列が定数の問合せ | 静的な cursor FOR ループ。`COLUMN_VALUE` は列番号で選ぶ | ループなので CUR-002 | 生成で確認 |
@@ -691,9 +693,10 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `DBMS_APPLICATION_INFO.SET_MODULE` / `SET_ACTION` / `SET_CLIENT_INFO` | 何もしない（コメントだけ） | なし | 名前付き引数も並べ替えて読みます |
 | `DBMS_STATS.GATHER_SCHEMA_STATS` / `GATHER_TABLE_STATS` | 何もしない（コメントだけ） | なし | ScalarDB にオプティマイザ統計はありません（生成で確認） |
 | `SYS_CONTEXT(...)` | 変換しない | SEM-013（REDESIGN） | 要る属性だけを呼び出し側が渡す形に直します（生成で確認） |
-| `UTL_HTTP`、`UTL_SMTP`、`UTL_FILE`、`UTL_TCP`、`DBMS_SCHEDULER`、`DBMS_JOB`、`DBMS_AQ`、`DBMS_PIPE`、`DBMS_ALERT`、`DBMS_LOB` | 変換しない | EXT-001（REDESIGN） | 外部への副作用です（生成で確認） |
+| `DBMS_LOB.GETLENGTH` / `SUBSTR` / `INSTR` | `Plsql.lobGetLength` / `lobSubstr` / `lobInstr` | なし | CLOB は `String`、BLOB は `byte[]` のまま、値に同じことをします。Oracle の DBMS_LOB の決まりに合わせ、NULL や範囲外の引数は例外でなく NULL、`SUBSTR` の既定は 32767 文字・1 文字目、負の offset で後ろから探すことはしません（Oracle 26ai で実測）。空の CLOB（`EMPTY_CLOB()`）は NULL と区別できません |
+| `UTL_HTTP`、`UTL_SMTP`、`UTL_FILE`、`UTL_TCP`、`DBMS_SCHEDULER`、`DBMS_JOB`、`DBMS_AQ`、`DBMS_PIPE`、`DBMS_ALERT`、`DBMS_LOB`（上の行の関数を除く） | 変換しない | EXT-001（REDESIGN） | 外部への副作用です。`DBMS_LOB` は引数を書き換える `APPEND` / `CREATETEMPORARY` などと、ファイルを読む `LOADCLOBFROMFILE` などが残ります（生成で確認） |
 | `DBMS_SQL` | 動的 SQL の節を参照 | DYN-003 | |
-| 解析した範囲に無い routine（他の package、表に無い組み込み） | `UnsupportedOperationException("external call: ...")` | CALL-001（REVIEW） | 呼び先が COMMIT するか、外へ送るか、ロックを取るかが分かりません（生成で確認） |
+| 解析した範囲に無い routine（他の package、表に無い組み込み） | `UnsupportedOperationException("external call: ...")` | CALL-001（REVIEW） | 呼び先が COMMIT するか、外へ送るか、ロックを取るかが分かりません（生成で確認）。次は呼び出しと数えません: 要素や field のコレクション・メソッド（`v(2).EXTEND`、`v(1).DELETE(1)`）、package が宣言した型の構築子（`pkg.names('a', 'b')`）。`STANDARD.TO_CHAR` のように `STANDARD.` を付けて書いた組み込み関数は、生成器がまだ読まないので CALL-001 のままです |
 
 ### package の状態
 
@@ -716,7 +719,8 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | 1 行に絞れる書き込み（キーで特定） | 書く側の Service が trigger の Service を受け取り、BEFORE は書く前、AFTER は書いた後（`rowCount > 0` のとき）に呼ぶ。UPDATE・DELETE は先に `:OLD` を読む | 呼ぶ側は trigger の判定を引き継ぐ | 生成で確認 |
 | `:NEW.id := seq.NEXTVAL` だけの BEFORE INSERT | 書く側の INSERT の値に織り込む（診断 `TRIGGER_INLINED`） | TRG-OPT-003（注記） | 生成で確認 |
 | 条件なしで `:NEW` / `:OLD` だけを読む `:NEW.c := 式` | 書く値に畳み込み、本体も呼ぶ（`TRIGGER_FOLDED`） | 呼ぶ側は TRG-001 を引き継ぐ | 生成で確認 |
-| 条件つき・局所変数を読む `:NEW` の代入、`:OLD` への代入 | 呼び出しにできない（`TRIGGER_REDESIGN`） | 書く側が TRG-002（REDESIGN） | |
+| 条件つき・局所変数を読む `:NEW` の代入 | 呼び出しにできない（`TRIGGER_REDESIGN`） | 書く側が TRG-002（REDESIGN） | |
+| `:OLD` への代入（`:OLD.c := 式`、`SELECT ... INTO :OLD.c`） | trigger を変換しない。ファイルは parse できなかったものと同じく `failedFiles` に出て、診断 `ORA_04085`（ERROR）が付く | trigger は判定に出ない。書く側にも掛けない | 元のソースの誤りです。Oracle でも `CREATE TRIGGER` が ORA-04085 で失敗し、trigger は作られません（Oracle 26ai で確認）。ソースを直してから変換します |
 | 複数行の UPDATE / DELETE、MERGE | 掛けない（`TRIGGER_NOT_APPLIED`） | 書く側が TRG-002（REDESIGN） | 行ごとに発火するものを 1 回の呼び出しにできないためです（生成で確認） |
 | `INSERTING` / `UPDATING` / `DELETING`、`UPDATING('列')` | 書く側が静的に決めた真偽値を引数で渡す | なし | |
 | `UPDATE OF 列` | その列を SET する書き込みにだけ掛ける | なし | |
@@ -758,7 +762,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `scanRows.default` / `routines` / `notLimited` | cursor の行を読む所に上限の検査を入れる | CUR-002 → CUR-OPT-002、BULK-003 → BULK-OPT-003 | `notLimited` でも既定値の検査は「暫定の網」として残ります（生成で確認） |
 | `rowLocks.optimistic` | 行ロックを落とす。列を読む UPDATE・RETURNING・MERGE を読んでから書く形に割る | SQL-001 / SEM-006 が外れ、SEM-011 の注記。LOCK-* は REDESIGN のまま | |
 | `transactions.perIteration` / `separate` / `callerBoundary` | トランザクションの節を参照 | TX-* は REDESIGN のまま（決定済み） | 1 つの routine に 1 つだけ書けます |
-| `dynamicTables` | 識別子を連結する動的 SQL を表ごとの文にする | DYN-001 は REDESIGN のまま | |
+| `dynamicTables` | 識別子を連結する動的 SQL を表ごとの文にする | DYN-001 は REDESIGN のまま。表ごとの文を判定するので、展開できた文の DYN-002 は外れる（`plsql.cli --limits` も同じ） | |
 | `ddl.omit` | 動的な DDL を省く | | |
 | `packageState.carried` | package 変数を引数と結果で運ぶ | STATE-001 は REDESIGN のまま | |
 | `constraints.enforce` | CHECK / 外部キーの検査を書く前に入れる | | |
@@ -774,7 +778,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | TX-001 | REDESIGN | routine（と呼び先）の COMMIT / ROLLBACK / SAVEPOINT | 決定が無ければ断る。`transactions.*` で形を決める |
 | TX-002 | REDESIGN | `PRAGMA AUTONOMOUS_TRANSACTION` | `transactions.separate` |
 | TX-003 | REDESIGN | ループの中の COMMIT / ROLLBACK | `transactions.perIteration` |
-| TX-004 | REDESIGN | 同じトランザクションで書いた表を走査する | routine を境界で割る。読み取りをキーにする |
+| TX-004 | REDESIGN | 同じトランザクションで書いた表を走査する（キーで読むもの、COMMIT のあとの読みは数えない。ScalarDB のスキーマが無ければ、書いた表の読みすべて） | routine を境界で割る。読み取りをキーにする |
 | SCAN-001 | REDESIGN | 呼び先が、この routine の書いた表を走査する | 同上 |
 | STATE-001 | REDESIGN | package 変数を（呼び出し経由を含めて）読み書きする | `packageState.carried` |
 | STATE-002 | REDESIGN | package 本体の初期化部 | 置き場所を人が決める（生成しない） |
@@ -845,6 +849,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `UTL_*` などの外部 package | `UnsupportedOperationException` | EXT-001 | |
 | `SYS_CONTEXT` | `UnsupportedOperationException` | SEM-013 | |
 | 型だけが違うオーバーロードの呼び出し | `UnsupportedOperationException` | CALL-002 | |
-| 畳み込めない `:NEW` の代入、`:OLD` への代入 | 書く側が呼ばない | TRG-002 | |
+| 畳み込めない `:NEW` の代入 | 書く側が呼ばない | TRG-002 | |
+| `:OLD` への代入 | trigger を変換しない（Oracle でも ORA-04085 で作れない） | 診断 `ORA_04085`、`failedFiles` | ソースを直す |
 | MULTISET の演算、`TABLE(v)` への `COUNT(*)` 以外の問合せ | 変換しない | | |
 | view への書き込みに `INSTEAD OF` trigger を織り込む形 | 無い | | view へ書く文は ScalarDB に view が無いので断られます |

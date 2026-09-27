@@ -34,7 +34,7 @@ from .frontend import ParsedFile
 from . import bulk, cursors
 from .ir import model as M
 from .preprocess import Unit
-from .source import SourceRange
+from .source import Issue, SourceRange
 from .symbols import OracleSchema, SymbolTable, _child, _children, _descend, _text
 
 RAISE_APPLICATION_ERROR = re.compile(
@@ -82,6 +82,17 @@ def lower_file(parsed: ParsedFile, symbols: SymbolTable | None = None,
             continue
         lowerer = _Lowerer(parsed_unit.unit, symbols, schema, public or set())
         lowered = lowerer.modules(parsed_unit.tree)
+        invalid = [(m, s) for m in lowered for s in _old_assignments(m)]
+        if invalid:
+            # Oracle refuses to create such a trigger (ORA-04085), so it never existed: the unit is an error in the
+            # source, reported as a parse failure is, and no write gets it applied (#134)
+            for _, statement in invalid:
+                parsed_unit.issues.append(Issue(
+                    "ERROR", "ORA_04085",
+                    "ORA-04085: cannot change the value of an OLD reference variable. Oracle でもこの trigger は"
+                    "作れない（CREATE TRIGGER が失敗する）。元のソースの誤りなので、直してから変換する",
+                    statement.source_range))
+            lowered = [m for m in lowered if all(m is not x for x, _ in invalid)]
         if not parsed_unit.ok:
             # ANTLR recovers from a syntax error and hands back a tree anyway -- with the offending text skipped
             # or re-read as something else. Rules run on that tree saw a clean routine and called it AUTO.
@@ -90,6 +101,24 @@ def lower_file(parsed: ParsedFile, symbols: SymbolTable | None = None,
                             "which may have dropped or misread statements")
         modules.extend(lowered)
     return modules
+
+
+_OLD_REFERENCE = re.compile(r"^\s*:?\s*OLD\s*\.", re.IGNORECASE)
+
+
+def _old_assignments(module: M.Module) -> list[M.Statement]:
+    """The statements of a trigger that write `:OLD.x` -- by assignment or as an INTO target. Oracle refuses to
+    compile them (ORA-04085, measured on 26ai: the CREATE TRIGGER fails and no trigger is left behind)."""
+    if module.module_kind != "trigger":
+        return []
+    out = []
+    for routine in module.routines:
+        for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
+            targets = [getattr(statement, "target", None) or ""] if statement.kind == "Assignment" else []
+            targets += list(getattr(statement, "into_targets", None) or [])
+            if any(_OLD_REFERENCE.match(t or "") for t in targets):
+                out.append(statement)
+    return out
 
 
 def _cannot_be_auto(modules: list[M.Module], construct: str, code: str, message: str,
@@ -971,6 +1000,17 @@ class _Lowerer:
                            error_code=int(application_error.group(1)),
                            message=application_error.group(2).strip().rstrip(")").strip())
         callee = _text(_child(context, "Routine_nameContext") or context).strip().rstrip(";")
+        if re.fullmatch(r"\s*RAISE_APPLICATION_ERROR\s*(\(.*)?", callee, re.IGNORECASE | re.DOTALL):
+            # the number is a constant or an expression (`raise_application_error(gc_error, msg)`). It is not a call
+            # into code nobody analysed -- CALL-001 said so (#132) -- but the exception class is chosen by the
+            # number, so the generator cannot write it either: a construct not lowered, said as one
+            node = M.Unsupported(id=ids.next("stmt"), kind="Unsupported", source_range=source, text=text,
+                                 construct="RaiseApplicationError")
+            node.add("WARN", "UNSUPPORTED_CONSTRUCT",
+                     "RAISE_APPLICATION_ERROR whose error number is not written as a number is not lowered: the "
+                     "generated exception class is chosen by the number. Write the number, or declare the "
+                     "exception with PRAGMA EXCEPTION_INIT and RAISE it")
+            return node
         arguments = [_text(a) for a in _descend(context, {"ArgumentContext"})]
         return M.Call(id=ids.next("stmt"), kind="Call", source_range=source,
                       callee=callee.split("(")[0].strip(), arguments=arguments)
@@ -1334,7 +1374,9 @@ class _Lowerer:
         if re.search(r"\bPRAGMA\s+AUTONOMOUS_TRANSACTION\b", text, re.IGNORECASE):
             routine.transaction_effects.autonomous = True
         routine.external_effects.db_links = sorted({m.lower() for m in DB_LINK.findall(text)})
-        routine.external_effects.packages = sorted({m.upper() for m in EXTERNAL_PACKAGES.findall(text)})
+        from .builtins import external_packages
+
+        routine.external_effects.packages = external_packages(text, EXTERNAL_PACKAGES)
 
     # -- helpers ---------------------------------------------------------------------------------------------
     def _type(self, scope: str | None, written: str, name: str | None = None) -> M.TypeRef:

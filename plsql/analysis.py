@@ -289,9 +289,24 @@ _COLLECTION_METHODS = {"count", "exists", "first", "last", "next", "prior", "del
 
 
 def _collection_method(callee: str | None, declared: set[str]) -> bool:
-    """`v_list.EXTEND;` on a local collection is a method of the variable, not a call into another routine."""
-    head, _, tail = (callee or "").strip().partition(".")
-    return head.lower() in declared and tail.lower() in _COLLECTION_METHODS
+    """`v_list.EXTEND;` on a local collection is a method of the variable, not a call into another routine. So is
+    the method of an element (`nva(4).EXTEND`, `vntb1(2).DELETE`) or of a field (`r.list.EXTEND`): the variable
+    is the name before the first subscript or dot (#132)."""
+    head, _, tail = (callee or "").strip().rpartition(".")
+    variable = re.split(r"[.(]", head, maxsplit=1)[0].strip()
+    return variable.lower() in declared and tail.strip().lower() in _COLLECTION_METHODS
+
+
+def _package_types(program: M.Program) -> set[str]:
+    """`pkg.names` for every TYPE a package declares: `pkg.names('a', 'b')` builds a collection, it calls nothing."""
+    return {f"{m.name}.{d.name}".lower() for m in program.modules for d in m.declarations
+            if d.declaration_kind in ("type", "record")}
+
+
+def _outside_code(callee: str | None, package_types: set[str]) -> bool:
+    """Whether a name that resolves to no routine of the program is a call into code nobody analysed. A package
+    type's constructor is not (#132)."""
+    return re.sub(r"\s+", "", callee or "").lower() not in package_types
 
 
 def _declared_names(module: M.Module, routine: M.Routine) -> set[str]:
@@ -307,6 +322,10 @@ def _declared_names(module: M.Module, routine: M.Routine) -> set[str]:
 def build_call_graph(program: M.Program) -> CallGraph:
     graph = CallGraph()
     by_name = _names(program)
+    package_types = _package_types(program)
+
+    def external_in(expression: str, module: str, declared: set[str]) -> set[str]:
+        return {c for c in _external_in(expression, by_name, module, declared) if _outside_code(c, package_types)}
 
     for module in program.modules:
         for routine in module.routines:
@@ -321,7 +340,7 @@ def build_call_graph(program: M.Program) -> CallGraph:
                    if d.initial and d.declaration_kind != "cursor"]
             for expression in initialisers:
                 graph.calls[routine.id] |= _called_in(expression, by_name, module.name, routine.id, declared)
-                graph.external[routine.id] |= _external_in(expression, by_name, module.name, declared)
+                graph.external[routine.id] |= external_in(expression, module.name, declared)
             for statement in statements:
                 if statement.kind == "Call":
                     resolved = _resolve(statement.callee, by_name, module.name, statement.arguments or [])
@@ -330,7 +349,8 @@ def build_call_graph(program: M.Program) -> CallGraph:
                         statement.resolved_to = resolved
                     elif overloaded(statement.callee, by_name, module.name):
                         _unresolved_overload(statement, statement.callee.strip())
-                    elif resolved is None and not _collection_method(statement.callee, declared):
+                    elif not _collection_method(statement.callee, declared) \
+                            and _outside_code(statement.callee, package_types):
                         graph.external[routine.id].add(statement.callee.strip())
                 # A function call is usually not a statement: `v := order_total(id)` is an assignment, and a
                 # condition may call one too. Looking only at Call nodes found one edge in the whole corpus and
@@ -343,7 +363,7 @@ def build_call_graph(program: M.Program) -> CallGraph:
                     for resolved in _called_in(expression, by_name, module.name, routine.id, declared):
                         graph.calls[routine.id].add(resolved)
                     if statement.kind != "SqlOperation":   # SQL has its own functions; the converter judges those
-                        graph.external[routine.id] |= _external_in(expression, by_name, module.name, declared)
+                        graph.external[routine.id] |= external_in(expression, module.name, declared)
     return graph
 
 
@@ -550,16 +570,18 @@ class ProgramAnalysis:
         static half of AUTO prohibition 11. A read counts as a scan when the statement has no equality on a key;
         that decision needs the ScalarDB schema, so P2-4 refines it. Here the pair is reported whenever a routine
         both writes and reads the same table, which is the superset P2-4 narrows.
+
+        A COMMIT or a ROLLBACK ends the transaction, and what was written before it is no longer this transaction's
+        write (#131): `UPDATE t; COMMIT; SELECT ... FROM t` reads in a new one. Only a COMMIT every path runs
+        through clears it -- one inside an IF leaves the other branch's writes in place (`written_after`).
         """
         found: list[tuple[str, str]] = []
         for module in self.program.modules:
             for routine in module.routines:
-                writes: set[str] = set()
-                for statement in _walk(routine.body):
-                    for table in statement.read_set:
-                        if table in writes:
-                            found.append((routine.id, table))
-                    writes.update(statement.write_set)
+                def reads(statement: M.Statement, written: set[str], routine_id: str = routine.id) -> None:
+                    found.extend((routine_id, table) for table in statement.read_set if table in written)
+
+                written_after(routine.body, set(), reads)
         return sorted(set(found))
 
     def gotos(self) -> list[tuple[str, str]]:
@@ -583,6 +605,48 @@ class ProgramAnalysis:
                 if statement.kind in ("Commit", "Rollback") and cfg.inside_loop(node_id):
                     out.append((routine_id, node_id))
         return sorted(out)
+
+
+def ends_transaction(statement: M.Statement) -> bool:
+    """COMMIT, or a ROLLBACK of the whole transaction. `ROLLBACK TO sp` keeps what was written before `sp`."""
+    return statement.kind == "Commit" or (statement.kind == "Rollback" and not getattr(statement, "savepoint", None))
+
+
+def written_after(statements: list[M.Statement], written: set[str], reads) -> set[str]:
+    """The tables this transaction has written once `statements` have run, starting from `written`.
+
+    `reads(statement, written)` is called for every statement with what was written before it on the way there. A
+    COMMIT or a full ROLLBACK starts a new transaction, so it empties the set (#131). A branch is one path among
+    several: what comes after an IF is the union of its branches (and of not taking any, when there is no ELSE), so
+    a COMMIT in one branch does not clear the writes of the other. A loop body may not run at all. A handler runs
+    after an unknown part of its block, so it starts from everything the block may have written."""
+    written = set(written)
+    for statement in statements:
+        if ends_transaction(statement):
+            written = set()
+            continue
+        reads(statement, written)
+        query = getattr(statement, "query", None)
+        if query is not None:
+            reads(query, written)
+        written |= set(statement.write_set)
+        branches = getattr(statement, "branches", None) or []
+        if branches:
+            after: set[str] = set()
+            for branch in branches:
+                after |= written_after(branch.body, written, reads)
+            written = after | written_after(getattr(statement, "else_body", None) or [], written, reads)
+        body = getattr(statement, "body", None) or []
+        before = set(written)
+        if body:
+            end = written_after(body, written, reads)
+            written = written | end if statement.kind == "Loop" else end
+        handlers = getattr(statement, "exception_handlers", None) or []
+        if handlers:
+            entered = before | written | {t for s in _walk(body) for t in s.write_set}
+            for handler in handlers:
+                written |= written_after(handler.body, entered, reads)
+    return written
 
 
 def analyse(program: M.Program) -> ProgramAnalysis:

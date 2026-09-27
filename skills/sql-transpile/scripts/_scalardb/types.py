@@ -61,6 +61,10 @@ def _params(dt: exp.DataType) -> list[int | None]:
 _ORACLE_NAMED = {
     "RAW": ("BLOB", "INFO", "{raw}: length limit is not enforced by ScalarDB BLOB"),
     "NCLOB": ("TEXT", "INFO", ""),
+    # `LONG RAW`, which the converter spells LONG_RAW before parsing: SQLGlot cannot read the two words (#142)
+    "LONG_RAW": ("BLOB", "WARN", "LONG RAW: Oracle's legacy binary type (up to 2 GB) mapped to BLOB. Oracle cannot "
+                                 "use a LONG RAW in WHERE, GROUP BY, an index or most functions, and allows one per "
+                                 "table: export it with TO_LOB (or convert it to BLOB first) when migrating"),
     # the same as PostgreSQL's XML below
     "XMLTYPE": ("TEXT", "WARN", "{raw}: mapped to TEXT; the XML is kept as text, and XML functions and operators "
                                 "(XMLQUERY, XMLTABLE, EXTRACTVALUE, XPath ...) are not available"),

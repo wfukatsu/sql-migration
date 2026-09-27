@@ -475,7 +475,7 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
         "externalPackage": lambda v: bool(effects and effects.external.packages) is v,
         # a call specification (`AS LANGUAGE JAVA NAME ...`): its body is Java or C inside the database (#69)
         "callSpec": lambda v: bool(routine.call_spec) is v,
-        "writeThenScan": lambda v: (routine.id in {r for r, _ in analysis.write_then_scan()}) is v,
+        "writeThenScan": lambda v: (routine.id in _writes_then_scans(analysis)) is v,
         "recursive": lambda v: any(routine.id in cycle for cycle in analysis.call_graph.cycles()) is v,
         # a call that resolves to no routine in the program: code nobody analysed, which may commit, send mail,
         # or take a lock. `externalPackage` only knows a short list of names; this is everything else
@@ -511,6 +511,28 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
 
 _INTERPOLATED_IDENTIFIER = re.compile(
     r"(FROM|INTO|TABLE|JOIN|UPDATE)\s+'\s*\|\||(FROM|INTO|TABLE|JOIN|UPDATE)\s*'\s*\|\|", re.IGNORECASE)
+
+
+def _writes_then_scans(analysis: ProgramAnalysis) -> set[str]:
+    """The routines that scan a table the same transaction wrote (AUTO prohibition 11, docs/design/plsql-kpi.md §2).
+
+    Condition 11 is about a *scan*: reading by key after writing is allowed (P2-9). Only the capability check knows
+    the access path, so once it has run (a ScalarDB schema was given, and every SQL statement has a target status)
+    its answer -- the statements marked SCAN_AFTER_WRITE -- is the one used. Without it, `write_then_scan` is the
+    superset from the SQL alone: any read of a table written earlier in the transaction (#131)."""
+    cached = getattr(analysis, "_writes_then_scans", None)
+    if cached is not None:
+        return cached
+    routines = [r for m in analysis.program.modules for r in m.routines]
+    checked = any(s.kind == "SqlOperation" and getattr(s, "target_status", None)
+                  for r in routines for s in _statements(r))
+    if checked:
+        found = {r.id for r in routines
+                 if any(d.code == "SCAN_AFTER_WRITE" for s in _statements(r) for d in s.diagnostics)}
+    else:
+        found = {r for r, _ in analysis.write_then_scan()}
+    analysis._writes_then_scans = found
+    return found
 
 
 def _state_touchers(analysis: ProgramAnalysis) -> set[str]:
