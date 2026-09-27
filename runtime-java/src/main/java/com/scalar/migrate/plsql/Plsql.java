@@ -36,7 +36,7 @@ public final class Plsql {
   /** Oracle's {@code =}: false when either side is null, value comparison for numbers. */
   public static boolean eq(Object a, Object b) {
     if (isNull(a) || isNull(b)) return false;
-    if (a instanceof Number && b instanceof Number) return compare(a, b) == 0;
+    if (numeric(a, b)) return compare(a, b) == 0;   // text against a number converts the text (#113)
     if (a instanceof java.util.List<?> x && b instanceof java.util.List<?> y) return Boolean.TRUE.equals(sameMultiset(x, y));
     return Objects.equals(a, b);
   }
@@ -86,12 +86,23 @@ public final class Plsql {
     return !isNull(a) && !isNull(b) && compare(a, b) >= 0;
   }
 
+  /**
+   * Text against a number compares as numbers, the text converted as TO_NUMBER would (#113). Measured on Oracle 26ai:
+   * `v VARCHAR2 := '10'` is `= 10` and `> 9`, ' 10 ', '1e1', '10.0', '+5' all equal their number, and 'abc' or
+   * '1,000' is ORA-06502 (character to number conversion error). Here `eq("10", 10)` was false and `gt("10", 9)` a
+   * ClassCastException. Two texts still compare as text: `'9' < '10'` is false.
+   */
   @SuppressWarnings({"unchecked", "rawtypes"})
   private static int compare(Object a, Object b) {
-    if (a instanceof Number && b instanceof Number) {
+    if (numeric(a, b)) {
       return num(a).compareTo(num(b));
     }
     return ((Comparable) a).compareTo(b);
+  }
+
+  private static boolean numeric(Object a, Object b) {
+    return (a instanceof Number || a instanceof CharSequence) && (b instanceof Number || b instanceof CharSequence)
+        && (a instanceof Number || b instanceof Number);
   }
 
   /** Oracle's {@code ||}: NULL behaves as an empty string, which Java's {@code +} does not. */
@@ -485,10 +496,16 @@ public final class Plsql {
     return arith(a, b, OracleNumbers::divide);
   }
 
+  /**
+   * Every result is rounded as a NUMBER holds it: 40 significant digits, or 39 when the leading base-100 pair holds
+   * one digit (OracleNumbers.round40). Only the division was; `a := 1/3; 'x' || (a * a)` printed 80 digits where
+   * Oracle 26ai prints .1111111111111111111111111111111111111111, and `1e30 + 1e-30` kept the 1e-30 Oracle drops
+   * (#113). Rounding once per operation is what Oracle does: `a := 1/3; a * 3` is .9999999999999999999999999999999999999999.
+   */
   private static BigDecimal arith(Object a, Object b,
       java.util.function.BinaryOperator<BigDecimal> operator) {
     if (a == null || b == null) return null;
-    return operator.apply(num(a), num(b));
+    return OracleNumbers.round40(operator.apply(num(a), num(b)));
   }
 
   /** {@code TO_CHAR(value, format)}. Only the formats the corpus uses are mapped; the rest raise. */
@@ -555,6 +572,11 @@ public final class Plsql {
   public static final class ValueError extends RuntimeException {
     public ValueError(String detail) {
       super("ORA-06502: PL/SQL: numeric or value error: " + detail);
+    }
+
+    /** The bare ORA-06502 an argument out of range raises, with no detail after it (`POWER(0, -1)`, #113). */
+    public ValueError() {
+      super("ORA-06502: PL/SQL: numeric or value error");
     }
   }
 
@@ -1449,7 +1471,10 @@ public final class Plsql {
     String needle = text(search);
     int start = num(position).intValue();
     int nth = num(occurrence).intValue();
-    if (start == 0 || nth < 1) return BigDecimal.ZERO;
+    // an occurrence below 1 is ORA-06502 in PL/SQL (ORA-01428 in SQL), measured on 26ai; it was 0 here (#113). A
+    // start of 0 is not an error: INSTR('abc','b',0,1) is 0
+    if (nth < 1) throw new ValueError();
+    if (start == 0) return BigDecimal.ZERO;
     int found = -1;
     if (start > 0) {
       int from = start - 1;
@@ -1608,10 +1633,16 @@ public final class Plsql {
     if (isNull(base) || isNull(exponent)) return null;
     BigDecimal b = num(base);
     BigDecimal e = num(exponent);
-    if (e.stripTrailingZeros().scale() <= 0 && e.abs().compareTo(BigDecimal.valueOf(999)) <= 0) {
+    boolean whole = e.stripTrailingZeros().scale() <= 0;
+    // POWER(0, -1) and POWER(-2, 0.5) are ORA-06502 in PL/SQL (26ai). They were Java's ArithmeticException and a
+    // NumberFormatException from a NaN, which no migrated handler catches (#113)
+    if ((b.signum() == 0 && e.signum() < 0) || (b.signum() < 0 && !whole)) throw new ValueError();
+    if (whole && e.abs().compareTo(BigDecimal.valueOf(999)) <= 0) {
       int n = e.intValue();
       BigDecimal raised = b.pow(Math.abs(n));
-      return n >= 0 ? raised : OracleNumbers.divide(BigDecimal.ONE, raised);
+      // rounded as a NUMBER holds it (#113): POWER(2, 200) is 160693804425899027554196209234116260252 followed by
+      // 22 zeros on 26ai, and POWER(1.1, 50) 117.390852879695316506666495990358319939
+      return n >= 0 ? OracleNumbers.round40(raised) : OracleNumbers.divide(BigDecimal.ONE, raised);
     }
     // x ** 0.5 as √x: Oracle's own result differs from it in the last digit or two (it uses exp and ln)
     if (e.compareTo(new BigDecimal("0.5")) == 0) return sqrt(b);
