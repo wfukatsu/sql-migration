@@ -1908,6 +1908,16 @@ def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine
             value = _into(file, f"row[{index}]", _local_type(routine, target))
             file.line(f"{_local(target)} = {_constrain(file, value, holder.type if holder else None)};")
     elif (statement.sql_kind or "").upper() in ("INSERT", "UPDATE", "DELETE", "MERGE"):
+        import json   # a Java string literal: the message quotes the PL/SQL, which may hold quotes itself
+        for guard in getattr(statement, "key_guards", None) or []:
+            # the key left the SET (#92): the same key is a no-op in Oracle; another one would move the row, which
+            # ScalarDB cannot do -- refused here rather than updated under the old key in silence
+            value = _expr(file, guard["value"], routine, None)
+            where = _expr(file, guard["where"], routine, None)
+            message = (f"SET {guard['column']} = {guard['value']} would move the row from {guard['column']} = "
+                       f"{guard['where']} to another key; ScalarDB cannot update a key")
+            with file.block(f"if (!Plsql.eq({value}, {where}))") as g:
+                g.line(f"throw new UnsupportedOperationException({json.dumps(message, ensure_ascii=False)});")
         # SQL%ROWCOUNT is part of the behaviour: `update_email` raises when it is zero. One variable per
         # statement, because a routine may hold several DML statements in one scope.
         file.line(f"rowCount {'+' if getattr(statement, 'accumulates_rowcount', False) else ''}= repository.{method}({arguments});")

@@ -800,6 +800,14 @@ class _Lowerer:
                 break
         node = M.SqlOperation(id=ids.next("stmt"), kind="SqlOperation", source_range=source,
                               sql_kind=kind, original_sql=text.strip().rstrip(";").strip())
+        if kind in ("INSERT", "UPDATE"):
+            # `INSERT INTO t VALUES rec` / `UPDATE t SET ROW = rec`: written out column by column, so everything
+            # after this reads the columns the statement writes (#92)
+            from .record_dml import expand
+            expanded = expand(node.original_sql, self.symbols, self.routine_id, self.schema)
+            if expanded:
+                node.add("INFO", "RECORD_DML", f"the record is written column by column: {expanded}"[:300])
+                node.original_sql = expanded
         mark_row_lock(node, text)
         if re.search(r"\bBULK\s+COLLECT\b", text, re.IGNORECASE):
             node.cardinality = "MANY"

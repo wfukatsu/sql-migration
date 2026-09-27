@@ -1394,6 +1394,12 @@
             "string",
             "null"
           ]
+        },
+        "key_guards": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },

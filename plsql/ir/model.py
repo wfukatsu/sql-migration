@@ -234,6 +234,9 @@ class SqlOperation(Statement):
     target_status: str | None = None      # OK | WARN | PLANNED | ERROR, from scalardb_migrate
     target_sql: list[str] = field(default_factory=list)
     plan_id: str | None = None            # the plan.json this statement needs at run time
+    # `SET ROW = rec` / `SET key = v` whose WHERE pins the key to `w`: the key left the SET, and the generated code
+    # checks v = w before the UPDATE -- ScalarDB cannot move a row to another key (#92). {column, value, where}
+    key_guards: list[dict] = field(default_factory=list)
 
 
 @dataclass
