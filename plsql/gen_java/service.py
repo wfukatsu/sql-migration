@@ -2354,10 +2354,12 @@ def _arguments(file: JavaFile, statement: M.SqlOperation, routine: M.Routine,
             if expected == "String":
                 rendered = f"(String) {rendered}"
             elif expected in ("Integer", "Long", "Double", "Float", "BigDecimal", "LocalDateTime"):
+                # the conversion belongs to this branch: dedented, a column of any other type (Object, a record) was a
+                # KeyError that stopped the generator (samples/oracle-plsql-docs 12-7, 2026-09-27)
                 file.add_import("com.scalar.migrate.plsql.Plsql")
-            helper = {"Integer": "toInt", "Long": "toLong", "Double": "toDouble", "Float": "toFloat",
-                      "BigDecimal": "dec"}[expected]
-            rendered = f"Plsql.{helper}({rendered})"
+                helper = {"Integer": "toInt", "Long": "toLong", "Double": "toDouble", "Float": "toFloat",
+                          "BigDecimal": "dec", "LocalDateTime": "moment"}[expected]
+                rendered = f"Plsql.{helper}({rendered})"
         out.append(rendered)
     return ", ".join(out)
 
