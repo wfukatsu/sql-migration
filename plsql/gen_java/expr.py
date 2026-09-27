@@ -837,18 +837,24 @@ class _Parser:
                 return f'sequences.next("{head.lower()}")'
             if tail.upper() == "LIMIT" and self.scope.get(f"{head.lower()}#limit"):
                 return self.scope[f"{head.lower()}#limit"]   # a VARRAY's declared bound (#45)
+            if tail.upper() == "LIMIT" and self.scope.get(f"{head.lower()}#collection"):
+                # an associative array or a nested table has no bound: LIMIT is NULL (5-28, #82)
+                return "(java.math.BigDecimal) null"
             if self.scope.get(f"{head.lower()}#collection") and tail.upper() in COLLECTION_METHODS \
                     and tail.upper() not in ("NEXT", "PRIOR", "EXISTS"):
                 # `v.COUNT`, `v.FIRST`, `v.LAST`, `v.DELETE`, `v.EXTEND`, `v.TRIM` on a local collection (#45)
                 self.result.imports.add(HELPER_IMPORT)
                 return f"{HELPER}.{COLLECTION_METHODS[tail.upper()]}({self.scope[head.lower()]})"
-            if head.lower() not in self.scope or tail.upper() in COLLECTION_ATTRIBUTES:
+            fields = (self.scope.get(f"{head.lower()}#fields_of") or "").split(",")
+            if head.lower() not in self.scope or (tail.upper() in COLLECTION_ATTRIBUTES and tail.lower() not in fields):
+                # (`name1.first` of a record whose field is called `first` is the field: 5-45, #82)
                 # `v_ids.COUNT` on a collection the scope does not know as one, or a package-qualified name:
                 # neither is a record field, and rendering it as one produces a call to a method that does
                 # not exist (#40)
                 self.result.unknown.append(value)
                 return value
-            return f"{self.scope[head.lower()]}.{java_name(tail)}()"
+            # `friend.name.first`: a field of a nested record, one accessor per step (5-35, #82)
+            return self.scope[head.lower()] + "".join(f".{java_name(step)}()" for step in tail.split("."))
         self.result.unknown.append(value)
         return java_name(value)
 

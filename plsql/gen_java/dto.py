@@ -27,13 +27,27 @@ class Dto:
     kind: str          # row | result
 
 
+def _original(resolved: str, shape: str) -> str:
+    """The `RECORD(...)` inside `resolved` whose whitespace-free, lower-cased form is `shape`, as written."""
+    for match in re.finditer(r"RECORD\(", resolved, re.IGNORECASE):
+        depth = 0
+        for end in range(match.end() - 1, len(resolved)):
+            depth += {"(": 1, ")": -1}.get(resolved[end], 0)
+            if depth == 0:
+                candidate = resolved[match.start():end + 1]
+                if re.sub(r"\s+", "", candidate).lower() == shape:
+                    return candidate
+                break
+    return resolved
+
+
 def row_record(name: str, resolved: str, package: str, source: str = "",
-               suffix: str = "Row", note: str | None = None) -> Dto | None:
+               suffix: str = "Row", note: str | None = None, class_name: str | None = None) -> Dto | None:
     """A record for a `%ROWTYPE`, one component per column, in DDL order."""
     columns = record_columns(resolved)
     if not columns:
         return None
-    file = JavaFile(package=package, name=java_class_name(name) + suffix, source=source)
+    file = JavaFile(package=package, name=class_name or java_class_name(name) + suffix, source=source)
     components = []
     for column, oracle in columns:
         mapped = java_type(oracle)
@@ -151,6 +165,19 @@ def dtos_for(module: M.Module, package: str) -> list[Dto]:
                                     note=f"PL/SQL record type {base}. Components follow the field names.")
                 if record is not None:
                     out.append(record)
+        # a RECORD type met only as a field of another record or as an element of a collection (`friend.name`,
+        # `v1(1)`) is a class too, or the component that names it would not compile (#82)
+        from .types import _shape, record_types
+        for declaration in list(routine.declarations) + list(routine.parameters):
+            resolved = _shape(declaration.type.resolved) if declaration.type is not None else ""
+            for shape, cls in record_types().items():
+                if shape in resolved and cls.lower() not in seen:
+                    seen.add(cls.lower())
+                    record = row_record(cls, _original(declaration.type.resolved, shape), package, source,
+                                        note=f"PL/SQL record type {cls}. Components follow the field names.",
+                                        class_name=cls)
+                    if record is not None:
+                        out.append(record)
         # `SELECT * INTO emp_tab(1)` with `emp_tab TABLE OF employees%ROWTYPE`: the repository builds the table's
         # row class for the element, which nothing else generates (samples/oracle-plsql-docs 12-6, #73)
         from ..lower import _walk

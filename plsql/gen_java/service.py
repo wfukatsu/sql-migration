@@ -418,6 +418,13 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
     trigger_locals = list(module.declarations) if module is not None and module.module_kind == "trigger" else []
     for holder in list(routine.parameters) + list(routine.declarations) + trigger_locals:
         kind = _collection_kind(holder)
+        if kind and getattr(holder, "declaration_kind", None) == "type":
+            # a TYPE, not a variable: only its constructor (`tv1(3, 5)`, 5-12, #82)
+            if kind == "list":
+                element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
+                names[f"{holder.name.lower()}#constructor"] = kind
+                names[f"{holder.name.lower()}#element"] = element
+            continue
         if kind:
             names[f"{holder.name.lower()}#collection"] = kind
             element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
@@ -439,6 +446,10 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
         text = _text_rendering(declared)
         if text:
             names[f"{holder.name.lower()}#text"] = text
+        if holder.type is not None and record_class(holder.type):
+            # its field names: `name1.first` is the field, not the collection method FIRST (5-45, #82)
+            names[f"{holder.name.lower()}#fields_of"] = ",".join(
+                f.lower() for f, _ in record_columns(holder.type.resolved or ""))
     # a schema object type's constructor `emp_grade_t(a, b, 'X')` builds its record (#54)
     from .types import object_types
     for name, resolved in object_types().items():
@@ -609,7 +620,7 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
                 # refused the whole class (2026-09-24, samples/oracle-samples normalize_name)
                 continue
             f.line(f"{_holder_java_type(file, parameter.type)} {java_name(parameter.name)} = "
-                   f"{_record_default(parameter.type) or 'null'};")
+                   f"{_record_default(parameter.type, f) or 'null'};")
         chunked = {(loop.variable or "").lower() for loop in _walk(routine.body)
                    if loop.kind == "Loop" and getattr(loop, "chunk", None)}
         # a `%ROWTYPE` record that a rewritten scan made its loop variable (#39): the for declares it
@@ -883,7 +894,72 @@ def _holder_java_type(file: JavaFile, type_ref: "M.TypeRef | None") -> str:
     return mapped.name
 
 
-def _record_default(type_ref: "M.TypeRef | None") -> str | None:
+def _rebuilt(file: JavaFile, current: str, resolved: str, record: str, path: list[str], value: str) -> str | None:
+    """`current` -- a record of type `resolved`, class `record` -- rebuilt with the field at `path` set to `value`.
+
+    Generated records are immutable, so `v_rec.id := 1` builds a new one with that component replaced (#45). A path
+    through a nested record (`friend.name.first`, 5-35) rebuilds each level on the way down (#82). None when a step
+    of the path is not a field, or a nested field's record has no class to build."""
+    columns = record_columns(resolved)
+    if not any(c.lower() == path[0].lower() for c, _ in columns):
+        return None
+    components = []
+    for column, declared in columns:
+        read = f"{current}.{java_name(column)}()"
+        if column.lower() != path[0].lower():
+            components.append(read)
+        elif len(path) == 1:
+            # the new value takes the component's type: `default_week.week := i` put an int into a BigDecimal
+            components.append(_coerce(file, value, java_type(declared).name))
+        else:
+            nested = java_type(declared).name
+            if not RECORD_TEXT.match(declared) or nested == "Object":
+                return None
+            file.add_import(*java_type(declared).imports)
+            inner = _rebuilt(file, read, declared, nested, path[1:], value)
+            if inner is None:
+                return None
+            components.append(inner)
+    return f"new {record}({', '.join(components)})"
+
+
+RECORD_TEXT = re.compile(r"^\s*RECORD\(", re.IGNORECASE)
+
+
+def _element_record(resolved: str | None) -> str | None:
+    """The `RECORD(...)` a collection holds, when it holds records."""
+    element = re.match(r"^\s*TABLE\s+OF\s+(RECORD\(.*\))(?:\s+INDEX\s+BY\s+.+)?$", resolved or "",
+                       re.IGNORECASE | re.DOTALL)
+    return element.group(1) if element else None
+
+
+def _empty_record(resolved: str, record: str, file: "JavaFile | None" = None) -> str:
+    """A record whose fields are all NULL -- and whose nested records are records of NULLs, as Oracle's are: a
+    nested field left null made `friend.name.first := 'John'` read a component of nothing (#82)."""
+    components = []
+    for _, declared in record_columns(resolved):
+        nested = java_type(declared).name
+        if RECORD_TEXT.match(declared) and nested != "Object":
+            if file is not None:
+                file.add_import(*java_type(declared).imports)
+            components.append(_empty_record(declared, nested, file))
+        else:
+            components.append(_literal_default(declared) or "null")
+    return f"new {record}({', '.join(components)})"
+
+
+def _literal_default(declared: str) -> str | None:
+    """A field's literal default (`:= 'abcde'` / `DEFAULT 0`) as Java, or None."""
+    text = re.search(r"(?::=|\bDEFAULT\b)\s*'((?:[^']|'')*)'\s*$", declared, re.IGNORECASE)
+    number = re.search(r"(?::=|\bDEFAULT\b)\s*(-?\d+(?:\.\d+)?)\s*$", declared, re.IGNORECASE)
+    if text:
+        return '"' + text.group(1).replace("''", "'").replace('"', '\\"') + '"'
+    if number:
+        return f'new java.math.BigDecimal("{number.group(1)}")'
+    return None
+
+
+def _record_default(type_ref: "M.TypeRef | None", file: "JavaFile | None" = None) -> str | None:
     """An OUT record starts as a record with every field NULL (or its TYPE's default), as a PL/SQL one does:
     `x.f` read before anything is assigned is 'abcde' for `RECORD (f VARCHAR2(5) := 'abcde')` (8-16)."""
     record = record_class(type_ref)
@@ -891,14 +967,14 @@ def _record_default(type_ref: "M.TypeRef | None") -> str | None:
         return None
     components = []
     for _, declared in record_columns(type_ref.resolved or ""):
-        text = re.search(r":=\s*'((?:[^']|'')*)'\s*$", declared)
-        number = re.search(r":=\s*(-?\d+(?:\.\d+)?)\s*$", declared)
-        if text:
-            components.append('"' + text.group(1).replace("''", "'").replace('"', '\\"') + '"')
-        elif number:
-            components.append(f'new java.math.BigDecimal("{number.group(1)}")')
+        # `f VARCHAR2(5) := 'abcde'` and `f VARCHAR2(5) DEFAULT 'abcde'` are the same default (5-45, #82); a
+        # nested record's text holds its own fields' defaults, so it is looked at first
+        if RECORD_TEXT.match(declared) and java_type(declared).name != "Object":
+            if file is not None:
+                file.add_import(*java_type(declared).imports)
+            components.append(_empty_record(declared, java_type(declared).name, file))   # a nested record (#82)
         else:
-            components.append("null")
+            components.append(_literal_default(declared) or "null")
     return f"new {record}({', '.join(components)})"
 
 
@@ -944,7 +1020,14 @@ def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
             return
         components = []
         for field_name, declared in record_columns(declaration.type.resolved if declaration.type else ""):
-            default = re.search(r":=\s*(.+)$", declared)
+            nested = java_type(declared).name
+            if RECORD_TEXT.match(declared):
+                # a nested record: a record of its own defaults, never null (#82). Its text holds its fields'
+                # defaults, which are not this field's
+                components.append(_empty_record(declared, nested, file) if nested != "Object" else "null")
+                continue
+            # `DEFAULT 'John'` is the same default as `:= 'John'` (5-45, #82)
+            default = re.search(r"(?::=|\bDEFAULT\b)\s*(.+)$", declared, re.IGNORECASE)
             try:
                 components.append(_expr(file, default.group(1).strip(), routine, result) if default else "null")
             except Untranslatable as e:
@@ -1109,6 +1192,29 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
             file.line(f"{mapped} = {_expr(file, statement.expression, routine, result)};")
             return
         written = (statement.target or "").strip()
+        element_field = re.fullmatch(r"(?P<collection>[\w$#]+)\s*\((?P<key>[^()]*)\)\s*\.\s*(?P<path>[\w$#.]+)", written)
+        if element_field:
+            # `v1(1).f1 := 1`: a field of an element that is a record (6-30, #82). The element is rebuilt with that
+            # field replaced -- or built, when there is none yet, as Oracle creates it
+            holder = _holder(routine, element_field.group("collection"))
+            element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name) \
+                if holder is not None and _collection_kind(holder) else None
+            shape = _element_record(holder.type.resolved) if element else None
+            if shape is None:
+                raise Untranslatable([f"assignment to collection element {written}"], written)
+            if _DOMAIN.get():
+                file.add_import(f"{_DOMAIN.get()}.{element}")
+            file.add_import("com.scalar.migrate.plsql.Plsql")
+            collection = _local(holder.name)
+            key = _expr(file, element_field.group("key"), routine, result)
+            current = (f"(Plsql.exists({collection}, {key}) ? ({element}) Plsql.at({collection}, {key}) : "
+                       f"{_empty_record(shape, element, file)})")
+            value = _expr(file, statement.expression, routine, result)
+            rebuilt = _rebuilt(file, current, shape, element, element_field.group("path").split("."), value)
+            if rebuilt is None:
+                raise Untranslatable([f"assignment to collection element {written}"], written)
+            file.line(f"Plsql.set({collection}, {key}, {rebuilt});")
+            return
         if "(" in written:
             # `v_sal(r.last_name) := r.salary`: an element of a collection (#45). `Plsql.set` grows a nested
             # table only through EXTEND, as Oracle does; an associative array takes any key
@@ -1136,20 +1242,19 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
                                or written.partition(".")[0].lower() in {k.lower() for k in _LOOP_ROWS.get()}):
             # `v_rec.id := 1`: a field of a record. The generated records are immutable, so the record is
             # rebuilt with that one component replaced (#45)
-            head, _, field_name = written.partition(".")
+            head, _, path = written.partition(".")
             holder = _holder(routine, head)
-            columns = record_columns(holder.type.resolved) if holder is not None and holder.type is not None else []
             record = _row_type(holder) if holder is not None else None
-            if record is None or not any(c.lower() == field_name.lower() for c, _ in columns):
+            if record is None:
                 raise Untranslatable([f"assignment to record field {written}"], written)
             if _DOMAIN.get():
                 file.add_import(f"{_DOMAIN.get()}.{record}")
             value = _expr(file, statement.expression, routine, result)
             variable = java_name(holder.name)
-            # the new value takes the component's type: `default_week.week := i` put an int into a BigDecimal (5-53)
-            components = [_coerce(file, value, java_type(t).name) if c.lower() == field_name.lower()
-                          else f"{variable}.{java_name(c)}()" for c, t in columns]
-            file.line(f"{variable} = new {record}({', '.join(components)});")
+            rebuilt = _rebuilt(file, variable, holder.type.resolved or "", record, path.split("."), value)
+            if rebuilt is None:
+                raise Untranslatable([f"assignment to record field {written}"], written)
+            file.line(f"{variable} = {rebuilt};")
             return
         # the target goes through the translator too: `:NEW.col` is not a Java name, and rendering it anyway
         # produced code that did not compile
@@ -1745,12 +1850,18 @@ def _collection_call(file: JavaFile, statement: M.Call, routine: M.Routine, resu
     """`v_names.EXTEND;`, `v_names.DELETE(2);`, `v_top3.EXTEND(3);`: a collection method as a statement (#45)."""
     from .expr import COLLECTION_METHODS
 
-    head, _, tail = (statement.callee or "").partition(".")
-    holder = _holder(routine, head)
+    receiver, _, tail = (statement.callee or "").rpartition(".")
+    head, _, subscript = receiver.partition("(")
+    holder = _holder(routine, head.strip())
     if holder is None or not _collection_kind(holder) or tail.upper() not in COLLECTION_METHODS:
         return False
     file.add_import("com.scalar.migrate.plsql.Plsql")
-    arguments = [java_name(holder.name)] + [_expr(file, a, routine, result) for a in statement.arguments]
+    # `vntb1(2).DELETE(1)`: the method of an element that is itself a collection -- the same object inside the
+    # outer one, so changing it changes the outer (5-12, #82)
+    target = java_name(holder.name)
+    for inner in (_subscripts("(" + subscript) or [] if subscript else []):
+        target = f"Plsql.at({target}, {_expr(file, inner, routine, result)})"
+    arguments = [target] + [_expr(file, a, routine, result) for a in statement.arguments]
     file.line(f"Plsql.{COLLECTION_METHODS[tail.upper()]}({', '.join(arguments)});")
     return True
 

@@ -198,8 +198,13 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
         carry(program, package_state)
     # #54: schema object types. The generator types a record / a collection of records from them, and the SQL
     # that builds or reads them (a constructor in the select list, TABLE(collection), PIPE ROW) becomes code
-    from .gen_java.types import set_object_types
+    from .gen_java.types import set_object_types, set_record_types
     set_object_types({name: schema.object_record(name) for name in schema.object_types} if schema else {})
+    # #82: a field or an element typed with a RECORD type is resolved without the type's name
+    set_record_types({symbol.name: symbol.type.resolved for scope in analysis.symbol_table().scopes.values()
+                      for symbol in scope.symbols.values()
+                      if symbol.kind == "type" and symbol.type is not None
+                      and (symbol.type.resolved or "").upper().startswith("RECORD(")})
     from . import objects
     objects.rewrite(program, schema, analysis.symbol_table())
     # #53: DBMS_SQL over a constant query is a static cursor FOR loop
