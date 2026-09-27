@@ -327,7 +327,8 @@ class _Parser:
         if rendered in ("true", "false"):
             return True
         if self.position == start + 1 and self.tokens[start][0] == "attribute":
-            return True
+            # except a cursor read at OPEN (#81): its %FOUND / %NOTFOUND are NULL before the first FETCH
+            return not rendered.endswith((".found()", ".notFound()"))
         return rendered.startswith("(") and rendered.endswith(")") and any(op in rendered for op in ("==", "!=", " > "))
 
     def _predicate(self, negated: bool, plain: str, opposite: str, arguments: str) -> str:
@@ -572,7 +573,17 @@ class _Parser:
         `Plsql.isTrue(p_id)` (#65 turned strict on for conditions; corpus pkg_shipment showed the leak)."""
         strict, self.strict = self.strict, False
         try:
-            return self._call_body()
+            rendered = self._call_body()
+            # `get_sum_multiples(m, sn)(n)`: an element of the collection the call returns (5-2, #93)
+            while (self.peek() is not None and self.peek()[1] == "(" and self.position > 0
+                   and self.tokens[self.position - 1][1] == ")"):
+                self.take()   # (
+                index = self.parse_or()
+                if self.peek() is not None and self.peek()[1] == ")":
+                    self.take()
+                self.result.imports.add(HELPER_IMPORT)
+                rendered = f"{HELPER}.at({rendered}, {index})"
+            return rendered
         finally:
             self.strict = strict
 

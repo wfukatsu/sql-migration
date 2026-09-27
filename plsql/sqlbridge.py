@@ -105,6 +105,9 @@ def analyse(operation: SqlOperation, scope: str, symbols: SymbolTable | None = N
     result.cardinality = operation.cardinality
     operation.at_most_one_row = at_most_one_row(tree)
 
+    # before the binds: the guard compares the PL/SQL values, not the placeholders they become (#92)
+    from .record_dml import key_guards
+    operation.key_guards = key_guards(tree, registry)
     binds = bind_variables(tree, scope, symbols, loop_variables)
     for name in dict.fromkeys(tree.meta.get("shadowed_variables", [])):
         issue = Issue("WARN", "BIND_SHADOWED",
@@ -393,6 +396,7 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
     schema = getattr(symbols, "oracle_schema", None)
     columns = {c for t in tree.find_all(exp.Table) for c in ((schema.columns(t.name) if schema else None) or {})}
     shadowed: list[str] = tree.meta.setdefault("shadowed_variables", [])
+    tables = {n.lower() for t in tree.find_all(exp.Table) for n in (t.name, t.alias_or_name) if n}
     for column in list(tree.find_all(exp.Column)):
         if column.table:
             fields = loop_fields.get(column.table.lower())
@@ -407,6 +411,11 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
                         oracle_type=symbol.type.oracle if symbol.type else None, plsql_variable=column.name)
                     column.replace(exp.Placeholder(this=placeholder))
                 continue
+            if fields is None and symbols is not None and column.table.lower() not in tables:
+                # `default_week.mon`: a field of a record local, which the generated Java holds as a value -- the
+                # same standing as a loop's row (#92, samples/oracle-plsql-docs 5-52). A name the statement uses
+                # for a table is a table, whatever the routine declares
+                fields = _record_fields(symbols, scope, column.table)
             if fields is None:
                 continue  # qualified: it is a column of that table, not a variable
             variable = f"{column.table}.{column.name}"
@@ -447,6 +456,17 @@ def bind_variables(tree: exp.Expression, scope: str, symbols: SymbolTable | None
         column.replace(exp.Placeholder(this=placeholder))
     _row_counts(tree, scope, symbols, found)
     return list(found.values())
+
+
+def _record_fields(symbols: SymbolTable, scope: str, name: str) -> dict[str, str | None] | None:
+    """The fields of a record local or parameter (`t%ROWTYPE`, a RECORD type), with each field's Oracle type."""
+    from .gen_java.types import record_columns
+
+    symbol = symbols.resolve(scope, name)
+    resolved = (symbol.type.resolved or "") if symbol is not None and symbol.type is not None else ""
+    if symbol is None or symbol.kind not in BIND_KINDS or not resolved.upper().startswith("RECORD("):
+        return None
+    return {field.lower(): oracle for field, oracle in record_columns(resolved)}
 
 
 def _row_counts(tree: exp.Expression, scope: str, symbols: SymbolTable | None,

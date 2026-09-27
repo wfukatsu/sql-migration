@@ -166,12 +166,13 @@ def java_type(oracle: str | None, *, money: bool = False) -> JavaType:
         if element is UNKNOWN or element.name == "Object":
             return JavaType("Object", "TEXT", note=f"collection of an unmapped type: {written!r}")
         key = java_type(collection.group("key").strip(), money=False) if collection.group("key") else None
-        if key is not None and key.name == "String":
-            # `INDEX BY VARCHAR2(30)`: an associative array keyed by text is a sorted Map (#45). Oracle walks it
-            # in key order (FIRST / NEXT), which a TreeMap gives for free. `INDEX BY PLS_INTEGER` stays a List:
-            # the corpus fills those with BULK COLLECT and walks them 1 .. COUNT, and the harness binds them as
-            # arrays. A sparse integer-keyed table is not modelled (Plsql.set refuses the gap)
-            return JavaType(f"Map<String, {element.name}>", element.storage, scale=element.scale,
+        if key is not None and key.name in ("String", "Integer"):
+            # an associative array is a sorted Map: keyed by text (`INDEX BY VARCHAR2(30)`, #45) or by integer
+            # (`INDEX BY PLS_INTEGER`, #93). Oracle walks it in key order (FIRST / NEXT), which a TreeMap gives for
+            # free. The integer one was a List, which cannot hold `v(0)` or `v(-10)` (SUBSCRIPT_OUTSIDE_LIMIT,
+            # oracle-plsql-docs 5-3, 7-4) and grows to the largest key (`v(emp_id)`); the harness still binds the
+            # scenario's list, numbered from 1 as python-oracledb numbers it
+            return JavaType(f"Map<{key.name}, {element.name}>", element.storage, scale=element.scale,
                             note="PL/SQL の連想配列。キー順に回る TreeMap で持つ")
         return JavaType(f"List<{element.name}>", element.storage, scale=element.scale,
                         note="PL/SQL のコレクション。呼び出し側が渡す")
@@ -302,4 +303,14 @@ def routine_stem(routine) -> str:
 
     ordinal = overload_of(routine)
     return routine.name if ordinal is None else f"{routine.name}{ordinal}"
+
+
+def result_record_name(routine) -> str:
+    """The `<Name>Result` record a routine with OUT / IN OUT arguments returns. A subprogram lifted out of another
+    routine (#80) carries its module's name too: the lifted `p` of ex_8_21 and a standalone `p` beside it both made
+    `PResult` in the one domain package, and javac took the other's (#90)."""
+    stem = java_class_name(routine_stem(routine))
+    if getattr(routine, "enclosing", None):
+        return java_class_name(routine.id.rsplit(".", 1)[0]) + stem + "Result"
+    return stem + "Result"
 

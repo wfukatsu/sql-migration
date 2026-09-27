@@ -80,6 +80,9 @@ class Parameter(Node):
     # #46: a package variable the caller carries in and out (limits.yaml packageState.carried). Added by
     # plsql.package_state.carry, not written in the source: the caller passes its own copy of the same name
     carried: bool = False
+    # #90: the caller's own name for a carried argument, when the routine names it otherwise -- a subprogram lifted
+    # out of `check_credit` receives `check_credit.rating` as `check_credit_rating` (2-19)
+    carried_from: str | None = None
 
 
 @dataclass
@@ -234,6 +237,14 @@ class SqlOperation(Statement):
     target_status: str | None = None      # OK | WARN | PLANNED | ERROR, from scalardb_migrate
     target_sql: list[str] = field(default_factory=list)
     plan_id: str | None = None            # the plan.json this statement needs at run time
+    # `SET ROW = rec` / `SET key = v` whose WHERE pins the key to `w`: the key left the SET, and the generated code
+    # checks v = w before the UPDATE -- ScalarDB cannot move a row to another key (#92). {column, value, where}
+    key_guards: list[dict] = field(default_factory=list)
+    # #81: an explicit cursor's OPEN in no shape cursors.py rewrites. The query's rows are read here -- a cursor
+    # is read-consistent as of its OPEN in Oracle too -- and each FETCH of the cursor takes the next one.
+    # `cursor_variable`: `OPEN cv FOR ...`, which Oracle lets reopen without a CLOSE
+    opens_cursor: str | None = None
+    cursor_variable: bool | None = None
 
 
 @dataclass

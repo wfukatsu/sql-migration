@@ -30,7 +30,7 @@ from . import split
 from .dto import loop_component_type
 from .emit import JavaFile
 from .expr import SEQUENCES_IMPORT, translate
-from .types import signature_type, record_class, java_class_name, java_name, java_type, record_columns, routine_stem
+from .types import signature_type, record_class, java_class_name, java_name, java_type, record_columns, result_record_name, routine_stem
 
 # the module being generated, so an expression can resolve a sibling routine without threading it through
 # every statement helper
@@ -384,11 +384,11 @@ def _constants(file: JavaFile, module: M.Module) -> None:
 
 
 def _collection_kind(holder) -> str | None:
-    """`list` for a nested table / VARRAY, `map` for an INDEX BY table, None for anything else (#45)."""
+    """`list` for a nested table / VARRAY, `map` for an INDEX BY table -- by text (#45) or by integer (#93)."""
     if holder.type is None or holder.type.origin != "collection":
         return None
     resolved = (holder.type.resolved or "").upper()
-    return "map" if re.search(r"INDEX\s+BY\s+N?VARCHAR2?\b", resolved) else "list"
+    return "map" if re.search(r"INDEX\s+BY\s+(?:N?VARCHAR2?|PLS_INTEGER|BINARY_INTEGER|SIMPLE_INTEGER)\b", resolved) else "list"
 
 
 def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]:
@@ -460,7 +460,7 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
                 names[f"{r.name.lower()}#parameters"] = ",".join(
                     signature_type(p.type).name for p in r.parameters
                     if not (r.enclosing and p.carried))
-                carried = [p.name for p in r.parameters if r.enclosing and p.carried]
+                carried = [p.carried_from or p.name for p in r.parameters if r.enclosing and p.carried]
                 if carried:
                     # a lifted local subprogram takes the enclosing variables it reads after its own (#80)
                     names[f"{r.name.lower()}#extra"] = ",".join(carried)
@@ -522,7 +522,7 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
         returns = mapped.name
     outs = [p for p in routine.parameters if p.direction in ("OUT", "IN OUT")]
     if outs:
-        returns = java_class_name(routine_stem(routine)) + "Result"
+        returns = result_record_name(routine)
         file.add_import(f"{domain_package}.{returns}")
 
     parameters = []
@@ -623,6 +623,10 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
                 # が for の変数になる。ここでも宣言すると同じ名前が 2 つになる
                 continue
             _declaration(f, declaration, routine, result)
+        for cursor, variable in _general_cursors(routine).items():
+            f.add_import("com.scalar.migrate.plsql.Plsql")
+            f.line(f"Plsql.Cursor {_cursor_state(cursor)} = new Plsql.Cursor({'true' if variable else 'false'});"
+                   f"   // {cursor}")
         for flag in _not_found_flags(routine):
             # `c%NOTFOUND` after an explicit cursor's first FETCH (#11). It is declared with the locals, not at
             # the read, because the branch that asks may sit in a different block from the read that answers.
@@ -1171,7 +1175,7 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
             # the OUT arguments travel in the result record, so a RETURN in the middle has to build it too:
             # a bare `return;` in a method that returns the record did not compile
             components = ([value or "null"] if routine.return_type is not None else []) + outs
-            file.line(f"return new {java_class_name(routine_stem(routine))}Result({', '.join(components)});")
+            file.line(f"return new {result_record_name(routine)}({', '.join(components)});")
         elif value is not None:
             file.line(f"return {value};")
         elif returns != "void":
@@ -1203,6 +1207,12 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
         file.line("// NULL;")
     elif kind == "Call":
         _call(file, statement, routine, result)
+    elif kind in ("Fetch", "CloseCursor") and \
+            (statement.cursor or "").split("(")[0].strip().lower() in _general_cursors(routine):
+        if kind == "Fetch":
+            _fetch(file, statement, routine)
+        else:
+            file.line(f"{_cursor_state((statement.cursor or '').split('(')[0].strip().lower())}.close();")
     elif kind == "SqlOperation":
         _sql(file, statement, routine)
     elif kind == "DynamicSql":
@@ -1435,6 +1445,10 @@ def _forall(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Servi
     """
     collection, index = _forall_collection(statement, routine)
     java = _expr(file, collection, routine, result)
+    bound = _holder(routine, collection)
+    # an INDEX BY PLS_INTEGER table is a Map keyed as PL/SQL keys it (#93): walked 1 .. COUNT, and an element
+    # read through Plsql.at, so a missing key raises as Oracle's FORALL does rather than reading null
+    keyed = bound is not None and _collection_kind(bound) == "map"
     # 本体が読むコレクションは 1 つとは限らない（`p_ids(i)` と `p_names(i)` が並ぶ）。回す長さは
     # 境界が名指したものから採り、要素の読み方は**本体が読んでいるすべて**について用意する
     scope = {}
@@ -1444,6 +1458,12 @@ def _forall(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Servi
             if reference is None or reference.group("index").lower() != index.lower():
                 continue
             name = reference.group("collection")
+            holder = _holder(routine, name)
+            if keyed and holder is not None and _collection_kind(holder) == "map":
+                element = re.sub(r"^Map<[^,]+,\s*(.+)>$", r"\1", java_type(holder.type.resolved).name)
+                scope[f"{name}({index})".lower()] = \
+                    f"(({element}) Plsql.at({_expr(file, name, routine, result)}, {java_name(index)}))"
+                continue
             scope[f"{name}({index})".lower()] = \
                 f"{_expr(file, name, routine, result)}.get({java_name(index)})"
     outer = _LOOP_ROWS.get()
@@ -1454,8 +1474,12 @@ def _forall(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Servi
         if counted:
             # SQL%BULK_ROWCOUNT(i): the rows the i-th element's statement touched, for the last FORALL (#51)
             file.line("bulkRowCount.clear();")
-        with file.block(f"for (int {java_name(index)} = 0; {java_name(index)} < {java}.size(); "
-                        f"{java_name(index)}++)") as f:
+        opening = (f"for (int {java_name(index)} = 1; {java_name(index)} <= Plsql.count({java}); {java_name(index)}++)"
+                   if keyed else
+                   f"for (int {java_name(index)} = 0; {java_name(index)} < {java}.size(); {java_name(index)}++)")
+        if keyed:
+            file.add_import("com.scalar.migrate.plsql.Plsql")
+        with file.block(opening) as f:
             if counted:
                 f.line("rowCount = 0;")
             _statements(f, statement.body, routine, result)
@@ -1672,7 +1696,7 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
             else:
                 file.line(f"{invocation};")
             return
-        record = java_class_name(routine_stem(callee)) + "Result"
+        record = result_record_name(callee)
         if _DOMAIN.get():
             file.add_import(f"{_DOMAIN.get()}.{record}")
         holder = f"{java_name(routine_stem(callee))}Result"
@@ -1757,8 +1781,9 @@ def _positional(statement: M.Call, callee: M.Routine | None) -> list[str]:
         if parameter.name.lower() in named:
             out.append(named.pop(parameter.name.lower()))
         elif getattr(parameter, "carried", False):
-            # #46: carried package state. The caller carries it too, under the same name
-            out.append(parameter.name)
+            # #46: carried package state. The caller carries it too, under the same name -- or under its own, for
+            # a lifted subprogram that names it otherwise (`check_credit.rating`, #90)
+            out.append(getattr(parameter, "carried_from", None) or parameter.name)
         elif parameter.default is not None and LITERAL_DEFAULT.match(parameter.default.strip()):
             out.append(parameter.default.strip())
         else:
@@ -1868,6 +1893,14 @@ def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine
     # a bind lifted out of the SQL (P4-4) is computed inside the repository from the other binds, so it is not
     # passed in. The repository's parameter list is built from the same rule; the two have to agree.
     arguments = _arguments(file, statement, routine, None)
+    if getattr(statement, "opens_cursor", None):
+        # an explicit cursor's OPEN (#81): its rows are read now, and each FETCH takes the next. A plan hands its
+        # rows back as lists; the cursor takes either
+        planned = statement.plan_id or statement.target_status == "PLANNED"
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        file.line(f"{_cursor_state(statement.opens_cursor)}.open(repository.{method}({arguments})"
+                  f"{'.rows()' if planned else ''});")
+        return
     if statement.plan_id or statement.target_status == "PLANNED":
         # the plan hands back rows, and turning them into the PL/SQL variables is a decision (which row? what
         # when there are none?), so it is left to the reviewer rather than guessed
@@ -1908,6 +1941,16 @@ def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine
             value = _into(file, f"row[{index}]", _local_type(routine, target))
             file.line(f"{_local(target)} = {_constrain(file, value, holder.type if holder else None)};")
     elif (statement.sql_kind or "").upper() in ("INSERT", "UPDATE", "DELETE", "MERGE"):
+        import json   # a Java string literal: the message quotes the PL/SQL, which may hold quotes itself
+        for guard in getattr(statement, "key_guards", None) or []:
+            # the key left the SET (#92): the same key is a no-op in Oracle; another one would move the row, which
+            # ScalarDB cannot do -- refused here rather than updated under the old key in silence
+            value = _expr(file, guard["value"], routine, None)
+            where = _expr(file, guard["where"], routine, None)
+            message = (f"SET {guard['column']} = {guard['value']} would move the row from {guard['column']} = "
+                       f"{guard['where']} to another key; ScalarDB cannot update a key")
+            with file.block(f"if (!Plsql.eq({value}, {where}))") as g:
+                g.line(f"throw new UnsupportedOperationException({json.dumps(message, ensure_ascii=False)});")
         # SQL%ROWCOUNT is part of the behaviour: `update_email` raises when it is zero. One variable per
         # statement, because a routine may hold several DML statements in one scope.
         file.line(f"rowCount {'+' if getattr(statement, 'accumulates_rowcount', False) else ''}= repository.{method}({arguments});")
@@ -2043,9 +2086,49 @@ def _first_row(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, me
     if statement.not_found_flag:
         file.line(f"{_flag_name(statement.not_found_flag)} = {row} == null;")
     with file.block(f"if ({row} != null)") as f:
-        for index, target in enumerate(targets):
-            value = _into(f, f"{row}[{index}]", _local_type(routine, target))
-            f.line(f"{_local(target)} = {value};")
+        _assign_row(f, routine, targets, row)
+
+
+def _assign_row(file: JavaFile, routine: M.Routine, targets: list[str], row: str) -> None:
+    """FETCH a row INTO its targets: one value per scalar target, or -- when the only target is a record -- the
+    record built from every column. Casting column 0 to the record (`job1 = (CRow) row[0]`) compiled and threw at
+    run time (#81)."""
+    holder = _holder(routine, targets[0]) if len(targets) == 1 else None
+    record = record_class(holder.type) if holder is not None else None
+    if record is not None:
+        fields = record_columns(holder.type.resolved or "")
+        for _, kind in fields:
+            file.add_import(*java_type(kind).imports)
+        values = ", ".join(_into(file, f"{row}[{index}]", java_type(kind).name) for index, (_, kind) in enumerate(fields))
+        file.line(f"{_local(targets[0])} = new {record}({values});")
+        return
+    for index, target in enumerate(targets):
+        value = _into(file, f"{row}[{index}]", _local_type(routine, target))
+        file.line(f"{_local(target)} = {value};")
+
+
+def _cursor_state(cursor: str) -> str:
+    return java_name(f"{cursor}_cursor")
+
+
+def _general_cursors(routine: M.Routine) -> dict[str, bool]:
+    """The cursors whose OPEN reads the rows its FETCHes take (#81), each with whether it is a cursor variable."""
+    out: dict[str, bool] = {}
+    for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
+        cursor = getattr(statement, "opens_cursor", None)
+        if cursor:
+            out[cursor.lower()] = out.get(cursor.lower(), False) or bool(getattr(statement, "cursor_variable", False))
+    return out
+
+
+def _fetch(file: JavaFile, statement: M.CursorStatement, routine: M.Routine) -> None:
+    """`FETCH c INTO ...` of a cursor whose OPEN read its rows (#81). No row leaves the targets as they were."""
+    cursor = (statement.cursor or "").split("(")[0].strip().lower()
+    file.add_import("com.scalar.migrate.plsql.Plsql")
+    with file.block("") as f:   # its own scope: a routine fetches more than once
+        f.line(f"Object[] row_ = {_cursor_state(cursor)}.fetch();")
+        with f.block("if (row_ != null)") as g:
+            _assign_row(g, routine, list(statement.into_targets), "row_")
 
 
 def _into(file: JavaFile, value: str, target_type: str) -> str:
@@ -2063,6 +2146,12 @@ def _into(file: JavaFile, value: str, target_type: str) -> str:
         # ScalarDB の TIMESTAMPTZ 列は Instant で返る。cast すると落ちる（`last_paid_at` / 2026-09-19）
         file.add_import("com.scalar.migrate.plsql.Plsql")
         return f"Plsql.zoned({value})"
+    helper = {"Integer": "toInt", "Long": "toLong", "Double": "toDouble", "Float": "toFloat"}.get(target_type)
+    if helper:
+        # a column read comes back as whatever JDBC or the plan's H2 hands over -- a BigDecimal for an Integer
+        # local cast and threw (#81, a cursor read through a plan)
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        return f"Plsql.{helper}({value})"
     return f"({target_type}) {value}"
 
 
@@ -2407,6 +2496,10 @@ def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "Service
     names = {**_scope(routine, module or _MODULE.get()), **_BLOCK_LOCALS.get(), **_LOOP_ROWS.get(),
              **_HANDLER_ERROR.get()}
     names.update({f"{flag}%notfound": _flag_name(flag) for flag in _not_found_flags(routine)})
+    for cursor in _general_cursors(routine):
+        state = _cursor_state(cursor)
+        names.update({f"{cursor}%found": f"{state}.found()", f"{cursor}%notfound": f"{state}.notFound()",
+                      f"{cursor}%rowcount": f"{state}.rowCount()", f"{cursor}%isopen": f"{state}.isOpen()"})
     rendered = translate(text, names, boolean_value=boolean_value, condition=condition, as_text=as_text)
     for name in rendered.unknown:
         if result is not None and name not in result.unknown_names:

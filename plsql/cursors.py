@@ -53,6 +53,67 @@ def rewrite(routine: M.Routine, symbols: SymbolTable | None, module: str | None 
         routine.body = _drop_isopen(routine.body, rewritten)
         for handler in routine.exception_handlers:
             handler.body = _drop_isopen(handler.body, rewritten)
+    _general(routine, symbols, module, schema)
+
+
+# --- D. any other shape (#81) ----------------------------------------------------------------------------
+
+def _general(routine: M.Routine, symbols: SymbolTable, module: str | None, schema: OracleSchema | None) -> None:
+    """An explicit cursor no shape above took: `OPEN c; FETCH c INTO a; FETCH c INTO b; ...`, a FETCH inside a
+    numeric FOR loop, `IF c%FOUND`, a cursor variable opened twice (oracle-plsql-docs 4-25, 6-7, 6-15, 6-26).
+
+    Each OPEN becomes the read of the cursor's query (`SqlOperation.opens_cursor`), and the FETCH / CLOSE stay:
+    the generator walks the rows the OPEN read, one per FETCH, and answers the attributes from where it is. Only a
+    cursor this routine opens itself is taken -- one opened elsewhere (a package cursor across calls) is session
+    state -- and not one a FETCH ... BULK COLLECT reads, which is a different read.
+    """
+    statements = _walk_all(routine.body) + [s for h in routine.exception_handlers for s in _walk_all(h.body)]
+    opens: dict[str, list[M.Statement]] = {}
+    for statement in statements:
+        if statement.kind == "OpenCursor":
+            opens.setdefault(_cursor_name(statement.cursor), []).append(statement)
+    for cursor, nodes in opens.items():
+        fetches = [s for s in statements if s.kind == "Fetch" and _cursor_name(s.cursor) == cursor]
+        if any(s.bulk_limit or any(d.code == "BULK_COLLECT" for d in s.diagnostics) or not s.into_targets
+               for s in fetches):
+            continue
+        replacements = {}
+        for node in nodes:
+            query = _query(cursor, list(node.arguments), routine, symbols, module, schema,
+                           opened=getattr(node, "query_sql", None))
+            if query is None or not _is_query(query):
+                break   # `OPEN cv FOR query_2`: the text is a variable -- dynamic SQL, not ours to read
+            operation = _operation(node, routine, query, [])
+            operation.cardinality = "MANY"
+            operation.opens_cursor = cursor
+            operation.cursor_variable = True if getattr(node, "query_sql", None) else None
+            replacements[id(node)] = operation
+        else:
+            _replace(routine.body, replacements)
+            for handler in routine.exception_handlers:
+                _replace(handler.body, replacements)
+
+
+def _is_query(sql: str) -> bool:
+    try:
+        return isinstance(sqlglot.parse_one(sql, dialect="oracle"), (exp.Select, exp.SetOperation))
+    except Exception:  # noqa: BLE001 - not a query we can read
+        return False
+
+
+def _replace(statements: list[M.Statement], replacements: dict[int, M.Statement]) -> None:
+    for index, statement in enumerate(statements):
+        if id(statement) in replacements:
+            statements[index] = replacements[id(statement)]
+            continue
+        for attribute in ("body", "else_body"):
+            nested = getattr(statement, attribute, None)
+            if nested:
+                _replace(nested, replacements)
+        for branch in getattr(statement, "branches", []) or []:
+            _replace(branch.body, replacements)
+        for handler in getattr(statement, "exception_handlers", []) or []:
+            _replace(handler.body, replacements)
 
 
 # --- `FOR r IN c LOOP` --------------------------------------------------------------------------------

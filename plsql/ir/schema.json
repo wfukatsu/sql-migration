@@ -572,6 +572,12 @@
         },
         "carried": {
           "type": "boolean"
+        },
+        "carried_from": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
@@ -1394,6 +1400,21 @@
             "string",
             "null"
           ]
+        },
+        "key_guards": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "opens_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cursor_variable": {
+          "type": "boolean"
         }
       }
     },

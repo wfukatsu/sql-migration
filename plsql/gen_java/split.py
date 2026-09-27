@@ -378,8 +378,11 @@ def _element(file: JavaFile, routine: M.Routine, shape: Shape):
         declared = next((p.type for p in routine.parameters if p.name.lower() == collection.lower()),
                         None)
         mapped = java_type(declared.resolved if declared else None)
-        # `List<BigDecimal>` の要素は `BigDecimal`。要素の型が読めなければ `Object` で受ける
-        element = mapped.name[len("List<"):-1] if mapped.name.startswith("List<") else "Object"
+        # `List<BigDecimal>` の要素は `BigDecimal`、`Map<Integer, BigDecimal>`（INDEX BY PLS_INTEGER、#93）も同じ。
+        # 要素の型が読めなければ `Object` で受ける
+        element = (mapped.name[len("List<"):-1] if mapped.name.startswith("List<")
+                   else re.sub(r"^Map<[^,]+,\s*(.+)>$", r"\1", mapped.name) if mapped.name.startswith("Map<")
+                   else "Object")
         file.add_import(*mapped.imports)
         name = java_name(collection) + "Item"
         key = f"{collection}({shape.index})"
