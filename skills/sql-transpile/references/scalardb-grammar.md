@@ -40,10 +40,10 @@ ScalarDB は複数のストレージを仮想的に統合し、それらをま�
 | 定数 1 行をソースにする `MERGE` | `UPSERT INTO` | WARN `MERGE` |
 | `DATE '...'`・`TO_DATE('...', 'YYYY-MM-DD')` などの日付・時刻 | ScalarDB のリテラル（`'YYYY-MM-DD'`、`'YYYY-MM-DD HH:MM:SS.FFF'`）。列の型に合わせて、DATE 列は 0 時の時刻を落とし、TIMESTAMP 列は日付だけのものに 0 時を補い、TIMESTAMPTZ 列は同じ瞬間の UTC（末尾 `Z`）にする | INFO `DATE_LIT`（下の「値とリテラル」） |
 | TRUE / FALSE を INT / BIGINT 列へ | `1` / `0` | INFO `BOOL_LIT` |
-| `catalog.schema.table` | `schema.table`（schema を namespace にする） | WARN `NAMESPACE` |
-| `CREATE SCHEMA` / `CREATE DATABASE`、`DROP SCHEMA` | `CREATE NAMESPACE`、`DROP NAMESPACE` | なし |
+| `catalog.schema.table`（DDL でも SELECT・INSERT・UPDATE・DELETE でも） | `schema.table`（schema を namespace にする） | WARN `NAMESPACE`（表ごとに 1 回） |
+| `CREATE SCHEMA` / `CREATE DATABASE`、`DROP SCHEMA` / `DROP DATABASE` | `CREATE NAMESPACE`、`DROP NAMESPACE`（`IF [NOT] EXISTS`・`CASCADE` は残す） | なし |
 | `TRUNCATE TABLE a, b` / `DROP TABLE a, b` | 表ごとに 1 文 | なし |
-| 複数の操作の `ALTER TABLE` | 1 操作ずつの `ALTER TABLE`（原子的でなくなる） | INFO `ALTER` |
+| 複数の操作の `ALTER TABLE`（MySQL の `ADD c INT, DROP d` のような混在、Oracle の `ADD (c1 ..., c2 ...)`・`DROP (c1, c2)`・`MODIFY (c1 型, ...)` も） | 1 操作ずつの `ALTER TABLE`（原子的でなくなる） | INFO `ALTER` |
 | MySQL のインライン `INDEX (col)`、`CREATE INDEX idx ON t (col)` | `CREATE INDEX ON t (col)`（索引名は落とす） | INFO `INDEX` |
 | ScalarDB SQL の予約語・通常の識別子でない名前 | 二重引用符で囲む（下の「識別子と文字列」） | INFO `IDENT` |
 
@@ -72,16 +72,22 @@ ScalarDB の型は 11 種（`BOOLEAN` / `INT` / `BIGINT` / `FLOAT` / `DOUBLE` / 
 | `NUMBER(p, s)` / `DECIMAL(p, s)`、s > 0 | `DOUBLE` | WARN（精度が落ちる） |
 | 精度なしの Oracle `NUMBER` / PostgreSQL `NUMERIC` | `DOUBLE` | WARN（どちらも桁数無制限で小数を持てる。MySQL の精度なし `DECIMAL` は `(10,0)` として扱う） |
 | Oracle の `INTEGER` / `INT` / `SMALLINT` | `BIGINT` | WARN（Oracle の整数型はすべて `NUMBER(38)`。正確に対応させるなら `NUMBER(p)` と書く） |
-| Oracle の `FLOAT` | `DOUBLE` | WARN（2 進精度つきの `NUMBER` で最大 38 桁。IEEE の単精度ではない） |
+| Oracle の `FLOAT` / `REAL` | `DOUBLE` | WARN（2 進精度つきの `NUMBER` で最大 38 桁。IEEE の単精度ではない） |
+| Oracle の `BINARY_FLOAT` | `FLOAT` | INFO（IEEE の単精度で、ScalarDB の `FLOAT` と同じ） |
+| PostgreSQL の `REAL`、`FLOAT(p)`（p ≤ 24） | `FLOAT` | INFO（精度なしの `FLOAT` と p ≥ 25 は `DOUBLE`） |
+| PostgreSQL の `MONEY` | `DOUBLE` | WARN（通貨の固定小数点。セント単位の整数を `BIGINT` に持つことを勧める） |
 | MySQL の `TINYINT(1)` | `INT` | WARN（真偽値に使っているなら `BOOLEAN` を検討） |
 | 符号なし `BIGINT` | `BIGINT` | WARN（範囲が符号つき 64 ビットを超える） |
 | `BIT(n)`、n > 1 | `BLOB` | WARN |
-| `VARCHAR2(n)` / `VARCHAR(n)` / `CLOB` / `TEXT` | `TEXT` | INFO（長さの制約は消える） |
+| `VARCHAR2(n)` / `VARCHAR(n)` / `CLOB` / `NCLOB` / `TEXT` | `TEXT` | INFO（長さの制約は消える） |
+| Oracle の `LONG` | `TEXT` | WARN（古い文字列の型。整数ではない。取り出すときは `TO_LOB` で CLOB にする） |
+| Oracle の `RAW(n)` | `BLOB` | INFO（長さの制約は消える） |
 | `CHAR(n)`、n > 1 | `TEXT` | WARN（空白で埋められ、埋めた分を無視して比較される。`TEXT` は厳密に比べるので、移行時に trim しないと同じ比較が当たらなくなる） |
 | Oracle の `DATE` | `DATE` | WARN（Oracle の DATE は時刻を持つ。時刻を使うなら `TIMESTAMP`） |
 | `TIMESTAMP` / `TIMESTAMPTZ`、精度が 4 以上（Oracle と PostgreSQL は精度を書かなければ 6、MySQL は 0） | 同名 | WARN（ミリ秒まで。`TIMESTAMPTZ` は UTC で持つ） |
 | `TIMETZ` | `TIME` | WARN（オフセットは落ちる） |
-| `JSON` / `JSONB` / `UUID` / `ENUM` / `SET` / `INET` / `XML` | `TEXT` | WARN |
+| `JSON` / `JSONB` / `UUID` / `ENUM` / `SET` / `INET` / `XML`、Oracle の `XMLTYPE` | `TEXT` | WARN |
+| MySQL の `TIMESTAMP` | `TIMESTAMPTZ` | INFO（UTC に直して持つ瞬間の型。`DATETIME` は `TIMESTAMP`） |
 | `SERIAL` / `BIGSERIAL` / `SMALLSERIAL` | — | ERROR（アプリで採番する） |
 | `ARRAY` / `INTERVAL` / `GEOMETRY` など上に無い型 | — | ERROR |
 
@@ -113,7 +119,7 @@ ScalarDB の型は 11 種（`BOOLEAN` / `INT` / `BIGINT` / `FLOAT` / `DOUBLE` / 
 | `CREATE INDEX` で複数列 | 変換しない（ScalarDB の副次索引は 1 列） | ERROR `INDEX` |
 | 表と列を名指ししない `DROP INDEX` | 変換しない（`DROP INDEX ON <表> (<列>)` の形が要る） | ERROR `DROP_INDEX` |
 | `ALTER TABLE ... ALTER COLUMN ... TYPE` | 変換する。型の変更ができるかは下のデータベース次第 | WARN `ALTER_TYPE` |
-| 列の追加・削除・改名、表の改名、型の変更以外の `ALTER TABLE` の操作（制約・索引・パーティションなど） | 変換しない | ERROR `ALTER` |
+| 列の追加・削除・改名、表の改名、型の変更以外の `ALTER TABLE` の操作（制約・索引・パーティションなど）、主キーの列の `DROP COLUMN`、型を変えない Oracle の `MODIFY (c NOT NULL)` | 変換しない | ERROR `ALTER`（読めない操作を名指しする） |
 | ビュー・シーケンス・トリガー・プロシージャの `CREATE`、表・スキーマ・索引以外の `DROP` | 変換しない | ERROR `DDL`（SQLGlot が文として解析しなかったものは ERROR `UNPARSED`） |
 
 キーの分け方は `--keys 表=パーティションキー/クラスタリングキー`（複数列はカンマ区切り）で上書きできる。存在しない列を指すと ERROR `KEYS`。
@@ -152,7 +158,9 @@ ScalarDB の型は 11 種（`BOOLEAN` / `INT` / `BIGINT` / `FLOAT` / `DOUBLE` / 
 
 ## 実行計画（`--plan-dir`）
 
-ERROR になった読み取り文（SELECT、UNION などの集合演算、CTE を含む）は、ScalarDB から行を取得してインメモリの H2 で元の SQL を実行する「実行計画」に分解できることが多い。`--plan-dir` を付けたときだけ分解し、分解できた文の状態を PLANNED にする。PLANNED は変換率に含めない。
+ERROR になった読み取り文（SELECT、UNION などの集合演算、CTE を含む）は、ScalarDB から行を取得してインメモリの H2 で元の SQL を実行する「実行計画」に分解できることが多い。分解できた文の状態は PLANNED になる。PLANNED は変換率に含めない。
+
+分解するかどうかは入口で違う。このスキルの `transpile.py` は `--plan-dir` を付けたときだけ分解し、計画をそこへ書く。`python -m scalardb_migrate.cli` は既定で分解し（`--no-plan` で止める）、`--plan-dir` は計画のファイルを書く先を指定するだけ。
 
 ```bash
 .venv/bin/python skills/sql-transpile/scripts/transpile.py <入力.sql> --source oracle --target scalardb \
@@ -209,13 +217,13 @@ ERROR になった読み取り文（SELECT、UNION などの集合演算、CTE �
 | `GROUP` | ERROR | `ROLLUP` / `CUBE` / `GROUPING SETS`、列でない GROUP BY | 同上 |
 | `ORDER` | ERROR | ORDER BY に列・別名・集約以外の式がある（パーティション SCAN の並びの WARN は上の節） | アプリで並べる |
 | `LIMIT` | ERROR | `FETCH … PERCENT`、`FETCH … WITH TIES`（LIMIT n では同順位の行が落ちる）、リテラルでもバインド変数でもない LIMIT | 順に読み、ソートキーが同じ間は読み続ける |
-| `ROWNUM` | ERROR | DISTINCT・GROUP BY・集約・ウィンドウ関数と一緒の ROWNUM（ROWNUM は入力の行、LIMIT は出力の行を数える）、整数でない比較、OR の中、LIMIT との併用 | 先に絞ってから、アプリで集約する |
+| `ROWNUM` | ERROR | DISTINCT・GROUP BY・集約・ウィンドウ関数と一緒の ROWNUM（ROWNUM は入力の行、LIMIT は出力の行を数える）、整数でない比較、OR の中、LIMIT との併用、射影の `SELECT ROWNUM, ...`（ScalarDB に行番号は無い） | 先に絞ってから、アプリで集約する。行番号はアプリで振る（実行計画なら H2 が振る） |
 | `FROM` | ERROR | FROM が 1 つの実表でない（派生表など） | 実行計画か、アプリで評価する |
 | `JOIN` | ERROR | CROSS / NATURAL / FULL JOIN、結合先が実表でない、RIGHT JOIN が最初の結合でない、結合条件の無いカンマ結合 | 同上 |
 | `JOIN_ON` | ERROR | 結合条件が `列 = 列` の AND でない | 同上 |
 | `JOIN_SCOPE` | ERROR | WHERE / ORDER BY が結合先の表の列を指している | 同上 |
 | `JOIN_KEY` | ERROR | 結合が相手の主キー全体も副次索引も覆っていない（ScalarDB Cluster が DB-SQL-10067 で断る） | 相手の列を主キーにするか索引を足す。読み取りは実行計画に回る |
-| `CLAUSE` | ERROR | `TABLESAMPLE`、`QUALIFY`・`WINDOW`・`LATERAL`・`INTO` などの句、表に付く対応外の句（パーティション指定、`AS OF` など） | 句を外して書き直す |
+| `CLAUSE` | ERROR | `TABLESAMPLE`、`QUALIFY`・`WINDOW`・`LATERAL`・`INTO` などの句、表に付く対応外の句（Oracle の `PARTITION (p1)` / `SUBPARTITION (...)` を含むパーティション指定、Oracle のフラッシュバック `AS OF TIMESTAMP` / `AS OF SCN` / `VERSIONS BETWEEN` など） | 句を外して書き直す。パーティション指定は分ける列の範囲の条件に、フラッシュバックはアプリが持つ履歴の表に置き換える |
 | `LOCK` | WARN | `FOR UPDATE` などのロック句を落とした | 行ロックに頼っていた処理は、commit 時の衝突と再試行に変わる |
 | `NULLS` | WARN | ORDER BY の `NULLS FIRST / LAST` を落とした | NULL の並びを確かめる |
 | `MODIFIER` | WARN / INFO | MySQL の修飾子を落とした。`SQL_CALC_FOUND_ROWS` は WARN（続く `SELECT FOUND_ROWS()` には別に `COUNT(*)` が要る）、サーバーへの助言だけのものは INFO | — |
@@ -234,7 +242,7 @@ ERROR になった読み取り文（SELECT、UNION などの集合演算、CTE �
 | `INSERT_SELECT` / `INSERT_IGNORE` / `DO_NOTHING` / `DELETE_JOIN` / `UPDATE_JOIN` | ERROR | `INSERT … SELECT`、`INSERT IGNORE`、`ON CONFLICT DO NOTHING`、`DELETE … USING / JOIN`、`UPDATE … FROM / JOIN` | アプリで対象を読んでから、キーを指定して書く |
 | `INSERT` / `UPDATE` / `DELETE` | ERROR | `INSERT OVERWRITE` などの変形、ORDER BY / LIMIT つきの UPDATE・DELETE | 主キーで対象行を絞る |
 | `RETURNING` | ERROR | `RETURNING` | 書いた後に読み直す |
-| `SEQUENCE` | ERROR | 値に `NEXTVAL` / `CURRVAL` | アプリで採番する（UUID など） |
+| `SEQUENCE` | ERROR | `NEXTVAL` / `CURRVAL`（値の中でも `SELECT seq.NEXTVAL FROM dual` でも）、PostgreSQL の `nextval('seq')` など。実行計画も作らない | アプリで採番する（UUID など） |
 | `UPSERT` | INFO / WARN / ERROR | upsert を `UPSERT INTO` にした（INFO）。上書きする列が元より多い、主キーと見なした一意制約の前提（WARN）。条件つきの DO UPDATE、`列 = EXCLUDED.列` でない更新、主キー以外での衝突（ERROR） | ERROR は 1 つのトランザクションで読んで判断して書く |
 | `MERGE` | WARN / ERROR | 定数 1 行の MERGE を UPSERT にした（WARN。WHEN MATCHED が設定しない列も上書きする）。表や問合せをソースにする MERGE、条件つきの枝、`WHEN MATCHED THEN DELETE`、主キー以外での突き合わせ（ERROR） | ERROR は存在確認と書き込みを 1 つのトランザクションにまとめる |
 | `REPLACE` | WARN | `REPLACE INTO` を UPSERT にした | 列リストに無い列の値が残ってよいか確かめる |

@@ -305,6 +305,16 @@ class Decomposer:
         for c in node.find_all(exp.Column):
             if c.name.upper() in ("ROWID", "ROWSCN", "ORA_ROWSCN"):
                 raise NotDecomposable(f"pseudo-column {c.name.upper()} cannot be fetched from ScalarDB")
+        from .converter import _oracle_partition_extension, _sequence_use
+        sequence = _sequence_use(node, self.dialect)
+        if sequence:
+            raise NotDecomposable(f"{sequence}: a sequence value cannot be computed from fetched rows; generate it "
+                                  f"in the application")
+        for t in node.find_all(exp.Table):
+            extension = _oracle_partition_extension(t, self.dialect) or (t.args.get("partition") and "PARTITION")
+            if extension:
+                raise NotDecomposable(f"{extension} on {t.name}: the fetched rows carry no partition; filter on the "
+                                      f"partitioning column's range instead")
         if any(c.args.get("join_mark") for c in node.find_all(exp.Column)):
             from .converter import _bad_join_mark_rewrite
             node = eliminate_join_marks(node.copy())

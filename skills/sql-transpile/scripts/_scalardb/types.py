@@ -57,12 +57,46 @@ def _params(dt: exp.DataType) -> list[int | None]:
     return out
 
 
-def map_type(dt: exp.DataType, source_dialect: str) -> TypeMapping:
-    """Map a sqlglot DataType (parsed from the source dialect) to a ScalarDB type."""
+# Oracle types SQLGlot does not know by name: it keeps them as user-defined types
+_ORACLE_NAMED = {
+    "RAW": ("BLOB", "INFO", "{raw}: length limit is not enforced by ScalarDB BLOB"),
+    "NCLOB": ("TEXT", "INFO", ""),
+    # the same as PostgreSQL's XML below
+    "XMLTYPE": ("TEXT", "WARN", "{raw}: mapped to TEXT; the XML is kept as text, and XML functions and operators "
+                                "(XMLQUERY, XMLTABLE, EXTRACTVALUE, XPath ...) are not available"),
+}
+
+
+def map_type(dt: exp.DataType, source_dialect: str, written: str | None = None) -> TypeMapping:
+    """Map a sqlglot DataType (parsed from the source dialect) to a ScalarDB type.
+
+    ``written`` is the type name as the source spells it, when the caller can see it. SQLGlot reads some Oracle
+    names as another type and forgets the spelling: LONG as BIGINT, BINARY_FLOAT and REAL as FLOAT.
+    """
     t = dt.this
     params = _params(dt)
     raw = dt.sql(dialect=source_dialect)
-
+    word = (written or "").upper()
+    if source_dialect == "oracle" and word == "REAL":
+        raw = "REAL"   # FLOAT(63), and SQLGlot prints it as FLOAT
+    if source_dialect == "oracle" and word == "LONG":
+        # LONG is Oracle's legacy character type, not an integer (SQLGlot reads it as BIGINT)
+        return TypeMapping("TEXT", "WARN", "LONG: Oracle's legacy character type (up to 2 GB) mapped to TEXT. Oracle "
+                                           "cannot use a LONG in WHERE, GROUP BY, an index or most functions, "
+                                           "allows one per table, and cannot SELECT it into a CLOB without TO_LOB: "
+                                           "export it with TO_LOB (or convert it to CLOB first) when migrating")
+    if source_dialect == "oracle" and word == "BINARY_FLOAT":
+        # BINARY_FLOAT is an IEEE 754 single, which is what ScalarDB FLOAT is (a Java float): the values and the way
+        # they print stay the same. DOUBLE would hold them too, but a widened 0.1f reads back as 0.10000000149011612.
+        # This follows the rule used for PostgreSQL below: single precision -> FLOAT, double -> DOUBLE
+        return TypeMapping("FLOAT", "INFO", "BINARY_FLOAT: IEEE single precision, the same as ScalarDB FLOAT; "
+                                            "whether NaN and the infinities can be stored depends on the underlying "
+                                            "database")
+    if t == T.USERDEFINED and source_dialect == "oracle":
+        named = _ORACLE_NAMED.get((dt.args.get("kind") or "").upper())
+        if named:
+            target, severity, note = named
+            return TypeMapping(target, severity, note.format(raw=raw))
     if t in _BOOL:
         if t == getattr(T, "BIT", None) and params and params[0] and params[0] > 1:
             return TypeMapping("BLOB", "WARN", f"{raw}: multi-bit BIT has no equivalent; mapped to BLOB")
@@ -89,14 +123,22 @@ def map_type(dt: exp.DataType, source_dialect: str) -> TypeMapping:
         if source_dialect == "oracle":
             # Oracle FLOAT is a NUMBER with binary precision (126 bits by default, about 38 digits), not an IEEE
             # single. As a 32-bit FLOAT it kept 7 digits
-            return TypeMapping("DOUBLE", "WARN", f"{raw}: Oracle FLOAT is a decimal NUMBER with up to 38 digits; "
-                                                 f"mapped to DOUBLE (about 15 digits)")
-        # PostgreSQL FLOAT(25..53) / FLOAT without precision is double precision
-        if source_dialect == "postgres" and (not params or (params[0] or 0) > 24):
+            return TypeMapping("DOUBLE", "WARN", f"{raw}: Oracle FLOAT (and REAL, which is FLOAT(63)) is a decimal "
+                                                 f"NUMBER with up to 38 digits; mapped to DOUBLE (about 15 digits)")
+        # PostgreSQL: SQLGlot reads REAL as FLOAT and FLOAT(p) as DOUBLE. Precision 1..24 is single precision
+        # (REAL), 25..53 double; ScalarDB FLOAT and DOUBLE are the same two IEEE types
+        if source_dialect == "postgres" and params and (params[0] or 0) > 24:
             return TypeMapping("DOUBLE", "INFO", "")
         return TypeMapping("FLOAT", "INFO", "")
     if t in _DOUBLE:
+        if source_dialect == "postgres" and params and params[0] is not None and params[0] <= 24:
+            return TypeMapping("FLOAT", "INFO", f"{raw}: precision 24 or less is single precision (REAL)")
         return TypeMapping("DOUBLE", "INFO", "")
+    if t in _t("MONEY", "SMALLMONEY"):
+        # a currency amount: a 64-bit integer count of the smallest unit (cents) with a fixed number of decimals
+        return TypeMapping("DOUBLE", "WARN", f"{raw}: a fixed-point currency amount mapped to DOUBLE, which is not "
+                                             f"exact for decimal fractions. Store the amount as a scaled integer "
+                                             f"(cents) in BIGINT instead")
     if t in _DECIMAL:
         precision = params[0] if params else None
         scale = params[1] if len(params) > 1 else 0
@@ -149,6 +191,9 @@ def map_type(dt: exp.DataType, source_dialect: str) -> TypeMapping:
             return TypeMapping(target, "WARN", f"{raw}{written}: ScalarDB {target} keeps millisecond precision only"
                                + ("; stored as UTC" if target == "TIMESTAMPTZ" else ""))
         return TypeMapping(target, "INFO", "stored as UTC; millisecond precision" if target == "TIMESTAMPTZ" else "")
+    if t == getattr(T, "XML", None):
+        return TypeMapping("TEXT", "WARN", f"{raw}: mapped to TEXT; the XML is kept as text, and XML functions and "
+                                           f"operators (xpath, XMLTABLE ...) are not available")
     if t in _SEMI:
         return TypeMapping("TEXT", "WARN",
                            f"{raw}: mapped to TEXT; JSON/ENUM/UUID semantics and operators are not available")

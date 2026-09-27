@@ -148,6 +148,35 @@ def _from(node: exp.Expression):
     return _arg(node, "from")
 
 
+_SEQUENCE_FUNCS = ("NEXTVAL", "CURRVAL", "SETVAL", "LASTVAL")
+
+
+def _sequence_use(node: exp.Expression, dialect: str) -> str | None:
+    """The first sequence reference in ``node`` as written: Oracle's `seq.NEXTVAL` / `seq.CURRVAL`, PostgreSQL's
+    `nextval('seq')` and the like, MySQL/MariaDB's `NEXT VALUE FOR seq`. None when there is none."""
+    for n in node.walk():
+        if isinstance(n, exp.Column) and n.table and n.name.upper() in ("NEXTVAL", "CURRVAL"):
+            return n.sql(dialect=dialect)
+        if isinstance(n, exp.Anonymous) and n.name.upper() in _SEQUENCE_FUNCS:
+            return n.sql(dialect=dialect)
+        if isinstance(n, exp.NextValueFor):
+            return n.sql(dialect=dialect)
+    return None
+
+
+def _oracle_partition_extension(t: exp.Table, dialect: str) -> str | None:
+    """Oracle's partition-extended name `t PARTITION (p1)` / `SUBPARTITION (p1)`, which SQLGlot reads as the table
+    alias PARTITION with a column list; None for anything else. Oracle has no column list on a table alias, so the
+    shape means the clause."""
+    alias = t.args.get("alias")
+    if dialect != "oracle" or not isinstance(alias, exp.TableAlias) or not alias.args.get("columns"):
+        return None
+    word = alias.name.upper()
+    if word not in ("PARTITION", "SUBPARTITION"):
+        return None
+    return f"{word} ({', '.join(c.sql(dialect=dialect) for c in alias.args['columns'])})"
+
+
 def _bad_join_mark_rewrite(node: exp.Expression) -> bool:
     """sqlglot's eliminate_join_marks() mishandles (+) on the FROM-side table: it emits a CROSS JOIN and duplicates
     the table. Detect that so the statement is reported for manual rewriting instead of silently wrong SQL."""
@@ -259,6 +288,7 @@ class StatementConverter:
     def convert(self, sql: str) -> Result:
         self.issues = []
         self._source = sql
+        self._parsed = sql   # the text the AST was parsed from (the REPLACE rewrite below changes it)
         res = Result(0, sql, "UNKNOWN")
         upsert = False
         src = sql
@@ -279,10 +309,19 @@ class StatementConverter:
             res.issues.append(Issue("ERROR", "PLSQL_BLOCK", "a PL/SQL block (stored program or anonymous block) is not a SQL "
                                                             "statement; migrate it with the PL/SQL tooling (python -m plsql.generate)"))
             return res
+        self._parsed = src
         try:
             node = sqlglot.parse_one(src, read=self.dialect)
         except ParseError as e:
             res.kind, res.status = "PARSE_ERROR", "ERROR"
+            flashback = self._flashback(src)
+            if flashback:
+                # SQLGlot cannot read Oracle's flashback query at all; say what the statement asks for instead of
+                # where the parser stopped
+                res.issues.append(Issue("ERROR", "CLAUSE", f"{flashback} (flashback query) is not supported: ScalarDB "
+                                                           f"keeps no past versions of a row to read. Keep the history "
+                                                           f"the application needs in a table of its own"))
+                return res
             res.issues.append(Issue("ERROR", "PARSE", str(e).splitlines()[0]))
             return res
         res.kind = type(node).__name__.upper()
@@ -324,6 +363,22 @@ class StatementConverter:
         if res.status == "WARN" and isinstance(node, exp.Select) and any(i.code == "CROSS_PARTITION" for i in res.issues):
             self._cost(res, [(_from(node).this.name, "CROSS_PARTITION")], row_limit=None)
         return res
+
+    def _flashback(self, src: str) -> str | None:
+        """`AS OF TIMESTAMP` / `AS OF SCN` / `VERSIONS BETWEEN` in an Oracle statement, read from its tokens (so
+        not from a string or a comment); None when there is none or the text cannot be tokenized."""
+        if self.dialect != "oracle":
+            return None
+        try:
+            words = [t.text.upper() for t in sqlglot.tokenize(src, read=self.dialect) if t.token_type != TokenType.STRING]
+        except TokenError:
+            return None
+        for i in range(len(words) - 2):
+            if words[i:i + 2] == ["AS", "OF"] and words[i + 2] in ("TIMESTAMP", "SCN"):
+                return f"AS OF {words[i + 2]}"
+            if words[i:i + 2] == ["VERSIONS", "BETWEEN"] and words[i + 2] in ("TIMESTAMP", "SCN"):
+                return f"VERSIONS BETWEEN {words[i + 2]}"
+        return None
 
     def _check_bind_order(self, binds: int, out: list) -> None:
         """Positional binds are bound by position, so a rewrite that moves or copies one changes what the caller
@@ -418,6 +473,12 @@ class StatementConverter:
             for k in ("partition", "version", "when", "changes"):
                 if t.args.get(k):
                     self.fail("CLAUSE", f"{t.args[k].sql(dialect=self.dialect)} on {t.name} is not supported")
+            extension = _oracle_partition_extension(t, self.dialect)
+            if extension:
+                # SQLGlot reads Oracle's `employees PARTITION (p1)` as the alias PARTITION with a column list, and
+                # the output was `employees AS PARTITION(p1)` (#124)
+                self.fail("CLAUSE", f"{extension} on {t.name} is not supported: ScalarDB tables have no Oracle "
+                                    f"partitions. Filter on the partitioning column's range instead")
         for sel in node.find_all(exp.Select):
             for m in sel.args.get("operation_modifiers") or []:
                 name = m.name.upper()
@@ -432,8 +493,27 @@ class StatementConverter:
                                   f"chooses the access path from the key and index conditions")
                 sel.set("hint", None)
 
+    def _drop_catalogs(self, node: exp.Expression) -> None:
+        """`catalog.schema.table` -> `schema.table`, in every statement: the schema is the ScalarDB namespace.
+
+        Only DDL, TRUNCATE and DROP did this (in `_table_name`); a SELECT or an INSERT kept all three parts, which
+        ScalarDB cannot resolve, and said nothing. Done once here, so the DDL no longer warns twice either.
+        """
+        said: set[str] = set()
+        for t in node.find_all(exp.Table):
+            if t.args.get("catalog") and t.args.get("db"):
+                full = f"{t.catalog}.{t.db}.{t.name}"
+                if full not in said:
+                    said.add(full)
+                    self.warn("NAMESPACE", f"{full}: catalog dropped, schema '{t.db}' used as ScalarDB namespace")
+                t.set("catalog", None)
+        for c in node.find_all(exp.Column):
+            if c.args.get("catalog") and c.args.get("db"):
+                c.set("catalog", None)
+
     def _dispatch(self, node: exp.Expression) -> list:
         self._source_only_syntax(node)
+        self._drop_catalogs(node)
         if isinstance(node, exp.Select):
             return [self.select(node)]
         if isinstance(node, (exp.Union, exp.Intersect, exp.Except)):
@@ -461,6 +541,8 @@ class StatementConverter:
             return [node]
         if isinstance(node, exp.Use):
             return [f"USE {node.this.name}"]
+        if isinstance(node, exp.Command) and node.name.upper() == "ALTER":
+            return self.alter(self._alter_from_text(self._parsed))
         if isinstance(node, exp.Command):
             self.fail("UNPARSED", f"statement type '{node.this}' is not supported "
                                   f"(views, triggers, procedures, sequences, grants, session settings ...)")
@@ -471,6 +553,11 @@ class StatementConverter:
         for col in node.find_all(exp.Column):
             if col.name.upper() in ("ROWID", "ROWSCN", "ORA_ROWSCN"):
                 self.fail("ROWID", f"pseudo-column {col.name.upper()} does not exist in ScalarDB; use the primary key")
+        sequence = _sequence_use(node, self.dialect)
+        if sequence:
+            # only VALUES and SET were checked, so `SELECT seq.NEXTVAL FROM dual` went through as a column (#123)
+            self.fail("SEQUENCE", f"{sequence}: sequences are not supported; generate keys in the application "
+                                  f"(e.g. UUID)")
         said: set[str] = set()
         for ident in node.find_all(exp.Identifier):
             was_quoted = bool(ident.quoted)
@@ -514,6 +601,19 @@ class StatementConverter:
     def _table_sql(self, t: exp.Expression) -> str:
         """The table as the statement has to spell it: `_table_name`, each part quoted where ScalarDB needs it."""
         return ".".join(quoted(part) for part in self._table_name(t).split("."))
+
+    def _written_type(self, cd: exp.ColumnDef, text: str | None = None) -> str | None:
+        """The type name of ``cd`` as the source spells it (LONG, BINARY_FLOAT ...), read from ``text`` -- the SQL
+        the definition was parsed from. SQLGlot reads some Oracle names as another type and keeps no spelling."""
+        text = self._parsed if text is None else text
+        end = cd.this.meta.get("end") if isinstance(cd.this, exp.Identifier) else None
+        if end is None or not text:
+            return None
+        m = re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*)", text[end + 1:])
+        return m.group(1) if m else None
+
+    def _map_type(self, cd: exp.ColumnDef, text: str | None = None):
+        return map_type(cd.kind, self.dialect, self._written_type(cd, text))
 
     def _meta(self, t: exp.Expression) -> TableMeta | None:
         t = t.this if isinstance(t, exp.Schema) else t
@@ -936,6 +1036,10 @@ class StatementConverter:
 
     def _check_projection(self, p: exp.Expression) -> None:
         inner = p.this if isinstance(p, exp.Alias) else p
+        if self.dialect == "oracle" and any(c.name.upper() == "ROWNUM" and not c.table for c in inner.find_all(exp.Column)):
+            # a ROWNUM left in the select list went through as a column named ROWNUM, which ScalarDB has not (#123)
+            self.fail("ROWNUM", "ROWNUM in the select list numbers the rows as they are read; ScalarDB has no row "
+                                "number. Number the rows in the application, or run the statement as a plan")
         if isinstance(inner, (exp.Column, exp.Star)) or _is_aggregate(inner):
             return
         if isinstance(inner, AGGREGATES) and isinstance(inner.this, exp.Distinct):
@@ -1456,7 +1560,7 @@ class StatementConverter:
         if kind == "INDEX":
             return [self.create_index(c)]
         if kind in ("SCHEMA", "DATABASE"):
-            return [f"CREATE NAMESPACE {'IF NOT EXISTS ' if c.args.get('exists') else ''}{quoted(c.this.name)}"]
+            return [f"CREATE NAMESPACE {'IF NOT EXISTS ' if c.args.get('exists') else ''}{self._namespace(c.this)}"]
         self.fail("DDL", f"CREATE {kind} is not supported (no views, sequences, triggers, procedures in ScalarDB)")
 
     def create_table(self, c: exp.Create) -> list:
@@ -1524,7 +1628,7 @@ class StatementConverter:
         meta = TableMeta(ns or None, bare, pkey, ckey, {}, columns)
         meta.residual_types = {cd.this.name: exact for cd in c.this.expressions
                                if isinstance(cd, exp.ColumnDef) and cd.kind is not None
-                               and (exact := map_type(cd.kind, self.dialect).residual_type)}
+                               and (exact := self._map_type(cd).residual_type)}
         meta.secondary_indexes.extend(inline_indexes)
         self.registry.add(meta)
         cols_sql = ",\n  ".join(f"{quoted(n)} {t}" for n, t in columns.items())
@@ -1561,7 +1665,7 @@ class StatementConverter:
         name = cd.this.name
         if cd.kind is None:
             self.fail("DDL", f"column {name} has no data type")
-        tm = map_type(cd.kind, self.dialect)
+        tm = self._map_type(cd)
         if tm.scalardb_type is None:
             self.fail("TYPE", f"column {name}: {tm.note}")
         if tm.severity == "ERROR":
@@ -1611,6 +1715,14 @@ class StatementConverter:
         return (f"CREATE INDEX {'IF NOT EXISTS ' if c.args.get('exists') else ''}ON "
                 f"{self._table_sql(idx.args['table'])} ({quoted(col)})")
 
+    def _namespace(self, t: exp.Expression) -> str:
+        """The namespace a CREATE / DROP SCHEMA or DATABASE names. PostgreSQL's schema name is parsed into `db` and
+        MySQL's database name into `this`; reading `this` alone gave PostgreSQL `CREATE NAMESPACE ""`."""
+        name = (t.name or t.db) if isinstance(t, exp.Table) else t.name
+        if not name:
+            self.fail("DDL", f"no namespace name in '{t.sql(dialect=self.dialect)}'")
+        return quoted(name)
+
     def drop(self, d: exp.Drop) -> list[str]:
         kind = (d.args.get("kind") or "").upper()
         exists = "IF EXISTS " if d.args.get("exists") else ""
@@ -1622,7 +1734,12 @@ class StatementConverter:
                 self.fail("DDL", "DROP TABLE without a table name")
             return [f"DROP TABLE {exists}{self._table_sql(t)}" for t in tables]
         if kind in ("SCHEMA", "DATABASE"):
-            return [f"DROP NAMESPACE {exists}{quoted(d.this.name)}{' CASCADE' if d.args.get('cascade') else ''}"]
+            # like DROP TABLE, the names are in `tables` and `this` is empty
+            names = [d.this] if d.this is not None else list(d.args.get("tables") or [])
+            if not names:
+                self.fail("DDL", f"DROP {kind} without a name")
+            cascade = " CASCADE" if d.args.get("cascade") else ""
+            return [f"DROP NAMESPACE {exists}{self._namespace(n)}{cascade}" for n in names]
         if kind == "INDEX":
             self.fail("DROP_INDEX", "DROP INDEX must name table and column in ScalarDB: DROP INDEX ON <table> (<column>)")
         self.fail("DDL", f"DROP {kind} is not supported")
@@ -1630,18 +1747,34 @@ class StatementConverter:
     def alter(self, a: exp.Alter) -> list:
         if (a.args.get("kind") or "").upper() != "TABLE":
             self.fail("DDL", f"ALTER {a.args.get('kind')} is not supported")
+        actions = list(a.args.get("actions") or [])
+        if any(isinstance(act, exp.Command) for act in actions):
+            # an action SQLGlot could not read (Oracle's DROP (c)): read the statement again, action by action
+            a = self._alter_from_text(self._parsed)
+            actions = list(a.args.get("actions") or [])
         tname = self._table_sql(a.this)
+        meta = self._meta(a.this)
         out = []
-        for act in a.args.get("actions") or []:
-            if isinstance(act, exp.ColumnDef):
-                tm = map_type(act.kind, self.dialect)
-                if tm.scalardb_type is None or tm.severity == "ERROR":
-                    self.fail("TYPE", f"column {act.this.name}: {tm.note}")
-                if act.constraints:
-                    self.warn("COL_OPT", f"ADD COLUMN {act.this.name}: constraints dropped")
-                out.append(f"ALTER TABLE {tname} ADD COLUMN {quoted(act.this.name)} {tm.scalardb_type}")
+        for act in actions:
+            if isinstance(act, exp.Schema):
+                # Oracle's ADD (c1 type, c2 type): one ADD COLUMN per column
+                for item in act.expressions:
+                    if not isinstance(item, exp.ColumnDef):
+                        self.fail("ALTER", f"ALTER TABLE ADD '{item.sql(dialect=self.dialect)[:60]}' is not "
+                                           f"supported (constraints, indexes, partitions ...)")
+                    item.meta.setdefault("parsed_from", act.meta.get("parsed_from"))
+                    out.append(self._add_column(tname, item))
+            elif isinstance(act, exp.ColumnDef):
+                out.append(self._add_column(tname, act))
             elif isinstance(act, exp.Drop) and (act.args.get("kind") or "").upper() == "COLUMN":
-                out.append(f"ALTER TABLE {tname} DROP COLUMN {quoted(act.this.name)}")
+                # the column is in `tables` and `this` is empty: reading `this` was an AttributeError (#122)
+                for col in [act.this] if act.this is not None else list(act.args.get("tables") or []):
+                    name = col.name
+                    if meta is not None and name.lower() in {k.lower() for k in meta.primary_key}:
+                        self.fail("ALTER", f"DROP COLUMN {name}: {name} is part of the primary key, and ScalarDB "
+                                           f"cannot drop a partition-key or clustering-key column")
+                    exists = "IF EXISTS " if act.args.get("exists") else ""
+                    out.append(f"ALTER TABLE {tname} DROP COLUMN {exists}{quoted(name)}")
             elif isinstance(act, exp.RenameColumn):
                 out.append(f"ALTER TABLE {tname} RENAME COLUMN {quoted(act.this.name)} TO {quoted(act.args['to'].name)}")
             elif isinstance(act, exp.AlterRename):
@@ -1650,17 +1783,118 @@ class StatementConverter:
                 cd = act.this if isinstance(act, exp.ModifyColumn) else act
                 dtype = cd.kind if isinstance(cd, exp.ColumnDef) else act.args["dtype"]
                 name = cd.this.name if isinstance(cd, exp.ColumnDef) else act.this.name
-                tm = map_type(dtype, self.dialect)
+                written = act.meta.get("written") or (self._written_type(cd, act.meta.get("parsed_from"))
+                                                      if isinstance(cd, exp.ColumnDef) else None)
+                tm = map_type(dtype, self.dialect, written)
                 if tm.scalardb_type is None or tm.severity == "ERROR":
                     self.fail("TYPE", f"column {name}: {tm.note}")
                 out.append(f"ALTER TABLE {tname} ALTER COLUMN {quoted(name)} SET DATA TYPE {tm.scalardb_type}")
-                self.warn("ALTER_TYPE", "type change support depends on the underlying database")
+                self.warn("ALTER_TYPE", f"column {name}: type change support depends on the underlying database")
             else:
                 self.fail("ALTER", f"ALTER TABLE action '{act.sql(dialect=self.dialect)[:60]}' is not supported "
                                    f"(constraints, indexes, partitions, engine options ...)")
         if len(out) > 1:
             self.info("ALTER", "multiple actions split into separate ALTER TABLE statements (not atomic)")
         return out
+
+    def _add_column(self, tname: str, cd: exp.ColumnDef) -> str:
+        if cd.kind is None:
+            self.fail("DDL", f"column {cd.this.name} has no data type")
+        tm = self._map_type(cd, cd.meta.get("parsed_from"))
+        if tm.scalardb_type is None or tm.severity == "ERROR":
+            self.fail("TYPE", f"column {cd.this.name}: {tm.note}")
+        if tm.severity == "WARN":
+            self.warn("TYPE", f"column {cd.this.name}: {tm.note}")
+        if cd.constraints:
+            self.warn("COL_OPT", f"ADD COLUMN {cd.this.name}: constraints dropped")
+        return f"ALTER TABLE {tname} ADD COLUMN {quoted(cd.this.name)} {tm.scalardb_type}"
+
+    _ALTER_VERBS = {"ADD", "DROP", "MODIFY", "RENAME", "ALTER", "CHANGE"}
+
+    def _alter_from_text(self, text: str) -> exp.Alter:
+        """Read `ALTER TABLE t <action>, <action> ...` one action at a time.
+
+        SQLGlot gives up on the whole statement (a Command, reported as UNPARSED) when the actions mix kinds, as in
+        MySQL's `ADD c INT, DROP d`, and on Oracle's `MODIFY c type`, `MODIFY (c type)` and `DROP (c1, c2)`. Each
+        action is parsed on its own here, and Oracle's MODIFY and parenthesised DROP are read by hand. An action
+        that is still not understood is refused as ERROR ALTER, naming it.
+        """
+        tokens = [t for t in sqlglot.tokenize(text, read=self.dialect) if t.token_type != TokenType.SEMICOLON]
+        words = [t.text.upper() for t in tokens]
+        if words[:2] != ["ALTER", "TABLE"]:
+            self.fail("UNPARSED", f"statement type '{words[0] if words else ''}' is not supported "
+                                  f"(views, triggers, procedures, sequences, grants, session settings ...)")
+        first = 4 if words[2:4] == ["IF", "EXISTS"] else 2
+        verb = next((i for i in range(first + 1, len(tokens)) if words[i] in self._ALTER_VERBS), None)
+        if verb is None:
+            self.fail("ALTER", f"ALTER TABLE without an action is not supported: {text.strip()[:80]}")
+        table_text = text[tokens[first].start:tokens[verb - 1].end + 1]
+        actions: list[exp.Expression] = []
+        for piece in self._split_top_level(text[tokens[verb].start:tokens[-1].end + 1]):
+            actions.extend(self._alter_action_from_text(table_text, piece))
+        table = sqlglot.parse_one(f"SELECT * FROM {table_text}", read=self.dialect).find(exp.Table)
+        return exp.Alter(this=table, kind="TABLE", actions=actions)
+
+    def _split_top_level(self, text: str) -> list[str]:
+        """``text`` cut at the commas outside parentheses."""
+        tokens = sqlglot.tokenize(text, read=self.dialect)
+        out, depth, begin = [], 0, 0
+        for i, tok in enumerate(tokens):
+            depth += 1 if tok.token_type == TokenType.L_PAREN else -1 if tok.token_type == TokenType.R_PAREN else 0
+            if tok.token_type == TokenType.COMMA and depth == 0:
+                out.append(text[tokens[begin].start:tokens[i - 1].end + 1])
+                begin = i + 1
+        if begin < len(tokens):
+            out.append(text[tokens[begin].start:tokens[-1].end + 1])
+        return out
+
+    def _alter_action_from_text(self, table_text: str, piece: str) -> list[exp.Expression]:
+        oracle = self.dialect == "oracle"
+        piece = piece.strip()
+        modify = re.fullmatch(r"MODIFY\s+(?:COLUMN\s+)?(.*)", piece, re.I | re.S) if oracle else None
+        if modify:
+            body = modify.group(1).strip()
+            defs = self._split_top_level(body[1:-1]) if body.startswith("(") and body.endswith(")") else [body]
+            out: list[exp.Expression] = []
+            for d in defs:
+                wrapped = f"CREATE TABLE x ({d})"
+                try:
+                    cd = sqlglot.parse_one(wrapped, read=self.dialect).find(exp.ColumnDef)
+                except ParseError:
+                    cd = None
+                if cd is None or cd.kind is None:
+                    self.fail("ALTER", f"ALTER TABLE MODIFY '{d.strip()[:60]}' changes no data type (only NULL / "
+                                       f"NOT NULL, DEFAULT or a constraint): ScalarDB has none of these, so there "
+                                       f"is nothing to convert. Drop the statement and enforce the rule in the "
+                                       f"application")
+                if cd.constraints:
+                    self.warn("COL_OPT", f"MODIFY {cd.this.name}: NOT NULL / DEFAULT / constraints dropped")
+                ac = exp.AlterColumn(this=cd.this, dtype=cd.kind)
+                ac.meta["written"] = self._written_type(cd, wrapped)
+                out.append(ac)
+            return out
+        drop = re.fullmatch(r"DROP\s*\((.*)\)", piece, re.I | re.S) if oracle else None
+        if drop:
+            names = [n.strip() for n in self._split_top_level(drop.group(1))]
+            if not names or not all(re.fullmatch(r'"[^"]+"|[A-Za-z_][A-Za-z0-9_$#]*', n) for n in names):
+                self.fail("ALTER", f"ALTER TABLE action '{piece[:60]}' is not supported")
+            return [exp.Drop(kind="COLUMN", tables=[sqlglot.parse_one(n, read=self.dialect) for n in names])]
+        bare_drop = re.fullmatch(r'DROP\s+("[^"]+"|`[^`]+`|[A-Za-z_][A-Za-z0-9_$#]*)', piece, re.I)
+        if bare_drop and bare_drop.group(1).upper() not in ("INDEX", "KEY", "PRIMARY", "FOREIGN", "CONSTRAINT",
+                                                             "CHECK", "PARTITION", "COLUMN"):
+            piece = f"DROP COLUMN {bare_drop.group(1)}"   # MySQL's DROP c is DROP COLUMN c
+        mini = f"ALTER TABLE {table_text} {piece}"
+        try:
+            node = sqlglot.parse_one(mini, read=self.dialect)
+        except ParseError:
+            node = None
+        actions = list(node.args.get("actions") or []) if isinstance(node, exp.Alter) else []
+        if not actions or any(isinstance(x, exp.Command) for x in actions):
+            self.fail("ALTER", f"ALTER TABLE action '{piece[:60]}' is not supported "
+                               f"(constraints, indexes, partitions, engine options ...)")
+        for x in actions:
+            x.meta["parsed_from"] = mini
+        return actions
 
 
 # --------------------------------------------------------------------------------------------------

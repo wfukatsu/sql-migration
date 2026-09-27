@@ -56,25 +56,27 @@ SQL 文の各項目を、変換器（`scalardb_migrate/`）がどう扱うかの
 | `NUMBER(p, s)` / `DECIMAL(p, s)`、s > 0 | DOUBLE | WARN `TYPE` | 精度が落ちる。金額は 10^s 倍した整数を BIGINT に持つことを勧める。実行計画の H2 では `NUMERIC(p, s)` として扱う |
 | Oracle の精度なし `NUMBER`、PostgreSQL の精度なし `NUMERIC` | DOUBLE | WARN `TYPE` | 桁数無制限の 10 進数は保てない |
 | MySQL の精度なし `DECIMAL` | BIGINT | OK（INFO `TYPE`） | MySQL の既定 `(10, 0)` として読む |
-| PostgreSQL の `MONEY` | DOUBLE | WARN `TYPE` | 精度なし NUMERIC と同じ扱い |
+| PostgreSQL の `MONEY` | DOUBLE | WARN `TYPE` | 通貨の固定小数点で、DOUBLE では小数が正確に持てない。セント単位などの整数を BIGINT に持つことを勧める |
 | Oracle の `INTEGER` / `INT` / `SMALLINT` | BIGINT | WARN `TYPE` | Oracle では `NUMBER(38)` の別名。正確に写すなら `NUMBER(p)` で宣言する |
 | PostgreSQL・MySQL の `SMALLINT` / `INT` / `INTEGER`、MySQL の `TINYINT` / `MEDIUMINT` | INT | OK | |
 | MySQL の `TINYINT(1)` | INT | WARN `TYPE` | 真偽値に使っているなら BOOLEAN を検討する |
 | `BIGINT` | BIGINT | OK | |
 | MySQL の `INT UNSIGNED` | BIGINT | OK（INFO `TYPE`） | 符号なし 32 ビットは BIGINT に収まる |
 | MySQL の `BIGINT UNSIGNED` | BIGINT | WARN `TYPE` | 符号なし 64 ビットの範囲は収まらない |
-| Oracle の `FLOAT` | DOUBLE | WARN `TYPE` | Oracle の FLOAT は最大 38 桁の 10 進数。DOUBLE は約 15 桁 |
-| Oracle の `BINARY_FLOAT` | DOUBLE | WARN `TYPE` | 指摘文は Oracle の FLOAT と同じものが出る |
+| Oracle の `FLOAT` / `REAL` | DOUBLE | WARN `TYPE` | Oracle の FLOAT は最大 38 桁の 10 進数（REAL は `FLOAT(63)`）。DOUBLE は約 15 桁 |
+| Oracle の `BINARY_FLOAT` | FLOAT | OK（INFO `TYPE`） | IEEE の単精度で、ScalarDB の FLOAT と同じ。NaN と無限大を持てるかは下のデータベース次第 |
 | Oracle の `BINARY_DOUBLE`、`DOUBLE` / `DOUBLE PRECISION` | DOUBLE | OK | |
-| PostgreSQL の `REAL` / `FLOAT` | DOUBLE | OK | 精度を書いた `FLOAT(10)` も DOUBLE になる |
+| PostgreSQL の `REAL`、`FLOAT(p)`（p ≤ 24） | FLOAT | OK | 単精度。`FLOAT(10)` は INFO `TYPE` |
+| PostgreSQL の `FLOAT`（精度なし）、`FLOAT(p)`（p ≥ 25） | DOUBLE | OK | 倍精度 |
 | MySQL の `FLOAT` | FLOAT | OK | |
 | `VARCHAR2(n)` / `NVARCHAR2(n)` / `VARCHAR(n)` | TEXT | OK（INFO `TYPE`） | 長さの上限は ScalarDB では守られない |
 | `TEXT` / `CLOB` / MySQL の `LONGTEXT` など | TEXT | OK | |
 | `CHAR(1)` | TEXT | OK（INFO `TYPE`） | |
 | `CHAR(n)` / `NCHAR(n)`、n > 1 | TEXT | WARN `TYPE` | 空白詰めの値は、移行時に trim しないと `=` で当たらなくなる |
-| Oracle の `NCLOB` | なし | ERROR `TYPE` | 対応する型が無いと判定される |
+| Oracle の `NCLOB` | TEXT | OK | |
+| Oracle の `LONG` | TEXT | WARN `TYPE` | 古い文字列の型（最大 2 GB）。整数ではない。Oracle 側では WHERE や索引に使えず、表に 1 列だけ。取り出すときは `TO_LOB` で CLOB にする |
 | `BLOB` / `BYTEA` / `BINARY(n)` / `VARBINARY(n)` | BLOB | OK | |
-| Oracle の `RAW(n)` | なし | ERROR `TYPE` | 現状は対応する型が無いと判定される |
+| Oracle の `RAW(n)` | BLOB | OK（INFO `TYPE`） | 長さの上限は ScalarDB では守られない |
 | `BOOLEAN`、`BIT(1)` | BOOLEAN | OK | |
 | `BIT(n)`、n > 1 | BLOB | WARN `TYPE` | |
 | Oracle の `DATE` | DATE | WARN `TYPE` | Oracle の DATE は時刻を持つ。時刻を使う列は TIMESTAMP にする |
@@ -83,10 +85,10 @@ SQL 文の各項目を、変換器（`scalardb_migrate/`）がどう扱うかの
 | PostgreSQL の `TIMETZ` | TIME | WARN `TYPE` | 時差が落ちる |
 | `TIMESTAMP(p)` / MySQL の `DATETIME(p)`、p ≤ 3 | TIMESTAMP | OK | |
 | 同上、p ≥ 4 か精度なし（Oracle・PostgreSQL の既定は 6） | TIMESTAMP | WARN `TYPE` | ミリ秒まで。MySQL の精度なしは 0 として読むので OK |
-| MySQL の `TIMESTAMP` | TIMESTAMPTZ | OK（INFO `TYPE`） | UTC で持つ |
+| MySQL の `TIMESTAMP` | TIMESTAMPTZ | OK（INFO `TYPE`） | MySQL の TIMESTAMP は、セッションの時間帯から UTC に直して持つ瞬間の型なので TIMESTAMPTZ にする。時差を持たない `DATETIME` は TIMESTAMP |
 | `TIMESTAMP WITH TIME ZONE` / `WITH LOCAL TIME ZONE` / `TIMESTAMPTZ` | TIMESTAMPTZ | 精度 3 以下は OK、それ以外は WARN `TYPE` | UTC で持ち、ミリ秒まで |
-| `JSON` / `JSONB` / `UUID` / `ENUM` / `SET` / `INET`、PostgreSQL の `XML` | TEXT | WARN `TYPE` | 文字列として入る。JSON の演算子や列挙の検査は使えない |
-| Oracle の `XMLTYPE` | なし | ERROR `TYPE` | |
+| `JSON` / `JSONB` / `UUID` / `ENUM` / `SET` / `INET` | TEXT | WARN `TYPE` | 文字列として入る。JSON の演算子や列挙の検査は使えない |
+| PostgreSQL の `XML`、Oracle の `XMLTYPE` | TEXT | WARN `TYPE` | XML を文字列として持つ。XPath・`XMLTABLE` などの関数は使えない |
 | `SERIAL` / `BIGSERIAL` / `SMALLSERIAL` | なし | ERROR `TYPE` | 自動採番は無い。ID はアプリで作る |
 | `INTERVAL`、配列（`INT[]`）、MySQL の `YEAR` / `GEOMETRY`、Oracle の `ROWID` 型 | なし | ERROR `TYPE` | 対応する型が無い |
 
@@ -118,16 +120,17 @@ SQL 文の各項目を、変換器（`scalardb_migrate/`）がどう扱うかの
 | MySQL のインライン `INDEX (dept_id)` | 別の `CREATE INDEX` 文 | OK（INFO `INDEX`） | |
 | インラインの複数列の索引 | 落とす | WARN `INDEX` | |
 | `DROP INDEX idx` | 変換しない | ERROR `DROP_INDEX` | ScalarDB は `DROP INDEX ON 表 (列)` の形が要る |
-| `CREATE SCHEMA` / MySQL の `CREATE DATABASE shop` | `CREATE NAMESPACE shop` | OK | PostgreSQL の `CREATE SCHEMA sales` は現状、名前が空の `CREATE NAMESPACE ""` になる |
-| `DROP SCHEMA` / `DROP DATABASE` | — | ERROR `INTERNAL` | 現状は変換器の内部エラーになる。手で `DROP NAMESPACE` を書く |
+| `CREATE SCHEMA sales` / MySQL の `CREATE DATABASE shop` | `CREATE NAMESPACE sales` / `CREATE NAMESPACE shop` | OK | `IF NOT EXISTS` は残す |
+| `DROP SCHEMA` / `DROP DATABASE` | `DROP NAMESPACE` | OK | `IF EXISTS` と `CASCADE` は残す |
 | `DROP TABLE a, b` / `TRUNCATE TABLE a, b` | 表ごとに 1 文 | OK | |
-| `catalog.schema.table`（DDL の中） | `schema.table` | WARN `NAMESPACE` | schema を名前空間にする。SELECT などの中の 3 つ組の名前は、そのまま残る |
+| `catalog.schema.table` | `schema.table` | WARN `NAMESPACE` | schema を名前空間にする。DDL・TRUNCATE・DROP も SELECT・INSERT・UPDATE・DELETE も同じ。指摘は表ごとに 1 回 |
 | `ALTER TABLE ... ADD COLUMN c VARCHAR(10)`（Oracle は `ADD c ...`） | `ALTER TABLE ... ADD COLUMN c TEXT` | OK | 列の型は上の対応表のとおり。付けた制約は落とし WARN `COL_OPT` |
-| Oracle の `ALTER TABLE ... ADD (c ...)`（括弧つき） | 変換しない | ERROR `ALTER` | 括弧を外して 1 列ずつ書く |
-| 複数の操作の `ALTER TABLE`（`ADD COLUMN a1 ..., ADD COLUMN a2 ...`） | 1 操作ずつの文 | OK（INFO `ALTER`） | まとめて 1 回ではなくなる |
+| Oracle の `ALTER TABLE ... ADD (c1 ..., c2 ...)`（括弧つき） | 1 列ずつの `ADD COLUMN` | OK（2 列以上は INFO `ALTER`） | 列の型は上の対応表のとおり |
+| 複数の操作の `ALTER TABLE`（`ADD COLUMN a1 ..., ADD COLUMN a2 ...`、MySQL の `ADD c INT, DROP d` のような混在も） | 1 操作ずつの文 | OK（INFO `ALTER`） | まとめて 1 回ではなくなる。読めない操作が 1 つでもあれば、その操作を名指しして ERROR `ALTER` |
 | `ALTER COLUMN ... TYPE`（PostgreSQL）/ `MODIFY COLUMN`（MySQL） | `ALTER COLUMN ... SET DATA TYPE` | WARN `ALTER_TYPE` | 型を変えられるかは下のデータベース次第 |
-| Oracle の `ALTER TABLE ... MODIFY (...)` | 変換しない | ERROR `UNPARSED` | |
-| `ALTER TABLE ... DROP COLUMN c` | — | ERROR `INTERNAL` | 現状は変換器の内部エラーになる。Oracle の `DROP (c)` は ERROR `ALTER` |
+| Oracle の `ALTER TABLE ... MODIFY c 型` / `MODIFY (c1 型, c2 型)` | 列ごとの `ALTER COLUMN ... SET DATA TYPE` | WARN `ALTER_TYPE` | 付けた `NOT NULL` などは落とし WARN `COL_OPT` |
+| Oracle の `MODIFY (c NOT NULL)` など型を変えない `MODIFY` | 変換しない | ERROR `ALTER` | ScalarDB に NOT NULL・DEFAULT・制約は無いので、変換するものが無い。文を落としてアプリで守る |
+| `ALTER TABLE ... DROP COLUMN c`、Oracle の `DROP (c1, c2)`、MySQL の `DROP c` | 列ごとの `ALTER TABLE ... DROP COLUMN c` | OK | `IF EXISTS` は残す。主キーの列は ScalarDB で落とせないので ERROR `ALTER`（表定義があるとき）。Oracle の `DROP (c) CASCADE CONSTRAINTS` は ERROR `ALTER` |
 | `RENAME COLUMN` / `RENAME TO` | そのまま | OK | |
 | 制約・索引・パーティションを変える `ALTER TABLE` | 変換しない | ERROR `ALTER` | |
 
@@ -166,7 +169,8 @@ SQL 文の各項目を、変換器（`scalardb_migrate/`）がどう扱うかの
 | PostgreSQL の `FROM ONLY employees` | `ONLY` を落とす | WARN `ONLY` | 子の表の行を移さない |
 | `SAMPLE (10)` / `TABLESAMPLE` | — | ERROR `CLAUSE`（`RESIDUAL_H2`） | H2 でも実行できない |
 | `QUALIFY` / `WINDOW` / `INTO` などの句 | — | ERROR `CLAUSE` | 読み取り文なら実行計画を試す |
-| Oracle の `AS OF TIMESTAMP ...` | — | ERROR `PARSE` | 解析できない |
+| Oracle の `FROM employees PARTITION (p1)` / `SUBPARTITION (...)`、MySQL の `PARTITION (p1)` | — | ERROR `CLAUSE` | ScalarDB の表に Oracle のパーティションは無い。パーティションを分ける列の範囲で絞る。実行計画も作らない |
+| Oracle の `AS OF TIMESTAMP ...` / `AS OF SCN ...` / `VERSIONS BETWEEN ...`（フラッシュバック問い合わせ） | — | ERROR `CLAUSE` | ScalarDB は過去の版を読めない。要る履歴はアプリが別の表に持つ。SQLGlot が解析できないので、ほかの指摘は出ない |
 | PostgreSQL の `$1`、JDBC の `?`、`:name` | `?` / `?` / `:name` | OK | 書き換えで `?` の順か数が変わると WARN `BIND_ORDER`（新しい順を指摘文に出す） |
 
 ### アクセスパス（表定義があるとき）
@@ -320,7 +324,7 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 | `WHERE ROWNUM <= :n` | `LIMIT :n` | WARN `ROWNUM` | `<` とバインド変数の組は ERROR |
 | 集約・DISTINCT・GROUP BY・ウィンドウ関数と一緒の ROWNUM | — | PLANNED（`ROWNUM`） | ROWNUM は入力の行、LIMIT は出力の行を数える |
 | `ROWNUM > 1`、OR の中、LIMIT との併用、整数でない比較 | — | PLANNED（`ROWNUM`） | |
-| 射影の `SELECT ROWNUM, name ...` | そのまま | 検査されない | 現状は列として素通りする。ScalarDB では動かない |
+| 射影の `SELECT ROWNUM, name ...` | — | PLANNED（`ROWNUM`） | ScalarDB に行番号は無い。実行計画の H2 が番号を振る。計画を作れなければ ERROR `ROWNUM` |
 | `FETCH FIRST 3 ROWS ONLY` / `FETCH FIRST ROW ONLY` | `LIMIT 3` / `LIMIT 1` | OK（INFO `LIMIT`） | |
 | `LIMIT 10` / `LIMIT ?` | そのまま | OK | |
 | `FETCH ... WITH TIES` / `FETCH ... PERCENT` | — | PLANNED（`LIMIT`） | LIMIT では同じ順位の行が落ちる |
@@ -332,7 +336,7 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 |---|---|---|---|
 | `CREATE SEQUENCE` / `DROP SEQUENCE` | — | ERROR `DDL` | |
 | 値の `emp_seq.NEXTVAL` / `CURRVAL`、PostgreSQL の `nextval('seq')` | — | ERROR `SEQUENCE` | アプリで採番する（UUID など） |
-| `SELECT emp_seq.NEXTVAL FROM dual` | そのまま | 検査されない | 現状は列として素通りし OK になる。ScalarDB では動かない |
+| `SELECT emp_seq.NEXTVAL FROM dual`、`SELECT nextval('seq')` | — | ERROR `SEQUENCE` | 実行計画も作らない。アプリで採番する |
 | `SERIAL` 型、`AUTO_INCREMENT`、`IDENTITY` | — | ERROR `TYPE` / `AUTO_INC` | 上の「データ型」「DDL」 |
 
 ### 名前（識別子）
@@ -355,7 +359,7 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 | Oracle | 空文字列 `''` | 変換できた文に WARN `SEMANTICS`。Oracle は NULL として持つ |
 | Oracle | `LIKE` のエスケープ | `ESCAPE ''` を補う（INFO `LIKE`）。実行計画の H2 では `\` を二重にする |
 | Oracle | 外部結合 `(+)`、`ROWNUM`、`CONNECT BY`、`KEEP`、`MINUS` | 上の各表 |
-| Oracle | 整数型、`FLOAT`、`DATE`、精度なし `NUMBER` | すべて WARN `TYPE`（上の「データ型」） |
+| Oracle | 整数型、`FLOAT`、`DATE`、精度なし `NUMBER`、`LONG`、`XMLTYPE` | すべて WARN `TYPE`（上の「データ型」） |
 | Oracle | `/` だけの行 | 文の切れ目として扱う |
 | Oracle | PL/SQL のブロック（`CREATE PROCEDURE` など、`BEGIN` / `DECLARE` の無名ブロック） | ERROR `PLSQL_BLOCK`。PL/SQL の移行ツールで扱う |
 | Oracle | `WITH FUNCTION ...`（WITH 句の PL/SQL） | ERROR `WITH_PLSQL`。関数をアプリに移せば、問い合わせは変換か実行計画にできる |
@@ -393,7 +397,7 @@ ERROR か PLANNED になった読み取り文には、変換器が最初につ�
 |---|---|---|
 | `CREATE VIEW` / `CREATE SEQUENCE` / `CREATE FUNCTION`（PostgreSQL）など、表・索引・名前空間以外の `CREATE` | ERROR `DDL` | |
 | 表・スキーマ・索引以外の `DROP` | ERROR `DDL` | |
-| `CREATE USER`、Oracle の `ALTER TABLE ... MODIFY` など、SQLGlot が文として解析しないもの | ERROR `UNPARSED` | |
+| `CREATE USER` など、SQLGlot が文として解析しないもの | ERROR `UNPARSED` | `ALTER TABLE` は操作ごとに読み直す（上の DDL） |
 | `GRANT`、`SET search_path ...`、MySQL の `SET NAMES`、`SAVEPOINT` | ERROR `STATEMENT` | 名前つきトランザクションとセーブポイントは ERROR `SAVEPOINT` の場合もある |
 | PL/SQL のブロック、`WITH FUNCTION` | ERROR `PLSQL_BLOCK` / `WITH_PLSQL` | 上の「方言ごとの差」 |
 | 移行元の方言として読めない文 | ERROR `PARSE` | `--source` を確かめる |
