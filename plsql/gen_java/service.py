@@ -110,6 +110,10 @@ def generate_module(module: M.Module, package: str, repository_package: str,
     file.comment(
         f"{module.name} ({module.module_kind}).\n"
         "The transaction boundary belongs to the caller: no method here begins, commits or rolls back.")
+    if getattr(module, "initialisation", None):
+        # #108: what Oracle ran before the first call is not here; say so where a reader of the class looks
+        file.comment("NOT MIGRATED: the package body's initialisation section, which Oracle runs once per session "
+                     "before the first call (STATE-002):\n" + module.initialisation)
     with file.block(f"public class {name}") as f:
         f.line(f"private final {java_class_name(module.name)}Repository repository;")
         for trigger in injected:

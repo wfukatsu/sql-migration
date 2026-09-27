@@ -383,6 +383,10 @@ class Module(Node):
     # `WHEN (OLD.status <> NEW.status)`: trigger が発火する条件。落とすと**記録される量が変わる**
     # ので、生成側は本体の前の番人として出す（#12 / trigger-patterns A-2）
     trigger_when: str | None = None
+    # a package body's initialisation section (`BEGIN ... END pkg;`), as written (#108). Oracle runs it once per
+    # session, the first time anything of the package is referenced; it had vanished without a trace. Nothing
+    # migrates it: STATE-002 asks a person, the way STATE-001 does for the package's variables
+    initialisation: str | None = None
 
     @property
     def has_package_state(self) -> bool:

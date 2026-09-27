@@ -317,6 +317,18 @@ class _Lowerer:
                 module.routines.append(self._routine(body, module=name, ordinal=ordinal))
             module.routines.extend(self.lifted)
             self.lifted, self.module_routines = [], set()
+            # `BEGIN ... END pkg;` after the routines: run once per session, on the package's first reference. It
+            # used to vanish without IR or diagnostic, and `pi.rate` was AUTO in a package whose initialisation
+            # raised (#108). Kept as written, and STATE-002 makes every routine of the package REDESIGN
+            statements = _children(context, "Seq_of_statementsContext")
+            if statements:
+                handlers = _children(context, "Exception_handlerContext")
+                module.initialisation = "BEGIN\n" + "\n".join(_text(s) for s in statements) + (
+                    "\nEXCEPTION\n" + "\n".join(_text(h) for h in handlers) if handlers else "")
+                module.add("WARN", "PACKAGE_INIT",
+                           f"package {name} has an initialisation section: Oracle runs it once per session, the first "
+                           "time the package is referenced, before the routine that was called. It is not migrated; "
+                           "what it sets up (and any exception it raises) is a design decision (STATE-002, #108)")
         return module
 
     def _standalone(self, context: ParserRuleContext) -> M.Module:
