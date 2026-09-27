@@ -87,6 +87,7 @@ def preprocess(text: str, file: str = "<memory>") -> Preprocessed:
         body = "\n".join(kept[start - 1:end])
         if not body.strip():
             continue
+        body = _plsql_line(body)
         unit = Unit(
             text=body,
             kind=kind,
@@ -104,6 +105,29 @@ def preprocess(text: str, file: str = "<memory>") -> Preprocessed:
         out.diagnostics.add("WARN", "EMPTY", "the file has no statement after preprocessing",
                             SourceRange(file, 1, max(1, len(lines))))
     return out
+
+
+_PLSQL_LINE = re.compile(r"\$\$plsql_line\b", re.IGNORECASE)
+_CREATE = re.compile(r"\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:EDITIONABLE\s+|NONEDITIONABLE\s+)?", re.IGNORECASE)
+
+
+def _plsql_line(body: str) -> str:
+    """`$$PLSQL_LINE` written as the number Oracle gives it (#140): the line in the unit, where line 1 holds the unit's
+    keyword -- `CREATE OR REPLACE` on a line of its own is not part of the stored source (measured on 26ai: the
+    directive on the fourth line of `CREATE OR REPLACE` / `PROCEDURE p AS` / `BEGIN` / `put_line($$plsql_line)` is
+    3). The number is padded with blanks to the directive's width, so no column moves."""
+    if "$$" not in body:
+        return body
+    from .conditional import _code_only
+
+    code = _code_only(body)
+    create = _CREATE.match(code)
+    first = code.count("\n", 0, create.end()) if create else 0
+    out = list(body)
+    for match in _PLSQL_LINE.finditer(code):
+        line = str(code.count("\n", 0, match.start()) - first + 1).ljust(match.end() - match.start())
+        out[match.start():match.end()] = list(line)
+    return "".join(out)
 
 
 def _conditional_compilation(text: str, file: str, out: "Preprocessed") -> str:

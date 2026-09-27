@@ -449,7 +449,7 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | オーバーロード | 版ごとに番号を付けたメソッド（`fmt` → `fmt1`、`fmt2`） | 呼び出しがどの版か決まらないと CALL-002（REVIEW） | 引数の数と名前だけで選びます。型だけが違う版は選べません（生成で確認） |
 | 宣言部の入れ子の procedure / function | 外側の変数を引数で運ぶ private メソッドに持ち上げる | なし | 入れ子のブロックの DECLARE に書いたものは持ち上げず、LOWER-001（REVIEW） |
 | 別の package の routine の呼び出し | 呼ばれる側の Service をコンストラクタで受け取って呼ぶ | 呼び先の判定を引き継ぐ | 生成で確認 |
-| package の定数（`CONSTANT`） | `private static final` のフィールド | なし | 生成で確認 |
+| package の定数（`CONSTANT`） | `private static final` のフィールド | なし | 値がリテラルの定数だけです。値が式の定数（`gc_line_feed CONSTANT VARCHAR2(1) := chr(10)`）はフィールドにせず、それを読む文を断ります（以前は無いフィールドを参照する Java になっていた）（生成で確認） |
 | trigger | `Trg<Name>Service` の `body(...)` メソッド。`:NEW` / `:OLD` の列が引数 | TRG-001（REDESIGN） | trigger の節を参照 |
 | 呼び出し仕様（`LANGUAGE JAVA` / `C`、`EXTERNAL`） | 本体を持たず `UnsupportedOperationException` を投げるメソッド | EXT-002（REDESIGN） | 生成で確認 |
 | `AUTHID CURRENT_USER` | 生成物は変わらない | AUTHID-001（REDESIGN） | 単体の routine に書いたものと、package の仕様に書いたもの（本体の routine すべてに当たる）を検出します |
@@ -499,6 +499,8 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `DATE + n`、`DATE - n`、`DATE - DATE` | `Plsql.add` / `Plsql.sub` | なし | 日数の足し引きです。DATE どうしの差は日数（小数つき）です |
 | 単項の `-x` | `Plsql.neg(x)` | なし | |
 | `x IN (...)`、`BETWEEN`、`LIKE`（と `NOT`） | `Plsql.in`、`between`、`like`（`notIn` など） | なし | NULL が絡むと真になりません |
+| `x LIKE p ESCAPE c` | `Plsql.like(x, p, c)`（`notLike`） | なし | 26ai の PL/SQL で測った動き: ESCAPE が NULL なら UNKNOWN、1 文字でない（`''` も）と ORA-06502、エスケープ文字のあとが `%`・`_`・自分以外か、パターンの最後にあると LIKE は偽・NOT LIKE は真（SQL なら ORA-01424）（#140） |
+| 問い合わせ指令 `$$PLSQL_UNIT`、`$$PLSQL_LINE`、`$$flag` | 単位の名前（大文字）の文字列、行番号の数、`limits.yaml` の `conditionalCompilation.flags` の値（無ければ NULL） | なし | `$$PLSQL_LINE` は読み込むときに、単位の中の行番号（`PROCEDURE` などのある行が 1）に置き換えます。桁は空白で埋め、列はずらしません。`$$PLSQL_CCFLAGS` はフラグを 1 つも決めていなければ NULL、決めていれば断ります（Oracle の書き方を再現しない）。ほかの `$$PLSQL_CODE_TYPE` などは移行元の設定なので断ります（#140） |
 | CASE 式 | 三項演算子（`Plsql.eq(p, 1) ? "one" : "many"`） | なし | 生成で確認 |
 | 文字列を NUMBER に代入 | `Plsql.dec(...)` | なし | 数値にならないと ORA-06502（`Plsql.ValueError`） |
 | 日付・TIMESTAMP を書式なしで文字にする（`'d=' \|\| d`、`TO_CHAR(d)`） | `Plsql.concat` / `Plsql.text` が Oracle の既定（`DD-MON-RR`、AMERICAN）で書く | SEM-012（REVIEW） | 移行元のセッションの NLS 設定までは確かめていません |
@@ -520,17 +522,28 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `UPPER`、`LOWER`、`INITCAP`、`LENGTH`、`SUBSTR`、`INSTR`、`REPLACE`、`LPAD`、`RPAD`、`TRIM`、`LTRIM`、`RTRIM`、`CONCAT`、`CHR`、`ASCII` | 同じ名前の `Plsql` の関数 | なし | NULL と空文字は Oracle と同じに扱います |
 | `TO_CHAR(日付, 書式)` | `Plsql.text(v, 書式)` | 書式に DAY・MON・AM など言語で変わる要素があると SEM-008（REVIEW） | 対応する書式は `YYYY-MM-DD`、`YYYY-MM-DD HH24:MI:SS`、`YYYYMM`、`YYYY` だけです。ほかは実行時に `UnsupportedOperationException` |
 | `TO_NUMBER(v)` | `Plsql.toNumber(v)` | なし | 書式つきの `TO_NUMBER(v, 書式)` は実行時に `UnsupportedOperationException` |
-| `TO_DATE(v, 書式)` | `Plsql.toDate(v, 書式)` | なし | 要素ごとに Oracle と同じ読み方をします（桁の少ない数字、RR の世紀、省いた年月は現在） |
+| `TO_DATE(v, 書式)` | `Plsql.toDate(v, 書式)` | なし | 要素ごとに Oracle と同じ読み方をします（桁の少ない数字、RR の世紀、省いた年月は現在、入力が時刻の要素の前で終わるのは可・日付の要素の前で終わると ORA-01840）。読めないときは Oracle と同じ番号の `Plsql.FunctionError`（ORA-01830・01841・01843・01847・01839・01850・01849・01851・01852・01855・01858）で、VALUE_ERROR では捕まりません。WHEN OTHERS では `SQLCODE` がその番号になります（#140。以前は ORA-06502） |
+| `TO_TIMESTAMP(v[, 書式])` | `Plsql.toTimestamp(v, 書式)` | なし | TO_DATE の読み方に `FF` / `FFn`（小数秒。桁が多いと ORA-01830）と `X`（小数点）を足したもの。書式を省くと `DD-MON-RR HH.MI.SSXFF AM`（#140） |
 | `ADD_MONTHS`、`LAST_DAY` | `Plsql.addMonths`、`lastDay` | なし | |
+| `MONTHS_BETWEEN(d1, d2)` | `Plsql.monthsBetween` | なし | 同じ日か両方が月末なら整数（時刻は無視）、ほかは 31 日を 1 か月とした小数を NUMBER と同じ 40 桁に丸めます。規則は実行計画の H2 が使う `OracleFunctions.monthsBetween` と共有します。TIMESTAMP は秒未満を落とし、文字は TO_DATE の既定の書式で読みます（#140） |
+| `EXTRACT(field FROM d)` | `Plsql.extract("YEAR", d)` | なし | YEAR・MONTH・DAY・HOUR・MINUTE・SECOND（小数つき）と、WITH TIME ZONE の TIMEZONE_HOUR・TIMEZONE_MINUTE。WITH TIME ZONE の日時の field は Oracle と同じく UTC のものです。INTERVAL（日時の差）からの EXTRACT は、生成コードでは差が日数なので断ります。TIMEZONE_REGION / ABBR も断ります（#140） |
+| `NULLIF(a, b)` | `Plsql.nullif` | なし | 比較は `=` と同じ（`NULLIF('1', 1)` は NULL、数値にならない文字は ORA-06502）（#140） |
+| `LENGTHB(s)` | `Plsql.lengthb` | なし | データベースの文字集合が AL32UTF8 である前提で、UTF-8 のバイト数を数えます（'日本a' は 7）。ほかの文字集合の移行元では値が変わります（#140） |
+| `TRANSLATE(s, from, to)` | `Plsql.translate` | なし | 文字（コードポイント）ごとの置き換え。`to` に対応の無い文字は消え、引数のどれかが NULL（`''` も）なら NULL（#140） |
+| `BITAND(a, b)` | `Plsql.bitand` | なし | 整数部（切り捨て）どうしの 2 の補数のビット積。-2^127〜2^127-1 の外は ORA-06502（#140） |
+| `RAWTOHEX(r)`、`HEXTORAW(s)` | `Plsql.rawToHex`、`Plsql.hexToRaw`（RAW は `byte[]`） | なし | PL/SQL の意味です。PL/SQL の `RAWTOHEX('ab')` は文字を 16 進として読んで 'AB'（SQL では文字のバイトで '6162'）。16 進でない文字は ORA-06502。奇数桁は先頭に 0 を足します。RAW を文字にすると大文字の 16 進、RAW どうしの `=` はバイトの比較です（#140） |
+| `REGEXP_LIKE`、`REGEXP_SUBSTR`、`REGEXP_REPLACE`、`REGEXP_INSTR`、`REGEXP_COUNT` | `Plsql.regexpLike` など。パターンは実行時に `OracleRegex` が Java の正規表現に訳す | なし | Oracle の方言に合わせます: POSIX の文字クラス（`[[:digit:]]` など。Unicode の文字も含む）、括弧式の中の `\` は文字そのもの、`\n` `\t` `\Q` などは文字そのもの、前に何も無い `*` は無視、区間でない `{` は文字、改行は LF だけ、`'x'` は括弧の外の空白だけを消す、`'i'` でも `[[:upper:]]` / `[[:lower:]]` は大文字小文字を区別、置換文字列の後方参照は `\1`〜`\9`（`$1` は文字）。数の引数は四捨五入し、範囲外は ORA-01428、誤ったパターンは ORA-12725〜12732、誤った match_parameter は ORA-01760。等価クラス `[[=e=]]`、`(?` で始まる括弧、量指定子の重ね（`a*+`）は Oracle と同じ意味にできないので、実行時に `UnsupportedOperationException` を投げます。REGEXP_LIKE は NULL を取る条件です（#140） |
 | `SYSDATE` | `Plsql.sysdate()` | 1 つの routine で時計を 2 回以上読むと SEM-007（REVIEW） | 時計は `Plsql.setClock` で差し替えられます。宣言部の初期値（`v DATE := SYSDATE`）で読んだ分も回数に入ります |
 | `SYSTIMESTAMP` | `audit.now()`（引数に `AuditContext audit` が足される） | 列へ書くと SEM-010（REVIEW） | `OffsetDateTime` を返します。TIMESTAMP の戻り値・変数へは `Plsql.moment(audit.now())`、DATE へは `Plsql.castDate(audit.now())` で入れます。Oracle と同じく、値の持つタイムゾーン（呼び出し側が渡す時計のもの。移行元ではデータベースサーバーの OS のもの）での日時を残してゾーンを落とし、DATE は秒未満も落とします。この向きの変換にはセッションのタイムゾーンは関わりません（生成で確認） |
 | `USER` | `audit.user()` | なし | 何を記録するかは業務の決定です（`AuditContext` は呼び出し側が渡します） |
 | `seq.NEXTVAL` | `sequences.next("seq")`（Repository が `Sequences` を受け取る） | なし | 採番は業務とは別のトランザクションで取ります。方式は DDL の `CACHE`（hi/lo）/ `NOCACHE`（counters 表と再試行）から決まります |
 | `SQLCODE`、`SQLERRM`、`SQLERRM(n)` | 例外の節を参照 | | |
 | `CURRENT_DATE`、`CURRENT_TIMESTAMP`、`LOCALTIMESTAMP`、`AT TIME ZONE` | 変換しない | SEM-002（REVIEW） | セッションのタイムゾーンで値が変わります |
-| `SYS_GUID` | 変換しない | SEM-014（REVIEW） | |
+| `SYS_GUID()` | `Plsql.sysGuid()`（16 バイトの `byte[]`） | SEM-014（REVIEW） | 値は乱数（`SecureRandom`）です。Oracle はホストとプロセスと連番から作ります。どちらにするかは移行先で決めます（#140） |
 | `SYS_CONTEXT` | 変換しない | SEM-013（REDESIGN） | |
-| `DECODE`、`MONTHS_BETWEEN`、`RAWTOHEX`、`REGEXP_*`、`NULLIF`、`EXTRACT`、`TO_TIMESTAMP` など、対応表に無い関数 | 変換しない（`UnsupportedOperationException`） | ルールは下がらない | 判定は下がらないので、`AUTO but not cleanly generated` で気づきます。DECODE は Oracle でも PL/SQL の式では使えません |
+| `DECODE`、`DUMP` | 変換しない（`UnsupportedOperationException`） | ルールは下がらない | Oracle でも PL/SQL の式では使えません（PLS-00204）。理由をそう書いて断ります（#140） |
+| `SYS.STANDARD.BITAND(...)` など `SYS.STANDARD.` / `STANDARD.` を付けた組み込み | 付けない名前と同じ | なし | 同じ名前の package の関数が組み込みを隠しているときの書き方です。解析の範囲に無い routine の呼び出し（CALL-001）にも数えません（#140） |
+| 対応表に無い関数（`SOUNDEX`、`NUMTODSINTERVAL`、`TO_CHAR` の書式つき、`TO_NUMBER` の書式つきなど） | 変換しない（`UnsupportedOperationException`） | ルールは下がらない | 判定は下がらないので、`AUTO but not cleanly generated` で気づきます |
 
 ### 制御構造
 
@@ -835,7 +848,9 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `SQL%BULK_EXCEPTIONS` | 同上 | 判定は下がらない | |
 | `DBMS_SQL`（定数の問合せ以外） | 同上 | DYN-003 | |
 | とりうる文を数えられない `EXECUTE IMMEDIATE` | 同上 | DYN-002 / DYN-001 | 宣言部の初期値で組んだ文字列も含みます |
-| 対応表に無い組み込み関数（`MONTHS_BETWEEN`、`SYS_GUID` など） | `UnsupportedOperationException` | 関数による | 組み込み関数の節を参照 |
+| 対応表に無い組み込み関数（`SOUNDEX`、`NUMTODSINTERVAL` など）、PL/SQL では使えない `DECODE` / `DUMP` | `UnsupportedOperationException` | 関数による | 組み込み関数の節を参照 |
+| INTERVAL 型と、日時の差からの `EXTRACT` | `UnsupportedOperationException` | 判定は下がらない | 生成コードでは日時の差が日数（数値）です |
+| Oracle と同じ意味にできない正規表現（等価クラス `[[=e=]]`、`(?` で始まる括弧、量指定子の重ね） | 実行時に `UnsupportedOperationException` | 判定は下がらない | パターンは実行時に訳すので、生成時には分かりません |
 | `TO_CHAR` の 4 つ以外の書式、書式つき `TO_NUMBER` | 実行時に `UnsupportedOperationException` | 書式による | |
 | 式の中の function 呼び出しで、式の既定値（`DEFAULT SYSDATE` など）の引数を省く | 同上 | 判定は下がらない | リテラルの既定値は補います |
 | 別の package の変数の直接参照（`pkg.var`） | `UnsupportedOperationException` | STATE-001 | `packageState.carried` を書いても断ります |

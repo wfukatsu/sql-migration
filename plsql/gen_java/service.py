@@ -436,6 +436,10 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
              "SQL%FOUND": "(rowCount > 0)", "sql%found": "(rowCount > 0)",
              # SQL%BULK_ROWCOUNT(i): a collection the FORALL fills, element by element (#51)
              "sql%bulk_rowcount#collection": "bulkRowCount"}
+    if module is not None:
+        # `$$PLSQL_UNIT` is the unit's name as Oracle stores it, upper case for an unquoted one (#140)
+        unit = module.name[1:-1] if module.name.startswith('"') else module.name.upper()
+        names["$$plsql_unit"] = '"' + unit.replace("\\", "\\\\").replace('"', '\\"') + '"'
     # trigger の相関名。`:NEW.status` は文が走る前から Java が値として持っているもので、
     # cursor FOR ループの行と同じ扱いになる（#10 / #12）
     for variable, bind in correlation_row(routine).items():
@@ -520,9 +524,14 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
         # to every routine; leaving them out reports real names as unknown
         # a package-level variable is session state (STATE-001): there is no field to assign, so a reference
         # is reported rather than compiled against nothing (#40). Constants and a trigger's locals stay
+        # A constant whose value is an expression (`gc_line_feed CONSTANT VARCHAR2(1) := chr(10)`) has no field
+        # (`_constants`): its name stays unknown and the statement reading it is refused, where it compiled into a
+        # reference to nothing (Logger, found while generating its routines for #140)
         names.update({d.name: java_name(d.name) for d in module.declarations
                       if d.declaration_kind != "type"
-                      and not (module.module_kind == "package" and d.declaration_kind == "variable")})
+                      and not (module.module_kind == "package" and d.declaration_kind == "variable")
+                      and not (module.module_kind == "package" and d.declaration_kind == "constant"
+                               and not (d.initial and _LITERAL.match(d.initial.strip())))})
     # #48: a function of another module inside an expression: `emp_api.hire(...)` -> `empApi.hire(...)`. The
     # service is injected (trigger_services). One with OUT / IN OUT arguments -- a carried package variable
     # (#46) included -- hands values back in a result record, which an expression has nowhere to put, so it is
@@ -827,9 +836,14 @@ def _guarded(file: JavaFile, handlers: list[M.ExceptionHandler], body: list[M.St
     classes = {name: class_of(name, routine, _MODULE.get(), program=_PROGRAM.get())
                for name in names if name != "OTHERS"}
     raised = []
+    # only a body that calls one of the functions raising it can see a FunctionError (#140)
+    function_errors = any(_FUNCTION_ERRORS.search(text) for s in _walk(body) for text in _expression_texts(s))
     for oracle, helper, code in _HELPER_ERRORS:
+        if helper == "FunctionError" and not function_errors:
+            continue
         # the class the handler names for this number: the predefined one, or a declared exception bound to it
-        migrated = next((cls for name, (bound, cls) in sorted(classes.items()) if bound == code), None)
+        migrated = next((cls for name, (bound, cls) in sorted(classes.items()) if code is not None and bound == code),
+                        None)
         if migrated is None and "OTHERS" in names:
             # an error without a predefined name (ORA-01426, ORA-06503) reaches OTHERS as the base class
             migrated = PREDEFINED[oracle][0] if oracle else "MigratedException"
@@ -850,7 +864,8 @@ def _guarded(file: JavaFile, handlers: list[M.ExceptionHandler], body: list[M.St
         # becomes cannot shadow a local (`size`, the old name for VALUE_ERROR, could)
         with file.block(f"catch (Plsql.{helper} raised_)") as translated:
             if migrated == "MigratedException":
-                translated.line(f"throw new MigratedException({code}, raised_.getMessage());")
+                translated.line(f"throw new MigratedException({'raised_.code()' if code is None else code}, "
+                                f"raised_.getMessage());")
             else:
                 translated.line(f"throw new {migrated}(raised_.getMessage());")
 
@@ -869,7 +884,11 @@ _HELPER_ERRORS = (("ZERO_DIVIDE", "ZeroDivide", -1476),
                   (None, "NoReturn", -6503),
                   # a repository's write of a value too long or too precise for its column (#115)
                   (None, "ValueTooLarge", -12899),
-                  (None, "PrecisionTooLarge", -1438))
+                  (None, "PrecisionTooLarge", -1438),
+                  # a SQL function's own error, its number on the exception (TO_DATE's ORA-01843, REGEXP_SUBSTR's
+                  # ORA-01428, ...): none has a predefined name, so only OTHERS catches it (#140)
+                  (None, "FunctionError", None))
+_FUNCTION_ERRORS = re.compile(r"\b(?:TO_DATE|TO_TIMESTAMP|REGEXP_(?:LIKE|SUBSTR|REPLACE|INSTR|COUNT))\s*\(", re.IGNORECASE)
 
 
 # 移行先では起こりえない Oracle の誤り。いまのところ行ロックが取れないこと（ORA-54）だけである

@@ -24,6 +24,8 @@ AUDIT_IMPORT = "com.scalar.migrate.plsql.AuditContext"
 
 TOKEN = re.compile(r"""
     (?P<string>'(?:[^']|'')*')
+  | (?P<comment>--[^\n]*|/\*.*?\*/)
+  | (?P<inquiry>\$\$[A-Za-z_][\w$#]*)
   | (?P<quoted>"[^"]+")
   | (?P<number>\d+(?:\.\d+)?)
   | (?P<bind>:[A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)?)
@@ -31,7 +33,7 @@ TOKEN = re.compile(r"""
   | (?P<name>[A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)*)
   | (?P<op><=|>=|<>|!=|~=|\^=|\|\||:=|[-+*/(),=<>%])
   | (?P<space>\s+)
-""", re.VERBOSE)
+""", re.VERBOSE | re.DOTALL)
 
 COMPARISONS = {"=": "eq", "<>": "ne", "!=": "ne", "~=": "ne", "^=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"}
 # Oracle built-ins the helper covers. Anything else is reported, not invented.
@@ -50,7 +52,33 @@ FUNCTIONS = {
     "SQRT": f"{HELPER}.sqrt", "CEIL": f"{HELPER}.ceil", "FLOOR": f"{HELPER}.floor", "SIGN": f"{HELPER}.sign",
     "CHR": f"{HELPER}.chr", "ASCII": f"{HELPER}.ascii", "TO_DATE": f"{HELPER}.toDate",
     "ADD_MONTHS": f"{HELPER}.addMonths", "LAST_DAY": f"{HELPER}.lastDay",
+    # #140, each measured on Oracle 26ai for NULL, its boundaries and the ORA number it raises (PlsqlBuiltinsTest).
+    # EXTRACT is read by its own rule (`_extract`), not as a call
+    "NULLIF": f"{HELPER}.nullif", "MONTHS_BETWEEN": f"{HELPER}.monthsBetween", "TO_TIMESTAMP": f"{HELPER}.toTimestamp",
+    "LENGTHB": f"{HELPER}.lengthb", "TRANSLATE": f"{HELPER}.translate", "BITAND": f"{HELPER}.bitand",
+    # PL/SQL's RAWTOHEX reads a text argument as hex, where SQL's writes its bytes: the helper is the PL/SQL one
+    "RAWTOHEX": f"{HELPER}.rawToHex", "HEXTORAW": f"{HELPER}.hexToRaw",
+    # a value that differs on every call: SEM-014 keeps the routine REVIEW until the migration decides its source
+    "SYS_GUID": f"{HELPER}.sysGuid",
+    # Oracle's regular expressions, translated to java.util.regex at run time (OracleRegex). REGEXP_LIKE is a
+    # condition: it returns a Boolean that is NULL when an argument is, like a BOOLEAN function
+    "REGEXP_LIKE": f"{HELPER}.regexpLike", "REGEXP_SUBSTR": f"{HELPER}.regexpSubstr",
+    "REGEXP_REPLACE": f"{HELPER}.regexpReplace", "REGEXP_INSTR": f"{HELPER}.regexpInstr",
+    "REGEXP_COUNT": f"{HELPER}.regexpCount",
 }
+
+# SQL functions PL/SQL does not have: a PL/SQL expression calling one does not compile (PLS-00204, measured on 26ai).
+# Refused with that reason rather than as an unknown name
+SQL_ONLY = {"DECODE", "DUMP"}
+
+# `EXTRACT(field FROM x)`: the fields of a DATE / TIMESTAMP [WITH TIME ZONE] the helper reads (#140)
+EXTRACT_FIELDS = {"YEAR", "MONTH", "DAY", "HOUR", "MINUTE", "SECOND", "TIMEZONE_HOUR", "TIMEZONE_MINUTE"}
+
+# the predefined inquiry directives (`$$PLSQL_CODE_TYPE`, ...) whose value is a setting of the source database the
+# migration does not see. `$$PLSQL_UNIT` comes from the scope, `$$PLSQL_LINE` from the preprocessor (#140)
+PREDEFINED_INQUIRY = {"plsql_code_type", "plsql_debug", "plsql_optimize_level", "plsql_warnings",
+                      "plscope_settings", "nls_length_semantics", "plsql_unit_owner", "plsql_unit_type",
+                      "permit_92_wrap_format", "plsql_ccflags", "plsql_line", "plsql_unit"}
 
 # Values, not calls. SYSDATE is the database clock, which is not the JVM clock -- the helper takes it from the
 # caller so that a generated routine is testable and the difference stays visible.
@@ -139,7 +167,9 @@ def _tokens(text: str) -> list[tuple[str, str]]:
         if kind == "quoted":
             # a quoted identifier is a name: under the key that says which name it is (#72)
             out.append(("name", plsql_identity(match.group())))
-        elif kind != "space":
+        elif kind not in ("space", "comment"):
+            # a comment inside an expression that runs over several lines (`substr(l_str, 1, -- why\n ...)`) is
+            # not part of it; its words were read as names
             out.append((kind, match.group()))
         position = match.end()
     return out
@@ -293,7 +323,12 @@ class _Parser:
             return self._predicate(negated != negate, "between", "notBetween", f"{left}, {low}, {high}")
         if self.at_word("LIKE"):
             self.take()
-            return self._predicate(negated != negate, "like", "notLike", f"{left}, {self.parse_concat()}")
+            pattern = self.parse_concat()
+            if self.at_word("ESCAPE"):
+                # the escape character: NULL makes it UNKNOWN, more than one character is ORA-06502 (#140)
+                self.take()
+                return self._predicate(negated != negate, "like", "notLike", f"{left}, {pattern}, {self.parse_concat()}")
+            return self._predicate(negated != negate, "like", "notLike", f"{left}, {pattern}")
         if negated:
             self.result.unknown.append("NOT")
             return f"!({left})"
@@ -499,6 +534,8 @@ class _Parser:
             if value == "||" or (kind == "op" and (value in COMPARISONS or value in self.ARITHMETIC)) \
                     or (kind == "name" and value.upper() in ("AND", "OR", "IS", "NOT", "IN", "BETWEEN",
                                                              "LIKE", "WHEN", "THEN", "ELSE", "END",
+                                                             # `x LIKE p ESCAPE c` (#140)
+                                                             "ESCAPE",
                                                              # `CAST(x AS DATE)` の区切り。PL/SQL の式に
                                                              # `AS` が現れるのはここだけである
                                                              "AS")):
@@ -519,7 +556,8 @@ class _Parser:
                 continue
             if kind == "name" and self.position + 1 < len(self.tokens) \
                     and self.tokens[self.position + 1][1] == "(":
-                out.append(self._cast() if value.upper() == "CAST" else self._call())
+                special = {"CAST": self._cast, "EXTRACT": self._extract}.get(value.upper())
+                out.append(special() if special is not None and value.lower() not in self.scope else self._call())
                 continue
             if kind == "attribute" and self.position + 1 < len(self.tokens) \
                     and self.tokens[self.position + 1][1] == "(":
@@ -567,6 +605,43 @@ class _Parser:
             self.take()
         self.result.imports.add(HELPER_IMPORT)
         return f"{HELPER}.{mapped}({value})"
+
+    def _extract(self) -> str:
+        """`EXTRACT(YEAR FROM d)` (#140): the field is a keyword and `FROM` a separator, so it is not an argument list.
+
+        An INTERVAL is refused: the difference of two datetimes is a number of days in the generated code where
+        Oracle has an INTERVAL DAY TO SECOND, and reading its fields out of the number would be wrong -- in Oracle
+        a DATE difference is a NUMBER, and EXTRACT of one does not compile."""
+        start = self.position
+        self.take()   # EXTRACT
+        self.take()   # (
+        field = self.take()[1].upper() if self.peek() is not None else ""
+        if not self.at_word("FROM") or field not in EXTRACT_FIELDS:
+            self.position = start
+            self.result.unknown.append(f"EXTRACT({field} FROM ...): この field は読まない")
+            return self._skip_call()
+        self.take()   # FROM
+        value = self.parse_or()
+        if self.peek() is not None and self.peek()[1] == ")":
+            self.take()
+        if value.lstrip("(").startswith(f"{HELPER}.sub(") or re.search(r"\bINTERVAL\b", value, re.IGNORECASE):
+            self.result.unknown.append("EXTRACT(... FROM INTERVAL): INTERVAL 型（日時の差）はまだ模していない")
+        self.result.imports.add(HELPER_IMPORT)
+        return f'{HELPER}.extract("{field}", {value})'
+
+    def _skip_call(self) -> str:
+        """Past a call that was refused: the name and its balanced parentheses."""
+        name = self.take()[1]
+        depth = 0
+        while self.peek() is not None:
+            value = self.take()[1]
+            if value == "(":
+                depth += 1
+            elif value == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+        return name
 
     def _call(self) -> str:
         """A call's arguments are values, not the spine of a condition: `IF f(p_id) = 0` must pass `p_id`, not
@@ -753,6 +828,8 @@ class _Parser:
         return mapped
 
     def _atom(self, kind: str, value: str) -> str:
+        if kind == "inquiry":
+            return self._inquiry(value)
         if kind == "bind":
             # `:NEW.col` / `:OLD.col` in a trigger, or a host variable. 以前はどちらも Java に相当する
             # ものが無いとして拒んでいた。#12 が trigger の行について答えを決めた——**呼び出し側が
@@ -784,6 +861,33 @@ class _Parser:
             return self._name(value)
         return value
 
+    def _inquiry(self, value: str) -> str:
+        """`$$PLSQL_UNIT` and a PLSQL_CCFLAGS flag (`$$logger_debug`) in an expression (#140). A flag is what
+        limits.yaml `conditionalCompilation.flags` says the source database compiled with, NULL when it says
+        nothing -- the same assumption the `$IF` the preprocessor resolved made. `$$PLSQL_LINE` was written as the
+        number by the preprocessor. The other predefined ones are settings this does not see."""
+        from ..conditional import settings
+
+        name = value[2:].lower()
+        if name == "plsql_unit" and "$$plsql_unit" in self.scope:
+            return self.scope["$$plsql_unit"]
+        flags = settings().flags
+        if name == "plsql_ccflags" and not flags:
+            return "(String) null"   # no flag declared: PLSQL_CCFLAGS is empty, which is NULL
+        if name in PREDEFINED_INQUIRY:
+            self.result.unknown.append(f"{value}: 移行元のコンパイル設定で、この解析からは見えない")
+            return value
+        flag = flags.get(name)
+        if flag is None:
+            return "null"
+        if isinstance(flag, bool):
+            return "true" if flag else "false"
+        if isinstance(flag, (int, float)):
+            number = int(flag) if float(flag).is_integer() else flag
+            return f'new java.math.BigDecimal("{number}")'
+        self.result.unknown.append(f"{value}: {flag!r} は BOOLEAN / PLS_INTEGER / NULL ではない")
+        return value
+
     def _event_of_column(self) -> str:
         """`UPDATING('SALARY')`: whether this UPDATE sets salary is known where the trigger is called, so the
         writer passes it as the BOOLEAN argument `UPDATING_SALARY` (`plsql.triggers.event_of_column`)."""
@@ -802,6 +906,16 @@ class _Parser:
     def _name(self, value: str) -> str:
         upper = value.upper()
         following = self.peek()[1] if self.peek() is not None else ""
+        for prefix in ("SYS.STANDARD.", "STANDARD."):
+            # `sys.standard.bitand(p_x, p_y)`: the built-in itself, named past a package function that hides it
+            if upper.startswith(prefix) and upper[len(prefix):] in FUNCTIONS and value.lower() not in self.scope:
+                value, upper = value[len(prefix):], upper[len(prefix):]
+                if following == "(":
+                    self.result.imports.add(HELPER_IMPORT)
+                    return FUNCTIONS[upper]
+        if upper in SQL_ONLY and following == "(" and value.lower() not in self.scope:
+            self.result.unknown.append(f"{value}: PL/SQL の式では使えない SQL 関数（PLS-00204）")
+            return value
         if upper in ("NULL", "TRUE", "FALSE"):
             return upper.lower()
         if upper in VALUES:
