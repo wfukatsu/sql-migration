@@ -693,8 +693,13 @@ public final class Plsql {
     return plsInteger(num(value).setScale(0, java.math.RoundingMode.HALF_UP)).intValue();
   }
 
+  /**
+   * A value going into a NUMBER(10..18) local (a Long here): Oracle rounds a fraction half away from zero, as
+   * {@link #toInt} does. {@code longValueExact} threw on 2.5, and a RETURNING of a NUMBER(10) column written with
+   * {@code p_id} (#110) goes through here before {@link #fitLong}.
+   */
   public static Long toLong(Object value) {
-    return isNull(value) ? null : num(value).longValueExact();
+    return isNull(value) ? null : num(value).setScale(0, java.math.RoundingMode.HALF_UP).longValueExact();
   }
 
   /** `SQLERRM` inside a handler: Oracle's text is `ORA-nnnnn: message` (the code is negative in PL/SQL). */

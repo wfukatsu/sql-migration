@@ -288,6 +288,7 @@ CHANGES = {
     "GOTO": (MEANING, "GOTO は生成しない。制御の流れを組み直す"),
     "UNSUPPORTED_CONSTRUCT": (MEANING, "下ろせない構文（入れ子のサブプログラムなど）がある。この routine は生成されない"),
     "DBMS_SQL_DYNAMIC": (MEANING, "DBMS_SQL の文が実行時に決まるので下ろせない。流れた文を集めて専用の Repository にする"),
+    "RETURNING_NOT_HOISTED": (MEANING, "RETURNING を書く値の代入にできなかった（列の型・BEFORE trigger・複数行）。この文は変換されない"),
     "SQL_PARSE": (MEANING, "SQL を解析できなかった。この文は変換されない"),
     # ファイル単位の問題。文には付かないが、付いたときに「未分類」で埋もれないよう表に置く
     "PARSE": (MEANING, "ファイルを PL/SQL として解析できなかった"),
@@ -300,7 +301,7 @@ CHANGES = {
     "RMW_SPLIT": (SHAPE, "SET col = col ± x を、読んでからアプリで計算して書く 2 文に割った"),
     "IDENTITY_FILLED": (SHAPE, "IDENTITY 列を INSERT に足し、Sequences から採番する"),
     "DEFAULT_FILLED": (SHAPE, "DDL の DEFAULT 句を持つ列を INSERT に足した（省くと移行先では NULL になる）"),
-    "RETURNING_HOISTED": (SHAPE, "INSERT の RETURNING を、書く値の代入に変えた"),
+    "RETURNING_HOISTED": (SHAPE, "INSERT の RETURNING を、列の型の変数に入れて書き、INSERT の後で返す形に変えた"),
     "TRIGGER_FOLDED": (SHAPE, "trigger の :NEW への代入を、書く値に畳み込んだ"),
     "CALL_HOISTED": (SHAPE, "OUT 引数のある関数の呼び出しを、式の中から文に出した"),
     "MERGE_SPLIT": (SHAPE, "MERGE を、読んでから UPDATE か INSERT を選ぶ形に割った"),

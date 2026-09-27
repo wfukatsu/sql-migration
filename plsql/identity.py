@@ -24,7 +24,7 @@ from sqlglot import exp
 
 from .ir import model as M
 from .lower import _walk
-from .symbols import OracleSchema
+from .symbols import OracleSchema, Symbol, SymbolTable
 
 
 def sequence_name(table: str, column: str) -> str:
@@ -35,79 +35,178 @@ RETURNING_INTO = re.compile(r"\s+RETURNING\s+(?P<columns>.+?)\s+INTO\s+(?P<targe
                             re.IGNORECASE | re.DOTALL)
 
 
-def rewrite(program: M.Program, schema: OracleSchema | None) -> None:
+def rewrite(program: M.Program, schema: OracleSchema | None, symbols: SymbolTable | None = None) -> None:
+    from .triggers import registry
+
+    triggers = registry(program)
     for module in program.modules:
         for routine in module.routines:
-            routine.body = _sequence(routine.body, schema)
+            before = len(routine.declarations)
+            routine.body = _sequence(routine.body, schema, routine, triggers)
             for handler in routine.exception_handlers:
-                handler.body = _sequence(handler.body, schema)
+                handler.body = _sequence(handler.body, schema, routine, triggers)
+            declare(symbols, routine, routine.declarations[before:])
 
 
-def _sequence(statements: list[M.Statement], schema: OracleSchema | None) -> list[M.Statement]:
+def _sequence(statements: list[M.Statement], schema: OracleSchema | None, routine: M.Routine | None = None,
+              triggers: dict | None = None) -> list[M.Statement]:
     out: list[M.Statement] = []
     for statement in statements:
         for attribute in ("body", "else_body"):
             nested = getattr(statement, attribute, None)
             if nested:
-                setattr(statement, attribute, _sequence(nested, schema))
+                setattr(statement, attribute, _sequence(nested, schema, routine, triggers))
         for branch in getattr(statement, "branches", []) or []:
-            branch.body = _sequence(branch.body, schema)
+            branch.body = _sequence(branch.body, schema, routine, triggers)
         for handler in getattr(statement, "exception_handlers", []) or []:
-            handler.body = _sequence(handler.body, schema)
+            handler.body = _sequence(handler.body, schema, routine, triggers)
+        after: list[M.Statement] = []
         if statement.kind == "SqlOperation" and (statement.sql_kind or "").upper() == "INSERT":
-            out.extend(_returned(statement))
+            before, after = _returned(statement, routine, schema, triggers)
+            out.extend(before)
             if schema is not None and (schema.identity or schema.defaults):
                 _fill(statement, schema)
         out.append(statement)
+        out.extend(after)
     return out
 
 
-def _returned(statement: M.SqlOperation) -> list[M.Statement]:
-    """`INSERT ... VALUES (seq.NEXTVAL, ...) RETURNING id INTO v_id`: the value the row got is one the writer
-    computed, so take it before the INSERT and write it in (ScalarDB SQL has no RETURNING).
+# The column types whose conversion on the way into the row the generated code reproduces when the value goes into
+# a local declared with that type (`gen_java.service._constrain`): NUMBER(p,s) rounds half-up to the scale, CHAR(n)
+# pads with blanks, and both refuse a value past the size (#110). Anything else -- DATE (drops the fraction of a
+# second), TIMESTAMP(p), NVARCHAR2 (a length in characters the helper would count as bytes), FLOAT -- is not
+# claimed: the RETURNING stays, and the statement a refusal
+STORED = re.compile(r"^\s*(?:(?:NUMBER|NUMERIC|DECIMAL)\s*(?:\(\s*\d+\s*(?:,\s*\d+\s*)?\))?|INTEGER|INT|SMALLINT"
+                    r"|(?:VARCHAR2|VARCHAR)\s*\(\s*\d+\s*(?:CHAR|BYTE)?\s*\)|N?CHAR\s*\(\s*\d+\s*(?:CHAR|BYTE)?\s*\))\s*$",
+                    re.IGNORECASE)
+RETURNED = "v_ret_"
 
-        v_id := seq.NEXTVAL;
-        INSERT ... VALUES (v_id, ...);
+
+def stored_type(schema: OracleSchema | None, table: str | None, column: str) -> str | None:
+    """The column's declared type when the value the row stores can be computed from it, else None (#110)."""
+    declared = schema.column(table, column) if schema is not None and table else None
+    return declared if declared and STORED.match(declared) else None
+
+
+def trigger_writing(triggers: dict | None, table: str | None, event: str, columns: list[str]) -> str | None:
+    """The BEFORE trigger on `table` that assigns `:NEW.<column>` for one of `columns` on `event`, if any (#110).
+
+    RETURNING gives the value the row was stored with, and such a trigger changes it after the writer computed it.
+    Folding the trigger (`triggers.rewrite`) comes later and changes the written value, not the returned one."""
+    from .lower import _walk
+    from .triggers import CORRELATION
+
+    wanted = {c.lower() for c in columns}
+    for trigger in (triggers or {}).get((table or "").lower(), []):
+        if trigger.timing != "BEFORE" or event not in trigger.events:
+            continue
+        statements = _walk(trigger.routine.body) + [s for h in trigger.routine.exception_handlers
+                                                    for s in _walk(h.body)]
+        for statement in statements:
+            written = [statement.target or ""] if statement.kind == "Assignment" else []
+            # INTO, and an argument a procedure may write through (OUT / IN OUT)
+            written += list(getattr(statement, "into_targets", None) or [])
+            written += list(getattr(statement, "arguments", None) or []) if statement.kind == "Call" else []
+            for text in written:
+                for match in CORRELATION.finditer(text):
+                    if match.group("qualifier").upper() == "NEW" and match.group("column").lower() in wanted:
+                        return trigger.routine.id
+    return None
+
+
+def returned_local(routine: M.Routine, stored: str, statement: M.Statement) -> M.Declaration:
+    """A new local of the column's type, holding the value written: assigning to it applies the column's
+    conversion, and the RETURNING targets read it after the write (#110)."""
+    used = {d.name.lower() for d in routine.declarations} | {p.name.lower() for p in routine.parameters}
+    index = 1
+    while f"{RETURNED}{index}" in used:
+        index += 1
+    declaration = M.Declaration(id=f"{routine.id}#decl-{RETURNED}{index}", kind="Declaration",
+                                name=f"{RETURNED}{index}", source_range=statement.source_range,
+                                type=M.TypeRef(oracle=stored, resolved=stored, origin="column-type"))
+    routine.declarations.append(declaration)
+    return declaration
+
+
+def declare(symbols: SymbolTable | None, routine: M.Routine, declarations: list[M.Declaration]) -> None:
+    """Register the locals a rewrite added, so SQL reads them as variables and not as columns."""
+    scope = symbols.scopes.get(routine.id) if symbols else None
+    if scope is None:
+        return
+    for declaration in declarations:
+        scope.declare(Symbol(name=declaration.name, kind="variable", scope=routine.id,
+                             type=declaration.type, source_range=declaration.source_range))
+
+
+def _returned(statement: M.SqlOperation, routine: M.Routine | None, schema: OracleSchema | None,
+              triggers: dict | None = None) -> tuple[list[M.Statement], list[M.Statement]]:
+    """`INSERT ... VALUES (seq.NEXTVAL, ...) RETURNING id INTO v_id`: the value the row got is one the writer
+    computed, so compute it before the INSERT, write it, and hand it to the targets after (ScalarDB SQL has no
+    RETURNING).
+
+        v_ret_1 := seq.NEXTVAL;           -- v_ret_1 is declared with the column's type
+        INSERT ... VALUES (v_ret_1, ...);
+        v_id := v_ret_1;
 
     Only a VALUES expression can be returned this way: it is the value written, whatever it is (a sequence
     read, a parameter, `UPPER(p_email)`). A returned column the VALUES do not spell out (a DEFAULT the fill
     below adds, an INSERT ... SELECT) is left as it was, and the RETURNING stays a refusal. Found with
     samples/oracle-samples `emp_api.hire` (2026-09-25).
+
+    #110: Oracle returns what the row **stored**, not the expression: `p_sal * 1.1` into NUMBER(10,2) comes back
+    rounded, a CHAR(n) padded. The local of the column's type applies that conversion (`stored_type`); a column
+    whose conversion is not reproduced, and a column a BEFORE INSERT trigger assigns, keep the RETURNING. The
+    targets are assigned after the INSERT: when it fails, a handler still sees what they held before. A value
+    past the column's size raises VALUE_ERROR here, where Oracle's INSERT raised ORA-01438 / ORA-12899.
     """
     original = statement.original_sql or ""
     returning = RETURNING_INTO.search(original)
-    if returning is None:
-        return []
+    if returning is None or routine is None:
+        return [], []
     try:
         tree = sqlglot.parse_one(original[:returning.start()], dialect="oracle")
     except Exception:
-        return []
+        return [], []
     if not isinstance(tree, exp.Insert) or not isinstance(tree.this, exp.Schema):
-        return []
+        return [], []
     values = tree.expression
     tuples = values.expressions if isinstance(values, exp.Values) else []
     if len(tuples) != 1 or not isinstance(tuples[0], exp.Tuple):
-        return []
+        return [], []
+    table = tree.this.this.name.lower() if isinstance(tree.this.this, exp.Table) else None
     columns = [c.name.lower() for c in tree.this.expressions]
     row = tuples[0].expressions
     if len(columns) != len(row):
-        return []
+        return [], []
     returned = [c.strip().lower() for c in returning.group("columns").split(",")]
     targets = [t.strip() for t in returning.group("targets").split(",")]
     if len(returned) != len(targets) or any(c not in columns for c in returned):
-        return []
+        return [], []
+    types = [stored_type(schema, table, c) for c in returned]
+    trigger = trigger_writing(triggers, table, "INSERT", returned)
+    if trigger is not None or not all(types):
+        why = (f"BEFORE INSERT trigger {trigger} が {', '.join(returned)} を書き換える" if trigger else
+               f"{table}.{', '.join(c for c, t in zip(returned, types) if not t)} の型では、行に入る値を計算できない")
+        statement.add("WARN", "RETURNING_NOT_HOISTED",
+                      f"RETURNING {', '.join(returned)} INTO {', '.join(targets)} を書く値の代入にしなかった: {why}。"
+                      f"Oracle が返すのは行に入った値である（#110）")
+        return [], []
     before: list[M.Statement] = []
-    for column, target in zip(returned, targets):
+    after: list[M.Statement] = []
+    for column, target, stored in zip(returned, targets, types):
         index = columns.index(column)
+        local = returned_local(routine, stored, statement).name
         before.append(M.Assignment(id=f"{statement.id}returned_{column}", kind="Assignment",
-                                   source_range=statement.source_range, target=target,
+                                   source_range=statement.source_range, target=local,
                                    expression=row[index].sql(dialect="oracle")))
-        row[index].replace(exp.column(target))
+        row[index].replace(exp.column(local))
+        after.append(M.Assignment(id=f"{statement.id}returning_{column}", kind="Assignment",
+                                  source_range=statement.source_range, target=target, expression=local))
     statement.original_sql = tree.sql(dialect="oracle")
     statement.add("INFO", "RETURNING_HOISTED",
                   f"RETURNING {', '.join(returned)} INTO {', '.join(targets)}: 書く値は呼び出し側が計算したものなので、"
-                  f"INSERT の前に代入してその変数を書く（ScalarDB SQL に RETURNING は無い）")
-    return before
+                  f"INSERT の前に列の型の変数へ代入してその変数を書き、INSERT の後で返す（ScalarDB SQL に RETURNING は無い）")
+    return before, after
 
 
 def _fill(statement: M.SqlOperation, schema: OracleSchema) -> None:
