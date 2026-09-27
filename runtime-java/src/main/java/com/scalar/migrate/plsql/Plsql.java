@@ -295,6 +295,23 @@ public final class Plsql {
    *
    * <p>タイムゾーンつきの値からは zone も落ちる。Oracle の DATE が持てないからである。
    */
+  /**
+   * A value read back from a column into a DATE / TIMESTAMP local. A direct read hands over a LocalDateTime; a plan
+   * runs the rest in H2 and hands text back ("2003-06-17 00:00:00"), which a cast turned into a ClassCastException
+   * (oracle-plsql-docs 6-6, a cursor read through a plan).
+   */
+  public static LocalDateTime moment(Object value) {
+    if (isNull(value)) return null;
+    if (value instanceof LocalDateTime moment) return moment;
+    if (value instanceof java.sql.Timestamp moment) return moment.toLocalDateTime();
+    if (value instanceof java.time.OffsetDateTime moment) return moment.toLocalDateTime();
+    if (value instanceof java.time.Instant moment) return LocalDateTime.ofInstant(moment, java.time.ZoneOffset.UTC);
+    if (value instanceof java.time.LocalDate day) return day.atStartOfDay();
+    if (value instanceof java.sql.Date day) return day.toLocalDate().atStartOfDay();
+    String text = value.toString().trim().replace(' ', 'T');
+    return text.length() == 10 ? java.time.LocalDate.parse(text).atStartOfDay() : LocalDateTime.parse(text);
+  }
+
   public static LocalDateTime castDate(Object value) {
     if (isNull(value)) return null;
     if (value instanceof LocalDateTime moment) return moment.withNano(0);
@@ -1385,6 +1402,13 @@ public final class Plsql {
    * `SELECT a, b BULK COLLECT INTO va, vb` (#66): column `index` of every row, as a nested table of `type` -- a
    * NUMBER column read as BigDecimal, an INTEGER one as Integer. No row is an empty collection, not NULL.
    */
+  /** A plan's rows ({@code List<List<Object>>}) as the arrays a direct read hands back (#83). */
+  public static java.util.List<Object[]> arrays(java.util.List<?> rows) {
+    java.util.List<Object[]> out = new java.util.ArrayList<>(rows.size());
+    for (Object row : rows) out.add(row instanceof Object[] a ? a : ((java.util.List<?>) row).toArray());
+    return out;
+  }
+
   public static <T> java.util.List<T> column(java.util.List<Object[]> rows, int index, Class<T> type) {
     java.util.List<T> out = new java.util.ArrayList<>(rows.size());
     for (Object[] row : rows) {

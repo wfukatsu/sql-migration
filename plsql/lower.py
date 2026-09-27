@@ -575,6 +575,11 @@ class _Lowerer:
                     initial = _first(re.search(r":=\s*(.+?);?\s*$", text, re.DOTALL))
                 declared_name = _text(identifier)
                 declared = self._subtype_of(self._type(scope, _text(spec), declared_name)) if spec is not None else None
+                if kind == "type" and self.symbols is not None and scope is not None:
+                    # the TYPE's own shape, as the symbol table resolved it: a constructor of a type no variable is
+                    # declared with (`tv1(3, 5)` inside `ntb2(...)`, 5-12) is known by it (#82)
+                    symbol = self.symbols.resolve(scope, declared_name)
+                    declared = symbol.type if symbol is not None and symbol.kind == "type" else None
                 if declared is not None and kind == "variable" and re.search(r"\bNOT\s+NULL\b", text, re.I):
                     # `acct_id INTEGER(4) NOT NULL := 9999`: a NULL assigned later raises VALUE_ERROR
                     declared = dataclasses.replace(declared, nullable=False)   # a copy: the symbol table's is shared
@@ -835,7 +840,9 @@ class _Lowerer:
                "Open_for_statementContext", "Commit_statementContext", "Rollback_statementContext",
                "Savepoint_statementContext", "Set_transaction_commandContext"}
 
-    COLLECTION_CALL = re.compile(r"^\s*(?P<name>[\w$#]+\.(?:EXTEND|DELETE|TRIM))\s*(?:\((?P<args>.*)\))?\s*;?\s*$",
+    # `vntb1(2).DELETE(1)`: a method of an element that is a collection itself (5-12, #82)
+    COLLECTION_CALL = re.compile(r"^\s*(?P<name>[\w$#]+(?:\s*\([^()]*\))*\s*\.(?:EXTEND|DELETE|TRIM))\s*"
+                                 r"(?:\((?P<args>.*)\))?\s*;?\s*$",
                                  re.IGNORECASE | re.DOTALL)
 
     def _sql_statement(self, context, ids, text, source) -> M.Statement:

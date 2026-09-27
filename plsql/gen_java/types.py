@@ -51,6 +51,34 @@ def object_types() -> dict[str, str]:
     return _OBJECT_TYPES.get()
 
 
+# `TYPE name_rec IS RECORD (...)` by the shape the symbol table resolves it to (#82). A field or an element typed
+# with one is resolved to `RECORD(first VARCHAR2(20), ...)`, which has lost the name -- without this the component
+# was an Object and `friend.name.first` could be neither read nor assigned. Two types of the same shape are left
+# out: which one a field means is not written anywhere
+_RECORD_CLASSES: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("record_classes", default={})
+
+
+def _shape(resolved: str) -> str:
+    return re.sub(r"\s+", "", resolved or "").lower()
+
+
+def set_record_types(types: dict[str, str]) -> None:
+    """{type name: its resolved `RECORD(...)`}."""
+    by_shape: dict[str, str] = {}
+    clashing: set[str] = set()
+    for name, resolved in types.items():
+        key, cls = _shape(resolved), java_class_name(name.rpartition(".")[2])
+        if key in by_shape and by_shape[key] != cls:
+            clashing.add(key)
+        by_shape.setdefault(key, cls)
+    _RECORD_CLASSES.set({k: v for k, v in by_shape.items() if k not in clashing})
+
+
+def record_types() -> dict[str, str]:
+    """{shape: class} of the record types a field or an element can be typed with."""
+    return _RECORD_CLASSES.get()
+
+
 def set_object_package(package: str | None) -> None:
     _OBJECT_PACKAGE.set(package)
 
@@ -76,7 +104,7 @@ class JavaType:
         out = {IMPORTS[part] for part in re.findall(r"\w+", self.name) if part in IMPORTS}
         package = _OBJECT_PACKAGE.get()
         if package:
-            classes = {java_class_name(n) for n in _OBJECT_TYPES.get()}
+            classes = {java_class_name(n) for n in _OBJECT_TYPES.get()} | set(_RECORD_CLASSES.get().values())
             out |= {f"{package}.{part}" for part in re.findall(r"\w+", self.name) if part in classes}
         return out
 
@@ -100,6 +128,8 @@ def java_type(oracle: str | None, *, money: bool = False) -> JavaType:
     record = object_class(written)
     if record is not None:
         return JavaType(record, "TEXT", note="Oracle のオブジェクト型。record として生成する（#54）")
+    if RECORD.match(written) and _shape(written) in _RECORD_CLASSES.get():
+        return JavaType(_RECORD_CLASSES.get()[_shape(written)], "TEXT", note="PL/SQL の RECORD 型（#82）")
 
     number = NUMBER.match(written)
     if number:
