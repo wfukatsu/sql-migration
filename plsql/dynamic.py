@@ -17,6 +17,16 @@ Three rules keep this from claiming more than it knows:
 * **Folding is not clearance.** A folded statement still carries its `USING` binds, and `EXECUTE IMMEDIATE`
   runs with privileges the caller may not have on a static statement (`AUTHID`). Both are recorded as
   diagnostics on the statement, because a reader who sees plain SQL will otherwise assume both were checked.
+* **A guard is evaluated again, so it has to give the same answer.** The generated code picks the variant with
+  the branch conditions, at the EXECUTE IMMEDIATE -- not at the IF that built the string (#107):
+
+      IF n = 0 THEN v_sql := '... sal = 3 ...'; n := 1; ELSE v_sql := '... sal = 4 ...'; END IF;
+      EXECUTE IMMEDIATE v_sql;          -- Oracle runs sal = 3; `if (n == 0)` here picked sal = 4
+
+  So a condition may read only the routine's own parameters and locals (and a few pure built-ins), and nothing
+  on the way from the IF to the EXECUTE may write them -- an assignment, an INTO, an argument of a call, a nested
+  procedure that carries it back. Otherwise the answer is None and the statement stays REVIEW (DYN-002). The same
+  holds for the string itself: written by anything but a plain assignment (`pick(v_sql)`), it is unknown.
 """
 
 from __future__ import annotations
@@ -47,8 +57,11 @@ class Variant:
         return {"guard": self.guard, "sql": self.sql}
 
 
-def enumerate_variants(routine: M.Routine, statement: M.DynamicSql) -> list[Variant] | None:
-    """Every statement `statement` can run, or None when that is not a finite knowable set."""
+def enumerate_variants(routine: M.Routine, statement: M.DynamicSql,
+                       module: M.Module | None = None) -> list[Variant] | None:
+    """Every statement `statement` can run, or None when that is not a finite knowable set.
+
+    `module` names the routines lifted out of this one (#80): a call to one of them writes what it carries back."""
     target = (statement.expression or "").strip()
     if not target:
         return None
@@ -60,11 +73,16 @@ def enumerate_variants(routine: M.Routine, statement: M.DynamicSql) -> list[Vari
         # a person has listed the table names it may take (2026-09-19)
         return _allowed(routine, target)
 
-    states = _trace(routine.body, statement.id, [_State(guard=(), values={})])
+    context = _Context(locals={p.name.lower() for p in routine.parameters}
+                              | {d.name.lower() for d in routine.declarations if d.declaration_kind != "cursor"},
+                       carried=_carried_back(routine, module))
+    states = _trace(routine.body, statement.id, [_State(guard=(), values={})], context)
     if states is None:
         return None
     variants: list[Variant] = []
     for state in states:
+        if state.tainted:
+            return None   # its guard may no longer say what it said when the string was built (#107)
         value = state.values.get(target.lower())
         if value is None:
             return None  # one path leaves the statement unknown, so the set is not knowable
@@ -149,31 +167,127 @@ def _split_concat(expression: str) -> list[str]:
 class _State:
     guard: tuple[str, ...]
     values: dict[str, str]
+    # the variables the guard's conditions read (#107): written after the IF, the guard re-evaluated at the
+    # EXECUTE IMMEDIATE may pick another variant than the one the string was built for
+    watched: frozenset = frozenset()
+    tainted: bool = False
 
-    def fork(self, condition: str | None) -> "_State":
-        return _State(guard=self.guard + ((condition,) if condition else ()), values=dict(self.values))
+    def fork(self, condition: str | None, reads: frozenset = frozenset()) -> "_State":
+        return _State(guard=self.guard + ((condition,) if condition else ()), values=dict(self.values),
+                      watched=self.watched | reads, tainted=self.tainted)
+
+    def written(self, names: set[str], by_assignment: bool = False) -> None:
+        if names & self.watched:
+            self.tainted = True
+        if not by_assignment:
+            # `pick(v_sql)`, `SELECT ... INTO v_sql`: a value this trace cannot follow (#107)
+            for name in names:
+                self.values.pop(name, None)
 
 
-def _trace(statements: list[M.Statement], stop_at: str, states: list[_State]) -> list[_State] | None:
+@dataclass
+class _Context:
+    locals: set[str]
+    carried: dict[str, set[str]]   # a lifted routine's name -> the enclosing variables it hands back
+
+
+# the built-ins a guard may call: they give the same answer for the same arguments, however often they run
+_PURE = {"UPPER", "LOWER", "TRIM", "LTRIM", "RTRIM", "NVL", "NVL2", "COALESCE", "LENGTH", "SUBSTR", "INSTR",
+         "TO_CHAR", "TO_NUMBER", "ABS", "MOD", "ROUND", "TRUNC", "SIGN", "GREATEST", "LEAST", "REPLACE"}
+_WORDS = {"AND", "OR", "NOT", "IS", "NULL", "IN", "BETWEEN", "LIKE", "ESCAPE", "TRUE", "FALSE"}
+_IDENTIFIER = re.compile(r"(?<![\w$#.%])([A-Za-z][\w$#]*)(\s*\()?")
+
+
+def _reads(condition: str | None, context: _Context) -> frozenset | None:
+    """The variables a branch condition reads, or None when it reads something else -- a package variable, a
+    function, SYSDATE -- that the generated code cannot be trusted to evaluate the same way twice (#107)."""
+    text = re.sub(r"'(?:[^']|'')*'", "''", condition or "")
+    if "%" in text or "." in text:
+        return None   # SQL%FOUND, c%ROWCOUNT, pkg.var, r.field: not a local read the trace can follow
+    names = set()
+    for match in _IDENTIFIER.finditer(text):
+        word = match.group(1)
+        if word.upper() in _WORDS:
+            continue
+        if match.group(2):
+            if word.upper() not in _PURE:
+                return None
+            continue
+        if word.lower() not in context.locals:
+            return None
+        names.add(word.lower())
+    return frozenset(names)
+
+
+def _carried_back(routine: M.Routine, module: M.Module | None) -> dict[str, set[str]]:
+    if module is None:
+        return {}
+    return {r.name.lower(): {(p.carried_from or p.name).lower() for p in r.parameters
+                             if p.carried and p.direction in ("OUT", "IN OUT")}
+            for r in module.routines if r.enclosing == routine.id}
+
+
+def _writes(statement: M.Statement, context: _Context) -> set[str]:
+    """What a statement other than a plain assignment may write, read conservatively: every INTO target, a
+    variable handed as a call's argument whatever the parameter's mode, `USING OUT`, and what a lifted procedure
+    hands back. A nested statement's writes count as its own."""
+    from .lower import _walk
+
+    names: set[str] = set()
+    for node in [statement] + _walk([statement])[1:]:
+        if node.kind == "Assignment" and node.target:
+            names.add(re.split(r"[.(]", node.target.strip(), maxsplit=1)[0].lower())
+        for target in getattr(node, "into_targets", None) or []:
+            names.add(re.split(r"[.(]", target.strip(), maxsplit=1)[0].lower())
+        for bind in getattr(node, "using", None) or []:
+            if (bind.direction or "IN").upper() != "IN":
+                names.add((bind.plsql_variable or bind.name or "").lower())
+        if node.kind == "Call":
+            callee = (node.callee or "").strip().lower()
+            if not callee.startswith("dbms_output."):
+                for argument in node.arguments or []:
+                    value = re.sub(r"^\s*[A-Za-z][\w$#]*\s*=>", "", argument)
+                    bare = re.fullmatch(r"\s*([A-Za-z][\w$#]*)(?:\s*\.\s*[A-Za-z][\w$#]*)?\s*", value)
+                    if bare:
+                        names.add(bare.group(1).lower())
+            names |= context.carried.get(callee, set())
+    for handler in getattr(statement, "exception_handlers", []) or []:
+        for node in _walk(handler.body):
+            names |= _writes(node, context)
+    return names
+
+
+def _trace(statements: list[M.Statement], stop_at: str, states: list[_State],
+           context: _Context) -> list[_State] | None:
     """Follow the assignments down every branch until the dynamic statement, carrying one state per path."""
     for statement in statements:
         if statement.id == stop_at:
             return states
         if statement.kind == "Assignment":
             for state in states:
+                state.written({re.split(r"[.(]", (statement.target or "").strip(), maxsplit=1)[0].lower()},
+                              by_assignment=True)
                 _apply(state, statement)
         elif statement.kind in ("If", "Case"):
+            if statement.kind == "Case" and statement.selector:
+                return None   # `CASE x WHEN 1`: the branch value alone is not a condition to evaluate again
+            # an ELSIF or ELSE is taken because the conditions before it were false: every condition of the IF is
+            # what picks the path, so every one is watched on each path
+            reads = [_reads(b.condition, context) for b in statement.branches or []]
+            if any(r is None for r in reads):
+                return None
+            watched = frozenset().union(*reads) if reads else frozenset()
             branched: list[_State] = []
             for branch in statement.branches or []:
-                inner = _trace(branch.body, stop_at, [s.fork(branch.condition) for s in states])
+                inner = _trace(branch.body, stop_at, [s.fork(branch.condition, watched) for s in states], context)
                 if inner is None:
                     return None
                 if any(_contains(branch.body, stop_at) for _ in [0]):
                     return inner  # the statement is inside this branch; that path is the answer
                 branched.extend(inner)
-            else_states = [s.fork(None) for s in states]
+            else_states = [s.fork(None, watched) for s in states]
             if statement.else_body:
-                inner = _trace(statement.else_body, stop_at, else_states)
+                inner = _trace(statement.else_body, stop_at, else_states, context)
                 if inner is None:
                     return None
                 if _contains(statement.else_body, stop_at):
@@ -185,6 +299,13 @@ def _trace(statements: list[M.Statement], stop_at: str, states: list[_State]) ->
         elif statement.kind == "Loop":
             # a loop can append any number of times; the set is not finite from here
             return None
+        elif statement.kind == "Block" and _contains(statement.body, stop_at):
+            # the EXECUTE IMMEDIATE is inside a nested block: its body runs in order up to it
+            return _trace(statement.body, stop_at, states, context)
+        else:
+            written = _writes(statement, context)
+            for state in states:
+                state.written(written)
     return states
 
 
@@ -222,9 +343,10 @@ def _unescape(text: str) -> str:
 
 # --------------------------------------------------------------------------------------------------
 
-def annotate(routine: M.Routine, statement: M.DynamicSql) -> list[Variant] | None:
+def annotate(routine: M.Routine, statement: M.DynamicSql,
+             module: M.Module | None = None) -> list[Variant] | None:
     """Record the variants on the statement, with what folding does *not* establish."""
-    variants = enumerate_variants(routine, statement)
+    variants = enumerate_variants(routine, statement, module)
     if variants is None:
         return None
     statement.variants = [v.as_dict() for v in variants]

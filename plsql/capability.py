@@ -115,7 +115,7 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
                     # P4-7: a dynamic statement whose text is knowable becomes ordinary SQL, one per variant,
                     # and is then converted and checked like anything else. Enumerating without converting
                     # would show a reader plain SQL that nothing had looked at.
-                    for index, variant in enumerate(annotate_dynamic(routine, statement) or [], start=1):
+                    for index, variant in enumerate(annotate_dynamic(routine, statement, module) or [], start=1):
                         # `USING` は**位置で**束縛される。placeholder を渡す変数の名前に直して
                         # おくと、畳んだ文がそのあと静的な文とまったく同じ道を通る（P4-7）
                         operation = M.SqlOperation(

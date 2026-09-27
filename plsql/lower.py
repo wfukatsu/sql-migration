@@ -125,6 +125,14 @@ def overload_ordinals(names: list[str]) -> list[int | None]:
     return out
 
 
+def _top_index(body: list[M.Statement], node: M.Statement) -> int:
+    """The index of the statement of `body` that is `node` or holds it."""
+    for index, statement in enumerate(body):
+        if statement is node or any(s is node for s in _walk([statement])):
+            return index
+    return len(body)
+
+
 def _closing_paren(text: str, open_at: int) -> int | None:
     depth = 0
     for index in range(open_at, len(text)):
@@ -623,7 +631,10 @@ class _Lowerer:
                          f"a nested subprogram that {reason} is not lowered; whatever it does (COMMIT included) is "
                          "invisible to the rules, so the routine cannot be AUTO while it is present")
                 routine.body.insert(0, node)
-            self._inline_dynamic_blocks(routine, ids)
+            handlers = " ".join(re.sub(r"'(?:[^']|'')*'|--[^\n]*", " ", _text(h)) for h in _descend(
+                body, {"Exception_handlerContext"}, stop={"BodyContext", "BlockContext"}))
+            self._inline_dynamic_blocks(routine, ids, module or name,
+                                        re.sub(r"'(?:[^']|'')*'|--[^\n]*", " ", _text(body)), handlers)
             self._carry_captured(routine)
             self.routine_id = routine_id   # lowering a nested one moved it
             # the routine's own handlers, not every handler inside it: a nested block keeps its own (#18)
@@ -1138,7 +1149,8 @@ class _Lowerer:
                                           "static statement may not have; confirm the caller is allowed to run this")
         return node
 
-    def _inline_dynamic_blocks(self, routine: M.Routine, ids) -> None:
+    def _inline_dynamic_blocks(self, routine: M.Routine, ids, module: str = "", text: str = "",
+                               handlers: str = "") -> None:
         """`stmt := 'BEGIN p(:x); END;'; EXECUTE IMMEDIATE stmt USING b;` (#87, oracle-plsql-docs 7-1, 7-2, 7-4).
 
         #52 inlined a constant block only when the literal was written in the EXECUTE IMMEDIATE itself; one kept in a
@@ -1146,6 +1158,12 @@ class _Lowerer:
         gives exactly one value -- a string literal that is a block, in its declaration or one assignment, and that
         nothing reads INTO -- is that constant, and the block is inlined the same way. Any other variable may hold
         something else at run time and stays dynamic.
+
+        "Exactly one value" means every way PL/SQL writes a variable (#107): `pick(stmt)` with an OUT parameter
+        (or a call whose modes are unknown), `USING OUT stmt`, a nested procedure that assigns it, an assignment in
+        the routine's own handlers (lowered after this, so read from `handlers`), a nested block that declares
+        another `stmt`. The one assignment has to sit in the routine's own statement list, before the EXECUTE
+        IMMEDIATE: inside an IF, the variable is NULL on the other path. Any of those and it stays dynamic.
         """
         statements = _walk(routine.body)
         dynamic = [s for s in statements if s.kind == "DynamicSql" and s.constant_sql is None
@@ -1153,19 +1171,41 @@ class _Lowerer:
         if not dynamic:
             return
         values: dict[str, list[str | None]] = {}
+        where: dict[str, M.Statement] = {}
         for declaration in routine.declarations:
             if declaration.initial is not None:
                 values.setdefault(declaration.name.lower(), []).append(declaration.initial)
         for statement in statements:
             if statement.kind == "Assignment" and statement.target:
                 values.setdefault(statement.target.strip().lower(), []).append(statement.expression)
+                where[statement.target.strip().lower()] = statement
             for target in getattr(statement, "into_targets", None) or []:
                 values.setdefault(target.strip().lower(), []).append(None)
+            for bind in getattr(statement, "using", None) or []:
+                if (bind.direction or "IN").upper() != "IN":
+                    values.setdefault((bind.plsql_variable or bind.name or "").lower(), []).append(None)
+            for declaration in getattr(statement, "declarations", None) or []:
+                values.setdefault(declaration.name.lower(), []).extend([None, None])   # another variable
         for parameter in routine.parameters:
             values.setdefault(parameter.name.lower(), []).append(None)
+        locals_ = {d.name.lower() for d in routine.declarations if d.declaration_kind == "variable"}
+        written, unknown = self._written_through_calls(routine, text, module, locals_)
+        lifted = [r for r in self.__dict__.get("lifted", []) if r.enclosing == routine.id]
+        for name in locals_:
+            if name in written or name in unknown \
+                    or any(name in r.__dict__.get("assigned", set()) for r in lifted) \
+                    or re.search(rf"\b{re.escape(name)}\b", handlers, re.IGNORECASE):
+                values.setdefault(name, []).append(None)
         replacements = {}
         for node in dynamic:
-            written = values.get(node.expression.lower(), [])
+            name = node.expression.lower()
+            written = values.get(name, [])
+            if name not in locals_:
+                continue   # a parameter or a package variable: whoever calls may have put anything there
+            assignment = where.get(name)
+            if assignment is not None and (assignment not in routine.body
+                                           or routine.body.index(assignment) > _top_index(routine.body, node)):
+                continue   # assigned on one path only, or after the EXECUTE IMMEDIATE
             literal = re.fullmatch(r"\s*'((?:[^']|'')*)'\s*", written[0] or "") if len(written) == 1 else None
             constant = literal.group(1).replace("''", "'") if literal else None
             if constant is None or not DYNAMIC_BLOCK.match(constant) or node.into_targets:
