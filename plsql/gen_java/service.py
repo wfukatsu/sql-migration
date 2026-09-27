@@ -2315,7 +2315,8 @@ def _into(file: JavaFile, value: str, target_type: str) -> str:
         # ScalarDB の TIMESTAMPTZ 列は Instant で返る。cast すると落ちる（`last_paid_at` / 2026-09-19）
         file.add_import("com.scalar.migrate.plsql.Plsql")
         return f"Plsql.zoned({value})"
-    helper = {"Integer": "toInt", "Long": "toLong", "Double": "toDouble", "Float": "toFloat"}.get(target_type)
+    helper = {"Integer": "toInt", "Long": "toLong", "Double": "toDouble", "Float": "toFloat",
+              "LocalDateTime": "moment"}.get(target_type)
     if helper:
         # a column read comes back as whatever JDBC or the plan's H2 hands over -- a BigDecimal for an Integer
         # local cast and threw (#81, a cursor read through a plan)

@@ -295,6 +295,23 @@ public final class Plsql {
    *
    * <p>タイムゾーンつきの値からは zone も落ちる。Oracle の DATE が持てないからである。
    */
+  /**
+   * A value read back from a column into a DATE / TIMESTAMP local. A direct read hands over a LocalDateTime; a plan
+   * runs the rest in H2 and hands text back ("2003-06-17 00:00:00"), which a cast turned into a ClassCastException
+   * (oracle-plsql-docs 6-6, a cursor read through a plan).
+   */
+  public static LocalDateTime moment(Object value) {
+    if (isNull(value)) return null;
+    if (value instanceof LocalDateTime moment) return moment;
+    if (value instanceof java.sql.Timestamp moment) return moment.toLocalDateTime();
+    if (value instanceof java.time.OffsetDateTime moment) return moment.toLocalDateTime();
+    if (value instanceof java.time.Instant moment) return LocalDateTime.ofInstant(moment, java.time.ZoneOffset.UTC);
+    if (value instanceof java.time.LocalDate day) return day.atStartOfDay();
+    if (value instanceof java.sql.Date day) return day.toLocalDate().atStartOfDay();
+    String text = value.toString().trim().replace(' ', 'T');
+    return text.length() == 10 ? java.time.LocalDate.parse(text).atStartOfDay() : LocalDateTime.parse(text);
+  }
+
   public static LocalDateTime castDate(Object value) {
     if (isNull(value)) return null;
     if (value instanceof LocalDateTime moment) return moment.withNano(0);
