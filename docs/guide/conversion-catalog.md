@@ -7,7 +7,7 @@ SQL と PL/SQL の各項目（構文・関数・データ型・文・例外な�
 
 使い方とコマンドは [SQL の変換と実行計画](sql-conversion.md) と [PL/SQL → Java 変換](plsql-conversion.md)、仕組みは
 [アーキテクチャと仕組み](../design/architecture.md) にあります。この一覧は 2026-09-27 のコードから取り、変換器と生成器に実際に通して確かめました。
-コードと食い違う所を見つけたら、コードが正です。いまの動きに不具合があるものは、表の注意の欄に「現状は」と書き、[最後の節](#既知の不具合2026-09-27-時点)にもまとめています。
+コードと食い違う所を見つけたら、コードが正です。この一覧を作るときに見つけた不具合（Issue #121〜#130）は直してあります。
 
 目次
 
@@ -848,25 +848,3 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | 畳み込めない `:NEW` の代入、`:OLD` への代入 | 書く側が呼ばない | TRG-002 | |
 | MULTISET の演算、`TABLE(v)` への `COUNT(*)` 以外の問合せ | 変換しない | | |
 | view への書き込みに `INSTEAD OF` trigger を織り込む形 | 無い | | view へ書く文は ScalarDB に view が無いので断られます |
-
-## 既知の不具合（2026-09-27 時点）
-
-この一覧を作るときに変換器と生成器に通して見つけたものです。判定が OK / AUTO のまま、動かない SQL や Java が出るものを含みます。
-
-SQL（`scalardb_migrate/`）
-
-- Oracle の `RAW(n)` が ERROR `TYPE` になる（`BLOB` にできる）。`LONG` は文字列の型なのに BIGINT になる。
-- PostgreSQL の `CREATE SCHEMA sales` が `CREATE NAMESPACE ""` になる。`DROP SCHEMA` / `DROP DATABASE` と `ALTER TABLE ... DROP COLUMN` は ERROR `INTERNAL`（変換器の内部エラー）になる。
-- 射影の `ROWNUM`（`SELECT ROWNUM, name ...`）と `SELECT seq.NEXTVAL FROM dual` が検査されずに素通りする。
-- Oracle の `FROM t PARTITION (p1)` が表の別名として読まれる。
-- SELECT などの中の `catalog.schema.table` は 3 つ組のまま、指摘なしで出る。
-
-PL/SQL（`plsql/`）
-
-- OUT 引数の `SYS_REFCURSOR` の行が呼び出し側に渡らない（結果の record が `null`）。判定は AUTO になりうる。
-- TIMESTAMP を返す function の `RETURN SYSTIMESTAMP`、式の中の function 呼び出しで既定値の引数を省く形、`%ROWTYPE` の field への型の違う NUMBER の代入が、javac で落ちる。
-- `FETCH ... BULK COLLECT INTO 数値のコレクション LIMIT n` で、要素が行の record になる。
-- `SELECT ... BULK COLLECT` と組にした `FORALL ... SAVE EXCEPTIONS` で BULK-002 が当たらず、部分失敗の意味が消える。
-- package の仕様の `AUTHID CURRENT_USER` と `SUBTYPE` を読まない（AUTHID-001 が当たらない、型が `Object` になる）。
-- SEM-007 が宣言部の初期値で読んだ時計を数えない。SQL-004 が、trigger を呼ぶために生成器が足した `SQL%ROWCOUNT` の読みにも当たる。
-- `ALTER TABLE ... ADD CONSTRAINT` で足した制約に、`constraints.enforce` の検査が出ない。

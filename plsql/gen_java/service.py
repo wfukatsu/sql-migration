@@ -3018,6 +3018,7 @@ def _whole(file: JavaFile, value: str, declared: str) -> str:
 
 
 _INTEGER_DECLARED = re.compile(r"\s*(?:INTEGER|INT|SMALLINT)\s*", re.IGNORECASE)
+_INTEGER_PRECISION = re.compile(r"\s*(?:INTEGER|INT|SMALLINT)\s*\(\s*(\d+)\s*\)\s*", re.IGNORECASE)
 
 
 def _fit(file: JavaFile, value: str, type_ref: "M.TypeRef | None") -> str:
@@ -3030,6 +3031,8 @@ def _fit(file: JavaFile, value: str, type_ref: "M.TypeRef | None") -> str:
     declared = ((type_ref.resolved or type_ref.oracle) if type_ref is not None else "") or ""
     if _INTEGER_DECLARED.fullmatch(declared):
         declared = "NUMBER(38)"   # `i INTEGER; i := 2.5` is 3 (#100)
+    elif m := _INTEGER_PRECISION.fullmatch(declared):
+        declared = f"NUMBER({m.group(1)})"   # `INTEGER(4)` is NUMBER(4): 10000 is VALUE_ERROR (types.java_type)
     number = _NUMBER_CONSTRAINT.fullmatch(declared.strip())
     text = _TEXT_CONSTRAINT.fullmatch(declared.strip())
     blank_padded = _CHAR_CONSTRAINT.fullmatch(declared.strip())
