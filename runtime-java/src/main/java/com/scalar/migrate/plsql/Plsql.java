@@ -571,12 +571,14 @@ public final class Plsql {
   /** ORA-06502. Its own type so that generated code can turn it into the migrated VALUE_ERROR. */
   public static final class ValueError extends RuntimeException {
     public ValueError(String detail) {
-      super("ORA-06502: PL/SQL: numeric or value error: " + detail);
+      // Oracle 26ai's text: `n NUMBER := 'abc'` is "ORA-06502: PL/SQL: value or conversion error: character to
+      // number conversion error". The older "numeric or value error" is what SQLERRM showed here (#114)
+      super("ORA-06502: PL/SQL: value or conversion error: " + detail);
     }
 
     /** The bare ORA-06502 an argument out of range raises, with no detail after it (`POWER(0, -1)`, #113). */
     public ValueError() {
-      super("ORA-06502: PL/SQL: numeric or value error");
+      super("ORA-06502: PL/SQL: value or conversion error");
     }
   }
 
@@ -890,29 +892,67 @@ public final class Plsql {
       case -1422 -> "exact fetch returned more than the requested number of rows ";
       case -1476 -> "divisor is equal to zero";
       case -1722 -> "unable to convert string value containing  to a number: ";
+      case -1428 -> "Argument  is out of range.";
+      case -1438 -> "value  greater than specified precision  for column ";
       case -6502 -> "PL/SQL: value or conversion error";
+      case -6510 -> "PL/SQL: unhandled user-defined exception";
       case -6511 -> "PL/SQL: cursor already open";
       case -6530 -> "Reference to uninitialized composite";
       case -6531 -> "Reference to uninitialized collection";
       case -6532 -> "subscript outside of limit";
       case -6533 -> "Subscript beyond count";
+      case -6592 -> "CASE not found while executing CASE statement";
+      case -12899 -> "value too large for column  (actual: , maximum: )";
       default -> "Message " + (-n) + " not found";
     };
     return String.format("ORA-%05d: %s", -n, text);
   }
 
+  // the numbers of Oracle's predefined exceptions (plsql/gen_java/exception.py PREDEFINED)
+  private static final java.util.Set<Integer> PREDEFINED_CODES =
+      java.util.Set.of(-1, -1001, -1422, -1476, -1722, -6502, -6511, -6531, -6532, -6533, -6592);
+
+  /**
+   * The numbers the generator gives a PL/SQL-declared exception that has no EXCEPTION_INIT (plsql/gen_java/exception.py
+   * `_user_code`): -900000 .. -900999. They keep the registry's classes apart and never reach the PL/SQL: Oracle's
+   * SQLCODE for such an exception is 1 (#114).
+   */
+  static final int USER_DEFINED_HIGH = -900000;
+  static final int USER_DEFINED_LOW = -900999;
+
+  static boolean userDefined(int code) {
+    return code <= USER_DEFINED_HIGH && code >= USER_DEFINED_LOW;
+  }
+
+  /**
+   * `SQLCODE` inside a handler: the handled exception's number, and +1 for a PL/SQL-declared one without
+   * EXCEPTION_INIT, as Oracle 26ai returns (`RAISE e_x` ... `WHEN OTHERS THEN SQLCODE` is 1). The class keeps its
+   * own number, which is what tells two declared exceptions apart in the registry (#114).
+   */
+  public static int sqlcode(int code) {
+    return userDefined(code) ? 1 : code;
+  }
+
   /** `SQLERRM(n)` inside a handler: the handled error's own message when n is its number (11-13). */
   public static String sqlerrmOf(Object code, int current, String message) {
-    if (!isNull(code) && num(code).intValue() == current) return sqlerrm(current, message);
+    // SQLERRM(SQLCODE) of a declared exception asks with +1, the number the handler sees (#114)
+    if (!isNull(code) && num(code).intValue() == sqlcode(current)) return sqlerrm(current, message);
     return sqlerrmOf(code);
   }
 
   public static String sqlerrm(int code, String message) {
     if (code == 0) return "ORA-0000: normal, successful completion";
+    // a PL/SQL-declared exception with no EXCEPTION_INIT: Oracle's SQLERRM is this text, whatever its class's own
+    // number is (`e_x EXCEPTION; RAISE e_x;` shows "1 User-Defined Exception" on 26ai; it showed "ORA-900875: e_x")
+    if (userDefined(code) || code > 0 && code != 100) return "User-Defined Exception";
     if (code == 100) return "ORA-01403: no data found";
     String prefix = String.format("ORA-%05d: ", Math.abs(code));
     // the runtime's own errors (Plsql.ZeroDivide, Plsql.NoDataFound, ...) already carry Oracle's whole text
     if (message != null && message.startsWith(prefix)) return message;
+    // an error Oracle names has Oracle's text whatever the Java message says: `RAISE VALUE_ERROR` is "ORA-06502:
+    // PL/SQL: value or conversion error" on 26ai, not "ORA-06502: VALUE_ERROR", and a SELECT INTO's second row
+    // "ORA-01422: exact fetch returned more than the requested number of rows " (#114)
+    if (PREDEFINED_CODES.contains(code)) return sqlerrmOf(code);
     return prefix + (message == null ? "" : message);
   }
 

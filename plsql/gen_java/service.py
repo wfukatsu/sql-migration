@@ -746,7 +746,10 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
             f.add_import("com.scalar.migrate.plsql.Plsql")
             errm = f"Plsql.sqlerrm({variable}.code(), {variable}.getMessage())"
             backtrace = f"Plsql.errorBacktrace({variable})"
-            _HANDLER_ERROR.set({"SQLCODE": f"{variable}.code()", "sqlcode": f"{variable}.code()",
+            # `Plsql.sqlcode`, not the class's number: a PL/SQL-declared exception without EXCEPTION_INIT is +1 in
+            # Oracle, and its class carries a pseudo-code only the registry needs (`exception._user_code`, #114)
+            code = f"Plsql.sqlcode({variable}.code())"
+            _HANDLER_ERROR.set({"SQLCODE": code, "sqlcode": code,
                                 "SQLERRM": errm, "sqlerrm": errm,
                                 "DBMS_UTILITY.FORMAT_ERROR_BACKTRACE": backtrace,
                                 "dbms_utility.format_error_backtrace": backtrace,
