@@ -2,7 +2,8 @@
 
 rules:
   - id: STATE-001
-    match: {packageState: true}
+    # #119: the routines that use a package variable, not every routine of a package that has one
+    match: {touchesPackageState: true}
     decision: REDESIGN
     severity: critical
     message: Package 変数はセッションに紐づく状態です。Singleton bean の field へ置くと意味が変わります

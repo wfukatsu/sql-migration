@@ -194,7 +194,8 @@ STATEMENT_KEYS = {
     "dynamicResolved": bool, "lacksDiagnostic": None, "intoTargets": bool, "routineControlsTransaction": bool,
 }
 ROUTINE_KEYS = {
-    "autonomous": bool, "controlsTransaction": bool, "packageState": bool, "moduleKind": None, "authId": None,
+    "autonomous": bool, "controlsTransaction": bool, "packageState": bool, "touchesPackageState": bool,
+    "moduleKind": None, "authId": None,
     "dbLink": bool, "externalPackage": bool, "callSpec": bool, "writeThenScan": bool, "recursive": bool,
     "handlesException": None, "unresolvedCallee": bool, "swallowsOthers": bool, "rowCountUntracked": bool,
     "clockReadsAtLeast": int, "cursorLocking": bool, "saveExceptions": bool, "packageInitialisation": bool,
@@ -456,6 +457,9 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
         "controlsTransaction": lambda v: ((effects.controls_transaction if effects else False)
                                           or routine.transaction_effects.controls_transaction) is v,
         "packageState": lambda v: module.has_package_state is v,
+        # the routine reads or writes a package variable, directly or through what it calls (#119). `packageState`
+        # asked whether the package had one at all, and every routine of it was REDESIGN whether it used it or not
+        "touchesPackageState": lambda v: (routine.id in _state_touchers(analysis)) is v,
         # a package body with a `BEGIN ... END pkg;` section, which Oracle runs before the first call (#108)
         "packageInitialisation": lambda v: bool(module.initialisation) is v,
         "moduleKind": lambda v: module.module_kind in _as_set(v),
@@ -499,6 +503,37 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
 
 _INTERPOLATED_IDENTIFIER = re.compile(
     r"(FROM|INTO|TABLE|JOIN|UPDATE)\s+'\s*\|\||(FROM|INTO|TABLE|JOIN|UPDATE)\s*'\s*\|\|", re.IGNORECASE)
+
+
+def _state_touchers(analysis: ProgramAnalysis) -> set[str]:
+    """The routines that read or write a package variable (not a constant) -- by its own name inside the package,
+    or `pkg.var` from anywhere -- and every routine that reaches one of them through calls. Computed once per
+    analysis. A local of the same name counts as a mention: over-matching keeps a routine REDESIGN, the safe way."""
+    cached = getattr(analysis, "_state_touchers", None)
+    if cached is not None:
+        return cached
+    from ..package_state import _mentions
+
+    touching: set[str] = set()
+    for module in analysis.program.modules:
+        if not module.has_package_state:
+            continue
+        variables = [d.name for d in module.declarations if d.declaration_kind == "variable"]
+        qualified = re.compile(r"(?<![\w$#])" + re.escape(module.name) + r"\s*\.\s*(?:"
+                               + "|".join(re.escape(v) for v in variables) + r")(?![\w$#(])", re.IGNORECASE)
+        for other in analysis.program.modules:
+            for routine in other.routines:
+                own = other is module and any(_mentions(routine, v) for v in variables)
+                defaults = " ".join(p.default or "" for p in routine.parameters)
+                if own or qualified.search(repr([routine.body, routine.exception_handlers, routine.declarations])
+                                           + defaults) or (other is module and any(
+                        re.search(rf"(?<![\w$#.]){re.escape(v)}(?![\w$#(])", defaults, re.IGNORECASE)
+                        for v in variables)):
+                    touching.add(routine.id)
+    reached = {r.id for m in analysis.program.modules for r in m.routines
+               if analysis.call_graph.reachable_from(r.id) & touching}
+    analysis._state_touchers = touching | reached
+    return analysis._state_touchers
 
 
 def _handled(routine: M.Routine) -> set[str]:

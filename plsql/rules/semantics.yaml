@@ -178,6 +178,20 @@ rules:
     requiredTests:
       - equivalent_result
 
+  # 2026-09-27（#15 の公開の PL/SQL で見つけた）: SYS_CONTEXT を見るルールが無く、Logger の get_sys_context が AUTO に
+  # なった（期待は REDESIGN）。セッション・接続・インスタンスの情報で、移行先に相当するものが無い。USER は
+  # AuditContext で呼び出し側が渡すが、SYS_CONTEXT の名前空間と属性は開いていて、どれを渡すかは設計である
+  - id: SEM-013
+    match: {statementKind: [SqlOperation, Expression], textMatches: '\bSYS_CONTEXT\s*\('}
+    decision: REDESIGN
+    severity: critical
+    message: SYS_CONTEXT でセッション・接続・インスタンスの情報を読んでいます。移行先に同じものは無く、どの値をどこから得るかを決め直す必要があります
+    remediation:
+      - 必要な属性だけを呼び出し側が渡す（USER と同じく AuditContext を広げる）
+      - アプリケーションのコンテキスト（DBMS_SESSION.SET_CONTEXT）なら、それを使う理由ごと移行先の設計に移す
+    requiredTests:
+      - caller_context_values
+
   - id: CUR-001
     match: {statementKind: [OpenCursor, Fetch, CloseCursor]}
     decision: REVIEW
