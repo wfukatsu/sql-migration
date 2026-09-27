@@ -55,7 +55,8 @@ cursor を持たない）。動く行数はメモリで決まり、Oracle では
 
 **実例（samples/oracle-samples、2026-09-26）。** 読むものごとに数を揃えた。1 部門の社員と部門の一覧を読む routine は
 1000（1 部門に 1000 人を超えるのは業務側で確かめるべき異常）、全社員を読む routine は 100000（数列の行なので数十 MB）。
-上限を超えると `RowLimitExceededException` で止まるので、実際の最大より十分上にする。明示 cursor を先読みに置き換えたことの
+上限を超えると生成コードが `IllegalStateException`（「走査行数が上限 n 行を超えた」）を投げて止まるので、実際の最大より十分上にする。
+（`RowLimitExceededException` は別の上限で、実行計画が ScalarDB から 1 つの表を取るときの行数 `max_rows` を超えたときに出る。）明示 cursor を先読みに置き換えたことの
 問い（CUR-003）は、routine か呼び先が COMMIT / ROLLBACK / SAVEPOINT を持つときだけ出る。COMMIT が無ければ読む時点は変わらない。
 
 ## 2. パーティションをまたぐ走査
