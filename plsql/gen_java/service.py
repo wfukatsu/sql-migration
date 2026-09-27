@@ -62,7 +62,18 @@ _CAUGHT = "<caught>"
 # inside a loop whose DML adds to `rowCount` (a multi-row UPDATE split into a loop, a fused BULK COLLECT + FORALL):
 # the count was set to 0 where that loop starts, and a loop nested in it must not start it again (#109)
 _COUNTING: "contextvars.ContextVar[bool]" = contextvars.ContextVar("counting", default=False)
+# the Java boolean that is true on a FORALL's first element, while its body is generated: a RETURNING BULK COLLECT
+# there appends to what the earlier elements returned instead of replacing it (12-26)
+_FORALL_FIRST: "contextvars.ContextVar[str | None]" = contextvars.ContextVar("forall_first", default=None)
 _HANDLER_ERROR: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("handler", default={})
+# #138: `outer.birthdate`, `main.i`, `dept_name.department_name` -- a name qualified by a block's or a loop's label or
+# by the routine's own name, lower case -> (its Java name, its declaration or None for a loop index)
+_QUALIFIED_NAMES: "contextvars.ContextVar[dict[str, tuple]]" = contextvars.ContextVar("qualified", default={})
+# #141: an argument left to an expression DEFAULT is passed as the callee's `defaultOf...()`. `_ordered` puts a marker
+# name in its place and records here the Java the marker stands for; `_expr` resolves it like any other name
+_DEFAULT_ARGUMENTS: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("default_arguments", default={})
+# the routine whose body is being generated: whose carried package variables an omitted DEFAULT may name (#141)
+_CALLER: "contextvars.ContextVar[M.Routine | None]" = contextvars.ContextVar("caller", default=None)
 
 
 @dataclass
@@ -97,6 +108,7 @@ def generate_module(module: M.Module, package: str, repository_package: str,
     file.add_import(f"{domain_package}.MigratedException")
 
     _MODULE.set(module)
+    _DEFAULT_ARGUMENTS.set({})
     _DOMAIN.set(domain_package)
     from .types import set_object_package
     set_object_package(domain_package)
@@ -148,6 +160,7 @@ def generate_module(module: M.Module, package: str, repository_package: str,
             # いままでどおり 1 つの method になる
             if not split.emit(f, module, routine, result, domain_package):
                 _method(f, module, routine, result, domain_package)
+            _default_methods(f, module, routine)
     return result
 
 
@@ -193,6 +206,8 @@ def _expression_callees(routine: M.Routine, module: "M.Module | None") -> dict[s
              for text in _expression_texts(statement)]
     # a declaration's initialiser calls too: `r My_Types.My_Rec := My_Types.Init_My_Rec();` (5-33)
     texts += [d.initial for d in routine.declarations if d.initial and d.declaration_kind != "cursor"]
+    # and a parameter's DEFAULT, which its defaultOf method evaluates (#141)
+    texts += [p.default for p in routine.parameters if p.default and not p.carried]
     for text in texts:
         for owner, name in _QUALIFIED.findall(_STRING.sub("''", text or "")):
             target = modules.get(owner.lower())
@@ -372,11 +387,19 @@ _LITERAL = re.compile(r"^(?:-?\d+(?:\.\d+)?|'(?:[^']|'')*'|TRUE|FALSE|NULL)$", r
 
 def _constants(file: JavaFile, module: M.Module) -> None:
     """A package's constants (`c_max_raise_pct CONSTANT NUMBER := 20`, in the specification or the body) as
-    fields (#46). A constant is the same for every caller, so a static field keeps its meaning; a constant whose
-    value is an expression is left out and its name stays unknown, which the statement that reads it reports."""
+    fields (#46). A constant is the same for every caller, so a static field keeps its meaning. One whose value is
+    an expression over literals, earlier constants and the runtime's pure functions (`gc_timestamp_format CONSTANT
+    VARCHAR2(255) := gc_date_format || ':FF'`) is a field too (`_expression_constants`); any other is left out and
+    its name stays unknown, which the statement that reads it reports."""
     if module.module_kind != "package":
         return
+    computed = _expression_constants(module)
     for declaration in module.declarations:
+        if declaration.name in computed:
+            java_type_name, value, imports = computed[declaration.name]
+            file.add_import(*imports)
+            file.line(f"private static final {java_type_name} {_local(declaration.name)} = {value};")
+            continue
         if declaration.declaration_kind != "constant" or not declaration.initial \
                 or not _LITERAL.match(declaration.initial.strip()):
             continue
@@ -391,6 +414,37 @@ def _constants(file: JavaFile, module: M.Module) -> None:
         elif mapped.name == "Long" and "." not in value:
             value = f"{value}L"
         file.line(f"private static final {mapped.name} {_local(declaration.name)} = {value.lower() if value.upper() in ('TRUE', 'FALSE', 'NULL') else value};")
+
+
+# what a package constant's initialiser may not read: it is evaluated once per JVM here and once per session in
+# Oracle, so a clock, a random value or the caller's identity would differ
+_SESSION_DEPENDENT = re.compile(r"\b(?:sysdate|systimestamp|audit\.|random|sysGuid|sequences\.)", re.IGNORECASE)
+
+
+def _expression_constants(module: M.Module) -> dict[str, tuple[str, str, set[str]]]:
+    """Package constants whose value is an expression the runtime computes without a session: {name: (Java type,
+    Java initialiser, imports)}, in declaration order so a constant may read an earlier one. Only String and
+    BigDecimal ones: the expression helpers return those, and a narrower field would need a fit."""
+    if module.module_kind != "package":
+        return {}
+    known: dict[str, str] = {d.name: java_name(d.name) for d in module.declarations
+                             if d.declaration_kind == "constant" and d.initial and _LITERAL.match(d.initial.strip())}
+    out: dict[str, tuple[str, str, set[str]]] = {}
+    for declaration in module.declarations:
+        if declaration.declaration_kind != "constant" or not declaration.initial \
+                or _LITERAL.match(declaration.initial.strip()):
+            continue
+        mapped = java_type(declaration.type.resolved if declaration.type else None)
+        if mapped.name not in ("String", "BigDecimal"):
+            continue
+        rendered = translate(declaration.initial, known)
+        if not rendered.translatable or rendered.audit or rendered.sequences or _SESSION_DEPENDENT.search(rendered.java):
+            continue
+        helper = "text" if mapped.name == "String" else "dec"
+        imports = set(rendered.imports) | set(mapped.imports) | {"com.scalar.migrate.plsql.Plsql"}
+        out[declaration.name] = (mapped.name, f"Plsql.{helper}({rendered.java})", imports)
+        known[declaration.name] = java_name(declaration.name)
+    return out
 
 
 def _collection_kind(holder) -> str | None:
@@ -435,7 +489,13 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
              "SQL%NOTFOUND": "(rowCount == 0)", "sql%notfound": "(rowCount == 0)",
              "SQL%FOUND": "(rowCount > 0)", "sql%found": "(rowCount > 0)",
              # SQL%BULK_ROWCOUNT(i): a collection the FORALL fills, element by element (#51)
-             "sql%bulk_rowcount#collection": "bulkRowCount"}
+             "sql%bulk_rowcount#collection": "bulkRowCount",
+             # keyed by the index FORALL ran; one it did not run is ORA-06532 (#136)
+             "sql%bulk_rowcount#read": "Plsql.bulkRowCount"}
+    if module is not None:
+        # `$$PLSQL_UNIT` is the unit's name as Oracle stores it, upper case for an unquoted one (#140)
+        unit = module.name[1:-1] if module.name.startswith('"') else module.name.upper()
+        names["$$plsql_unit"] = '"' + unit.replace("\\", "\\\\").replace('"', '\\"') + '"'
     # trigger の相関名。`:NEW.status` は文が走る前から Java が値として持っているもので、
     # cursor FOR ループの行と同じ扱いになる（#10 / #12）
     for variable, bind in correlation_row(routine).items():
@@ -447,6 +507,12 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
     # a TYPE is not a value: `t_names('a', 'b')` (a collection constructor) rendered as a call to a method that
     # does not exist. Left out, the constructor is reported instead (#40)
     names.update({d.name: java_name(d.name) for d in routine.declarations if d.declaration_kind != "type"})
+    # `dept_name.department_name`: the routine's own parameter or local, qualified by the routine's name past a
+    # column or an inner name of the same spelling (B-5, 2-22, #138). A carried variable of a lifted routine is the
+    # enclosing routine's, not its own
+    for holder in [p for p in routine.parameters if not p.carried] + list(routine.declarations):
+        if getattr(holder, "declaration_kind", None) not in ("type", "cursor", "exception"):
+            names[f"{routine.name}.{holder.name}"] = java_name(holder.name)
     # collections (#45): `v#collection` says a local is one (list / map), `t#constructor` that a TYPE builds one
     trigger_locals = list(module.declarations) if module is not None and module.module_kind == "trigger" else []
     for holder in list(routine.parameters) + list(routine.declarations) + trigger_locals:
@@ -520,9 +586,15 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
         # to every routine; leaving them out reports real names as unknown
         # a package-level variable is session state (STATE-001): there is no field to assign, so a reference
         # is reported rather than compiled against nothing (#40). Constants and a trigger's locals stay
+        # A constant whose value is an expression (`gc_line_feed CONSTANT VARCHAR2(1) := chr(10)`) has no field
+        # (`_constants`): its name stays unknown and the statement reading it is refused, where it compiled into a
+        # reference to nothing (Logger, found while generating its routines for #140)
         names.update({d.name: java_name(d.name) for d in module.declarations
                       if d.declaration_kind != "type"
-                      and not (module.module_kind == "package" and d.declaration_kind == "variable")})
+                      and not (module.module_kind == "package" and d.declaration_kind == "variable")
+                      and not (module.module_kind == "package" and d.declaration_kind == "constant"
+                               and not (d.initial and _LITERAL.match(d.initial.strip()))
+                               and d.name not in _expression_constants(module))})
     # #48: a function of another module inside an expression: `emp_api.hire(...)` -> `empApi.hire(...)`. The
     # service is injected (trigger_services). One with OUT / IN OUT arguments -- a carried package variable
     # (#46) included -- hands values back in a result record, which an expression has nowhere to put, so it is
@@ -581,6 +653,11 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
     for parameter in routine.parameters:
         if parameter.direction == "OUT":
             continue  # an OUT argument comes back in the result, not through the signature
+        if _carried_cursor(parameter):
+            # the enclosing routine's open cursor, whose rows this one fetches (6-11, #138)
+            file.add_import("com.scalar.migrate.plsql.Plsql")
+            parameters.append(f"Plsql.Cursor {_cursor_state(_carried_cursor(parameter))}")
+            continue
         parameters.append(f"{_holder_java_type(file, parameter.type)} {java_name(parameter.name)}")
 
     for variable, bind in correlation_row(routine).items():
@@ -604,6 +681,10 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
         parameters.append("AuditContext audit")
 
     visibility = "public" if routine.visibility == "public" else "private"
+    _QUALIFIED_NAMES.set({f"{routine.name}.{h.name}".lower(): (java_name(h.name), h)
+                    for h in [p for p in routine.parameters if not p.carried] + list(routine.declarations)
+                    if getattr(h, "declaration_kind", None) not in ("type", "cursor", "exception")})
+    _CALLER.set(routine)
     _ROWCOUNT_SEEN.set(False)
     _REFUSES_LATER.set(_refuses_somewhere(routine, result))
     _source_comment(file, routine)
@@ -649,10 +730,9 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
             # one declaration per method: a routine may hold several DML statements, in different blocks
             f.line("int rowCount = 0;")
             if _reads_bulk_rowcount(routine):
-                f.add_import("java.util.List")
-                f.add_import("java.util.ArrayList")
-                f.add_import("java.math.BigDecimal")
-                f.line("List<BigDecimal> bulkRowCount = new ArrayList<>();")
+                # keyed by the index each element's statement ran at: INDICES OF / VALUES OF skip some (#136)
+                f.add_import("java.util.Map", "java.math.BigDecimal", "com.scalar.migrate.plsql.Plsql")
+                f.line("Map<Integer, BigDecimal> bulkRowCount = Plsql.indexBy();")
         for parameter in outs:
             # an OUT argument becomes a local, and comes back in the result record rather than through the
             # signature: a caller must not see a half-updated set when an exception interrupts the routine
@@ -690,7 +770,10 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
                 # が for の変数になる。ここでも宣言すると同じ名前が 2 つになる
                 continue
             _declaration(f, declaration, routine, result)
+        handed = {_carried_cursor(p) for p in routine.parameters if _carried_cursor(p)}
         for cursor, variable in _general_cursors(routine).items():
+            if cursor in handed:
+                continue   # the caller's, a parameter (#138)
             f.add_import("com.scalar.migrate.plsql.Plsql")
             f.line(f"Plsql.Cursor {_cursor_state(cursor)} = new Plsql.Cursor({'true' if variable else 'false'});"
                    f"   // {cursor}")
@@ -827,9 +910,18 @@ def _guarded(file: JavaFile, handlers: list[M.ExceptionHandler], body: list[M.St
     classes = {name: class_of(name, routine, _MODULE.get(), program=_PROGRAM.get())
                for name in names if name != "OTHERS"}
     raised = []
-    for oracle, helper, code in _HELPER_ERRORS:
+    helpers = _HELPER_ERRORS
+    if any(getattr(s, "loop_kind", None) == "forall" for s in _walk(body)):
+        # ORA-22160, which only a FORALL raises: listed only where one is, so no other routine changes (#136)
+        helpers = helpers + ((None, "ElementNotExist", -22160),)
+    # only a body that calls one of the functions raising it can see a FunctionError (#140)
+    function_errors = any(_FUNCTION_ERRORS.search(text) for s in _walk(body) for text in _expression_texts(s))
+    for oracle, helper, code in helpers:
+        if helper == "FunctionError" and not function_errors:
+            continue
         # the class the handler names for this number: the predefined one, or a declared exception bound to it
-        migrated = next((cls for name, (bound, cls) in sorted(classes.items()) if bound == code), None)
+        migrated = next((cls for name, (bound, cls) in sorted(classes.items()) if code is not None and bound == code),
+                        None)
         if migrated is None and "OTHERS" in names:
             # an error without a predefined name (ORA-01426, ORA-06503) reaches OTHERS as the base class
             migrated = PREDEFINED[oracle][0] if oracle else "MigratedException"
@@ -850,7 +942,8 @@ def _guarded(file: JavaFile, handlers: list[M.ExceptionHandler], body: list[M.St
         # becomes cannot shadow a local (`size`, the old name for VALUE_ERROR, could)
         with file.block(f"catch (Plsql.{helper} raised_)") as translated:
             if migrated == "MigratedException":
-                translated.line(f"throw new MigratedException({code}, raised_.getMessage());")
+                translated.line(f"throw new MigratedException({'raised_.code()' if code is None else code}, "
+                                f"raised_.getMessage());")
             else:
                 translated.line(f"throw new {migrated}(raised_.getMessage());")
 
@@ -869,7 +962,11 @@ _HELPER_ERRORS = (("ZERO_DIVIDE", "ZeroDivide", -1476),
                   (None, "NoReturn", -6503),
                   # a repository's write of a value too long or too precise for its column (#115)
                   (None, "ValueTooLarge", -12899),
-                  (None, "PrecisionTooLarge", -1438))
+                  (None, "PrecisionTooLarge", -1438),
+                  # a SQL function's own error, its number on the exception (TO_DATE's ORA-01843, REGEXP_SUBSTR's
+                  # ORA-01428, ...): none has a predefined name, so only OTHERS catches it (#140)
+                  (None, "FunctionError", None))
+_FUNCTION_ERRORS = re.compile(r"\b(?:TO_DATE|TO_TIMESTAMP|REGEXP_(?:LIKE|SUBSTR|REPLACE|INSTR|COUNT))\s*\(", re.IGNORECASE)
 
 
 # 移行先では起こりえない Oracle の誤り。いまのところ行ロックが取れないこと（ORA-54）だけである
@@ -913,6 +1010,10 @@ def _always_throws(statement: M.Statement, result: ServiceFile) -> bool:
             if _always_throws(s, result):
                 return True
         return False
+    if statement.kind == "Block" and not statement.exception_handlers and not statement.jump_label:
+        # `{ throw ...; }` for a refused call in a nested block without handlers: nothing after the block runs, and
+        # javac rejects it as unreachable (Logger's sqlplus_format, `dbms_output.enable` outside the program)
+        return any(_always_throws(s, result) for s in statement.body)
     if statement.kind in ("If", "Case"):
         branches = all(any(_always_throws(s, result) for s in b.body) for b in statement.branches)
         if statement.else_body:
@@ -938,8 +1039,17 @@ def _always_leaves(statement: M.Statement) -> bool:
     if statement.kind in ("Exit", "Continue"):
         return not getattr(statement, "condition", None)
     if statement.kind == "Block":
+        if _left_by_a_jump(statement):
+            return False
         return any(s.kind == "Return" or (s.kind == "Block" and _always_leaves(s)) for s in statement.body)
     return False
+
+
+def _left_by_a_jump(statement: M.Statement) -> bool:
+    """Whether a block a forward GOTO became is left by that GOTO's `break` (#139): the statements after it then run,
+    whatever its own body does at its end."""
+    label = (getattr(statement, "jump_label", None) or "").lower()
+    return bool(label) and any(s.kind == "Exit" and (s.label or "").lower() == label for s in _walk(statement.body))
 
 
 def _always_exits(routine: M.Routine, result: ServiceFile) -> bool:
@@ -960,8 +1070,9 @@ def _always_exits(routine: M.Routine, result: ServiceFile) -> bool:
         if last.kind == "Loop" and getattr(last, "returns_rows", False):
             return True   # `OPEN rc FOR q; RETURN rc;` became `return repository...(...)`
         if last.kind == "Block":
-            # a block leaves by falling out of it unless its body and every handler leave for good
-            return exits(last.body) and all(exits(h.body) for h in last.exception_handlers)
+            # a block leaves by falling out of it unless its body and every handler leave for good -- or a GOTO's
+            # `break` leaves it (#139)
+            return not _left_by_a_jump(last) and exits(last.body) and all(exits(h.body) for h in last.exception_handlers)
         if last.kind in ("If", "Case") and last.else_body:
             # Java sees that nothing follows an if / else whose every branch leaves, and rejects what is put there
             return exits(last.else_body) and all(exits(b.body) for b in last.branches)
@@ -1469,6 +1580,13 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
                   if statement.condition else f"{jump};")
     elif kind == "Null":
         file.line("// NULL;")
+    elif kind == "Goto":
+        # one plsql.goto could not rebuild as a block or a loop (#139): say why where the throw stands
+        for diagnostic in statement.diagnostics:
+            if diagnostic.code == "GOTO_NOT_RESTRUCTURED":
+                file.comment(diagnostic.message)
+        file.line(f'throw new UnsupportedOperationException("GOTO {statement.label} is not translated");')
+        result.untranslated.append(statement.id)
     elif kind == "Call":
         _call(file, statement, routine, result)
     elif kind in ("Fetch", "CloseCursor") and \
@@ -1522,7 +1640,21 @@ def _local(name: str) -> str:
     for plsql_name, java in _BLOCK_LOCALS.get().items():
         if plsql_name.lower() == name.lower():
             return java
+    qualified = _QUALIFIED_NAMES.get().get(name.strip().lower())
+    if qualified is not None:
+        return qualified[0]
     return java_name(name)
+
+
+def _canonical(routine: M.Routine, target: str) -> str:
+    """A target written qualified (`dept_name.department_name`, `outer.total`) as its plain name, when the plain
+    name reaches the same variable here -- which is every case but a name an inner block hides (#138). What reads a
+    target takes a dot for a record field, so the qualified spelling went down that path and failed."""
+    qualified = _QUALIFIED_NAMES.get().get((target or "").strip().lower())
+    if qualified is None or qualified[1] is None:
+        return target
+    holder = qualified[1]
+    return holder.name if _holder(routine, holder.name) is holder else target
 
 
 def _taken(routine: M.Routine) -> set[str]:
@@ -1559,14 +1691,35 @@ def _block(file: JavaFile, statement: M.Block, routine: M.Routine, result: Servi
     own, not the `try`'s: a handler reads the block's variables, and a name declared inside `try` is not
     visible from `catch`.
     """
+    jump = getattr(statement, "jump_label", None)
+    if jump:
+        # a forward GOTO rebuilt as a block it leaves (#139): `label: { ... break label; }`
+        labels = _LOOP_LABELS.get()
+        _LOOP_LABELS.set(labels | {jump.lower()})
+        try:
+            with file.block(f"{java_name(jump)}:") as f:
+                _statements(f, statement.body, routine, result)
+        finally:
+            _LOOP_LABELS.set(labels)
+        return
     outer = _BLOCK_LOCALS.get()
     taken, renamed = _taken(routine), {}
     for d in statement.declarations:
         renamed[d.name] = _fresh(java_name(d.name), taken)
         taken.add(renamed[d.name])
-    _BLOCK_LOCALS.set({**outer, **renamed})
+    qualified = {}
+    for label in statement.labels or []:
+        # `outer.birthdate` names the block's own birthdate past an inner one of the same name (#138); the block's
+        # declarations have their Java names by now, which the label reaches whatever hides them further in
+        for d in statement.declarations:
+            if d.declaration_kind not in ("type", "exception", "cursor"):
+                qualified[f"{label}.{d.name}"] = renamed[d.name]
+    _BLOCK_LOCALS.set({**outer, **renamed, **qualified})
     outer_holders = _BLOCK_HOLDERS.get()
     _BLOCK_HOLDERS.set(outer_holders + tuple(statement.declarations))
+    outer_qualified = _QUALIFIED_NAMES.get()
+    by_name = {d.name: d for d in statement.declarations}
+    _QUALIFIED_NAMES.set({**outer_qualified, **{k.lower(): (v, by_name[k.partition(".")[2]]) for k, v in qualified.items()}})
     try:
         with file.block("") as scope:
             for declaration in statement.declarations:
@@ -1581,6 +1734,7 @@ def _block(file: JavaFile, statement: M.Block, routine: M.Routine, result: Servi
     finally:
         _BLOCK_LOCALS.set(outer)
         _BLOCK_HOLDERS.set(outer_holders)
+        _QUALIFIED_NAMES.set(outer_qualified)
 
 
 def _if(file: JavaFile, statement: M.If, routine: M.Routine, result: ServiceFile) -> None:
@@ -1664,20 +1818,32 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
     if statement.label:
         _LOOP_LABELS.set(outer | {statement.label.lower()})
     if index_name:
-        _BLOCK_LOCALS.set({**outer_locals, index_name: index})
+        # `outer_loop.i` is this loop's index past an inner loop's i (4-22, #138)
+        qualified = {f"{statement.label}.{index_name}": index} if statement.label else {}
+        _BLOCK_LOCALS.set({**outer_locals, index_name: index, **qualified})
+    outer_qualified = _QUALIFIED_NAMES.get()
+    if index_name and statement.label:
+        _QUALIFIED_NAMES.set({**outer_qualified, f"{statement.label}.{index_name}".lower(): (index, None)})
     try:
         with file.block(opening) as f:
             _statements(f, statement.body, routine, result)
     finally:
         _LOOP_LABELS.set(outer)
         _BLOCK_LOCALS.set(outer_locals)
+        _QUALIFIED_NAMES.set(outer_qualified)
 
 
 # `j IN REVERSE 1 .. 6`, `a IN 1 .. v_max`: what the lowering keeps of a numeric FOR loop
 NUMERIC_FOR = re.compile(r"^\s*(?P<index>[\w$#]+)\s+IN\s+(?P<reverse>REVERSE\s+)?(?P<low>.+?)\s*\.\.\s*(?P<high>.+?)\s*$",
                          re.IGNORECASE | re.DOTALL)
 
-FORALL_BOUND = re.compile(r"^\s*1\s*\.\.\s*(?P<collection>[\w$#]+)\s*\.\s*COUNT\s*$", re.IGNORECASE)
+# `FORALL i IN <bounds>` の bounds（lowering は `Bounds_clause` の原文を cursor に入れる）。#136
+FORALL_INDICES = re.compile(r"^\s*INDICES\s+OF\s+(?P<collection>[\w$#.]+?)"
+                            r"(?:\s+BETWEEN\s+(?P<low>.+?)\s+AND\s+(?P<high>.+?))?\s*$", re.IGNORECASE | re.DOTALL)
+FORALL_VALUES = re.compile(r"^\s*VALUES\s+OF\s+(?P<collection>[\w$#.]+)\s*$", re.IGNORECASE | re.DOTALL)
+FORALL_RANGE = re.compile(r"^\s*(?P<low>.+?)\s*\.\.\s*(?P<high>.+?)\s*$", re.DOTALL)
+# `1 .. v.COUNT`: the shape every FORALL had to have before #136, and the one where the n-th statement is v(n)
+FORALL_BOUND = re.compile(r"^\s*1\s*\.\.\s*(?P<collection>[\w$#]+)\s*\.\s*COUNT\s*(?:\(\s*\))?\s*$", re.IGNORECASE)
 
 
 def _accumulates(loop: M.Loop) -> bool:
@@ -1685,22 +1851,49 @@ def _accumulates(loop: M.Loop) -> bool:
     return any(getattr(s, "accumulates_rowcount", False) for s in _walk(loop.body))
 
 
-def _forall_collection(statement: M.Loop, routine: M.Routine) -> tuple[str, str] | None:
-    """`FORALL i IN 1 .. p_ids.COUNT` の (コレクション, 添字)。回せない形なら None。
-
-    添字の名前は本体の参照から採る——`FORALL` の索引は IR に残っていないが、`p_ids(i)` の `i` が
-    それである。本体がコレクションの要素を読んでいなければ、ループにしても意味が無い。
-    """
+def _forall_index(statement: M.Loop) -> str | None:
+    """The FORALL's index. The lowering keeps it (#136); an IR without it still names it where the body reads
+    `v(i)` of the collection `1 .. v.COUNT` walks."""
+    if statement.variable:
+        return statement.variable
     bound = FORALL_BOUND.match(statement.cursor or "")
     if bound is None:
         return None
-    collection = bound.group("collection").lower()
     for inner in _forall_statements(statement):
         for bind in getattr(inner, "binds", None) or []:
             reference = COLLECTION_ELEMENT.match(bind.plsql_variable or "")
-            if reference and reference.group("collection").lower() == collection:
-                return collection, reference.group("index")
+            if reference and reference.group("collection").lower() == bound.group("collection").lower():
+                return reference.group("index")
     return None
+
+
+def _forall_collection(statement: M.Loop, routine: M.Routine) -> tuple[str, str] | None:
+    """`FORALL i IN <bounds>` の (最初に読むコレクション, 添字)。回せない形なら None。
+
+    bounds は `lo .. hi`（`1 .. v.COUNT`、`v.FIRST .. v.LAST`、定数）、`INDICES OF v [BETWEEN a AND b]`、
+    `VALUES OF p`（#136）。本体がコレクションの要素を添字で読んでいなければ、ループにしても意味が無い。
+    """
+    bounds = statement.cursor or ""
+    if not (FORALL_INDICES.match(bounds) or FORALL_VALUES.match(bounds) or FORALL_RANGE.match(bounds)):
+        return None
+    index = _forall_index(statement)
+    if index is None:
+        return None
+    for name in _forall_reads(statement, index):
+        return name, index
+    return None
+
+
+def _forall_reads(statement: M.Loop, index: str) -> list[str]:
+    """The collections the body reads element `index` of, in the order it names them."""
+    out: list[str] = []
+    for inner in _forall_statements(statement):
+        for bind in getattr(inner, "binds", None) or []:
+            reference = COLLECTION_ELEMENT.match(bind.plsql_variable or "")
+            if reference and reference.group("index").lower() == index.lower() \
+                    and reference.group("collection").lower() not in {c.lower() for c in out}:
+                out.append(reference.group("collection"))
+    return out
 
 
 COLLECTION_ELEMENT = re.compile(r"^(?P<collection>[\w$#]+)\s*\(\s*(?P<index>[\w$#]+)\s*\)$")
@@ -1717,69 +1910,114 @@ def _forall_statements(statement: M.Loop) -> list[M.Statement]:
     return out
 
 
+def _forall_keys(file: JavaFile, statement: M.Loop, routine: M.Routine, result: ServiceFile) -> str:
+    """The indexes the FORALL runs its statement at, as a `List<Integer>` -- null when it does not run at all.
+
+    The bounds are evaluated once, before the first statement (Oracle's rule for FORALL as for FOR). Measured on
+    26ai (#136): a NULL bound or lo > hi runs nothing and leaves SQL%ROWCOUNT as it was; INDICES OF skips the
+    gaps; VALUES OF runs the indexes p holds, in p's order, a repeated one each time.
+    """
+    bounds = statement.cursor or ""
+    indices = FORALL_INDICES.match(bounds)
+    if indices:
+        collection = _expr(file, indices.group("collection"), routine, result)
+        if indices.group("low") is None:
+            return f"Plsql.indicesOf({collection})"
+        low = _expr(file, indices.group("low"), routine, result)
+        high = _expr(file, indices.group("high"), routine, result)
+        return f"Plsql.indicesOf({collection}, {low}, {high})"
+    values = FORALL_VALUES.match(bounds)
+    if values:
+        return f"Plsql.valuesOf({_expr(file, values.group('collection'), routine, result)})"
+    numeric = FORALL_RANGE.match(bounds)
+    low = _expr(file, numeric.group("low"), routine, result)
+    high = _expr(file, numeric.group("high"), routine, result)
+    return f"Plsql.forallRange({low}, {high})"
+
+
 def _forall(file: JavaFile, statement: M.Loop, routine: M.Routine, result: ServiceFile) -> None:
-    """`FORALL i IN 1 .. p_ids.COUNT <DML>` を、その要素を回す Java のループにする。
+    """`FORALL i IN <bounds> <DML>` を、その添字を回す Java のループにする。
 
     **FORALL は 1 往復、ループは要素ごとに 1 回**である。答えは変わらないが性能は変わる——#14 で
     `BULK COLLECT` + `FORALL` を走査ループにしたときと同じ代償で、そこと同じく隠さずに書く。
 
+    添字は Oracle と同じく 1 から数える（#136。それまでは List を 0 から回していた）。要素を読む前に、本体が
+    読むコレクションのそれぞれにその要素があるかを確かめる——無ければ ORA-22160 で、それより前の要素の文は
+    実行済みのまま残る（26ai で実測）。
+
     `SAVE EXCEPTIONS`（部分失敗を許す原子性）はここでは扱わない。`BULK-002` が REDESIGN として
     捕まえ続ける。
     """
-    collection, index = _forall_collection(statement, routine)
-    java = _expr(file, collection, routine, result)
-    bound = _holder(routine, collection)
-    # an INDEX BY PLS_INTEGER table is a Map keyed as PL/SQL keys it (#93): walked 1 .. COUNT, and an element
-    # read through Plsql.at, so a missing key raises as Oracle's FORALL does rather than reading null
-    keyed = bound is not None and _collection_kind(bound) == "map"
-    # 本体が読むコレクションは 1 つとは限らない（`p_ids(i)` と `p_names(i)` が並ぶ）。回す長さは
-    # 境界が名指したものから採り、要素の読み方は**本体が読んでいるすべて**について用意する
+    index = _forall_index(statement)
+    java_index = _fresh(java_name(index), _taken(routine))
+    reads = _forall_reads(statement, index)
+    # 本体が読むコレクションは 1 つとは限らない（`p_ids(i)` と `p_names(i)` が並ぶ）。要素の読み方は
+    # **本体が読んでいるすべて**について用意する。List も Map（INDEX BY、#93）も Plsql.at で添字どおりに読む
     scope = {}
-    for inner in _forall_statements(statement):
-        for bind in getattr(inner, "binds", None) or []:
-            reference = COLLECTION_ELEMENT.match(bind.plsql_variable or "")
-            if reference is None or reference.group("index").lower() != index.lower():
-                continue
-            name = reference.group("collection")
-            holder = _holder(routine, name)
-            if keyed and holder is not None and _collection_kind(holder) == "map":
-                element = re.sub(r"^Map<[^,]+,\s*(.+)>$", r"\1", java_type(holder.type.resolved).name)
-                scope[f"{name}({index})".lower()] = \
-                    f"(({element}) Plsql.at({_expr(file, name, routine, result)}, {java_name(index)}))"
-                continue
-            scope[f"{name}({index})".lower()] = \
-                f"{_expr(file, name, routine, result)}.get({java_name(index)})"
+    checks = []
+    for name in reads:
+        holder = _holder(routine, name)
+        collection = _expr(file, name, routine, result)
+        mapped = java_type(holder.type.resolved).name if holder is not None and holder.type is not None else "Object"
+        element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", mapped) \
+            if mapped.startswith(("List<", "Map<")) else "Object"
+        if holder is not None and holder.type is not None:
+            file.add_import(*java_type(holder.type.resolved).imports)
+        read = f"Plsql.at({collection}, {java_index})"
+        scope[f"{name}({index})".lower()] = read if element == "Object" else f"(({element}) {read})"
+        checks.append(f"Plsql.forallElement({collection}, {java_index});")
+    file.add_import("com.scalar.migrate.plsql.Plsql", "java.util.List")
+    keys = _forall_keys(file, statement, routine, result)
     outer = _LOOP_ROWS.get()
+    outer_locals = _BLOCK_LOCALS.get()
     _LOOP_ROWS.set({**outer, **scope})
+    _BLOCK_LOCALS.set({**outer_locals, index: java_index})
     try:
         file.comment("FORALL は 1 往復、ここでは要素ごとに 1 回。答えは同じで、性能が変わる")
         counted = _reads_bulk_rowcount(routine)
-        if counted:
-            # SQL%BULK_ROWCOUNT(i): the rows the i-th element's statement touched, for the last FORALL (#51)
-            file.line("bulkRowCount.clear();")
-        opening = (f"for (int {java_name(index)} = 1; {java_name(index)} <= Plsql.count({java}); {java_name(index)}++)"
-                   if keyed else
-                   f"for (int {java_name(index)} = 0; {java_name(index)} < {java}.size(); {java_name(index)}++)")
-        if keyed:
-            file.add_import("com.scalar.migrate.plsql.Plsql")
         # SQL%ROWCOUNT after a FORALL is the rows every element's statement touched, not the last one's (#109):
-        # each element's count starts at 0 and is added up here. A bare block, so two FORALLs can sit side by side
-        total = _fresh("forallRows", _taken(routine))
+        # each element's count starts at 0 and is added up here -- in a finally, because a statement that fails
+        # leaves the ones before it done, and SQL%ROWCOUNT counts them (measured, #136). A bare block, so two
+        # FORALLs can sit side by side
+        taken = _taken(routine)
+        listed = _fresh("forallKeys", taken)
+        total = _fresh("forallRows", taken)
         token = _COUNTING.set(False)
         try:
             with file.block("") as b:
-                b.line(f"int {total} = 0;")
-                with b.block(opening) as f:
-                    f.line("rowCount = 0;")
-                    _statements(f, statement.body, routine, result)
+                b.line(f"List<Integer> {listed} = {keys};")
+                with b.block(f"if ({listed} != null)") as run:
                     if counted:
-                        f.line("bulkRowCount.add(Plsql.dec(rowCount));")
-                    f.line(f"{total} += rowCount;")
-                b.line(f"rowCount = {total};")
+                        # SQL%BULK_ROWCOUNT(i): the rows the statement at index i touched, for the last FORALL (#51)
+                        run.line("bulkRowCount.clear();")
+                    run.line(f"int {total} = 0;")
+                    collects = any(re.search(r"\bBULK\s+COLLECT\b", getattr(s, "original_sql", None) or "", re.I)
+                                   for s in _walk(statement.body))
+                    first = _fresh("forallFirst", taken) if collects else None
+                    if first:
+                        run.line(f"boolean {first} = true;")
+                    first_token = _FORALL_FIRST.set(first)
+                    with run.block("try") as guarded:
+                        with guarded.block(f"for (Integer {java_index} : {listed})") as f:
+                            for check in checks:
+                                f.line(check)
+                            f.line("rowCount = 0;")
+                            try:
+                                _statements(f, statement.body, routine, result)
+                            finally:
+                                _FORALL_FIRST.reset(first_token)
+                            if first:
+                                f.line(f"{first} = false;")
+                            if counted:
+                                f.line(f"bulkRowCount.put({java_index}, Plsql.dec(rowCount));")
+                            f.line(f"{total} += rowCount;")
+                    with run.block("finally") as done:
+                        done.line(f"rowCount = {total};")
         finally:
             _COUNTING.reset(token)
     finally:
         _LOOP_ROWS.set(outer)
+        _BLOCK_LOCALS.set(outer_locals)
 
 
 def _reads_bulk_rowcount(routine: M.Routine) -> bool:
@@ -1801,6 +2039,9 @@ def _cursor_for(file: JavaFile, statement: M.Loop, routine: M.Routine, result: S
     query = statement.query
     if query.target_status == "ERROR":
         raise Untranslatable(["cursor FOR loop whose query ScalarDB cannot run"], query.original_sql)
+    if _runs_table_query(query):
+        _table_cursor_for(file, statement, routine, result)
+        return
     written = {t for s in _walk(statement.body) for t in (getattr(s, "write_set", None) or [])}
     conflict = written & set(query.read_set or [])
     locked_undecided = bool(query.locking_mode) and not _locked_and_decided(query)
@@ -2102,13 +2343,14 @@ def _positional(statement: M.Call, callee: M.Routine | None) -> list[str]:
     `put(p_note => 'x', p_id => 1)` was rendered as it stood, which is not Java -- and named notation is what
     tells two overloads apart. A parameter left to its DEFAULT is filled with the default when it is a literal."""
     return _ordered(list(statement.arguments), callee, statement.callee,
-                    list(callee.parameters) if callee is not None else None)
+                    list(callee.parameters) if callee is not None else None, caller=_CALLER.get())
 
 
 def _ordered(arguments: list[str], callee: M.Routine | None, where: str,
-             parameters: "list[M.Parameter] | None") -> list[str]:
+             parameters: "list[M.Parameter] | None", caller: "M.Routine | None" = None) -> list[str]:
     """`_positional` for a call statement and for a call inside an expression (#126): the arguments in the order
-    of `parameters`, named ones placed by name, a literal DEFAULT written out for one left out."""
+    of `parameters`, named ones placed by name, a literal DEFAULT written out for one left out, and an expression
+    DEFAULT passed as the callee's `defaultOf...()` (#141)."""
     if not any(NAMED_ARGUMENT.match(a) for a in arguments) and (
             callee is None or len(arguments) >= len(parameters)):
         return list(arguments)
@@ -2119,6 +2361,7 @@ def _ordered(arguments: list[str], callee: M.Routine | None, where: str,
              for a in arguments if NAMED_ARGUMENT.match(a)}
     taken = list(parameters)[len(positional):]
     out = list(positional)
+    calling = []   # the omitted DEFAULTs that call a routine, which may have side effects
     for parameter in taken:
         if parameter.name.lower() in named:
             out.append(named.pop(parameter.name.lower()))
@@ -2128,12 +2371,178 @@ def _ordered(arguments: list[str], callee: M.Routine | None, where: str,
             out.append(getattr(parameter, "carried_from", None) or parameter.name)
         elif parameter.default is not None and LITERAL_DEFAULT.match(parameter.default.strip()):
             out.append(parameter.default.strip())
+        elif parameter.default is not None:
+            out.append(_default_argument(callee, parameter, caller, where))
+            if _calls_a_routine(parameter.default):
+                calling.append(parameter.name)
         else:
             # a parameter left to its default: the generated method has no default to fall back on
             raise Untranslatable([f"{parameter.name} is left to its default"], where)
+    if len(calling) > 1:
+        # Oracle does not say in which order it evaluates the defaults; two with side effects could run either way
+        raise Untranslatable([f"{', '.join(calling)} are left to DEFAULTs that call routines, and the order Oracle "
+                              "evaluates them in is not defined"], where)
     if named:
         raise Untranslatable([f"no parameter named {', '.join(named)}"], where)
     return out
+
+
+_CALL_IN_TEXT = re.compile(r"([A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)*)\s*\(")
+
+
+def _calls_a_routine(text: str) -> bool:
+    """Whether a DEFAULT calls something other than a built-in (whose value depends on nothing but its arguments)."""
+    from .expr import FUNCTIONS
+
+    return any(name.upper().split(".")[-1] not in FUNCTIONS for name in _CALL_IN_TEXT.findall(_STRING.sub("''", text)))
+
+
+def _default_argument(callee: M.Routine, parameter: M.Parameter, caller: "M.Routine | None", where: str) -> str:
+    """What a call passes for a parameter it leaves to an expression DEFAULT (#141).
+
+    Oracle evaluates the default at every call that leaves the argument out, in the scope of the callee's
+    declaration: `p_at DATE DEFAULT SYSDATE` reads the clock each time, `DEFAULT pkg.c_limit` reads a constant the
+    caller may not see, `DEFAULT next_id()` calls the function each time (docs 8-21). So the callee's Service has a
+    method that evaluates it, `defaultOf<Routine><Parameter>()`, and the caller calls it where the argument goes.
+
+    A package **variable** is session state (STATE-001). When the project decided the caller carries it
+    (packageState.carried) the caller holds its own copy under the same name and passes that; otherwise the call
+    is refused as before."""
+    variable = _package_variable_default(callee, parameter)
+    if variable is not None:
+        carried = next((p for p in (caller.parameters if caller is not None else [])
+                        if p.carried and variable and p.name.lower() == variable.lower()), None)
+        if carried is None:
+            raise Untranslatable([f"{parameter.name} is left to its default {parameter.default.strip()}, which reads a "
+                                  "package variable (STATE-001): passed only when limits.yaml packageState.carried "
+                                  "decides the caller carries it"], where)
+        return carried.carried_from or carried.name
+    method, reason = default_method(callee, parameter)
+    if method is None:
+        raise Untranslatable([f"{parameter.name} is left to its default {parameter.default.strip()}: {reason}"], where)
+    module = _MODULE.get()
+    owner = _owner_module(callee.id, module)
+    if owner is not None and (module is None or owner.lower() != module.name.lower()):
+        if split.runs_separately(callee.id):
+            raise Untranslatable([f"{parameter.name} is left to its default, and {callee.id} runs in a transaction "
+                                  "of its own: its Service is not injected here"], where)
+        java = f"{java_name(owner)}.{method}()"
+    else:
+        java = f"{method}()"
+    markers = _DEFAULT_ARGUMENTS.get()
+    marker = f"plsql$default#{len(markers) + 1}"
+    _DEFAULT_ARGUMENTS.set({**markers, marker: java})
+    return marker
+
+
+def _package_variable_default(callee: M.Routine, parameter: M.Parameter) -> str | None:
+    """The package variable a DEFAULT is (`DEFAULT g_level`, `DEFAULT pkg.g_level`); "" when it reads one inside a
+    larger expression, which is never passed; None when it reads none."""
+    module = _callee_module(callee)
+    if module is None or module.module_kind != "package":
+        return None
+    text = parameter.default.strip()
+    variables = {d.name.lower() for d in module.declarations if d.declaration_kind == "variable"}
+    head, _, tail = text.rpartition(".")
+    if (not head or head.lower() == module.name.lower()) and tail.lower() in variables:
+        return tail
+    bare = _STRING.sub("''", text)
+    if any(re.search(rf"(?<![\w$#]){re.escape(v)}(?![\w$#(])", bare, re.IGNORECASE) for v in variables):
+        return ""
+    return None
+
+
+def _callee_module(callee: M.Routine) -> "M.Module | None":
+    program = _PROGRAM.get()
+    modules = list(program.modules) if program else ([_MODULE.get()] if _MODULE.get() else [])
+    for module in modules:
+        if any(r is callee or r.id == callee.id for r in module.routines):
+            return module
+    return None
+
+
+def default_method_name(routine: M.Routine, parameter: M.Parameter) -> str:
+    return "defaultOf" + java_class_name(routine_stem(routine)) + java_class_name(parameter.name)
+
+
+def default_method(callee: M.Routine, parameter: M.Parameter) -> "tuple[str | None, str | None]":
+    """(`defaultOf...` when the callee's Service has it, the reason when it does not)."""
+    module = _callee_module(callee)
+    if module is None:
+        return None, "the routine is not in the program"
+    try:
+        _default_java(JavaFile(package="x", name="X", source=""), module, callee, parameter)
+    except Untranslatable as e:
+        return None, ", ".join(e.names)
+    return default_method_name(callee, parameter), None
+
+
+def _default_java(file: JavaFile, module: M.Module, routine: M.Routine, parameter: M.Parameter) -> str:
+    """The Java of a parameter's DEFAULT, in the scope of the routine's declaration (its unit's names, not its
+    locals and parameters), shaped for the parameter's Java type."""
+    text = parameter.default.strip()
+    if _package_variable_default(routine, parameter) is not None:
+        raise Untranslatable(["it reads a package variable (STATE-001)"], text)
+    # `pkg.c` inside pkg is the unit's own name: `c`
+    text = _own_qualifier(text, module)
+    # the callee's unit, whichever module is being generated: its names are what the default sees
+    outer, cached = _MODULE.get(), _CALLEES.get()
+    _MODULE.set(module)
+    try:
+        names = dict(_scope(routine, module))
+        spelled = _spelled_out(text, routine, module)
+    finally:
+        _MODULE.set(outer)
+        _CALLEES.set(cached)
+    for holder in list(routine.parameters) + list(routine.declarations):
+        names.pop(holder.name, None)
+        names.pop(holder.name.lower(), None)
+    if spelled != text:
+        raise Untranslatable(["it calls a routine that leaves its own arguments to their defaults"], text)
+    rendered = translate(text, names)
+    if rendered.unknown:
+        raise Untranslatable(rendered.unknown, text)
+    if rendered.audit:
+        raise Untranslatable(["it reads USER / SYSTIMESTAMP, which the caller's AuditContext supplies"], text)
+    if rendered.sequences:
+        raise Untranslatable(["it takes a sequence number"], text)
+    file.add_import(*rendered.imports)
+    value = _coerce(file, _fit_argument(file, rendered.java, parameter), signature_type(parameter.type).name)
+    expected = signature_type(parameter.type).name
+    if re.fullmatch(r"[A-Za-z_]\w*", value) and expected in ("String", "LocalDateTime", "Boolean", "OffsetDateTime"):
+        # a package constant whose `%TYPE` the field did not resolve is an Object field (`g_pref_type_logger`)
+        value = f"({expected}) {value}"
+    elif re.fullmatch(r"[A-Za-z_]\w*", value) and expected in ("Integer", "Long"):
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        value = f"Plsql.{'toInt' if expected == 'Integer' else 'toLong'}({value})"
+    return value
+
+
+def _own_qualifier(text: str, module: M.Module) -> str:
+    pattern = re.compile(rf"(?<![\w$#.]){re.escape(module.name)}\.(?=[A-Za-z])", re.IGNORECASE)
+    parts = re.split(r"('(?:[^']|'')*')", text)
+    return "".join(part if part.startswith("'") else pattern.sub("", part) for part in parts)
+
+
+def _default_methods(file: JavaFile, module: M.Module, routine: M.Routine) -> None:
+    """`defaultOf<Routine><Parameter>()` for each IN parameter whose DEFAULT is an expression (#141)."""
+    for parameter in routine.parameters:
+        if parameter.direction != "IN" or parameter.carried or parameter.default is None \
+                or LITERAL_DEFAULT.match(parameter.default.strip()):
+            continue
+        try:
+            java = _default_java(file, module, routine, parameter)
+        except Untranslatable:
+            continue   # a call that leaves it out is refused with the reason (`default_method`)
+        mapped = signature_type(parameter.type)
+        file.add_import(*mapped.imports)
+        visibility = "public" if routine.visibility == "public" else "private"
+        throws = " throws Exception" if _calls_a_routine(parameter.default) else ""
+        file.line()
+        file.comment(f"DEFAULT {' '.join(parameter.default.split())} of {routine.name}.{parameter.name}: evaluated "
+                     "at each call that leaves it out, in this unit's scope, as Oracle does (#141)")
+        with file.block(f"{visibility} {mapped.name} {default_method_name(routine, parameter)}(){throws}") as f:
+            f.line(f"return {java};")
 
 
 _CALL_NAME = re.compile(r"([A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)?)\s*\(")
@@ -2170,15 +2579,26 @@ def _spelled_out(text: str, routine: M.Routine, module: "M.Module | None") -> st
     call inside an expression went to the translator as written, and `scaled(p_x)` became a Java call one
     argument short -- javac refused it -- while `scaled(p_x, p_factor => 3)` was refused as an unknown name. A
     call that already passes every argument by position is left exactly as written."""
-    if not text or "(" not in text:
+    if not text:
         return text
     callees = _expression_routines(routine, module)
     if not callees:
         return text
-    return _fill_calls(text, callees)
+    return _fill_calls(text, callees, routine)
 
 
-def _fill_calls(text: str, callees: dict[str, M.Routine]) -> str:
+_BARE_NAME = re.compile(r"([A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)?)(?![\w$#.])(?!\s*(?:\(|=>|:=))")
+
+
+def _defaulted_function(callee: "M.Routine | None") -> bool:
+    """A function with parameters, every one of them IN with a DEFAULT: callable with no argument list at all."""
+    if callee is None or callee.return_type is None:
+        return False
+    own = [p for p in callee.parameters if not p.carried]
+    return bool(own) and all(p.direction == "IN" and p.default is not None for p in own)
+
+
+def _fill_calls(text: str, callees: dict[str, M.Routine], caller: "M.Routine | None" = None) -> str:
     out: list[str] = []
     index = 0
     while index < len(text):
@@ -2196,7 +2616,17 @@ def _fill_calls(text: str, callees: dict[str, M.Routine]) -> str:
             index = end + 1
             continue
         match = _CALL_NAME.match(text, index)
-        if match is None or (index > 0 and (text[index - 1].isalnum() or text[index - 1] in "_$#.:")):
+        after_name = index > 0 and (text[index - 1].isalnum() or text[index - 1] in "_$#.:")
+        bare = _BARE_NAME.match(text, index) if match is None and not after_name else None
+        if bare is not None and _defaulted_function(callees.get(bare.group(1).lower())):
+            # `pkg.label || 'x'`: a function whose parameters all have DEFAULTs, called without parentheses (#141)
+            name = bare.group(1)
+            callee = callees[name.lower()]
+            parameters = [p for p in callee.parameters if not (callee.enclosing and p.carried)]
+            out.append(f"{name}({', '.join(_ordered([], callee, name, parameters, caller=caller))})")
+            index = bare.end()
+            continue
+        if match is None or after_name:
             out.append(character)
             index += 1
             continue
@@ -2208,10 +2638,10 @@ def _fill_calls(text: str, callees: dict[str, M.Routine]) -> str:
             index += len(name)
             continue
         inner = text[match.end():close]
-        arguments = [_fill_calls(a, callees) for a in _split_arguments(inner)]
+        arguments = [_fill_calls(a, callees, caller) for a in _split_arguments(inner)]
         # a lifted local subprogram's carried variables are appended by the translator (`#extra`), not here
         parameters = [p for p in callee.parameters if not (callee.enclosing and p.carried)]
-        ordered = _ordered(arguments, callee, name, parameters)
+        ordered = _ordered(arguments, callee, name, parameters, caller=caller)
         if ordered == arguments and all(a == b for a, b in zip(arguments, _split_arguments(inner))):
             out.append(text[index:close + 1])
         else:
@@ -2358,6 +2788,13 @@ def _sql(file: JavaFile, statement: M.SqlOperation, routine: M.Routine) -> None:
 
 
 def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine) -> None:
+    from .. import table_query
+
+    if _runs_table_query(statement):
+        # #135: `TABLE(v)` of the routine's collection -- the rows are computed here, in a block of their own
+        with file.block("") as f:
+            _table_into(f, statement, routine, _table_rows(f, statement, routine, None))
+        return
     method = f"{java_name(routine_stem(routine))}{_sql_suffix(statement)}"
     # a bind lifted out of the SQL (P4-4) is computed inside the repository from the other binds, so it is not
     # passed in. The repository's parameter list is built from the same rule; the two have to agree.
@@ -2370,7 +2807,7 @@ def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine
         file.line(f"{_cursor_state(statement.opens_cursor)}.open(repository.{method}({arguments})"
                   f"{'.rows()' if planned else ''});")
         return
-    targets = statement.into_targets
+    targets = [_canonical(routine, t) for t in statement.into_targets]
     if getattr(statement, "returns_deleted", None) and targets:
         # `DELETE ... RETURNING ... INTO` of scalars, read before the DELETE (#87): none leaves the targets, a
         # second raises TOO_MANY_ROWS -- before the DELETE, as Oracle undoes its statement
@@ -2399,6 +2836,9 @@ def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine
         return
     if targets and statement.cardinality == "AT_MOST_ONE":
         _first_row(file, statement, routine, method, arguments, targets)
+    elif targets and len(targets) == 1 and _stored_element(file, routine, targets[0], None) is not None:
+        # `SELECT * INTO emp_tab(1)`: an element of a collection, stored with Plsql.set (12-6, #137)
+        file.line(_stored_element(file, routine, targets[0], f"repository.{method}({arguments})"))
     elif targets and len(targets) == 1 and "." not in targets[0]:
         # (`INTO rec.dept_name` -- one field of a record -- goes the way of several fields below: 8-37, #74)
         holder = _holder(routine, targets[0])
@@ -2412,6 +2852,10 @@ def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine
         file.comment(f"SELECT INTO {', '.join(targets)}")
         file.line(f"var row = repository.{method}({arguments});")
         for index, target in enumerate(targets):
+            element = _stored_element(file, routine, target, f"row[{index}]")
+            if element is not None:
+                file.line(element)
+                continue
             holder = _holder(routine, target)
             value = _into(file, f"row[{index}]", _local_type(routine, target))
             file.line(f"{_local(target)} = {_constrain(file, value, holder.type if holder else None)};")
@@ -2618,11 +3062,18 @@ def _bulk_into(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, ta
                     g.add_import(*java_type(kind).imports)
                 values = ", ".join(_into(g, f"row_[{i}]", java_type(kind).name) for i, (_, kind) in enumerate(fields))
                 g.line(f"rows_.add(new {element}({values}));")
-            f.line(f"{_local(targets[0])} = {_collected(holder, 'rows_')};")
+            f.line(f"{_local(targets[0])} = {_collected(holder, _appended(targets[0], 'rows_'))};")
             return
         for index, (target, holder) in enumerate(zip(targets, holders)):
             element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
-            f.line(f"{_local(target)} = {_collected(holder, f'Plsql.column(bulk_, {index}, {element}.class)')};")
+            column = _appended(target, f"Plsql.column(bulk_, {index}, {element}.class)")
+            f.line(f"{_local(target)} = {_collected(holder, column)};")
+
+
+def _appended(target: str, values: str) -> str:
+    """Inside a FORALL, BULK COLLECT adds each element's rows to the earlier ones' (12-26); elsewhere it replaces."""
+    first = _FORALL_FIRST.get()
+    return f"Plsql.appended({first} ? null : {_local(target)}, {values})" if first else values
 
 
 def _collected(holder, values: str) -> str:
@@ -2647,8 +3098,18 @@ def _planned_into(file: JavaFile, statement: M.SqlOperation, routine: M.Routine,
     if statement.cardinality == "MANY":
         _bulk_into(file, statement, routine, targets, rows)
         return
+    _rows_into(file, statement, routine, targets, rows, "through the plan")
+
+
+def _rows_into(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, targets: list[str], rows: str,
+               how: str | None = None) -> None:
+    """Every row a query returned, INTO its targets as SELECT INTO or a cursor's first FETCH takes them: the plan's
+    rows (#83), or the rows of a `TABLE(v)` query the application ran (#135)."""
+    if any("." in t for t in targets):
+        raise Untranslatable([f"INTO {', '.join(targets)}"], statement.original_sql)
+    file.add_import("com.scalar.migrate.plsql.Plsql")
     with file.block("") as f:
-        f.comment(f"SELECT INTO {', '.join(targets)}, through the plan")
+        f.comment(f"SELECT INTO {', '.join(targets)}" + (f", {how}" if how else ""))
         f.line(f"var rows_ = {rows};")
         if statement.cardinality == "AT_MOST_ONE":
             if statement.not_found_flag:
@@ -2680,11 +3141,193 @@ def _assign_row(file: JavaFile, routine: M.Routine, targets: list[str], row: str
         file.line(f"{_local(targets[0])} = new {record}({values});")
         return
     for index, target in enumerate(targets):
+        element = _stored_element(file, routine, target, f"{row}[{index}]")
+        if element is not None:
+            file.line(element)
+            continue
         value = _into(file, f"{row}[{index}]", _local_type(routine, target))
         if constrained:
             holder = _holder(routine, target)
             value = _constrain(file, value, holder.type if holder else None)
         file.line(f"{_local(target)} = {value};")
+
+
+def _runs_table_query(statement) -> bool:
+    """Whether the application runs this query over `TABLE(v)` (#135): the analysis left it OK, not ERROR."""
+    from .. import table_query
+
+    if statement is None or not table_query.reads_table(getattr(statement, "original_sql", None)) \
+            or statement.target_status == "ERROR":
+        return False
+    try:
+        return table_query.parse(statement.original_sql, check_columns=False) is not None
+    except table_query.Refused:
+        return True   # refused where the rows are computed, with the reason
+
+
+def _table_into(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, rows: str) -> None:
+    """The rows of a `TABLE(v)` query (#135) into what the statement puts them in, as a repository's rows go."""
+    targets = list(statement.into_targets)
+    if getattr(statement, "opens_cursor", None):
+        file.line(f"{_cursor_state(statement.opens_cursor)}.open({rows});")
+        return
+    if not targets or (statement.sql_kind or "").upper() != "SELECT":
+        raise Untranslatable(["TABLE() query whose rows go nowhere"], statement.original_sql)
+    if statement.cardinality == "MANY":
+        _bulk_into(file, statement, routine, targets, rows)
+        return
+    _rows_into(file, statement, routine, targets, rows)
+
+
+def _table_cursor_for(file: JavaFile, statement: M.Loop, routine: M.Routine, result: ServiceFile) -> None:
+    """`FOR r IN (SELECT ... FROM TABLE(v) ...) LOOP` (#135): the rows computed here, and `r.<column>` the column of
+    the row -- typed as the element's field (or the element, for COLUMN_VALUE) when the item is one."""
+    from .. import table_query
+
+    if statement.returns_rows or statement.rows_into or statement.chunk:
+        raise Untranslatable(["TABLE() query returned or read in chunks"], statement.query.original_sql)
+    query = table_query.parse(statement.query.original_sql, check_columns=False)
+    element = _table_element(routine, table_query.collection_of(statement.query.original_sql) or "")
+    if query is None or element is None:
+        raise Untranslatable(["TABLE() of something other than the routine's collection"],
+                             statement.query.original_sql)
+    _, java_element, fields = element
+    types = {f.lower(): t for f, t in fields} if fields is not None else {"column_value": java_element}
+    if query.items is None and not query.count:
+        names, kinds = list(types), list(types.values())
+    elif query.count:
+        names, kinds = [None], ["BigDecimal"]
+    else:
+        # an item that is the row's column keeps its type, whatever the alias calls it
+        names = list(query.names)
+        kinds = [java_element if item == table_query.ROW else
+                 types.get(item.split(".", 1)[1].lower(), "Object") if item.startswith(table_query.ROW + ".")
+                 else "Object" for item in query.items]
+    variable = java_name(statement.variable or "r")
+    row = _fresh(variable, _taken(routine))
+    columns = {}
+    for position, (name, kind) in enumerate(zip(names, kinds)):
+        if not name:
+            continue
+        value = f"{row}[{position}]"
+        columns[f"{statement.variable}.{name}".lower()] = value if kind == "Object" else _into(file, value, kind)
+    with file.block("") as b:
+        rows = _table_rows(b, statement.query, routine, result)
+        outer = _LOOP_ROWS.get()
+        _LOOP_ROWS.set({**outer, **columns})
+        try:
+            with b.block(f"for (Object[] {row} : {rows})") as f:
+                _statements(f, statement.body, routine, result)
+        finally:
+            _LOOP_ROWS.set(outer)
+
+
+def _table_element(routine: M.Routine, collection: str):
+    """(Java element type, [(field, Java type)] or None for scalars) of a collection `TABLE(...)` reads (#135)."""
+    from .types import COLLECTION as COLLECTION_TYPE, object_types
+
+    holder = _holder(routine, collection)
+    if holder is None or not _collection_kind(holder):
+        return None
+    mapped = java_type(holder.type.resolved).name
+    element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", mapped) if mapped.startswith(("List<", "Map<")) \
+        else "Object"
+    declared = COLLECTION_TYPE.match((holder.type.resolved or "").strip())
+    text = declared.group("element").strip() if declared else ""
+    record = text if RECORD_TEXT.match(text) else object_types().get(text.lower())
+    fields = [(name, java_type(kind).name) for name, kind in record_columns(record)] if record else None
+    return holder, element, fields
+
+
+def _table_rows(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, result) -> str | None:
+    """#135: a query over `TABLE(v)` of the routine's own collection, run here. Writes the Java that computes its rows
+    -- walk the elements, keep the ones WHERE keeps, sort as ORDER BY does, take the select list -- and returns the
+    name of the `List<Object[]>` holding them: what a repository hands back for a query, so SELECT INTO, BULK COLLECT
+    and an OPEN take them as they take any. None when the query does not read `TABLE(...)`; a shape it cannot run
+    is refused (the analysis already marked it ERROR, `capability._table_query`)."""
+    from .. import table_query
+
+    sql = statement.original_sql
+    if not table_query.reads_table(sql) or statement.target_status == "ERROR":
+        return None
+    collection = table_query.collection_of(sql)
+    element = _table_element(routine, collection or "")
+    if element is None:
+        raise Untranslatable([f"TABLE({collection}): not a collection this routine declares"], sql)
+    holder, java_element, fields = element
+    try:
+        query = table_query.parse(sql, routine.name, [f for f, _ in fields] if fields is not None else None)
+    except table_query.Refused as refused:
+        raise Untranslatable([str(refused)], sql) from refused
+    if query is None:
+        return None
+    file.add_import("com.scalar.migrate.plsql.Plsql", "java.util.List", "java.util.ArrayList",
+                    *java_type(holder.type.resolved).imports)
+    taken = _taken(routine)
+    rows, each, row = _fresh("tableRows", taken), _fresh("tableElement", taken), _fresh("tableRow", taken)
+    if query.items is None and not query.count:
+        # `SELECT *`: every column of the element -- the fields of a record, COLUMN_VALUE of a scalar
+        query.items = [f"{table_query.ROW}.{f}" for f, _ in fields] if fields is not None else [table_query.ROW]
+    items = query.items or []
+    outer = _LOOP_ROWS.get()
+    _LOOP_ROWS.set({**outer, table_query.ROW: row})
+    try:
+        values = [_expr(file, item, routine, result) for item in items]
+        keys, extra = [], []
+        for key, _, _ in query.order:
+            if isinstance(key, int):
+                keys.append(key - 1)
+            else:
+                keys.append(len(values) + len(extra))
+                extra.append(_expr(file, key, routine, result))
+        condition = _expr(file, query.where, routine, result, condition=True) if query.where else None
+    finally:
+        _LOOP_ROWS.set(outer)
+    file.comment(f"TABLE({collection}) はアプリが持つコレクションなので、SQL ではなくその要素を回して絞り・並べる（#135）")
+    file.line(f"List<Object[]> {rows} = new ArrayList<>();")
+    source = f"Plsql.tableRows({_expr(file, collection, routine, result)})"
+    if statement.cardinality == "MANY" and (collection or "").lower() in {
+            t.lower() for t in (getattr(statement, "into_targets", None) or [])}:
+        # `SELECT ... BULK COLLECT INTO v FROM TABLE(v)`: Oracle empties v before the query reads it, so the query
+        # sees no rows (the reference's 12-18, "unexpected results"); reading v first gave its old elements
+        file.comment(f"BULK COLLECT INTO {collection} は問合せの前に {collection} を空にする（Oracle と同じく 0 行）")
+        source = "List.<Object>of()"
+    with file.block(f"for (Object {each} : {source})") as f:
+        f.line(f"{java_element} {row} = " + (each if java_element == "Object" else f"({java_element}) {each}") + ";")
+        add = f"{rows}.add(new Object[] {{{', '.join(values + extra)}}});"
+        if condition:
+            with f.block(f"if ({condition})") as g:
+                g.line(add)
+        else:
+            f.line(add)
+    if query.order:
+        desc = ", ".join("true" if d else "false" for _, d, _ in query.order)
+        nulls = ", ".join("true" if n else "false" for _, _, n in query.order)
+        file.line(f"Plsql.orderRows({rows}, {len(values)}, new int[] {{{', '.join(map(str, keys))}}}, "
+                  f"new boolean[] {{{desc}}}, new boolean[] {{{nulls}}});")
+    if query.count:
+        file.line(f"{rows} = Plsql.countRows({rows});")
+    if query.limit is not None:
+        file.line(f"{rows} = Plsql.firstRows({rows}, {query.limit});")
+    return rows
+
+
+def _stored_element(file: JavaFile, routine: M.Routine, target: str, value: str | None) -> str | None:
+    """`INTO v(1)`: the Java that stores `value` as that element of the collection -- `Plsql.set`, as `v(1) := x`
+    stores it. `empTab (1) = ...` was what came out before, which javac refused (12-6, #137). None when `target`
+    is not an element of a local collection; with `value` None, only that question is answered."""
+    from .repository import ELEMENT_TARGET
+
+    element = ELEMENT_TARGET.match(target or "")
+    holder = _holder(routine, element.group("collection")) if element else None
+    if holder is None or not _collection_kind(holder) or "(" in element.group("key"):
+        return None
+    if value is None:
+        return ""
+    held = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
+    file.add_import("com.scalar.migrate.plsql.Plsql", *java_type(holder.type.resolved).imports)
+    key = _expr(file, element.group("key"), routine, None)
+    return f"Plsql.set({_local(holder.name)}, {key}, {_into(file, value, held)});"
 
 
 def _cursor_state(cursor: str) -> str:
@@ -2698,7 +3341,17 @@ def _general_cursors(routine: M.Routine) -> dict[str, bool]:
         cursor = getattr(statement, "opens_cursor", None)
         if cursor:
             out[cursor.lower()] = out.get(cursor.lower(), False) or bool(getattr(statement, "cursor_variable", False))
+    for parameter in routine.parameters:
+        # one the enclosing routine opened and handed over (#138): its FETCHes here take the rows that OPEN read
+        if _carried_cursor(parameter):
+            out.setdefault(_carried_cursor(parameter), False)
     return out
+
+
+def _carried_cursor(parameter: M.Parameter) -> str | None:
+    """The cursor a lifted subprogram's carried parameter is the state of (`c%cursor`, #138), or None."""
+    carried = getattr(parameter, "carried_from", None) or ""
+    return carried[:-len("%cursor")].lower() if parameter.carried and carried.lower().endswith("%cursor") else None
 
 
 def _fetch(file: JavaFile, statement: M.CursorStatement, routine: M.Routine) -> None:
@@ -2708,13 +3361,13 @@ def _fetch(file: JavaFile, statement: M.CursorStatement, routine: M.Routine) -> 
     if any(d.code == "BULK_COLLECT" for d in statement.diagnostics):
         # FETCH ... BULK COLLECT INTO ... [LIMIT n]: the next n rows into the collections (#67)
         limit = _expr(file, statement.bulk_limit, routine, None) if statement.bulk_limit else "null"
-        _bulk_into(file, statement, routine, list(statement.into_targets),
+        _bulk_into(file, statement, routine, [_canonical(routine, t) for t in statement.into_targets],
                    f"{_cursor_state(cursor)}.fetchMany({limit})")
         return
     with file.block("") as f:   # its own scope: a routine fetches more than once
         f.line(f"Object[] row_ = {_cursor_state(cursor)}.fetch();")
         with f.block("if (row_ != null)") as g:
-            _assign_row(g, routine, list(statement.into_targets), "row_")
+            _assign_row(g, routine, [_canonical(routine, t) for t in statement.into_targets], "row_")
 
 
 def _into(file: JavaFile, value: str, target_type: str) -> str:
@@ -2942,6 +3595,9 @@ def _name_clashes(routine: M.Routine) -> list[str]:
 
 
 def _holder(routine: M.Routine, target: str):
+    qualified = _QUALIFIED_NAMES.get().get((target or "").strip().lower())
+    if qualified is not None and qualified[1] is not None and qualified[1].type is not None:
+        return qualified[1]   # `outer.x`: the block's x, past an inner one (#138)
     # a nested block's own declaration first: it hides the routine's of the same name (#71)
     for holder in reversed(_BLOCK_HOLDERS.get()):
         if holder.name.lower() == (target or "").lower() and holder.type is not None:
@@ -3115,10 +3771,14 @@ def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "Service
     """
     names = {**_scope(routine, module or _MODULE.get()), **_BLOCK_LOCALS.get(), **_LOOP_ROWS.get(),
              **_HANDLER_ERROR.get()}
+    written = text
     text = _spelled_out(text, routine, module or _MODULE.get())
+    names.update(_DEFAULT_ARGUMENTS.get())   # the arguments left to an expression DEFAULT (#141)
     names.update({f"{flag}%notfound": _flag_name(flag) for flag in _not_found_flags(routine)})
     for cursor in _general_cursors(routine):
         state = _cursor_state(cursor)
+        # `<cursor>%cursor`: the state itself, which a call hands to a lifted subprogram that fetches it (#138)
+        names.update({f"{cursor}%cursor": state})
         names.update({f"{cursor}%found": f"{state}.found()", f"{cursor}%notfound": f"{state}.notFound()",
                       f"{cursor}%rowcount": f"{state}.rowCount()", f"{cursor}%isopen": f"{state}.isOpen()"})
     rendered = translate(text, names, boolean_value=boolean_value, condition=condition, as_text=as_text)
@@ -3126,7 +3786,8 @@ def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "Service
         if result is not None and name not in result.unknown_names:
             result.unknown_names.append(name)
     if rendered.unknown:
-        raise Untranslatable(rendered.unknown, text or "")
+        # the text as written, not with the markers standing for defaulted arguments (#141)
+        raise Untranslatable(rendered.unknown, (written if "plsql$default#" in (text or "") else text) or "")
     if rendered.sequences:
         # `v_id := seq.NEXTVAL` outside any SQL. Numbering belongs to the repository -- it is the one that is
         # given a `Sequences` (plan §9) -- so the service asks it, instead of reaching for a field it never had

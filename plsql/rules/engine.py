@@ -438,9 +438,9 @@ CLOCK = re.compile(r"\b(SYSDATE|SYSTIMESTAMP|CURRENT_DATE|CURRENT_TIMESTAMP|LOCA
                    re.IGNORECASE)
 
 
-def _clock_reads(routine: M.Routine) -> int:
+def _clock_reads(routine: M.Routine, program: "M.Program | None" = None) -> int:
     """How many times the routine asks the database what time it is."""
-    total = 0
+    total = _defaulted_clock_reads(routine, program)
     for statement in _statements(routine):
         text = " ".join(str(getattr(statement, field, "") or "")
                         for field in ("original_sql", "expression", "cursor", "target", "condition"))
@@ -452,6 +452,26 @@ def _clock_reads(routine: M.Routine) -> int:
     for declaration in list(routine.declarations) + nested:
         if declaration.declaration_kind in ("variable", "constant"):
             total += len(CLOCK.findall(declaration.initial or ""))
+    return total
+
+
+def _defaulted_clock_reads(routine: M.Routine, program: "M.Program | None") -> int:
+    """#141: a call that leaves an argument to `DEFAULT SYSDATE` reads the clock where the call is, each time -- Oracle
+    evaluates the default for the call, and the generated code calls the callee's defaultOf method there."""
+    if program is None:
+        return 0
+    routines = {r.id: r for m in program.modules for r in m.routines}
+    total = 0
+    for statement in _statements(routine):
+        callee = routines.get(getattr(statement, "resolved_to", None) or "") if statement.kind == "Call" else None
+        if callee is None:
+            continue
+        arguments = list(statement.arguments or [])
+        named = {a.partition("=>")[0].strip().lower() for a in arguments if re.match(r"^\s*[\w$#]+\s*=>", a)}
+        positional = len(arguments) - len(named)
+        for index, parameter in enumerate(callee.parameters):
+            if index >= positional and parameter.name.lower() not in named and parameter.default:
+                total += len(CLOCK.findall(parameter.default))
     return total
 
 
@@ -475,7 +495,7 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
         "externalPackage": lambda v: bool(effects and effects.external.packages) is v,
         # a call specification (`AS LANGUAGE JAVA NAME ...`): its body is Java or C inside the database (#69)
         "callSpec": lambda v: bool(routine.call_spec) is v,
-        "writeThenScan": lambda v: (routine.id in {r for r, _ in analysis.write_then_scan()}) is v,
+        "writeThenScan": lambda v: (routine.id in _writes_then_scans(analysis)) is v,
         "recursive": lambda v: any(routine.id in cycle for cycle in analysis.call_graph.cycles()) is v,
         # a call that resolves to no routine in the program: code nobody analysed, which may commit, send mail,
         # or take a lock. `externalPackage` only knows a short list of names; this is everything else
@@ -489,7 +509,7 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
         # P4-3: how many times the routine reads the database clock. Two reads can return two values, and
         # nothing in the recorded Oracle evidence pins that -- a scenario pins the clock to one value, so a
         # routine that reads it twice is compared against something the comparison cannot distinguish.
-        "clockReadsAtLeast": lambda v: _clock_reads(routine) >= v,
+        "clockReadsAtLeast": lambda v: _clock_reads(routine, analysis.program) >= v,
         # row locking hides in a cursor declaration as well as in a statement (found in P1-7)
         "cursorLocking": lambda v: _locking_cursor(module, routine) is v,
         # the FORALL itself, or the loop a BULK COLLECT + FORALL pair became (plsql.bulk carries the diagnostic, #127)
@@ -511,6 +531,28 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
 
 _INTERPOLATED_IDENTIFIER = re.compile(
     r"(FROM|INTO|TABLE|JOIN|UPDATE)\s+'\s*\|\||(FROM|INTO|TABLE|JOIN|UPDATE)\s*'\s*\|\|", re.IGNORECASE)
+
+
+def _writes_then_scans(analysis: ProgramAnalysis) -> set[str]:
+    """The routines that scan a table the same transaction wrote (AUTO prohibition 11, docs/design/plsql-kpi.md §2).
+
+    Condition 11 is about a *scan*: reading by key after writing is allowed (P2-9). Only the capability check knows
+    the access path, so once it has run (a ScalarDB schema was given, and every SQL statement has a target status)
+    its answer -- the statements marked SCAN_AFTER_WRITE -- is the one used. Without it, `write_then_scan` is the
+    superset from the SQL alone: any read of a table written earlier in the transaction (#131)."""
+    cached = getattr(analysis, "_writes_then_scans", None)
+    if cached is not None:
+        return cached
+    routines = [r for m in analysis.program.modules for r in m.routines]
+    checked = any(s.kind == "SqlOperation" and getattr(s, "target_status", None)
+                  for r in routines for s in _statements(r))
+    if checked:
+        found = {r.id for r in routines
+                 if any(d.code == "SCAN_AFTER_WRITE" for s in _statements(r) for d in s.diagnostics)}
+    else:
+        found = {r for r, _ in analysis.write_then_scan()}
+    analysis._writes_then_scans = found
+    return found
 
 
 def _state_touchers(analysis: ProgramAnalysis) -> set[str]:

@@ -55,6 +55,7 @@ _CAMEL = {
     "column_oracle_type": "columnOracleType", "writes_column": "writesColumn",
     "expression": "expression",
     "variants": "variants",
+    "jump_label": "jumpLabel",
 }
 _SNAKE = {v: k for k, v in _CAMEL.items()}
 

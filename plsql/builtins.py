@@ -82,11 +82,57 @@ BUILTINS: dict[str, Builtin] = {b.name: b for b in [
             function=True),
     Builtin("DBMS_UTILITY.GET_TIME", (), "Plsql.getTime",
             "経過時間の目盛り（1/100 秒）。差を取るためだけの値で、起点は Oracle と違う", function=True),
+    # #132: DBMS_LOB の読むだけの関数。生成コードは CLOB を String、BLOB を byte[] で持つ（gen_java/types.py）ので、
+    # LOB の位置指定子ではなく値そのものに同じことをする。副作用は無い（データにもトランザクションにも触れない）。
+    # CREATETEMPORARY / APPEND など引数を書き換えるもの、BFILE やファイルを読むものは載せない（EXT-001 のまま）
+    Builtin("DBMS_LOB.GETLENGTH", ("lob_loc",), "Plsql.lobGetLength",
+            "長さ（CLOB は文字数、BLOB はバイト数）。NULL なら NULL", function=True),
+    Builtin("DBMS_LOB.SUBSTR", ("lob_loc", "amount", "offset"), "Plsql.lobSubstr",
+            "offset 文字（BLOB はバイト）目から amount 個。amount の既定は 32767、offset の既定は 1。どれかが NULL、"
+            "amount が 1〜32767 の外、offset が 1 未満か長さを超えるなら NULL（Oracle 26ai で実測）", function=True,
+            arities=(1, 2, 3)),
+    Builtin("DBMS_LOB.INSTR", ("lob_loc", "pattern", "offset", "nth"), "Plsql.lobInstr",
+            "offset 文字目から探して nth 番目に現れる位置。無ければ 0。どれかが NULL か空、offset か nth が 1 未満なら "
+            "NULL（SQL の INSTR と違い、負の offset で後ろから探すことはしない。Oracle 26ai で実測）", function=True,
+            arities=(2, 3, 4)),
 ]}
 
 
 def lookup(name: str | None) -> Builtin | None:
-    return BUILTINS.get(re.sub(r"\s+", "", name or "").upper())
+    key = re.sub(r"\s+", "", name or "").upper()
+    return BUILTINS.get(key) or _standard(key)
+
+
+# `SYS.STANDARD.BITAND(x, y)` / `STANDARD.TO_CHAR(x)`: a SQL function named through the package that defines it,
+# which code does when a function of its own hides the built-in (oos_util_bit.bitand). It is the built-in the
+# expression translator reads (plsql/gen_java/expr.py FUNCTIONS), not code nobody analysed (#140)
+_STANDARD = re.compile(r"^(?:SYS\.)?STANDARD\.([A-Z][\w$#]*)$")
+
+
+def _standard(key: str) -> Builtin | None:
+    match = _STANDARD.match(key)
+    if match is None:
+        return None
+    from .gen_java.expr import FUNCTIONS
+
+    java = FUNCTIONS.get(match.group(1))
+    if java is None:
+        return None
+    return Builtin(key, (), java, f"{match.group(1)} itself, named through STANDARD", function=True, arities=tuple(range(10)))
+
+
+def external_packages(text: str, pattern: "re.Pattern[str]") -> list[str]:
+    """The external packages (`pattern`, lower.EXTERNAL_PACKAGES) a routine's text calls into, leaving out the
+    members this table knows: `DBMS_LOB.GETLENGTH(c)` is a function of a value, not a call into a package that
+    writes, commits or sends anything (#132). A mention with no known member (`DBMS_LOB.APPEND`, a constant such
+    as `DBMS_LOB.LOBMAXSIZE`) still counts."""
+    found: set[str] = set()
+    for match in pattern.finditer(text):
+        member = re.match(r"\s*\.\s*([A-Za-z][\w$#]*)", text[match.end():])
+        if member and lookup(f"{match.group(0)}.{member.group(1)}") is not None:
+            continue
+        found.add(match.group(0).upper())
+    return sorted(found)
 
 
 class BuiltinArgumentError(ValueError):

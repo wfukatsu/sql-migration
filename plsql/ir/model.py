@@ -23,6 +23,8 @@ from ..source import Issue, SourceRange
 
 # 1.1.0: P3-1 added what each bind and select item was attributed to (column, ScalarDB type, declared Oracle
 # type) and whether the SELECT asked for a star. All optional, so a 1.0.0 reader still reads a 1.1.0 document.
+# A statement's labels and a GOTO block's Java label (#138, #139) were added later, optional, under the same version:
+# a reader that does not know them drops them, and they only say where a GOTO went.
 SCHEMA_VERSION = "1.1.0"
 
 # --- verdict / capability vocabularies (shared with docs/design/plsql-kpi.md) -------------------------------
@@ -107,6 +109,9 @@ class Statement(Node):
 
     read_set: list[str] = field(default_factory=list)
     write_set: list[str] = field(default_factory=list)
+    # `<<outer>> DECLARE ...`, `<<print_now>> DBMS_OUTPUT.PUT_LINE(...)`: the labels written before the statement,
+    # lower case (#138, #139). A block's label qualifies its names (`outer.x`); any label is where a GOTO can go
+    labels: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -302,6 +307,9 @@ class Block(Statement):
     declarations: list[Declaration] = field(default_factory=list)
     body: list[Statement] = field(default_factory=list)
     exception_handlers: list["ExceptionHandler"] = field(default_factory=list)
+    # #139: a block that stands for a forward GOTO (plsql.goto): the statements from the GOTO up to its label, left
+    # by `EXIT jump_label` -- the Java `label: { ... break label; }`. None for a block the source wrote
+    jump_label: str | None = None
 
 
 @dataclass
