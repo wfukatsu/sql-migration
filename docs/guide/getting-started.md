@@ -91,8 +91,8 @@ DB にしかない情報（制約、外部キー、索引、行数、統計、DB
 
 ## 6. テスト
 
-DB の要らないテストは CI でも回ります（`.github/workflows/ci.yml` と `.gitlab-ci.yml`、同じ内容）: pytest、同梱コピーの
-一致（`vendor_sync.py --check`）、Java の単体テスト。DB の要る検証（`difftest/`）は手で回します。
+DB の要らないテスト（pytest、同梱コピーの一致（`vendor_sync.py --check`）、Java の単体テスト）は、merge の前に手元で
+回します。main へ merge したあとは、開発側の CI も同じものを回します。DB の要る検証（`difftest/`）は手で回します。
 
 ```bash
 .venv/bin/python -m pytest -q          # 変換ツール・PL/SQL 変換・スキル（図の描画のテストは mmdc が無ければ skip）
