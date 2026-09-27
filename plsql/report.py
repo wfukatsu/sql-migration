@@ -107,31 +107,85 @@ class Analysis:
         return [(m, r) for m in self.program.modules for r in m.routines]
 
 
-def _resolve_package_types(program: M.Program, table: SymbolTable) -> None:
+def _resolve_package_types(program: M.Program, table: SymbolTable, schema: OracleSchema | None = None) -> None:
     """`x OUT r_types.r_type_1`: a RECORD or collection type another package declares. Each file's symbol table
     sees only its own scopes, so the type stayed `declared` as written and the generator typed the variable
     Object -- `x.f()` did not compile (samples/oracle-plsql-docs 8-16 / 8-18 / 8-21, #74). With every file's
-    scopes merged, the package's own declaration answers it."""
-    import re as _re
+    scopes merged, the package's own declaration answers it.
 
-    def resolve(type_: "M.TypeRef | None") -> "M.TypeRef | None":
+    #128: the same for `a pkg2.t1` on `SUBTYPE t1 IS VARCHAR2(10)` in pkg2's specification. And a name that
+    nothing answers -- no TYPE or SUBTYPE of that name anywhere, no Oracle type the generator maps -- is marked
+    unresolved: it was `declared` as written, became Object, and cost the routine nothing (typeResolution)."""
+    import re as _re
+    from .gen_java.types import java_type
+
+    declared_types = {name for scope in table.scopes.values() for name, symbol in scope.symbols.items()
+                      if symbol.kind == "type"} \
+        | {name for scope in table.scopes.values() for name, *_ in scope.subtypes} \
+        | set(schema.object_types if schema else ()) | set(schema.table_types if schema else ())
+
+    def subtype(package: str, name: str, formal: bool) -> "M.TypeRef | None":
+        scope = table.scopes.get(package)
+        found = {n: (base, bounds, not_null) for n, base, bounds, not_null in (scope.subtypes if scope else [])}
+        if name not in found:
+            return None
+        base, bounds, not_null = found[name]
+        seen = {name}
+        while base.lower() in found and base.lower() not in seen:   # a subtype of a subtype of the same package
+            seen.add(base.lower())
+            base, more, also = found[base.lower()]
+            bounds, not_null = bounds or more, not_null or also
+        if formal:   # a parameter takes the NOT NULL and the RANGE, not the size (lower._Lowerer._formal)
+            base = _re.sub(r"\s*\([^()]*\)\s*$", "", base)
+        return M.TypeRef(None, base, "declared", nullable=False if not_null else None, range=bounds)
+
+    def resolve(type_: "M.TypeRef | None", formal: bool = False) -> "M.TypeRef | None":
         if type_ is None or type_.origin != "declared":
             return type_
         qualified = _re.fullmatch(r"\s*([A-Za-z][\w$#]*)\s*\.\s*([A-Za-z][\w$#]*)\s*", type_.oracle or "")
         scope = table.scopes.get(qualified.group(1).lower()) if qualified else None
         declared = scope.symbols.get(qualified.group(2).lower()) if scope is not None else None
-        if declared is None or declared.kind != "type" or declared.type is None \
-                or declared.type.origin not in ("record", "collection"):
-            return type_
-        return M.TypeRef(type_.oracle, declared.type.resolved, declared.type.origin, type_.schema_snapshot)
+        if declared is not None and declared.kind == "type" and declared.type is not None \
+                and declared.type.origin in ("record", "collection"):
+            return M.TypeRef(type_.oracle, declared.type.resolved, declared.type.origin, type_.schema_snapshot)
+        based = subtype(qualified.group(1).lower(), qualified.group(2).lower(), formal) if qualified else None
+        if based is not None:
+            return M.TypeRef(type_.oracle, based.resolved, "declared", type_.schema_snapshot, based.nullable,
+                             based.range)
+        if _unknown(type_):
+            return M.TypeRef(type_.oracle, None, "unresolved", type_.schema_snapshot, type_.nullable, type_.range)
+        return type_
+
+    def _unknown(type_: M.TypeRef) -> bool:
+        written = (type_.oracle or "").strip()
+        named = _re.fullmatch(r"([A-Za-z][\w$#]*)(?:\s*\.\s*([A-Za-z][\w$#]*))?\s*(?:\(.*\))?", written)
+        if named is None or (type_.resolved or "").strip() != written:
+            return False   # not a name, or something (a local SUBTYPE) already answered it
+        if java_type(written).name != "Object":
+            return False
+        first, second = named.group(1).upper(), (named.group(2) or "").upper()
+        if (second or first).lower() in declared_types or first in _OPAQUE_TYPES \
+                or (second and first.startswith(_ORACLE_PACKAGES)):
+            return False   # a type the program or Oracle declares; the generator's Object for it is deliberate
+        return True
 
     for module in program.modules:
         for holder in module.declarations:
-            holder.type = resolve(holder.type)
+            holder.type = resolve(holder.type) if holder.declaration_kind in ("variable", "constant") else holder.type
         for routine in module.routines:
-            routine.return_type = resolve(routine.return_type)
-            for holder in list(routine.parameters) + list(routine.declarations):
-                holder.type = resolve(holder.type)
+            routine.return_type = resolve(routine.return_type, formal=True)
+            for holder in routine.parameters:
+                holder.type = resolve(holder.type, formal=True)
+            for holder in routine.declarations:
+                holder.type = resolve(holder.type) if holder.declaration_kind in ("variable", "constant") \
+                    else holder.type
+
+
+# Oracle's own types the generator holds as Object on purpose: a cursor variable, a row address, an opaque value
+_OPAQUE_TYPES = {"SYS_REFCURSOR", "ROWID", "UROWID", "XMLTYPE", "ANYDATA", "ANYTYPE", "ANYDATASET", "BFILE",
+                 "SDO_GEOMETRY", "URITYPE", "JSON_OBJECT_T", "JSON_ARRAY_T", "JSON_ELEMENT_T"}
+# `DBMS_SQL.DESC_TAB`, `UTL_FILE.FILE_TYPE`: a type an Oracle-supplied package declares
+_ORACLE_PACKAGES = ("DBMS_", "UTL_", "SYS", "OWA", "HTP", "APEX_", "CTX_")
 
 
 def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: str = "corpus",
@@ -184,7 +238,7 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
         analysis.symbols.append(build(parsed, schema, set()))
         program.modules.extend(lower_file(parsed, None, schema, set()))
 
-    _resolve_package_types(program, analysis.symbol_table())
+    _resolve_package_types(program, analysis.symbol_table(), schema)
     # #12: 移行先に trigger は無いので、**書き込む側が呼ぶ**。移行先のスキーマが渡っているかに
     # 関わらず行う——「その更新が 1 行に絞れるか」は Oracle の主キーの話である
     # #26 の続き: 記録された routine の MERGE を「読んでから UPDATE か INSERT を選ぶ」へ割る。
@@ -264,7 +318,8 @@ def _record_row_limits(program: M.Program, limits, boundaries=None) -> None:
     """Say on the loop that somebody decided how many rows it may read.
 
     CUR-002 / BULK-003 ask a person to look at the number of rows a loop reads. `limits.yaml` is where that person
-    answers -- a value the generated code enforces (RowLimitExceededException), or a reason why a limit is not what
+    answers -- a value the generated code enforces (it throws IllegalStateException past it; RowLimitExceededException
+    is the execution plan's own per-table fetch cap, `max_rows`, a different limit), or a reason why a limit is not what
     protects this routine -- and once it is answered the question is no longer open (decided 2026-09-20). The rules
     read this diagnostic; a routine that falls to the default has decided nothing and is still reviewed.
 
