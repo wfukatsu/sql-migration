@@ -101,6 +101,12 @@ class OracleSchema:
             if isinstance(statement, exp.Create) and statement.kind == "VIEW":
                 views.append(statement)
                 continue
+            alter = _alter_table(statement)
+            if alter is not None:
+                # `ALTER TABLE t ADD CONSTRAINT ... CHECK / FOREIGN KEY`: the same constraints written after the table.
+                # Only CREATE TABLE was read, and constraints.enforce named a constraint nobody had seen (#129)
+                _constraints(schema, alter.this.name.lower(), alter)
+                continue
             if not isinstance(statement, exp.Create) or statement.kind != "TABLE":
                 continue
             table = statement.find(exp.Table)
@@ -207,7 +213,8 @@ def _constraints(schema: "OracleSchema", table: str, statement) -> None:
     """CHECK と FOREIGN KEY を、列に付いたものも表に付いたものも拾う。名前が無ければ表名から作る。"""
     from sqlglot import exp
 
-    unnamed = 0
+    # an unnamed one is named after the table and its place; one added by ALTER TABLE counts on from the table's
+    unnamed = len(schema.checks.get(table, [])) + len(schema.foreign_keys.get(table, []))
 
     def name_of(node, fallback: str) -> str:
         nonlocal unnamed
@@ -249,6 +256,46 @@ def _constraints(schema: "OracleSchema", table: str, statement) -> None:
                 ref = kind.args.get("reference")
                 if ref is not None:
                     reference(name_of(constraint, "fk"), columns, ref)
+    # an unnamed one at table level -- `FOREIGN KEY (a) REFERENCES t` / `CHECK (a > 0)` among the columns, or after
+    # `ALTER TABLE ... ADD` -- has no `Constraint` around it, and was not read at all (#129)
+    for kind in statement.find_all(exp.CheckColumnConstraint, exp.ForeignKey):
+        if isinstance(kind.parent, (exp.Constraint, exp.ColumnConstraint)):
+            continue
+        if isinstance(kind, exp.CheckColumnConstraint):
+            check(name_of(kind, "check"), kind)
+        elif kind.args.get("reference") is not None:
+            reference(name_of(kind, "fk"), [c.name.lower() for c in kind.expressions], kind.args["reference"])
+
+
+_UNNAMED = "sqlmig_unnamed_constraint"
+
+
+def _alter_table(statement):
+    """`ALTER TABLE ... ADD [CONSTRAINT name] CHECK / FOREIGN KEY` among the DDL's statements, or None. sqlglot
+    reads the unnamed form as an opaque command; it is read again with a placeholder name, which is then dropped
+    so that the constraint is named the way an unnamed one in CREATE TABLE is."""
+    import sqlglot
+    from sqlglot import exp
+
+    if isinstance(statement, exp.Command) and str(statement.this).upper() == "ALTER":
+        text = statement.expression.sql() if isinstance(statement.expression, exp.Expression) \
+            else str(statement.expression or "")
+        unnamed = re.match(r"^\s*TABLE\s+(?P<table>[\w$#.\"]+)\s+ADD\s+(?P<rest>(?:CHECK|FOREIGN\s+KEY)\b.*)$", text,
+                           re.IGNORECASE | re.DOTALL)
+        if unnamed is None:
+            return None
+        try:
+            statement = sqlglot.parse_one(f"ALTER TABLE {unnamed.group('table')} ADD CONSTRAINT {_UNNAMED} "
+                                          f"{unnamed.group('rest')}", dialect="oracle")
+        except sqlglot.errors.ParseError:
+            return None
+        for constraint in statement.find_all(exp.Constraint):
+            if isinstance(constraint.this, exp.Identifier) and constraint.this.name == _UNNAMED:
+                constraint.set("this", None)
+    if not isinstance(statement, exp.Alter) or (statement.args.get("kind") or "").upper() != "TABLE" \
+            or not isinstance(statement.this, exp.Table):
+        return None
+    return statement
 
 
 def _primary_key(statement) -> list[str]:
@@ -291,6 +338,12 @@ class Scope:
     kind: str                  # module | routine
     parent: "Scope | None" = None
     symbols: dict[str, Symbol] = field(default_factory=dict)
+    # a package's `AUTHID CURRENT_USER | DEFINER`. It is written on the specification and nowhere else, and it
+    # holds for every routine of the body -- which the lowering reads without the specification (#128)
+    auth_id: str | None = None
+    # `SUBTYPE kilo_t IS NUMBER(10)` declared by the package (specification or body), in source order, as
+    # `lower.subtype_parts` reads it. Not symbols: they have no value, and KPI-2 counts typed symbols (#128)
+    subtypes: list[tuple[str, str, str | None, bool]] = field(default_factory=list)
 
     def declare(self, symbol: Symbol) -> None:
         known = self.symbols.setdefault(symbol.name.lower(), symbol)
@@ -391,6 +444,12 @@ class _Builder:
     def _package(self, context: ParserRuleContext) -> None:
         name = _text(_child(context, "Package_nameContext") or context).split(".")[-1].lower()
         scope = self._scope(name, "module", None)
+        rights = _child(context, "Invoker_rights_clauseContext")
+        if rights is not None:
+            scope.auth_id = "CURRENT_USER" if re.search(r"\bCURRENT_USER\b", _text(rights), re.I) else "DEFINER"
+        from .lower import subtype_parts
+
+        scope.subtypes.extend(subtype_parts(context, stop=ROUTINE_BODIES))
         # a body declares under Declare_spec, a specification under Package_obj_spec. Walking only the first
         # means a package's own RECORD type -- declared in the specification, used throughout the body -- is
         # never recorded, and every reference to it resolves to an opaque name.

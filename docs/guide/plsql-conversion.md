@@ -109,7 +109,7 @@ PL/SQL の変数・引数・戻り値・`%TYPE` / `%ROWTYPE` の列は、`plsql/
 | NUMBER(p, s), s > 0（金額を含む） | BigDecimal | BIGINT（10^s 倍した整数） | ScalarDB に DECIMAL が無く、DOUBLE では Oracle の四捨五入が保てない。`scale` を持ち、生成された repository が `Plsql.bind` / `Plsql.read` で往復させる |
 | 精度なしの NUMBER | BigDecimal | TEXT | 何桁でも入るので、今のデータが long に収まるからと long にはしない。精度が分からないことを見える形で残す |
 | PLS_INTEGER / BINARY_INTEGER / SIMPLE_INTEGER | Integer | INT | 32 ビット。超えると ORA-01426 |
-| INTEGER / INT / SMALLINT | BigDecimal | BIGINT | Oracle では NUMBER(38) で、PLS_INTEGER ではない。代入で整数に丸める（`Plsql.fit(v, 38, 0)`）。Integer だった頃は 2^31 を超える値で ORA-01426 になった（#100） |
+| INTEGER / INT / SMALLINT | BigDecimal | BIGINT | Oracle では NUMBER(38) で、PLS_INTEGER ではない。**変数**への代入で整数に丸める（`Plsql.fit(v, 38, 0)`）。引数と戻り値は丸めない——仮引数と RETURN は精度を受け継がないので、`p(0.66)` の `p INTEGER` は 0.66 のまま（`types.signature_type`、8-11）。Integer だった頃は 2^31 を超える値で ORA-01426 になった（#100） |
 | BINARY_FLOAT | Float | FLOAT | |
 | BINARY_DOUBLE / FLOAT / REAL | Double | DOUBLE | |
 | VARCHAR2 / NVARCHAR2 / CHAR / NCHAR / VARCHAR / STRING | String | TEXT | Oracle は `''` を NULL として扱う。この区別はアプリが保つ（`Plsql.bind` は `''` を NULL にして渡す） |

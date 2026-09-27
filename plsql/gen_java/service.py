@@ -2152,10 +2152,13 @@ def _trigger_call(file: JavaFile, statement: M.Call, routine: M.Routine,
 
 def _sets_rowcount_to_one(statement) -> bool:
     """An implicit `SELECT ... INTO` that returns sets SQL%ROWCOUNT to 1 (no row and many rows raise instead).
-    An explicit cursor's FETCH (AT_MOST_ONE) does not touch the implicit cursor's attributes."""
+    An explicit cursor's FETCH (AT_MOST_ONE) does not touch the implicit cursor's attributes. One the execution plan
+    runs is the same SELECT INTO: `_planned_into` raises on none and on many as a direct read does (#83), so it
+    sets the count as well -- it was left out from the time a planned INTO could not be generated at all (#128)."""
+    planned = statement.kind == "SqlOperation" and (statement.plan_id or statement.target_status == "PLANNED")
     return statement.kind == "SqlOperation" and bool(statement.into_targets) \
-        and statement.cardinality not in ("MANY", "AT_MOST_ONE") and not statement.plan_id \
-        and statement.target_status != "PLANNED"
+        and statement.cardinality not in ("MANY", "AT_MOST_ONE") \
+        and (not planned or (statement.sql_kind or "").upper() == "SELECT")
 
 
 def _sql(file: JavaFile, statement: M.SqlOperation, routine: M.Routine) -> None:

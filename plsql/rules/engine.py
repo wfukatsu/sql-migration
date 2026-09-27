@@ -445,6 +445,13 @@ def _clock_reads(routine: M.Routine) -> int:
         text = " ".join(str(getattr(statement, field, "") or "")
                         for field in ("original_sql", "expression", "cursor", "target", "condition"))
         total += len(CLOCK.findall(text))
+    # `v_start DATE := SYSDATE;` reads the clock too, each time the routine (or the block) is entered: the
+    # declarations were left out, and a routine that read it there and once more in the body was one read (#128)
+    nested = [d for s in _statements(routine) for d in getattr(s, "declarations", []) or []]
+    # A cursor's `initial` is its query, read where the cursor is opened -- that statement already counts it
+    for declaration in list(routine.declarations) + nested:
+        if declaration.declaration_kind in ("variable", "constant"):
+            total += len(CLOCK.findall(declaration.initial or ""))
     return total
 
 
@@ -552,11 +559,21 @@ def _swallows_others(routine: M.Routine) -> bool:
 def _untracked_row_count(routine: M.Routine) -> list[str]:
     """What else, besides a static INSERT / UPDATE / DELETE / SELECT INTO, sets SQL%ROWCOUNT in a routine that
     reads it. The generated `rowCount` follows the static statements only."""
-    if not re.search(r"SQL%ROWCOUNT", repr([routine.body, routine.exception_handlers, routine.declarations]),
-                     re.IGNORECASE):
+    # what the source reads, not what the lowering added: the guard in front of a trigger call and the one around
+    # the targets of a rewritten RETURNING read SQL%ROWCOUNT too, and a routine that never did was REVIEW (#128)
+    written = [" ".join([_text(s), str(getattr(s, "text", "") or ""), repr(getattr(s, "using", ""))])
+               for s in _statements(routine)
+               if not _generated_rowcount_guard(s)]
+    nested = [d for s in _statements(routine) for d in getattr(s, "declarations", []) or []]
+    written += [d.initial or "" for d in list(routine.declarations) + nested]
+    if not any(re.search(r"SQL\s*%\s*ROWCOUNT", text, re.IGNORECASE) for text in written):
         return []
     found = []
     for statement in _statements(routine):
+        if statement.kind == "Call" and any(d.code == "TRIGGER_CALL" for d in statement.diagnostics):
+            # the trigger runs as a service of its own: its DML leaves the caller's rowCount alone, as a trigger
+            # leaves SQL%ROWCOUNT of the statement that fired it
+            continue
         if statement.kind == "Loop" and statement.loop_kind == "forall":
             found.append("FORALL")
         elif statement.kind == "DynamicSql":
@@ -566,6 +583,20 @@ def _untracked_row_count(routine: M.Routine) -> list[str]:
         elif statement.kind == "Call" and getattr(statement, "resolved_to", None):
             found.append(f"call to {statement.resolved_to}")
     return sorted(set(found))
+
+
+def _generated_rowcount_guard(statement: M.Statement) -> bool:
+    """`IF SQL%ROWCOUNT > 0` that the lowering wrote, not the developer: the one in front of a trigger call
+    (`triggers._guarded`, id `...if`) and the one around the targets of a rewritten RETURNING (`rmw`, id
+    `...returned`)."""
+    if statement.kind != "If" or len(statement.branches) != 1 or statement.else_body:
+        return False
+    branch = statement.branches[0]
+    if " ".join(branch.condition.split()).upper() != "SQL%ROWCOUNT > 0":
+        return False
+    trigger = len(branch.body) == 1 and branch.body[0].kind == "Call" \
+        and any(d.code == "TRIGGER_CALL" for d in branch.body[0].diagnostics)
+    return trigger or statement.id.endswith("returned")
 
 
 def _unresolved_callees(routine: M.Routine, analysis: ProgramAnalysis) -> list[str]:

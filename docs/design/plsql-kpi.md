@@ -171,10 +171,10 @@ compile 率 = compile が通った AUTO 対象 routine 数 / AUTO 判定され�
 |---|---|---|---|
 | 1 | routine 内の `COMMIT` / `ROLLBACK` / `SAVEPOINT` / `ROLLBACK TO` | IR の文種別 | REDESIGN |
 | 2 | `PRAGMA AUTONOMOUS_TRANSACTION` | IR の routine 属性 | REDESIGN |
-| 3 | Package 変数（package spec / body の状態） | Symbol Table | REDESIGN |
-| 4 | `EXECUTE IMMEDIATE` / `DBMS_SQL` のうち、定数畳込みで SQL を確定できないもの | IR の DynamicSql | REDESIGN |
+| 3 | Package 変数を読む・書く routine（直接か、呼び出し先を通して。変数を持つ package の routine すべてではない。#119） | Symbol Table + 呼び出しグラフ | REDESIGN |
+| 4 | 動的 SQL（`EXECUTE IMMEDIATE` / `DBMS_SQL`）。表名など識別子を実行時に組み立てるもの（DYN-001）と `DBMS_SQL`（DYN-003）は REDESIGN。それ以外で、とりうる文をすべて静的な文に展開して ScalarDB がそのまま実行できると確かめられないもの（DYN-002） | IR の DynamicSql | REVIEW 以上（DYN-001 / DYN-003 は REDESIGN） |
 | 5 | Trigger | IR の module 種別 | REDESIGN |
-| 6 | `AUTHID CURRENT_USER` | IR の routine 属性 | REDESIGN |
+| 6 | `AUTHID CURRENT_USER`（単独の routine に書いたものと、package の仕様に書いたもの。後者は本体の routine すべてに当たる。#128） | IR の routine 属性 | REDESIGN |
 | 7 | DB Link を介した参照 | 識別子の `@link` | REDESIGN |
 | 8 | 行ロック（`FOR UPDATE` とその変種） | SQL AST | REDESIGN |
 | 9 | 変換不能な SQL（converter が `ERROR` を返す）を含む | SQL bridge の結果 | REVIEW 以上 |
@@ -205,7 +205,7 @@ confidence = ruleCoverage × symbolResolution × typeResolution × targetCapabil
 |---|---|---|
 | `ruleCoverage` | ルールが判定を出せた IR ノード数 / routine 内の全 IR ノード数 | 未知の構文を 1 つでも含む |
 | `symbolResolution` | 解決できた識別子参照 / 全識別子参照（KPI-2 の routine 単位版） | 未解決シンボルが 1 つでもある。**解析した範囲に無い routine の呼び出し**（`billing_pkg.post(...)`、`UTL_MAIL.SEND` など）もここに数え、ルール CALL-001 が REVIEW にする。`DBMS_OUTPUT` / `DBMS_ASSERT` とコレクションのメソッド（`.COUNT` など）は数えない |
-| `typeResolution` | 型が確定した変数・引数・戻り値 / 全体 | 精度不明の `NUMBER` を Java 型へ確定できない、`%TYPE` の参照先 DDL が無い |
+| `typeResolution` | 型が確定した変数・引数・戻り値 / 全体 | 精度不明の `NUMBER` を Java 型へ確定できない、`%TYPE` の参照先 DDL が無い、どこにも宣言の無い型の名前（TYPE・SUBTYPE・オブジェクト型のどれでもなく、生成器が `Object` にするもの。#128）。`SYS_REFCURSOR` や REF CURSOR の型のように意図して `Object` にする型は数えない |
 | `targetCapability` | ScalarDB SQL で実行できる SQL 文 / routine 内の全 SQL 文。`PLANNED` は 0.5 として数える。**まだ検査していない文は 0.5 ではなく 0** — 「未解析」は能力の半分ではない | converter が `ERROR` を返す SQL を含む、または P2-4 を通していない SQL を含む |
 | `testEvidence` | 意味的同等性テストに合格した capture 数 / その routine に紐づく capture 数 | capture が 1 つも無い、または 1 つでも落ちている |
 

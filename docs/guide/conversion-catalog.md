@@ -452,7 +452,7 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | package の定数（`CONSTANT`） | `private static final` のフィールド | なし | 生成で確認 |
 | trigger | `Trg<Name>Service` の `body(...)` メソッド。`:NEW` / `:OLD` の列が引数 | TRG-001（REDESIGN） | trigger の節を参照 |
 | 呼び出し仕様（`LANGUAGE JAVA` / `C`、`EXTERNAL`） | 本体を持たず `UnsupportedOperationException` を投げるメソッド | EXT-002（REDESIGN） | 生成で確認 |
-| `AUTHID CURRENT_USER` | 生成物は変わらない | AUTHID-001（REDESIGN） | 単体の routine に書いたものは検出します。package の仕様に書いたものは routine に伝わらず、検出されません（生成で確認） |
+| `AUTHID CURRENT_USER` | 生成物は変わらない | AUTHID-001（REDESIGN） | 単体の routine に書いたものと、package の仕様に書いたもの（本体の routine すべてに当たる）を検出します |
 | トランザクションの境界 | どのメソッドも begin・commit・rollback をしない。Repository は呼び出し側の `Connection` を受け取る | なし | 境界は呼び出し側が持ちます。Spring の注釈も出しません |
 | 元のソースの位置 | 各文の前に `// ファイル:行` のコメント | なし | `traceability.csv` にも出ます |
 
@@ -475,14 +475,14 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `TIMESTAMP WITH (LOCAL) TIME ZONE` | `OffsetDateTime` | なし | UTC で保存します |
 | `BOOLEAN` | `Boolean` | なし | NULL を取るので primitive にしません |
 | `SUBTYPE s IS 基底型`（routine の中） | 基底型の Java 型 | なし | `RANGE a..b` は `Plsql.inRange`、`NOT NULL` は `Plsql.notNull`（違反は ORA-06502） |
-| `SUBTYPE`（package の仕様） | `Object` になる | なし（型解決の因子も下がらない） | 下書き時点では解決されません（生成で確認） |
+| `SUBTYPE`（package の仕様） | 基底型の Java 型 | なし | routine の中の SUBTYPE と同じ扱いです。別の package の SUBTYPE（`pkg.t`）も引きます。引数と戻り値の型にしたときは、Oracle と同じく NOT NULL と数値の RANGE だけを受け継ぎ、長さ・精度は受け継ぎません |
 | `変数 表.列%TYPE` | その列の Oracle の型に対応する Java 型 | なし | `schema.sql`（Oracle の DDL）から引きます |
 | `変数 表%ROWTYPE` / `cursor%ROWTYPE` | 生成した record（`EmpRow`、`CEmpRow`） | なし | 列名が record の要素名です。field への代入は record を作り直します（Java の record は不変） |
 | `TYPE t IS RECORD (...)` | 生成した record（`TPair`） | なし | 各 field は NULL か既定値で作ります（生成で確認） |
 | コレクション型 | コレクションの節を参照 | | |
 | `SYS_REFCURSOR` / `REF CURSOR` | cursor の節を参照 | | |
 | `CREATE TYPE ... AS OBJECT`（スキーマのオブジェクト型） | 生成した record。`AS TABLE OF` はその `List` | なし | コンストラクタ `t_point(1, 2)` は `new TPoint(...)`（生成で確認） |
-| 解決できない型 | `Object` | 型解決の因子が 0 になり REVIEW | 生成器は型を推測しません |
+| 解決できない型（どこにも宣言の無い名前、対応の無い型） | `Object` | 型解決の因子が 0 になり REVIEW | 生成器は型を推測しません。`SYS_REFCURSOR`、`REF CURSOR` の型、`ROWID` など、意図して `Object` にする型は因子を下げません |
 
 ### 式と演算子
 
@@ -522,7 +522,7 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `TO_NUMBER(v)` | `Plsql.toNumber(v)` | なし | 書式つきの `TO_NUMBER(v, 書式)` は実行時に `UnsupportedOperationException` |
 | `TO_DATE(v, 書式)` | `Plsql.toDate(v, 書式)` | なし | 要素ごとに Oracle と同じ読み方をします（桁の少ない数字、RR の世紀、省いた年月は現在） |
 | `ADD_MONTHS`、`LAST_DAY` | `Plsql.addMonths`、`lastDay` | なし | |
-| `SYSDATE` | `Plsql.sysdate()` | 1 つの routine で時計を 2 回以上読むと SEM-007（REVIEW） | 時計は `Plsql.setClock` で差し替えられます。宣言部の初期値で読んだ分は SEM-007 の回数に入りません（生成で確認） |
+| `SYSDATE` | `Plsql.sysdate()` | 1 つの routine で時計を 2 回以上読むと SEM-007（REVIEW） | 時計は `Plsql.setClock` で差し替えられます。宣言部の初期値（`v DATE := SYSDATE`）で読んだ分も回数に入ります |
 | `SYSTIMESTAMP` | `audit.now()`（引数に `AuditContext audit` が足される） | 列へ書くと SEM-010（REVIEW） | `OffsetDateTime` を返すので、TIMESTAMP を返す function の `RETURN SYSTIMESTAMP` は javac で落ちます（生成で確認） |
 | `USER` | `audit.user()` | なし | 何を記録するかは業務の決定です（`AuditContext` は呼び出し側が渡します） |
 | `seq.NEXTVAL` | `sequences.next("seq")`（Repository が `Sequences` を受け取る） | なし | 採番は業務とは別のトランザクションで取ります。方式は DDL の `CACHE`（hi/lo）/ `NOCACHE`（counters 表と再試行）から決まります |
@@ -567,14 +567,14 @@ PL/SQL の中の SQL 文は、Repository のメソッドになります。SQL �
 | `INSERT ... VALUES (seq.NEXTVAL, ...) RETURNING id INTO v` | INSERT の前に番号を取り、それを書いて v に入れる | なし | 生成で確認 |
 | `DELETE ... RETURNING c INTO v` | 消す行を先に読み、それから DELETE | なし | 変数へ受けて 2 行以上なら `TooManyRowsException`（生成で確認） |
 | `MERGE` | 決定が無ければ SQL 変換器の結果しだい（断られれば `UnsupportedOperationException`） | SEM-006（REVIEW）。断られれば SQL-001 も | `rowLocks.optimistic` があれば「件数を読んで UPDATE か INSERT を選ぶ」に割り、SEM-011（注記）になります（生成で確認） |
-| `SQL%ROWCOUNT` | `int rowCount`（DML ごとに更新。`SELECT INTO` のあとは 1） | FORALL・動的 SQL・MERGE・呼び出し先が件数を決めうる routine で読むと SQL-004（REVIEW） | |
+| `SQL%ROWCOUNT` | `int rowCount`（DML ごとに更新。`SELECT INTO` のあとは 1。実行計画を通る `SELECT INTO` も同じ） | FORALL・動的 SQL・MERGE・呼び出し先が件数を決めうる routine で読むと SQL-004（REVIEW） | 数えるのは利用者が書いた読みだけです。trigger を呼ぶ前や RETURNING の書き換えで生成器が足した `SQL%ROWCOUNT > 0` と、trigger の呼び出しは数えません |
 | `SQL%FOUND` / `SQL%NOTFOUND` | `rowCount > 0` / `rowCount == 0` | 同上 | 生成で確認 |
 | ScalarDB SQL で直接は実行できず、実行計画に分解される文 | `PlanRunner.join(connection, plan, ...)`（ScalarDB から取得して H2 で実行） | SQL-002（REVIEW） | 行数上限と性能を確かめます（生成で確認） |
 | ScalarDB が実行できない文 | Repository のメソッドが理由つきで `UnsupportedOperationException` | SQL-001（REVIEW） | |
 | 結合 | そのまま実行できれば Repository の 1 文 | そのまま実行できない（警告・実行計画・拒否・スキーマ無し）と SEM-005（REVIEW） | |
 | `WHERE p IS NULL OR col = p` | p が NULL のときの文と、等号で絞る文に分け、実行時に選ぶ | なし | ScalarDB SQL は bind の NULL 判定を WHERE に書けないためです |
 | DDL の `DEFAULT` 列、`IDENTITY` 列を省いた INSERT | 省いた列を INSERT に足す（IDENTITY は採番） | なし | ScalarDB は主キーの無い INSERT を断るためです |
-| CHECK 制約・外部キーのある表への書き込み | `constraints.enforce` に書いた表だけ、書く前に検査（ORA-02290 / ORA-02291 の例外） | 書いていない表は診断 `CONSTRAINT_UNDECIDED`（判定は下がらない） | 外部キーは親の行をキーで読みます。`CREATE TABLE` の中の制約は読みますが、`ALTER TABLE ... ADD CONSTRAINT` の制約では検査を出しませんでした（生成で確認） |
+| CHECK 制約・外部キーのある表への書き込み | `constraints.enforce` に書いた表だけ、書く前に検査（ORA-02290 / ORA-02291 の例外） | 書いていない表は診断 `CONSTRAINT_UNDECIDED`（判定は下がらない） | 外部キーは親の行をキーで読みます。`CREATE TABLE` の中の制約と、`ALTER TABLE ... ADD [CONSTRAINT 名前] CHECK / FOREIGN KEY` で足した制約を読みます。名前の無い制約は `<表>_check<n>` / `<表>_fk<n>` と呼びます |
 | PL/SQL の変数と表の列が同じ名前 | そのまま生成 | SQL-003（REVIEW） | Oracle は列として読みます |
 | データ辞書（`USER_*`、`ALL_*`、`DBA_*`、`V$*`）を読む | SQL をそのまま生成 | DICT-001（REDESIGN） | 移行先には無い表です |
 | 同じトランザクションで書いた表を走査する | 生成はするが、ScalarDB が実行時に拒否 | TX-004 / SCAN-001（REDESIGN） | `ScanAfterWriteException` になります |
@@ -778,7 +778,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | SCAN-001 | REDESIGN | 呼び先が、この routine の書いた表を走査する | 同上 |
 | STATE-001 | REDESIGN | package 変数を（呼び出し経由を含めて）読み書きする | `packageState.carried` |
 | STATE-002 | REDESIGN | package 本体の初期化部 | 置き場所を人が決める（生成しない） |
-| AUTHID-001 | REDESIGN | routine の `AUTHID CURRENT_USER` | 認証・認可を別に設計する |
+| AUTHID-001 | REDESIGN | routine の `AUTHID CURRENT_USER`（package の仕様に書いたものは本体の routine すべて） | 認証・認可を別に設計する |
 | DYN-001 | REDESIGN | 識別子を実行時に組む動的 SQL | `dynamicTables` |
 | DYN-003 | REDESIGN | `DBMS_SQL`（定数の問合せに書き換えられなかったもの） | 実行ログから文を洗い出す |
 | LOWER-002 | REDESIGN | `GOTO` | 制御構造を組み直す |
@@ -803,7 +803,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | SEM-004 | REVIEW | ScalarDB がそのまま実行できない集約の `SELECT INTO` | |
 | SEM-005 | REVIEW | そのまま実行できると判定されなかった結合 | |
 | SEM-006 | REVIEW | 割っていない `MERGE` | `rowLocks.optimistic` |
-| SEM-007 | REVIEW | 時計（SYSDATE など）を文の中で 2 回以上読む | 1 回読んで使い回す |
+| SEM-007 | REVIEW | 時計（SYSDATE など）を、文と宣言部の初期値で合わせて 2 回以上読む | 1 回読んで使い回す |
 | SEM-008 | REVIEW | 言語で変わる `TO_CHAR` の書式 | |
 | SEM-009 | REVIEW | 移行先 DB が評価する `CAST(... AS DATE)` | |
 | SEM-010 | REVIEW | `SYSTIMESTAMP` を列へ書く INSERT / UPDATE / MERGE | 時刻の正確さを業務で決める |
@@ -819,7 +819,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | SQL-001 | REVIEW | ScalarDB SQL で実行できない文 | RMW なら `rowLocks.optimistic` |
 | SQL-002 | REVIEW | 実行計画に分解される文 | |
 | SQL-003 | REVIEW | 変数と列が同じ名前 | 名前を変える、列を修飾する |
-| SQL-004 | REVIEW | 静的な DML 以外が件数を決めうる routine で `SQL%ROWCOUNT` を読む | |
+| SQL-004 | REVIEW | 静的な DML 以外が件数を決めうる routine で、利用者が書いた `SQL%ROWCOUNT` を読む（生成器が足した読みと trigger の呼び出しは数えない） | |
 | RECUR-001 | REVIEW | 再帰 | |
 | （ルールなし） | REVIEW | 確信度の因子が 0（Unsupported の文、解決できない型・呼び先、ScalarDB が実行できない文、証拠が無い） | |
 
@@ -840,7 +840,6 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | 対応表に無い組み込み関数（`MONTHS_BETWEEN`、`SYS_GUID` など） | `UnsupportedOperationException` | 関数による | 組み込み関数の節を参照 |
 | `TO_CHAR` の 4 つ以外の書式、書式つき `TO_NUMBER` | 実行時に `UnsupportedOperationException` | 書式による | |
 | 別の package の変数の直接参照（`pkg.var`） | `UnsupportedOperationException` | STATE-001 | `packageState.carried` を書いても断ります |
-| package の仕様の `SUBTYPE` | 変数が `Object` になる | 判定は下がらない | |
 | OUT 引数の `SYS_REFCURSOR` | 結果の record に `null` が入る | 判定は下がらない | 生成で確認 |
 | TIMESTAMP を返す function の `RETURN SYSTIMESTAMP` | javac で落ちる | 判定は下がらない | 生成で確認 |
 | `FETCH ... BULK COLLECT INTO 数値のコレクション LIMIT n` の要素 | 要素が行の record になり、`PUT_LINE(v(i))` が record の文字列を出す | CUR-002、BULK-003 | 生成で確認 |
