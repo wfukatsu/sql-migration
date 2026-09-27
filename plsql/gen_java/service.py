@@ -62,6 +62,9 @@ _CAUGHT = "<caught>"
 # inside a loop whose DML adds to `rowCount` (a multi-row UPDATE split into a loop, a fused BULK COLLECT + FORALL):
 # the count was set to 0 where that loop starts, and a loop nested in it must not start it again (#109)
 _COUNTING: "contextvars.ContextVar[bool]" = contextvars.ContextVar("counting", default=False)
+# the Java boolean that is true on a FORALL's first element, while its body is generated: a RETURNING BULK COLLECT
+# there appends to what the earlier elements returned instead of replacing it (12-26)
+_FORALL_FIRST: "contextvars.ContextVar[str | None]" = contextvars.ContextVar("forall_first", default=None)
 _HANDLER_ERROR: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("handler", default={})
 # #138: `outer.birthdate`, `main.i`, `dept_name.department_name` -- a name qualified by a block's or a loop's label or
 # by the routine's own name, lower case -> (its Java name, its declaration or None for a loop index)
@@ -1944,12 +1947,23 @@ def _forall(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Servi
                         # SQL%BULK_ROWCOUNT(i): the rows the statement at index i touched, for the last FORALL (#51)
                         run.line("bulkRowCount.clear();")
                     run.line(f"int {total} = 0;")
+                    collects = any(re.search(r"\bBULK\s+COLLECT\b", getattr(s, "original_sql", None) or "", re.I)
+                                   for s in _walk(statement.body))
+                    first = _fresh("forallFirst", taken) if collects else None
+                    if first:
+                        run.line(f"boolean {first} = true;")
+                    first_token = _FORALL_FIRST.set(first)
                     with run.block("try") as guarded:
                         with guarded.block(f"for (Integer {java_index} : {listed})") as f:
                             for check in checks:
                                 f.line(check)
                             f.line("rowCount = 0;")
-                            _statements(f, statement.body, routine, result)
+                            try:
+                                _statements(f, statement.body, routine, result)
+                            finally:
+                                _FORALL_FIRST.reset(first_token)
+                            if first:
+                                f.line(f"{first} = false;")
                             if counted:
                                 f.line(f"bulkRowCount.put({java_index}, Plsql.dec(rowCount));")
                             f.line(f"{total} += rowCount;")
@@ -3004,11 +3018,18 @@ def _bulk_into(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, ta
                     g.add_import(*java_type(kind).imports)
                 values = ", ".join(_into(g, f"row_[{i}]", java_type(kind).name) for i, (_, kind) in enumerate(fields))
                 g.line(f"rows_.add(new {element}({values}));")
-            f.line(f"{_local(targets[0])} = {_collected(holder, 'rows_')};")
+            f.line(f"{_local(targets[0])} = {_collected(holder, _appended(targets[0], 'rows_'))};")
             return
         for index, (target, holder) in enumerate(zip(targets, holders)):
             element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
-            f.line(f"{_local(target)} = {_collected(holder, f'Plsql.column(bulk_, {index}, {element}.class)')};")
+            column = _appended(target, f"Plsql.column(bulk_, {index}, {element}.class)")
+            f.line(f"{_local(target)} = {_collected(holder, column)};")
+
+
+def _appended(target: str, values: str) -> str:
+    """Inside a FORALL, BULK COLLECT adds each element's rows to the earlier ones' (12-26); elsewhere it replaces."""
+    first = _FORALL_FIRST.get()
+    return f"Plsql.appended({first} ? null : {_local(target)}, {values})" if first else values
 
 
 def _collected(holder, values: str) -> str:
@@ -3220,7 +3241,14 @@ def _table_rows(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, r
         _LOOP_ROWS.set(outer)
     file.comment(f"TABLE({collection}) はアプリが持つコレクションなので、SQL ではなくその要素を回して絞り・並べる（#135）")
     file.line(f"List<Object[]> {rows} = new ArrayList<>();")
-    with file.block(f"for (Object {each} : Plsql.tableRows({_expr(file, collection, routine, result)}))") as f:
+    source = f"Plsql.tableRows({_expr(file, collection, routine, result)})"
+    if statement.cardinality == "MANY" and (collection or "").lower() in {
+            t.lower() for t in (getattr(statement, "into_targets", None) or [])}:
+        # `SELECT ... BULK COLLECT INTO v FROM TABLE(v)`: Oracle empties v before the query reads it, so the query
+        # sees no rows (the reference's 12-18, "unexpected results"); reading v first gave its old elements
+        file.comment(f"BULK COLLECT INTO {collection} は問合せの前に {collection} を空にする（Oracle と同じく 0 行）")
+        source = "List.<Object>of()"
+    with file.block(f"for (Object {each} : {source})") as f:
         f.line(f"{java_element} {row} = " + (each if java_element == "Object" else f"({java_element}) {each}") + ";")
         add = f"{rows}.add(new Object[] {{{', '.join(values + extra)}}});"
         if condition:

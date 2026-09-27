@@ -2744,6 +2744,20 @@ public final class Plsql {
     return out;
   }
 
+  /**
+   * RETURNING ... BULK COLLECT INTO inside a FORALL: every element's rows, appended to what the earlier elements
+   * returned (Oracle fills the collections across the whole FORALL, not per element). {@code prior} is the target
+   * as it stands -- a List, or an INDEX BY Map walked in key order -- or null for the first element.
+   */
+  @SuppressWarnings("unchecked")
+  public static <T> java.util.List<T> appended(Object prior, java.util.List<T> more) {
+    java.util.List<T> out = new java.util.ArrayList<>();
+    if (prior instanceof java.util.Map<?, ?> m) out.addAll((java.util.Collection<T>) m.values());
+    else if (prior instanceof java.util.List<?> l) out.addAll((java.util.List<T>) l);
+    out.addAll(more);
+    return out;
+  }
+
   public static <T> java.util.List<T> column(java.util.List<Object[]> rows, int index, Class<T> type) {
     java.util.List<T> out = new java.util.ArrayList<>(rows.size());
     for (Object[] row : rows) {
