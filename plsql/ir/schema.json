@@ -1413,6 +1413,9 @@
             "null"
           ]
         },
+        "returns_deleted": {
+          "type": "boolean"
+        },
         "cursor_variable": {
           "type": "boolean"
         }

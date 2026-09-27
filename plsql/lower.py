@@ -154,6 +154,22 @@ def _rename_in(node, pattern: str, replacement: str) -> None:
             _rename_in(value, pattern, replacement)
 
 
+def _replace_statements(statements: list[M.Statement], replacements: dict[int, M.Statement]) -> None:
+    """Swap nodes by identity, at any depth of the statement tree."""
+    for index, statement in enumerate(statements):
+        if id(statement) in replacements:
+            statements[index] = replacements[id(statement)]
+            continue
+        for attribute in ("body", "else_body"):
+            nested = getattr(statement, attribute, None)
+            if nested:
+                _replace_statements(nested, replacements)
+        for branch in getattr(statement, "branches", []) or []:
+            _replace_statements(branch.body, replacements)
+        for handler in getattr(statement, "exception_handlers", []) or []:
+            _replace_statements(handler.body, replacements)
+
+
 def routine_id_of(module: str | None, name: str, ordinal: int | None = None) -> str:
     """`pkg.put`, and `pkg.put~2` for the second overload of put.
 
@@ -490,6 +506,7 @@ class _Lowerer:
                          f"a nested subprogram that {reason} is not lowered; whatever it does (COMMIT included) is "
                          "invisible to the rules, so the routine cannot be AUTO while it is present")
                 routine.body.insert(0, node)
+            self._inline_dynamic_blocks(routine, ids)
             self._carry_captured(routine)
             self.routine_id = routine_id   # lowering a nested one moved it
             # the routine's own handlers, not every handler inside it: a nested block keeps its own (#18)
@@ -858,7 +875,41 @@ class _Lowerer:
         return M.Unsupported(id=ids.next("stmt"), kind="Unsupported", source_range=source,
                              text=text, construct=type(context).__name__.removesuffix("Context"))
 
+    DELETE_RETURNING = re.compile(r"^\s*DELETE\s+(?:FROM\s+)?(?P<rest>.+?)\s+RETURNING\s+(?P<columns>.+?)\s+"
+                                  r"(?P<bulk>BULK\s+COLLECT\s+)?INTO\s+(?P<targets>.+?)\s*;?\s*$",
+                                  re.IGNORECASE | re.DOTALL)
+
+    def _delete_returning(self, ids, text, source) -> M.Statement | None:
+        """`DELETE FROM t WHERE c RETURNING a, b [BULK COLLECT] INTO x, y` (#87, oracle-plsql-docs 6-1, 12-25, 12-27).
+
+        ScalarDB SQL has no RETURNING. What a DELETE returns is the rows as they were, so the same rows are read
+        first, in the same transaction, and then deleted. Into collections, every row is read. Into scalars, Oracle
+        leaves the targets as they were when no row went and raises TOO_MANY_ROWS for a second one (checked on Oracle
+        26ai, 2026-09-27) -- the read carries `returns_deleted` so the generator answers that, and it raises before
+        the DELETE runs, as Oracle's statement is undone. UPDATE ... RETURNING returns the new values and is not this.
+        """
+        match = self.DELETE_RETURNING.match(text)
+        if match is None:
+            return None
+        bulk = bool(match.group("bulk"))
+        read = M.SqlOperation(id=ids.next("stmt"), kind="SqlOperation", source_range=source, sql_kind="SELECT",
+                              original_sql=f"SELECT {match.group('columns').strip()} {'BULK COLLECT ' if bulk else ''}"
+                                           f"INTO {match.group('targets').strip()} FROM {match.group('rest').strip()}")
+        if bulk:
+            read.cardinality = "MANY"
+            read.add("WARN", "BULK_COLLECT", "BULK COLLECT needs a row limit and a memory bound")
+        else:
+            read.returns_deleted = True
+        read.add("INFO", "RETURNING_READ_FIRST", "RETURNING は ScalarDB SQL に無いので、消す行を同じトランザクションで先に読み、"
+                                                  "それから消す")
+        delete = M.SqlOperation(id=ids.next("stmt"), kind="SqlOperation", source_range=source, sql_kind="DELETE",
+                                original_sql=f"DELETE FROM {match.group('rest').strip()}")
+        return M.Block(id=ids.next("stmt"), kind="Block", source_range=source, body=[read, delete])
+
     def _sql(self, context, ids, text, source) -> M.Statement:
+        split = self._delete_returning(ids, text.strip().rstrip(";").strip(), source)
+        if split is not None:
+            return split
         kind = "UNKNOWN"
         # **包む側から先に見る。** MERGE は USING に SELECT を、INSERT は `INSERT ... SELECT` を、
         # UPDATE / DELETE は副問い合わせを含む。SELECT を先に探すと、それらが全部 SELECT になる——
@@ -969,7 +1020,47 @@ class _Lowerer:
                                           "static statement may not have; confirm the caller is allowed to run this")
         return node
 
-    def _dynamic_block(self, constant: str, context, ids, source) -> M.Statement | None:
+    def _inline_dynamic_blocks(self, routine: M.Routine, ids) -> None:
+        """`stmt := 'BEGIN p(:x); END;'; EXECUTE IMMEDIATE stmt USING b;` (#87, oracle-plsql-docs 7-1, 7-2, 7-4).
+
+        #52 inlined a constant block only when the literal was written in the EXECUTE IMMEDIATE itself; one kept in a
+        variable reached the SQL analysis as the block's text and stopped on a ParseError. A variable the routine
+        gives exactly one value -- a string literal that is a block, in its declaration or one assignment, and that
+        nothing reads INTO -- is that constant, and the block is inlined the same way. Any other variable may hold
+        something else at run time and stays dynamic.
+        """
+        statements = _walk(routine.body)
+        dynamic = [s for s in statements if s.kind == "DynamicSql" and s.constant_sql is None
+                   and re.fullmatch(r"[\w$#]+", s.expression or "")]
+        if not dynamic:
+            return
+        values: dict[str, list[str | None]] = {}
+        for declaration in routine.declarations:
+            if declaration.initial is not None:
+                values.setdefault(declaration.name.lower(), []).append(declaration.initial)
+        for statement in statements:
+            if statement.kind == "Assignment" and statement.target:
+                values.setdefault(statement.target.strip().lower(), []).append(statement.expression)
+            for target in getattr(statement, "into_targets", None) or []:
+                values.setdefault(target.strip().lower(), []).append(None)
+        for parameter in routine.parameters:
+            values.setdefault(parameter.name.lower(), []).append(None)
+        replacements = {}
+        for node in dynamic:
+            written = values.get(node.expression.lower(), [])
+            literal = re.fullmatch(r"\s*'((?:[^']|'')*)'\s*", written[0] or "") if len(written) == 1 else None
+            constant = literal.group(1).replace("''", "'") if literal else None
+            if constant is None or not DYNAMIC_BLOCK.match(constant) or node.into_targets:
+                continue
+            inlined = self._dynamic_block(constant, None, ids, node.source_range,
+                                          values=[b.plsql_variable or b.name for b in node.using])
+            if inlined is not None:
+                replacements[id(node)] = inlined
+        if replacements:
+            _replace_statements(routine.body, replacements)
+
+    def _dynamic_block(self, constant: str, context, ids, source,
+                       values: list[str] | None = None) -> M.Statement | None:
         """`EXECUTE IMMEDIATE 'BEGIN :x := :x * 10; END;' USING IN OUT v_cnt` (#52).
 
         A constant anonymous block is PL/SQL the routine could have written in place. In a dynamic PL/SQL block
@@ -980,9 +1071,10 @@ class _Lowerer:
         from .dynamic import PLACEHOLDER
         from .frontend import parse_text
 
-        elements = [_text(e).strip() for clause in _descend(context, {"Using_clauseContext"})
-                    for e in _descend(clause, {"Using_elementContext"})]
-        values = [re.sub(r"^(?:IN\s+OUT|IN|OUT)\s+", "", e, flags=re.IGNORECASE).strip() for e in elements]
+        if values is None:
+            elements = [_text(e).strip() for clause in _descend(context, {"Using_clauseContext"})
+                        for e in _descend(clause, {"Using_elementContext"})]
+            values = [re.sub(r"^(?:IN\s+OUT|IN|OUT)\s+", "", e, flags=re.IGNORECASE).strip() for e in elements]
         names = list(dict.fromkeys(m.lower() for m in PLACEHOLDER.findall(_strip_literals(constant))))
         if len(names) != len(values):
             return None

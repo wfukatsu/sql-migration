@@ -2013,6 +2013,22 @@ def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine
                   f"{'.rows()' if planned else ''});")
         return
     targets = statement.into_targets
+    if getattr(statement, "returns_deleted", None) and targets:
+        # `DELETE ... RETURNING ... INTO` of scalars, read before the DELETE (#87): none leaves the targets, a
+        # second raises TOO_MANY_ROWS -- before the DELETE, as Oracle undoes its statement
+        planned = statement.plan_id or statement.target_status == "PLANNED"
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        if _DOMAIN.get():
+            file.add_import(f"{_DOMAIN.get()}.TooManyRowsException")
+        with file.block("") as f:
+            f.comment(f"DELETE ... RETURNING INTO {', '.join(targets)}: the rows it deletes, read first")
+            rows = f"repository.{method}({arguments})" + (".rows()" if planned else "")
+            f.line(f"var rows_ = Plsql.arrays({rows});")
+            with f.block("if (rows_.size() > 1)") as g:
+                g.line('throw new TooManyRowsException("DML Returning: Too many rows");')
+            with f.block("if (!rows_.isEmpty())") as g:
+                _assign_row(g, routine, targets, "rows_.get(0)", constrained=True)
+        return
     if statement.plan_id or statement.target_status == "PLANNED":
         _planned_into(file, statement, routine, method, arguments, targets)
         return
