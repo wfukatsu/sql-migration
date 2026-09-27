@@ -23,7 +23,7 @@ Oracle の SQL / PL/SQL を ScalarDB へ移すとき、**生成器が決めら�
 | 4 | routine の中の COMMIT / ROLLBACK | `TX-001` `TX-003` `BULK-002` | 1 反復 = 1 トランザクション / 呼び出し側の境界 / 別トランザクション | 反復があれば perIteration、無ければ callerBoundary | `transactions.*` |
 | 5 | 採番（sequence / IDENTITY / 採番 trigger） | `SEQ` `TRIGGER_INLINED` `IDENTITY_FILLED` | hi/lo / counters 表 + 再試行 | 代理キーは hi/lo、業務番号は counters | DDL の `CACHE` / `NOCACHE`、列の定義 |
 | 6 | trigger の掛け方 | `TRG-001` `TRG-002` | 書く側が呼ぶ（生成コードの経路だけ）/ 手で Service へ移す / 捨てる | 書く側が呼び、網羅は照合で追う | trigger-patterns、TriggerChecks |
-| 7 | package 変数（セッション状態） | `STATE-001` | 呼び出し側が運ぶ / トランザクション context / Singleton の field | 呼び出し側が運ぶ | `packageState.carried` |
+| 7 | package 変数（セッション状態）と初期化部 | `STATE-001` `STATE-002`（`PACKAGE_INIT`） | 呼び出し側が運ぶ / トランザクション context / Singleton の field。初期化部は起動時の処理として手で移す | 呼び出し側が運ぶ。初期化部は生成しない（#108） | `packageState.carried` |
 | 8 | CHECK / FOREIGN KEY の代わり | `CONSTRAINT_UNDECIDED` | 表ごとに guard を生成 / 全表で生成 / アプリの検証に任せる | 表ごとに決めて guard | `constraints.enforce` |
 | 9 | 動的 SQL の表名と DDL | `DYN-001`、DDL の拒否 | 受け付ける表名を列挙 / 断る。routine の中の DDL は省く / 断る | 列挙できるなら列挙。データに残らない DDL は省く | `dynamicTables` / `ddl.omit` |
 | 10 | DB link 越しの操作 | `LINK-001` | 別 namespace として同じトランザクション / 分散トランザクションの設計 | 同じクラスタに載るなら namespace | `dbLinks` |
