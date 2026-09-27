@@ -99,7 +99,26 @@ BUILTINS: dict[str, Builtin] = {b.name: b for b in [
 
 
 def lookup(name: str | None) -> Builtin | None:
-    return BUILTINS.get(re.sub(r"\s+", "", name or "").upper())
+    key = re.sub(r"\s+", "", name or "").upper()
+    return BUILTINS.get(key) or _standard(key)
+
+
+# `SYS.STANDARD.BITAND(x, y)` / `STANDARD.TO_CHAR(x)`: a SQL function named through the package that defines it,
+# which code does when a function of its own hides the built-in (oos_util_bit.bitand). It is the built-in the
+# expression translator reads (plsql/gen_java/expr.py FUNCTIONS), not code nobody analysed (#140)
+_STANDARD = re.compile(r"^(?:SYS\.)?STANDARD\.([A-Z][\w$#]*)$")
+
+
+def _standard(key: str) -> Builtin | None:
+    match = _STANDARD.match(key)
+    if match is None:
+        return None
+    from .gen_java.expr import FUNCTIONS
+
+    java = FUNCTIONS.get(match.group(1))
+    if java is None:
+        return None
+    return Builtin(key, (), java, f"{match.group(1)} itself, named through STANDARD", function=True, arities=tuple(range(10)))
 
 
 def external_packages(text: str, pattern: "re.Pattern[str]") -> list[str]:

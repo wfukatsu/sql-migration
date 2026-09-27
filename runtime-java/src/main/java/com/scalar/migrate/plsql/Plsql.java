@@ -38,6 +38,8 @@ public final class Plsql {
     if (isNull(a) || isNull(b)) return false;
     if (numeric(a, b)) return compare(a, b) == 0;   // text against a number converts the text (#113)
     if (a instanceof java.util.List<?> x && b instanceof java.util.List<?> y) return Boolean.TRUE.equals(sameMultiset(x, y));
+    // two RAWs are equal byte for byte: HEXTORAW('ab') = HEXTORAW('AB') (#140)
+    if (a instanceof byte[] x && b instanceof byte[] y) return java.util.Arrays.equals(x, y);
     return Objects.equals(a, b);
   }
 
@@ -97,6 +99,7 @@ public final class Plsql {
     if (numeric(a, b)) {
       return num(a).compareTo(num(b));
     }
+    if (a instanceof byte[] x && b instanceof byte[] y) return java.util.Arrays.compareUnsigned(x, y);
     return ((Comparable) a).compareTo(b);
   }
 
@@ -139,6 +142,8 @@ public final class Plsql {
     if (value instanceof LocalDateTime d) return dateText(d);
     if (value instanceof java.time.LocalDate d) return dateText(d.atStartOfDay());
     if (value instanceof java.time.OffsetDateTime d) return timestampText(d, 6);
+    // a RAW is written as its hex digits, upper case: `v VARCHAR2(32) := SYS_GUID()`, `'x' || r` (#140)
+    if (value instanceof byte[] raw) return hex(raw);
     return String.valueOf(value);
   }
 
@@ -2095,8 +2100,71 @@ public final class Plsql {
   public static LocalDateTime toDate(Object value, Object format) {
     if (isNull(value) || isNull(format)) return null;
     if (value instanceof LocalDateTime d) return d;
-    String input = text(value).trim();
-    String model = text(format);
+    return parseMoment(text(value).trim(), text(format), false);
+  }
+
+  /** TO_TIMESTAMP(text): the session's NLS_TIMESTAMP_FORMAT, DD-MON-RR HH.MI.SSXFF AM (#140). */
+  public static LocalDateTime toTimestamp(Object value) {
+    return toTimestamp(value, "DD-MON-RR HH.MI.SSXFF AM");
+  }
+
+  /**
+   * TO_TIMESTAMP(text, format): {@link #toDate(Object, Object)}'s reading plus the fraction of a second (#140). Measured
+   * on Oracle 26ai: `FF` takes up to nine digits and `FFn` up to n -- more is ORA-01830, fewer are fine
+   * ('01:02:03.5' with FF3 is .500); `X` is the radix character `.`; a fraction left out of the input is zero. A
+   * DATE or TIMESTAMP argument comes back as it is.
+   */
+  public static LocalDateTime toTimestamp(Object value, Object format) {
+    if (isNull(value) || isNull(format)) return null;
+    if (value instanceof LocalDateTime d) return d;
+    if (value instanceof java.time.OffsetDateTime d) return d.toLocalDateTime();
+    return parseMoment(text(value).trim(), text(format), true);
+  }
+
+  /**
+   * An error a SQL function raises with its own ORA number, one PL/SQL has no predefined name for: TO_DATE's
+   * ORA-01843 (not a valid month), REGEXP_SUBSTR's ORA-01428 (argument out of range), ... Only WHEN OTHERS or a
+   * name bound to the number with EXCEPTION_INIT catches it in Oracle, and not VALUE_ERROR -- which TO_DATE's
+   * failures used to be here (#140). The generated code turns it into MigratedException with {@link #code()}.
+   */
+  public static final class FunctionError extends OracleError {
+    public FunctionError(int code, String message) {
+      super(code, message);
+    }
+  }
+
+  private static FunctionError dateError(int code, String text) {
+    return new FunctionError(code, String.format("ORA-%05d: %s", -code, text));
+  }
+
+  // what Oracle 26ai says for each way a date does not read (#140)
+  private static FunctionError notLongEnough() {
+    return dateError(-1840, "input value not long enough for date format");
+  }
+
+  private static FunctionError nonNumeric() {
+    return dateError(-1858, "A non-numeric character was found instead of a numeric character.");
+  }
+
+  /**
+   * TO_DATE / TO_TIMESTAMP, read element by element as Oracle reads them (#112, #140). Measured on Oracle 26ai:
+   *
+   * <ul>
+   *   <li>a numeric element takes up to its width in digits and fewer are fine: `TO_DATE('1-1-2026','DD-MM-YYYY')`
+   *       is 2026-01-01 and '2026-3-5 7:8:9' reads too;
+   *   <li>`YY` is a year of the current century -- `TO_DATE('01-JAN-99','DD-MON-YY')` is 2099-01-01. `RR` (and `RRRR`
+   *       given two digits) is the one that picks the century around the current year: 99 is 1999, 49 is 2049;
+   *   <li>what the format leaves out is the current year and month, day 1, midnight: `TO_DATE('2026','YYYY')` is
+   *       2026-09-01 in September. Year and month come from {@link #sysdate()}, the database clock;
+   *   <li>punctuation in the format matches any punctuation: '2026/01/05' reads with 'YYYY-MM-DD';
+   *   <li>the input may stop before a time element ('2026-01-01 10' with 'YYYY-MM-DD HH24:MI:SS' is 10:00:00), not
+   *       before a date element (ORA-01840);
+   *   <li>each failure has its own number, and none is VALUE_ERROR: ORA-01830 input left over, ORA-01841 year,
+   *       ORA-01843 month, ORA-01847 day, ORA-01839 day for the month, ORA-01850 / 01849 hour, ORA-01851 minutes,
+   *       ORA-01852 seconds, ORA-01855 AM/PM, ORA-01858 not a number where one was expected.
+   * </ul>
+   */
+  private static LocalDateTime parseMoment(String input, String model, boolean timestamp) {
     String f = model.toUpperCase(java.util.Locale.ROOT);
     LocalDateTime now = sysdate();
     int year = now.getYear();
@@ -2105,79 +2173,106 @@ public final class Plsql {
     int hour = 0;
     int minute = 0;
     int second = 0;
+    int nano = 0;
     boolean twelve = false;
     Boolean afternoon = null;
     int[] at = {0};
     int i = 0;
-    try {
-      while (i < f.length()) {
-        String rest = f.substring(i);
-        if (rest.startsWith("YYYY") || rest.startsWith("RRRR")) {
-          int start = at[0];
-          int y = digits(input, at, 4);
-          year = rest.startsWith("RRRR") && at[0] - start <= 2 ? rr(y, now.getYear()) : y;
-          i += 4;
-        } else if (rest.startsWith("RR")) {
-          int start = at[0];
-          int y = digits(input, at, 4);
-          year = at[0] - start <= 2 ? rr(y, now.getYear()) : y;   // RR given four digits takes them as they are
-          i += 2;
-        } else if (rest.startsWith("YY")) {
-          year = now.getYear() / 100 * 100 + digits(input, at, 2);
-          i += 2;
-        } else if (rest.startsWith("MONTH") || rest.startsWith("MON")) {
-          month = monthName(input, at);
-          i += rest.startsWith("MONTH") ? 5 : 3;
-        } else if (rest.startsWith("MM")) {
-          month = digits(input, at, 2);
-          i += 2;
-        } else if (rest.startsWith("DD")) {
-          day = digits(input, at, 2);
-          i += 2;
-        } else if (rest.startsWith("HH24")) {
-          hour = digits(input, at, 2);
-          i += 4;
-        } else if (rest.startsWith("HH12") || rest.startsWith("HH")) {
-          hour = digits(input, at, 2);
-          twelve = true;
-          i += rest.startsWith("HH12") ? 4 : 2;
-        } else if (rest.startsWith("MI")) {
-          minute = digits(input, at, 2);
-          i += 2;
-        } else if (rest.startsWith("SS")) {
-          second = digits(input, at, 2);
-          i += 2;
-        } else if (rest.startsWith("AM") || rest.startsWith("PM")) {
-          String marker = input.substring(at[0], Math.min(at[0] + 2, input.length())).toUpperCase(java.util.Locale.ROOT);
-          if (!marker.equals("AM") && !marker.equals("PM")) throw new IllegalArgumentException("AM/PM");
-          afternoon = marker.equals("PM");
-          at[0] += 2;
-          i += 2;
-        } else if (Character.isLetterOrDigit(f.charAt(i))) {
-          throw new UnsupportedOperationException("TO_DATE format element not mapped: " + model.substring(i));
-        } else {
-          // a separator: any one punctuation or blank of the input stands for it, and a missing one is fine
-          if (at[0] < input.length() && !Character.isLetterOrDigit(input.charAt(at[0]))) at[0]++;
-          i++;
+    while (i < f.length()) {
+      String rest = f.substring(i);
+      boolean dateElement = rest.startsWith("Y") || rest.startsWith("R") || rest.startsWith("MM")
+          || rest.startsWith("MON") || rest.startsWith("DD");
+      if (at[0] >= input.length() && Character.isLetter(f.charAt(i))) {
+        if (dateElement) throw notLongEnough();
+        break;   // the time of day may be left out
+      }
+      if (rest.startsWith("YYYY") || rest.startsWith("RRRR")) {
+        int start = at[0];
+        if (!Character.isDigit(input.charAt(start))) {
+          throw dateError(-1841, "(full) year must be between -4713 and +9999, and not be 0");
         }
+        int y = digits(input, at, 4);
+        year = rest.startsWith("RRRR") && at[0] - start <= 2 ? rr(y, now.getYear()) : y;
+        if (year == 0) throw dateError(-1841, "(full) year must be between -4713 and +9999, and not be 0");
+        i += 4;
+      } else if (rest.startsWith("RR")) {
+        int start = at[0];
+        int y = digits(input, at, 4);
+        year = at[0] - start <= 2 ? rr(y, now.getYear()) : y;   // RR given four digits takes them as they are
+        i += 2;
+      } else if (rest.startsWith("YY")) {
+        year = now.getYear() / 100 * 100 + digits(input, at, 2);
+        i += 2;
+      } else if (rest.startsWith("MONTH") || rest.startsWith("MON")) {
+        month = monthName(input, at);
+        i += rest.startsWith("MONTH") ? 5 : 3;
+      } else if (rest.startsWith("MM")) {
+        month = digits(input, at, 2);
+        if (month < 1 || month > 12) throw dateError(-1843, "An invalid month was specified.");
+        i += 2;
+      } else if (rest.startsWith("DD")) {
+        day = digits(input, at, 2);
+        if (day < 1 || day > 31) throw dateError(-1847, "day of month must be between 1 and last day of month");
+        i += 2;
+      } else if (rest.startsWith("HH24")) {
+        hour = digits(input, at, 2);
+        if (hour > 23) throw dateError(-1850, "hour must be between 0 and 23");
+        i += 4;
+      } else if (rest.startsWith("HH12") || rest.startsWith("HH")) {
+        hour = digits(input, at, 2);
+        if (hour < 1 || hour > 12) throw dateError(-1849, "hour must be between 1 and 12");
+        twelve = true;
+        i += rest.startsWith("HH12") ? 4 : 2;
+      } else if (rest.startsWith("MI")) {
+        minute = digits(input, at, 2);
+        if (minute > 59) throw dateError(-1851, "minutes must be between 0 and 59");
+        i += 2;
+      } else if (rest.startsWith("SS")) {
+        second = digits(input, at, 2);
+        if (second > 59) throw dateError(-1852, "seconds must be between 0 and 59");
+        i += 2;
+      } else if (timestamp && rest.startsWith("FF")) {
+        boolean sized = rest.length() > 2 && rest.charAt(2) >= '1' && rest.charAt(2) <= '9';
+        int width = sized ? rest.charAt(2) - '0' : 9;
+        int start = at[0];
+        digits(input, at, width);
+        String fraction = input.substring(start, at[0]);
+        nano = Integer.parseInt((fraction + "000000000").substring(0, 9));
+        i += sized ? 3 : 2;
+      } else if (timestamp && rest.startsWith("X")) {
+        // the radix character. Anything else stops the reading there: '03,5' with SSXFF is ORA-01830 (26ai)
+        if (input.charAt(at[0]) != '.') break;
+        at[0]++;
+        i += 1;
+      } else if (rest.startsWith("AM") || rest.startsWith("PM")) {
+        String marker = input.substring(at[0], Math.min(at[0] + 2, input.length())).toUpperCase(java.util.Locale.ROOT);
+        if (!marker.equals("AM") && !marker.equals("PM")) throw dateError(-1855, "AM/A.M. or PM/P.M. required");
+        afternoon = marker.equals("PM");
+        at[0] += 2;
+        i += 2;
+      } else if (Character.isLetterOrDigit(f.charAt(i))) {
+        throw new UnsupportedOperationException("TO_DATE format element not mapped: " + model.substring(i));
+      } else {
+        // a separator: any one punctuation or blank of the input stands for it, and a missing one is fine
+        if (at[0] < input.length() && !Character.isLetterOrDigit(input.charAt(at[0]))) at[0]++;
+        i++;
       }
-      if (at[0] < input.length()) throw new IllegalArgumentException("input left over");   // ORA-01830
-      if (twelve) {
-        if (hour < 1 || hour > 12) throw new IllegalArgumentException("hour");
-        hour = hour % 12 + (Boolean.TRUE.equals(afternoon) ? 12 : 0);
-      }
-      return LocalDateTime.of(year, month, day, hour, minute, second);
-    } catch (RuntimeException e) {
-      if (e instanceof UnsupportedOperationException) throw e;
-      throw new ValueError("date " + text(value) + " does not match format " + model);
     }
+    if (at[0] < input.length()) {
+      throw dateError(-1830, "Date format picture ends before converting entire input string.");
+    }
+    if (twelve) hour = hour % 12 + (Boolean.TRUE.equals(afternoon) ? 12 : 0);
+    if (day > java.time.YearMonth.of(year, month).lengthOfMonth()) {
+      throw dateError(-1839, "date not valid for month specified");
+    }
+    return LocalDateTime.of(year, month, day, hour, minute, second, nano);
   }
 
-  /** Up to {@code width} digits of the input from {@code at[0]}, at least one. */
+  /** Up to {@code width} digits of the input from {@code at[0]}, at least one (ORA-01858 when there is none). */
   private static int digits(String input, int[] at, int width) {
     int start = at[0];
     while (at[0] < input.length() && at[0] - start < width && Character.isDigit(input.charAt(at[0]))) at[0]++;
-    if (at[0] == start) throw new IllegalArgumentException("a number was expected at " + start);
+    if (at[0] == start) throw nonNumeric();
     return Integer.parseInt(input.substring(start, at[0]));
   }
 
@@ -2204,7 +2299,7 @@ public final class Plsql {
         return m + 1;
       }
     }
-    throw new IllegalArgumentException("not a month");
+    throw dateError(-1843, "An invalid month was specified.");
   }
 
   /** ADD_MONTHS: the last day of a month stays the last day (31-JAN + 1 month is 28/29-FEB, 28-FEB + 1 is 31-MAR). */
@@ -2222,6 +2317,413 @@ public final class Plsql {
     if (isNull(value)) return null;
     LocalDateTime date = castDate(value);
     return date.withDayOfMonth(date.toLocalDate().lengthOfMonth());
+  }
+
+  // --- more SQL functions PL/SQL calls (#140). Each was measured on Oracle 26ai (AL32UTF8, AMERICAN) for NULL, the
+  // boundaries and the error it raises; the numbers are in the tests (PlsqlTest.builtins*).
+
+  /** NULLIF(a, b): NULL when a = b (Oracle's `=`, so '1' = 1), else a. A NULL b never equals, so a comes back. */
+  public static <T> T nullif(T a, Object b) {
+    if (isNull(a)) return null;
+    return eq(a, b) ? null : a;
+  }
+
+  /**
+   * MONTHS_BETWEEN(d1, d2): whole months when both are the same day of the month or both the last day (the time of
+   * day ignored), else a fraction over a 31-day month, rounded as a NUMBER is. The rule is written once, in
+   * {@link com.scalar.migrate.runtime.OracleFunctions#monthsBetween}, which the residual SQL engine registers in H2; a
+   * TIMESTAMP is read as a DATE (the fraction of a second dropped) and text as TO_DATE reads it.
+   */
+  public static BigDecimal monthsBetween(Object d1, Object d2) {
+    if (isNull(d1) || isNull(d2)) return null;
+    return com.scalar.migrate.runtime.OracleFunctions.monthsBetween(dateArgument(d1), dateArgument(d2));
+  }
+
+  private static LocalDateTime dateArgument(Object value) {
+    return value instanceof CharSequence ? toDate(value) : castDate(value);
+  }
+
+  /**
+   * EXTRACT(field FROM value) (#140). YEAR, MONTH, DAY, HOUR, MINUTE and SECOND (with its fraction: 5.456) of a DATE
+   * or TIMESTAMP; of a TIMESTAMP WITH TIME ZONE they are the UTC ones, as Oracle's are (EXTRACT(HOUR FROM TIMESTAMP
+   * '2026-01-02 10:11:12 +09:00') is 1), and TIMEZONE_HOUR / TIMEZONE_MINUTE are its offset. Oracle refuses HOUR of a
+   * DATE when it compiles (PLS-00656), so this does not tell the two apart. An INTERVAL is not modelled: the
+   * generated code has a number of days where Oracle has one, and reading fields out of that would be wrong.
+   */
+  public static BigDecimal extract(String field, Object value) {
+    if (isNull(value)) return null;
+    if (value instanceof Number) {
+      throw new UnsupportedOperationException("EXTRACT(" + field + " FROM an INTERVAL) is not modelled: "
+          + "the difference of two datetimes is a number of days here");
+    }
+    java.time.ZoneOffset offset = null;
+    LocalDateTime t;
+    if (value instanceof java.time.OffsetDateTime o) {
+      offset = o.getOffset();
+      t = o.withOffsetSameInstant(java.time.ZoneOffset.UTC).toLocalDateTime();
+    } else if (value instanceof java.time.LocalDate d) {
+      t = d.atStartOfDay();
+    } else {
+      t = moment(value);
+    }
+    switch (field.toUpperCase(java.util.Locale.ROOT)) {
+      case "YEAR":
+        return BigDecimal.valueOf(t.getYear());
+      case "MONTH":
+        return BigDecimal.valueOf(t.getMonthValue());
+      case "DAY":
+        return BigDecimal.valueOf(t.getDayOfMonth());
+      case "HOUR":
+        return BigDecimal.valueOf(t.getHour());
+      case "MINUTE":
+        return BigDecimal.valueOf(t.getMinute());
+      case "SECOND":
+        BigDecimal seconds = BigDecimal.valueOf(t.getSecond()).add(BigDecimal.valueOf(t.getNano(), 9)).stripTrailingZeros();
+        return seconds.scale() < 0 ? seconds.setScale(0) : seconds;
+      case "TIMEZONE_HOUR":
+        if (offset == null) break;
+        return BigDecimal.valueOf(offset.getTotalSeconds() / 3600);
+      case "TIMEZONE_MINUTE":
+        if (offset == null) break;
+        return BigDecimal.valueOf(offset.getTotalSeconds() / 60 % 60);
+      default:
+        break;
+    }
+    throw new UnsupportedOperationException("EXTRACT(" + field + " FROM " + value.getClass().getSimpleName() + ")");
+  }
+
+  /** LENGTHB: the bytes of the text in the database character set, which is taken to be AL32UTF8 (UTF-8). */
+  public static BigDecimal lengthb(Object value) {
+    if (isNull(value)) return null;
+    String text = text(value);
+    return text.isEmpty() ? null : BigDecimal.valueOf(text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
+  }
+
+  /**
+   * TRANSLATE(s, from, to): each character of {@code from} becomes the one at the same place in {@code to}, and one
+   * with no counterpart there is removed ('abcabc','ab','x' is 'xcxc'). The first occurrence of a repeated character
+   * decides ('aab','aa','xy' is 'xxb'). Any NULL argument -- '' included -- makes it NULL, as does a result with
+   * nothing left.
+   */
+  public static String translate(Object value, Object from, Object to) {
+    if (isNull(value) || isNull(from) || isNull(to)) return null;
+    int[] source = text(from).codePoints().toArray();
+    int[] target = text(to).codePoints().toArray();
+    java.util.Map<Integer, Integer> map = new java.util.HashMap<>();
+    for (int k = 0; k < source.length; k++) map.putIfAbsent(source[k], k < target.length ? target[k] : -1);
+    StringBuilder out = new StringBuilder();
+    text(value).codePoints().forEach(point -> {
+      Integer mapped = map.get(point);
+      if (mapped == null) out.appendCodePoint(point);
+      else if (mapped >= 0) out.appendCodePoint(mapped);
+    });
+    return emptyIsNull(out.toString());
+  }
+
+  private static final java.math.BigInteger BITAND_LIMIT = java.math.BigInteger.ONE.shiftLeft(127);
+
+  /**
+   * BITAND(a, b): the bits both have, of the integer parts (5.7 is 5, -2.5 is -2), in two's complement: BITAND(-6, -3)
+   * is -8. An operand outside -2**127 .. 2**127-1 is ORA-06502.
+   */
+  public static BigDecimal bitand(Object a, Object b) {
+    if (isNull(a) || isNull(b)) return null;
+    java.math.BigInteger x = num(a).setScale(0, java.math.RoundingMode.DOWN).toBigIntegerExact();
+    java.math.BigInteger y = num(b).setScale(0, java.math.RoundingMode.DOWN).toBigIntegerExact();
+    for (java.math.BigInteger v : new java.math.BigInteger[] {x, y}) {
+      if (v.compareTo(BITAND_LIMIT) >= 0 || v.compareTo(BITAND_LIMIT.negate()) < 0) throw new ValueError();
+    }
+    return new BigDecimal(x.and(y));
+  }
+
+  /**
+   * RAWTOHEX(r): upper-case hex. In PL/SQL a text argument is converted to RAW first, as hex -- RAWTOHEX('ab') is 'AB'
+   * and RAWTOHEX('XY') is ORA-06502 -- where SQL's RAWTOHEX('AB') is the characters' bytes, '4142'. This is the
+   * PL/SQL one (#140).
+   */
+  public static String rawToHex(Object value) {
+    byte[] raw = hexToRaw(value);
+    return raw == null ? null : hex(raw);
+  }
+
+  /**
+   * HEXTORAW(text): the bytes the hex digits spell, either case; an odd count takes a leading 0 ('ABC' is 0ABC). A
+   * character that is not a hex digit -- a blank included -- is ORA-06502 in PL/SQL. A number is read as its text.
+   */
+  public static byte[] hexToRaw(Object value) {
+    if (isNull(value)) return null;
+    if (value instanceof byte[] raw) return raw;
+    String text = text(value);
+    if (text.length() % 2 == 1) text = "0" + text;
+    byte[] out = new byte[text.length() / 2];
+    for (int k = 0; k < out.length; k++) {
+      int high = Character.digit(text.charAt(2 * k), 16);
+      int low = Character.digit(text.charAt(2 * k + 1), 16);
+      if (high < 0 || low < 0 || text.charAt(2 * k) > 0x7f || text.charAt(2 * k + 1) > 0x7f) {
+        throw new ValueError("hex to raw conversion error");
+      }
+      out[k] = (byte) (high << 4 | low);
+    }
+    return out;
+  }
+
+  static String hex(byte[] raw) {
+    StringBuilder out = new StringBuilder(raw.length * 2);
+    for (byte b : raw) out.append(Character.toUpperCase(Character.forDigit(b >> 4 & 0xf, 16)))
+        .append(Character.toUpperCase(Character.forDigit(b & 0xf, 16)));
+    return out.toString();
+  }
+
+  private static final java.security.SecureRandom GUIDS = new java.security.SecureRandom();
+
+  /**
+   * SYS_GUID(): 16 bytes, a RAW(16) -- 32 hex digits as text. Oracle's are made from the host and process and a
+   * counter; these are random. Which to use is a decision the migration still has to take (SEM-014), which is why
+   * a routine calling it stays REVIEW.
+   */
+  public static byte[] sysGuid() {
+    byte[] out = new byte[16];
+    GUIDS.nextBytes(out);
+    return out;
+  }
+
+  // --- regular expressions (#140). The pattern is Oracle's dialect, translated by OracleRegex. The numeric arguments
+  // are rounded (REGEXP_INSTR('abab','b',2.5) starts at 3), a NULL one makes the result NULL, and one out of range is
+  // ORA-01428 -- a position or occurrence below 1, a return option below 0, a subexpression outside 0 .. 9.
+
+  /** REGEXP_LIKE(s, pattern[, match]): UNKNOWN (null) when s or the pattern is NULL. */
+  public static Boolean regexpLike(Object value, Object pattern) {
+    return regexpLike(value, pattern, null);
+  }
+
+  public static Boolean regexpLike(Object value, Object pattern, Object match) {
+    if (isNull(value) || isNull(pattern)) return null;
+    return regex(pattern, match).matcher(text(value)).find();
+  }
+
+  /** REGEXP_SUBSTR(s, pattern[, position[, occurrence[, match[, subexpression]]]]): NULL when nothing is found. */
+  public static String regexpSubstr(Object value, Object pattern) {
+    return regexpSubstr(value, pattern, 1, 1, null, 0);
+  }
+
+  public static String regexpSubstr(Object value, Object pattern, Object position) {
+    return regexpSubstr(value, pattern, position, 1, null, 0);
+  }
+
+  public static String regexpSubstr(Object value, Object pattern, Object position, Object occurrence) {
+    return regexpSubstr(value, pattern, position, occurrence, null, 0);
+  }
+
+  public static String regexpSubstr(Object value, Object pattern, Object position, Object occurrence, Object match) {
+    return regexpSubstr(value, pattern, position, occurrence, match, 0);
+  }
+
+  public static String regexpSubstr(Object value, Object pattern, Object position, Object occurrence, Object match,
+      Object subexpression) {
+    Object[] a = arguments(position, occurrence, match, subexpression);
+    if (isNull(value) || isNull(pattern) || a[0] == null || a[1] == null || a[3] == null) return null;
+    int from = positive(a[0]);
+    int nth = positive(a[1]);
+    int group = subexpression(a[3]);
+    java.util.regex.Matcher m = regex(pattern, a[2]).matcher(text(value));
+    if (!nth(m, text(value), from, nth) || group > m.groupCount()) return null;
+    String found = m.group(group);
+    return found == null ? null : emptyIsNull(found);
+  }
+
+  /**
+   * REGEXP_INSTR(s, pattern[, position[, occurrence[, return_option[, match[, subexpression]]]]]): where the match
+   * (or its subexpression) starts, or with a non-zero return option where it ends plus one; 0 when not found.
+   */
+  public static BigDecimal regexpInstr(Object value, Object pattern) {
+    return regexpInstr(value, pattern, 1, 1, 0, null, 0);
+  }
+
+  public static BigDecimal regexpInstr(Object value, Object pattern, Object position) {
+    return regexpInstr(value, pattern, position, 1, 0, null, 0);
+  }
+
+  public static BigDecimal regexpInstr(Object value, Object pattern, Object position, Object occurrence) {
+    return regexpInstr(value, pattern, position, occurrence, 0, null, 0);
+  }
+
+  public static BigDecimal regexpInstr(Object value, Object pattern, Object position, Object occurrence, Object option) {
+    return regexpInstr(value, pattern, position, occurrence, option, null, 0);
+  }
+
+  public static BigDecimal regexpInstr(Object value, Object pattern, Object position, Object occurrence, Object option,
+      Object match) {
+    return regexpInstr(value, pattern, position, occurrence, option, match, 0);
+  }
+
+  public static BigDecimal regexpInstr(Object value, Object pattern, Object position, Object occurrence, Object option,
+      Object match, Object subexpression) {
+    Object[] a = arguments(position, occurrence, option, match, subexpression);
+    if (isNull(value) || isNull(pattern) || a[0] == null || a[1] == null || a[2] == null || a[4] == null) return null;
+    int from = positive(a[0]);
+    int nth = positive(a[1]);
+    BigDecimal returned = num(a[2]);
+    if (returned.signum() < 0) throw outOfRange(rounded(returned));
+    int group = subexpression(a[4]);
+    String text = text(value);
+    java.util.regex.Matcher m = regex(pattern, a[3]).matcher(text);
+    if (!nth(m, text, from, nth) || group > m.groupCount() || m.start(group) < 0) return BigDecimal.ZERO;
+    int at = returned.signum() == 0 ? m.start(group) : m.end(group);
+    return BigDecimal.valueOf(text.codePointCount(0, at) + 1L);
+  }
+
+  /** REGEXP_COUNT(s, pattern[, position[, match]]): how many times it matches, the matches not overlapping. */
+  public static BigDecimal regexpCount(Object value, Object pattern) {
+    return regexpCount(value, pattern, 1, null);
+  }
+
+  public static BigDecimal regexpCount(Object value, Object pattern, Object position) {
+    return regexpCount(value, pattern, position, null);
+  }
+
+  public static BigDecimal regexpCount(Object value, Object pattern, Object position, Object match) {
+    Object[] a = arguments(position, match);
+    if (isNull(value) || isNull(pattern) || a[0] == null) return null;
+    String text = text(value);
+    java.util.regex.Matcher m = regex(pattern, a[1]).matcher(text);
+    int start = offset(text, positive(a[0]));
+    if (start < 0) return BigDecimal.ZERO;
+    int n = 0;
+    m.region(start, text.length());
+    m.useTransparentBounds(true).useAnchoringBounds(false);
+    while (m.find()) n++;
+    return BigDecimal.valueOf(n);
+  }
+
+  /**
+   * REGEXP_REPLACE(s, pattern[, replacement[, position[, occurrence[, match]]]]): every match (occurrence 0) or the
+   * n-th replaced. The replacement refers to a subexpression as \1 .. \9 -- one the pattern does not have is empty
+   * -- and `\\` is a backslash; `$1` and any other backslash are themselves. A NULL pattern leaves s as it is, a NULL
+   * replacement removes the matches, and a result with nothing left is NULL.
+   */
+  public static String regexpReplace(Object value, Object pattern) {
+    return regexpReplace(value, pattern, null, 1, 0, null);
+  }
+
+  public static String regexpReplace(Object value, Object pattern, Object replacement) {
+    return regexpReplace(value, pattern, replacement, 1, 0, null);
+  }
+
+  public static String regexpReplace(Object value, Object pattern, Object replacement, Object position) {
+    return regexpReplace(value, pattern, replacement, position, 0, null);
+  }
+
+  public static String regexpReplace(Object value, Object pattern, Object replacement, Object position,
+      Object occurrence) {
+    return regexpReplace(value, pattern, replacement, position, occurrence, null);
+  }
+
+  public static String regexpReplace(Object value, Object pattern, Object replacement, Object position,
+      Object occurrence, Object match) {
+    Object[] a = arguments(replacement, position, occurrence, match);
+    if (isNull(value)) return null;
+    String text = text(value);
+    if (isNull(pattern)) return emptyIsNull(text);
+    if (a[1] == null || a[2] == null) return null;
+    int start = offset(text, positive(a[1]));
+    int nth = rounded(num(a[2]));
+    if (nth < 0) throw outOfRange(nth);
+    String with = isNull(a[0]) ? "" : text(a[0]);
+    if (start < 0) return emptyIsNull(text);
+    java.util.regex.Matcher m = regex(pattern, a[3]).matcher(text);
+    m.region(start, text.length());
+    m.useTransparentBounds(true).useAnchoringBounds(false);
+    StringBuilder out = new StringBuilder(text.substring(0, start));
+    int copied = start;
+    int k = 0;
+    while (m.find()) {
+      k++;
+      if (nth != 0 && k != nth) continue;
+      out.append(text, copied, m.start()).append(substitute(with, m));
+      copied = m.end();
+      if (nth != 0) break;
+    }
+    out.append(text.substring(copied));
+    return emptyIsNull(out.toString());
+  }
+
+  private static String substitute(String replacement, java.util.regex.Matcher m) {
+    StringBuilder out = new StringBuilder();
+    for (int k = 0; k < replacement.length(); k++) {
+      char c = replacement.charAt(k);
+      if (c == '\\' && k + 1 < replacement.length()) {
+        char next = replacement.charAt(k + 1);
+        if (next >= '1' && next <= '9') {
+          int group = next - '0';
+          String found = group <= m.groupCount() ? m.group(group) : null;
+          if (found != null) out.append(found);
+          k++;
+          continue;
+        }
+        if (next == '\\') {
+          out.append('\\');
+          k++;
+          continue;
+        }
+      }
+      out.append(c);
+    }
+    return out.toString();
+  }
+
+  private static java.util.regex.Pattern regex(Object pattern, Object match) {
+    return OracleRegex.compile(text(pattern), isNull(match) ? null : text(match));
+  }
+
+  /** The optional arguments, '' read as the NULL it is. A NULL match parameter is its default; any other NULL makes
+   * the result NULL (a left-out argument arrives as its default from the shorter overload). */
+  private static Object[] arguments(Object... given) {
+    Object[] out = given.clone();
+    for (int k = 0; k < out.length; k++) out[k] = isNull(out[k]) ? null : out[k];
+    return out;
+  }
+
+  private static int rounded(BigDecimal value) {
+    BigDecimal whole = value.setScale(0, java.math.RoundingMode.HALF_UP);
+    if (whole.compareTo(BigDecimal.valueOf(Integer.MAX_VALUE)) > 0) return Integer.MAX_VALUE;
+    if (whole.compareTo(BigDecimal.valueOf(Integer.MIN_VALUE)) < 0) return Integer.MIN_VALUE;
+    return whole.intValue();
+  }
+
+  private static int positive(Object value) {
+    int n = rounded(num(value));
+    if (n < 1) throw outOfRange(n);
+    return n;
+  }
+
+  private static int subexpression(Object value) {
+    int n = rounded(num(value));
+    if (n < 0 || n > 9) throw outOfRange(n);
+    return n;
+  }
+
+  /** ORA-01428, as 26ai words it for REGEXP_SUBSTR('abc', 'b', 0). */
+  private static FunctionError outOfRange(int argument) {
+    return new FunctionError(-1428, "ORA-01428: Argument " + argument + " is out of range.");
+  }
+
+  /** The UTF-16 index of character {@code position} (from 1), or -1 past the end. */
+  private static int offset(String text, int position) {
+    int count = text.codePointCount(0, text.length());
+    if (position > count) return -1;
+    return text.offsetByCodePoints(0, position - 1);
+  }
+
+  /** Moves {@code m} to the {@code occurrence}-th match at or after character {@code position}. */
+  private static boolean nth(java.util.regex.Matcher m, String text, int position, int occurrence) {
+    int start = offset(text, position);
+    if (start < 0) return false;
+    m.region(start, text.length());
+    m.useTransparentBounds(true).useAnchoringBounds(false);
+    for (int k = 0; k < occurrence; k++) {
+      if (!m.find()) return false;
+    }
+    return true;
   }
 
   /**
@@ -2318,6 +2820,45 @@ public final class Plsql {
    */
   public static Boolean bool3(boolean isTrue, boolean isFalse) {
     return isTrue ? Boolean.TRUE : isFalse ? Boolean.FALSE : null;
+  }
+
+  /**
+   * {@code x LIKE pattern ESCAPE c} (#140): the escape character makes the {@code %}, {@code _} or itself after it
+   * literal. Measured on Oracle 26ai in PL/SQL: a NULL escape makes it UNKNOWN; an escape of other than one
+   * character ('' or '##') is ORA-06502; the escape before any other character, or last in the pattern, matches
+   * nothing -- LIKE is FALSE and NOT LIKE TRUE (SQL raises ORA-01424 there instead).
+   */
+  public static boolean like(Object value, Object pattern, Object escape) {
+    return Boolean.TRUE.equals(likeEscaped(value, pattern, escape));
+  }
+
+  public static boolean notLike(Object value, Object pattern, Object escape) {
+    return Boolean.FALSE.equals(likeEscaped(value, pattern, escape));
+  }
+
+  private static Boolean likeEscaped(Object value, Object pattern, Object escape) {
+    // '' is NULL everywhere else, but not here: `ESCAPE ''` is ORA-06502 and `ESCAPE NULL` UNKNOWN (26ai)
+    if (escape != null && text(escape).codePointCount(0, text(escape).length()) != 1) throw new ValueError();
+    if (isNull(value) || isNull(pattern) || escape == null) return null;
+    int esc = text(escape).codePointAt(0);
+    StringBuilder regex = new StringBuilder();
+    int[] points = text(pattern).codePoints().toArray();
+    for (int k = 0; k < points.length; k++) {
+      int c = points[k];
+      if (c == esc) {
+        if (k + 1 >= points.length || (points[k + 1] != '%' && points[k + 1] != '_' && points[k + 1] != esc)) {
+          return Boolean.FALSE;
+        }
+        regex.append(java.util.regex.Pattern.quote(new String(Character.toChars(points[++k]))));
+      } else if (c == '%') {
+        regex.append(".*");
+      } else if (c == '_') {
+        regex.append('.');
+      } else {
+        regex.append(java.util.regex.Pattern.quote(new String(Character.toChars(c))));
+      }
+    }
+    return java.util.regex.Pattern.compile(regex.toString(), java.util.regex.Pattern.DOTALL).matcher(text(value)).matches();
   }
 
   /** Oracle's {@code LIKE}: {@code %} is any run of characters, {@code _} is exactly one. */
