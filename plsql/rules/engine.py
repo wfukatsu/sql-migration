@@ -161,7 +161,11 @@ class RuleSet:
         rules: list[Rule] = []
         for path in sorted(directory.glob("*.yaml")):
             document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            for entry in document.get("rules", []):
+            problems = validate(document)
+            if problems:
+                # a typo used to make its rule never fire -- the permissive direction, with nothing to see (#98)
+                raise ValueError(f"{path}: " + "; ".join(problems))
+            for entry in document["rules"]:
                 rules.append(Rule(source=path.name, **{
                     "id": entry["id"], "decision": entry["decision"], "message": entry["message"],
                     "match": entry.get("match", {}), "severity": entry.get("severity", "warning"),
@@ -171,6 +175,113 @@ class RuleSet:
 
     def evaluate(self, module: M.Module, routine: M.Routine, analysis: ProgramAnalysis) -> list[Match]:
         return [m for rule in self.rules for m in _match(rule, module, routine, analysis)]
+
+
+# --- validation (#98) -------------------------------------------------------------------------------------
+#
+# The matcher reads what it knows and ignores the rest, so a misspelt key, a string where a boolean belongs, or a
+# diagnostic code nothing emits made a rule silently never fire -- a REVIEW or REDESIGN that quietly became
+# nothing. Everything a rule file says is checked when it is loaded instead.
+
+ENTRY_KEYS = {"id", "decision", "message", "match", "severity", "remediation", "requiredTests"}
+DECISIONS = {"AUTO", "REVIEW", "REDESIGN"}
+SEVERITIES = {"critical", "warning", "info"}
+# statement-level keys, and the type of their value (None: a string or a list of strings)
+STATEMENT_KEYS = {
+    "statementKind": None, "insideLoop": bool, "lockingMode": None, "constantSql": bool,
+    "identifierInterpolation": bool, "targetStatus": None, "evaluatedByTarget": str, "targetStatusNot": None,
+    "sqlKind": None, "textMatches": str, "loopKind": None, "hasDiagnostic": None, "hasAllDiagnostics": None,
+    "dynamicResolved": bool, "lacksDiagnostic": None, "intoTargets": bool, "routineControlsTransaction": bool,
+}
+ROUTINE_KEYS = {
+    "autonomous": bool, "controlsTransaction": bool, "packageState": bool, "moduleKind": None, "authId": None,
+    "dbLink": bool, "externalPackage": bool, "callSpec": bool, "writeThenScan": bool, "recursive": bool,
+    "handlesException": None, "unresolvedCallee": bool, "swallowsOthers": bool, "rowCountUntracked": bool,
+    "clockReadsAtLeast": int, "cursorLocking": bool, "saveExceptions": bool,
+}
+DIAGNOSTIC_KEYS = ("hasDiagnostic", "hasAllDiagnostics", "lacksDiagnostic")
+
+
+def validate(document: dict) -> list[str]:
+    """What is wrong with one rule file; empty when nothing is."""
+    if not isinstance(document, dict) or set(document) != {"rules"} or not isinstance(document["rules"], list):
+        return [f"a rule file has exactly one key, `rules`, a list (found {sorted(document) if isinstance(document, dict) else type(document).__name__})"]
+    problems: list[str] = []
+    kinds, codes = _statement_kinds(), _emitted_codes()
+    for entry in document["rules"]:
+        name = entry.get("id", "<no id>") if isinstance(entry, dict) else "<not a mapping>"
+        if not isinstance(entry, dict):
+            problems.append(f"{name}: not a mapping")
+            continue
+        problems += [f"{name}: unknown key `{k}`" for k in sorted(set(entry) - ENTRY_KEYS)]
+        problems += [f"{name}: `{k}` is missing" for k in ("id", "decision", "message", "match") if k not in entry]
+        if entry.get("decision") not in DECISIONS:
+            problems.append(f"{name}: decision `{entry.get('decision')}` is not one of {sorted(DECISIONS)}")
+        if "severity" in entry and entry["severity"] not in SEVERITIES:
+            problems.append(f"{name}: severity `{entry['severity']}` is not one of {sorted(SEVERITIES)}")
+        criteria = entry.get("match")
+        if not isinstance(criteria, dict) or not criteria:
+            problems.append(f"{name}: `match` is empty or not a mapping")
+            continue
+        allowed = STATEMENT_KEYS if "statementKind" in criteria else ROUTINE_KEYS
+        for key, value in criteria.items():
+            if key not in allowed:
+                where = "a statement rule (with statementKind)" if allowed is STATEMENT_KEYS else "a routine rule"
+                problems.append(f"{name}: `{key}` is not a key of {where}")
+                continue
+            wanted = allowed[key]
+            if wanted is None:
+                ok = isinstance(value, str) or (isinstance(value, list) and value and all(isinstance(v, str) for v in value))
+            elif wanted is int:
+                ok = isinstance(value, int) and not isinstance(value, bool)
+            else:
+                ok = isinstance(value, wanted)
+            if not ok:
+                problems.append(f"{name}: `{key}` takes {'a string or a list of strings' if wanted is None else wanted.__name__}"
+                                f", not {value!r}")
+                continue
+            if key == "statementKind":
+                problems += [f"{name}: statementKind `{k}` is no statement the IR has" for k in sorted(_as_set(value))
+                             if k != EXPRESSION and k not in kinds]
+            if key in DIAGNOSTIC_KEYS:
+                problems += [f"{name}: {key} `{c}` is a code nothing emits" for c in sorted(_as_set(value))
+                             if c not in codes]
+            if key in ("textMatches", "evaluatedByTarget"):
+                try:
+                    re.compile(value)
+                except re.error as error:
+                    problems.append(f"{name}: `{key}` is not a regular expression ({error})")
+    return problems
+
+
+def _source_text() -> str:
+    root = Path(__file__).resolve().parent.parent.parent
+    return "\n".join(p.read_text(encoding="utf-8") for directory in ("plsql", "scalardb_migrate")
+                     for p in sorted((root / directory).rglob("*.py"))
+                     if "grammar" not in p.parts and "__pycache__" not in p.parts)
+
+
+_KNOWN: dict[str, set[str]] = {}
+
+
+def _statement_kinds() -> set[str]:
+    """The `kind` of every statement the lowering builds: the Statement classes and the `kind="..."` they are given."""
+    if "kinds" not in _KNOWN:
+        import inspect
+
+        classes = {n for n, c in vars(M).items() if inspect.isclass(c) and issubclass(c, M.Statement)}
+        # `kind="Null"`, and the lowering's tables from a parser context to a kind (`"Goto_statementContext": "Goto"`)
+        pairs = re.findall(r'kind="([A-Z]\w+)"|Context":\s*"([A-Z]\w+)"', _source_text())
+        _KNOWN["kinds"] = classes | {kind for pair in pairs for kind in pair if kind}
+    return _KNOWN["kinds"]
+
+
+def _emitted_codes() -> set[str]:
+    """Every quoted upper-case code the analyser and the converter write: a diagnostic code no line of them spells
+    cannot be on a statement."""
+    if "codes" not in _KNOWN:
+        _KNOWN["codes"] = set(re.findall(r'["\']([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+|[A-Z]{3,})["\']', _source_text()))
+    return _KNOWN["codes"]
 
 
 # --- predicates -------------------------------------------------------------------------------------------
@@ -378,7 +489,7 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
     for key, value in criteria.items():
         check = checks.get(key)
         if check is None:
-            return False  # an unknown key never matches; the schema test catches the typo
+            return False  # an unknown key never matches; `validate` refuses the file that has one (#98)
         if not check(value):
             return False
     return True
