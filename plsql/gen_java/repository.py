@@ -344,8 +344,9 @@ def _direct(file: JavaFile, name: str, statement: M.SqlOperation, result: Reposi
         f.line(f'String sql = "{_escape(sql)}";')
         f.line("Map<String, Object> params = new HashMap<>();")
         scope = {b.plsql_variable or b.name: java_name(b.name) for b in statement.binds if not b.expression}
+        written = (statement.write_set or [None])[0]
         for bind in statement.binds:
-            f.line(f'params.put("{bind.name}", {_bound(file, bind, scope)});')
+            f.line(f'params.put("{bind.name}", {_bound(file, bind, scope, written)});')
         f.line("List<Object> values = new ArrayList<>();")
         f.line("String bound = Residual.bindNamed(sql, params, values);")
         with f.block("try (PreparedStatement statement = connection.prepareStatement(bound))") as g:
@@ -423,7 +424,8 @@ def _planned(file: JavaFile, name: str, statement: M.SqlOperation, result: Repos
         f.line(f'var plan = PlanRunner.resource("plans/{plan}");')
         # 計画の取得も ScalarDB SQL へ渡すので、直接の文と同じく列の型で渡す。素の値を渡すと、
         # BigDecimal が型ごと拒否される（DB-SQL-10016。keyset の起点で実際に落ちた / 2026-09-19）
-        binds = ", ".join(f'"{b.name}", {_bound(file, b)}' for b in statement.binds)
+        written = (statement.write_set or [None])[0]
+        binds = ", ".join(f'"{b.name}", {_bound(file, b, None, written)}' for b in statement.binds)
         f.line(f"return PlanRunner.join(connection, plan, Map.of({binds}));")
     result.methods.append(name)
     result.planned.append(statement.id)
@@ -469,7 +471,8 @@ def _scale(oracle_type: str | None) -> int:
     return java_type(oracle_type).scale or 0
 
 
-def _bound(file: JavaFile, bind: M.BindVariable, scope: dict[str, str] | None = None) -> str:
+def _bound(file: JavaFile, bind: M.BindVariable, scope: dict[str, str] | None = None,
+           table: str | None = None) -> str:
     """The expression that binds this value.
 
     The column's ScalarDB type comes from the schema that was actually loaded, not from the Oracle type, because
@@ -477,13 +480,43 @@ def _bound(file: JavaFile, bind: M.BindVariable, scope: dict[str, str] | None = 
     analysis could not attribute to exactly one column is passed through unchanged -- the old behaviour, which is
     right when there is nothing better to say.
     """
-    name = _java_value(file, bind, scope)
+    name = _checked(file, _java_value(file, bind, scope), bind, table)
     if not bind.scalardb_type:
         # still through the boundary: '' is NULL there whatever the column is (#5)
         file.add_import("com.scalar.migrate.plsql.Plsql")
         return f"Plsql.bind({name})"
     file.add_import("com.scalar.migrate.plsql.Plsql")
     return f'Plsql.bind({name}, "{bind.scalardb_type}", {_scale(bind.column_oracle_type)})'
+
+
+_COLUMN_NUMBER = re.compile(r"\s*(?:NUMBER|NUMERIC|DECIMAL|DEC)\s*\(\s*(\d+)\s*(?:,\s*(-?\d+)\s*)?\)\s*", re.IGNORECASE)
+_COLUMN_TEXT = re.compile(r"\s*(N?)(?:VARCHAR2|VARCHAR|CHAR|CHARACTER)\s*\(\s*(\d+)\s*(CHAR|BYTE)?\s*\)\s*",
+                          re.IGNORECASE)
+
+
+def _checked(file: JavaFile, value: str, bind: M.BindVariable, table: str | None) -> str:
+    """A value written into a column, checked against the column's Oracle declaration as Oracle checks it (#115).
+
+    `VARCHAR2(10)` refuses 11 bytes with ORA-12899 and `NUMBER(5,2)` refuses 1000 with ORA-01438; ScalarDB's TEXT
+    and BIGINT take both, so the value went in and neither the PL/SQL's WHEN OTHERS nor its caller saw an error.
+    The length is in bytes unless the column says CHAR (NVARCHAR2 / NCHAR are characters); the database's
+    NLS_LENGTH_SEMANTICS is taken to be BYTE, Oracle's default. A compared value is not checked
+    (`writes_column`), and a column the DDL does not constrain has nothing to check.
+    """
+    declared = bind.column_oracle_type or ""
+    if not bind.writes_column or not bind.column:
+        return value
+    column = ".".join(f'\\"{part.upper()}\\"' for part in (table, bind.column) if part)
+    number = _COLUMN_NUMBER.fullmatch(declared)
+    if number:
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        return f'Plsql.columnNumber({value}, {int(number.group(1))}, {int(number.group(2) or 0)}, "{column}")'
+    text = _COLUMN_TEXT.fullmatch(declared)
+    if text:
+        chars = bool(text.group(1)) or (text.group(3) or "").upper() == "CHAR"
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        return f'Plsql.columnText({value}, {int(text.group(2))}, {"true" if chars else "false"}, "{column}")'
+    return value
 
 
 def _java_value(file: JavaFile, bind: M.BindVariable, scope: dict[str, str] | None) -> str:

@@ -758,7 +758,10 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
             f.add_import("com.scalar.migrate.plsql.Plsql")
             errm = f"Plsql.sqlerrm({variable}.code(), {variable}.getMessage())"
             backtrace = f"Plsql.errorBacktrace({variable})"
-            _HANDLER_ERROR.set({"SQLCODE": f"{variable}.code()", "sqlcode": f"{variable}.code()",
+            # `Plsql.sqlcode`, not the class's number: a PL/SQL-declared exception without EXCEPTION_INIT is +1 in
+            # Oracle, and its class carries a pseudo-code only the registry needs (`exception._user_code`, #114)
+            code = f"Plsql.sqlcode({variable}.code())"
+            _HANDLER_ERROR.set({"SQLCODE": code, "sqlcode": code,
                                 "SQLERRM": errm, "sqlerrm": errm,
                                 "DBMS_UTILITY.FORMAT_ERROR_BACKTRACE": backtrace,
                                 "dbms_utility.format_error_backtrace": backtrace,
@@ -822,7 +825,10 @@ _HELPER_ERRORS = (("ZERO_DIVIDE", "ZeroDivide", -1476),
                   ("CURSOR_ALREADY_OPEN", "CursorAlreadyOpen", -6511),
                   ("CASE_NOT_FOUND", "CaseNotFound", -6592),
                   (None, "NumericOverflow", -1426),
-                  (None, "NoReturn", -6503))
+                  (None, "NoReturn", -6503),
+                  # a repository's write of a value too long or too precise for its column (#115)
+                  (None, "ValueTooLarge", -12899),
+                  (None, "PrecisionTooLarge", -1438))
 
 
 # 移行先では起こりえない Oracle の誤り。いまのところ行ロックが取れないこと（ORA-54）だけである

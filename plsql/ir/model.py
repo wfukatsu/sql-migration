@@ -205,6 +205,11 @@ class BindVariable:
     # expression in SET or VALUES is computed in the application and bound as a value instead. None means the
     # bind is a plain variable reference.
     expression: str | None = None
+    # #115: True when the value is written into the column (an INSERT's VALUES, an UPDATE's SET, MERGE's branches),
+    # not compared with it. Oracle refuses a value too long or too precise for the column only on the way in, so
+    # only a written value is checked against `column_oracle_type`. None, not False, so that a document without
+    # writes stays as it was
+    writes_column: bool | None = None
 
 
 @dataclass

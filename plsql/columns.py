@@ -151,6 +151,45 @@ def _merge_source(tree: exp.Expression, found: dict[str, str]) -> None:
             found.setdefault(placeholder, column.name.lower())
 
 
+def written_binds(tree: exp.Expression) -> set[str]:
+    """The placeholders whose value is written into a column: an INSERT's VALUES, an UPDATE's SET, and MERGE's
+    UPDATE / INSERT branches, directly or through the `USING (SELECT :b AS c ...) s` a MERGE reads them from (#115).
+    A placeholder that is only compared (`WHERE id = :id`, MERGE's ON) is not one: Oracle checks a column's length
+    and precision when a value goes in, and a comparison with a longer value simply finds nothing."""
+    by_alias: dict[str, str] = {}
+    alias = ""
+    if isinstance(tree, exp.Merge):
+        using = tree.args.get("using")
+        inner = using.this if isinstance(using, exp.Subquery) else using
+        if isinstance(inner, exp.Select):
+            alias = (using.alias_or_name if using is not None else "").lower()
+            for item in inner.expressions or []:
+                value = item.this if isinstance(item, exp.Alias) else item
+                name = item.alias if isinstance(item, exp.Alias) else getattr(item, "name", "")
+                if isinstance(value, exp.Placeholder) and name:
+                    by_alias[name.lower()] = str(value.this)
+
+    def placeholder(value: exp.Expression | None) -> str | None:
+        if isinstance(value, exp.Placeholder):
+            return str(value.this)
+        if isinstance(value, exp.Column) and by_alias and (not alias or (value.table or "").lower() == alias):
+            return by_alias.get(value.name.lower())
+        return None
+
+    out: set[str] = set()
+    for insert in ([tree] if isinstance(tree, exp.Insert) else list(tree.find_all(exp.Insert))):
+        values = insert.expression
+        tuples = values.expressions if isinstance(values, exp.Values) else \
+            [values] if isinstance(values, exp.Tuple) else []
+        for tuple_ in tuples:
+            out |= {p for p in (placeholder(v) for v in tuple_.expressions) if p}
+    for update in ([tree] if isinstance(tree, exp.Update) else list(tree.find_all(exp.Update))):
+        for assignment in update.expressions or []:
+            if isinstance(assignment, exp.EQ) and (p := placeholder(assignment.expression)):
+                out.add(p)
+    return out
+
+
 def _insert_values(tree: exp.Expression, found: dict[str, str]) -> None:
     """INSERT names its columns in one list and its values in another; the pairing is positional.
 
