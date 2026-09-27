@@ -191,12 +191,31 @@ _ORACLE_PACKAGES = ("DBMS_", "UTL_", "SYS", "OWA", "HTP", "APEX_", "CTX_")
 def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: str = "corpus",
             scalardb_schema: str | Path | None = None,
             row_locks: "RowLocks | None" = None, boundaries=None, limits=None, db_links=None,
-            package_state=None, constraints=None) -> Analysis:
+            package_state=None, constraints=None, dynamic_tables=None) -> Analysis:
     """Parse, resolve and lower every source file under `root`. Nothing raises; failures become diagnostics.
 
     With `scalardb_schema`, every SQL statement is also checked against the target (P2-4) and the answer lands on
     the IR, so the report can say what ScalarDB can run rather than leaving it unasked.
+
+    `dynamic_tables` (limits.yaml `dynamicTables`) are the table names a dynamic SQL statement may be given; the
+    statement is then expanded into one per name, as `plsql.generate` does (#133). Without it the allowlist already
+    set (`dynamic.set_allowed_tables`, which `plsql.generate` calls) is used as it is.
     """
+    if dynamic_tables is None:
+        return _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundaries, limits, db_links,
+                        package_state, constraints)
+    from .dynamic import _ALLOWED
+
+    token = _ALLOWED.set(dict(dynamic_tables.allowed))
+    try:
+        return _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundaries, limits, db_links,
+                        package_state, constraints)
+    finally:
+        _ALLOWED.reset(token)
+
+
+def _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundaries, limits, db_links,
+             package_state, constraints) -> Analysis:
     root = Path(root)
     schema = OracleSchema.from_ddl(schema_ddl) if schema_ddl else None
     program = M.Program(id=program_id, kind="Program",

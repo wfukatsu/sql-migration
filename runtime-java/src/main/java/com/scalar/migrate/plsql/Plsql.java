@@ -1652,6 +1652,111 @@ public final class Plsql {
     return BigDecimal.valueOf(text.codePointCount(0, found) + 1L);
   }
 
+  // --- DBMS_LOB's read-only functions (#132). The generated code holds a CLOB as a String and a BLOB as a byte[]
+  // (the catalog's data types), so these do to the value what DBMS_LOB does to the locator. Their rules are not the
+  // SQL functions' (measured on Oracle 26ai): a NULL or out-of-range argument gives NULL rather than an error, an
+  // offset does not count from the end, and numbers are truncated. As everywhere in this class an empty String is
+  // NULL, so an EMPTY_CLOB() -- length 0 in Oracle -- cannot be told from a NULL CLOB here.
+
+  private static final int LOB_MAX_AMOUNT = 32767;
+
+  /** DBMS_LOB.GETLENGTH(lob): characters of a CLOB, bytes of a BLOB. */
+  public static BigDecimal lobGetLength(Object lob) {
+    if (lob instanceof byte[] bytes) return BigDecimal.valueOf(bytes.length);
+    if (isNull(lob)) return null;
+    String text = text(lob);
+    return BigDecimal.valueOf(text.codePointCount(0, text.length()));
+  }
+
+  /** DBMS_LOB.SUBSTR(lob[, amount[, offset]]): `amount` characters from `offset`; 32767 and 1 when left out. */
+  public static String lobSubstr(String lob) {
+    return lobSubstr(lob, LOB_MAX_AMOUNT, 1);
+  }
+
+  public static String lobSubstr(String lob, Object amount) {
+    return lobSubstr(lob, amount, 1);
+  }
+
+  public static String lobSubstr(String lob, Object amount, Object offset) {
+    int[] range = lobRange(isNull(lob) ? null : lob.codePointCount(0, lob.length()), amount, offset);
+    if (range == null) return null;
+    int[] points = lob.codePoints().toArray();
+    return emptyIsNull(new String(points, range[0], range[1] - range[0]));
+  }
+
+  public static byte[] lobSubstr(byte[] lob) {
+    return lobSubstr(lob, LOB_MAX_AMOUNT, 1);
+  }
+
+  public static byte[] lobSubstr(byte[] lob, Object amount) {
+    return lobSubstr(lob, amount, 1);
+  }
+
+  public static byte[] lobSubstr(byte[] lob, Object amount, Object offset) {
+    int[] range = lobRange(lob == null ? null : lob.length, amount, offset);
+    return range == null ? null : java.util.Arrays.copyOfRange(lob, range[0], range[1]);
+  }
+
+  /** [from, to) of a SUBSTR, or null where DBMS_LOB.SUBSTR returns NULL. */
+  private static int[] lobRange(Integer length, Object amount, Object offset) {
+    if (length == null || isNull(amount) || isNull(offset)) return null;
+    BigDecimal n = num(amount).setScale(0, java.math.RoundingMode.DOWN);
+    BigDecimal from = num(offset).setScale(0, java.math.RoundingMode.DOWN);
+    if (n.signum() <= 0 || n.compareTo(BigDecimal.valueOf(LOB_MAX_AMOUNT)) > 0) return null;
+    if (from.signum() <= 0 || from.compareTo(BigDecimal.valueOf(length)) > 0) return null;
+    int start = from.intValue() - 1;
+    return new int[] {start, (int) Math.min((long) start + n.intValue(), length)};
+  }
+
+  /** DBMS_LOB.INSTR(lob, pattern[, offset[, nth]]): where the nth match at or after `offset` starts; 0 if none. */
+  public static BigDecimal lobInstr(Object lob, Object pattern) {
+    return lobInstr(lob, pattern, 1, 1);
+  }
+
+  public static BigDecimal lobInstr(Object lob, Object pattern, Object offset) {
+    return lobInstr(lob, pattern, offset, 1);
+  }
+
+  public static BigDecimal lobInstr(Object lob, Object pattern, Object offset, Object nth) {
+    if (lob == null || isNull(lob) || isNull(pattern) || isNull(offset) || isNull(nth)) return null;
+    BigDecimal from = num(offset).setScale(0, java.math.RoundingMode.DOWN);
+    BigDecimal occurrence = num(nth).setScale(0, java.math.RoundingMode.DOWN);
+    if (from.signum() <= 0 || occurrence.signum() <= 0) return null;
+    if (lob instanceof byte[] bytes) {
+      if (!(pattern instanceof byte[] needle) || needle.length == 0) return null;
+      if (from.compareTo(BigDecimal.valueOf(bytes.length)) > 0) return BigDecimal.ZERO;
+      int found = from.intValue() - 2;
+      for (long k = occurrence.longValue(); k > 0; k--) {
+        found = indexOf(bytes, needle, found + 1);
+        if (found < 0) return BigDecimal.ZERO;
+      }
+      return BigDecimal.valueOf(found + 1L);
+    }
+    int[] points = text(lob).codePoints().toArray();
+    int[] needle = text(pattern).codePoints().toArray();
+    if (from.compareTo(BigDecimal.valueOf(points.length)) > 0) return BigDecimal.ZERO;
+    int found = from.intValue() - 2;
+    for (long k = occurrence.longValue(); k > 0; k--) {
+      found = indexOf(points, needle, found + 1);
+      if (found < 0) return BigDecimal.ZERO;
+    }
+    return BigDecimal.valueOf(found + 1L);
+  }
+
+  private static int indexOf(byte[] haystack, byte[] needle, int from) {
+    for (int i = Math.max(from, 0); i + needle.length <= haystack.length; i++) {
+      if (java.util.Arrays.equals(haystack, i, i + needle.length, needle, 0, needle.length)) return i;
+    }
+    return -1;
+  }
+
+  private static int indexOf(int[] haystack, int[] needle, int from) {
+    for (int i = Math.max(from, 0); i + needle.length <= haystack.length; i++) {
+      if (java.util.Arrays.equals(haystack, i, i + needle.length, needle, 0, needle.length)) return i;
+    }
+    return -1;
+  }
+
   /** REPLACE(s, from[, to]): a NULL `from` leaves s as it is; a NULL or missing `to` removes the matches. */
   public static String replace(Object value, Object from) {
     return replace(value, from, null);

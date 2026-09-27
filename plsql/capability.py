@@ -223,7 +223,7 @@ def scan_after_write(program: M.Program, report: CapabilityReport) -> list[tuple
     with the access path. Reading by key after writing is allowed (measured in P2-9); scanning is not.
     """
     found: list[tuple[str, str, str]] = []
-    from .analysis import _called_in, _declared_names, _expressions, _names, build_call_graph
+    from .analysis import _called_in, _declared_names, _expressions, _names, build_call_graph, ends_transaction
 
     routines = {r.id: r for m in program.modules for r in m.routines}
     module_of = {r.id: m.name for m in program.modules for r in m.routines}
@@ -275,8 +275,24 @@ def scan_after_write(program: M.Program, report: CapabilityReport) -> list[tuple
                     found.extend((routine_id, table, sql_id) for table in scans(inner, written))
                     written.update(inner.write_set)
 
-    def visit(routine_id: str, statements: list[M.Statement], written: set[str]) -> None:
+    def writes_in(routine_id: str, statements: list[M.Statement]) -> set[str]:
+        """Every table the statements may write, what they call included."""
+        out: set[str] = set()
+        for inner in _walk(statements):
+            out.update(inner.write_set)
+            out.update(t for c in callees(routine_id, inner) for r in reachable(c, set())
+                       for s in everything(r) for t in s.write_set)
+        return out
+
+    def visit(routine_id: str, statements: list[M.Statement], written: set[str]) -> set[str]:
+        """What this transaction has written once `statements` have run (the same walk as
+        `analysis.written_after`). A COMMIT or a full ROLLBACK starts a new transaction, and what was written
+        before it can be scanned again (#131); only a COMMIT every path runs through clears it."""
+        written = set(written)
         for statement in statements:
+            if ends_transaction(statement):
+                written = set()
+                continue
             query = getattr(statement, "query", None)
             if query is not None:
                 # a cursor FOR loop opens its query once, before the first iteration: the body's writes come
@@ -284,29 +300,40 @@ def scan_after_write(program: M.Program, report: CapabilityReport) -> list[tuple
                 found.extend((routine_id, table, query.id) for table in scans(query, written))
             if statement.kind == "Loop":
                 # the back edge: the second iteration runs the top of the body after the writes at its bottom
-                for inner in _walk(statement.body):
-                    written.update(inner.write_set)
-                    written.update(t for c in callees(routine_id, inner) for r in reachable(c, set())
-                                   for s in everything(r) for t in s.write_set)
+                written |= writes_in(routine_id, statement.body)
             found.extend((routine_id, table, statement.id) for table in scans(statement, written))
             run(routine_id, statement.id, callees(routine_id, statement), written)
             written.update(statement.write_set)
-            for branch in getattr(statement, "branches", []) or []:
-                visit(routine_id, branch.body, written)
-            visit(routine_id, getattr(statement, "else_body", []) or [], written)
-            visit(routine_id, getattr(statement, "body", []) or [], written)
-            for handler in getattr(statement, "exception_handlers", []) or []:
-                visit(routine_id, handler.body, written)
+            branches = getattr(statement, "branches", None) or []
+            if branches:
+                # one branch runs (or none, without an ELSE): a COMMIT in one leaves the others' writes in place
+                after: set[str] = set()
+                for branch in branches:
+                    after |= visit(routine_id, branch.body, written)
+                written = after | visit(routine_id, getattr(statement, "else_body", None) or [], written)
+            body = getattr(statement, "body", None) or []
+            before = set(written)
+            if body:
+                end = visit(routine_id, body, written)
+                written = written | end if statement.kind == "Loop" else end   # a loop body may not run at all
+            handlers = getattr(statement, "exception_handlers", None) or []
+            if handlers:
+                # a handler runs after whatever part of the block ran before the exception
+                entered = before | written | writes_in(routine_id, body)
+                for handler in handlers:
+                    written |= visit(routine_id, handler.body, entered)
+        return written
 
     for module in program.modules:
         for routine in module.routines:
             written: set[str] = set()
             if routine.body:
                 run(routine.id, routine.body[0].id, initialisers(routine), written)
-            visit(routine.id, routine.body, written)
+            end = visit(routine.id, routine.body, written)
             # a handler runs after whatever part of the body ran before the exception
+            entered = written | end | writes_in(routine.id, routine.body)
             for handler in routine.exception_handlers:
-                visit(routine.id, handler.body, written)
+                visit(routine.id, handler.body, entered)
     return sorted(set(found))
 
 
