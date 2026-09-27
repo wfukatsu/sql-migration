@@ -24,7 +24,7 @@ from pathlib import Path
 
 import yaml
 
-ORIGINS = ("synthetic", "real-anonymized")
+ORIGINS = ("synthetic", "public", "real-anonymized")
 # in the order a reader should trust them
 EVIDENCE = ("independent-holdout", "referenced-holdout", "development")
 EVIDENCE_LABELS = {
@@ -34,6 +34,9 @@ EVIDENCE_LABELS = {
 }
 ORIGIN_LABELS = {
     "synthetic": "合成（ツールを試すために書いたコード）",
+    # #15: 実案件のコードが無いので、その代わりに足した公開の OSS（fixtures/plsql-public）。業務のために書かれた
+    # コードではあるが、顧客のコードではない。実案件の耐性の証拠にはならない
+    "public": "公開の OSS（実案件ではない。MIT の Logger / oos-utils）",
     "real-anonymized": "実案件（匿名化したもの）",
 }
 
