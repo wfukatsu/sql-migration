@@ -304,3 +304,13 @@ def routine_stem(routine) -> str:
     ordinal = overload_of(routine)
     return routine.name if ordinal is None else f"{routine.name}{ordinal}"
 
+
+def result_record_name(routine) -> str:
+    """The `<Name>Result` record a routine with OUT / IN OUT arguments returns. A subprogram lifted out of another
+    routine (#80) carries its module's name too: the lifted `p` of ex_8_21 and a standalone `p` beside it both made
+    `PResult` in the one domain package, and javac took the other's (#90)."""
+    stem = java_class_name(routine_stem(routine))
+    if getattr(routine, "enclosing", None):
+        return java_class_name(routine.id.rsplit(".", 1)[0]) + stem + "Result"
+    return stem + "Result"
+

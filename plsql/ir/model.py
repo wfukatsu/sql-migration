@@ -80,6 +80,9 @@ class Parameter(Node):
     # #46: a package variable the caller carries in and out (limits.yaml packageState.carried). Added by
     # plsql.package_state.carry, not written in the source: the caller passes its own copy of the same name
     carried: bool = False
+    # #90: the caller's own name for a carried argument, when the routine names it otherwise -- a subprogram lifted
+    # out of `check_credit` receives `check_credit.rating` as `check_credit_rating` (2-19)
+    carried_from: str | None = None
 
 
 @dataclass

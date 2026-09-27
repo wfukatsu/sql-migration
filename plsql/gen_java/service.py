@@ -30,7 +30,7 @@ from . import split
 from .dto import loop_component_type
 from .emit import JavaFile
 from .expr import SEQUENCES_IMPORT, translate
-from .types import signature_type, record_class, java_class_name, java_name, java_type, record_columns, routine_stem
+from .types import signature_type, record_class, java_class_name, java_name, java_type, record_columns, result_record_name, routine_stem
 
 # the module being generated, so an expression can resolve a sibling routine without threading it through
 # every statement helper
@@ -460,7 +460,7 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
                 names[f"{r.name.lower()}#parameters"] = ",".join(
                     signature_type(p.type).name for p in r.parameters
                     if not (r.enclosing and p.carried))
-                carried = [p.name for p in r.parameters if r.enclosing and p.carried]
+                carried = [p.carried_from or p.name for p in r.parameters if r.enclosing and p.carried]
                 if carried:
                     # a lifted local subprogram takes the enclosing variables it reads after its own (#80)
                     names[f"{r.name.lower()}#extra"] = ",".join(carried)
@@ -522,7 +522,7 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
         returns = mapped.name
     outs = [p for p in routine.parameters if p.direction in ("OUT", "IN OUT")]
     if outs:
-        returns = java_class_name(routine_stem(routine)) + "Result"
+        returns = result_record_name(routine)
         file.add_import(f"{domain_package}.{returns}")
 
     parameters = []
@@ -1171,7 +1171,7 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
             # the OUT arguments travel in the result record, so a RETURN in the middle has to build it too:
             # a bare `return;` in a method that returns the record did not compile
             components = ([value or "null"] if routine.return_type is not None else []) + outs
-            file.line(f"return new {java_class_name(routine_stem(routine))}Result({', '.join(components)});")
+            file.line(f"return new {result_record_name(routine)}({', '.join(components)});")
         elif value is not None:
             file.line(f"return {value};")
         elif returns != "void":
@@ -1686,7 +1686,7 @@ def _call(file: JavaFile, statement: M.Call, routine: M.Routine, result: Service
             else:
                 file.line(f"{invocation};")
             return
-        record = java_class_name(routine_stem(callee)) + "Result"
+        record = result_record_name(callee)
         if _DOMAIN.get():
             file.add_import(f"{_DOMAIN.get()}.{record}")
         holder = f"{java_name(routine_stem(callee))}Result"
@@ -1771,8 +1771,9 @@ def _positional(statement: M.Call, callee: M.Routine | None) -> list[str]:
         if parameter.name.lower() in named:
             out.append(named.pop(parameter.name.lower()))
         elif getattr(parameter, "carried", False):
-            # #46: carried package state. The caller carries it too, under the same name
-            out.append(parameter.name)
+            # #46: carried package state. The caller carries it too, under the same name -- or under its own, for
+            # a lifted subprogram that names it otherwise (`check_credit.rating`, #90)
+            out.append(getattr(parameter, "carried_from", None) or parameter.name)
         elif parameter.default is not None and LITERAL_DEFAULT.match(parameter.default.strip()):
             out.append(parameter.default.strip())
         else:

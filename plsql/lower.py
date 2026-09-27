@@ -125,6 +125,35 @@ def overload_ordinals(names: list[str]) -> list[int | None]:
     return out
 
 
+def _read_in_a_handler(body: str, name: str) -> bool:
+    """Whether an exception handler in `body` (the text after `EXCEPTION WHEN`) mentions `name`."""
+    return any(re.search(rf"\b{re.escape(name)}\b", part, re.I)
+               for part in re.split(r"\bEXCEPTION\s+WHEN\b", body, flags=re.I)[1:])
+
+
+def _rename_in(node, pattern: str, replacement: str) -> None:
+    """Rewrite every PL/SQL text a lowered routine holds (conditions, expressions, SQL, arguments ...)."""
+    import dataclasses
+
+    if isinstance(node, list):
+        for i, item in enumerate(node):
+            if isinstance(item, str):
+                node[i] = re.sub(pattern, replacement, item, flags=re.I)
+            else:
+                _rename_in(item, pattern, replacement)
+        return
+    if not dataclasses.is_dataclass(node):
+        return
+    for f in dataclasses.fields(node):
+        if f.name in ("id", "kind", "source_range"):
+            continue
+        value = getattr(node, f.name)
+        if isinstance(value, str):
+            setattr(node, f.name, re.sub(pattern, replacement, value, flags=re.I))
+        elif isinstance(value, list) or dataclasses.is_dataclass(value):
+            _rename_in(value, pattern, replacement)
+
+
 def routine_id_of(module: str | None, name: str, ordinal: int | None = None) -> str:
     """`pkg.put`, and `pkg.put~2` for the second overload of put.
 
@@ -245,37 +274,63 @@ class _Lowerer:
         self.lifted = []
         return module
 
-    def _lift(self, nested: ParserRuleContext, outer: M.Routine, module: str) -> str | None:
+    def _lift(self, nested: ParserRuleContext, outer: M.Routine, module: str, outer_body: str = "") -> str | None:
         """Lower a subprogram from `outer`'s declare section as `<module>.<name>`, private, into `self.lifted`.
-        Returns why it cannot be lifted instead: it reads `outer`'s own names, or the module already has one of
-        its name."""
+        Returns why it cannot be lifted instead.
+
+        What it reads of `outer` is handed to it as trailing arguments the caller carries (#80); what it assigns
+        goes both ways, IN OUT (#90). A cursor only it uses moves into it. A name it reaches by qualifying it with
+        `outer`'s name (`check_credit.rating`, past a local of the same name) is handed under another name."""
         name = _routine_name(nested)
         taken = {r.name.lower() for r in self.__dict__.get("lifted", [])} | self.__dict__.get("module_routines", set())
         if name.lower() in taken or name.lower() == outer.name.lower():
             return f"shares its name with another routine of the module ({name})"
         lifted = self._routine(nested, module=module)
         own = {p.name.lower() for p in lifted.parameters} | {d.name.lower() for d in lifted.declarations}
-        holders = {h.name.lower(): h for h in list(outer.parameters) + list(outer.declarations)
-                   if h.name.lower() not in own}
+        holders = {h.name.lower(): h for h in list(outer.parameters) + list(outer.declarations)}
         text = re.sub(r"'(?:[^']|'')*'|--[^\n]*", " ", _text(nested))
+        # `check_credit.rating` reaches past a local of the same name to the enclosing one (2-19): handed to the
+        # lifted routine as `check_credit_rating`, and the qualified references renamed to it
+        aliases: dict[str, str] = {}
+        for qualified in sorted({m.lower() for m in re.findall(
+                rf"\b{re.escape(outer.name)}\s*\.\s*([A-Za-z][\w$#]*)", text, re.I)}):
+            alias = f"{outer.name}_{qualified}".lower()
+            if qualified not in holders or alias in own or alias in holders:
+                return f"qualifies the enclosing routine's {qualified} by its name"
+            aliases[alias] = qualified
+            _rename_in(lifted, rf"\b{re.escape(outer.name)}\s*\.\s*{re.escape(qualified)}\b", alias)
+        text = re.sub(rf"\b{re.escape(outer.name)}\s*\.\s*([A-Za-z][\w$#]*)",
+                      lambda m: f"{outer.name}_{m.group(1)}".lower(), text, flags=re.I)
         used = {w.lower() for w in re.findall(r"[A-Za-z][\w$#]*", text)}
+        visible = {n: h for n, h in holders.items() if n not in own}
         # the enclosing routine's TYPEs resolve through the symbol table (the nested scope sits inside the outer
         # one); its variables and parameters are what the lifted routine needs handed to it
-        qualified = sorted({m.lower() for m in re.findall(rf"\b{re.escape(outer.name)}\s*\.\s*([A-Za-z][\w$#]*)", text, re.I)})
-        if qualified:
-            # `check_credit.rating` reaches past a local of the same name to the enclosing one: an argument named
-            # `rating` cannot stand for both (2-19)
-            return f"qualifies the enclosing routine's {', '.join(qualified)} by its name"
-        captured = sorted(n for n in holders.keys() & used if getattr(holders[n], "declaration_kind", None) != "type")
-        cursors = [n for n in captured if getattr(holders[n], "declaration_kind", None) in ("cursor", "exception")]
-        if cursors:
-            return f"uses the enclosing routine's cursor or exception {', '.join(cursors)}"
-        assigned = [n for n in captured if not self._carriable(holders[n], text, n)]
-        if assigned:
-            return f"assigns the enclosing routine's {', '.join(assigned)}"
+        captured = sorted(n for n in visible.keys() & used if getattr(visible[n], "declaration_kind", None) != "type")
+        cursors = [n for n in captured if getattr(visible[n], "declaration_kind", None) == "cursor"]
+        shared = [n for n in cursors if re.search(rf"\b{re.escape(n)}\b", outer_body, re.I)]
+        exceptions = [n for n in captured if getattr(visible[n], "declaration_kind", None) == "exception"]
+        if shared or exceptions:
+            # a cursor the enclosing routine opens and this one fetches (6-11) is one cursor in two methods; an
+            # exception raised here is caught out there
+            return f"uses the enclosing routine's cursor or exception {', '.join(shared + exceptions)}"
+        assigned = [n for n in captured if n not in cursors and not self._carriable(visible[n], text, n)]
+        handled = [n for n in assigned if _read_in_a_handler(outer_body, n)]
+        if handled:
+            # Oracle's nested subprogram changes the variable itself, so a change before an exception survives it;
+            # an IN OUT argument comes back only when the call returns. A handler reading it would see the old value
+            return f"assigns the enclosing routine's {', '.join(handled)}, which a handler of that routine reads"
         lifted.visibility = "private"
         lifted.enclosing = outer.id
-        lifted.__dict__["captured"] = {n: holders[n] for n in captured}
+        for cursor in cursors:
+            # only this routine uses it: it moves in (5-49)
+            declaration = visible[cursor]
+            outer.declarations.remove(declaration)
+            lifted.declarations.append(declaration)
+        lifted.__dict__["captured"] = {n: visible[n] for n in captured if n not in cursors}
+        lifted.__dict__["assigned"] = set(assigned)
+        for alias, qualified in aliases.items():
+            lifted.__dict__["captured"][alias] = holders[qualified]
+            lifted.__dict__.setdefault("carried_from", {})[alias] = holders[qualified].name
         self.__dict__.setdefault("lifted", []).append(lifted)
         return None
 
@@ -309,11 +364,19 @@ class _Lowerer:
                     if missing:
                         caller.__dict__["captured"].update(missing)
                         changed = True
+                    # what the callee assigns, the caller has to hand back out as well
+                    passed_on = callee.__dict__["assigned"] - caller.__dict__["assigned"]
+                    if passed_on:
+                        caller.__dict__["assigned"] |= passed_on
+                        changed = True
         for r in mine:
+            assigned = r.__dict__.pop("assigned")
+            renamed = r.__dict__.pop("carried_from", {})
             for name, holder in r.__dict__.pop("captured").items():
                 r.parameters.append(M.Parameter(
-                    id=f"{r.id}#param-carried-{name}", kind="Parameter", name=holder.name, direction="IN",
-                    type=holder.type, carried=True, source_range=holder.source_range))
+                    id=f"{r.id}#param-carried-{name}", kind="Parameter", name=name if name in renamed else holder.name,
+                    direction="IN OUT" if name in assigned else "IN",
+                    type=holder.type, carried=True, carried_from=renamed.get(name), source_range=holder.source_range))
 
     def _trigger(self, context: ParserRuleContext) -> M.Module:
         name = _text(_child(context, "Trigger_nameContext")).split(".")[-1].lower() or "<trigger>"
@@ -417,7 +480,8 @@ class _Lowerer:
             for nested in _descend(context, NESTED_SUBPROGRAMS, stop={"BodyContext"}):
                 self.__dict__.setdefault("_source_text", {})[routine_id_of(module or name, _routine_name(nested))] = \
                     re.sub(r"'(?:[^']|'')*'|--[^\n]*", " ", _text(nested))
-                reason = self._lift(nested, routine, module or name)
+                reason = self._lift(nested, routine, module or name,
+                                    re.sub(r"'(?:[^']|'')*'|--[^\n]*", " ", _text(body)))
                 if reason is None:
                     continue
                 node = M.Unsupported(id=ids.next("stmt"), kind="Unsupported", source_range=self._range(nested),

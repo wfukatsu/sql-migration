@@ -572,6 +572,12 @@
         },
         "carried": {
           "type": "boolean"
+        },
+        "carried_from": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
