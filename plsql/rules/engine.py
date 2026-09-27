@@ -492,8 +492,9 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
         "clockReadsAtLeast": lambda v: _clock_reads(routine) >= v,
         # row locking hides in a cursor declaration as well as in a statement (found in P1-7)
         "cursorLocking": lambda v: _locking_cursor(module, routine) is v,
+        # the FORALL itself, or the loop a BULK COLLECT + FORALL pair became (plsql.bulk carries the diagnostic, #127)
         "saveExceptions": lambda v: any(
-            s.kind == "Loop" and s.loop_kind == "forall"
+            s.kind == "Loop" and s.loop_kind in ("forall", "cursor-for")
             and any(d.code == "FORALL_SAVE_EXCEPTIONS" for d in s.diagnostics)
             for s in _statements(routine)) is v,
     }

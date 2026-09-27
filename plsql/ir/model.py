@@ -182,6 +182,9 @@ class Loop(Statement):
     chunk: str | None = None
     # `OPEN rc FOR q; RETURN rc;` (#44): the rows are the function's result, not something to loop over here
     returns_rows: bool = False
+    # `OPEN p_rc FOR q` of an OUT SYS_REFCURSOR argument (#125): the rows go into that argument, and so into the
+    # result record, as the List a `RETURN rc` hands back
+    rows_into: str | None = None
     # #19: 処理対象を件数つきで繰り返し読むとき、次のページの起点になるキー列（keyset）
     paged_key: str | None = None
     body: list[Statement] = field(default_factory=list)
