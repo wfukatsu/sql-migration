@@ -125,6 +125,34 @@ def overload_ordinals(names: list[str]) -> list[int | None]:
     return out
 
 
+def _closing_paren(text: str, open_at: int) -> int | None:
+    depth = 0
+    for index in range(open_at, len(text)):
+        if text[index] == "(":
+            depth += 1
+        elif text[index] == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def _top_level_split(inner: str) -> list[str]:
+    """`a, f(b, c), d` -> the three arguments. Literals are already blanked out by the caller."""
+    parts, depth, start = [], 0, 0
+    for index, character in enumerate(inner):
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+        elif character == "," and depth == 0:
+            parts.append(inner[start:index].strip())
+            start = index + 1
+    if inner[start:].strip():
+        parts.append(inner[start:].strip())
+    return parts
+
+
 def _read_in_a_handler(body: str, name: str) -> bool:
     """Whether an exception handler in `body` (the text after `EXCEPTION WHEN`) mentions `name`."""
     return any(re.search(rf"\b{re.escape(name)}\b", part, re.I)
@@ -332,7 +360,14 @@ class _Lowerer:
             # a cursor the enclosing routine opens and this one fetches (6-11) is one cursor in two methods; an
             # exception raised here is caught out there
             return f"uses the enclosing routine's cursor or exception {', '.join(shared + exceptions)}"
-        assigned = [n for n in captured if n not in cursors and not self._carriable(visible[n], text, n)]
+        # an enclosing variable handed to an OUT / IN OUT parameter of a call is written too: carried IN, the
+        # callee's write landed on the lifted routine's copy and the caller kept 0 (#105). A call whose parameter
+        # modes nothing here knows may write it or not, so such a routine is not lifted
+        written, unknown = self._written_through_calls(lifted, text, module, set(captured) - set(cursors))
+        if unknown:
+            return f"hands the enclosing routine's {', '.join(unknown)} to a call whose parameter modes are unknown"
+        assigned = [n for n in captured
+                    if n not in cursors and (n in written or not self._carriable(visible[n], text, n))]
         handled = [n for n in assigned if _read_in_a_handler(outer_body, n)]
         if handled:
             # Oracle's nested subprogram changes the variable itself, so a change before an exception survives it;
@@ -353,6 +388,82 @@ class _Lowerer:
         self.__dict__.setdefault("lifted", []).append(lifted)
         return None
 
+    def _written_through_calls(self, lifted: M.Routine, text: str, module: str,
+                               captured: set[str]) -> tuple[set[str], list[str]]:
+        """Which of `captured` the lifted routine hands to an OUT / IN OUT parameter, and which it hands to a call
+        statement whose parameter modes are unknown (a routine outside this file, #105).
+
+        A call statement is read from the IR; a function inside an expression from the text, and only when it is a
+        routine this file declares -- anything else there is a built-in (NVL, TO_CHAR), a collection element or a
+        constructor, none of which writes its argument. Only an argument that is the variable itself (or one of
+        its fields) can be an OUT target: `c + 1` is a value."""
+        from .builtins import BUILTINS
+
+        written: set[str] = set()
+        unknown: list[str] = []
+
+        def target(argument: str) -> tuple[str | None, str]:
+            named = re.match(r"^\s*([A-Za-z][\w$#]*)\s*=>\s*(.+)$", argument, re.DOTALL)
+            value = named.group(2) if named else argument
+            bare = re.fullmatch(r"\s*([A-Za-z][\w$#]*)(?:\s*\.\s*[A-Za-z][\w$#]*)?\s*", value)
+            name = bare.group(1).lower() if bare else None
+            return (name if name in captured else None), (named.group(1).lower() if named else "")
+
+        def visit(callee: str, arguments: list[str], statement: bool) -> None:
+            modes = self._parameter_modes(callee, module)
+            for index, argument in enumerate(arguments):
+                name, named = target(argument)
+                if name is None:
+                    continue
+                if modes is None:
+                    # an Oracle-supplied call the generator knows, DBMS_OUTPUT, or a collection method (`v.DELETE(i)`)
+                    # takes its arguments IN
+                    known_in = callee.upper() in BUILTINS or callee.upper().startswith("DBMS_OUTPUT.") \
+                        or callee.upper().rpartition(".")[2] in ("EXTEND", "DELETE", "TRIM")
+                    if statement and not known_in and name not in unknown:
+                        unknown.append(name)
+                    continue
+                if any((named and by_name.get(named) in ("OUT", "IN OUT"))
+                       or (not named and index < len(order) and order[index] in ("OUT", "IN OUT"))
+                       for order, by_name in modes):
+                    written.add(name)
+                elif named and not any(named in by_name for _, by_name in modes) and name not in unknown:
+                    unknown.append(name)   # a parameter name none of the overloads has
+
+        statements = _walk(lifted.body) + [s for h in lifted.exception_handlers for s in _walk(h.body)]
+        for statement in statements:
+            if statement.kind == "Call":
+                visit(statement.callee, list(statement.arguments), True)
+        for call in re.finditer(r"(?<![\w$#.])([A-Za-z][\w$#]*(?:\s*\.\s*[A-Za-z][\w$#]*)?)\s*\(", text):
+            callee = re.sub(r"\s+", "", call.group(1))
+            if self._parameter_modes(callee, module) is None:
+                continue
+            close = _closing_paren(text, call.end() - 1)
+            if close is not None:
+                visit(callee, _top_level_split(text[call.end():close]), False)
+        return written, unknown
+
+    def _parameter_modes(self, callee: str, module: str) -> "list[tuple[list[str], dict[str, str]]] | None":
+        """The directions of each overload's parameters, in order and by name; None when this file does not
+        declare the routine (#105)."""
+        if self.symbols is None:
+            return None
+        parts = [p.strip().lower() for p in callee.split(".")]
+        key = ".".join(parts[-2:]) if len(parts) > 1 else f"{module}.{parts[0]}"
+        overloads = self.symbols.overloads.get(key)
+        if not overloads:
+            return None
+        owner, _, name = key.rpartition(".")
+        out = []
+        for ordinal in ([None] if len(overloads) == 1 else range(1, len(overloads) + 1)):
+            scope = self.symbols.scopes.get(routine_id_of(owner, name, ordinal))
+            if scope is None:
+                return None
+            parameters = [s for s in scope.symbols.values() if s.kind == "parameter"]
+            out.append(([s.direction or "IN" for s in parameters],
+                        {s.name.lower(): s.direction or "IN" for s in parameters}))
+        return out
+
     @staticmethod
     def _carriable(holder, text: str, name: str) -> bool:
         """Whether the enclosing routine's `name` can be handed to the lifted routine as an argument (#80). It
@@ -363,6 +474,9 @@ class _Lowerer:
         if re.search(word + r"\s*:=", text, re.I) or re.search(word + r"\s*\.\s*[A-Za-z][\w$#]*\s*:=", text, re.I):
             return False
         if re.search(r"\bINTO\b[^;]*" + word, text, re.I):
+            return False
+        # `EXECUTE IMMEDIATE ... USING OUT c` / `USING IN OUT c` writes it too (#105)
+        if re.search(r"\bUSING\b[^;]*\bOUT\s+" + word, text, re.I):
             return False
         return True
 
