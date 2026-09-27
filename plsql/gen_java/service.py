@@ -384,11 +384,11 @@ def _constants(file: JavaFile, module: M.Module) -> None:
 
 
 def _collection_kind(holder) -> str | None:
-    """`list` for a nested table / VARRAY, `map` for an INDEX BY table, None for anything else (#45)."""
+    """`list` for a nested table / VARRAY, `map` for an INDEX BY table -- by text (#45) or by integer (#93)."""
     if holder.type is None or holder.type.origin != "collection":
         return None
     resolved = (holder.type.resolved or "").upper()
-    return "map" if re.search(r"INDEX\s+BY\s+N?VARCHAR2?\b", resolved) else "list"
+    return "map" if re.search(r"INDEX\s+BY\s+(?:N?VARCHAR2?|PLS_INTEGER|BINARY_INTEGER|SIMPLE_INTEGER)\b", resolved) else "list"
 
 
 def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]:
@@ -1435,6 +1435,10 @@ def _forall(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Servi
     """
     collection, index = _forall_collection(statement, routine)
     java = _expr(file, collection, routine, result)
+    bound = _holder(routine, collection)
+    # an INDEX BY PLS_INTEGER table is a Map keyed as PL/SQL keys it (#93): walked 1 .. COUNT, and an element
+    # read through Plsql.at, so a missing key raises as Oracle's FORALL does rather than reading null
+    keyed = bound is not None and _collection_kind(bound) == "map"
     # 本体が読むコレクションは 1 つとは限らない（`p_ids(i)` と `p_names(i)` が並ぶ）。回す長さは
     # 境界が名指したものから採り、要素の読み方は**本体が読んでいるすべて**について用意する
     scope = {}
@@ -1444,6 +1448,12 @@ def _forall(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Servi
             if reference is None or reference.group("index").lower() != index.lower():
                 continue
             name = reference.group("collection")
+            holder = _holder(routine, name)
+            if keyed and holder is not None and _collection_kind(holder) == "map":
+                element = re.sub(r"^Map<[^,]+,\s*(.+)>$", r"\1", java_type(holder.type.resolved).name)
+                scope[f"{name}({index})".lower()] = \
+                    f"(({element}) Plsql.at({_expr(file, name, routine, result)}, {java_name(index)}))"
+                continue
             scope[f"{name}({index})".lower()] = \
                 f"{_expr(file, name, routine, result)}.get({java_name(index)})"
     outer = _LOOP_ROWS.get()
@@ -1454,8 +1464,12 @@ def _forall(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Servi
         if counted:
             # SQL%BULK_ROWCOUNT(i): the rows the i-th element's statement touched, for the last FORALL (#51)
             file.line("bulkRowCount.clear();")
-        with file.block(f"for (int {java_name(index)} = 0; {java_name(index)} < {java}.size(); "
-                        f"{java_name(index)}++)") as f:
+        opening = (f"for (int {java_name(index)} = 1; {java_name(index)} <= Plsql.count({java}); {java_name(index)}++)"
+                   if keyed else
+                   f"for (int {java_name(index)} = 0; {java_name(index)} < {java}.size(); {java_name(index)}++)")
+        if keyed:
+            file.add_import("com.scalar.migrate.plsql.Plsql")
+        with file.block(opening) as f:
             if counted:
                 f.line("rowCount = 0;")
             _statements(f, statement.body, routine, result)
