@@ -1037,7 +1037,64 @@ public final class Plsql {
   };
   @SafeVarargs
   public static <E> java.util.List<E> table(E... elements) {
-    return new java.util.ArrayList<>(java.util.Arrays.asList(elements));
+    // `nt_of_nt(n1, n2)` holds copies of n1 and n2, as every PL/SQL assignment does (#111)
+    java.util.List<E> out = new java.util.ArrayList<>(elements.length);
+    for (E element : elements) out.add(copy(element));
+    return out;
+  }
+
+  /**
+   * A PL/SQL value copy. {@code n2 := n1} copies a collection in PL/SQL, and so does storing it into a record or
+   * another collection, and passing it IN OUT without NOCOPY; a Java List or Map is shared, so a change through
+   * one name showed through the other (#111). Collections are copied deeply -- a collection of collections, a
+   * record holding one. Everything else the generated code holds (BigDecimal, String, the java.time types, a
+   * record of those) cannot change, and is returned as it is.
+   */
+  @SuppressWarnings("unchecked")
+  public static <T> T copy(T value) {
+    if (value instanceof java.util.List<?> list) {
+      java.util.List<Object> out = new java.util.ArrayList<>(list.size());
+      for (Object element : list) out.add(element == GAP ? GAP : copy(element));
+      return (T) out;
+    }
+    if (value instanceof java.util.SortedMap<?, ?> map) {
+      java.util.TreeMap<Object, Object> out = new java.util.TreeMap<>((java.util.Comparator<Object>) map.comparator());
+      for (java.util.Map.Entry<?, ?> entry : map.entrySet()) out.put(entry.getKey(), copy(entry.getValue()));
+      return (T) out;
+    }
+    if (value instanceof java.util.Map<?, ?> map) {
+      java.util.Map<Object, Object> out = new java.util.LinkedHashMap<>();
+      for (java.util.Map.Entry<?, ?> entry : map.entrySet()) out.put(entry.getKey(), copy(entry.getValue()));
+      return (T) out;
+    }
+    if (value instanceof Record record) {
+      return (T) copyRecord(record);
+    }
+    return value;
+  }
+
+  /** A record with its collection components copied; the record itself when it holds none (it is immutable). */
+  private static Record copyRecord(Record record) {
+    java.lang.reflect.RecordComponent[] components = record.getClass().getRecordComponents();
+    Object[] values = new Object[components.length];
+    Class<?>[] types = new Class<?>[components.length];
+    boolean changed = false;
+    try {
+      for (int i = 0; i < components.length; i++) {
+        java.lang.reflect.Method accessor = components[i].getAccessor();
+        accessor.setAccessible(true);
+        Object value = accessor.invoke(record);
+        values[i] = copy(value);
+        types[i] = components[i].getType();
+        changed |= values[i] != value;
+      }
+      if (!changed) return record;
+      java.lang.reflect.Constructor<?> constructor = record.getClass().getDeclaredConstructor(types);
+      constructor.setAccessible(true);
+      return (Record) constructor.newInstance(values);
+    } catch (ReflectiveOperationException e) {
+      throw new IllegalStateException("cannot copy " + record.getClass().getName(), e);
+    }
   }
 
   public static <K, E> java.util.Map<K, E> indexBy() {
@@ -1257,8 +1314,9 @@ public final class Plsql {
     if (from < 1 || from > list.size() || list.get(from - 1) == GAP) {
       throw new SubscriptBeyondCount();
     }
-    Object copy = list.get(from - 1);
-    for (int k = num(n).intValueExact(); k > 0; k--) list.add(copy);
+    Object element = list.get(from - 1);
+    // each new element is a copy of its own: a collection of collections must not share one inner List (#111)
+    for (int k = num(n).intValueExact(); k > 0; k--) list.add(copy(element));
   }
 
   /**
