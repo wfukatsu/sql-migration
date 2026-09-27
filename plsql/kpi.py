@@ -44,14 +44,29 @@ FIXTURES = ROOT / "fixtures" / "plsql"
 CORPUS_SUFFIXES = (".pks", ".pkb", ".prc", ".fnc", ".trg", ".sql")
 
 
-def expected_verdicts() -> dict[str, str]:
-    manifest = yaml.safe_load((FIXTURES / "manifest.yaml").read_text(encoding="utf-8"))
-    return {r["name"].lower(): r["expected"] for u in manifest["units"] for r in u["routines"]}
+def expected_verdicts(src: Path | None = None) -> dict[str, str]:
+    """The manifest's expected verdicts for the corpus at `src` (`<src>/../manifest.yaml`; the corpus's by default),
+    keyed by `unit.routine` and, where no two units share it, by the routine's name alone. The public packages (#15)
+    define `is_null` / `to_char`-like names in several packages, which one flat map by name would have mixed up."""
+    path = (Path(src).resolve().parent if src is not None else FIXTURES) / "manifest.yaml"
+    if not path.exists():
+        return {}
+    manifest = yaml.safe_load(path.read_text(encoding="utf-8"))
+    out: dict[str, str] = {}
+    short: dict[str, list[str]] = {}
+    for unit in manifest["units"]:
+        for routine in unit["routines"]:
+            out[f"{unit['name']}.{routine['name']}".lower()] = routine["expected"]
+            short.setdefault(routine["name"].lower(), []).append(routine["expected"])
+    out.update({name: verdicts[0] for name, verdicts in short.items() if len(verdicts) == 1 and name not in out})
+    return out
 
 
 def _wanted(routine_id: str, expected: dict[str, str]) -> str | None:
+    if routine_id.lower() in expected:
+        return expected[routine_id.lower()]
     short = routine_id.split(".")[-1]
-    return expected.get(short if short != "body" else routine_id.split(".")[0])
+    return expected.get((short if short != "body" else routine_id.split(".")[0]).lower())
 
 
 def measure(src: Path, ddl: Path | None, scalardb: Path | None, evidence_path: str | None,
@@ -67,15 +82,20 @@ def measure(src: Path, ddl: Path | None, scalardb: Path | None, evidence_path: s
 
     kpi4 = _kpi4(analysis, decisions, generated)
     manifest = _manifest_for(src)
-    real = [u.name for u in manifest.groups("origin")["real-anonymized"]] if manifest else []
+    origins = {key for key, units in manifest.groups("origin").items() if units} if manifest else {"synthetic"}
+    expected = expected_verdicts(src)
     return {
-        "corpus": {"source": str(src), "origin": "mixed" if real else "synthetic",
-                   "note": ("合成と実案件（匿名化）が混ざっている。全体の値は出自別の値の代わりにならない" if real else
+        "corpus": {"source": str(src), "origin": next(iter(origins)) if len(origins) == 1 else "mixed",
+                   "note": ("出自の違うコードが混ざっている。全体の値は出自別の値の代わりにならない" if len(origins) > 1 else
+                            "公開の OSS。業務のために書かれたコードだが、実案件コードでの達成の証拠ではない（#15）"
+                            if origins == {"public"} else
+                            "実案件（匿名化）" if origins == {"real-anonymized"} else
                             "合成 corpus。実案件コードでの達成の証拠ではない（計画 §9）")},
-        "breakdown": _breakdown(manifest, src, analysis, decisions, kpi4, evidence_path, variant, evidence.stale),
+        "breakdown": _breakdown(manifest, src, analysis, decisions, kpi4, evidence_path, variant, evidence.stale,
+                                expected),
         "kpi1": _kpi1(data),
         "kpi2": _kpi2(data),
-        "kpi3": _kpi3(decisions),
+        "kpi3": _kpi3(decisions, expected),
         "kpi4": kpi4,
         "kpi5": _kpi5(evidence_path, variant, decisions, evidence.stale),
         "kpi6": _kpi6(document),
@@ -91,11 +111,10 @@ def _manifest_for(src: Path) -> "corpora.Corpus | None":
 
 
 def _breakdown(manifest, src: Path, analysis, decisions: dict, kpi4: dict, evidence_path: str | None,
-               variant: str | None, stale: dict) -> dict | None:
+               variant: str | None, stale: dict, expected: dict[str, str]) -> dict | None:
     """The same KPIs, per group. A rate over nothing is `None`, and the group is still listed."""
     if manifest is None:
         return None
-    expected = expected_verdicts()
     routine_file = {routine.id: (routine.source_range.file if routine.source_range else None)
                     for module in analysis.program.modules for routine in module.routines}
     failed = {Path(f).name for f in inventory(analysis)["kpi"]["failedFiles"]}
@@ -179,9 +198,8 @@ def _kpi2(data: dict) -> dict:
             "source": "inventory.json"}
 
 
-def _kpi3(decisions: dict) -> dict:
+def _kpi3(decisions: dict, expected: dict[str, str]) -> dict:
     """Agreement is measured on `rule_verdict`: what the rules say before any evidence has arrived."""
-    expected = expected_verdicts()
     agree = total = 0
     mismatches = []
     missed = []
@@ -198,7 +216,7 @@ def _kpi3(decisions: dict) -> dict:
             missed.append(routine_id)
     return {"name": "判定一致", "unit": "rate", "target": 0.90, "value": agree / total if total else None,
             "detail": f"{agree}/{total}", "autoProhibitionsMissed": missed, "mismatches": mismatches,
-            "source": "rules + fixtures/plsql/manifest.yaml"}
+            "source": "rules + <src>/../manifest.yaml"}
 
 
 def _kpi4(analysis, decisions: dict, generated: str | None) -> dict:

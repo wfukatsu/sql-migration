@@ -58,6 +58,9 @@ def main(argv: list[str] | None = None) -> int:
     from . import redesign
 
     project = redesign.Decided.load(args.limits) if args.limits else None
+    from .limits import conditional_compilation
+
+    conditional_compilation(args.limits)   # before the parse: `$IF` is resolved there (#118)
     analysis = analyse(args.root, schema, scalardb_schema=scalardb, **(project.for_analysis() if project else {}))
     data = inventory(analysis)
     kpi, totals = data["kpi"], data["totals"]

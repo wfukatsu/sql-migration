@@ -71,6 +71,17 @@ python -m plsql.kpi --evidence difftest/work/plsql-diff.json --generated generat
 - 生成器が断った箇所がある routine
 - 比べられなかったシナリオがある routine
 
+条件付きコンパイル（`$IF $$flag $THEN … $END`）は、読み込むときに、Oracle がコンパイルする側だけを残します。フラグは
+移行元の `PLSQL_CCFLAGS` で、ツールからは見えません。書いていないフラグは Oracle と同じく NULL（偽）として扱い、
+`DBMS_DB_VERSION` は 19.0 とします（診断 `CONDITIONAL_COMPILATION` に何を仮定したかが出ます）。実際の値は
+`limits.yaml` に書きます（#118）:
+
+```yaml
+conditionalCompilation:
+  flags: {logger_debug: false, no_op: false}
+  dbVersion: "19.0"
+```
+
 ## 出力
 
 | ファイル | 中身 |
