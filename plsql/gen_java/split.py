@@ -245,12 +245,12 @@ def _takes(carried: "Carried", statements: list[M.Statement]) -> bool:
 
 
 def _position_note(shape: Shape) -> list[str]:
-    """失敗した要素の**位置**は、数え始めが Oracle と違う。黙って 1 ずれるより、書いておく。"""
+    """`SQL%BULK_EXCEPTIONS(j).ERROR_INDEX` は**何回目の文か**（1 から数える通し番号）で、添字ではない（26ai で実測、
+    #136）。割ったあとは、それを数えているのは回している呼び出し側なので、書いておく。"""
     if not shape.index:
         return []
-    return [f"`{shape.index}` は失敗した要素の位置である。Oracle の `ERROR_INDEX` は **1 から**"
-            f"数え、生成したループは **0 から**数える——記録に残る値が 1 ずれる。1 から数えた"
-            f"値を残すなら、呼び出し側が `{java_name(shape.index)} + 1` を渡す"]
+    return [f"`{shape.index}` は失敗した文が**何回目か**（Oracle の `ERROR_INDEX`。**1 から**数える）である。"
+            f"呼び出し側が 1 反復ごとに数えて渡す"]
 
 
 def _failure(shape: Shape) -> list["Carried"]:
@@ -305,15 +305,24 @@ def _caller_comment(file: JavaFile, routine: M.Routine, shape: Shape, parts: lis
         variable = java_name(shape.loop.variable or "r")
         lines.append("  BigDecimal after = null;   // 1 回に取る件数（pBatch）は運用の調整値")
         lines.append("  List<...> page;")
+        if shape.index and "failed" in by_suffix:
+            lines.append(f"  int {java_name(shape.index)} = 0;   // 何回目の文か（ERROR_INDEX）")
         lines.append(f"  while (!(page = tx.run(() -> service.{by_suffix['targets'].call(name)})).isEmpty()) {{")
         lines.append(f"    for (var {variable} : page) {{")
+        if shape.index and "failed" in by_suffix:
+            lines.append(f"        {java_name(shape.index)}++;")
     elif shape.kind == "cursor":
         variable = java_name(shape.loop.variable or "r")
+        if shape.index and "failed" in by_suffix:
+            lines.append(f"  int {java_name(shape.index)} = 0;   // 何回目の文か（ERROR_INDEX）")
         lines.append(f"  for (var {variable} : "
                      f"tx.run(() -> service.{by_suffix['targets'].call(name)})) {{")
+        if shape.index and "failed" in by_suffix:
+            lines.append(f"      {java_name(shape.index)}++;")
     else:
+        # `FORALL i IN 1 .. v.COUNT`: the n-th statement is v(n), so the count is the index (#136)
         collections = shape_collections(shape)
-        lines.append(f"  for (int {java_name(shape.index)} = 0; {java_name(shape.index)} < "
+        lines.append(f"  for (int {java_name(shape.index)} = 1; {java_name(shape.index)} <= "
                      f"{java_name(collections[0])}.size(); {java_name(shape.index)}++) {{")
     indent = "  " if paged else ""
     lines.append(f"{indent}      try {{ tx.run(() -> service.{by_suffix['one'].call(name)}); }}")
@@ -387,11 +396,11 @@ def _element(file: JavaFile, routine: M.Routine, shape: Shape):
         name = java_name(collection) + "Item"
         key = f"{collection}({shape.index})"
         scope[key.lower()] = name
-        carried.append(Carried(element, name, f"{java_name(collection)}.get({java_name(shape.index)})",
+        carried.append(Carried(element, name, f"{java_name(collection)}.get({java_name(shape.index)} - 1)",
                                key))
     if shape.index:
-        # 失敗した要素の**位置**。Oracle は `SQL%BULK_EXCEPTIONS(i).ERROR_INDEX` で受け取っていた
-        # ——1 要素 = 1 トランザクションなら、それを知っているのはループを回している側である
+        # 失敗した文が**何回目か**。Oracle は `SQL%BULK_EXCEPTIONS(i).ERROR_INDEX` で受け取っていた（1 から数える、
+        # #136）——1 要素 = 1 トランザクションなら、それを数えているのはループを回している側である
         scope[shape.index.lower()] = java_name(shape.index)
     return scope, carried
 
@@ -518,6 +527,12 @@ def _shape(routine: M.Routine) -> Shape | None:
         return Shape(kind="cursor", loop=loop, before=before, after=after, one=one, failed=failed,
                      failed_batch=_batch(routine.exception_handlers), index=index, notes=notes)
     if loop.loop_kind == "forall":
+        from .service import FORALL_BOUND
+
+        if FORALL_BOUND.match(loop.cursor or "") is None:
+            # `INDICES OF` / `VALUES OF` / `lo .. hi`: the n-th statement is not v(n), and ERROR_INDEX counts
+            # statements, not indexes (#136). The caller would have to walk the same indexes; not split
+            return None
         failed, index, notes = _save_exceptions(routine.exception_handlers, routine)
         if index is None:
             return None
@@ -636,7 +651,8 @@ def _rewritten(statement: M.Statement) -> M.Statement:
     """割ったあと意味が変わる参照を書き換える。元の IR は触らない（写しを返す）。
 
     * `SQLERRM(...)` -> `SQLERRM`。渡された例外から読むので、引数は要らない
-    * `SQL%BULK_EXCEPTIONS(i).ERROR_INDEX` -> 添字そのもの。失敗した要素の位置である
+    * `SQL%BULK_EXCEPTIONS(i).ERROR_INDEX` -> 呼び出し側が渡す、失敗した文が何回目か（1 から、#136）。割るのは
+      `1 .. v.COUNT` の FORALL だけなので、それは失敗した要素の添字でもある
     """
     copied = copy.deepcopy(statement)
     for node in _walk([copied]) + [copied]:

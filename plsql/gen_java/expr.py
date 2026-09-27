@@ -353,7 +353,7 @@ class _Parser:
         self.strict = strict
         return out
 
-    ARITHMETIC = {"+": "add", "-": "sub", "*": "mul", "/": "div"}
+    ARITHMETIC = {"+": "add", "-": "sub", "*": "mul", "/": "div", "MOD": "mod"}
     ADDITIVE = ("+", "-")
     MULTIPLICATIVE = ("*", "/")
 
@@ -381,9 +381,12 @@ class _Parser:
         left_pls = self._pls_integer(start)
         while True:
             token = self.peek()
-            if token is None or token[0] != "op" or token[1] not in operators:
+            # `n MOD j`: PL/SQL's infix MOD is a word at the level of * and / (4-29, #137). Left to the name path it
+            # became `nPlsql.modj`, which javac refused
+            infix_mod = operators is self.MULTIPLICATIVE and self.at_word("MOD")
+            if not infix_mod and (token is None or token[0] != "op" or token[1] not in operators):
                 return left
-            operator = self.take()[1]
+            operator = self.take()[1].upper()
             if operator == "*" and self.peek() is not None and self.peek()[1] == "*":
                 # `**` は parse_unary が読む。ここに来るのは読めなかったときだけ
                 self.take()
@@ -503,6 +506,8 @@ class _Parser:
                                                              # `AS` が現れるのはここだけである
                                                              "AS")):
                 break
+            if kind == "name" and value.upper() == "MOD" and out:
+                break   # `n MOD j`: the infix operator, which _binary reads (#137); `MOD(n, j)` starts an operand
             if kind == "op" and value == ")":
                 break
             if kind == "name" and value.upper() == "CASE":
@@ -524,7 +529,8 @@ class _Parser:
             if kind == "attribute" and self.position + 1 < len(self.tokens) \
                     and self.tokens[self.position + 1][1] == "(":
                 # `SQL%BULK_ROWCOUNT(i)`: an attribute that is a collection, read by element (#51)
-                holder = self.scope.get(" ".join(value.split()).replace(" ", "").lower() + "#collection")
+                attribute = " ".join(value.split()).replace(" ", "").lower()
+                holder = self.scope.get(attribute + "#collection")
                 if holder is not None:
                     self.take()
                     self.take()   # (
@@ -532,7 +538,9 @@ class _Parser:
                     if self.peek() is not None and self.peek()[1] == ")":
                         self.take()
                     self.result.imports.add(HELPER_IMPORT)
-                    out.append(f"{HELPER}.at({holder}, {element})")
+                    # the scope may name its own reader: SQL%BULK_ROWCOUNT(k) of an index FORALL did not run (#136)
+                    reader = self.scope.get(attribute + "#read", f"{HELPER}.at")
+                    out.append(f"{reader}({holder}, {element})")
                     continue
             self.take()
             out.append(self._atom(kind, value))

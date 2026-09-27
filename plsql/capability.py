@@ -134,9 +134,16 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
                     continue
                 if statement.kind != "SqlOperation" or not statement.original_sql:
                     continue
+                before = len(statement.diagnostics)
                 result = analyse_sql(statement, scope=routine.id, symbols=symbols,
                                     registry=registry, storage=storage, lift=not locked,
                                     loop_variables=loop_variables)
+                if _table_query(statement, routine, before):
+                    # #135: `TABLE(v)` of a PL/SQL collection -- run by the application, or refused with its reason;
+                    # either way not a statement ScalarDB (or a plan) is given
+                    report.statuses[statement.id] = statement.target_status
+                    report.issues.extend(d for d in statement.diagnostics[before:] if d.severity == "ERROR")
+                    continue
                 report.statuses[statement.id] = result.status
                 if result.access_path:
                     report.access_paths[statement.id] = result.access_path
@@ -146,6 +153,43 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
                     Issue(i["severity"], i["code"], i["message"], statement.source_range)
                     for i in result.issues if i["severity"] == "ERROR")
     return report
+
+
+def _table_query(statement: M.SqlOperation, routine: M.Routine, before: int) -> bool:
+    """#135: a query that reads `TABLE(v)`. True when it is one, with the node set to what happens instead of ScalarDB.
+
+    `v` a collection the routine declares, in a shape `table_query` takes: the application walks it (status OK, no
+    plan). Anything else reading `TABLE(...)`: refused here (status ERROR) with the reason, where it used to go to a
+    plan and fail when it ran. What the converter said about the statement is dropped either way -- it was about
+    running it on ScalarDB (`function TABLE is not supported`, the plan's fetch), which is not what happens."""
+    from . import table_query
+
+    if not table_query.reads_table(statement.original_sql):
+        return False
+    collection = table_query.collection_of(statement.original_sql)
+    nested = [d for s in _walk(routine.body) for d in (getattr(s, "declarations", None) or [])]
+    holders = {h.name.lower(): h for h in nested + list(routine.parameters) + list(routine.declarations)}
+    held = holders.get((collection or "").lower())
+    try:
+        query = table_query.parse(statement.original_sql, routine.name, check_columns=False)
+        if query is None:
+            return False
+        if held is None or held.type is None or held.type.origin != "collection":
+            raise table_query.Refused(f"TABLE({query.collection}): not a collection this routine declares")
+    except table_query.Refused as refused:
+        del statement.diagnostics[before:]
+        statement.target_status = "ERROR"
+        statement.plan_id = None
+        statement.add("ERROR", "TABLE_QUERY", f"{refused} -- not run on ScalarDB, and not run by the application "
+                                              f"either (#135)")
+        return True
+    del statement.diagnostics[before:]
+    statement.target_status = "OK"
+    statement.plan_id = None
+    statement.target_sql = []
+    statement.add("INFO", "TABLE_COLLECTION", f"TABLE({query.collection}) はアプリが持つコレクションなので、SQL ではなく"
+                                              f"その要素を回して絞り・並べる（#135）")
+    return True
 
 
 def _correlation_fields(module: M.Module, schema: "OracleSchema | None") -> dict[str, dict[str, str | None]]:

@@ -52,7 +52,7 @@ SKILL.md の Step 7 で、`migration_doc.py facts` が作った文書の `（未
 | `TRIGGER_INLINED` | 採番 trigger を INSERT の値として織り込んだ。キーを渡さない INSERT は、生成コードの外の経路では採番されない |
 | `dynamicTables` | 動的 SQL の表名は一覧にあるものだけ。それ以外は実行時に拒否する |
 | `DYN_STATIC` / `DYN_INLINED` | 文字列が定数の動的 SQL を静的な文として下ろした（`RETURNING INTO` 付きの DML、`OPEN FOR '定数'`、動的 PL/SQL ブロック）。`EXECUTE IMMEDIATE` の実行者の権限で走っていたことは `DYN_PRIVILEGE` に残る |
-| `OBJECT_BUILT` / `TABLE_COLLECTION` / `PIPELINED` | スキーマのオブジェクト型は Java の record。コンストラクタを選ぶ SELECT は列を読んでアプリで組み、`TABLE(コレクション)` への COUNT(*) は List を回し、PIPELINED 関数は List をまとめて返す（行が出るそばから読むのではない） |
+| `OBJECT_BUILT` / `TABLE_COLLECTION` / `PIPELINED` | スキーマのオブジェクト型は Java の record。コンストラクタを選ぶ SELECT は列を読んでアプリで組み、`TABLE(コレクション)` を 1 つだけ読む問合せは List を回して絞り・並べ（#135）、PIPELINED 関数は List をまとめて返す（行が出るそばから読むのではない） |
 | `DBMS_SQL_STATIC` | 定数の問合せを PARSE する DBMS_SQL の一連を、静的な cursor FOR ループにした |
 | `SUBQUERY_READ_FIRST` | SET の相関の無いスカラ副問合せを UPDATE の前に読む。0 行は NULL、2 行以上は ORA-01427（Oracle と同じ） |
 | `OPTIONAL_FILTER` | `WHERE p IS NULL OR col = p` を 2 つの問合せに分け、p の値で選ぶ |

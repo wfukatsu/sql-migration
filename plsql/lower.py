@@ -947,6 +947,8 @@ class _Lowerer:
     def _forall(self, context, ids, text, source) -> M.Statement:
         node = M.Loop(id=ids.next("stmt"), kind="Loop", source_range=source, loop_kind="forall",
                       cursor=_text(_child(context, "Bounds_clauseContext")),
+                      # the index: `VALUES OF p` names another collection than the one the body reads (#136)
+                      variable=_text(_child(context, "Index_nameContext")).strip() or None,
                       body=self._statements(context, ids))
         if re.search(r"\bSAVE\s+EXCEPTIONS\b", text, re.IGNORECASE):
             node.add("WARN", "FORALL_SAVE_EXCEPTIONS",

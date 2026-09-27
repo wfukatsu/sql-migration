@@ -496,6 +496,7 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `x IS NULL` / `IS NOT NULL` | `Plsql.isNull(x)` / `Plsql.isNotNull(x)` | なし | `''` も NULL です |
 | `a \|\| b` | `Plsql.concat(a, b)` | なし | NULL は空文字として扱い、結果が空なら NULL です |
 | `+`、`-`、`*`、`/` | `Plsql.add`、`sub`、`mul`、`div` | なし | NULL は NULL を返します。結果は NUMBER と同じく 40 桁に丸めます。0 で割ると ORA-01476（`Plsql.ZeroDivide`） |
+| 中置の `n MOD j` | `Plsql.mod(n, j)`（関数の `MOD(n, j)` と同じ） | なし | `*` と `/` と同じ強さで結びます（`a + b MOD 3 * 2` は `a + ((b MOD 3) * 2)`） |
 | `DATE + n`、`DATE - n`、`DATE - DATE` | `Plsql.add` / `Plsql.sub` | なし | 日数の足し引きです。DATE どうしの差は日数（小数つき）です |
 | 単項の `-x` | `Plsql.neg(x)` | なし | |
 | `x IN (...)`、`BETWEEN`、`LIKE`（と `NOT`） | `Plsql.in`、`between`、`like`（`notIn` など） | なし | NULL が絡むと真になりません |
@@ -560,6 +561,7 @@ PL/SQL の中の SQL 文は、Repository のメソッドになります。SQL �
 | キーで届かない `SELECT INTO` | 同じ。SQL に `LIMIT 2` を足す | ScalarDB がそのまま実行できれば SELECT-OPT-001（注記）。できなければ SELECT-001（REVIEW） | 0 行と複数行の意味は生成コードが保ちます（生成で確認） |
 | 集約の `SELECT COUNT(*) INTO` | 同じ形 | ScalarDB がそのまま実行できなければ SEM-004（REVIEW） | 集約は 0 行でも 1 行返ります |
 | `SELECT * INTO rec` / 複数列を複数の変数へ | 列を並べて読み、record を作る / 変数ごとに代入 | なし | 生成で確認 |
+| `SELECT ... INTO v(i)`（コレクションの要素へ） | `Plsql.set(v, i, 値)`。`SELECT * INTO emp_tab(1)` の行はコレクションの要素の record として作る | なし | `v(i) := x` と同じ置き方です（生成とコンパイルで確認） |
 | `INSERT` / `UPDATE` / `DELETE`（値が引数・変数） | `rowCount = repository.xxxStmtN(...)`（`executeUpdate`） | なし | 書く値は `Plsql.columnText` / `columnNumber` で列の長さと桁を検査し（ORA-12899 / ORA-01438）、`Plsql.bind(値, ScalarDB の型, scale)` で渡します |
 | `INSERT INTO t VALUES rec` / `UPDATE t SET ROW = rec` | 列を 1 つずつ並べた文 | なし | 生成で確認（INSERT） |
 | 列を読む式の `UPDATE`（`SET c = c + x`） | 決定が無ければ Repository が `UnsupportedOperationException` | SQL-001（REVIEW） | `rowLocks.optimistic` に書くと「同じトランザクションで読んでから書く」2 文に割ります。複数行なら読んだ行を回すループです（生成で確認） |
@@ -615,7 +617,8 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | コレクションの代入 | 値を複製する | なし | PL/SQL の代入は複製なので |
 | record の要素・コレクションの要素の record の field への代入 | record を作り直して置き換える | なし | |
 | `PIPELINED` の function と `PIPE ROW` | `List` を返すメソッド。`PIPE ROW` は List に足す | なし | 生成で確認 |
-| `TABLE(v)` への `COUNT(*)` | List を回して数える | なし | ほかの `TABLE(v)` の問合せは断ります |
+| `TABLE(v)` を 1 つだけ読む問合せ（`SELECT [BULK COLLECT] INTO`、`WHERE`、`ORDER BY`、`FETCH FIRST n ROWS ONLY`、`COUNT(*)`、cursor FOR ループ、明示 cursor の OPEN / FETCH） | SQL にせず、生成コードが要素を回して絞り、並べ、列を取る（`Plsql.tableRows`、`Plsql.orderRows`）。行は Repository の行と同じ `List<Object[]>` で、INTO・BULK COLLECT・cursor にそのまま渡す | なし（診断 `TABLE_COLLECTION`） | 26ai で実測した Oracle の動きに合わせています: 行は添字の順（ネスト表の隙間は飛ばす）、`TABLE(NULL)` は 0 行、昇順は NULL が最後・降順は NULL が先、文字列はバイナリ順。スカラーのコレクションの列は `COLUMN_VALUE`、record のコレクションは field が列です（生成とコンパイルで確認） |
+| 上の形に当てはまらない `TABLE(...)`（表との結合、GROUP BY、DISTINCT、副問い合わせ、`COUNT(*)` 以外の集約、function の結果 `TABLE(f(x))`、routine が宣言していないコレクション） | 解析のときに理由つきで断る（Repository のメソッドが `UnsupportedOperationException`） | SQL-001（REVIEW）。診断 `TABLE_QUERY` に理由 | 以前は実行計画に回り、実行時に ScalarDB が落としていました（#135） |
 
 ### BULK COLLECT / FORALL / SAVE EXCEPTIONS
 
@@ -625,10 +628,11 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `FETCH c BULK COLLECT INTO v LIMIT n` のループ | 行を先に全部読み、`Plsql.chunks(行, n)` で n 件ずつ配るループ | 上限を決めていなければ CUR-002 と BULK-003（REVIEW）。決めれば BULK-OPT-003（注記） | LIMIT はもうメモリを守りません。v が数値などのコレクションなら要素は列の値、record（`c%ROWTYPE` など）のコレクションなら行の record です（生成で確認） |
 | 件数を数えるだけの分割読み | `COUNT(*)` の問合せ 1 回 | なし | 生成で確認 |
 | `SELECT ... BULK COLLECT INTO v` の直後の `FORALL i IN 1 .. v.COUNT <DML>` | 2 つを 1 つの cursor FOR ループにまとめる（診断 `BULK_CHUNKED`） | CUR-002、BULK-003。`SAVE EXCEPTIONS` 付きなら BULK-002（REDESIGN） | 組の外で v や `SQL%ROWCOUNT` を読むと、まとめません。`SAVE EXCEPTIONS` の診断はまとめたループに移すので、BULK-002 は当たり続けます（生成で確認） |
-| `FORALL i IN 1 .. v.COUNT <DML>` | 要素ごとに 1 回 DML する Java のループ。`rowCount` は合計 | なし | FORALL の 1 往復が要素ごとの往復になり、性能が変わります（生成で確認） |
-| `SQL%BULK_ROWCOUNT(i)` | `bulkRowCount` の List | なし | 生成で確認 |
-| `FORALL i IN INDICES OF v` / `VALUES OF v` | 変換しない | 判定は下がらない | 生成で確認 |
-| `FORALL ... SAVE EXCEPTIONS` | 部分失敗の意味は生成しない | BULK-002（REDESIGN） | `SELECT ... BULK COLLECT` と組にしてループにまとめた形でも同じです。`transactions.perIteration` で 1 要素 = 1 トランザクションに割る決定をすると、handler は失敗した 1 要素の記録になります |
+| `FORALL i IN lo .. hi <DML>`（`1 .. v.COUNT`、`v.FIRST .. v.LAST`、定数、式） | 添字の列（`Plsql.forallRange(lo, hi)`）を作ってから、添字ごとに 1 回 DML する Java のループ。`rowCount` は合計 | なし | 境界は 1 回だけ評価します。NULL の境界と `lo > hi` は何もせず、`SQL%ROWCOUNT` も前の値のままです。文の前に、本体が読むコレクションに要素があるかを確かめ、無ければ ORA-22160（`Plsql.ElementNotExist`）で、それより前の要素の文は実行済みのまま残り `SQL%ROWCOUNT` にも数えます（26ai で実測）。FORALL の 1 往復が要素ごとの往復になり、性能が変わります（生成とコンパイルで確認） |
+| `FORALL i IN INDICES OF v [BETWEEN a AND b]` | `Plsql.indicesOf(v[, a, b])` の添字を回す | なし | 要素のある添字だけを昇順に回します（隙間は飛ばす）。`BETWEEN` の境界が NULL なら何もしません。v が NULL なら ORA-06531（26ai で実測。生成とコンパイルで確認） |
+| `FORALL i IN VALUES OF p` | `Plsql.valuesOf(p)` の値を、p の順に添字として回す | なし | 同じ値は 2 回回します。値が NULL か、その要素が無ければ ORA-22160。p が NULL なら ORA-06531。空の INDICES OF / VALUES OF は `SQL%ROWCOUNT` を 0 にします（26ai で実測。生成とコンパイルで確認） |
+| `SQL%BULK_ROWCOUNT(i)` | `Plsql.bulkRowCount(bulkRowCount, i)`。`bulkRowCount` は FORALL が回した添字をキーにした Map | なし | 回していない添字は ORA-06532（26ai で実測。Oracle は NULL の添字で ORA-06530、生成コードは ORA-06502） |
+| `FORALL ... SAVE EXCEPTIONS` | 部分失敗の意味は生成しない | BULK-002（REDESIGN） | `SELECT ... BULK COLLECT` と組にしてループにまとめた形でも同じです。`transactions.perIteration` で 1 要素 = 1 トランザクションに割る決定をすると、handler は失敗した 1 要素の記録になります。割るのは `1 .. v.COUNT` の FORALL だけです。`SQL%BULK_EXCEPTIONS(j).ERROR_INDEX` は**何回目の文か**（1 から数える。添字ではない、26ai で実測）で、割ったあとは呼び出し側が数えて渡します |
 | `SQL%BULK_EXCEPTIONS` | 変換しない（`UnsupportedOperationException`） | 判定は下がらない | 生成で確認 |
 | `FORALL ... RETURNING BULK COLLECT INTO` | 1 要素ごとに書いた値を List に足す | RMW なので `rowLocks.optimistic` の決定が要る | コード上の対応（#51）。生成では確かめていません |
 
@@ -831,7 +835,6 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 |---|---|---|---|
 | `GOTO` | `UnsupportedOperationException` | LOWER-002（REDESIGN） | |
 | 決定の無い COMMIT / ROLLBACK / SAVEPOINT | 同上 | TX-001 | |
-| `FORALL ... INDICES OF` / `VALUES OF` | 同上 | 判定は下がらない | |
 | `SQL%BULK_EXCEPTIONS` | 同上 | 判定は下がらない | |
 | `DBMS_SQL`（定数の問合せ以外） | 同上 | DYN-003 | |
 | とりうる文を数えられない `EXECUTE IMMEDIATE` | 同上 | DYN-002 / DYN-001 | 宣言部の初期値で組んだ文字列も含みます |
@@ -846,5 +849,6 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `SYS_CONTEXT` | `UnsupportedOperationException` | SEM-013 | |
 | 型だけが違うオーバーロードの呼び出し | `UnsupportedOperationException` | CALL-002 | |
 | 畳み込めない `:NEW` の代入、`:OLD` への代入 | 書く側が呼ばない | TRG-002 | |
-| MULTISET の演算、`TABLE(v)` への `COUNT(*)` 以外の問合せ | 変換しない | | |
+| MULTISET の演算 | 変換しない | | |
+| `TABLE(v)` の問合せのうち、コレクションの節の形に当てはまらないもの | 解析のときに理由つきで断る | SQL-001（REVIEW） | 結合・集約・function の結果など。コレクションの節を参照 |
 | view への書き込みに `INSTEAD OF` trigger を織り込む形 | 無い | | view へ書く文は ScalarDB に view が無いので断られます |

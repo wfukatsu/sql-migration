@@ -221,9 +221,12 @@ def generate_module(module: M.Module, package: str, domain_package: str) -> Repo
                 from .service import DDL
                 expanded.extend(v for v in (getattr(statement, "variant_statements", None) or [])
                                 if not DDL.match(v.original_sql or ""))
+            from .service import _runs_table_query
             for statement in expanded:
                 if statement.kind != "SqlOperation" or not statement.original_sql:
                     continue
+                if _runs_table_query(statement):
+                    continue   # `TABLE(v)` of a PL/SQL collection: the service computes the rows (#135)
                 f.line()
                 loop = loop_queries.get(statement.id)
                 if loop is not None:
@@ -561,6 +564,10 @@ def _read(file: JavaFile, statement: M.SqlOperation, index: int) -> str:
     return f'Plsql.read({raw}, "{kind}", {_column_scale(statement, index)})'
 
 
+# `INTO v(1)`, `INTO emp_tab(i + 1)`: the target is an element of a collection (#137)
+ELEMENT_TARGET = re.compile(r"^\s*(?P<collection>[\w$#]+)\s*\((?P<key>.+)\)\s*$", re.DOTALL)
+
+
 def _row(file: JavaFile, statement: M.SqlOperation) -> str:
     """Construct the %ROWTYPE record from every column, positionally.
 
@@ -578,6 +585,17 @@ def _row(file: JavaFile, statement: M.SqlOperation) -> str:
                      if d.name.lower() == target and d.type is not None), None)
     if declared is not None and declared.type.origin == "record":
         record = java_class_name(declared.type.oracle.rpartition(".")[2])
+    element = ELEMENT_TARGET.match(target)
+    if element and routine is not None:
+        # `SELECT * INTO emp_tab(1)`: the row is an element of a collection of records, whose class is the
+        # collection's own (`EmptabtypRow`), not the table's -- the service stores it with Plsql.set (12-6, #137)
+        holder = next((h for h in list(routine.declarations) + list(routine.parameters)
+                       if h.name.lower() == element.group("collection") and h.type is not None
+                       and h.type.origin == "collection"), None)
+        held = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1",
+                      java_type(holder.type.resolved).name) if holder is not None else "Object"
+        if held not in ("Object", java_type(holder.type.resolved).name if holder is not None else ""):
+            record = held
     file.add_import(f"{getattr(file, 'domain_package', '')}.{record}")
     arguments = []
     for i, oracle in enumerate(statement.into_oracle_types or [], start=1):
