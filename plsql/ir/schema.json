@@ -732,6 +732,12 @@
             "type": "string"
           }
         },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "target": {
           "type": [
             "string",
@@ -787,6 +793,12 @@
           }
         },
         "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "labels": {
           "type": "array",
           "items": {
             "type": "string"
@@ -864,6 +876,12 @@
             "type": "string"
           }
         },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "exception": {
           "type": [
             "string",
@@ -930,6 +948,12 @@
             "type": "string"
           }
         },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "expression": {
           "type": [
             "string",
@@ -979,6 +1003,12 @@
           }
         },
         "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "labels": {
           "type": "array",
           "items": {
             "type": "string"
@@ -1038,6 +1068,12 @@
             "type": "string"
           }
         },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "branches": {
           "type": "array",
           "items": {
@@ -1090,6 +1126,12 @@
           }
         },
         "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "labels": {
           "type": "array",
           "items": {
             "type": "string"
@@ -1153,6 +1195,12 @@
           }
         },
         "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "labels": {
           "type": "array",
           "items": {
             "type": "string"
@@ -1263,6 +1311,12 @@
             "type": "string"
           }
         },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "declarations": {
           "type": "array",
           "items": {
@@ -1277,6 +1331,12 @@
           "items": {
             "$ref": "#/$defs/node"
           }
+        },
+        "jumpLabel": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
@@ -1321,6 +1381,12 @@
           }
         },
         "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "labels": {
           "type": "array",
           "items": {
             "type": "string"
@@ -1479,6 +1545,12 @@
             "type": "string"
           }
         },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "expression": {
           "type": [
             "string",
@@ -1566,6 +1638,12 @@
             "type": "string"
           }
         },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "cursor": {
           "type": [
             "string",
@@ -1644,6 +1722,12 @@
             "type": "string"
           }
         },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "label": {
           "type": [
             "string",
@@ -1704,6 +1788,12 @@
             "type": "string"
           }
         },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "text": {
           "type": [
             "string",
@@ -1759,6 +1849,12 @@
           }
         },
         "writeSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "labels": {
           "type": "array",
           "items": {
             "type": "string"

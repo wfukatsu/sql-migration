@@ -31,7 +31,7 @@ from pathlib import Path
 from antlr4 import ParserRuleContext
 
 from .frontend import ParsedFile
-from . import bulk, cursors
+from . import bulk, cursors, goto
 from .ir import model as M
 from .preprocess import Unit
 from .source import SourceRange
@@ -368,13 +368,17 @@ class _Lowerer:
         self.lifted = []
         return module
 
-    def _lift(self, nested: ParserRuleContext, outer: M.Routine, module: str, outer_body: str = "") -> str | None:
-        """Lower a subprogram from `outer`'s declare section as `<module>.<name>`, private, into `self.lifted`.
-        Returns why it cannot be lifted instead.
+    def _lift(self, nested: ParserRuleContext, outer: M.Routine, module: str, outer_body: str = "",
+              blocks: "list[tuple[list[str], list[M.Declaration]]]" = (), hidden: set[str] = frozenset()) -> str | None:
+        """Lower a subprogram from `outer`'s declare section -- or from the DECLARE of a block nested in its body,
+        `blocks` being the blocks around it, outermost first, with their labels (#138) -- as `<module>.<name>`,
+        private, into `self.lifted`. Returns why it cannot be lifted instead.
 
         What it reads of `outer` is handed to it as trailing arguments the caller carries (#80); what it assigns
-        goes both ways, IN OUT (#90). A cursor only it uses moves into it. A name it reaches by qualifying it with
-        `outer`'s name (`check_credit.rating`, past a local of the same name) is handed under another name."""
+        goes both ways, IN OUT (#90). A cursor only it uses moves into it; one the enclosing routine opens and it
+        only fetches is handed to it as the cursor's state (6-11, #138). A name it reaches by qualifying it with
+        `outer`'s name (`check_credit.rating`, past a local of the same name) or with a block's label is handed
+        under another name."""
         name = _routine_name(nested)
         taken = {r.name.lower() for r in self.__dict__.get("lifted", [])} | self.__dict__.get("module_routines", set())
         if name.lower() in taken or name.lower() == outer.name.lower():
@@ -382,39 +386,63 @@ class _Lowerer:
         lifted = self._routine(nested, module=module)
         own = {p.name.lower() for p in lifted.parameters} | {d.name.lower() for d in lifted.declarations}
         holders = {h.name.lower(): h for h in list(outer.parameters) + list(outer.declarations)}
+        for _, declarations in blocks:
+            # a block's name hides the routine's and an outer block's of the same spelling
+            holders.update({d.name.lower(): d for d in declarations})
         text = re.sub(r"'(?:[^']|'')*'|--[^\n]*", " ", _text(nested))
-        # `check_credit.rating` reaches past a local of the same name to the enclosing one (2-19): handed to the
-        # lifted routine as `check_credit_rating`, and the qualified references renamed to it
-        aliases: dict[str, str] = {}
-        for qualified in sorted({m.lower() for m in re.findall(
-                rf"\b{re.escape(outer.name)}\s*\.\s*([A-Za-z][\w$#]*)", text, re.I)}):
-            alias = f"{outer.name}_{qualified}".lower()
-            if qualified not in holders or alias in own or alias in holders:
-                return f"qualifies the enclosing routine's {qualified} by its name"
-            aliases[alias] = qualified
-            _rename_in(lifted, rf"\b{re.escape(outer.name)}\s*\.\s*{re.escape(qualified)}\b", alias)
-        text = re.sub(rf"\b{re.escape(outer.name)}\s*\.\s*([A-Za-z][\w$#]*)",
-                      lambda m: f"{outer.name}_{m.group(1)}".lower(), text, flags=re.I)
+        # what the enclosing routine does apart from this subprogram
+        outside = outer_body.replace(text, " ")
+        # `check_credit.rating` reaches past a local of the same name to the enclosing one (2-19), `outer.x` to the
+        # block labelled outer: handed to the lifted routine as `check_credit_rating` / `outer_x`, and the qualified
+        # references renamed to it. The subprogram's own name qualifies its own names (2-22's `echo.x`)
+        qualifiers = [(outer.name, {h.name.lower(): h for h in list(outer.parameters) + list(outer.declarations)},
+                       False)]
+        for labels, declarations in blocks:
+            qualifiers += [(label, {d.name.lower(): d for d in declarations}, True) for label in labels]
+        aliases: dict[str, tuple[str, str, bool]] = {}
+        for qualifier, names, is_label in qualifiers:
+            if qualifier.lower() == name.lower():
+                continue
+            for qualified in sorted({m.lower() for m in re.findall(
+                    rf"\b{re.escape(qualifier)}\s*\.\s*([A-Za-z][\w$#]*)", text, re.I)}):
+                alias = f"{qualifier}_{qualified}".lower()
+                if qualified not in names or alias in own or alias in holders:
+                    return f"qualifies the enclosing {'block' if is_label else 'routine'}'s {qualified} by its " \
+                           f"{'label' if is_label else 'name'}"
+                aliases[alias] = (qualifier, qualified, is_label)
+                _rename_in(lifted, rf"\b{re.escape(qualifier)}\s*\.\s*{re.escape(qualified)}\b", alias)
+            text = re.sub(rf"\b{re.escape(qualifier)}\s*\.\s*([A-Za-z][\w$#]*)",
+                          lambda m, q=qualifier: f"{q}_{m.group(1)}".lower(), text, flags=re.I)
         used = {w.lower() for w in re.findall(r"[A-Za-z][\w$#]*", text)}
         visible = {n: h for n, h in holders.items() if n not in own}
         # the enclosing routine's TYPEs resolve through the symbol table (the nested scope sits inside the outer
         # one); its variables and parameters are what the lifted routine needs handed to it
         captured = sorted(n for n in visible.keys() & used if getattr(visible[n], "declaration_kind", None) != "type")
         cursors = [n for n in captured if getattr(visible[n], "declaration_kind", None) == "cursor"]
-        shared = [n for n in cursors if re.search(rf"\b{re.escape(n)}\b", outer_body, re.I)]
+        shared = [n for n in cursors if re.search(rf"\b{re.escape(n)}\b", outside, re.I)]
+        # a cursor the enclosing routine opens (and never fetches) and this one only fetches (6-11): one cursor, whose
+        # state -- the rows its OPEN read, where the FETCHes are -- is handed to the lifted routine (#138)
+        passed = [n for n in shared
+                  if re.search(rf"\bOPEN\s+{re.escape(n)}\b", outside, re.I)
+                  and not re.search(rf"\bFETCH\s+{re.escape(n)}\b", outside, re.I)
+                  and not re.search(rf"\b(?:OPEN|IN)\s+{re.escape(n)}\b", text, re.I)]
         exceptions = [n for n in captured if getattr(visible[n], "declaration_kind", None) == "exception"]
-        if shared or exceptions:
-            # a cursor the enclosing routine opens and this one fetches (6-11) is one cursor in two methods; an
-            # exception raised here is caught out there
-            return f"uses the enclosing routine's cursor or exception {', '.join(shared + exceptions)}"
+        if set(shared) - set(passed) or exceptions:
+            # a cursor both fetch from, or one this routine opens, is one cursor in two methods; an exception
+            # raised here is caught out there
+            return f"uses the enclosing routine's cursor or exception {', '.join(sorted(set(shared) - set(passed)) + exceptions)}"
+        again = sorted(set(captured) & set(hidden))
+        if again:
+            return f"reads {', '.join(again)}, which a block inside the one declaring it declares again"
+        cursors = [n for n in cursors if n not in passed]
         # an enclosing variable handed to an OUT / IN OUT parameter of a call is written too: carried IN, the
         # callee's write landed on the lifted routine's copy and the caller kept 0 (#105). A call whose parameter
         # modes nothing here knows may write it or not, so such a routine is not lifted
-        written, unknown = self._written_through_calls(lifted, text, module, set(captured) - set(cursors))
+        written, unknown = self._written_through_calls(lifted, text, module, set(captured) - set(cursors) - set(passed))
         if unknown:
             return f"hands the enclosing routine's {', '.join(unknown)} to a call whose parameter modes are unknown"
         assigned = [n for n in captured
-                    if n not in cursors and (n in written or not self._carriable(visible[n], text, n))]
+                    if n not in cursors and n not in passed and (n in written or not self._carriable(visible[n], text, n))]
         handled = [n for n in assigned if _read_in_a_handler(outer_body, n)]
         if handled:
             # Oracle's nested subprogram changes the variable itself, so a change before an exception survives it;
@@ -425,13 +453,19 @@ class _Lowerer:
         for cursor in cursors:
             # only this routine uses it: it moves in (5-49)
             declaration = visible[cursor]
-            outer.declarations.remove(declaration)
+            for declarations in [outer.declarations] + [d for _, d in blocks]:
+                if any(d is declaration for d in declarations):
+                    declarations.remove(declaration)
+                    break
             lifted.declarations.append(declaration)
         lifted.__dict__["captured"] = {n: visible[n] for n in captured if n not in cursors}
         lifted.__dict__["assigned"] = set(assigned)
-        for alias, qualified in aliases.items():
-            lifted.__dict__["captured"][alias] = holders[qualified]
-            lifted.__dict__.setdefault("carried_from", {})[alias] = holders[qualified].name
+        for alias, (qualifier, qualified, is_label) in aliases.items():
+            holder = next(names[qualified] for q, names, _ in qualifiers if q == qualifier and qualified in names)
+            lifted.__dict__["captured"][alias] = holder
+            # the caller hands its own: the routine's variable by its name, a block's by its label (`outer.x`)
+            lifted.__dict__.setdefault("carried_from", {})[alias] = \
+                f"{qualifier}.{holder.name}" if is_label else holder.name
         self.__dict__.setdefault("lifted", []).append(lifted)
         return None
 
@@ -553,6 +587,14 @@ class _Lowerer:
             assigned = r.__dict__.pop("assigned")
             renamed = r.__dict__.pop("carried_from", {})
             for name, holder in r.__dict__.pop("captured").items():
+                if getattr(holder, "declaration_kind", None) == "cursor":
+                    # the enclosing routine's open cursor (#138): its state, the generator's `Plsql.Cursor`, which
+                    # the caller hands as `<cursor>%cursor`
+                    r.parameters.append(M.Parameter(
+                        id=f"{r.id}#param-carried-{name}", kind="Parameter", name=f"{holder.name}_cursor",
+                        direction="IN", carried=True, carried_from=f"{holder.name}%cursor",
+                        source_range=holder.source_range))
+                    continue
                 r.parameters.append(M.Parameter(
                     id=f"{r.id}#param-carried-{name}", kind="Parameter", name=name if name in renamed else holder.name,
                     direction="IN OUT" if name in assigned else "IN",
@@ -607,6 +649,7 @@ class _Lowerer:
         for handler in _descend(inner, {"Exception_handlerContext"},
                                 stop={"BodyContext", "BlockContext"}):
             routine.exception_handlers.append(self._handler(handler, ids))
+        goto.rewrite(routine)
         self._effects(routine, _text(context))
         module.routines.append(routine)
         return module
@@ -656,7 +699,15 @@ class _Lowerer:
 
         body = _child(context, "BodyContext")
         if body is not None:
-            routine.body = self._statements(_child(body, "Seq_of_statementsContext") or body, ids)
+            # what a subprogram declared in a nested block of this body is lifted out of (#138): this routine, the
+            # module it lifts into, the body's text, and the blocks around it (`_block` pushes and pops them)
+            enclosing = self.__dict__.get("_enclosing")
+            self._enclosing = {"routine": routine, "module": module or name, "blocks": [],
+                               "text": re.sub(r"'(?:[^']|'')*'|--[^\n]*", " ", _text(body))}
+            try:
+                routine.body = self._statements(_child(body, "Seq_of_statementsContext") or body, ids)
+            finally:
+                self._enclosing = enclosing
             # 宣言部に書かれた入れ子の procedure / function は、まだ routine として下ろしていない。以前は
             # 黙って消えていて、中の COMMIT も見えず、引数は外側の引数に混ざっていた。下ろせないものは
             # Unsupported として残す——LOWER-001 が AUTO を止め、生成側は本体ごと拒む
@@ -694,6 +745,8 @@ class _Lowerer:
         # そちらの道に乗る。
         bulk.rewrite(routine)
         cursors.rewrite(routine, self.symbols, module, self.schema)
+        # #139: a GOTO becomes a block it leaves or a loop it repeats, before any rule or the generator reads it
+        goto.rewrite(routine)
         self._effects(routine, text)
         return routine
 
@@ -800,16 +853,40 @@ class _Lowerer:
             node.declarations = self._declarations(context, ids, self.routine_id,
                                                    stop={"BodyContext"} | NESTED_SUBPROGRAMS)
             _bind_exception_codes(node, _text(context))
-        node.body = self._statements(_child(body, "Seq_of_statementsContext") or body, ids)
+        enclosing = self.__dict__.get("_enclosing")
+        frame = (_labels_before(context), node.declarations)
+        if enclosing is not None:
+            enclosing["blocks"].append(frame)
+        try:
+            node.body = self._statements(_child(body, "Seq_of_statementsContext") or body, ids)
+        finally:
+            if enclosing is not None:
+                enclosing["blocks"].pop()
         if inner is not None:
-            # a subprogram in a nested block's DECLARE is not lifted (#80 lifts the routine's own); it is kept
-            # visible as Unsupported rather than dropped, so a call to it is not mistaken for an external one
-            for nested in _descend(context, NESTED_SUBPROGRAMS, stop={"BodyContext"}):
+            # a subprogram in a nested block's DECLARE is lifted like one of the routine's own (#80), with the
+            # blocks around it as part of what it can read (#138). One that cannot be is kept visible as
+            # Unsupported rather than dropped, so a call to it is not mistaken for an external one
+            nested_subprograms = _descend(context, NESTED_SUBPROGRAMS, stop={"BodyContext"})
+            # a name a block inside this one declares again: a call from in there would hand the lifted routine the
+            # inner variable, where Oracle's subprogram reads this block's
+            hidden = {d.name.lower() for s in _walk(node.body) for d in getattr(s, "declarations", None) or []}
+            routine_id = self.routine_id
+            for nested in nested_subprograms:
+                reason = "is declared in a nested block of a routine that is not lowered"
+                if enclosing is not None:
+                    self.__dict__.setdefault("_source_text", {})[
+                        routine_id_of(enclosing["module"], _routine_name(nested))] = \
+                        re.sub(r"'(?:[^']|'')*'|--[^\n]*", " ", _text(nested))
+                    reason = self._lift(nested, enclosing["routine"], enclosing["module"], enclosing["text"],
+                                        blocks=list(enclosing["blocks"]) + [frame], hidden=hidden)
+                    self.routine_id = routine_id   # lowering the nested one moved it
+                if reason is None:
+                    continue
                 unsupported = M.Unsupported(id=ids.next("stmt"), kind="Unsupported", source_range=self._range(nested),
                                             text=_text(nested), construct="NestedSubprogram")
                 unsupported.add("WARN", "UNSUPPORTED_CONSTRUCT",
-                                "a subprogram declared in a nested block is not lowered; the routine cannot be AUTO "
-                                "while it is present")
+                                f"a subprogram declared in a nested block that {reason} is not lowered; the routine "
+                                "cannot be AUTO while it is present")
                 node.body.insert(0, unsupported)
         for handler in _descend(body, {"Exception_handlerContext"},
                                 stop={"BodyContext", "BlockContext"}):
@@ -829,8 +906,19 @@ class _Lowerer:
 
     # -- statements ------------------------------------------------------------------------------------------
     def _statements(self, context: ParserRuleContext, ids: M.IdFactory) -> list[M.Statement]:
-        return [self._statement(c, ids) for c in _descend(context, set(STATEMENT_CONTEXTS),
-                                                          stop={"Exception_handlerContext"})]
+        out = []
+        for c in _descend(context, set(STATEMENT_CONTEXTS), stop={"Exception_handlerContext"}):
+            node = self._statement(c, ids)
+            # `<<outer>> DECLARE ...` / `<<print_now>> x := 1;`: the labels are siblings of the statement in its
+            # sequence, not part of it; a loop's own sits inside the loop and is already `Loop.label` (#138, #139)
+            labels = _labels_before(c)
+            if getattr(node, "label", None) and node.kind == "Loop" and node.label.lower() not in labels:
+                labels.append(node.label.lower())
+            if node.kind == "Loop" and not node.label and labels:
+                node.label = labels[-1]
+            node.labels = labels
+            out.append(node)
+        return out
 
     def _statement(self, context: ParserRuleContext, ids: M.IdFactory) -> M.Statement:
         name = type(context).__name__
@@ -1023,7 +1111,8 @@ class _Lowerer:
                                   label=_text(_child(context, "Label_nameContext")) or None,
                                   condition=_text(condition) if condition is not None else None)
         if kind == "Goto":
-            node.add("WARN", "GOTO", "GOTO has no structured equivalent; the control flow has to be rebuilt")
+            # plsql.goto rebuilds it as a block or a loop and drops this; one it cannot rebuild keeps it (#139)
+            node.add("WARN", "GOTO", "GOTO has to be rebuilt as structured control flow")
         return node
 
     # `Sql_statement`, `Cursor_manipulation_statements` and `Transaction_control_statements` are grouping rules,
@@ -1501,6 +1590,30 @@ def _bind_exception_codes(routine: "M.Routine | M.Module | M.Block", text: str) 
         found = re.search(EXCEPTION_INIT.format(name=re.escape(declaration.name)), text, re.IGNORECASE)
         if found:
             declaration.initial = found.group("code")
+
+
+def _labels_before(context: ParserRuleContext) -> list[str]:
+    """The `<<label>>`s written right before the statement `context` is (or is the only part of), lower case.
+
+    In `seq_of_statements` a label is a sibling of the statement it names: `<<a>> <<b>> DECLARE ...` gives the block
+    both. Only the labels between the previous statement's `;` and this one count."""
+    node = context
+    while node is not None and node.parentCtx is not None \
+            and type(node.parentCtx).__name__ != "Seq_of_statementsContext":
+        node = node.parentCtx
+    parent = node.parentCtx if node is not None else None
+    if parent is None:
+        return []
+    siblings = [parent.getChild(i) for i in range(parent.getChildCount())]
+    index = next((i for i, s in enumerate(siblings) if s is node), None)
+    labels: list[str] = []
+    for sibling in reversed(siblings[:index or 0]):
+        name = type(sibling).__name__
+        if name == "Label_declarationContext":
+            labels.insert(0, _text(_child(sibling, "Label_nameContext")).strip().lower())
+        elif name != "Pragma_declarationContext":
+            break
+    return labels
 
 
 def _first(match) -> str | None:

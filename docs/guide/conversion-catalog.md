@@ -447,7 +447,8 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | 引数の既定値（`DEFAULT`） | 呼び出し文でも式の中の function 呼び出しでも、省いた引数に既定値を補って渡す | なし | 補えるのは既定値がリテラル（NULL・数・文字列・TRUE / FALSE）のときだけです。`DEFAULT SYSDATE` のような式を省くと、その文を断ります（生成で確認） |
 | 名前付き引数（`p_a => 1`） | 呼び出し文でも式の中の function 呼び出しでも、引数の順に並べ替えて渡す | なし | 式の中で並べ替えるのは、同じ package の routine と、ほかの module の routine（オーバーロードの無いもの）です（生成で確認） |
 | オーバーロード | 版ごとに番号を付けたメソッド（`fmt` → `fmt1`、`fmt2`） | 呼び出しがどの版か決まらないと CALL-002（REVIEW） | 引数の数と名前だけで選びます。型だけが違う版は選べません（生成で確認） |
-| 宣言部の入れ子の procedure / function | 外側の変数を引数で運ぶ private メソッドに持ち上げる | なし | 入れ子のブロックの DECLARE に書いたものは持ち上げず、LOWER-001（REVIEW） |
+| 宣言部の入れ子の procedure / function（入れ子のブロックの DECLARE に書いたものを含む） | 外側の変数を引数で運ぶ private メソッドに持ち上げる。外側の routine が開いた cursor を FETCH するものには、その cursor の状態（`Plsql.Cursor`）を引数で渡す | なし | 持ち上げられないもの（名前がほかの routine と重なる、外側の例外を使う、外側と同じ cursor を両方で FETCH する、外側の handler が読む変数に代入する、内側のブロックが同じ名前を宣言し直す）は LOWER-001（REVIEW）。型だけが違うオーバーロードは持ち上げません（生成で確認） |
+| ラベル・routine 名で修飾した名前（`<<outer>>` の `outer.x`、ループの `outer_loop.i`、`dept_name.department_name`） | 修飾が指す宣言の Java 名。内側で隠された変数は Java の別名（`x_2` など）で宣言されているので、修飾した参照はもとの `x` を指す | なし | PL/SQL の文・式・INTO の先で解決します。SQL 文の中でブロックのラベルで修飾した名前は、まだ列として読むので断られます（生成で確認） |
 | 別の package の routine の呼び出し | 呼ばれる側の Service をコンストラクタで受け取って呼ぶ | 呼び先の判定を引き継ぐ | 生成で確認 |
 | package の定数（`CONSTANT`） | `private static final` のフィールド | なし | 生成で確認 |
 | trigger | `Trg<Name>Service` の `body(...)` メソッド。`:NEW` / `:OLD` の列が引数 | TRG-001（REDESIGN） | trigger の節を参照 |
@@ -544,7 +545,7 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `CONTINUE` / `CONTINUE WHEN c` | `continue;` / `if (c) continue;` | なし | |
 | `FOR i IN a .. b` / `IN REVERSE` | `for (int i = Plsql.loopBound(a), iEnd = Plsql.loopBound(b); ...)` | なし | 上下限は 1 回だけ評価します。NULL の上下限は ORA-06502 |
 | `WHILE c LOOP` | `while (c)` | なし | |
-| `GOTO` | 変換しない（`UnsupportedOperationException`） | LOWER-002（REDESIGN） | 生成で確認 |
+| `GOTO` | 前へ飛ぶものは、GOTO を含む文からラベルの手前までを包むラベルつきブロック `L: { ... break L; }`。後ろへ飛ぶものは、ラベルの文から GOTO を含む文までを包むラベルつきループ `L: while (true) { ... continue L; ... break L; }` | なし（組み直せないものは LOWER-002（REDESIGN）） | 前へ飛ぶ範囲が後ろへ飛ぶ範囲の途中から始まって交差するなど、入れ子にできない形は `UnsupportedOperationException` と理由を残します。Oracle が拒む GOTO（IF・LOOP・ブロックの中へ飛ぶ、文の無いラベル）も同じです（生成で確認） |
 | `NULL;` | `// NULL;` のコメント | なし | |
 | 入れ子のブロック（`DECLARE ... BEGIN ... EXCEPTION ... END`） | Java のブロック `{ }`。局所変数はその中だけ。handler は `try` / `catch` | なし | 生成で確認 |
 | `RETURN` | `return`。OUT 引数があれば `return new <Name>Result(...)` | なし | |
@@ -781,7 +782,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | AUTHID-001 | REDESIGN | routine の `AUTHID CURRENT_USER`（package の仕様に書いたものは本体の routine すべて） | 認証・認可を別に設計する |
 | DYN-001 | REDESIGN | 識別子を実行時に組む動的 SQL | `dynamicTables` |
 | DYN-003 | REDESIGN | `DBMS_SQL`（定数の問合せに書き換えられなかったもの） | 実行ログから文を洗い出す |
-| LOWER-002 | REDESIGN | `GOTO` | 制御構造を組み直す |
+| LOWER-002 | REDESIGN | ブロックとループに組み直せなかった `GOTO`（範囲が交差して入れ子にできない、Oracle が拒む飛び先） | 制御構造を組み直す |
 | LOCK-001 | REDESIGN | 行ロックのある SQL 文 | `rowLocks.optimistic` |
 | LOCK-002 | REDESIGN | 行ロックする cursor の宣言 | 同上 |
 | BULK-002 | REDESIGN | `FORALL ... SAVE EXCEPTIONS` | `transactions.perIteration` で要素ごとに割る |
@@ -792,7 +793,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | LINK-001 | REDESIGN | DB link 越しの操作 | `dbLinks` |
 | EXT-001 | REDESIGN | `UTL_*`、`DBMS_SCHEDULER`、`DBMS_AQ` など | adapter 経由の外部 Service にする |
 | EXT-002 | REDESIGN | 呼び出し仕様（`LANGUAGE JAVA` / `C`、`EXTERNAL`） | 本体をアプリに移す |
-| LOWER-001 | REVIEW | lowering がまだ模していない構文（入れ子ブロックの中の subprogram、構文エラーから回復した unit など） | |
+| LOWER-001 | REVIEW | lowering がまだ模していない構文（持ち上げられない入れ子の subprogram、構文エラーから回復した unit など） | |
 | CALL-001 | REVIEW | 解析した範囲に無い routine の呼び出し | 呼び先のソースを加えるか、代替を決める |
 | CALL-002 | REVIEW | どの版か決まらないオーバーロードの呼び出し | 名前付き引数で呼ぶ、版ごとに名前を分ける |
 | CALL-003 | REVIEW | OUT 引数のある関数を、評価されるか条件で決まる位置で呼ぶ | 条件を IF に分ける |
@@ -829,7 +830,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 
 | PL/SQL の書き方 | 生成される Java | 判定への影響（ルール ID） | 注意 |
 |---|---|---|---|
-| `GOTO` | `UnsupportedOperationException` | LOWER-002（REDESIGN） | |
+| ブロックとループに組み直せない `GOTO` | `UnsupportedOperationException` | LOWER-002（REDESIGN） | 組み直せるものは制御構造の節を参照 |
 | 決定の無い COMMIT / ROLLBACK / SAVEPOINT | 同上 | TX-001 | |
 | `FORALL ... INDICES OF` / `VALUES OF` | 同上 | 判定は下がらない | |
 | `SQL%BULK_EXCEPTIONS` | 同上 | 判定は下がらない | |
@@ -839,7 +840,8 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `TO_CHAR` の 4 つ以外の書式、書式つき `TO_NUMBER` | 実行時に `UnsupportedOperationException` | 書式による | |
 | 式の中の function 呼び出しで、式の既定値（`DEFAULT SYSDATE` など）の引数を省く | 同上 | 判定は下がらない | リテラルの既定値は補います |
 | 別の package の変数の直接参照（`pkg.var`） | `UnsupportedOperationException` | STATE-001 | `packageState.carried` を書いても断ります |
-| 入れ子ブロックの DECLARE の subprogram | 本体ごと断る | LOWER-001（REVIEW） | |
+| 持ち上げられない入れ子の subprogram（単位の節の条件） | 本体ごと断る | LOWER-001（REVIEW） | |
+| SQL 文の中でブロックのラベルで修飾した名前（`SELECT outer.x ...`） | ScalarDB が断る文になる | SQL-001 | routine 名での修飾は bind にします |
 | package 本体の初期化部 | 生成しない | STATE-002 | |
 | 呼び出し仕様（`LANGUAGE JAVA` など） | `UnsupportedOperationException` | EXT-002 | |
 | `UTL_*` などの外部 package | `UnsupportedOperationException` | EXT-001 | |

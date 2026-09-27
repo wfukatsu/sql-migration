@@ -63,6 +63,9 @@ _CAUGHT = "<caught>"
 # the count was set to 0 where that loop starts, and a loop nested in it must not start it again (#109)
 _COUNTING: "contextvars.ContextVar[bool]" = contextvars.ContextVar("counting", default=False)
 _HANDLER_ERROR: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("handler", default={})
+# #138: `outer.birthdate`, `main.i`, `dept_name.department_name` -- a name qualified by a block's or a loop's label or
+# by the routine's own name, lower case -> (its Java name, its declaration or None for a loop index)
+_QUALIFIED_NAMES: "contextvars.ContextVar[dict[str, tuple]]" = contextvars.ContextVar("qualified", default={})
 
 
 @dataclass
@@ -447,6 +450,12 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
     # a TYPE is not a value: `t_names('a', 'b')` (a collection constructor) rendered as a call to a method that
     # does not exist. Left out, the constructor is reported instead (#40)
     names.update({d.name: java_name(d.name) for d in routine.declarations if d.declaration_kind != "type"})
+    # `dept_name.department_name`: the routine's own parameter or local, qualified by the routine's name past a
+    # column or an inner name of the same spelling (B-5, 2-22, #138). A carried variable of a lifted routine is the
+    # enclosing routine's, not its own
+    for holder in [p for p in routine.parameters if not p.carried] + list(routine.declarations):
+        if getattr(holder, "declaration_kind", None) not in ("type", "cursor", "exception"):
+            names[f"{routine.name}.{holder.name}"] = java_name(holder.name)
     # collections (#45): `v#collection` says a local is one (list / map), `t#constructor` that a TYPE builds one
     trigger_locals = list(module.declarations) if module is not None and module.module_kind == "trigger" else []
     for holder in list(routine.parameters) + list(routine.declarations) + trigger_locals:
@@ -581,6 +590,11 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
     for parameter in routine.parameters:
         if parameter.direction == "OUT":
             continue  # an OUT argument comes back in the result, not through the signature
+        if _carried_cursor(parameter):
+            # the enclosing routine's open cursor, whose rows this one fetches (6-11, #138)
+            file.add_import("com.scalar.migrate.plsql.Plsql")
+            parameters.append(f"Plsql.Cursor {_cursor_state(_carried_cursor(parameter))}")
+            continue
         parameters.append(f"{_holder_java_type(file, parameter.type)} {java_name(parameter.name)}")
 
     for variable, bind in correlation_row(routine).items():
@@ -604,6 +618,9 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
         parameters.append("AuditContext audit")
 
     visibility = "public" if routine.visibility == "public" else "private"
+    _QUALIFIED_NAMES.set({f"{routine.name}.{h.name}".lower(): (java_name(h.name), h)
+                    for h in [p for p in routine.parameters if not p.carried] + list(routine.declarations)
+                    if getattr(h, "declaration_kind", None) not in ("type", "cursor", "exception")})
     _ROWCOUNT_SEEN.set(False)
     _REFUSES_LATER.set(_refuses_somewhere(routine, result))
     _source_comment(file, routine)
@@ -690,7 +707,10 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
                 # が for の変数になる。ここでも宣言すると同じ名前が 2 つになる
                 continue
             _declaration(f, declaration, routine, result)
+        handed = {_carried_cursor(p) for p in routine.parameters if _carried_cursor(p)}
         for cursor, variable in _general_cursors(routine).items():
+            if cursor in handed:
+                continue   # the caller's, a parameter (#138)
             f.add_import("com.scalar.migrate.plsql.Plsql")
             f.line(f"Plsql.Cursor {_cursor_state(cursor)} = new Plsql.Cursor({'true' if variable else 'false'});"
                    f"   // {cursor}")
@@ -938,8 +958,17 @@ def _always_leaves(statement: M.Statement) -> bool:
     if statement.kind in ("Exit", "Continue"):
         return not getattr(statement, "condition", None)
     if statement.kind == "Block":
+        if _left_by_a_jump(statement):
+            return False
         return any(s.kind == "Return" or (s.kind == "Block" and _always_leaves(s)) for s in statement.body)
     return False
+
+
+def _left_by_a_jump(statement: M.Statement) -> bool:
+    """Whether a block a forward GOTO became is left by that GOTO's `break` (#139): the statements after it then run,
+    whatever its own body does at its end."""
+    label = (getattr(statement, "jump_label", None) or "").lower()
+    return bool(label) and any(s.kind == "Exit" and (s.label or "").lower() == label for s in _walk(statement.body))
 
 
 def _always_exits(routine: M.Routine, result: ServiceFile) -> bool:
@@ -960,8 +989,9 @@ def _always_exits(routine: M.Routine, result: ServiceFile) -> bool:
         if last.kind == "Loop" and getattr(last, "returns_rows", False):
             return True   # `OPEN rc FOR q; RETURN rc;` became `return repository...(...)`
         if last.kind == "Block":
-            # a block leaves by falling out of it unless its body and every handler leave for good
-            return exits(last.body) and all(exits(h.body) for h in last.exception_handlers)
+            # a block leaves by falling out of it unless its body and every handler leave for good -- or a GOTO's
+            # `break` leaves it (#139)
+            return not _left_by_a_jump(last) and exits(last.body) and all(exits(h.body) for h in last.exception_handlers)
         if last.kind in ("If", "Case") and last.else_body:
             # Java sees that nothing follows an if / else whose every branch leaves, and rejects what is put there
             return exits(last.else_body) and all(exits(b.body) for b in last.branches)
@@ -1469,6 +1499,13 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
                   if statement.condition else f"{jump};")
     elif kind == "Null":
         file.line("// NULL;")
+    elif kind == "Goto":
+        # one plsql.goto could not rebuild as a block or a loop (#139): say why where the throw stands
+        for diagnostic in statement.diagnostics:
+            if diagnostic.code == "GOTO_NOT_RESTRUCTURED":
+                file.comment(diagnostic.message)
+        file.line(f'throw new UnsupportedOperationException("GOTO {statement.label} is not translated");')
+        result.untranslated.append(statement.id)
     elif kind == "Call":
         _call(file, statement, routine, result)
     elif kind in ("Fetch", "CloseCursor") and \
@@ -1522,7 +1559,21 @@ def _local(name: str) -> str:
     for plsql_name, java in _BLOCK_LOCALS.get().items():
         if plsql_name.lower() == name.lower():
             return java
+    qualified = _QUALIFIED_NAMES.get().get(name.strip().lower())
+    if qualified is not None:
+        return qualified[0]
     return java_name(name)
+
+
+def _canonical(routine: M.Routine, target: str) -> str:
+    """A target written qualified (`dept_name.department_name`, `outer.total`) as its plain name, when the plain
+    name reaches the same variable here -- which is every case but a name an inner block hides (#138). What reads a
+    target takes a dot for a record field, so the qualified spelling went down that path and failed."""
+    qualified = _QUALIFIED_NAMES.get().get((target or "").strip().lower())
+    if qualified is None or qualified[1] is None:
+        return target
+    holder = qualified[1]
+    return holder.name if _holder(routine, holder.name) is holder else target
 
 
 def _taken(routine: M.Routine) -> set[str]:
@@ -1559,14 +1610,35 @@ def _block(file: JavaFile, statement: M.Block, routine: M.Routine, result: Servi
     own, not the `try`'s: a handler reads the block's variables, and a name declared inside `try` is not
     visible from `catch`.
     """
+    jump = getattr(statement, "jump_label", None)
+    if jump:
+        # a forward GOTO rebuilt as a block it leaves (#139): `label: { ... break label; }`
+        labels = _LOOP_LABELS.get()
+        _LOOP_LABELS.set(labels | {jump.lower()})
+        try:
+            with file.block(f"{java_name(jump)}:") as f:
+                _statements(f, statement.body, routine, result)
+        finally:
+            _LOOP_LABELS.set(labels)
+        return
     outer = _BLOCK_LOCALS.get()
     taken, renamed = _taken(routine), {}
     for d in statement.declarations:
         renamed[d.name] = _fresh(java_name(d.name), taken)
         taken.add(renamed[d.name])
-    _BLOCK_LOCALS.set({**outer, **renamed})
+    qualified = {}
+    for label in statement.labels or []:
+        # `outer.birthdate` names the block's own birthdate past an inner one of the same name (#138); the block's
+        # declarations have their Java names by now, which the label reaches whatever hides them further in
+        for d in statement.declarations:
+            if d.declaration_kind not in ("type", "exception", "cursor"):
+                qualified[f"{label}.{d.name}"] = renamed[d.name]
+    _BLOCK_LOCALS.set({**outer, **renamed, **qualified})
     outer_holders = _BLOCK_HOLDERS.get()
     _BLOCK_HOLDERS.set(outer_holders + tuple(statement.declarations))
+    outer_qualified = _QUALIFIED_NAMES.get()
+    by_name = {d.name: d for d in statement.declarations}
+    _QUALIFIED_NAMES.set({**outer_qualified, **{k.lower(): (v, by_name[k.partition(".")[2]]) for k, v in qualified.items()}})
     try:
         with file.block("") as scope:
             for declaration in statement.declarations:
@@ -1581,6 +1653,7 @@ def _block(file: JavaFile, statement: M.Block, routine: M.Routine, result: Servi
     finally:
         _BLOCK_LOCALS.set(outer)
         _BLOCK_HOLDERS.set(outer_holders)
+        _QUALIFIED_NAMES.set(outer_qualified)
 
 
 def _if(file: JavaFile, statement: M.If, routine: M.Routine, result: ServiceFile) -> None:
@@ -1664,13 +1737,19 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
     if statement.label:
         _LOOP_LABELS.set(outer | {statement.label.lower()})
     if index_name:
-        _BLOCK_LOCALS.set({**outer_locals, index_name: index})
+        # `outer_loop.i` is this loop's index past an inner loop's i (4-22, #138)
+        qualified = {f"{statement.label}.{index_name}": index} if statement.label else {}
+        _BLOCK_LOCALS.set({**outer_locals, index_name: index, **qualified})
+    outer_qualified = _QUALIFIED_NAMES.get()
+    if index_name and statement.label:
+        _QUALIFIED_NAMES.set({**outer_qualified, f"{statement.label}.{index_name}".lower(): (index, None)})
     try:
         with file.block(opening) as f:
             _statements(f, statement.body, routine, result)
     finally:
         _LOOP_LABELS.set(outer)
         _BLOCK_LOCALS.set(outer_locals)
+        _QUALIFIED_NAMES.set(outer_qualified)
 
 
 # `j IN REVERSE 1 .. 6`, `a IN 1 .. v_max`: what the lowering keeps of a numeric FOR loop
@@ -2370,7 +2449,7 @@ def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine
         file.line(f"{_cursor_state(statement.opens_cursor)}.open(repository.{method}({arguments})"
                   f"{'.rows()' if planned else ''});")
         return
-    targets = statement.into_targets
+    targets = [_canonical(routine, t) for t in statement.into_targets]
     if getattr(statement, "returns_deleted", None) and targets:
         # `DELETE ... RETURNING ... INTO` of scalars, read before the DELETE (#87): none leaves the targets, a
         # second raises TOO_MANY_ROWS -- before the DELETE, as Oracle undoes its statement
@@ -2698,7 +2777,17 @@ def _general_cursors(routine: M.Routine) -> dict[str, bool]:
         cursor = getattr(statement, "opens_cursor", None)
         if cursor:
             out[cursor.lower()] = out.get(cursor.lower(), False) or bool(getattr(statement, "cursor_variable", False))
+    for parameter in routine.parameters:
+        # one the enclosing routine opened and handed over (#138): its FETCHes here take the rows that OPEN read
+        if _carried_cursor(parameter):
+            out.setdefault(_carried_cursor(parameter), False)
     return out
+
+
+def _carried_cursor(parameter: M.Parameter) -> str | None:
+    """The cursor a lifted subprogram's carried parameter is the state of (`c%cursor`, #138), or None."""
+    carried = getattr(parameter, "carried_from", None) or ""
+    return carried[:-len("%cursor")].lower() if parameter.carried and carried.lower().endswith("%cursor") else None
 
 
 def _fetch(file: JavaFile, statement: M.CursorStatement, routine: M.Routine) -> None:
@@ -2708,13 +2797,13 @@ def _fetch(file: JavaFile, statement: M.CursorStatement, routine: M.Routine) -> 
     if any(d.code == "BULK_COLLECT" for d in statement.diagnostics):
         # FETCH ... BULK COLLECT INTO ... [LIMIT n]: the next n rows into the collections (#67)
         limit = _expr(file, statement.bulk_limit, routine, None) if statement.bulk_limit else "null"
-        _bulk_into(file, statement, routine, list(statement.into_targets),
+        _bulk_into(file, statement, routine, [_canonical(routine, t) for t in statement.into_targets],
                    f"{_cursor_state(cursor)}.fetchMany({limit})")
         return
     with file.block("") as f:   # its own scope: a routine fetches more than once
         f.line(f"Object[] row_ = {_cursor_state(cursor)}.fetch();")
         with f.block("if (row_ != null)") as g:
-            _assign_row(g, routine, list(statement.into_targets), "row_")
+            _assign_row(g, routine, [_canonical(routine, t) for t in statement.into_targets], "row_")
 
 
 def _into(file: JavaFile, value: str, target_type: str) -> str:
@@ -2942,6 +3031,9 @@ def _name_clashes(routine: M.Routine) -> list[str]:
 
 
 def _holder(routine: M.Routine, target: str):
+    qualified = _QUALIFIED_NAMES.get().get((target or "").strip().lower())
+    if qualified is not None and qualified[1] is not None and qualified[1].type is not None:
+        return qualified[1]   # `outer.x`: the block's x, past an inner one (#138)
     # a nested block's own declaration first: it hides the routine's of the same name (#71)
     for holder in reversed(_BLOCK_HOLDERS.get()):
         if holder.name.lower() == (target or "").lower() and holder.type is not None:
@@ -3119,6 +3211,8 @@ def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "Service
     names.update({f"{flag}%notfound": _flag_name(flag) for flag in _not_found_flags(routine)})
     for cursor in _general_cursors(routine):
         state = _cursor_state(cursor)
+        # `<cursor>%cursor`: the state itself, which a call hands to a lifted subprogram that fetches it (#138)
+        names.update({f"{cursor}%cursor": state})
         names.update({f"{cursor}%found": f"{state}.found()", f"{cursor}%notfound": f"{state}.notFound()",
                       f"{cursor}%rowcount": f"{state}.rowCount()", f"{cursor}%isopen": f"{state}.isOpen()"})
     rendered = translate(text, names, boolean_value=boolean_value, condition=condition, as_text=as_text)
