@@ -66,8 +66,8 @@ flowchart LR
   |---|---|
   | `skills/plsql-spec/SKILL.md` | 段階 1（PL/SQL） |
   | `skills/plsql-migrate/SKILL.md` | 段階 2・3（PL/SQL） |
-  | `skills/sql-transpile/SKILL.md` と `references/sql.md` | SQL 文だけの移行（段階 1〜3 の書き方が PL/SQL と違う） |
-  | `references/approval.md` | 承認を求めるとき。**求める前に必ず読む**（何を見せ、どう聞くか） |
+  | `skills/sql-transpile/SKILL.md` と `references/sql.md` | SQL 文だけの移行（始め方、段階 1〜3 の書き方、テストが PL/SQL と違う） |
+  | `references/approval.md` | 承認を求めるとき。**求める前に必ず読む**（何を見せ、どう聞くか、`flow.py` が何を確かめるか、承認がいつ古くなるか） |
 
 ## 判断を求めるときの形
 

@@ -47,15 +47,15 @@ SQL を Source 方言で読んで AST に抽象化し、Target 方言または S
 - **関数は変換先の組み込み関数一覧で判定する**。PostgreSQL・Oracle・MySQL・DuckDB は実際のデータベースから取った一覧（`scripts/catalogs/`）と照合する。一覧に無い関数は、利用者定義の関数であっても WARN `FUNC_PORTABILITY` になる
 - **MySQL の文字列比較は大文字小文字を区別しない**（既定の照合順序）。区別する Target へ変換すると WARN `COLLATION` になる。`--mysql-case-insensitive` を付けると `ILIKE` と `LOWER()` に書き換えるが、索引が使われなくなることがある
 - **ScalarDB で変換できない読み取り文は、アプリ側に移す処理をすべて列挙する**。CTE の本体やサブクエリの中まで調べた結果と、結果を変えないための注意（`APP_SEMANTICS`）がレポートに出る。手で書き換えるなら必ず利用者に伝える
-- **コストの見積もりは目安**。1 台の PC・単一クライアントで測った「スキャン 1 行 約 25 µs、キー指定 約 5 ms」からの計算。本番の性能を約束するものではないと伝える
+- **コストの見積もりは目安**。1 台の PC・単一クライアントで測った値からの計算（前提の数値は `references/scalardb-grammar.md` の「取得コストの見積もり」）。本番の性能を約束するものではないと伝える
 - 参照資料は必要になったときだけ Read ツールで読む:
 
   | 資料 | 読むとき |
   |---|---|
-  | `references/dialect-notes.md` | 汎用 Target の WARN / ERROR の書き換え方を説明するとき |
-  | `references/scalardb-grammar.md` | ScalarDB SQL の文法、指摘コードの意味を説明するとき |
-  | `references/app-side-notes.md` | ScalarDB でアプリ側に移す処理の注意と Java の補助クラスを説明するとき |
-  | `references/operations.md` | golden での突き合わせ、同梱コピーの同期、関数一覧の作り直し、変換の仕組みを聞かれたとき |
+  | `references/dialect-notes.md` | 汎用 Target（ScalarDB 以外）の指摘コードの意味と書き換え方を説明するとき |
+  | `references/scalardb-grammar.md` | ScalarDB SQL の文法・型の対応・キー設計・実行計画・取得コストと、ScalarDB 向けの指摘コードの意味を説明するとき |
+  | `references/app-side-notes.md` | アプリ側に移す処理で結果を変えないための注意（`APP_SEMANTICS`）、Java の補助クラス、H2 で動かない構文（`RESIDUAL_H2`）の書き換えを説明するとき |
+  | `references/operations.md` | 同梱コピーの確認、関数一覧の作り直し、変換の仕組みを聞かれたとき。golden での突き合わせと同梱コピーの取り込み（リポジトリで作業するときだけ） |
 
 ## Workflow
 
@@ -124,7 +124,7 @@ SQL を Source 方言で読んで AST に抽象化し、Target 方言または S
 1 文の変換中に変換器が想定外の失敗をしても、その文が ERROR `INTERNAL` になるだけで、残りの文は変換される（終了コード 1）。
 閉じていない文字列などでスクリプトを文に分けられないときは、全体が 1 件の ERROR `TOKENIZE` になる。
 
-ScalarDB を Target にしたときは、`vendor_sync.py --check` も実行する。終了コード 1 なら同梱コピーが本体と食い違っているので、利用者に伝える（取り込み方は `references/operations.md`）。最終行が `VENDOR_DRIFT=n/a`（終了コード 0）なら、スキルがリポジトリの外に置かれていて比べる本体が無い。変換は同梱コピーで動くので、そのまま進める。
+ScalarDB を Target にしたときは、`vendor_sync.py --check` も実行する。終了コード 1 なら同梱コピーが本体と食い違っているので、利用者に伝える（取り込み方は `references/operations.md` の「sql-migration のリポジトリで作業するとき」）。最終行が `VENDOR_DRIFT=n/a`（終了コード 0）なら、スキルがリポジトリの外に置かれていて比べる本体が無い。変換は同梱コピーで動くので、そのまま進める。
 
 ### Step 4: 利用者に報告する
 
@@ -143,7 +143,7 @@ ScalarDB を Target にしたときは、`vendor_sync.py --check` も実行す�
    - `ROWNUM`: ORDER BY を伴う場合は件数の意味が変わりうる。元の意図を確かめる
 4. **出力ファイルの場所**
 
-ERROR の文の書き換えを頼まれたら、書き換え後の SQL をもう一度このスキルに通して OK になることを確かめる。アプリ側の Java 実装を書いたら、golden での突き合わせ（`references/operations.md`）を案内する。
+ERROR の文の書き換えを頼まれたら、書き換え後の SQL をもう一度このスキルに通して OK になることを確かめる。アプリ側の Java 実装を書いたら、sql-migration のリポジトリで作業しているときは golden での突き合わせ（`references/operations.md` の「sql-migration のリポジトリで作業するとき」）を案内する。
 
 ## Error Handling
 

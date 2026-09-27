@@ -54,9 +54,9 @@ PL/SQL を解析して事実を出し、原文を読んで動作を書き、書�
 
   | 資料 | 読むとき |
   |---|---|
-  | `references/writing.md` | Step 3 で文章を書くとき。**書く前に必ず読む**（節ごとの書き方、Oracle の振る舞いの落とし穴） |
-  | `examples/create_order/` | 書き上がった仕様書の実例が要るとき |
-  | `fixtures/plsql-external/README.md` | 利用者が貼った PL/SQL をどこに置くかを決めるとき |
+  | `references/writing.md` | Step 3 で文章を書くとき。**書く前に必ず読む**（節ごとの書き方、図、Oracle の振る舞いの落とし穴） |
+  | `examples/create_order/` | 書き上がった仕様書の実例が要るとき（sql-migration のリポジトリにだけある） |
+  | `fixtures/plsql-external/README.md` | sql-migration のリポジトリで、利用者が貼った PL/SQL をどこに置くかを決めるとき（リポジトリにだけある） |
 
 ## 判断を求めるときの形
 
@@ -99,7 +99,7 @@ AskUserQuestion を使うときは、先に本文で 1〜5 を説明し、推奨
 
 | 入力 | 既定 | 無いとき |
 |---|---|---|
-| PL/SQL のディレクトリ | 利用者に聞く | 会話に貼られたものは `fixtures/plsql-external/<名前>/src/` に置く（corpus には足さない） |
+| PL/SQL のディレクトリ | 利用者に聞く | 会話に貼られたものは、利用者のプロジェクトの側のディレクトリに置く。sql-migration のリポジトリで作業するときは `fixtures/plsql-external/<名前>/src/`（corpus には足さない） |
 | Oracle の DDL | `<src>/schema.sql` があれば自動 | 「判断を求めるときの形」で聞く（上の例） |
 | 業務文書（仕様書・運用手順） | — | 無くてもよい。あれば Step 3 で用語を合わせ、食い違いを「確かめたいこと」に書く |
 | 出力先 | `out/plsql-spec/<名前>/`（`analysis/` と `spec/`） | — |
@@ -133,11 +133,10 @@ AskUserQuestion を使うときは、先に本文で 1〜5 を説明し、推奨
 2. 呼ばれる側から書く（索引の「呼び出しの関係」の右側から）。呼ぶ側を書くときに、呼び先の動作を引ける
 3. routine ごとに `（未記入: …）` を置き換える: **動作 → 業務ルール → エラーと例外 → 確かめたいこと**。
    事実の欄の**処理の流れの図**（Mermaid）を見ながら原文を読むと、分岐と例外の道を落としにくい
-4. trigger は、事実の欄の「この trigger を発火させる routine」を見て、発火させる側の routine の
-   「動作」にも、その書き込みで何が起きるかを 1 行書く（書き込んだ本人の原文には現れない動作だからである）
+4. trigger は、発火させる側の routine の「動作」にも 1 行書く（`references/writing.md` の「動作」）
 5. 最後に module の「概要」と、索引の「全体の概要」を書く。個々の routine を読み終えてからでないと書けない
 6. 状態の遷移や、複数の routine にまたがる業務の流れは、文章の側に Mermaid で描く（`references/writing.md` の「図」）。
-   描いた図は `mmdc -i <file.md> -o <scratch>/check.md -q` で確かめる
+   描いた図は `mmdc -i <file.md> -o <scratch>/check.md -q` で確かめる。`mmdc` が無ければ、確かめていないと報告する
 
 module が多いとき（目安 10 以上）は、呼び出しの関係でつながっていない module を Agent で手分けしてよい。
 そのときは各 Agent に `references/writing.md` を読ませ、担当の Markdown だけを書かせる。

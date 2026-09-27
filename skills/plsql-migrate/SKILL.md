@@ -61,17 +61,16 @@ PL/SQL を読んで ScalarDB 向けの Java を生成し、生成器が決めず
   観ていない部分（途中で止まったとき、同時に書いたとき、PL/SQL の外から書いたとき）である
 - **routine ごとの決定は `limits.yaml` に書き、生成し直す。** 行数の上限（`scanRows`）、楽観制御へ移す routine
   （`rowLocks.optimistic`）、トランザクションの境界（`transactions` の perIteration / separate / callerBoundary）、動的 SQL の表名（`dynamicTables`）、routine の中の DDL を省くか（`ddl.omit`）、package 変数の置き場（`packageState.carried`）は
-  生成器が読む。値には理由をコメントで添える（既存の書き方に合わせる）。書くのは利用者が答えてから
+  生成器が読む。理由は値として書く（書き方は `references/operations.md` の「limits.yaml の書き方」）。書くのは利用者が答えてから
 - 参照資料は必要になったときだけ読む:
 
   | 資料 | 読むとき |
   |---|---|
   | `docs/plsql-migration/plsql-decisions-outside-generator.md` | 項目を問うとき。**問う前に、その項目の節を必ず読む**（選択肢・推奨・代償が書いてある） |
-  | `references/alignment.md` | Step 6 で業務ロジックとの整合を確かめるとき |
+  | `references/alignment.md` | Step 6 で業務ロジックとの整合を確かめるとき（項目ごとの観点、問いの例、答えの記録の形） |
   | `references/documenting.md` | Step 7 で変換後のコードの文書を書くとき。**書く前に必ず読む** |
-  | `examples/create_order/` | 書き上がった文書の実例が要るとき |
-  | `references/operations.md` | Oracle との突き合わせ（difftest）、生成物の構成、記録ファイルの形を聞かれたとき |
-  | `fixtures/plsql/limits.yaml` | routine ごとの決定の書き方の実例が要るとき |
+  | `references/operations.md` | 生成物の構成、`limits.yaml` の書き方、記録ファイルの形を聞かれたとき・書く前。Oracle との突き合わせ（difftest）は、その最後の節（sql-migration のリポジトリで作業するときだけ） |
+  | `examples/create_order/` | 書き上がった文書の実例が要るとき（sql-migration のリポジトリにだけある） |
 
 ## 判断を求めるときの形
 
@@ -170,8 +169,7 @@ JVM が無いとき（Gradle は `runtime-java/gradlew` が取ってくる。ネ
    実行計画に回した文（`plannedSql`）の件数。report には件数しか無い。どの文かは生成物の
    `UnsupportedOperationException`（変換できなかった文）を Grep で探し、直前のコメントの原文の位置
    （`<file>:<line>`）を添える
-3. 出力の場所: `src/main/java/.../application`（Service）、`infrastructure`（Repository）、`domain`、
-   `db/*.sql`（移行で足す表・権限の雛形）、`src/main/resources/plans/`
+3. 出力の場所（中身は `references/operations.md` の「生成物の構成」）
 
 ### Step 4: 生成コードの外で決めることを拾う
 
@@ -226,21 +224,18 @@ JVM が無いとき（Gradle は `runtime-java/gradlew` が取ってくる。ネ
 ### Step 6: 業務ロジックとの整合を確かめる
 
 出た BIZ 項目それぞれについて、**routine ごとに**「移行で何が変わったか」を具体的に言い、業務がそれを
-受け入れられるかを確かめる。手順と観点は `references/alignment.md` にある。要点:
+受け入れられるかを確かめる。項目ごとの観点・問いの例・記録の形は `references/alignment.md` にある。
 
 1. PL/SQL の原文と生成された Java を並べて読み、その routine で**実際に変わる振る舞い**を 1〜2 文で書く
-   （例: 「`prc_nightly_close` は 1 注文ずつ確定する。途中で止まると、確定した注文と未処理の注文が混ざる」）
 2. 利用者が業務文書（仕様書・業務ルール・運用手順）を渡していれば、その振る舞いに触れる記述を探す。
-   見つかったら出典つきで**案**として記録する（`--status 未決 --proposal "<案>（出典: <文書> <節>）"`）
-3. **業務文書と食い違う**（例: 仕様に「締めは全件一括で確定する」とある）なら、それは確認ではなく
-   再設計の要否の問題である。案にせず、`--conflict "<食い違い>（出典: <文書> <節>）"` で記録し、報告する。
-   食い違いが**元の PL/SQL にすでにある**（移行前から仕様に合っていない）なら、そう書き分ける——移行で
-   生じた差ではないので、直すかどうかは移行とは別の判断になる
+   見つかったら出典つきで**案**として記録する
+3. **業務文書と食い違う**なら、それは確認ではなく再設計の要否の問題である。案にせず、食い違いとして記録し、
+   報告する。食い違いが元の PL/SQL にすでにあるなら、そう書き分ける
 4. 利用者に問う。BIZ 項目の選択肢は「受け入れる / 受け入れない（どう直すか）/ 担当に確認する」で、
    ここでも推奨と理由、選択肢ごとの影響を示す（受け入れたら何が変わったままになるか、受け入れないなら
-   どの直し方があり、それぞれ `limits.yaml` の変更で済むのか再設計になるのか）。答えを Step 5 と同じ形で
-   記録する。**利用者が BIZ 項目の担当でない**（たとえば運用担当）なら、
-   BIZ 項目は決定にしない。案と食い違いを記録し、業務担当への問いとして報告に並べる
+   どの直し方があり、それぞれ `limits.yaml` の変更で済むのか再設計になるのか）。答えを記録する。
+   **利用者が BIZ 項目の担当でない**（たとえば運用担当）なら、BIZ 項目は決定にしない。案と食い違いを記録し、
+   業務担当への問いとして報告に並べる
 
 ### Step 7: 変換後のコードを文書にまとめる
 
@@ -256,12 +251,12 @@ JVM が無いとき（Gradle は `runtime-java/gradlew` が取ってくる。ネ
 ```
 
 1. 1 行目は、生成（Step 2）と**同じ** `--limits` と `--scalardb-schema` で回す。文ごとの診断と判定ルールはここから来る。
-   `--evidence`（実 DB の比較、`references/operations.md`）と `--record` は、無ければ外す。**比較が無いなら、
-   文書の「制限」に「Oracle と同じ結果を返すかは確かめていない」と書くことになる**（`check` が見る）
+   `--evidence`（実 DB の比較の結果。取り方は `references/operations.md` の最後の節で、sql-migration のリポジトリでだけ
+   取れる）と `--record` は、無ければ外す。**比較が無いなら、文書の「制限」に「Oracle と同じ結果を返すかは
+   確かめていない」と書くことになる**（`check` が見る）
 2. `references/documenting.md` を読み、生成された Java（Service と Repository）と原文を開いて、`（未記入: …）` を
    置き換える。事実の欄（`<!-- facts:begin … -->` 〜 `<!-- facts:end … -->`）は書き換えない
-3. routine ごとの節を先に書き、`README.md` の 4 章は最後に書く。plsql-spec の仕様書があれば、動作はそこへの
-   参照にして、違うところだけを書く
+3. routine ごとの節を先に書き、`README.md` の 4 章は最後に書く
 4. 確かめる。0 で終わるまで直す:
 
 ```bash
@@ -272,9 +267,11 @@ JVM が無いとき（Gradle は `runtime-java/gradlew` が取ってくる。ネ
 |---|---|
 | 未記入が N か所 | 書く |
 | 文章に、判定の理由 `LOCK-001` / 受け入れた差のシナリオ / 決定 `rowLocks.optimistic` が出てこない | その routine の「移行で変わったこと」「制限と注意」に、呼び出し側が何をすればよいかを書く |
-| 「制限」に AUTO でない routine・Oracle と違うシナリオが出てこない | `README.md` の「制限」に挙げる。落とすと、読んだ人が踏む |
+| 「制限」に AUTO でない routine・Oracle と違うシナリオ・実 DB で比べていないことが出てこない | `README.md` の「制限」に挙げる。落とすと、読んだ人が踏む |
+| 「どのように移行したか」に決定 `<種類>` が出てこない | `limits.yaml` にある決定の種類（`optimistic`、`perIteration` など）を、誰がなぜ決めたかと一緒に書く |
 | 文章が引く `X.java` は生成物に無い | 生成物を開いて名前を確かめる。推し量って書かない |
-| 事実の欄が生成物と違う | 生成し直したか、決定・比較が変わった。`facts` を回し直し、その節の文章を読み直す |
+| 事実の欄が生成物と違う / 節が無い | 生成し直したか、決定・比較が変わった。`facts` を回し直し、その節の文章を読み直す |
+| `<id>` は生成物に無い | 消えた routine の節が残っている。消すか、名前の変わった routine へ文章を移すかを利用者に確かめる |
 
 生成し直したら（Step 5 の決定で `limits.yaml` が変わったときなど）、`facts` を回し直す。文章は残り、事実の欄だけが
 書き直される。`check` が通るのは文章が事実から離れていないことまでで、コード例が動くことは確かめない。
@@ -288,8 +285,8 @@ JVM が無いとき（Gradle は `runtime-java/gradlew` が取ってくる。ネ
 3. **未決の項目と、誰に聞くか**（担当ごとに問いを並べる）
 4. 業務ロジックとの食い違い（あれば。再設計の候補として）
 5. ファイルの場所: 生成物、`decision-items.md`、記録ファイル、書き換えた `limits.yaml`、文書（`<out>/docs/README.md`）
-6. 次の手: 未決が残っていれば担当への確認。Oracle との突き合わせをまだしていなければ
-   `references/operations.md` の difftest を案内する
+6. 次の手: 未決が残っていれば担当への確認。Oracle との突き合わせをまだしていなければ、それが未確認であることを
+   伝える（sql-migration のリポジトリで作業しているなら、`references/operations.md` の最後の節の difftest を案内する）
 
 ## Error Handling
 
