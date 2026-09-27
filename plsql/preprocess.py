@@ -77,8 +77,9 @@ class Preprocessed:
 
 
 def preprocess(text: str, file: str = "<memory>") -> Preprocessed:
-    lines = text.splitlines()
     out = Preprocessed(file=file)
+    text = _conditional_compilation(text, file, out)
+    lines = text.splitlines()
 
     kept, kept_origin = _strip_directives(lines, file, out)
     full_map = SourceMap(file, kept_origin)
@@ -103,6 +104,30 @@ def preprocess(text: str, file: str = "<memory>") -> Preprocessed:
         out.diagnostics.add("WARN", "EMPTY", "the file has no statement after preprocessing",
                             SourceRange(file, 1, max(1, len(lines))))
     return out
+
+
+def _conditional_compilation(text: str, file: str, out: "Preprocessed") -> str:
+    """#118: the side of each `$IF` that Oracle compiles, with the rest blanked (plsql/conditional.py)."""
+    from . import conditional
+
+    chosen = conditional.select(text)
+    whole = SourceRange(file, 1, max(1, text.count("\n") + 1))
+    if chosen.unresolved:
+        out.diagnostics.add("WARN", "CONDITIONAL_COMPILATION",
+                            f"条件付きコンパイルを解けなかった（{chosen.unresolved}）。ファイルはそのまま parse する", whole)
+        return text
+    if chosen.directives:
+        settings = conditional.settings()
+        flags = ", ".join(f"$${name}={settings.flags.get(name)!r}" for name in sorted(chosen.flags_read))
+        out.diagnostics.add("INFO", "CONDITIONAL_COMPILATION",
+                            f"条件付きコンパイル {chosen.directives} か所を、移行元の設定を仮定して解いた"
+                            f"（{flags or '問い合わせ指令なし'}、DBMS_DB_VERSION {settings.version[0]}.{settings.version[1]}）。"
+                            f"未設定のフラグは Oracle と同じく NULL。実際の PLSQL_CCFLAGS は limits.yaml の "
+                            f"conditionalCompilation で渡す", whole)
+    for line, message in chosen.errors:
+        out.diagnostics.add("ERROR", "CONDITIONAL_ERROR", f"選ばれた側に $ERROR がある: {message}",
+                            SourceRange(file, line, line))
+    return chosen.text
 
 
 def _strip_directives(lines: list[str], file: str, out: "Preprocessed") -> tuple[list[str], list[int]]:

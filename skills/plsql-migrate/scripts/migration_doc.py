@@ -327,6 +327,8 @@ CHANGES = {
     "CUR_BRANCHED": (SHAPE, "分岐ごとに別の問合せで開く cursor 変数を、分岐ごとに行を読んで回す形にした"),
     "PLAN_FETCH": (SHAPE, "実行計画: ScalarDB から行を取得する"),
     "PLAN_RESIDUAL": (SHAPE, "実行計画: 取得した行に、H2 で元の SQL を実行する"),
+    "CONDITIONAL_COMPILATION": (INFO, "条件付きコンパイル（$IF）を、移行元の PLSQL_CCFLAGS と版を仮定して解いた（#118）"),
+    "CONDITIONAL_ERROR": (INFO, "条件付きコンパイルの選ばれた側に $ERROR がある（#118）"),
     "BULK_NOT_FUSED": (INFO, "BULK COLLECT + FORALL を走査ループにしなかった（組の後ろで配列か SQL%ROWCOUNT を読む・#109）"),
     "ACCESS": (INFO, "アクセスパス（GET / パーティション走査）"),
     "CONFIG": (INFO, "読み取り専用のトランザクションにできる"),

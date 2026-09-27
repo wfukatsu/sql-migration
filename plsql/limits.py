@@ -166,6 +166,28 @@ class DynamicTables:
         return list(self.allowed.get(routine, []))
 
 
+def conditional_compilation(path: str | Path | None) -> None:
+    """#118: the source database's PLSQL_CCFLAGS and version, for the `$IF` the preprocessor resolves.
+
+        conditionalCompilation:
+          flags: {logger_debug: false, no_op: false}
+          dbVersion: "19.0"
+
+    Without the section a flag nobody declared is NULL, as in Oracle, and the version is 19.0.
+    """
+    from .conditional import Settings, configure
+
+    data = (yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}) if path else {}
+    section = data.get("conditionalCompilation") or {}
+    unknown = set(section) - {"flags", "dbVersion"}
+    if unknown:
+        raise ValueError(f"{path}: conditionalCompilation に知らないキー {sorted(unknown)}")
+    flags = {str(k).lower(): (float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v)
+             for k, v in (section.get("flags") or {}).items()}
+    major, _, minor = str(section.get("dbVersion", "19.0")).partition(".")
+    configure(Settings(flags=flags, version=(int(major), int(minor or 0))))
+
+
 @dataclass
 class DynamicDdl:
     """routine の中の DDL（`EXECUTE IMMEDIATE 'CREATE TABLE ...'`）を移行先で実行しないと決めた routine（#52）。
