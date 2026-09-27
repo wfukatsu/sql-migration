@@ -325,6 +325,7 @@ CHANGES = {
     "OPTIONAL_FILTER": (SHAPE, "`p IS NULL OR 列 = p` を、p が NULL のときとそれ以外の 2 つの問合せに分けた"),
     "OBJECT_BUILT": (SHAPE, "オブジェクト型のコンストラクタを、列を読んでアプリで組む形にした"),
     "TABLE_COLLECTION": (SHAPE, "TABLE(コレクション) を、SQL ではなくコレクションの要素を回す形にした"),
+    "TABLE_QUERY": (MEANING, "TABLE(...) の問合せのうち、アプリで回せない形（結合・集約・function の結果など）。この文は変換されない"),
     "DBMS_SQL_STATIC": (SHAPE, "定数の問合せの DBMS_SQL を、静的な cursor FOR ループにした"),
     "DYN_STATIC": (SHAPE, "定数の文字列の OPEN FOR / 動的 DML を、静的な文にした"),
     "DYN_INLINED": (SHAPE, "定数の動的 PL/SQL ブロックを、その場のブロックにした"),

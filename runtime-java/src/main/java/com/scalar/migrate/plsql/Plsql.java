@@ -1177,6 +1177,137 @@ public final class Plsql {
     }
   }
 
+  /** ORA-22160: FORALL reached an index its collection has no element at. It has no predefined name (#136). */
+  public static final class ElementNotExist extends OracleError {
+    public ElementNotExist(Object index) {
+      super(-22160, "ORA-22160: element at index [" + (index == null ? "null" : index) + "] does not exist");
+    }
+  }
+
+  // ---- FORALL (#136). Measured on 26ai: the bounds are evaluated once; a NULL bound, lo > hi, or a NULL bound of
+  // INDICES OF ... BETWEEN runs nothing and leaves SQL%ROWCOUNT / SQL%BULK_ROWCOUNT as they were, while INDICES OF /
+  // VALUES OF over an empty collection runs nothing and sets SQL%ROWCOUNT to 0. Each element's statement is checked
+  // for its element first: a missing one is ORA-22160, and the statements before it stay done.
+
+  /** {@code FORALL i IN lo .. hi}: the indexes, or null when the statement does not run at all. */
+  public static java.util.List<Integer> forallRange(Object lo, Object hi) {
+    if (isNull(lo) || isNull(hi)) return null;
+    int from = toInt(lo), to = toInt(hi);
+    if (from > to) return null;
+    java.util.List<Integer> out = new java.util.ArrayList<>(to - from + 1);
+    for (int i = from; i <= to; i++) out.add(i);
+    return out;
+  }
+
+  /** {@code FORALL i IN INDICES OF v}: the indexes v has an element at, in order; gaps are skipped. */
+  public static java.util.List<Integer> indicesOf(Object collection) {
+    if (collection == null) throw collectionIsNull();
+    java.util.List<Integer> out = new java.util.ArrayList<>();
+    if (collection instanceof java.util.List<?> list) {
+      for (int i = 1; i <= list.size(); i++) if (list.get(i - 1) != GAP) out.add(i);
+      return out;
+    }
+    for (Object k : ((java.util.Map<?, ?>) collection).keySet()) out.add(num(k).intValueExact());
+    return out;
+  }
+
+  /** {@code FORALL i IN INDICES OF v BETWEEN lo AND hi}: those of them from lo to hi; null (nothing runs) for a NULL bound. */
+  public static java.util.List<Integer> indicesOf(Object collection, Object lo, Object hi) {
+    java.util.List<Integer> all = indicesOf(collection);
+    if (isNull(lo) || isNull(hi)) return null;
+    int from = toInt(lo), to = toInt(hi);
+    java.util.List<Integer> out = new java.util.ArrayList<>();
+    for (Integer i : all) if (i >= from && i <= to) out.add(i);
+    return out;
+  }
+
+  /**
+   * {@code FORALL i IN VALUES OF p}: p's element values, in p's order -- a value twice runs the statement twice, and
+   * SQL%BULK_ROWCOUNT keeps one count per index. A NULL value is ORA-22160 when its statement is reached.
+   */
+  public static java.util.List<Integer> valuesOf(Object indexes) {
+    if (indexes == null) throw collectionIsNull();
+    java.util.Collection<?> values = indexes instanceof java.util.List<?> list ? list
+        : ((java.util.Map<?, ?>) indexes).values();
+    java.util.List<Integer> out = new java.util.ArrayList<>();
+    for (Object value : values) {
+      if (value == GAP) continue;
+      out.add(isNull(value) ? null : toInt(value));
+    }
+    return out;
+  }
+
+  /** Before one element's statement: ORA-22160 when the collection it reads has no element at {@code at}. */
+  public static void forallElement(Object collection, Object at) {
+    if (collection == null) throw collectionIsNull();
+    if (at == null || !exists(collection, at)) throw new ElementNotExist(at);
+  }
+
+  /**
+   * {@code SQL%BULK_ROWCOUNT(i)}: ORA-06532 for an index the last FORALL did not run (measured). A NULL index is
+   * ORA-06530 in Oracle; it is VALUE_ERROR here, as a NULL key of any collection is.
+   */
+  public static Object bulkRowCount(java.util.Map<Integer, BigDecimal> counts, Object at) {
+    if (isNull(at)) throw new ValueError("NULL index for SQL%BULK_ROWCOUNT");
+    Integer k = toInt(at);
+    if (!counts.containsKey(k)) throw new SubscriptOutsideLimit();
+    return counts.get(k);
+  }
+
+  // ---- A query over TABLE(v) of a PL/SQL collection, run here rather than by SQL (#135). Measured on 26ai: the rows
+  // are the elements in index order with a nested table's gaps skipped, TABLE(NULL) has none, and ORDER BY puts NULLs
+  // last ascending and first descending, strings by their binary value.
+
+  /** The rows of {@code TABLE(v)}: its elements, in index order. */
+  public static java.util.List<Object> tableRows(Object collection) {
+    java.util.List<Object> out = new java.util.ArrayList<>();
+    if (collection == null) return out;
+    java.util.Collection<?> elements = collection instanceof java.util.List<?> list ? list
+        : ((java.util.Map<?, ?>) collection).values();
+    for (Object element : elements) if (element != GAP) out.add(element);
+    return out;
+  }
+
+  /**
+   * ORDER BY over rows whose columns from {@code width} on are the sort keys the query added: sorted by
+   * {@code keys} (column positions), each descending or not and with its NULLs first or not, then cut back to the
+   * {@code width} columns the query selects.
+   */
+  public static void orderRows(java.util.List<Object[]> rows, int width, int[] keys, boolean[] descending,
+                               boolean[] nullsFirst) {
+    rows.sort((a, b) -> {
+      for (int k = 0; k < keys.length; k++) {
+        Object x = a[keys[k]], y = b[keys[k]];
+        boolean xNull = isNull(x), yNull = isNull(y);
+        int order;
+        if (xNull || yNull) {
+          if (xNull && yNull) continue;
+          order = xNull == nullsFirst[k] ? -1 : 1;   // NULL placement does not flip with DESC
+        } else {
+          order = compare(x, y);
+          if (descending[k]) order = -order;
+        }
+        if (order != 0) return order;
+      }
+      return 0;
+    });
+    for (int i = 0; i < rows.size(); i++) {
+      if (rows.get(i).length > width) rows.set(i, java.util.Arrays.copyOf(rows.get(i), width));
+    }
+  }
+
+  /** {@code FETCH FIRST n ROWS ONLY}: the first n. */
+  public static java.util.List<Object[]> firstRows(java.util.List<Object[]> rows, int n) {
+    return rows.size() > n ? new java.util.ArrayList<>(rows.subList(0, Math.max(n, 0))) : rows;
+  }
+
+  /** {@code SELECT COUNT(*)}: one row, the number of rows. */
+  public static java.util.List<Object[]> countRows(java.util.List<Object[]> rows) {
+    java.util.List<Object[]> out = new java.util.ArrayList<>();
+    out.add(new Object[] {BigDecimal.valueOf(rows.size())});
+    return out;
+  }
+
   private static Object key(Object collection, Object key) {
     // PLS_INTEGER keys arrive as Integer, Long or BigDecimal depending on the arithmetic that produced them
     if (collection instanceof java.util.List || key instanceof Number) return key == null ? null : num(key).intValueExact();
