@@ -121,7 +121,46 @@ public final class Plsql {
       if (!Double.isNaN(d) && !Double.isInfinite(d)) return text(BigDecimal.valueOf(d));
       return binaryText(d, 17);
     }
+    // what Oracle writes with the default NLS settings (AMERICAN): Java's toString gave 2026-09-26T01:00 for a DATE
+    // Oracle writes as 26-SEP-26 (#94). A DATE and a TIMESTAMP are both a LocalDateTime; the generator marks a
+    // TIMESTAMP local and calls timestampText, so a bare LocalDateTime is a DATE -- as `t + 1` is in Oracle
+    if (value instanceof Boolean b) return b ? "TRUE" : "FALSE";
+    if (value instanceof LocalDateTime d) return dateText(d);
+    if (value instanceof java.time.LocalDate d) return dateText(d.atStartOfDay());
+    if (value instanceof java.time.OffsetDateTime d) return timestampText(d, 6);
     return String.valueOf(value);
+  }
+
+  private static final String[] MONTHS =
+      {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
+
+  /** A DATE as NLS_DATE_FORMAT DD-MON-RR writes it: 05-JAN-99. The time of day is not written. */
+  static String dateText(LocalDateTime d) {
+    return String.format("%02d-%s-%02d", d.getDayOfMonth(), MONTHS[d.getMonthValue() - 1], Math.floorMod(d.getYear(), 100));
+  }
+
+  /**
+   * TO_CHAR of a TIMESTAMP(precision) or TIMESTAMP WITH TIME ZONE, or `'...' || t` with one, as NLS_TIMESTAMP_FORMAT
+   * DD-MON-RR HH.MI.SSXFF AM (and _TZ_FORMAT's TZR) write it: 26-SEP-26 09.30.00.500000 AM +09:00. FF is as many
+   * digits as the declared precision, and TIMESTAMP(0) has no fraction at all (#94).
+   */
+  public static String timestampText(Object value, int precision) {
+    if (isNull(value)) return "";
+    LocalDateTime t;
+    String zone = "";
+    if (value instanceof java.time.OffsetDateTime o) {
+      t = o.toLocalDateTime();
+      int seconds = o.getOffset().getTotalSeconds();
+      zone = String.format(" %s%02d:%02d", seconds < 0 ? "-" : "+", Math.abs(seconds) / 3600, Math.abs(seconds) / 60 % 60);
+    } else if (value instanceof LocalDateTime l) {
+      t = l;
+    } else {
+      return text(value);
+    }
+    int hour = t.getHour() % 12 == 0 ? 12 : t.getHour() % 12;
+    String fraction = precision > 0 ? "." + String.format("%09d", t.getNano()).substring(0, Math.min(precision, 9)) : "";
+    return dateText(t) + String.format(" %02d.%02d.%02d", hour, t.getMinute(), t.getSecond()) + fraction
+        + (t.getHour() < 12 ? " AM" : " PM") + zone;
   }
 
   /** TO_CHAR of a BINARY_DOUBLE / SIMPLE_DOUBLE, or `'...' || d` with one: 17 significant digits (#91). */

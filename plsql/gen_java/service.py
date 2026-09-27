@@ -436,8 +436,9 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
             names[f"{holder.name.lower()}#blank_padded"] = "1"
         if declared.upper() in _PLS_INTEGER_TYPES:
             names[f"{holder.name.lower()}#pls_integer"] = "1"
-        if declared.upper() in ("BINARY_DOUBLE", "SIMPLE_DOUBLE"):
-            names[f"{holder.name.lower()}#binary_double"] = "1"   # written as 4.0E+000, not as a NUMBER (#91)
+        text = _text_rendering(declared)
+        if text:
+            names[f"{holder.name.lower()}#text"] = text
     # a schema object type's constructor `emp_grade_t(a, b, 'X')` builds its record (#54)
     from .types import object_types
     for name, resolved in object_types().items():
@@ -1710,7 +1711,9 @@ def _builtin_call(file: JavaFile, statement: M.Call, routine: M.Routine, result:
         file.comment(f"{builtin.name}: {builtin.note}（#55）")
         return True
     file.add_import("com.scalar.migrate.plsql.Plsql")
-    file.line(f"{builtin.java}({', '.join(_expr(file, a, routine, result) for a in arguments)});")
+    # DBMS_OUTPUT writes its argument as text: a TIMESTAMP or BINARY_DOUBLE local as TO_CHAR would (#91, #94)
+    as_text = builtin.name in ("DBMS_OUTPUT.PUT_LINE", "DBMS_OUTPUT.PUT")
+    file.line(f"{builtin.java}({', '.join(_expr(file, a, routine, result, as_text=as_text) for a in arguments)});")
     return True
 
 
@@ -2270,6 +2273,27 @@ _NUMBER_CONSTRAINT = re.compile(r"(?:NUMBER|NUMERIC|DECIMAL|DEC)\s*\(\s*(\d+)\s*
 _TEXT_CONSTRAINT = re.compile(r"(?:VARCHAR2|VARCHAR|NVARCHAR2)\s*\(\s*(\d+)\s*(CHAR|BYTE)?\s*\)", re.IGNORECASE)
 # PL/SQL's 32-bit integers and their predefined subtypes: the range and NOT NULL each carries (#59, #60).
 # SIMPLE_INTEGER is NOT NULL but wraps on overflow instead of raising, so it has no range here
+_TIMESTAMP_DECLARED = re.compile(r"^\s*TIMESTAMP\s*(?:\(\s*(\d+)\s*\))?\s*(WITH\s+(LOCAL\s+)?TIME\s+ZONE)?\s*$",
+                                 re.IGNORECASE)
+
+
+def _text_rendering(declared: str) -> str | None:
+    """How a local of this type is written as text, when its Java type alone would write it as something else.
+
+    A BINARY_DOUBLE is a Double, as a REAL local or a NUMBER column read as one is: Oracle writes it 4.0E+000 (#91).
+    A TIMESTAMP is a LocalDateTime, as a DATE is: Oracle writes it with the time and as many fraction digits as the
+    declared precision, 6 when none is given (#94). A TIMESTAMP WITH TIME ZONE is an OffsetDateTime and the runtime
+    knows it, but not its precision. WITH LOCAL TIME ZONE is shown in the session's zone without one, and ScalarDB
+    keeps no session zone, so it is left to the runtime.
+    """
+    if declared.upper() in ("BINARY_DOUBLE", "SIMPLE_DOUBLE"):
+        return "Plsql.binaryDouble({})"
+    timestamp = _TIMESTAMP_DECLARED.fullmatch(declared)
+    if timestamp and not timestamp.group(3):
+        return f"Plsql.timestampText({{}}, {int(timestamp.group(1) or 6)})"
+    return None
+
+
 _PLS_INTEGER_TYPES = {"PLS_INTEGER", "BINARY_INTEGER", "NATURAL", "NATURALN", "POSITIVE", "POSITIVEN", "SIGNTYPE"}
 _PREDEFINED_RANGES = {"NATURAL": "0..2147483647", "NATURALN": "0..2147483647", "POSITIVE": "1..2147483647",
                       "POSITIVEN": "1..2147483647", "SIGNTYPE": "-1..1"}
@@ -2372,7 +2396,8 @@ def _flag_name(cursor: str) -> str:
 
 
 def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "ServiceFile | None",
-          module: M.Module | None = None, boolean_value: bool = False, condition: bool = False) -> str:
+          module: M.Module | None = None, boolean_value: bool = False, condition: bool = False,
+          as_text: bool = False) -> str:
     """Translate an expression, or refuse.
 
     An unrecognised name reaching the output would either fail to compile or, worse, resolve to something with
@@ -2382,7 +2407,7 @@ def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "Service
     names = {**_scope(routine, module or _MODULE.get()), **_BLOCK_LOCALS.get(), **_LOOP_ROWS.get(),
              **_HANDLER_ERROR.get()}
     names.update({f"{flag}%notfound": _flag_name(flag) for flag in _not_found_flags(routine)})
-    rendered = translate(text, names, boolean_value=boolean_value, condition=condition)
+    rendered = translate(text, names, boolean_value=boolean_value, condition=condition, as_text=as_text)
     for name in rendered.unknown:
         if result is not None and name not in result.unknown_names:
             result.unknown_names.append(name)
