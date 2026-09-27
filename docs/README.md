@@ -93,7 +93,8 @@ corpus の外の routine を流す手順は [fixtures/plsql-external/](../fixtur
 ## 個別の SQL の移行例（`examples/`）
 
 `CONNECT BY` + CTE + ウィンドウ関数の SQL を、ScalarDB SQL での取得と Java での集計に分解した例と、その性能の調整を
-`examples/` に置いています。題材が顧客の SQL なので、公開はしていません（開発側のリポジトリだけにあります）。
+`examples/` に置いています（部署別の月次受注集計、顧客別受注ランキング。どちらも合成の題材）。`examples/` は公開していません
+（開発側のリポジトリだけにあります）。
 
 ## 検証レポート
 
