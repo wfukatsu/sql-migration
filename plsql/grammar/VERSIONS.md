@@ -11,12 +11,14 @@
 | 取り込み日 | 2026-09-16 |
 | ANTLR ツール | 4.13.2（`build/antlr/` に取得。commit しない） |
 | Python ランタイム | `antlr4-python3-runtime==4.13.2`（`requirements.txt`） |
-| ライセンス | 上流 grammars-v4 は BSD-3-Clause |
+| ライセンス | Apache License 2.0（`.g4` の冒頭のとおり。本文は `LICENSE`、著作権者と改変の説明は `NOTICE`）。以前ここに「BSD-3-Clause」と書いていたのは誤り（2026-09-27 に直した） |
 
 ## ファイル構成
 
 ```text
 plsql/grammar/
+  LICENSE              Apache License 2.0 の本文（再配布の条件。消さない）
+  NOTICE               上流、著作権者、generated/ が派生物であること
   PlSqlLexer.g4        上流のまま（未改変）
   PlSqlParser.g4       上流のまま（未改変）
   python3/             上流 sql/plsql/Python3/ のまま（未改変）

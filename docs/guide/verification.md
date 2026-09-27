@@ -75,10 +75,10 @@ difftest/oracle-backend-init.sh
 cd difftest && docker compose --profile oracle --profile oracle-backend up -d scalardb-cluster-oracle && cd ..
 difftest/backend_compare.sh oracle out/cassandra-verify/oracle-backend
 
-# アプリ側実装の golden 比較
-.venv/bin/python difftest/golden.py capture --setup difftest/golden/dept-orders/setup.sql \
-    --query difftest/golden/dept-orders/query.sql --tables org_units,order_lines --out difftest/golden/dept-orders
-.venv/bin/python difftest/golden.py check --golden difftest/golden/dept-orders --impl com.scalar.migrate.examples.DeptOrderReport
+# アプリ側実装の golden 比較（<name> は difftest/golden/ の下の題材、<Impl> はそれを実装した Java のクラス）
+.venv/bin/python difftest/golden.py capture --setup difftest/golden/<name>/setup.sql \
+    --query difftest/golden/<name>/query.sql --tables <table>,<table> --out difftest/golden/<name>
+.venv/bin/python difftest/golden.py check --golden difftest/golden/<name> --impl <Impl>
 ```
 
 </details>

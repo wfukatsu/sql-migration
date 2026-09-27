@@ -184,7 +184,7 @@ runtime-java/              実行基盤（Java 17、Gradle）
   .../runtime/               Runner・Fetcher（Core / JDBC）・Residual（H2）・Bench
   .../appside/               アプリ側で Oracle の動きを再現する補助クラス（階層、ウィンドウ関数、数値、並び順、日付）
   .../plsql/                 生成コードの実行時ヘルパ（Oracle の式の意味論）と差分ハーネス
-  .../examples/              アプリ側実装の例（部署別の月次受注集計）
+  .../examples/              アプリ側実装の例（公開していない）
 .claude-plugin/            Claude Code のプラグインと marketplace のマニフェスト（プラグイン = このリポジトリのルート）
 .codex-plugin/ .agents/    Codex のプラグインのマニフェスト、marketplace（.agents/plugins/）、skills/ へのリンク（.agents/skills）
 bin/python                 スキル用の Python の起動スクリプト（どの作業ディレクトリからでも動く。無ければ仮想環境を作る）
@@ -230,11 +230,20 @@ docs/                      文書。入口は docs/README.md（guide/ 使い方�
 
 [MIT License](LICENSE)（Copyright (c) 2026 Wataru Fukatsu）
 
+リポジトリに含めている第三者のものは、次の 2 つです。ライセンス本文と著作権表示を一緒に置いています。
+
+| ソフトウェア | ライセンス | 場所 |
+|---|---|---|
+| [ANTLR の Oracle PL/SQL 文法](https://github.com/antlr/grammars-v4/tree/master/sql/plsql)（grammars-v4）と、そこから生成した parser | Apache-2.0 | `plsql/grammar/`（`LICENSE`、`NOTICE`） |
+| Gradle Wrapper | Apache-2.0 | `runtime-java/gradlew`、`runtime-java/gradle/wrapper/` |
+
 依存するソフトウェアは、それぞれのライセンスに従います。リポジトリには含めず、pip と Gradle が取得します。
 
 | ソフトウェア | ライセンス | 用途 |
 |---|---|---|
-| [SQLGlot](https://github.com/tobymao/sqlglot)、DuckDB、pytest | MIT | 変換ツール・テスト |
+| [SQLGlot](https://github.com/tobymao/sqlglot)、DuckDB、pytest、PyYAML、jsonschema | MIT | 変換ツール・テスト |
+| ANTLR 4 Python ランタイム（antlr4-python3-runtime） | BSD-3-Clause | PL/SQL の parse |
+| Hypothesis | MPL 2.0 | テスト |
 | ScalarDB（Core）、Gson | Apache-2.0 | 実行基盤（Core API 経路） |
 | ScalarDB SQL JDBC、ScalarDB Cluster Java Client SDK | Scalar Commercial License | 実行基盤の ScalarDB SQL 経路。**ScalarDB Cluster のライセンスが要ります** |
 | H2 Database | MPL 2.0 / EPL 1.0 | 実行計画の残りの処理 |
