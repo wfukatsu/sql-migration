@@ -1385,6 +1385,13 @@ public final class Plsql {
    * `SELECT a, b BULK COLLECT INTO va, vb` (#66): column `index` of every row, as a nested table of `type` -- a
    * NUMBER column read as BigDecimal, an INTEGER one as Integer. No row is an empty collection, not NULL.
    */
+  /** A plan's rows ({@code List<List<Object>>}) as the arrays a direct read hands back (#83). */
+  public static java.util.List<Object[]> arrays(java.util.List<?> rows) {
+    java.util.List<Object[]> out = new java.util.ArrayList<>(rows.size());
+    for (Object row : rows) out.add(row instanceof Object[] a ? a : ((java.util.List<?>) row).toArray());
+    return out;
+  }
+
   public static <T> java.util.List<T> column(java.util.List<Object[]> rows, int index, Class<T> type) {
     java.util.List<T> out = new java.util.ArrayList<>(rows.size());
     for (Object[] row : rows) {

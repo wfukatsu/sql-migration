@@ -2012,11 +2012,10 @@ def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine
         file.line(f"{_cursor_state(statement.opens_cursor)}.open(repository.{method}({arguments})"
                   f"{'.rows()' if planned else ''});")
         return
-    if statement.plan_id or statement.target_status == "PLANNED":
-        # the plan hands back rows, and turning them into the PL/SQL variables is a decision (which row? what
-        # when there are none?), so it is left to the reviewer rather than guessed
-        raise Untranslatable(["execution plan result"], statement.original_sql)
     targets = statement.into_targets
+    if statement.plan_id or statement.target_status == "PLANNED":
+        _planned_into(file, statement, routine, method, arguments, targets)
+        return
     if targets and statement.cardinality == "MANY":
         # BULK COLLECT fills collections from every matching row (#66). Treating it as a one-row SELECT INTO turns
         # "no rows" and "many rows" into exceptions the original never raised. The repository returns every row;
@@ -2166,6 +2165,15 @@ def _arguments(file: JavaFile, statement: M.SqlOperation, routine: M.Routine,
         # a literal the dynamic SQL's USING wrote (`USING 110, 'DEPARTMENT_ID'`, 7-20) goes as its value
         plain = name.replace("_", "").replace("$", "").replace("#", "").isalnum() and name[:1].isalpha()
         rendered = _local(name) if plain else _expr(file, name, routine, result)
+        expected = java_type(bind.oracle_type).name if bind.oracle_type else None
+        if plain and expected in ("Integer", "Long", "Double", "Float", "BigDecimal") and \
+                _local_type(routine, name) not in (expected, None, "Object"):
+            # an INTEGER parameter is a BigDecimal (#75) and the repository takes the column's own type: passing it
+            # as it stood did not compile (12-18, #83)
+            file.add_import("com.scalar.migrate.plsql.Plsql")
+            helper = {"Integer": "toInt", "Long": "toLong", "Double": "toDouble", "Float": "toFloat",
+                      "BigDecimal": "dec"}[expected]
+            rendered = f"Plsql.{helper}({rendered})"
         if rendered.startswith("Plsql.at(") and "." not in name:
             # a collection element is Object; the repository parameter is typed from the bind's column the way
             # `repository._parameters` types it (`FORALL ... VALUES (pnums(i), ...)`: 12-9, #75)
@@ -2173,7 +2181,10 @@ def _arguments(file: JavaFile, statement: M.SqlOperation, routine: M.Routine,
             if expected == "String":
                 rendered = f"(String) {rendered}"
             elif expected in ("Integer", "Long", "Double", "Float", "BigDecimal", "LocalDateTime"):
-                rendered = _coerce(file, rendered, expected)
+                file.add_import("com.scalar.migrate.plsql.Plsql")
+            helper = {"Integer": "toInt", "Long": "toLong", "Double": "toDouble", "Float": "toFloat",
+                      "BigDecimal": "dec"}[expected]
+            rendered = f"Plsql.{helper}({rendered})"
         out.append(rendered)
     return ", ".join(out)
 
@@ -2200,7 +2211,51 @@ def _first_row(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, me
         _assign_row(f, routine, targets, row)
 
 
-def _assign_row(file: JavaFile, routine: M.Routine, targets: list[str], row: str) -> None:
+def _planned_into(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, method: str, arguments: str,
+                  targets: list[str]) -> None:
+    """A query the plan runs (ScalarDB fetches, H2 computes the rest) read INTO variables (#83).
+
+    The plan hands back every row, so the three ways a read can end are decided here as a direct read decides them:
+    a `SELECT INTO` raises NO_DATA_FOUND on none and TOO_MANY_ROWS on a second; a cursor's first row (`AT_MOST_ONE`)
+    leaves its targets as they were when there is none; BULK COLLECT takes them all. `SELECT salary * 0.10 INTO
+    bonus FROM employees WHERE employee_id = 100` -- a key read with arithmetic on it -- stopped here before (2-25).
+    """
+    kind = (statement.sql_kind or "").upper()
+    if not targets or kind != "SELECT" or any("." in t for t in targets):
+        raise Untranslatable(["execution plan result"], statement.original_sql)
+    file.add_import("com.scalar.migrate.plsql.Plsql")
+    rows = f"Plsql.arrays(repository.{method}({arguments}).rows())"
+    if statement.cardinality == "MANY":
+        holders = [_holder(routine, t) for t in targets]
+        if len(targets) != len(statement.into_columns or targets) or any(
+                h is None or not _collection_kind(h) or "RECORD(" in (h.type.resolved or "").upper() for h in holders):
+            raise Untranslatable([f"BULK COLLECT INTO {', '.join(targets)}"], statement.original_sql)
+        with file.block("") as f:
+            f.line(f"var bulk_ = {rows};")
+            for index, (target, holder) in enumerate(zip(targets, holders)):
+                element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
+                f.line(f"{_local(target)} = Plsql.column(bulk_, {index}, {element}.class);")
+        return
+    with file.block("") as f:
+        f.comment(f"SELECT INTO {', '.join(targets)}, through the plan")
+        f.line(f"var rows_ = {rows};")
+        if statement.cardinality == "AT_MOST_ONE":
+            if statement.not_found_flag:
+                f.line(f"{_flag_name(statement.not_found_flag)} = rows_.isEmpty();")
+            with f.block("if (!rows_.isEmpty())") as g:
+                _assign_row(g, routine, targets, "rows_.get(0)")
+            return
+        if _DOMAIN.get():
+            f.add_import(f"{_DOMAIN.get()}.NoDataFoundException", f"{_DOMAIN.get()}.TooManyRowsException")
+        with f.block("if (rows_.isEmpty())") as g:
+            g.line('throw new NoDataFoundException("SELECT INTO matched no row");')
+        with f.block("if (rows_.size() > 1)") as g:
+            g.line('throw new TooManyRowsException("SELECT INTO matched more than one row");')
+        _assign_row(f, routine, targets, "rows_.get(0)", constrained=True)
+
+
+def _assign_row(file: JavaFile, routine: M.Routine, targets: list[str], row: str,
+                constrained: bool = False) -> None:
     """FETCH a row INTO its targets: one value per scalar target, or -- when the only target is a record -- the
     record built from every column. Casting column 0 to the record (`job1 = (CRow) row[0]`) compiled and threw at
     run time (#81)."""
@@ -2215,6 +2270,9 @@ def _assign_row(file: JavaFile, routine: M.Routine, targets: list[str], row: str
         return
     for index, target in enumerate(targets):
         value = _into(file, f"{row}[{index}]", _local_type(routine, target))
+        if constrained:
+            holder = _holder(routine, target)
+            value = _constrain(file, value, holder.type if holder else None)
         file.line(f"{_local(target)} = {value};")
 
 
