@@ -229,6 +229,133 @@ public final class Plsql {
     return num(value).setScale(0, java.math.RoundingMode.DOWN);
   }
 
+  /**
+   * `TRUNC(d, 'MM')` on a DATE or TIMESTAMP: a DATE at the start of that unit. The overloads take the static type,
+   * so `TRUNC(SYSDATE, 'MM')` no longer reaches the numeric TRUNC below and fails as VALUE_ERROR (#112).
+   */
+  public static LocalDateTime trunc(LocalDateTime value, Object format) {
+    return isNull(value) || isNull(format) ? null : dateUnit(castDate(value), text(format), false);
+  }
+
+  public static LocalDateTime trunc(java.time.OffsetDateTime value, Object format) {
+    return isNull(value) || isNull(format) ? null : dateUnit(castDate(value), text(format), false);
+  }
+
+  /** `ROUND(d)` on a DATE: the nearest midnight, noon going up (#112). */
+  public static LocalDateTime round(LocalDateTime value) {
+    return value == null ? null : dateUnit(castDate(value), "DD", true);
+  }
+
+  /** `ROUND(d, 'MM')` on a DATE or TIMESTAMP (#112). */
+  public static LocalDateTime round(LocalDateTime value, Object format) {
+    return isNull(value) || isNull(format) ? null : dateUnit(castDate(value), text(format), true);
+  }
+
+  public static LocalDateTime round(java.time.OffsetDateTime value, Object format) {
+    return isNull(value) || isNull(format) ? null : dateUnit(castDate(value), text(format), true);
+  }
+
+  /**
+   * The start of the unit a date format names (TRUNC), or the nearer of that start and the next one (ROUND). The
+   * units and the half-way points, measured on Oracle 26ai with 2026-09-27 13:45:10 (a Sunday):
+   *
+   * <pre>
+   *   CC SCC                    2001-01-01; ROUND goes up from year 51 of the century
+   *   YYYY YEAR YYY YY Y ...    2026-01-01; up from July
+   *   IYYY IY I                 2025-12-29, the Monday of ISO week 1
+   *   Q                         2026-07-01; up from the 16th of the quarter's second month
+   *   MM MON MONTH RM           2026-09-01; up from the 16th
+   *   WW                        2026-09-24, the weekday of 1 January; IW 2026-09-21 (Monday); W 2026-09-22, the
+   *                             weekday of the 1st; D DY DAY 2026-09-27 (Sunday). ROUND: up from 3.5 days in
+   *   DD DDD J                  2026-09-27; up from noon
+   *   HH HH12 HH24              13:00; up from :30.   MI 13:45; up from :30 seconds
+   * </pre>
+   *
+   * Any other format is ORA-01821 (date format not recognized) in Oracle, and so it is here.
+   */
+  static LocalDateTime dateUnit(LocalDateTime d, String format, boolean round) {
+    String unit = format.toUpperCase(java.util.Locale.ROOT);
+    java.time.LocalDate day = d.toLocalDate();
+    LocalDateTime start;
+    LocalDateTime next;
+    switch (unit) {
+      case "CC", "SCC" -> {
+        int first = (d.getYear() - 1) / 100 * 100 + 1;
+        start = LocalDateTime.of(first, 1, 1, 0, 0);
+        next = start.plusYears(100);
+        if (round) return d.getYear() - first >= 50 ? next : start;
+        return start;
+      }
+      case "SYYYY", "YYYY", "YEAR", "SYEAR", "YYY", "YY", "Y" -> {
+        start = day.withDayOfYear(1).atStartOfDay();
+        next = start.plusYears(1);
+        if (round) return d.getMonthValue() >= 7 ? next : start;
+        return start;
+      }
+      case "IYYY", "IY", "I" -> {
+        start = isoYearStart(day.get(java.time.temporal.IsoFields.WEEK_BASED_YEAR));
+        next = isoYearStart(day.get(java.time.temporal.IsoFields.WEEK_BASED_YEAR) + 1);
+      }
+      case "Q" -> {
+        int firstMonth = (d.getMonthValue() - 1) / 3 * 3 + 1;
+        start = LocalDateTime.of(d.getYear(), firstMonth, 1, 0, 0);
+        next = start.plusMonths(3);
+        if (round) return !d.isBefore(start.plusMonths(1).withDayOfMonth(16)) ? next : start;
+        return start;
+      }
+      case "MONTH", "MON", "MM", "RM" -> {
+        start = day.withDayOfMonth(1).atStartOfDay();
+        next = start.plusMonths(1);
+        if (round) return d.getDayOfMonth() >= 16 ? next : start;
+        return start;
+      }
+      case "WW" -> {
+        start = weekFrom(day, day.withDayOfYear(1).getDayOfWeek());
+        next = start.plusDays(7);
+      }
+      case "IW" -> {
+        start = weekFrom(day, java.time.DayOfWeek.MONDAY);
+        next = start.plusDays(7);
+      }
+      case "W" -> {
+        start = weekFrom(day, day.withDayOfMonth(1).getDayOfWeek());
+        next = start.plusDays(7);
+      }
+      case "DAY", "DY", "D" -> {
+        // the first day of the week is the territory's: AMERICA's Sunday, which the comparison sessions use
+        start = weekFrom(day, java.time.DayOfWeek.SUNDAY);
+        next = start.plusDays(7);
+      }
+      case "DDD", "DD", "J" -> {
+        start = day.atStartOfDay();
+        next = start.plusDays(1);
+      }
+      case "HH", "HH12", "HH24" -> {
+        start = d.truncatedTo(java.time.temporal.ChronoUnit.HOURS);
+        next = start.plusHours(1);
+      }
+      case "MI" -> {
+        start = d.truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+        next = start.plusMinutes(1);
+      }
+      default -> throw new IllegalArgumentException("ORA-01821: date format not recognized: " + format);
+    }
+    if (!round) return start;
+    // half-way or later goes to the next unit: noon for a day, 3.5 days for a week, 30 seconds for a minute
+    long toNext = java.time.Duration.between(d, next).getSeconds();
+    long fromStart = java.time.Duration.between(start, d).getSeconds();
+    return fromStart >= toNext ? next : start;
+  }
+
+  private static LocalDateTime weekFrom(java.time.LocalDate day, java.time.DayOfWeek first) {
+    return day.with(java.time.temporal.TemporalAdjusters.previousOrSame(first)).atStartOfDay();
+  }
+
+  private static LocalDateTime isoYearStart(int isoYear) {
+    return java.time.LocalDate.of(isoYear, 1, 4).with(java.time.temporal.TemporalAdjusters.previousOrSame(
+        java.time.DayOfWeek.MONDAY)).atStartOfDay();
+  }
+
   /** TRUNC(n, places): toward zero at that many decimals (a negative count truncates left of the point). */
   public static BigDecimal trunc(Object value, Object places) {
     if (isNull(value) || isNull(places)) return null;
@@ -678,9 +805,25 @@ public final class Plsql {
     return out.toString();
   }
 
-  /** `TRIM(x)`: both ends, spaces only; an empty result is NULL as in Oracle. */
+  /**
+   * `TRIM(x)`: both ends, the blank (U+0020) only; an empty result is NULL as in Oracle. Java's strip() took every
+   * Unicode space as well: `TRIM(CHR(10)||'a'||CHR(9))` is `\na\t` on Oracle 26ai and `TRIM('　a　')` keeps its
+   * full-width spaces, where this gave `a` for both (#112).
+   */
   public static String trim(Object value) {
-    return isNull(value) ? null : emptyIsNull(text(value).strip());
+    return isNull(value) ? null : emptyIsNull(trimmed(text(value), " ", true, true));
+  }
+
+  /** The characters of {@code set} removed from the start and/or the end of {@code text}, by code point. */
+  private static String trimmed(String text, String set, boolean leading, boolean trailing) {
+    int[] points = text.codePoints().toArray();
+    java.util.Set<Integer> remove = new java.util.HashSet<>();
+    set.codePoints().forEach(remove::add);
+    int start = 0;
+    int end = points.length;
+    while (leading && start < end && remove.contains(points[start])) start++;
+    while (trailing && end > start && remove.contains(points[end - 1])) end--;
+    return new String(points, start, end - start);
   }
 
   /** A PLS_INTEGER target: `i := i + 1` goes through {@link #add} (which returns Object) and lands in an Integer. */
@@ -1187,12 +1330,23 @@ public final class Plsql {
     return BigDecimal.valueOf(System.nanoTime() / 10_000_000L);
   }
 
+  /** `RTRIM(x)`: the trailing blanks (U+0020) only, as {@link #trim} (#112: `RTRIM(' a '||CHR(9))` keeps the tab). */
   public static String rtrim(Object value) {
-    return isNull(value) ? null : emptyIsNull(text(value).stripTrailing());
+    return rtrim(value, " ");
+  }
+
+  /** `RTRIM(x, set)`: every trailing character that is in the set -- `RTRIM('xxaxx', 'x')` is `xxa`. */
+  public static String rtrim(Object value, Object set) {
+    return isNull(value) || isNull(set) ? null : emptyIsNull(trimmed(text(value), text(set), false, true));
   }
 
   public static String ltrim(Object value) {
-    return isNull(value) ? null : emptyIsNull(text(value).stripLeading());
+    return ltrim(value, " ");
+  }
+
+  /** `LTRIM(x, set)`: `LTRIM('xyxaxy', 'xy')` is `axy` (26ai). */
+  public static String ltrim(Object value, Object set) {
+    return isNull(value) || isNull(set) ? null : emptyIsNull(trimmed(text(value), text(set), true, false));
   }
 
   /**
@@ -1342,19 +1496,82 @@ public final class Plsql {
     return isNull(fill) ? null : padTo(value, length, text(fill), false);
   }
 
-  /** LPAD / RPAD: cut to the length when longer, padded with the fill repeated when shorter. */
+  /**
+   * LPAD / RPAD: cut to the length when longer, padded with the fill repeated when shorter. The length is Oracle's
+   * display width, not a count of characters: an East Asian wide or full-width character is 2 (#112). Where a wide
+   * character would straddle the length it is left out and a blank takes its column -- on the left for LPAD, on the
+   * right for RPAD. Measured on Oracle 26ai (AL32UTF8):
+   *
+   * <pre>
+   *   LPAD('あ',4,'*')   '**あ'      RPAD('あい',3)     'あ '       LPAD('あい',3)   ' あ'
+   *   LPAD('abc',6,'あ') ' あabc'    RPAD('abc',6,'あ') 'abcあ '    LPAD('あ',1,'*') ' '
+   *   LPAD('ab',5,'Ａ')  ' Ａab'     LPAD('ab',5,'ｶ')   'ｶｶｶab'     LPAD('ab',5,'★') '★★★ab'
+   * </pre>
+   */
   private static String padTo(Object value, Object length, String fill, boolean left) {
     if (isNull(value) || isNull(length) || fill.isEmpty()) return null;
     int size = num(length).setScale(0, java.math.RoundingMode.DOWN).intValue();
     if (size < 1) return null;
     int[] points = text(value).codePoints().toArray();
-    if (points.length >= size) return emptyIsNull(new String(points, 0, size));
+    StringBuilder body = new StringBuilder();
+    int width = 0;
+    for (int point : points) {
+      if (width + displayWidth(point) > size) break;
+      body.appendCodePoint(point);
+      width += displayWidth(point);
+    }
     StringBuilder filler = new StringBuilder();
-    int[] fillPoints = fill.codePoints().toArray();
-    for (int k = 0; k < size - points.length; k++) filler.appendCodePoint(fillPoints[k % fillPoints.length]);
-    String body = new String(points, 0, points.length);
-    return left ? filler + body : body + filler;
+    if (body.length() == text(value).length()) {
+      int[] fillPoints = fill.codePoints().toArray();
+      for (int k = 0; width + displayWidth(fillPoints[k % fillPoints.length]) <= size; k++) {
+        filler.appendCodePoint(fillPoints[k % fillPoints.length]);
+        width += displayWidth(fillPoints[k % fillPoints.length]);
+      }
+    }
+    String blanks = " ".repeat(size - width);
+    return left ? blanks + filler + body : body + filler.toString() + blanks;
   }
+
+  /**
+   * How many columns Oracle gives a character in LPAD / RPAD: 2 for Unicode's East Asian Width W and F, 1 for the
+   * rest -- the ambiguous ones (○ ※ ① ★ §), the half-width katakana, even a combining mark or a zero-width space.
+   * Each range below was checked on Oracle 26ai with a character of it (`LPAD('ab',5,UNISTR(...))`): all of W and
+   * F measured 2 and nothing else did. The table is Unicode 16.0's.
+   */
+  static int displayWidth(int point) {
+    int low = 0;
+    int high = WIDE.length / 2 - 1;
+    while (low <= high) {
+      int middle = (low + high) >>> 1;
+      if (point < WIDE[middle * 2]) high = middle - 1;
+      else if (point > WIDE[middle * 2 + 1]) low = middle + 1;
+      else return 2;
+    }
+    return 1;
+  }
+
+  // East Asian Width W and F, as [first, last] pairs (Unicode 16.0, generated with Python's unicodedata)
+  private static final int[] WIDE = {
+      0x1100, 0x115F, 0x231A, 0x231B, 0x2329, 0x232A, 0x23E9, 0x23EC, 0x23F0, 0x23F0, 0x23F3, 0x23F3, 0x25FD, 0x25FE,
+      0x2614, 0x2615, 0x2630, 0x2637, 0x2648, 0x2653, 0x267F, 0x267F, 0x268A, 0x268F, 0x2693, 0x2693, 0x26A1, 0x26A1,
+      0x26AA, 0x26AB, 0x26BD, 0x26BE, 0x26C4, 0x26C5, 0x26CE, 0x26CE, 0x26D4, 0x26D4, 0x26EA, 0x26EA, 0x26F2, 0x26F3,
+      0x26F5, 0x26F5, 0x26FA, 0x26FA, 0x26FD, 0x26FD, 0x2705, 0x2705, 0x270A, 0x270B, 0x2728, 0x2728, 0x274C, 0x274C,
+      0x274E, 0x274E, 0x2753, 0x2755, 0x2757, 0x2757, 0x2795, 0x2797, 0x27B0, 0x27B0, 0x27BF, 0x27BF, 0x2B1B, 0x2B1C,
+      0x2B50, 0x2B50, 0x2B55, 0x2B55, 0x2E80, 0x2E99, 0x2E9B, 0x2EF3, 0x2F00, 0x2FD5, 0x2FF0, 0x303E, 0x3041, 0x3096,
+      0x3099, 0x30FF, 0x3105, 0x312F, 0x3131, 0x318E, 0x3190, 0x31E5, 0x31EF, 0x321E, 0x3220, 0x3247, 0x3250, 0xA48C,
+      0xA490, 0xA4C6, 0xA960, 0xA97C, 0xAC00, 0xD7A3, 0xF900, 0xFAFF, 0xFE10, 0xFE19, 0xFE30, 0xFE52, 0xFE54, 0xFE66,
+      0xFE68, 0xFE6B, 0xFF01, 0xFF60, 0xFFE0, 0xFFE6, 0x16FE0, 0x16FE4, 0x16FF0, 0x16FF1, 0x17000, 0x187F7, 0x18800,
+      0x18CD5, 0x18CFF, 0x18D08, 0x1AFF0, 0x1AFF3, 0x1AFF5, 0x1AFFB, 0x1AFFD, 0x1AFFE, 0x1B000, 0x1B122, 0x1B132,
+      0x1B132, 0x1B150, 0x1B152, 0x1B155, 0x1B155, 0x1B164, 0x1B167, 0x1B170, 0x1B2FB, 0x1D300, 0x1D356, 0x1D360,
+      0x1D376, 0x1F004, 0x1F004, 0x1F0CF, 0x1F0CF, 0x1F18E, 0x1F18E, 0x1F191, 0x1F19A, 0x1F200, 0x1F202, 0x1F210,
+      0x1F23B, 0x1F240, 0x1F248, 0x1F250, 0x1F251, 0x1F260, 0x1F265, 0x1F300, 0x1F320, 0x1F32D, 0x1F335, 0x1F337,
+      0x1F37C, 0x1F37E, 0x1F393, 0x1F3A0, 0x1F3CA, 0x1F3CF, 0x1F3D3, 0x1F3E0, 0x1F3F0, 0x1F3F4, 0x1F3F4, 0x1F3F8,
+      0x1F43E, 0x1F440, 0x1F440, 0x1F442, 0x1F4FC, 0x1F4FF, 0x1F53D, 0x1F54B, 0x1F54E, 0x1F550, 0x1F567, 0x1F57A,
+      0x1F57A, 0x1F595, 0x1F596, 0x1F5A4, 0x1F5A4, 0x1F5FB, 0x1F64F, 0x1F680, 0x1F6C5, 0x1F6CC, 0x1F6CC, 0x1F6D0,
+      0x1F6D2, 0x1F6D5, 0x1F6D7, 0x1F6DC, 0x1F6DF, 0x1F6EB, 0x1F6EC, 0x1F6F4, 0x1F6FC, 0x1F7E0, 0x1F7EB, 0x1F7F0,
+      0x1F7F0, 0x1F90C, 0x1F93A, 0x1F93C, 0x1F945, 0x1F947, 0x1F9FF, 0x1FA70, 0x1FA7C, 0x1FA80, 0x1FA89, 0x1FA8F,
+      0x1FAC6, 0x1FACE, 0x1FADC, 0x1FADF, 0x1FAE9, 0x1FAF0, 0x1FAF8, 0x20000, 0x2FFFD, 0x30000, 0x3FFFD,
+  };
 
   /** COALESCE: the first argument that is not NULL. */
   public static Object coalesce(Object... values) {
@@ -1436,61 +1653,133 @@ public final class Plsql {
     return toDate(value, "DD-MON-RR");
   }
 
+  /**
+   * TO_DATE(text, format), read element by element as Oracle reads it (#112). Measured on Oracle 26ai, 2026-09-27:
+   *
+   * <ul>
+   *   <li>a numeric element takes up to its width in digits and fewer are fine: `TO_DATE('1-1-2026','DD-MM-YYYY')`
+   *       is 2026-01-01 and '2026-3-5 7:8:9' reads too. java.time asked for exactly two, and refused them;
+   *   <li>`YY` is a year of the current century -- `TO_DATE('01-JAN-99','DD-MON-YY')` is 2099-01-01. `RR` (and `RRRR`
+   *       given two digits) is the one that picks the century around the current year: 99 is 1999, 49 is 2049;
+   *   <li>what the format leaves out is the current year and month, day 1, midnight: `TO_DATE('2026','YYYY')` is
+   *       2026-09-01 in September, `TO_DATE('10:30','HH24:MI')` the 1st of this month at 10:30. Year and month come
+   *       from {@link #sysdate()}, the database clock, as Oracle's come from SYSDATE;
+   *   <li>punctuation in the format matches any punctuation: '2026/01/05' reads with 'YYYY-MM-DD'.
+   * </ul>
+   */
   public static LocalDateTime toDate(Object value, Object format) {
     if (isNull(value) || isNull(format)) return null;
     if (value instanceof LocalDateTime d) return d;
-    java.time.format.DateTimeFormatterBuilder builder = new java.time.format.DateTimeFormatterBuilder().parseCaseInsensitive();
-    appendOracleFormat(builder, text(format));
-    java.time.format.DateTimeFormatter formatter = builder
-        .parseDefaulting(java.time.temporal.ChronoField.HOUR_OF_DAY, 0)
-        .parseDefaulting(java.time.temporal.ChronoField.MINUTE_OF_HOUR, 0)
-        .parseDefaulting(java.time.temporal.ChronoField.SECOND_OF_MINUTE, 0)
-        .parseDefaulting(java.time.temporal.ChronoField.DAY_OF_MONTH, 1)
-        .toFormatter(java.util.Locale.ENGLISH);
+    String input = text(value).trim();
+    String model = text(format);
+    String f = model.toUpperCase(java.util.Locale.ROOT);
+    LocalDateTime now = sysdate();
+    int year = now.getYear();
+    int month = now.getMonthValue();
+    int day = 1;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+    boolean twelve = false;
+    Boolean afternoon = null;
+    int[] at = {0};
+    int i = 0;
     try {
-      return LocalDateTime.parse(text(value).trim(), formatter);
-    } catch (java.time.format.DateTimeParseException e) {
-      throw new ValueError("date " + text(value) + " does not match format " + text(format));
+      while (i < f.length()) {
+        String rest = f.substring(i);
+        if (rest.startsWith("YYYY") || rest.startsWith("RRRR")) {
+          int start = at[0];
+          int y = digits(input, at, 4);
+          year = rest.startsWith("RRRR") && at[0] - start <= 2 ? rr(y, now.getYear()) : y;
+          i += 4;
+        } else if (rest.startsWith("RR")) {
+          int start = at[0];
+          int y = digits(input, at, 4);
+          year = at[0] - start <= 2 ? rr(y, now.getYear()) : y;   // RR given four digits takes them as they are
+          i += 2;
+        } else if (rest.startsWith("YY")) {
+          year = now.getYear() / 100 * 100 + digits(input, at, 2);
+          i += 2;
+        } else if (rest.startsWith("MONTH") || rest.startsWith("MON")) {
+          month = monthName(input, at);
+          i += rest.startsWith("MONTH") ? 5 : 3;
+        } else if (rest.startsWith("MM")) {
+          month = digits(input, at, 2);
+          i += 2;
+        } else if (rest.startsWith("DD")) {
+          day = digits(input, at, 2);
+          i += 2;
+        } else if (rest.startsWith("HH24")) {
+          hour = digits(input, at, 2);
+          i += 4;
+        } else if (rest.startsWith("HH12") || rest.startsWith("HH")) {
+          hour = digits(input, at, 2);
+          twelve = true;
+          i += rest.startsWith("HH12") ? 4 : 2;
+        } else if (rest.startsWith("MI")) {
+          minute = digits(input, at, 2);
+          i += 2;
+        } else if (rest.startsWith("SS")) {
+          second = digits(input, at, 2);
+          i += 2;
+        } else if (rest.startsWith("AM") || rest.startsWith("PM")) {
+          String marker = input.substring(at[0], Math.min(at[0] + 2, input.length())).toUpperCase(java.util.Locale.ROOT);
+          if (!marker.equals("AM") && !marker.equals("PM")) throw new IllegalArgumentException("AM/PM");
+          afternoon = marker.equals("PM");
+          at[0] += 2;
+          i += 2;
+        } else if (Character.isLetterOrDigit(f.charAt(i))) {
+          throw new UnsupportedOperationException("TO_DATE format element not mapped: " + model.substring(i));
+        } else {
+          // a separator: any one punctuation or blank of the input stands for it, and a missing one is fine
+          if (at[0] < input.length() && !Character.isLetterOrDigit(input.charAt(at[0]))) at[0]++;
+          i++;
+        }
+      }
+      if (at[0] < input.length()) throw new IllegalArgumentException("input left over");   // ORA-01830
+      if (twelve) {
+        if (hour < 1 || hour > 12) throw new IllegalArgumentException("hour");
+        hour = hour % 12 + (Boolean.TRUE.equals(afternoon) ? 12 : 0);
+      }
+      return LocalDateTime.of(year, month, day, hour, minute, second);
+    } catch (RuntimeException e) {
+      if (e instanceof UnsupportedOperationException) throw e;
+      throw new ValueError("date " + text(value) + " does not match format " + model);
     }
   }
 
-  /**
-   * An Oracle date format model, element by element: the elements the examples and the corpus use. RR / YY take a
-   * two-digit year into the century around the current one (1950-2049 today), as Oracle's RR does -- java.time's
-   * `uu` would read 99 as 2099.
-   */
-  private static void appendOracleFormat(java.time.format.DateTimeFormatterBuilder builder, String oracle) {
-    String f = oracle.toUpperCase(java.util.Locale.ROOT);
-    int pivot = java.time.Year.now().getValue() / 100 * 100 - 50;
-    int i = 0;
-    while (i < f.length()) {
-      String rest = f.substring(i);
-      if (rest.startsWith("RRRR") || rest.startsWith("YYYY")) {
-        builder.appendPattern("uuuu");
-        i += 4;
-      } else if (rest.startsWith("RR") || rest.startsWith("YY")) {
-        builder.appendValueReduced(java.time.temporal.ChronoField.YEAR, 2, 2, pivot);
-        i += 2;
-      } else {
-        String[][] elements = {{"HH24", "HH"}, {"HH12", "hh"}, {"MONTH", "MMMM"}, {"MON", "MMM"}, {"MM", "MM"},
-            {"DD", "dd"}, {"MI", "mm"}, {"SS", "ss"}, {"AM", "a"}, {"PM", "a"}};
-        String[] hit = null;
-        for (String[] element : elements) {
-          if (rest.startsWith(element[0])) {
-            hit = element;
-            break;
-          }
-        }
-        if (hit != null) {
-          builder.appendPattern(hit[1]);
-          i += hit[0].length();
-        } else if (Character.isLetter(f.charAt(i))) {
-          throw new UnsupportedOperationException("TO_DATE format element not mapped: " + oracle.substring(i));
-        } else {
-          builder.appendLiteral(oracle.charAt(i++));
-        }
+  /** Up to {@code width} digits of the input from {@code at[0]}, at least one. */
+  private static int digits(String input, int[] at, int width) {
+    int start = at[0];
+    while (at[0] < input.length() && at[0] - start < width && Character.isDigit(input.charAt(at[0]))) at[0]++;
+    if (at[0] == start) throw new IllegalArgumentException("a number was expected at " + start);
+    return Integer.parseInt(input.substring(start, at[0]));
+  }
+
+  /** RR: a two-digit year into the century that puts it nearest the current year (Oracle's rule for RR). */
+  private static int rr(int twoDigits, int currentYear) {
+    int century = currentYear / 100 * 100;
+    boolean currentLow = currentYear % 100 < 50;
+    if (currentLow) return twoDigits < 50 ? century + twoDigits : century - 100 + twoDigits;
+    return twoDigits < 50 ? century + 100 + twoDigits : century + twoDigits;
+  }
+
+  /** A month's English name, full or its first three letters, in any case: 'January' and 'jan' are both 1. */
+  private static int monthName(String input, int[] at) {
+    String rest = input.substring(at[0]).toUpperCase(java.util.Locale.ROOT);
+    for (java.time.Month month : java.time.Month.values()) {
+      if (rest.startsWith(month.name())) {
+        at[0] += month.name().length();
+        return month.getValue();
       }
     }
+    for (int m = 0; m < MONTHS.length; m++) {
+      if (rest.startsWith(MONTHS[m])) {
+        at[0] += 3;
+        return m + 1;
+      }
+    }
+    throw new IllegalArgumentException("not a month");
   }
 
   /** ADD_MONTHS: the last day of a month stays the last day (31-JAN + 1 month is 28/29-FEB, 28-FEB + 1 is 31-MAR). */
