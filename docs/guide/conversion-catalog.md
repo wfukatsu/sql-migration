@@ -444,7 +444,7 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | IN 引数 | メソッドの引数 | なし | |
 | OUT / IN OUT 引数 | 結果の record `<Name>Result` を返す。IN OUT は引数でもある | なし | 例外で抜けたときは record を返さないので、呼び出し側に書きかけの値が見えません（生成で確認） |
 | function の戻り値 | メソッドの戻り値。OUT 引数もある function は `<Name>Result(returned, ...)` | なし | |
-| 引数の既定値（`DEFAULT`） | 呼び出し文でも式の中の function 呼び出しでも、省いた引数に既定値を補って渡す | なし | 補えるのは既定値がリテラル（NULL・数・文字列・TRUE / FALSE）のときだけです。`DEFAULT SYSDATE` のような式を省くと、その文を断ります（生成で確認） |
+| 引数の既定値（`DEFAULT`） | 呼び出し文でも式の中の function 呼び出しでも、省いた引数に既定値を補って渡す。リテラル（NULL・数・文字列・TRUE / FALSE）はそのまま書き、式（`DEFAULT SYSDATE`、`DEFAULT pkg.c_limit`、`DEFAULT next_no()`）は呼ばれる側の Service に作る `defaultOf<Routine><引数>()` を呼んで渡す | 省いた `DEFAULT SYSDATE` は、呼ぶ側の時計の読みとして SEM-007 に数える（呼び出し文のとき） | Oracle と同じく、省いた呼び出しのたびに、呼ばれる側の宣言の場所の名前で評価します。すべての引数に既定値がある function は、括弧なしの呼び出し（`pkg.label \|\| 'x'`）でも補います。package の**変数**を既定値に持つもの（`DEFAULT g_level`）は、`packageState.carried` で運ぶと決めたときだけ、呼ぶ側が運んでいる値を渡します（省く呼び出しをする routine も運ぶ側になります）。決めていなければ、既定値が `USER` / `SYSTIMESTAMP` を読むとき、sequence を採るとき、routine を呼ぶ既定値を 2 つ以上省くとき（Oracle は評価の順を決めていない）は、今までどおりその文を断ります（生成で確認、#141） |
 | 名前付き引数（`p_a => 1`） | 呼び出し文でも式の中の function 呼び出しでも、引数の順に並べ替えて渡す | なし | 式の中で並べ替えるのは、同じ package の routine と、ほかの module の routine（オーバーロードの無いもの）です（生成で確認） |
 | オーバーロード | 版ごとに番号を付けたメソッド（`fmt` → `fmt1`、`fmt2`） | 呼び出しがどの版か決まらないと CALL-002（REVIEW） | 引数の数と名前だけで選びます。型だけが違う版は選べません（生成で確認） |
 | 宣言部の入れ子の procedure / function | 外側の変数を引数で運ぶ private メソッドに持ち上げる | なし | 入れ子のブロックの DECLARE に書いたものは持ち上げず、LOWER-001（REVIEW） |
@@ -852,7 +852,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | INTERVAL 型と、日時の差からの `EXTRACT` | `UnsupportedOperationException` | 判定は下がらない | 生成コードでは日時の差が日数（数値）です |
 | Oracle と同じ意味にできない正規表現（等価クラス `[[=e=]]`、`(?` で始まる括弧、量指定子の重ね） | 実行時に `UnsupportedOperationException` | 判定は下がらない | パターンは実行時に訳すので、生成時には分かりません |
 | `TO_CHAR` の 4 つ以外の書式、書式つき `TO_NUMBER` | 実行時に `UnsupportedOperationException` | 書式による | |
-| 式の中の function 呼び出しで、式の既定値（`DEFAULT SYSDATE` など）の引数を省く | 同上 | 判定は下がらない | リテラルの既定値は補います |
+| 既定値を省いた呼び出しのうち、既定値が package の変数（`packageState.carried` の決定が無いとき）、`USER` / `SYSTIMESTAMP`、sequence を読むもの、routine を呼ぶ既定値を 2 つ以上省くもの | 同上 | 判定は下がらない | ほかの式の既定値は、呼ばれる側の `defaultOf...()` で補います（単位の節を参照） |
 | 別の package の変数の直接参照（`pkg.var`） | `UnsupportedOperationException` | STATE-001 | `packageState.carried` を書いても断ります |
 | 入れ子ブロックの DECLARE の subprogram | 本体ごと断る | LOWER-001（REVIEW） | |
 | package 本体の初期化部 | 生成しない | STATE-002 | |

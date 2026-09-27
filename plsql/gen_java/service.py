@@ -63,6 +63,11 @@ _CAUGHT = "<caught>"
 # the count was set to 0 where that loop starts, and a loop nested in it must not start it again (#109)
 _COUNTING: "contextvars.ContextVar[bool]" = contextvars.ContextVar("counting", default=False)
 _HANDLER_ERROR: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("handler", default={})
+# #141: an argument left to an expression DEFAULT is passed as the callee's `defaultOf...()`. `_ordered` puts a marker
+# name in its place and records here the Java the marker stands for; `_expr` resolves it like any other name
+_DEFAULT_ARGUMENTS: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("default_arguments", default={})
+# the routine whose body is being generated: whose carried package variables an omitted DEFAULT may name (#141)
+_CALLER: "contextvars.ContextVar[M.Routine | None]" = contextvars.ContextVar("caller", default=None)
 
 
 @dataclass
@@ -97,6 +102,7 @@ def generate_module(module: M.Module, package: str, repository_package: str,
     file.add_import(f"{domain_package}.MigratedException")
 
     _MODULE.set(module)
+    _DEFAULT_ARGUMENTS.set({})
     _DOMAIN.set(domain_package)
     from .types import set_object_package
     set_object_package(domain_package)
@@ -148,6 +154,7 @@ def generate_module(module: M.Module, package: str, repository_package: str,
             # いままでどおり 1 つの method になる
             if not split.emit(f, module, routine, result, domain_package):
                 _method(f, module, routine, result, domain_package)
+            _default_methods(f, module, routine)
     return result
 
 
@@ -193,6 +200,8 @@ def _expression_callees(routine: M.Routine, module: "M.Module | None") -> dict[s
              for text in _expression_texts(statement)]
     # a declaration's initialiser calls too: `r My_Types.My_Rec := My_Types.Init_My_Rec();` (5-33)
     texts += [d.initial for d in routine.declarations if d.initial and d.declaration_kind != "cursor"]
+    # and a parameter's DEFAULT, which its defaultOf method evaluates (#141)
+    texts += [p.default for p in routine.parameters if p.default and not p.carried]
     for text in texts:
         for owner, name in _QUALIFIED.findall(_STRING.sub("''", text or "")):
             target = modules.get(owner.lower())
@@ -613,6 +622,7 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
         parameters.append("AuditContext audit")
 
     visibility = "public" if routine.visibility == "public" else "private"
+    _CALLER.set(routine)
     _ROWCOUNT_SEEN.set(False)
     _REFUSES_LATER.set(_refuses_somewhere(routine, result))
     _source_comment(file, routine)
@@ -2121,13 +2131,14 @@ def _positional(statement: M.Call, callee: M.Routine | None) -> list[str]:
     `put(p_note => 'x', p_id => 1)` was rendered as it stood, which is not Java -- and named notation is what
     tells two overloads apart. A parameter left to its DEFAULT is filled with the default when it is a literal."""
     return _ordered(list(statement.arguments), callee, statement.callee,
-                    list(callee.parameters) if callee is not None else None)
+                    list(callee.parameters) if callee is not None else None, caller=_CALLER.get())
 
 
 def _ordered(arguments: list[str], callee: M.Routine | None, where: str,
-             parameters: "list[M.Parameter] | None") -> list[str]:
+             parameters: "list[M.Parameter] | None", caller: "M.Routine | None" = None) -> list[str]:
     """`_positional` for a call statement and for a call inside an expression (#126): the arguments in the order
-    of `parameters`, named ones placed by name, a literal DEFAULT written out for one left out."""
+    of `parameters`, named ones placed by name, a literal DEFAULT written out for one left out, and an expression
+    DEFAULT passed as the callee's `defaultOf...()` (#141)."""
     if not any(NAMED_ARGUMENT.match(a) for a in arguments) and (
             callee is None or len(arguments) >= len(parameters)):
         return list(arguments)
@@ -2138,6 +2149,7 @@ def _ordered(arguments: list[str], callee: M.Routine | None, where: str,
              for a in arguments if NAMED_ARGUMENT.match(a)}
     taken = list(parameters)[len(positional):]
     out = list(positional)
+    calling = []   # the omitted DEFAULTs that call a routine, which may have side effects
     for parameter in taken:
         if parameter.name.lower() in named:
             out.append(named.pop(parameter.name.lower()))
@@ -2147,12 +2159,178 @@ def _ordered(arguments: list[str], callee: M.Routine | None, where: str,
             out.append(getattr(parameter, "carried_from", None) or parameter.name)
         elif parameter.default is not None and LITERAL_DEFAULT.match(parameter.default.strip()):
             out.append(parameter.default.strip())
+        elif parameter.default is not None:
+            out.append(_default_argument(callee, parameter, caller, where))
+            if _calls_a_routine(parameter.default):
+                calling.append(parameter.name)
         else:
             # a parameter left to its default: the generated method has no default to fall back on
             raise Untranslatable([f"{parameter.name} is left to its default"], where)
+    if len(calling) > 1:
+        # Oracle does not say in which order it evaluates the defaults; two with side effects could run either way
+        raise Untranslatable([f"{', '.join(calling)} are left to DEFAULTs that call routines, and the order Oracle "
+                              "evaluates them in is not defined"], where)
     if named:
         raise Untranslatable([f"no parameter named {', '.join(named)}"], where)
     return out
+
+
+_CALL_IN_TEXT = re.compile(r"([A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)*)\s*\(")
+
+
+def _calls_a_routine(text: str) -> bool:
+    """Whether a DEFAULT calls something other than a built-in (whose value depends on nothing but its arguments)."""
+    from .expr import FUNCTIONS
+
+    return any(name.upper().split(".")[-1] not in FUNCTIONS for name in _CALL_IN_TEXT.findall(_STRING.sub("''", text)))
+
+
+def _default_argument(callee: M.Routine, parameter: M.Parameter, caller: "M.Routine | None", where: str) -> str:
+    """What a call passes for a parameter it leaves to an expression DEFAULT (#141).
+
+    Oracle evaluates the default at every call that leaves the argument out, in the scope of the callee's
+    declaration: `p_at DATE DEFAULT SYSDATE` reads the clock each time, `DEFAULT pkg.c_limit` reads a constant the
+    caller may not see, `DEFAULT next_id()` calls the function each time (docs 8-21). So the callee's Service has a
+    method that evaluates it, `defaultOf<Routine><Parameter>()`, and the caller calls it where the argument goes.
+
+    A package **variable** is session state (STATE-001). When the project decided the caller carries it
+    (packageState.carried) the caller holds its own copy under the same name and passes that; otherwise the call
+    is refused as before."""
+    variable = _package_variable_default(callee, parameter)
+    if variable is not None:
+        carried = next((p for p in (caller.parameters if caller is not None else [])
+                        if p.carried and variable and p.name.lower() == variable.lower()), None)
+        if carried is None:
+            raise Untranslatable([f"{parameter.name} is left to its default {parameter.default.strip()}, which reads a "
+                                  "package variable (STATE-001): passed only when limits.yaml packageState.carried "
+                                  "decides the caller carries it"], where)
+        return carried.carried_from or carried.name
+    method, reason = default_method(callee, parameter)
+    if method is None:
+        raise Untranslatable([f"{parameter.name} is left to its default {parameter.default.strip()}: {reason}"], where)
+    module = _MODULE.get()
+    owner = _owner_module(callee.id, module)
+    if owner is not None and (module is None or owner.lower() != module.name.lower()):
+        if split.runs_separately(callee.id):
+            raise Untranslatable([f"{parameter.name} is left to its default, and {callee.id} runs in a transaction "
+                                  "of its own: its Service is not injected here"], where)
+        java = f"{java_name(owner)}.{method}()"
+    else:
+        java = f"{method}()"
+    markers = _DEFAULT_ARGUMENTS.get()
+    marker = f"plsql$default#{len(markers) + 1}"
+    _DEFAULT_ARGUMENTS.set({**markers, marker: java})
+    return marker
+
+
+def _package_variable_default(callee: M.Routine, parameter: M.Parameter) -> str | None:
+    """The package variable a DEFAULT is (`DEFAULT g_level`, `DEFAULT pkg.g_level`); "" when it reads one inside a
+    larger expression, which is never passed; None when it reads none."""
+    module = _callee_module(callee)
+    if module is None or module.module_kind != "package":
+        return None
+    text = parameter.default.strip()
+    variables = {d.name.lower() for d in module.declarations if d.declaration_kind == "variable"}
+    head, _, tail = text.rpartition(".")
+    if (not head or head.lower() == module.name.lower()) and tail.lower() in variables:
+        return tail
+    bare = _STRING.sub("''", text)
+    if any(re.search(rf"(?<![\w$#]){re.escape(v)}(?![\w$#(])", bare, re.IGNORECASE) for v in variables):
+        return ""
+    return None
+
+
+def _callee_module(callee: M.Routine) -> "M.Module | None":
+    program = _PROGRAM.get()
+    modules = list(program.modules) if program else ([_MODULE.get()] if _MODULE.get() else [])
+    for module in modules:
+        if any(r is callee or r.id == callee.id for r in module.routines):
+            return module
+    return None
+
+
+def default_method_name(routine: M.Routine, parameter: M.Parameter) -> str:
+    return "defaultOf" + java_class_name(routine_stem(routine)) + java_class_name(parameter.name)
+
+
+def default_method(callee: M.Routine, parameter: M.Parameter) -> "tuple[str | None, str | None]":
+    """(`defaultOf...` when the callee's Service has it, the reason when it does not)."""
+    module = _callee_module(callee)
+    if module is None:
+        return None, "the routine is not in the program"
+    try:
+        _default_java(JavaFile(package="x", name="X", source=""), module, callee, parameter)
+    except Untranslatable as e:
+        return None, ", ".join(e.names)
+    return default_method_name(callee, parameter), None
+
+
+def _default_java(file: JavaFile, module: M.Module, routine: M.Routine, parameter: M.Parameter) -> str:
+    """The Java of a parameter's DEFAULT, in the scope of the routine's declaration (its unit's names, not its
+    locals and parameters), shaped for the parameter's Java type."""
+    text = parameter.default.strip()
+    if _package_variable_default(routine, parameter) is not None:
+        raise Untranslatable(["it reads a package variable (STATE-001)"], text)
+    # `pkg.c` inside pkg is the unit's own name: `c`
+    text = _own_qualifier(text, module)
+    # the callee's unit, whichever module is being generated: its names are what the default sees
+    outer, cached = _MODULE.get(), _CALLEES.get()
+    _MODULE.set(module)
+    try:
+        names = dict(_scope(routine, module))
+        spelled = _spelled_out(text, routine, module)
+    finally:
+        _MODULE.set(outer)
+        _CALLEES.set(cached)
+    for holder in list(routine.parameters) + list(routine.declarations):
+        names.pop(holder.name, None)
+        names.pop(holder.name.lower(), None)
+    if spelled != text:
+        raise Untranslatable(["it calls a routine that leaves its own arguments to their defaults"], text)
+    rendered = translate(text, names)
+    if rendered.unknown:
+        raise Untranslatable(rendered.unknown, text)
+    if rendered.audit:
+        raise Untranslatable(["it reads USER / SYSTIMESTAMP, which the caller's AuditContext supplies"], text)
+    if rendered.sequences:
+        raise Untranslatable(["it takes a sequence number"], text)
+    file.add_import(*rendered.imports)
+    value = _coerce(file, _fit_argument(file, rendered.java, parameter), signature_type(parameter.type).name)
+    expected = signature_type(parameter.type).name
+    if re.fullmatch(r"[A-Za-z_]\w*", value) and expected in ("String", "LocalDateTime", "Boolean", "OffsetDateTime"):
+        # a package constant whose `%TYPE` the field did not resolve is an Object field (`g_pref_type_logger`)
+        value = f"({expected}) {value}"
+    elif re.fullmatch(r"[A-Za-z_]\w*", value) and expected in ("Integer", "Long"):
+        file.add_import("com.scalar.migrate.plsql.Plsql")
+        value = f"Plsql.{'toInt' if expected == 'Integer' else 'toLong'}({value})"
+    return value
+
+
+def _own_qualifier(text: str, module: M.Module) -> str:
+    pattern = re.compile(rf"(?<![\w$#.]){re.escape(module.name)}\.(?=[A-Za-z])", re.IGNORECASE)
+    parts = re.split(r"('(?:[^']|'')*')", text)
+    return "".join(part if part.startswith("'") else pattern.sub("", part) for part in parts)
+
+
+def _default_methods(file: JavaFile, module: M.Module, routine: M.Routine) -> None:
+    """`defaultOf<Routine><Parameter>()` for each IN parameter whose DEFAULT is an expression (#141)."""
+    for parameter in routine.parameters:
+        if parameter.direction != "IN" or parameter.carried or parameter.default is None \
+                or LITERAL_DEFAULT.match(parameter.default.strip()):
+            continue
+        try:
+            java = _default_java(file, module, routine, parameter)
+        except Untranslatable:
+            continue   # a call that leaves it out is refused with the reason (`default_method`)
+        mapped = signature_type(parameter.type)
+        file.add_import(*mapped.imports)
+        visibility = "public" if routine.visibility == "public" else "private"
+        throws = " throws Exception" if _calls_a_routine(parameter.default) else ""
+        file.line()
+        file.comment(f"DEFAULT {' '.join(parameter.default.split())} of {routine.name}.{parameter.name}: evaluated "
+                     "at each call that leaves it out, in this unit's scope, as Oracle does (#141)")
+        with file.block(f"{visibility} {mapped.name} {default_method_name(routine, parameter)}(){throws}") as f:
+            f.line(f"return {java};")
 
 
 _CALL_NAME = re.compile(r"([A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)?)\s*\(")
@@ -2189,15 +2367,26 @@ def _spelled_out(text: str, routine: M.Routine, module: "M.Module | None") -> st
     call inside an expression went to the translator as written, and `scaled(p_x)` became a Java call one
     argument short -- javac refused it -- while `scaled(p_x, p_factor => 3)` was refused as an unknown name. A
     call that already passes every argument by position is left exactly as written."""
-    if not text or "(" not in text:
+    if not text:
         return text
     callees = _expression_routines(routine, module)
     if not callees:
         return text
-    return _fill_calls(text, callees)
+    return _fill_calls(text, callees, routine)
 
 
-def _fill_calls(text: str, callees: dict[str, M.Routine]) -> str:
+_BARE_NAME = re.compile(r"([A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)?)(?![\w$#.])(?!\s*(?:\(|=>|:=))")
+
+
+def _defaulted_function(callee: "M.Routine | None") -> bool:
+    """A function with parameters, every one of them IN with a DEFAULT: callable with no argument list at all."""
+    if callee is None or callee.return_type is None:
+        return False
+    own = [p for p in callee.parameters if not p.carried]
+    return bool(own) and all(p.direction == "IN" and p.default is not None for p in own)
+
+
+def _fill_calls(text: str, callees: dict[str, M.Routine], caller: "M.Routine | None" = None) -> str:
     out: list[str] = []
     index = 0
     while index < len(text):
@@ -2215,7 +2404,17 @@ def _fill_calls(text: str, callees: dict[str, M.Routine]) -> str:
             index = end + 1
             continue
         match = _CALL_NAME.match(text, index)
-        if match is None or (index > 0 and (text[index - 1].isalnum() or text[index - 1] in "_$#.:")):
+        after_name = index > 0 and (text[index - 1].isalnum() or text[index - 1] in "_$#.:")
+        bare = _BARE_NAME.match(text, index) if match is None and not after_name else None
+        if bare is not None and _defaulted_function(callees.get(bare.group(1).lower())):
+            # `pkg.label || 'x'`: a function whose parameters all have DEFAULTs, called without parentheses (#141)
+            name = bare.group(1)
+            callee = callees[name.lower()]
+            parameters = [p for p in callee.parameters if not (callee.enclosing and p.carried)]
+            out.append(f"{name}({', '.join(_ordered([], callee, name, parameters, caller=caller))})")
+            index = bare.end()
+            continue
+        if match is None or after_name:
             out.append(character)
             index += 1
             continue
@@ -2227,10 +2426,10 @@ def _fill_calls(text: str, callees: dict[str, M.Routine]) -> str:
             index += len(name)
             continue
         inner = text[match.end():close]
-        arguments = [_fill_calls(a, callees) for a in _split_arguments(inner)]
+        arguments = [_fill_calls(a, callees, caller) for a in _split_arguments(inner)]
         # a lifted local subprogram's carried variables are appended by the translator (`#extra`), not here
         parameters = [p for p in callee.parameters if not (callee.enclosing and p.carried)]
-        ordered = _ordered(arguments, callee, name, parameters)
+        ordered = _ordered(arguments, callee, name, parameters, caller=caller)
         if ordered == arguments and all(a == b for a, b in zip(arguments, _split_arguments(inner))):
             out.append(text[index:close + 1])
         else:
@@ -3134,7 +3333,9 @@ def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "Service
     """
     names = {**_scope(routine, module or _MODULE.get()), **_BLOCK_LOCALS.get(), **_LOOP_ROWS.get(),
              **_HANDLER_ERROR.get()}
+    written = text
     text = _spelled_out(text, routine, module or _MODULE.get())
+    names.update(_DEFAULT_ARGUMENTS.get())   # the arguments left to an expression DEFAULT (#141)
     names.update({f"{flag}%notfound": _flag_name(flag) for flag in _not_found_flags(routine)})
     for cursor in _general_cursors(routine):
         state = _cursor_state(cursor)
@@ -3145,7 +3346,8 @@ def _expr(file: JavaFile, text: str | None, routine: M.Routine, result: "Service
         if result is not None and name not in result.unknown_names:
             result.unknown_names.append(name)
     if rendered.unknown:
-        raise Untranslatable(rendered.unknown, text or "")
+        # the text as written, not with the markers standing for defaulted arguments (#141)
+        raise Untranslatable(rendered.unknown, (written if "plsql$default#" in (text or "") else text) or "")
     if rendered.sequences:
         # `v_id := seq.NEXTVAL` outside any SQL. Numbering belongs to the repository -- it is the one that is
         # given a `Sequences` (plan §9) -- so the service asks it, instead of reaching for a field it never had
