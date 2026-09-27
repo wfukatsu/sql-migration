@@ -92,11 +92,8 @@ corpus の外の routine を流す手順は [fixtures/plsql-external/](../fixtur
 
 ## 個別の SQL の移行例（`examples/`）
 
-| 文書 | 内容 |
-|---|---|
-| [顧客別受注ランキング](examples/order-ranking-scalardb-conversion.md) | CTE + ウィンドウ関数。明細を取得し、集計と順位付けを Java で行う（短い例） |
-| [部署別の月次受注集計](examples/dept-orders-scalardb-conversion.md) | `CONNECT BY` + CTE + ウィンドウ関数を、取得 + Java に分解する |
-| [同・性能を最大化する方法](examples/dept-orders-performance.md) | 読む行数を減らす設計と、fetch size・分離レベル・並列取得の調整 |
+`CONNECT BY` + CTE + ウィンドウ関数の SQL を、ScalarDB SQL での取得と Java での集計に分解した例と、その性能の調整を
+`examples/` に置いています。題材が顧客の SQL なので、公開はしていません（開発側のリポジトリだけにあります）。
 
 ## 検証レポート
 

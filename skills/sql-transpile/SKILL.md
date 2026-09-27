@@ -108,7 +108,7 @@ SQL を Source 方言で読んで AST に抽象化し、Target 方言または S
 ```bash
 .venv/bin/python skills/sql-transpile/scripts/transpile.py <入力.sql> \
   --source oracle --target scalardb --out-dir out/transpile --plan-dir out/transpile/plans \
-  --storage cassandra --expected-rows order_lines=1000000:1000
+  --storage cassandra --expected-rows orders=1000000:1000
 ```
 
 ### Step 3: 結果を読む
