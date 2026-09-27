@@ -97,7 +97,7 @@ class Expression:
 
 
 def translate(text: str | None, names: dict[str, str] | None = None, boolean_value: bool = False,
-              condition: bool = False) -> Expression:
+              condition: bool = False, as_text: bool = False) -> Expression:
     """Render one PL/SQL expression as Java. `names` maps PL/SQL identifiers to the Java ones in scope.
 
     `boolean_value`: the result lands in a PL/SQL BOOLEAN (an assignment, a RETURN, an initialiser) rather than
@@ -117,6 +117,9 @@ def translate(text: str | None, names: dict[str, str] | None = None, boolean_val
         is_true, _ = _render(tokens, scope, Expression(""), strict=True)
         is_false, _ = _render(tokens, scope, Expression(""), negate=True, strict=True)
         rendered = f"{HELPER}.bool3({is_true}, {is_false})"
+    if as_text and len(tokens) == 1 and tokens[0][0] == "name" and scope.get(f"{tokens[0][1].lower()}#text"):
+        # `DBMS_OUTPUT.PUT_LINE(t)`: the argument is written as text, as TO_CHAR(t) would write it (#94)
+        rendered = scope[f"{tokens[0][1].lower()}#text"].format(rendered)
     result.java = rendered
     if HELPER + "." in rendered:
         result.imports.add(HELPER_IMPORT)
@@ -420,28 +423,30 @@ class _Parser:
         self.result.imports.add(HELPER_IMPORT)
         return f"{HELPER}.neg({operand})"
 
-    def _binary_double(self, start: int) -> bool:
-        """Whether the operand parsed from `start` is one BINARY_DOUBLE local. It is a Double like a REAL local or a
-        NUMBER column read as one, and only the declaration says Oracle writes it as 4.0E+000 (#91)."""
+    def _as_text(self, start: int, rendered: str) -> str:
+        """The operand parsed from `start`, as the text Oracle writes for it when it is one local whose Java type does
+        not say which: a BINARY_DOUBLE is a Double like a REAL local or a NUMBER column read as one (4.0E+000, #91),
+        a TIMESTAMP a LocalDateTime like a DATE (26-SEP-26 09.30.00.500000 AM, #94). The declaration says, and the
+        service leaves the rendering under `name#text`."""
         if self.position != start + 1:
-            return False
+            return rendered
         kind, value = self.tokens[start]
-        return kind == "name" and f"{value.lower()}#binary_double" in self.scope
+        template = self.scope.get(f"{value.lower()}#text") if kind == "name" else None
+        return template.format(rendered) if template else rendered
 
     def parse_concat(self) -> str:
         start = self.position
         parts = [self.parse_arithmetic()]
-        binary = [self._binary_double(start)]
+        texts = [self._as_text(start, parts[0])]
         while self.peek() is not None and self.peek()[1] == "||":
             self.take()
             start = self.position
             parts.append(self.parse_arithmetic())
-            binary.append(self._binary_double(start))
+            texts.append(self._as_text(start, parts[-1]))
         if len(parts) == 1:
             return parts[0]
-        parts = [f"{HELPER}.binaryDouble({part})" if flag else part for part, flag in zip(parts, binary)]
         self.result.imports.add(HELPER_IMPORT)
-        return f"{HELPER}.concat({', '.join(parts)})"
+        return f"{HELPER}.concat({', '.join(texts)})"
 
     def parse_case(self) -> str:
         """`CASE x WHEN a THEN b ... ELSE c END` as a chain of ternaries.
@@ -601,14 +606,15 @@ class _Parser:
             return f"{HELPER}.sqlerrmOf({code})"
         if (plsql_name.upper() == "TO_CHAR" and self.position + 3 < len(self.tokens)
                 and self.tokens[self.position + 1][1] == "(" and self.tokens[self.position + 3][1] == ")"
-                and f"{self.tokens[self.position + 2][1].lower()}#binary_double" in self.scope):
-            # TO_CHAR(d) of a BINARY_DOUBLE local: 17 significant digits, 4.0E+000 (#91)
+                and f"{self.tokens[self.position + 2][1].lower()}#text" in self.scope):
+            # TO_CHAR(d) of a BINARY_DOUBLE (#91) or TIMESTAMP (#94) local, which its Java type cannot tell apart
             self.take()
             self.take()   # (
-            value = self.parse_or()
+            start = self.position
+            value = self._as_text(start, self.parse_or())
             self.take()   # )
             self.result.imports.add(HELPER_IMPORT)
-            return f"{HELPER}.binaryDouble({value})"
+            return value
         head, _, tail = plsql_name.partition(".")
         collection = self.scope.get(f"{head.lower()}#collection")
         constructor = self.scope.get(f"{plsql_name.lower()}#constructor")

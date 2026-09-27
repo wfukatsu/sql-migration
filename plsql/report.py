@@ -234,6 +234,9 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
     dblinks.rewrite(program, db_links)
     _record_row_limits(program, limits, boundaries)
 
+    from .nls import annotate as annotate_nls
+    annotate_nls(program)   # 書式なしで日付を文字にする所（#94）。スキーマが無くても言える
+
     if scalardb_schema is not None:
         from .capability import annotate, check
         from scalardb_migrate.schema import SchemaRegistry

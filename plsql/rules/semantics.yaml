@@ -165,6 +165,19 @@ rules:
     requiredTests:
       - concurrent_upsert
 
+  # 書式なしの TO_CHAR / || / PUT_LINE で日付・TIMESTAMP を文字にする所（#94）。生成コードは Oracle の既定の NLS
+  # （DD-MON-RR、AMERICAN）で書き、実 DB の比較も既定で流すので、一致しても移行元のセッション設定までは確かめていない。
+  # 既定の DD-MON-RR は月の名前を含み、書式に MON を書いた SEM-008 と同じく言語設定で変わるので、同じ REVIEW にした
+  - id: SEM-012
+    match: {statementKind: [SqlOperation, Expression], hasDiagnostic: IMPLICIT_DATE_TEXT}
+    decision: REVIEW
+    message: 日付・TIMESTAMP を書式なしで文字にしています。形は移行元のセッションの NLS_DATE_FORMAT / NLS_TIMESTAMP_FORMAT / NLS_DATE_LANGUAGE で決まり、生成コードは Oracle の既定（DD-MON-RR、AMERICAN）で書きます
+    remediation:
+      - 書式を明示する（TO_CHAR(d, 'YYYY-MM-DD') など）
+      - 移行元のセッションが既定の NLS 設定で動いていることを確かめて、そのまま受け入れる
+    requiredTests:
+      - equivalent_result
+
   - id: CUR-001
     match: {statementKind: [OpenCursor, Fetch, CloseCursor]}
     decision: REVIEW
