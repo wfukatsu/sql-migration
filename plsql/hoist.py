@@ -13,6 +13,15 @@ Only positions where the call was going to run exactly once, before the statemen
 assignment's expression, a call statement's arguments, a RAISE message, a RETURN expression and the first
 condition of an IF. An ELSIF condition or a loop condition runs conditionally or repeatedly, and hoisting would
 change when the OUT arguments are written; those stay refused by the generator, with the reason.
+
+Inside one of those positions, only a call the expression always evaluates is hoisted (#104). The right side of
+AND / OR is short-circuited, and a CASE branch or an argument of DECODE / NVL2 / COALESCE runs only when chosen:
+
+    IF a > 0 AND bump(c) > 0 THEN ...          -- a = 0: Oracle never calls bump, so c is not written
+
+Hoisting that call runs it every time. It is left where it is -- the generator refuses it with the reason -- and
+the statement carries CALL_NOT_HOISTED, which CALL-003 turns into REVIEW. So does any call left in an ELSIF or loop
+condition: before, those were refused in the generated code while the rules still said AUTO.
 """
 
 from __future__ import annotations
@@ -25,6 +34,11 @@ from .lower import overload_of
 NAME = re.compile(r"(?<![\w$#.:])([A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)?)")
 _LITERAL = re.compile(r"'(?:[^']|'')*'")
 PREFIX = "v_call_"
+# what makes the rest of an expression run only sometimes (#104). BETWEEN's AND is caught too; it only costs a
+# REVIEW, where missing a real AND would cost a wrong result
+_SHORT_CIRCUIT = re.compile(r"\b(AND|OR)\b", re.IGNORECASE)
+_CASE_WORD = re.compile(r"\b(CASE|END)\b", re.IGNORECASE)
+_CHOOSING = re.compile(r"\b(DECODE|NVL2|COALESCE|NVL|NULLIF)\s*\(", re.IGNORECASE)
 
 
 def rewrite(program: M.Program) -> None:
@@ -73,7 +87,47 @@ def _hoisted(statement: M.Statement, routine: M.Routine, module: M.Module, modul
         statement.expression = process(statement.expression)
     elif statement.kind == "If" and statement.branches:
         statement.branches[0].condition = process(statement.branches[0].condition)
+    _report_left(statement, routine, module, modules)
     return before
+
+
+def _report_left(statement: M.Statement, routine: M.Routine, module: M.Module,
+                 modules: dict[str, M.Module]) -> None:
+    """A call with OUT / IN OUT arguments still in an expression of the statement: one not always evaluated, or in
+    a position nothing hoists (an ELSIF or loop condition, a CASE selector). The generator refuses it; the rules
+    have to know too, or the routine stays AUTO around a refused call (#104)."""
+    texts = [getattr(statement, a, None) for a in ("expression", "condition", "selector", "message", "target")]
+    texts += [b.condition for b in getattr(statement, "branches", []) or []]
+    texts += list(getattr(statement, "arguments", []) or [])
+    left = sorted({name for text in texts if isinstance(text, str) and text
+                   for name in _out_calls(text, routine, module, modules)})
+    if left and not any(d.code == "CALL_NOT_HOISTED" for d in statement.diagnostics):
+        statement.add("WARN", "CALL_NOT_HOISTED",
+                      f"{', '.join(left)} は OUT / IN OUT 引数のある関数だが、式が必ず評価する位置にない（AND / OR の右辺、"
+                      f"CASE や DECODE の分岐、ELSIF やループの条件）。文に出すと条件が偽でも呼んで引数を書き換えるので、"
+                      f"出さずに残した（#104）")
+
+
+def _out_calls(text: str, routine: M.Routine, module: M.Module, modules: dict[str, M.Module]) -> list[str]:
+    masked = _LITERAL.sub(lambda m: "'" + "x" * (len(m.group(0)) - 2) + "'", text)
+    return [m.group(1) for m in NAME.finditer(masked) if _callee(m.group(1), routine, module, modules)]
+
+
+def _conditional(masked: str, at: int) -> bool:
+    """Whether the expression may finish without evaluating what starts at `at` (#104): it follows an AND / OR,
+    or it sits inside a CASE ... END or the arguments of DECODE / NVL2 / COALESCE / NVL / NULLIF."""
+    if _SHORT_CIRCUIT.search(masked, 0, at):
+        return True
+    depth = 0
+    for word in _CASE_WORD.finditer(masked, 0, at):
+        depth = depth + 1 if word.group(1).upper() == "CASE" else max(depth - 1, 0)
+    if depth:
+        return True
+    for choosing in _CHOOSING.finditer(masked, 0, at):
+        close_at = _matching(masked, choosing.end() - 1)
+        if close_at is None or close_at > at:
+            return True
+    return False
 
 
 def _callee(name: str, routine: M.Routine, module: M.Module, modules: dict[str, M.Module]) -> M.Routine | None:
@@ -103,8 +157,8 @@ def _replace(text: str, statement: M.Statement, routine: M.Routine, module: M.Mo
         if match.start() < position:
             continue
         callee = _callee(match.group(1), routine, module, modules)
-        if callee is None:
-            continue
+        if callee is None or _conditional(masked, match.start()):
+            continue  # a conditional call stays, and _report_left says so (#104)
         end = match.end()
         arguments: list[str] = []
         rest = masked[end:]

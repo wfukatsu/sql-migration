@@ -7,8 +7,10 @@
   is a query ordered by something, its first row, and a value for when there is none. The value is written in
   the original -- in the `%NOTFOUND` branch -- and losing it is the one way this rewrite can be wrong.
 * **C. counting the rows.** `OPEN c; LOOP FETCH c; EXIT WHEN c%NOTFOUND; n := n + 1; END LOOP; CLOSE c;`
-  is `SELECT COUNT(*)`. `COUNT` returns a row even when nothing matched (`SEM-004`), which is what the
-  original did too -- the counter was initialised before the loop -- so no `NO_DATA_FOUND` is introduced.
+  adds `SELECT COUNT(*)` to `n`. `COUNT` returns a row even when nothing matched (`SEM-004`), so no
+  `NO_DATA_FOUND` is introduced. It is `n := n + COUNT(*)`, not `n := COUNT(*)`: the loop added to whatever `n`
+  held, which may be an earlier loop's count, or NULL (NULL + 1 stays NULL). Only right after `n := 0` are the two
+  the same (#106).
 
 Both are recognised on the **statement sequence**, not on the cursor: the same cursor used a different way is
 a different shape, and a sequence that does anything else is left alone rather than guessed at. What is not
@@ -450,15 +452,38 @@ def _count(statements: list[M.Statement], index: int, routine: M.Routine, symbol
         # the cursor counts at most n rows; COUNT(*) returns one row, so the cap would no longer apply to
         # anything and the count would be of every matching row instead
         return None
-    operation = _operation(run[1], routine, _count_sql(query), [counter])
+    # the loop adds to what the counter held: an earlier loop's count, or NULL, which `NULL + 1` keeps. Only when
+    # the statement right before the OPEN sets it to 0 is `n := COUNT(*)` the same thing; otherwise the count goes
+    # into a local of its own and is added, as the BULK COLLECT count does (#106)
+    zeroed = index > 0 and statements[index - 1].kind == "Assignment" \
+        and (statements[index - 1].target or "").strip().lower() == counter.strip().lower() \
+        and re.fullmatch(r"\s*0\s*", statements[index - 1].expression or "") is not None
+    into = counter if zeroed else _free_count_name(routine)
+    operation = _operation(run[1], routine, _count_sql(query), [into])
     if operation is None:
         return None
     operation.cardinality = "EXACTLY_ONE"
+    if zeroed:
+        operation.add("INFO", "CUR_COUNT",
+                      f"cursor {cursor} counted its rows; replaced by COUNT(*). COUNT returns a row even when "
+                      f"nothing matched (SEM-004), and {counter} was set to 0 right before the loop, so "
+                      f"{counter} := COUNT(*) is what the loop left")
+        return ([operation], 3, cursor)
+    routine.declarations.append(M.Declaration(
+        id=f"{routine.id}#decl-{into}", kind="Declaration", name=into, source_range=run[1].source_range,
+        type=M.TypeRef(oracle="NUMBER", resolved="NUMBER", origin="inferred")))
+    if symbols.scopes.get(routine.id) is not None:
+        from .symbols import Symbol
+
+        symbols.scopes[routine.id].declare(Symbol(name=into, kind="variable", scope=routine.id,
+                                                  type=routine.declarations[-1].type))
     operation.add("INFO", "CUR_COUNT",
-                  f"cursor {cursor} counted its rows; replaced by COUNT(*). COUNT returns a row even when "
-                  f"nothing matched (SEM-004), which is what the loop did -- {counter} was initialised before "
-                  f"it -- so no NO_DATA_FOUND is introduced")
-    return ([operation], 3, cursor)
+                  f"cursor {cursor} counted its rows; replaced by COUNT(*) into {into}, added to {counter}. The loop "
+                  f"added to what {counter} held -- an earlier count, or NULL, which stays NULL -- and nothing "
+                  f"shows it was 0 (#106)")
+    total = M.Assignment(id=f"{run[1].id}sum", kind="Assignment", source_range=run[1].source_range,
+                         target=counter, expression=f"{counter} + {into}")
+    return ([operation, total], 3, cursor)
 
 
 def _counted(loop: M.Loop, cursor: str) -> str | None:

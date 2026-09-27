@@ -229,7 +229,7 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
     hoist.rewrite(program)
     # IDENTITY 列を INSERT に足す（採番は Sequences から）。trigger を織り込む前に行う: 織り込まれた trigger の INSERT も同じ
     from . import identity
-    identity.rewrite(program, schema)
+    identity.rewrite(program, schema, analysis.symbol_table())
     merge.rewrite(program, row_locks, schema, analysis.symbol_table())
     # #19: 割った routine の処理対象を、キー順に件数つきで繰り返し読む
     paging.rewrite(program, boundaries, schema, analysis.symbol_table())

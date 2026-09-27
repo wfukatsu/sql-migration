@@ -34,7 +34,7 @@ from sqlglot import exp
 from scalardb_migrate.converter import StatementConverter
 from scalardb_migrate.schema import SchemaRegistry
 
-from .columns import at_most_one_row, bind_columns, select_columns, selects_star
+from .columns import at_most_one_row, bind_columns, select_columns, selects_star, written_binds
 from .ir.model import BindVariable, SqlOperation
 from .source import Issue, SourceRange
 from .symbols import SymbolTable
@@ -513,7 +513,12 @@ def _collection_elements(tree: exp.Expression, scope: str, symbols: SymbolTable 
         index = arguments[0].name
         variable = f"{name}({index})"
         placeholder = _unique(f"{name}_{index}", found, variable)
-        element = (symbol.type.resolved or "").partition("TABLE OF ")[2] or None
+        # the element type alone: a VARRAY resolves to `TABLE OF NUMBER LIMIT 20`, and the partition kept the
+        # `LIMIT 20`, which types nothing (12-7)
+        from .gen_java.types import COLLECTION
+
+        of = COLLECTION.match((symbol.type.resolved or "").strip())
+        element = of.group("element").strip() if of else None
         found[placeholder] = BindVariable(name=placeholder, direction="IN", oracle_type=element,
                                           plsql_variable=variable)
         node.replace(exp.Placeholder(this=placeholder))
@@ -555,6 +560,7 @@ def attribute_columns(tree: exp.Expression, binds: list[BindVariable], operation
     by_bind = bind_columns(tree)
     _positional_insert_binds(tree, by_bind, registry, oracle)
     counts = _row_count_binds(tree)
+    written = written_binds(tree)
     for bind in binds:
         column = by_bind.get(bind.name)
         if bind.name in counts:
@@ -567,6 +573,8 @@ def attribute_columns(tree: exp.Expression, binds: list[BindVariable], operation
             bind.column = column
             bind.scalardb_type = _column_type(registry, tables, column)
             bind.column_oracle_type = _oracle_type(oracle, tables, column)
+            if bind.name in written:
+                bind.writes_column = True
     operation.selects_star = selects_star(tree)
     operation.into_columns = select_columns(tree)
     operation.into_types = [_column_type(registry, tables, c) if c else None for c in operation.into_columns]

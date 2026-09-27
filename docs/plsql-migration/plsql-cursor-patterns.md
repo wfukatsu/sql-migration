@@ -222,6 +222,19 @@ for (List<CollectOpenOrdersLoop3Row> vIds : Plsql.chunks(repository.collectOpenO
 **実測（2026-09-18、実 ScalarDB Cluster / `bulk_collect_open_orders`）**: Oracle と一致した
 （`p_count` = 2）。書き換える前は `OpenCursor is not translated` で止まっていた。
 
+### `SELECT ... BULK COLLECT INTO` と、それを回す `FORALL`（#14 / #109）
+
+直後に続く `FORALL i IN 1 .. v.COUNT` と組にして、行を回す cursor FOR ループにする（`BULK_CHUNKED`）。
+ループは行をそのまま回すので、**配列は埋まらず、`SQL%ROWCOUNT` はループが残した値になる**。だから
+次のときは組にしない（`BULK_NOT_FUSED`。組のまま `BULK-001` が REVIEW に留め、生成コードは全部の行を配列へ読む）:
+
+* 組の外で配列を読む（後の `v.COUNT` は、組にすると COLLECTION_IS_NULL だった）
+* 配列が routine の局所変数でない（引数・package 変数）
+* 組の後ろで `SQL%ROWCOUNT` / `SQL%BULK_ROWCOUNT` / `SQL%FOUND` / `SQL%NOTFOUND` を読む（外のループの次の回を含む）
+
+組にしたループの DML は件数を足し上げる（ループの前で 0 にする）。組にしない `FORALL` も要素ごとの件数を
+足し、後の `SQL%ROWCOUNT` は Oracle と同じく全要素の合計になる（最後の 1 回の件数だった）。
+
 ## G. `FORALL ... SAVE EXCEPTIONS`
 
 ```sql

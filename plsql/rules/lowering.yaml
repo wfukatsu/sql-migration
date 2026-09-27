@@ -32,6 +32,18 @@ rules:
     requiredTests:
       - equivalent_result
 
+  # #104: OUT / IN OUT 引数のある関数は、式が必ず評価する位置にあるときだけ文に出す（plsql/hoist.py）。AND / OR の右辺や
+  # CASE の分岐にあるものを出すと条件が偽でも呼んで引数を書き換えるので、出さずに残し、生成コードは断る
+  - id: CALL-003
+    match: {statementKind: Expression, hasDiagnostic: CALL_NOT_HOISTED}
+    decision: REVIEW
+    severity: critical
+    message: OUT / IN OUT 引数のある関数を、評価されるかどうかが条件で決まる位置で呼んでいます。文に出すと条件が偽でも呼んでしまうので出していません。生成コードはこの呼び出しを断っています
+    remediation:
+      - 条件を if に分けて、関数を呼ぶ枝の中で文として呼ぶ
+    requiredTests:
+      - equivalent_result
+
   - id: CALL-001
     match: {unresolvedCallee: true}
     decision: REVIEW

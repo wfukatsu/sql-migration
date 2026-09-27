@@ -1,5 +1,6 @@
 package com.scalar.migrate.runtime;
 
+import com.scalar.migrate.appside.OracleNumbers;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.Statement;
@@ -66,9 +67,11 @@ public final class OracleFunctions {
     boolean aLast = a.equals(a.with(TemporalAdjusters.lastDayOfMonth()));
     boolean bLast = b.equals(b.with(TemporalAdjusters.lastDayOfMonth()));
     if (a.getDayOfMonth() == b.getDayOfMonth() || (aLast && bLast)) return BigDecimal.valueOf(months);
-    double dayFraction = (a.getDayOfMonth() - b.getDayOfMonth()
-        + (d1.toLocalTime().toSecondOfDay() - d2.toLocalTime().toSecondOfDay()) / 86400.0) / 31.0;
-    return BigDecimal.valueOf(months + dayFraction);
+    // exactly, then rounded as a NUMBER is (#113): in double it was 1.4516129032258065 where Oracle 26ai gives
+    // MONTHS_BETWEEN(DATE '2026-03-15', DATE '2026-02-01') = 1.4516129032258064516129032258064516129
+    long seconds = months * 31 * 86400L + (a.getDayOfMonth() - b.getDayOfMonth()) * 86400L
+        + d1.toLocalTime().toSecondOfDay() - d2.toLocalTime().toSecondOfDay();
+    return OracleNumbers.divide(BigDecimal.valueOf(seconds), BigDecimal.valueOf(31 * 86400L));
   }
 
   /** NEXT_DAY(d, 'MONDAY'): the first named weekday strictly after d (time of day preserved). */
@@ -96,6 +99,8 @@ public final class OracleFunctions {
   /** Helper used by DATEDIFF rewrites of Oracle "date - date" (fractional days). */
   public static BigDecimal daysBetween(LocalDateTime a, LocalDateTime b) {
     if (a == null || b == null) return null;
-    return BigDecimal.valueOf(ChronoUnit.SECONDS.between(b, a) / 86400.0);
+    // exactly, then rounded as a NUMBER is, not in double (#113): 2026-03-15 10:00:01 - 2026-02-01 is
+    // 42.4166782407407407407407407407407407407 on Oracle 26ai
+    return OracleNumbers.divide(BigDecimal.valueOf(ChronoUnit.SECONDS.between(b, a)), BigDecimal.valueOf(86400));
   }
 }

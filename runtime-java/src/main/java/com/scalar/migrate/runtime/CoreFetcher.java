@@ -195,8 +195,12 @@ public class CoreFetcher implements Fetcher {
       case ">=": return ConditionBuilder.buildConditionalExpression(Values.column(pr.column, type, v), Operator.GTE);
       case "<": return ConditionBuilder.buildConditionalExpression(Values.column(pr.column, type, v), Operator.LT);
       case "<=": return ConditionBuilder.buildConditionalExpression(Values.column(pr.column, type, v), Operator.LTE);
-      case "LIKE": return ConditionBuilder.column(pr.column).isLikeText(v.toString());
-      case "NOT LIKE": return ConditionBuilder.column(pr.column).isNotLikeText(v.toString());
+      // Oracle's LIKE has no escape character and ScalarDB's default is `\`: the plan names ESCAPE '' for an
+      // Oracle pattern, or `a\_%` would not read the row `a\xb` (#103)
+      case "LIKE": return pr.escape == null ? ConditionBuilder.column(pr.column).isLikeText(v.toString())
+          : ConditionBuilder.column(pr.column).isLikeText(v.toString(), pr.escape);
+      case "NOT LIKE": return pr.escape == null ? ConditionBuilder.column(pr.column).isNotLikeText(v.toString())
+          : ConditionBuilder.column(pr.column).isNotLikeText(v.toString(), pr.escape);
       case "IS NULL": return ConditionBuilder.buildConditionalExpression(Values.column(pr.column, type, null), Operator.IS_NULL);
       case "IS NOT NULL": return ConditionBuilder.buildConditionalExpression(Values.column(pr.column, type, null), Operator.IS_NOT_NULL);
       default: return null; // BETWEEN etc.: residual engine handles it

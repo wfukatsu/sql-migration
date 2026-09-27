@@ -25,6 +25,7 @@ import re
 import sqlglot
 from sqlglot import exp
 
+from .identity import returned_local, stored_type, trigger_writing
 from .ir import model as M
 from .limits import RowLocks
 from .symbols import OracleSchema, Symbol, SymbolTable
@@ -40,15 +41,18 @@ def rewrite(program: M.Program, row_locks: RowLocks | None, schema: OracleSchema
     素の識別子＝列として読む——`SET stock_qty = v_rmw_1 + :qty` が再び「列を読む式」になり、
     割った意味が無くなる（実際そうなった）。
     """
+    from .triggers import registry
+
     locks = row_locks or RowLocks()
+    triggers = registry(program)
     for module in program.modules:
         for routine in module.routines:
             if not locks.decided(routine.id):
                 continue   # 決めた人がいない。ロックが落ちたままの書き換えは進めない
             before = len(routine.declarations)
-            routine.body = _sequence(routine.body, routine, schema)
+            routine.body = _sequence(routine.body, routine, schema, triggers)
             for handler in routine.exception_handlers:
-                handler.body = _sequence(handler.body, routine, schema)
+                handler.body = _sequence(handler.body, routine, schema, triggers)
             _declare(symbols, routine, routine.declarations[before:])
 
 
@@ -63,18 +67,18 @@ def _declare(symbols: SymbolTable | None, routine: M.Routine,
 
 
 def _sequence(statements: list[M.Statement], routine: M.Routine,
-              schema: OracleSchema | None) -> list[M.Statement]:
+              schema: OracleSchema | None, triggers: dict | None = None) -> list[M.Statement]:
     out: list[M.Statement] = []
     for statement in statements:
         for attribute in ("body", "else_body"):
             nested = getattr(statement, attribute, None)
             if nested:
-                setattr(statement, attribute, _sequence(nested, routine, schema))
+                setattr(statement, attribute, _sequence(nested, routine, schema, triggers))
         for branch in getattr(statement, "branches", []) or []:
-            branch.body = _sequence(branch.body, routine, schema)
+            branch.body = _sequence(branch.body, routine, schema, triggers)
         for handler in getattr(statement, "exception_handlers", []) or []:
-            handler.body = _sequence(handler.body, routine, schema)
-        replacement = _split(statement, routine, schema)
+            handler.body = _sequence(handler.body, routine, schema, triggers)
+        replacement = _split(statement, routine, schema, triggers)
         if statement.kind == "Loop" and statement.loop_kind == "forall":
             # `FORALL … RETURNING c BULK COLLECT INTO v` (#51): the collection holds what the whole FORALL
             # returned, so it is emptied before the loop and each written row is added to it
@@ -122,7 +126,7 @@ def _returned(statement: M.Statement, column: str, target: str, value: str, bulk
 
 
 def _split(statement: M.Statement, routine: M.Routine,
-           schema: OracleSchema | None) -> list[M.Statement] | None:
+           schema: OracleSchema | None, triggers: dict | None = None) -> list[M.Statement] | None:
     """`UPDATE t SET c = <c を読む式> WHERE …` を、読んでから書く形にする。割れなければ None。
 
     WHERE が主キーを全部決めている（1 行）なら、読みの文を前に置く（元からの形）:
@@ -139,8 +143,11 @@ def _split(statement: M.Statement, routine: M.Routine,
           UPDATE t SET c = <式（c を r_rmw_1.c に）> WHERE <主キー> = r_rmw_1.<主キー>;
         END LOOP;
 
-    `RETURNING c INTO v` が付いていれば、書いた値は計算した式そのものなので、UPDATE のあとに `v := <式>` を
-    足して RETURNING を落とす（ScalarDB SQL に RETURNING は無い）。
+    `RETURNING c INTO v` が付いていれば、書いた値は計算した式そのものなので、RETURNING を落とす（ScalarDB SQL に
+    RETURNING は無い）。Oracle が返すのは**行に入った値**である（#110）: 式の値を列の型の変数 `v_ret_N` に入れて
+    （NUMBER(p,s) の丸め・CHAR の空白埋め・桁の確認）それを書き、UPDATE のあとで `v := v_ret_N` とする。1 行の形では
+    行が無ければ代入しない（Oracle は INTO の変数を元のまま残す）。列の型の変換を再現できない列、BEFORE UPDATE
+    trigger が書き換える列、複数行の RETURNING INTO（Oracle では 2 行目で ORA-01422）は割らない。
     """
     if statement.kind != "SqlOperation" or (statement.sql_kind or "").upper() != "UPDATE":
         return None
@@ -190,8 +197,11 @@ def _split(statement: M.Statement, routine: M.Routine,
         return None
     if keyed and len(reads) != 1:
         return None   # 複数列の RMW。読みが複数要るので、まずは 1 つだけを扱う
+    before: list[M.Statement] = []   # the value each returned column is written with, in the column's type (#110)
     after: list[M.Statement] = []
-    unwritten: list[tuple[str, str]] = []   # RETURNING of a column the UPDATE does not write: (column, target)
+    # RETURNING of a column the UPDATE does not write: (column, where the read puts it -- a local of the
+    # routine's, handed to the target after the UPDATE (#110))
+    unwritten: list[tuple[str, str]] = []
     if returning is not None:
         columns = [c.strip().lower() for c in returning.group("columns").split(",")]
         targets = [t.strip() for t in returning.group("targets").split(",")]
@@ -205,19 +215,50 @@ def _split(statement: M.Statement, routine: M.Routine,
             else:
                 # a column the statement does not write has the same value after it as before, so the read that
                 # precedes the write can return it (#52, samples/oracle-samples b06_3: `RETURNING last_name`)
-                unwritten.append((column, target))
+                unwritten.append((column, ""))
                 pending.append((column, target, None))
-        if unwritten and not keyed and not bulk:
-            return None   # a multi-row UPDATE ... RETURNING INTO is ORA-01422 in Oracle anyway
+        if not keyed and not bulk:
+            # a multi-row UPDATE ... RETURNING INTO is ORA-01422 in Oracle from the second row, and the loop would
+            # assign the targets once per row instead (#110)
+            return _not_hoisted(statement, columns, "WHERE が主キーを決めていない（Oracle では 2 行目で ORA-01422）")
+        if keyed and bulk and unwritten:
+            return None   # would read into the collection itself; not a shape the samples need
+        trigger = trigger_writing(triggers, table, "UPDATE", columns)
+        if trigger is not None:
+            return _not_hoisted(statement, columns, f"BEFORE UPDATE trigger {trigger} が書き換える")
+        types = {c: stored_type(schema, table, c) for c, _, v in pending if v is not None}
+        if not all(types.values()):
+            return _not_hoisted(statement, columns, f"{table}.{', '.join(c for c, t in types.items() if not t)} の型"
+                                                    f"では、行に入る値を計算できない")
+        stored: dict[str, str] = {}   # column -> the local holding the value written into it
         for column, target, value in pending:
-            if value is None and not keyed:
+            if value is not None and column not in stored:
+                local = returned_local(routine, types[column], statement).name
+                before.append(M.Assignment(id=f"{statement.id}stored_{column}", kind="Assignment",
+                                           source_range=statement.source_range, target=local, expression=value))
+                written[column].set("expression", exp.column(local))
+                stored[column] = local
+            if column in stored:
+                value = stored[column]
+            elif not keyed:
                 value = f"{row}.{column}"          # the loop's row holds it (added to the query below)
+            else:
+                # read before the UPDATE into a local, not into the target: when the UPDATE fails, a handler
+                # still sees what the target held (#110)
+                value = next((v for c, v in unwritten if c == column and v), None)
+                if value is None:
+                    value = _free_name(routine, reads)
+                    routine.declarations.append(_declaration(routine, value, table, column, schema, statement))
+                    unwritten = [(c, value if c == column and not v else v) for c, v in unwritten]
             if value is not None:
                 after.extend(_returned(statement, column, target, value, bool(bulk)))
+        if keyed and after:
+            # no row: Oracle leaves the INTO targets as they were, and a RETURNING BULK COLLECT adds nothing (#110,
+            # as for DELETE ... RETURNING in #87)
+            after = [M.If(id=f"{statement.id}returned", kind="If", source_range=statement.source_range,
+                          branches=[M.Branch(condition="SQL%ROWCOUNT > 0", body=after)])]
         if bulk:
             statement.bulk_returned_into = list(dict.fromkeys(targets))
-    if keyed and bulk and unwritten:
-        return None   # would read into the collection itself; not a shape the samples need
     if keyed:
         column, variable = reads[0]
         routine.declarations.append(_declaration(routine, variable, table, column, schema, statement))
@@ -232,8 +273,7 @@ def _split(statement: M.Statement, routine: M.Routine,
         # その番号に `read` を足した形にする（`cancelStmt6` の相方が `cancelStmt6read`）
         return [M.SqlOperation(id=f"{statement.id}read", kind="SqlOperation", source_range=statement.source_range,
                                sql_kind="SELECT", original_sql=read, into_targets=[variable] + [t for _, t in unwritten],
-                               cardinality="AT_MOST_ONE"),
-                statement] + after
+                               cardinality="AT_MOST_ONE")] + before + [statement] + after
     columns = list(dict.fromkeys(list(key) + [c for c, _ in reads] + [c for c, _ in unwritten]))
     query = f"SELECT {', '.join(columns)} FROM {table} {where.sql(dialect='oracle')}"
     tree.set("where", exp.Where(this=exp.and_(*(exp.EQ(this=exp.column(k), expression=exp.column(k, table=row))
@@ -247,7 +287,15 @@ def _split(statement: M.Statement, routine: M.Routine,
     operation = M.SqlOperation(id=f"{statement.id}read", kind="SqlOperation", source_range=statement.source_range,
                                sql_kind="SELECT", original_sql=query, cardinality="MANY")
     return [M.Loop(id=f"{statement.id}rmw", kind="Loop", source_range=statement.source_range, loop_kind="cursor-for",
-                   variable=row, query=operation, body=[statement] + after, cursor=f"{row} IN ({query})")]
+                   variable=row, query=operation, body=before + [statement] + after, cursor=f"{row} IN ({query})")]
+
+
+def _not_hoisted(statement: M.Statement, columns: list[str], why: str) -> None:
+    """Leave the UPDATE whole, and say why its RETURNING was not turned into assignments (#110)."""
+    statement.add("WARN", "RETURNING_NOT_HOISTED",
+                  f"RETURNING {', '.join(columns)} を書く値の代入にしなかった: {why}。Oracle が返すのは行に入った値である"
+                  f"（#110）")
+    return None
 
 
 def _covers_key(condition: exp.Expression, key: list[str]) -> bool:

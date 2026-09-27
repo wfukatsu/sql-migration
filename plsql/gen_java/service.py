@@ -59,6 +59,9 @@ _LOOP_LABELS: "contextvars.ContextVar[frozenset[str]]" = contextvars.ContextVar(
 # `_HANDLER_ERROR` のキー。値は、いま中にいる catch の変数名（`e`、入れ子なら `e2` ...）。PL/SQL の名前と
 # ぶつからないよう、識別子にならない文字を入れてある
 _CAUGHT = "<caught>"
+# inside a loop whose DML adds to `rowCount` (a multi-row UPDATE split into a loop, a fused BULK COLLECT + FORALL):
+# the count was set to 0 where that loop starts, and a loop nested in it must not start it again (#109)
+_COUNTING: "contextvars.ContextVar[bool]" = contextvars.ContextVar("counting", default=False)
 _HANDLER_ERROR: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("handler", default={})
 
 
@@ -110,6 +113,10 @@ def generate_module(module: M.Module, package: str, repository_package: str,
     file.comment(
         f"{module.name} ({module.module_kind}).\n"
         "The transaction boundary belongs to the caller: no method here begins, commits or rolls back.")
+    if getattr(module, "initialisation", None):
+        # #108: what Oracle ran before the first call is not here; say so where a reader of the class looks
+        file.comment("NOT MIGRATED: the package body's initialisation section, which Oracle runs once per session "
+                     "before the first call (STATE-002):\n" + module.initialisation)
     with file.block(f"public class {name}") as f:
         f.line(f"private final {java_class_name(module.name)}Repository repository;")
         for trigger in injected:
@@ -394,6 +401,29 @@ def _collection_kind(holder) -> str | None:
     return "map" if re.search(r"INDEX\s+BY\s+(?:N?VARCHAR2?|PLS_INTEGER|BINARY_INTEGER|SIMPLE_INTEGER)\b", resolved) else "list"
 
 
+def _mutable(resolved: str | None) -> bool:
+    """Whether a value of this PL/SQL type is a Java object something else can change under it: a collection (a List
+    or a Map), or a record holding one. PL/SQL copies these on assignment; Java shares them (#111)."""
+    name = java_type(resolved).name if resolved else ""
+    if name.startswith(("List<", "Map<")) or name in ("List", "Map"):
+        return True
+    return bool(RECORD_TEXT.match(resolved or "")) and any(_mutable(t) for _, t in record_columns(resolved or ""))
+
+
+# a value nothing else holds yet: copying it again would only cost
+_FRESH = re.compile(r"^(?:null|new\s|Plsql\.(?:table|indexBy|column|indexed|copy)\()")
+
+
+def _copied(file: JavaFile, value: str, resolved: str | None) -> str:
+    """`n2 := n1` copies the collection in PL/SQL (and a record holding one): `n2 = n1;` made the two names one List,
+    so `n2(1) := 9` changed n1 too (#111). Plsql.copy copies deeply -- a collection of collections, a record's
+    collection field."""
+    if not _mutable(resolved) or _FRESH.match(value.strip()):
+        return value
+    file.add_import("com.scalar.migrate.plsql.Plsql")
+    return f"Plsql.copy({value})"
+
+
 def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]:
     """PL/SQL name -> Java name for everything visible inside the method, siblings included.
 
@@ -465,6 +495,14 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
         # resolved, so the name is left out and the expression is reported instead of compiled against nothing
         from ..lower import overload_of
         names.update({r.name: java_name(r.name) for r in module.routines if overload_of(r) is None})
+        # a sibling function with OUT / IN OUT arguments returns its Result record, which an expression cannot
+        # compare or add: one left in an expression (plsql.hoist would not move it, #104) is refused with the reason
+        # instead of compiling into `Plsql.gt(bump(c), 0)` against a record
+        for r in module.routines:
+            if overload_of(r) is None and r.return_type is not None \
+                    and any(p.direction in ("OUT", "IN OUT") for p in r.parameters):
+                names[f"{r.name.lower()}#refused"] = ("OUT / IN OUT 引数のある関数は式の中では呼べない。"
+                                                      "文に分けて Result record から受ける")
         # the Java types of a sibling's IN parameters, so that a call can hand a NUMBER parameter a BigDecimal.
         # `rank_of(v_balance)` with `v_balance members.balance%TYPE` (NUMBER(10) -> Long) did not compile: the
         # method takes BigDecimal (samples/tutorial, 2026-09-20). The key cannot clash with a PL/SQL name
@@ -621,6 +659,14 @@ def _emit_method(file: JavaFile, module: M.Module, routine: M.Routine, result: S
             if parameter.direction == "IN OUT":
                 # the method parameter itself is the local: `String pName = pName;` redeclared it and javac
                 # refused the whole class (2026-09-24, samples/oracle-samples normalize_name)
+                if _mutable(parameter.type.resolved if parameter.type else None) and not parameter.nocopy \
+                        and not parameter.carried:
+                    # PL/SQL passes an IN OUT collection by value (without NOCOPY): the routine changes a copy,
+                    # and the caller gets it back only when the routine returns normally -- in the result record,
+                    # like any OUT. Changing the caller's List or Map in place left it changed when the routine
+                    # raised (#111). A carried package variable is the package's own state and is not copied
+                    f.add_import("com.scalar.migrate.plsql.Plsql")
+                    f.line(f"{java_name(parameter.name)} = Plsql.copy({java_name(parameter.name)});")
                 continue
             f.line(f"{_holder_java_type(file, parameter.type)} {java_name(parameter.name)} = "
                    f"{_record_default(parameter.type, f) or 'null'};")
@@ -746,7 +792,10 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
             f.add_import("com.scalar.migrate.plsql.Plsql")
             errm = f"Plsql.sqlerrm({variable}.code(), {variable}.getMessage())"
             backtrace = f"Plsql.errorBacktrace({variable})"
-            _HANDLER_ERROR.set({"SQLCODE": f"{variable}.code()", "sqlcode": f"{variable}.code()",
+            # `Plsql.sqlcode`, not the class's number: a PL/SQL-declared exception without EXCEPTION_INIT is +1 in
+            # Oracle, and its class carries a pseudo-code only the registry needs (`exception._user_code`, #114)
+            code = f"Plsql.sqlcode({variable}.code())"
+            _HANDLER_ERROR.set({"SQLCODE": code, "sqlcode": code,
                                 "SQLERRM": errm, "sqlerrm": errm,
                                 "DBMS_UTILITY.FORMAT_ERROR_BACKTRACE": backtrace,
                                 "dbms_utility.format_error_backtrace": backtrace,
@@ -810,7 +859,10 @@ _HELPER_ERRORS = (("ZERO_DIVIDE", "ZeroDivide", -1476),
                   ("CURSOR_ALREADY_OPEN", "CursorAlreadyOpen", -6511),
                   ("CASE_NOT_FOUND", "CaseNotFound", -6592),
                   (None, "NumericOverflow", -1426),
-                  (None, "NoReturn", -6503))
+                  (None, "NoReturn", -6503),
+                  # a repository's write of a value too long or too precise for its column (#115)
+                  (None, "ValueTooLarge", -12899),
+                  (None, "PrecisionTooLarge", -1438))
 
 
 # 移行先では起こりえない Oracle の誤り。いまのところ行ロックが取れないこと（ORA-54）だけである
@@ -958,6 +1010,28 @@ def _rebuilt(file: JavaFile, current: str, resolved: str, record: str, path: lis
 RECORD_TEXT = re.compile(r"^\s*RECORD\(", re.IGNORECASE)
 
 
+def _field_type(resolved: str, path: list[str]) -> str | None:
+    """The declared type of `r.a.b` in a record type's text, or None."""
+    for name in path:
+        declared = next((t for c, t in record_columns(resolved or "") if c.lower() == name.lower()), None)
+        if declared is None:
+            return None
+        resolved = declared
+    return resolved
+
+
+def _element_type(resolved: str | None, depth: int = 1) -> str | None:
+    """The element type of a collection type's text, `depth` subscripts in (`TABLE OF TABLE OF NUMBER`, 2 -> NUMBER)."""
+    for _ in range(depth):
+        match = re.match(r"^\s*(?:TABLE|VARRAY\s*\(\s*\d+\s*\)|VARYING\s+ARRAY\s*\(\s*\d+\s*\))\s+OF\s+(.+?)"
+                         r"(?:\s+INDEX\s+BY\s+[\w$#]+(?:\s*\(\s*\d+\s*\))?)?\s*$",
+                         resolved or "", re.IGNORECASE | re.DOTALL)
+        if match is None:
+            return None
+        resolved = match.group(1)
+    return resolved
+
+
 def _element_record(resolved: str | None) -> str | None:
     """The `RECORD(...)` a collection holds, when it holds records."""
     element = re.match(r"^\s*TABLE\s+OF\s+(RECORD\(.*\))(?:\s+INDEX\s+BY\s+.+)?$", resolved or "",
@@ -1062,6 +1136,7 @@ def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
                 if routine.id not in result.untranslated:
                     result.untranslated.append(routine.id)
                 return
+            rendered = _copied(file, rendered, declaration.type.resolved if declaration.type else None)   # (#111)
             file.line(f"{row} {_local(declaration.name)} = ({row}) {rendered};")
             return
         components = []
@@ -1124,6 +1199,8 @@ def _declaration(file: JavaFile, declaration: M.Declaration, routine: M.Routine,
             # constructor keeps the literal exact, which a double would not
             rendered = f'new BigDecimal("{rendered}")'
         rendered = _convert_variable(file, routine, declaration.initial, rendered, mapped.name)
+        # `n2 nt := n1;` starts n2 as a copy of n1 (#111)
+        rendered = _copied(file, rendered, declaration.type.resolved if declaration.type else None)
         initial = f" = {_constrain(file, _coerce(file, rendered, mapped.name), declaration.type)}"
     file.line(f"{mapped.name} {_local(declaration.name)}{initial};")
 
@@ -1256,6 +1333,7 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
             current = (f"(Plsql.exists({collection}, {key}) ? ({element}) Plsql.at({collection}, {key}) : "
                        f"{_empty_record(shape, element, file)})")
             value = _expr(file, statement.expression, routine, result)
+            value = _copied(file, value, _field_type(shape, element_field.group("path").split(".")))   # (#111)
             rebuilt = _rebuilt(file, current, shape, element, element_field.group("path").split("."), value)
             if rebuilt is None:
                 raise Untranslatable([f"assignment to collection element {written}"], written)
@@ -1283,6 +1361,8 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
             if len(subscripts) == 1:
                 declared = _COLLECTION_TYPE.match((holder.type.resolved or "").strip())
                 value = _whole(file, _coerce(file, value, element), declared.group("element") if declared else "")
+            # `t(1) := n1` in a collection of collections stores a copy (#111)
+            value = _copied(file, value, _element_type(holder.type.resolved, len(subscripts)))
             file.line(f"Plsql.set({container}, {key}, {value});")
             return
         if "." in written and (_holder(routine, written.partition(".")[0]) is not None
@@ -1297,6 +1377,8 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
             if _DOMAIN.get():
                 file.add_import(f"{_DOMAIN.get()}.{record}")
             value = _expr(file, statement.expression, routine, result)
+            # `r.ids := n1` stores a copy (#111)
+            value = _copied(file, value, _field_type(holder.type.resolved or "", path.split(".")))
             variable = java_name(holder.name)
             rebuilt = _rebuilt(file, variable, holder.type.resolved or "", record, path.split("."), value)
             if rebuilt is None:
@@ -1321,6 +1403,7 @@ def _translate_statement(file: JavaFile, statement: M.Statement, routine: M.Rout
             return
         value = _expr(file, statement.expression, routine, result, boolean_value=target_type == "Boolean")
         value = _convert_variable(file, routine, statement.expression, value, target_type)
+        value = _copied(file, value, holder.type.resolved if holder is not None and holder.type else None)
         file.line(f"{target} = {_constrain(file, _coerce(file, value, target_type), holder.type if holder else None)};")
     elif kind == "Return":
         returns = signature_type(routine.return_type).name \
@@ -1517,7 +1600,16 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
     if statement.loop_kind == "while":
         opening = f"{label}while ({_expr(file, statement.condition, routine, result, condition=True)})"
     elif statement.loop_kind == "cursor-for" and statement.query is not None:
-        _cursor_for(file, statement, routine, result)
+        counting = _COUNTING.get()
+        if not counting and _accumulates(statement):
+            # SQL%ROWCOUNT after the loop is the rows of every iteration -- and 0 when it ran none, not what the
+            # statement before it left (#109)
+            file.line("rowCount = 0;")
+        token = _COUNTING.set(counting or _accumulates(statement))
+        try:
+            _cursor_for(file, statement, routine, result)
+        finally:
+            _COUNTING.reset(token)
         return
     elif statement.loop_kind == "forall" and _forall_collection(statement, routine) is not None:
         _forall(file, statement, routine, result)
@@ -1564,6 +1656,11 @@ NUMERIC_FOR = re.compile(r"^\s*(?P<index>[\w$#]+)\s+IN\s+(?P<reverse>REVERSE\s+)
                          re.IGNORECASE | re.DOTALL)
 
 FORALL_BOUND = re.compile(r"^\s*1\s*\.\.\s*(?P<collection>[\w$#]+)\s*\.\s*COUNT\s*$", re.IGNORECASE)
+
+
+def _accumulates(loop: M.Loop) -> bool:
+    """Whether the loop's own DML adds to `rowCount` rather than setting it."""
+    return any(getattr(s, "accumulates_rowcount", False) for s in _walk(loop.body))
 
 
 def _forall_collection(statement: M.Loop, routine: M.Routine) -> tuple[str, str] | None:
@@ -1643,12 +1740,22 @@ def _forall(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Servi
                    f"for (int {java_name(index)} = 0; {java_name(index)} < {java}.size(); {java_name(index)}++)")
         if keyed:
             file.add_import("com.scalar.migrate.plsql.Plsql")
-        with file.block(opening) as f:
-            if counted:
-                f.line("rowCount = 0;")
-            _statements(f, statement.body, routine, result)
-            if counted:
-                f.line("bulkRowCount.add(Plsql.dec(rowCount));")
+        # SQL%ROWCOUNT after a FORALL is the rows every element's statement touched, not the last one's (#109):
+        # each element's count starts at 0 and is added up here. A bare block, so two FORALLs can sit side by side
+        total = _fresh("forallRows", _taken(routine))
+        token = _COUNTING.set(False)
+        try:
+            with file.block("") as b:
+                b.line(f"int {total} = 0;")
+                with b.block(opening) as f:
+                    f.line("rowCount = 0;")
+                    _statements(f, statement.body, routine, result)
+                    if counted:
+                        f.line("bulkRowCount.add(Plsql.dec(rowCount));")
+                    f.line(f"{total} += rowCount;")
+                b.line(f"rowCount = {total};")
+        finally:
+            _COUNTING.reset(token)
     finally:
         _LOOP_ROWS.set(outer)
 
@@ -2247,10 +2354,12 @@ def _arguments(file: JavaFile, statement: M.SqlOperation, routine: M.Routine,
             if expected == "String":
                 rendered = f"(String) {rendered}"
             elif expected in ("Integer", "Long", "Double", "Float", "BigDecimal", "LocalDateTime"):
+                # the conversion belongs to this branch: dedented, a column of any other type (Object, a record) was a
+                # KeyError that stopped the generator (samples/oracle-plsql-docs 12-7, 2026-09-27)
                 file.add_import("com.scalar.migrate.plsql.Plsql")
-            helper = {"Integer": "toInt", "Long": "toLong", "Double": "toDouble", "Float": "toFloat",
-                      "BigDecimal": "dec"}[expected]
-            rendered = f"Plsql.{helper}({rendered})"
+                helper = {"Integer": "toInt", "Long": "toLong", "Double": "toDouble", "Float": "toFloat",
+                          "BigDecimal": "dec", "LocalDateTime": "moment"}[expected]
+                rendered = f"Plsql.{helper}({rendered})"
         out.append(rendered)
     return ", ".join(out)
 
@@ -2530,7 +2639,8 @@ def _record_copy(file: JavaFile, routine: M.Routine, target: str | None, source:
     if len(to_columns) != len(of_columns) or not to_columns:
         return None
     variable = _local(of.name)
-    parts = [_coerce(file, f"{variable}.{java_name(c)}()", java_type(t).name) for (c, _), (_, t) in zip(of_columns, to_columns)]
+    parts = [_copied(file, _coerce(file, f"{variable}.{java_name(c)}()", java_type(t).name), t)   # (#111)
+             for (c, _), (_, t) in zip(of_columns, to_columns)]
     return f"{_local(to.name)} = {variable} == null ? null : new {to_class}({', '.join(parts)});"
 
 

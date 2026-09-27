@@ -208,6 +208,11 @@ id（`pkg.put~1`、Java では `put1`）を持ち、版ごとに判定・生成�
 呼び出しは引数の数と名前付き引数で 1 つに絞れたときだけ解決し、絞れなければ（型だけが違う版、式の中の呼び出し）
 呼び出し元を REVIEW にする（CALL-002）。manifest とシナリオは `set_email~1` のように版を書く。
 
+OUT 引数を持つ関数を AND / OR の右辺や CASE の分岐の中で呼ぶ routine は、CALL-003（`CALL_NOT_HOISTED`）で
+REVIEW にする。呼び出しを外へ出すと、条件が偽でも呼ばれて引数が書き換わるからである（#104）。パッケージ本体に
+初期化部（`BEGIN … END pkg;`）があれば、そのパッケージの routine はすべて STATE-002（`PACKAGE_INIT`）で
+REDESIGN にする。初期化部は生成しないので、黙って消えないようにするためである（#108）。
+
 文字列で見るルール（SEM-001 など）の `statementKind: Expression` は「式が評価される場所すべて」を指す:
 SQL 以外の全ての文と、宣言の初期化式・引数の既定値。以前は `[Assignment, Return, If]` の列挙で、WHILE / EXIT WHEN の
 条件、CASE のセレクタ、呼び出しの引数、宣言部を見ていなかった。

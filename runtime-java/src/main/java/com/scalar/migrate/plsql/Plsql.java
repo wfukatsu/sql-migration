@@ -36,7 +36,7 @@ public final class Plsql {
   /** Oracle's {@code =}: false when either side is null, value comparison for numbers. */
   public static boolean eq(Object a, Object b) {
     if (isNull(a) || isNull(b)) return false;
-    if (a instanceof Number && b instanceof Number) return compare(a, b) == 0;
+    if (numeric(a, b)) return compare(a, b) == 0;   // text against a number converts the text (#113)
     if (a instanceof java.util.List<?> x && b instanceof java.util.List<?> y) return Boolean.TRUE.equals(sameMultiset(x, y));
     return Objects.equals(a, b);
   }
@@ -86,12 +86,23 @@ public final class Plsql {
     return !isNull(a) && !isNull(b) && compare(a, b) >= 0;
   }
 
+  /**
+   * Text against a number compares as numbers, the text converted as TO_NUMBER would (#113). Measured on Oracle 26ai:
+   * `v VARCHAR2 := '10'` is `= 10` and `> 9`, ' 10 ', '1e1', '10.0', '+5' all equal their number, and 'abc' or
+   * '1,000' is ORA-06502 (character to number conversion error). Here `eq("10", 10)` was false and `gt("10", 9)` a
+   * ClassCastException. Two texts still compare as text: `'9' < '10'` is false.
+   */
   @SuppressWarnings({"unchecked", "rawtypes"})
   private static int compare(Object a, Object b) {
-    if (a instanceof Number && b instanceof Number) {
+    if (numeric(a, b)) {
       return num(a).compareTo(num(b));
     }
     return ((Comparable) a).compareTo(b);
+  }
+
+  private static boolean numeric(Object a, Object b) {
+    return (a instanceof Number || a instanceof CharSequence) && (b instanceof Number || b instanceof CharSequence)
+        && (a instanceof Number || b instanceof Number);
   }
 
   /** Oracle's {@code ||}: NULL behaves as an empty string, which Java's {@code +} does not. */
@@ -229,6 +240,133 @@ public final class Plsql {
     return num(value).setScale(0, java.math.RoundingMode.DOWN);
   }
 
+  /**
+   * `TRUNC(d, 'MM')` on a DATE or TIMESTAMP: a DATE at the start of that unit. The overloads take the static type,
+   * so `TRUNC(SYSDATE, 'MM')` no longer reaches the numeric TRUNC below and fails as VALUE_ERROR (#112).
+   */
+  public static LocalDateTime trunc(LocalDateTime value, Object format) {
+    return isNull(value) || isNull(format) ? null : dateUnit(castDate(value), text(format), false);
+  }
+
+  public static LocalDateTime trunc(java.time.OffsetDateTime value, Object format) {
+    return isNull(value) || isNull(format) ? null : dateUnit(castDate(value), text(format), false);
+  }
+
+  /** `ROUND(d)` on a DATE: the nearest midnight, noon going up (#112). */
+  public static LocalDateTime round(LocalDateTime value) {
+    return value == null ? null : dateUnit(castDate(value), "DD", true);
+  }
+
+  /** `ROUND(d, 'MM')` on a DATE or TIMESTAMP (#112). */
+  public static LocalDateTime round(LocalDateTime value, Object format) {
+    return isNull(value) || isNull(format) ? null : dateUnit(castDate(value), text(format), true);
+  }
+
+  public static LocalDateTime round(java.time.OffsetDateTime value, Object format) {
+    return isNull(value) || isNull(format) ? null : dateUnit(castDate(value), text(format), true);
+  }
+
+  /**
+   * The start of the unit a date format names (TRUNC), or the nearer of that start and the next one (ROUND). The
+   * units and the half-way points, measured on Oracle 26ai with 2026-09-27 13:45:10 (a Sunday):
+   *
+   * <pre>
+   *   CC SCC                    2001-01-01; ROUND goes up from year 51 of the century
+   *   YYYY YEAR YYY YY Y ...    2026-01-01; up from July
+   *   IYYY IY I                 2025-12-29, the Monday of ISO week 1
+   *   Q                         2026-07-01; up from the 16th of the quarter's second month
+   *   MM MON MONTH RM           2026-09-01; up from the 16th
+   *   WW                        2026-09-24, the weekday of 1 January; IW 2026-09-21 (Monday); W 2026-09-22, the
+   *                             weekday of the 1st; D DY DAY 2026-09-27 (Sunday). ROUND: up from 3.5 days in
+   *   DD DDD J                  2026-09-27; up from noon
+   *   HH HH12 HH24              13:00; up from :30.   MI 13:45; up from :30 seconds
+   * </pre>
+   *
+   * Any other format is ORA-01821 (date format not recognized) in Oracle, and so it is here.
+   */
+  static LocalDateTime dateUnit(LocalDateTime d, String format, boolean round) {
+    String unit = format.toUpperCase(java.util.Locale.ROOT);
+    java.time.LocalDate day = d.toLocalDate();
+    LocalDateTime start;
+    LocalDateTime next;
+    switch (unit) {
+      case "CC", "SCC" -> {
+        int first = (d.getYear() - 1) / 100 * 100 + 1;
+        start = LocalDateTime.of(first, 1, 1, 0, 0);
+        next = start.plusYears(100);
+        if (round) return d.getYear() - first >= 50 ? next : start;
+        return start;
+      }
+      case "SYYYY", "YYYY", "YEAR", "SYEAR", "YYY", "YY", "Y" -> {
+        start = day.withDayOfYear(1).atStartOfDay();
+        next = start.plusYears(1);
+        if (round) return d.getMonthValue() >= 7 ? next : start;
+        return start;
+      }
+      case "IYYY", "IY", "I" -> {
+        start = isoYearStart(day.get(java.time.temporal.IsoFields.WEEK_BASED_YEAR));
+        next = isoYearStart(day.get(java.time.temporal.IsoFields.WEEK_BASED_YEAR) + 1);
+      }
+      case "Q" -> {
+        int firstMonth = (d.getMonthValue() - 1) / 3 * 3 + 1;
+        start = LocalDateTime.of(d.getYear(), firstMonth, 1, 0, 0);
+        next = start.plusMonths(3);
+        if (round) return !d.isBefore(start.plusMonths(1).withDayOfMonth(16)) ? next : start;
+        return start;
+      }
+      case "MONTH", "MON", "MM", "RM" -> {
+        start = day.withDayOfMonth(1).atStartOfDay();
+        next = start.plusMonths(1);
+        if (round) return d.getDayOfMonth() >= 16 ? next : start;
+        return start;
+      }
+      case "WW" -> {
+        start = weekFrom(day, day.withDayOfYear(1).getDayOfWeek());
+        next = start.plusDays(7);
+      }
+      case "IW" -> {
+        start = weekFrom(day, java.time.DayOfWeek.MONDAY);
+        next = start.plusDays(7);
+      }
+      case "W" -> {
+        start = weekFrom(day, day.withDayOfMonth(1).getDayOfWeek());
+        next = start.plusDays(7);
+      }
+      case "DAY", "DY", "D" -> {
+        // the first day of the week is the territory's: AMERICA's Sunday, which the comparison sessions use
+        start = weekFrom(day, java.time.DayOfWeek.SUNDAY);
+        next = start.plusDays(7);
+      }
+      case "DDD", "DD", "J" -> {
+        start = day.atStartOfDay();
+        next = start.plusDays(1);
+      }
+      case "HH", "HH12", "HH24" -> {
+        start = d.truncatedTo(java.time.temporal.ChronoUnit.HOURS);
+        next = start.plusHours(1);
+      }
+      case "MI" -> {
+        start = d.truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+        next = start.plusMinutes(1);
+      }
+      default -> throw new IllegalArgumentException("ORA-01821: date format not recognized: " + format);
+    }
+    if (!round) return start;
+    // half-way or later goes to the next unit: noon for a day, 3.5 days for a week, 30 seconds for a minute
+    long toNext = java.time.Duration.between(d, next).getSeconds();
+    long fromStart = java.time.Duration.between(start, d).getSeconds();
+    return fromStart >= toNext ? next : start;
+  }
+
+  private static LocalDateTime weekFrom(java.time.LocalDate day, java.time.DayOfWeek first) {
+    return day.with(java.time.temporal.TemporalAdjusters.previousOrSame(first)).atStartOfDay();
+  }
+
+  private static LocalDateTime isoYearStart(int isoYear) {
+    return java.time.LocalDate.of(isoYear, 1, 4).with(java.time.temporal.TemporalAdjusters.previousOrSame(
+        java.time.DayOfWeek.MONDAY)).atStartOfDay();
+  }
+
   /** TRUNC(n, places): toward zero at that many decimals (a negative count truncates left of the point). */
   public static BigDecimal trunc(Object value, Object places) {
     if (isNull(value) || isNull(places)) return null;
@@ -358,10 +496,16 @@ public final class Plsql {
     return arith(a, b, OracleNumbers::divide);
   }
 
+  /**
+   * Every result is rounded as a NUMBER holds it: 40 significant digits, or 39 when the leading base-100 pair holds
+   * one digit (OracleNumbers.round40). Only the division was; `a := 1/3; 'x' || (a * a)` printed 80 digits where
+   * Oracle 26ai prints .1111111111111111111111111111111111111111, and `1e30 + 1e-30` kept the 1e-30 Oracle drops
+   * (#113). Rounding once per operation is what Oracle does: `a := 1/3; a * 3` is .9999999999999999999999999999999999999999.
+   */
   private static BigDecimal arith(Object a, Object b,
       java.util.function.BinaryOperator<BigDecimal> operator) {
     if (a == null || b == null) return null;
-    return operator.apply(num(a), num(b));
+    return OracleNumbers.round40(operator.apply(num(a), num(b)));
   }
 
   /** {@code TO_CHAR(value, format)}. Only the formats the corpus uses are mapped; the rest raise. */
@@ -427,7 +571,14 @@ public final class Plsql {
   /** ORA-06502. Its own type so that generated code can turn it into the migrated VALUE_ERROR. */
   public static final class ValueError extends RuntimeException {
     public ValueError(String detail) {
-      super("ORA-06502: PL/SQL: numeric or value error: " + detail);
+      // Oracle 26ai's text: `n NUMBER := 'abc'` is "ORA-06502: PL/SQL: value or conversion error: character to
+      // number conversion error". The older "numeric or value error" is what SQLERRM showed here (#114)
+      super("ORA-06502: PL/SQL: value or conversion error: " + detail);
+    }
+
+    /** The bare ORA-06502 an argument out of range raises, with no detail after it (`POWER(0, -1)`, #113). */
+    public ValueError() {
+      super("ORA-06502: PL/SQL: value or conversion error");
     }
   }
 
@@ -533,6 +684,66 @@ public final class Plsql {
   //
   // `scale` is how many decimal places the column keeps when it is stored as an integer. Oracle NUMBER(12,2) in
   // a BIGINT column is scale 2 -- the column holds cents. Scale 0 means the column holds the value as it is.
+
+  /**
+   * ORA-12899: a value longer than its VARCHAR2 / CHAR column. Oracle names the column as "SCHEMA"."TABLE"."COLUMN";
+   * the schema is not known here, so the name is "TABLE"."COLUMN". It has no predefined name, so a WHEN OTHERS sees
+   * it as the base class with this number (service._HELPER_ERRORS, #115).
+   */
+  public static final class ValueTooLarge extends OracleError {
+    public ValueTooLarge(String column, long actual, int maximum) {
+      super(-12899, "ORA-12899: value too large for column " + column + " (actual: " + actual + ", maximum: " + maximum + ")");
+    }
+  }
+
+  /**
+   * ORA-01438: a value with more digits left of the point than its NUMBER(p,s) column allows. The text is the one
+   * Oracle 26ai gives for `CAST(123 AS NUMBER(2))`: "value 123 greater than specified precision (2, 0) for column",
+   * with the column's name after it (#115).
+   */
+  public static final class PrecisionTooLarge extends OracleError {
+    public PrecisionTooLarge(String value, int precision, int scale, String column) {
+      super(-1438, "ORA-01438: value " + value + " greater than specified precision (" + precision + ", " + scale
+          + ") for column " + column);
+    }
+  }
+
+  /**
+   * A value written into a VARCHAR2(size) / CHAR(size) column (#115): ORA-12899 when it is longer, counted in
+   * characters for a CHAR-semantics column ({@code chars}) and in UTF-8 bytes (AL32UTF8) otherwise. The value comes
+   * back as it was given, for {@link #bind} to convert. ScalarDB's TEXT has no length, so this is the only place
+   * the declaration is kept.
+   */
+  public static Object columnText(Object value, int size, boolean chars, String column) {
+    if (isNull(value)) return value;
+    String text = text(value);
+    long length = chars ? text.codePointCount(0, text.length())
+        : text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+    if (length > size) throw new ValueTooLarge(column, length, size);
+    return value;
+  }
+
+  /**
+   * A value written into a NUMBER(precision, scale) column (#115): rounded half-up to the scale, as the column
+   * stores it, and ORA-01438 when that needs more than precision - scale digits left of the point. Measured with
+   * CAST on Oracle 26ai: 12.345 into (4,2) is 12.35, 99.995 and -99.995 are ORA-01438, 123.5 into (3) is 124,
+   * 0.0123 into (2,3) is 0.012 and 0.123 is ORA-01438. The value comes back as it was given: {@link #bind} rounds
+   * it for the column's storage. Text that is not a number is left to the bind, as before.
+   */
+  public static Object columnNumber(Object value, int precision, int scale, String column) {
+    if (isNull(value) || !(value instanceof Number || value instanceof CharSequence)) return value;
+    BigDecimal number;
+    try {
+      number = OracleNumbers.toBigDecimal(value);
+    } catch (NumberFormatException notANumber) {
+      return value;
+    }
+    BigDecimal rounded = number.setScale(scale, java.math.RoundingMode.HALF_UP);
+    if (rounded.signum() != 0 && rounded.precision() - rounded.scale() > precision - scale) {
+      throw new PrecisionTooLarge(text(number), precision, scale, column);
+    }
+    return value;
+  }
 
   /** A PL/SQL value on its way into a ScalarDB column of the given type. */
   /**
@@ -678,9 +889,25 @@ public final class Plsql {
     return out.toString();
   }
 
-  /** `TRIM(x)`: both ends, spaces only; an empty result is NULL as in Oracle. */
+  /**
+   * `TRIM(x)`: both ends, the blank (U+0020) only; an empty result is NULL as in Oracle. Java's strip() took every
+   * Unicode space as well: `TRIM(CHR(10)||'a'||CHR(9))` is `\na\t` on Oracle 26ai and `TRIM('　a　')` keeps its
+   * full-width spaces, where this gave `a` for both (#112).
+   */
   public static String trim(Object value) {
-    return isNull(value) ? null : emptyIsNull(text(value).strip());
+    return isNull(value) ? null : emptyIsNull(trimmed(text(value), " ", true, true));
+  }
+
+  /** The characters of {@code set} removed from the start and/or the end of {@code text}, by code point. */
+  private static String trimmed(String text, String set, boolean leading, boolean trailing) {
+    int[] points = text.codePoints().toArray();
+    java.util.Set<Integer> remove = new java.util.HashSet<>();
+    set.codePoints().forEach(remove::add);
+    int start = 0;
+    int end = points.length;
+    while (leading && start < end && remove.contains(points[start])) start++;
+    while (trailing && end > start && remove.contains(points[end - 1])) end--;
+    return new String(points, start, end - start);
   }
 
   /** A PLS_INTEGER target: `i := i + 1` goes through {@link #add} (which returns Object) and lands in an Integer. */
@@ -725,29 +952,67 @@ public final class Plsql {
       case -1422 -> "exact fetch returned more than the requested number of rows ";
       case -1476 -> "divisor is equal to zero";
       case -1722 -> "unable to convert string value containing  to a number: ";
+      case -1428 -> "Argument  is out of range.";
+      case -1438 -> "value  greater than specified precision  for column ";
       case -6502 -> "PL/SQL: value or conversion error";
+      case -6510 -> "PL/SQL: unhandled user-defined exception";
       case -6511 -> "PL/SQL: cursor already open";
       case -6530 -> "Reference to uninitialized composite";
       case -6531 -> "Reference to uninitialized collection";
       case -6532 -> "subscript outside of limit";
       case -6533 -> "Subscript beyond count";
+      case -6592 -> "CASE not found while executing CASE statement";
+      case -12899 -> "value too large for column  (actual: , maximum: )";
       default -> "Message " + (-n) + " not found";
     };
     return String.format("ORA-%05d: %s", -n, text);
   }
 
+  // the numbers of Oracle's predefined exceptions (plsql/gen_java/exception.py PREDEFINED)
+  private static final java.util.Set<Integer> PREDEFINED_CODES =
+      java.util.Set.of(-1, -1001, -1422, -1476, -1722, -6502, -6511, -6531, -6532, -6533, -6592);
+
+  /**
+   * The numbers the generator gives a PL/SQL-declared exception that has no EXCEPTION_INIT (plsql/gen_java/exception.py
+   * `_user_code`): -900000 .. -900999. They keep the registry's classes apart and never reach the PL/SQL: Oracle's
+   * SQLCODE for such an exception is 1 (#114).
+   */
+  static final int USER_DEFINED_HIGH = -900000;
+  static final int USER_DEFINED_LOW = -900999;
+
+  static boolean userDefined(int code) {
+    return code <= USER_DEFINED_HIGH && code >= USER_DEFINED_LOW;
+  }
+
+  /**
+   * `SQLCODE` inside a handler: the handled exception's number, and +1 for a PL/SQL-declared one without
+   * EXCEPTION_INIT, as Oracle 26ai returns (`RAISE e_x` ... `WHEN OTHERS THEN SQLCODE` is 1). The class keeps its
+   * own number, which is what tells two declared exceptions apart in the registry (#114).
+   */
+  public static int sqlcode(int code) {
+    return userDefined(code) ? 1 : code;
+  }
+
   /** `SQLERRM(n)` inside a handler: the handled error's own message when n is its number (11-13). */
   public static String sqlerrmOf(Object code, int current, String message) {
-    if (!isNull(code) && num(code).intValue() == current) return sqlerrm(current, message);
+    // SQLERRM(SQLCODE) of a declared exception asks with +1, the number the handler sees (#114)
+    if (!isNull(code) && num(code).intValue() == sqlcode(current)) return sqlerrm(current, message);
     return sqlerrmOf(code);
   }
 
   public static String sqlerrm(int code, String message) {
     if (code == 0) return "ORA-0000: normal, successful completion";
+    // a PL/SQL-declared exception with no EXCEPTION_INIT: Oracle's SQLERRM is this text, whatever its class's own
+    // number is (`e_x EXCEPTION; RAISE e_x;` shows "1 User-Defined Exception" on 26ai; it showed "ORA-900875: e_x")
+    if (userDefined(code) || code > 0 && code != 100) return "User-Defined Exception";
     if (code == 100) return "ORA-01403: no data found";
     String prefix = String.format("ORA-%05d: ", Math.abs(code));
     // the runtime's own errors (Plsql.ZeroDivide, Plsql.NoDataFound, ...) already carry Oracle's whole text
     if (message != null && message.startsWith(prefix)) return message;
+    // an error Oracle names has Oracle's text whatever the Java message says: `RAISE VALUE_ERROR` is "ORA-06502:
+    // PL/SQL: value or conversion error" on 26ai, not "ORA-06502: VALUE_ERROR", and a SELECT INTO's second row
+    // "ORA-01422: exact fetch returned more than the requested number of rows " (#114)
+    if (PREDEFINED_CODES.contains(code)) return sqlerrmOf(code);
     return prefix + (message == null ? "" : message);
   }
 
@@ -772,7 +1037,64 @@ public final class Plsql {
   };
   @SafeVarargs
   public static <E> java.util.List<E> table(E... elements) {
-    return new java.util.ArrayList<>(java.util.Arrays.asList(elements));
+    // `nt_of_nt(n1, n2)` holds copies of n1 and n2, as every PL/SQL assignment does (#111)
+    java.util.List<E> out = new java.util.ArrayList<>(elements.length);
+    for (E element : elements) out.add(copy(element));
+    return out;
+  }
+
+  /**
+   * A PL/SQL value copy. {@code n2 := n1} copies a collection in PL/SQL, and so does storing it into a record or
+   * another collection, and passing it IN OUT without NOCOPY; a Java List or Map is shared, so a change through
+   * one name showed through the other (#111). Collections are copied deeply -- a collection of collections, a
+   * record holding one. Everything else the generated code holds (BigDecimal, String, the java.time types, a
+   * record of those) cannot change, and is returned as it is.
+   */
+  @SuppressWarnings("unchecked")
+  public static <T> T copy(T value) {
+    if (value instanceof java.util.List<?> list) {
+      java.util.List<Object> out = new java.util.ArrayList<>(list.size());
+      for (Object element : list) out.add(element == GAP ? GAP : copy(element));
+      return (T) out;
+    }
+    if (value instanceof java.util.SortedMap<?, ?> map) {
+      java.util.TreeMap<Object, Object> out = new java.util.TreeMap<>((java.util.Comparator<Object>) map.comparator());
+      for (java.util.Map.Entry<?, ?> entry : map.entrySet()) out.put(entry.getKey(), copy(entry.getValue()));
+      return (T) out;
+    }
+    if (value instanceof java.util.Map<?, ?> map) {
+      java.util.Map<Object, Object> out = new java.util.LinkedHashMap<>();
+      for (java.util.Map.Entry<?, ?> entry : map.entrySet()) out.put(entry.getKey(), copy(entry.getValue()));
+      return (T) out;
+    }
+    if (value instanceof Record record) {
+      return (T) copyRecord(record);
+    }
+    return value;
+  }
+
+  /** A record with its collection components copied; the record itself when it holds none (it is immutable). */
+  private static Record copyRecord(Record record) {
+    java.lang.reflect.RecordComponent[] components = record.getClass().getRecordComponents();
+    Object[] values = new Object[components.length];
+    Class<?>[] types = new Class<?>[components.length];
+    boolean changed = false;
+    try {
+      for (int i = 0; i < components.length; i++) {
+        java.lang.reflect.Method accessor = components[i].getAccessor();
+        accessor.setAccessible(true);
+        Object value = accessor.invoke(record);
+        values[i] = copy(value);
+        types[i] = components[i].getType();
+        changed |= values[i] != value;
+      }
+      if (!changed) return record;
+      java.lang.reflect.Constructor<?> constructor = record.getClass().getDeclaredConstructor(types);
+      constructor.setAccessible(true);
+      return (Record) constructor.newInstance(values);
+    } catch (ReflectiveOperationException e) {
+      throw new IllegalStateException("cannot copy " + record.getClass().getName(), e);
+    }
   }
 
   public static <K, E> java.util.Map<K, E> indexBy() {
@@ -992,8 +1314,9 @@ public final class Plsql {
     if (from < 1 || from > list.size() || list.get(from - 1) == GAP) {
       throw new SubscriptBeyondCount();
     }
-    Object copy = list.get(from - 1);
-    for (int k = num(n).intValueExact(); k > 0; k--) list.add(copy);
+    Object element = list.get(from - 1);
+    // each new element is a copy of its own: a collection of collections must not share one inner List (#111)
+    for (int k = num(n).intValueExact(); k > 0; k--) list.add(copy(element));
   }
 
   /**
@@ -1187,12 +1510,23 @@ public final class Plsql {
     return BigDecimal.valueOf(System.nanoTime() / 10_000_000L);
   }
 
+  /** `RTRIM(x)`: the trailing blanks (U+0020) only, as {@link #trim} (#112: `RTRIM(' a '||CHR(9))` keeps the tab). */
   public static String rtrim(Object value) {
-    return isNull(value) ? null : emptyIsNull(text(value).stripTrailing());
+    return rtrim(value, " ");
+  }
+
+  /** `RTRIM(x, set)`: every trailing character that is in the set -- `RTRIM('xxaxx', 'x')` is `xxa`. */
+  public static String rtrim(Object value, Object set) {
+    return isNull(value) || isNull(set) ? null : emptyIsNull(trimmed(text(value), text(set), false, true));
   }
 
   public static String ltrim(Object value) {
-    return isNull(value) ? null : emptyIsNull(text(value).stripLeading());
+    return ltrim(value, " ");
+  }
+
+  /** `LTRIM(x, set)`: `LTRIM('xyxaxy', 'xy')` is `axy` (26ai). */
+  public static String ltrim(Object value, Object set) {
+    return isNull(value) || isNull(set) ? null : emptyIsNull(trimmed(text(value), text(set), true, false));
   }
 
   /**
@@ -1295,7 +1629,10 @@ public final class Plsql {
     String needle = text(search);
     int start = num(position).intValue();
     int nth = num(occurrence).intValue();
-    if (start == 0 || nth < 1) return BigDecimal.ZERO;
+    // an occurrence below 1 is ORA-06502 in PL/SQL (ORA-01428 in SQL), measured on 26ai; it was 0 here (#113). A
+    // start of 0 is not an error: INSTR('abc','b',0,1) is 0
+    if (nth < 1) throw new ValueError();
+    if (start == 0) return BigDecimal.ZERO;
     int found = -1;
     if (start > 0) {
       int from = start - 1;
@@ -1342,19 +1679,82 @@ public final class Plsql {
     return isNull(fill) ? null : padTo(value, length, text(fill), false);
   }
 
-  /** LPAD / RPAD: cut to the length when longer, padded with the fill repeated when shorter. */
+  /**
+   * LPAD / RPAD: cut to the length when longer, padded with the fill repeated when shorter. The length is Oracle's
+   * display width, not a count of characters: an East Asian wide or full-width character is 2 (#112). Where a wide
+   * character would straddle the length it is left out and a blank takes its column -- on the left for LPAD, on the
+   * right for RPAD. Measured on Oracle 26ai (AL32UTF8):
+   *
+   * <pre>
+   *   LPAD('あ',4,'*')   '**あ'      RPAD('あい',3)     'あ '       LPAD('あい',3)   ' あ'
+   *   LPAD('abc',6,'あ') ' あabc'    RPAD('abc',6,'あ') 'abcあ '    LPAD('あ',1,'*') ' '
+   *   LPAD('ab',5,'Ａ')  ' Ａab'     LPAD('ab',5,'ｶ')   'ｶｶｶab'     LPAD('ab',5,'★') '★★★ab'
+   * </pre>
+   */
   private static String padTo(Object value, Object length, String fill, boolean left) {
     if (isNull(value) || isNull(length) || fill.isEmpty()) return null;
     int size = num(length).setScale(0, java.math.RoundingMode.DOWN).intValue();
     if (size < 1) return null;
     int[] points = text(value).codePoints().toArray();
-    if (points.length >= size) return emptyIsNull(new String(points, 0, size));
+    StringBuilder body = new StringBuilder();
+    int width = 0;
+    for (int point : points) {
+      if (width + displayWidth(point) > size) break;
+      body.appendCodePoint(point);
+      width += displayWidth(point);
+    }
     StringBuilder filler = new StringBuilder();
-    int[] fillPoints = fill.codePoints().toArray();
-    for (int k = 0; k < size - points.length; k++) filler.appendCodePoint(fillPoints[k % fillPoints.length]);
-    String body = new String(points, 0, points.length);
-    return left ? filler + body : body + filler;
+    if (body.length() == text(value).length()) {
+      int[] fillPoints = fill.codePoints().toArray();
+      for (int k = 0; width + displayWidth(fillPoints[k % fillPoints.length]) <= size; k++) {
+        filler.appendCodePoint(fillPoints[k % fillPoints.length]);
+        width += displayWidth(fillPoints[k % fillPoints.length]);
+      }
+    }
+    String blanks = " ".repeat(size - width);
+    return left ? blanks + filler + body : body + filler.toString() + blanks;
   }
+
+  /**
+   * How many columns Oracle gives a character in LPAD / RPAD: 2 for Unicode's East Asian Width W and F, 1 for the
+   * rest -- the ambiguous ones (○ ※ ① ★ §), the half-width katakana, even a combining mark or a zero-width space.
+   * Each range below was checked on Oracle 26ai with a character of it (`LPAD('ab',5,UNISTR(...))`): all of W and
+   * F measured 2 and nothing else did. The table is Unicode 16.0's.
+   */
+  static int displayWidth(int point) {
+    int low = 0;
+    int high = WIDE.length / 2 - 1;
+    while (low <= high) {
+      int middle = (low + high) >>> 1;
+      if (point < WIDE[middle * 2]) high = middle - 1;
+      else if (point > WIDE[middle * 2 + 1]) low = middle + 1;
+      else return 2;
+    }
+    return 1;
+  }
+
+  // East Asian Width W and F, as [first, last] pairs (Unicode 16.0, generated with Python's unicodedata)
+  private static final int[] WIDE = {
+      0x1100, 0x115F, 0x231A, 0x231B, 0x2329, 0x232A, 0x23E9, 0x23EC, 0x23F0, 0x23F0, 0x23F3, 0x23F3, 0x25FD, 0x25FE,
+      0x2614, 0x2615, 0x2630, 0x2637, 0x2648, 0x2653, 0x267F, 0x267F, 0x268A, 0x268F, 0x2693, 0x2693, 0x26A1, 0x26A1,
+      0x26AA, 0x26AB, 0x26BD, 0x26BE, 0x26C4, 0x26C5, 0x26CE, 0x26CE, 0x26D4, 0x26D4, 0x26EA, 0x26EA, 0x26F2, 0x26F3,
+      0x26F5, 0x26F5, 0x26FA, 0x26FA, 0x26FD, 0x26FD, 0x2705, 0x2705, 0x270A, 0x270B, 0x2728, 0x2728, 0x274C, 0x274C,
+      0x274E, 0x274E, 0x2753, 0x2755, 0x2757, 0x2757, 0x2795, 0x2797, 0x27B0, 0x27B0, 0x27BF, 0x27BF, 0x2B1B, 0x2B1C,
+      0x2B50, 0x2B50, 0x2B55, 0x2B55, 0x2E80, 0x2E99, 0x2E9B, 0x2EF3, 0x2F00, 0x2FD5, 0x2FF0, 0x303E, 0x3041, 0x3096,
+      0x3099, 0x30FF, 0x3105, 0x312F, 0x3131, 0x318E, 0x3190, 0x31E5, 0x31EF, 0x321E, 0x3220, 0x3247, 0x3250, 0xA48C,
+      0xA490, 0xA4C6, 0xA960, 0xA97C, 0xAC00, 0xD7A3, 0xF900, 0xFAFF, 0xFE10, 0xFE19, 0xFE30, 0xFE52, 0xFE54, 0xFE66,
+      0xFE68, 0xFE6B, 0xFF01, 0xFF60, 0xFFE0, 0xFFE6, 0x16FE0, 0x16FE4, 0x16FF0, 0x16FF1, 0x17000, 0x187F7, 0x18800,
+      0x18CD5, 0x18CFF, 0x18D08, 0x1AFF0, 0x1AFF3, 0x1AFF5, 0x1AFFB, 0x1AFFD, 0x1AFFE, 0x1B000, 0x1B122, 0x1B132,
+      0x1B132, 0x1B150, 0x1B152, 0x1B155, 0x1B155, 0x1B164, 0x1B167, 0x1B170, 0x1B2FB, 0x1D300, 0x1D356, 0x1D360,
+      0x1D376, 0x1F004, 0x1F004, 0x1F0CF, 0x1F0CF, 0x1F18E, 0x1F18E, 0x1F191, 0x1F19A, 0x1F200, 0x1F202, 0x1F210,
+      0x1F23B, 0x1F240, 0x1F248, 0x1F250, 0x1F251, 0x1F260, 0x1F265, 0x1F300, 0x1F320, 0x1F32D, 0x1F335, 0x1F337,
+      0x1F37C, 0x1F37E, 0x1F393, 0x1F3A0, 0x1F3CA, 0x1F3CF, 0x1F3D3, 0x1F3E0, 0x1F3F0, 0x1F3F4, 0x1F3F4, 0x1F3F8,
+      0x1F43E, 0x1F440, 0x1F440, 0x1F442, 0x1F4FC, 0x1F4FF, 0x1F53D, 0x1F54B, 0x1F54E, 0x1F550, 0x1F567, 0x1F57A,
+      0x1F57A, 0x1F595, 0x1F596, 0x1F5A4, 0x1F5A4, 0x1F5FB, 0x1F64F, 0x1F680, 0x1F6C5, 0x1F6CC, 0x1F6CC, 0x1F6D0,
+      0x1F6D2, 0x1F6D5, 0x1F6D7, 0x1F6DC, 0x1F6DF, 0x1F6EB, 0x1F6EC, 0x1F6F4, 0x1F6FC, 0x1F7E0, 0x1F7EB, 0x1F7F0,
+      0x1F7F0, 0x1F90C, 0x1F93A, 0x1F93C, 0x1F945, 0x1F947, 0x1F9FF, 0x1FA70, 0x1FA7C, 0x1FA80, 0x1FA89, 0x1FA8F,
+      0x1FAC6, 0x1FACE, 0x1FADC, 0x1FADF, 0x1FAE9, 0x1FAF0, 0x1FAF8, 0x20000, 0x2FFFD, 0x30000, 0x3FFFD,
+  };
 
   /** COALESCE: the first argument that is not NULL. */
   public static Object coalesce(Object... values) {
@@ -1391,10 +1791,16 @@ public final class Plsql {
     if (isNull(base) || isNull(exponent)) return null;
     BigDecimal b = num(base);
     BigDecimal e = num(exponent);
-    if (e.stripTrailingZeros().scale() <= 0 && e.abs().compareTo(BigDecimal.valueOf(999)) <= 0) {
+    boolean whole = e.stripTrailingZeros().scale() <= 0;
+    // POWER(0, -1) and POWER(-2, 0.5) are ORA-06502 in PL/SQL (26ai). They were Java's ArithmeticException and a
+    // NumberFormatException from a NaN, which no migrated handler catches (#113)
+    if ((b.signum() == 0 && e.signum() < 0) || (b.signum() < 0 && !whole)) throw new ValueError();
+    if (whole && e.abs().compareTo(BigDecimal.valueOf(999)) <= 0) {
       int n = e.intValue();
       BigDecimal raised = b.pow(Math.abs(n));
-      return n >= 0 ? raised : OracleNumbers.divide(BigDecimal.ONE, raised);
+      // rounded as a NUMBER holds it (#113): POWER(2, 200) is 160693804425899027554196209234116260252 followed by
+      // 22 zeros on 26ai, and POWER(1.1, 50) 117.390852879695316506666495990358319939
+      return n >= 0 ? OracleNumbers.round40(raised) : OracleNumbers.divide(BigDecimal.ONE, raised);
     }
     // x ** 0.5 as √x: Oracle's own result differs from it in the last digit or two (it uses exp and ln)
     if (e.compareTo(new BigDecimal("0.5")) == 0) return sqrt(b);
@@ -1436,61 +1842,133 @@ public final class Plsql {
     return toDate(value, "DD-MON-RR");
   }
 
+  /**
+   * TO_DATE(text, format), read element by element as Oracle reads it (#112). Measured on Oracle 26ai, 2026-09-27:
+   *
+   * <ul>
+   *   <li>a numeric element takes up to its width in digits and fewer are fine: `TO_DATE('1-1-2026','DD-MM-YYYY')`
+   *       is 2026-01-01 and '2026-3-5 7:8:9' reads too. java.time asked for exactly two, and refused them;
+   *   <li>`YY` is a year of the current century -- `TO_DATE('01-JAN-99','DD-MON-YY')` is 2099-01-01. `RR` (and `RRRR`
+   *       given two digits) is the one that picks the century around the current year: 99 is 1999, 49 is 2049;
+   *   <li>what the format leaves out is the current year and month, day 1, midnight: `TO_DATE('2026','YYYY')` is
+   *       2026-09-01 in September, `TO_DATE('10:30','HH24:MI')` the 1st of this month at 10:30. Year and month come
+   *       from {@link #sysdate()}, the database clock, as Oracle's come from SYSDATE;
+   *   <li>punctuation in the format matches any punctuation: '2026/01/05' reads with 'YYYY-MM-DD'.
+   * </ul>
+   */
   public static LocalDateTime toDate(Object value, Object format) {
     if (isNull(value) || isNull(format)) return null;
     if (value instanceof LocalDateTime d) return d;
-    java.time.format.DateTimeFormatterBuilder builder = new java.time.format.DateTimeFormatterBuilder().parseCaseInsensitive();
-    appendOracleFormat(builder, text(format));
-    java.time.format.DateTimeFormatter formatter = builder
-        .parseDefaulting(java.time.temporal.ChronoField.HOUR_OF_DAY, 0)
-        .parseDefaulting(java.time.temporal.ChronoField.MINUTE_OF_HOUR, 0)
-        .parseDefaulting(java.time.temporal.ChronoField.SECOND_OF_MINUTE, 0)
-        .parseDefaulting(java.time.temporal.ChronoField.DAY_OF_MONTH, 1)
-        .toFormatter(java.util.Locale.ENGLISH);
+    String input = text(value).trim();
+    String model = text(format);
+    String f = model.toUpperCase(java.util.Locale.ROOT);
+    LocalDateTime now = sysdate();
+    int year = now.getYear();
+    int month = now.getMonthValue();
+    int day = 1;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+    boolean twelve = false;
+    Boolean afternoon = null;
+    int[] at = {0};
+    int i = 0;
     try {
-      return LocalDateTime.parse(text(value).trim(), formatter);
-    } catch (java.time.format.DateTimeParseException e) {
-      throw new ValueError("date " + text(value) + " does not match format " + text(format));
+      while (i < f.length()) {
+        String rest = f.substring(i);
+        if (rest.startsWith("YYYY") || rest.startsWith("RRRR")) {
+          int start = at[0];
+          int y = digits(input, at, 4);
+          year = rest.startsWith("RRRR") && at[0] - start <= 2 ? rr(y, now.getYear()) : y;
+          i += 4;
+        } else if (rest.startsWith("RR")) {
+          int start = at[0];
+          int y = digits(input, at, 4);
+          year = at[0] - start <= 2 ? rr(y, now.getYear()) : y;   // RR given four digits takes them as they are
+          i += 2;
+        } else if (rest.startsWith("YY")) {
+          year = now.getYear() / 100 * 100 + digits(input, at, 2);
+          i += 2;
+        } else if (rest.startsWith("MONTH") || rest.startsWith("MON")) {
+          month = monthName(input, at);
+          i += rest.startsWith("MONTH") ? 5 : 3;
+        } else if (rest.startsWith("MM")) {
+          month = digits(input, at, 2);
+          i += 2;
+        } else if (rest.startsWith("DD")) {
+          day = digits(input, at, 2);
+          i += 2;
+        } else if (rest.startsWith("HH24")) {
+          hour = digits(input, at, 2);
+          i += 4;
+        } else if (rest.startsWith("HH12") || rest.startsWith("HH")) {
+          hour = digits(input, at, 2);
+          twelve = true;
+          i += rest.startsWith("HH12") ? 4 : 2;
+        } else if (rest.startsWith("MI")) {
+          minute = digits(input, at, 2);
+          i += 2;
+        } else if (rest.startsWith("SS")) {
+          second = digits(input, at, 2);
+          i += 2;
+        } else if (rest.startsWith("AM") || rest.startsWith("PM")) {
+          String marker = input.substring(at[0], Math.min(at[0] + 2, input.length())).toUpperCase(java.util.Locale.ROOT);
+          if (!marker.equals("AM") && !marker.equals("PM")) throw new IllegalArgumentException("AM/PM");
+          afternoon = marker.equals("PM");
+          at[0] += 2;
+          i += 2;
+        } else if (Character.isLetterOrDigit(f.charAt(i))) {
+          throw new UnsupportedOperationException("TO_DATE format element not mapped: " + model.substring(i));
+        } else {
+          // a separator: any one punctuation or blank of the input stands for it, and a missing one is fine
+          if (at[0] < input.length() && !Character.isLetterOrDigit(input.charAt(at[0]))) at[0]++;
+          i++;
+        }
+      }
+      if (at[0] < input.length()) throw new IllegalArgumentException("input left over");   // ORA-01830
+      if (twelve) {
+        if (hour < 1 || hour > 12) throw new IllegalArgumentException("hour");
+        hour = hour % 12 + (Boolean.TRUE.equals(afternoon) ? 12 : 0);
+      }
+      return LocalDateTime.of(year, month, day, hour, minute, second);
+    } catch (RuntimeException e) {
+      if (e instanceof UnsupportedOperationException) throw e;
+      throw new ValueError("date " + text(value) + " does not match format " + model);
     }
   }
 
-  /**
-   * An Oracle date format model, element by element: the elements the examples and the corpus use. RR / YY take a
-   * two-digit year into the century around the current one (1950-2049 today), as Oracle's RR does -- java.time's
-   * `uu` would read 99 as 2099.
-   */
-  private static void appendOracleFormat(java.time.format.DateTimeFormatterBuilder builder, String oracle) {
-    String f = oracle.toUpperCase(java.util.Locale.ROOT);
-    int pivot = java.time.Year.now().getValue() / 100 * 100 - 50;
-    int i = 0;
-    while (i < f.length()) {
-      String rest = f.substring(i);
-      if (rest.startsWith("RRRR") || rest.startsWith("YYYY")) {
-        builder.appendPattern("uuuu");
-        i += 4;
-      } else if (rest.startsWith("RR") || rest.startsWith("YY")) {
-        builder.appendValueReduced(java.time.temporal.ChronoField.YEAR, 2, 2, pivot);
-        i += 2;
-      } else {
-        String[][] elements = {{"HH24", "HH"}, {"HH12", "hh"}, {"MONTH", "MMMM"}, {"MON", "MMM"}, {"MM", "MM"},
-            {"DD", "dd"}, {"MI", "mm"}, {"SS", "ss"}, {"AM", "a"}, {"PM", "a"}};
-        String[] hit = null;
-        for (String[] element : elements) {
-          if (rest.startsWith(element[0])) {
-            hit = element;
-            break;
-          }
-        }
-        if (hit != null) {
-          builder.appendPattern(hit[1]);
-          i += hit[0].length();
-        } else if (Character.isLetter(f.charAt(i))) {
-          throw new UnsupportedOperationException("TO_DATE format element not mapped: " + oracle.substring(i));
-        } else {
-          builder.appendLiteral(oracle.charAt(i++));
-        }
+  /** Up to {@code width} digits of the input from {@code at[0]}, at least one. */
+  private static int digits(String input, int[] at, int width) {
+    int start = at[0];
+    while (at[0] < input.length() && at[0] - start < width && Character.isDigit(input.charAt(at[0]))) at[0]++;
+    if (at[0] == start) throw new IllegalArgumentException("a number was expected at " + start);
+    return Integer.parseInt(input.substring(start, at[0]));
+  }
+
+  /** RR: a two-digit year into the century that puts it nearest the current year (Oracle's rule for RR). */
+  private static int rr(int twoDigits, int currentYear) {
+    int century = currentYear / 100 * 100;
+    boolean currentLow = currentYear % 100 < 50;
+    if (currentLow) return twoDigits < 50 ? century + twoDigits : century - 100 + twoDigits;
+    return twoDigits < 50 ? century + 100 + twoDigits : century + twoDigits;
+  }
+
+  /** A month's English name, full or its first three letters, in any case: 'January' and 'jan' are both 1. */
+  private static int monthName(String input, int[] at) {
+    String rest = input.substring(at[0]).toUpperCase(java.util.Locale.ROOT);
+    for (java.time.Month month : java.time.Month.values()) {
+      if (rest.startsWith(month.name())) {
+        at[0] += month.name().length();
+        return month.getValue();
       }
     }
+    for (int m = 0; m < MONTHS.length; m++) {
+      if (rest.startsWith(MONTHS[m])) {
+        at[0] += 3;
+        return m + 1;
+      }
+    }
+    throw new IllegalArgumentException("not a month");
   }
 
   /** ADD_MONTHS: the last day of a month stays the last day (31-JAN + 1 month is 28/29-FEB, 28-FEB + 1 is 31-MAR). */

@@ -12,6 +12,19 @@ rules:
     requiredTests:
       - state_isolation_between_calls
 
+  # #108: パッケージ本体の初期化部（BEGIN … END pkg;）は、セッションで最初にパッケージを参照したときに 1 回だけ走る。
+  # 移行先に相当するものは無く、黙って落としていた。状態と同じく、どこで何をするかは人が決める
+  - id: STATE-002
+    match: {packageInitialisation: true}
+    decision: REDESIGN
+    severity: critical
+    message: パッケージ本体に初期化部（BEGIN … END）があります。Oracle ではセッションで最初にこのパッケージを参照したときに、呼んだ routine より先に 1 回だけ走ります（そこで起きた例外は呼び出し元に届きます）。生成コードには入っていません
+    remediation:
+      - 初期化部がすることを、アプリの起動時の処理か、各 routine の前に呼ぶ明示的な初期化に移す
+      - package 変数を設定しているなら、STATE-001 の決定（引数で渡す / SessionContext / 永続化）と合わせて決める
+    requiredTests:
+      - package_initialisation_runs_once
+
   - id: AUTHID-001
     match: {authId: CURRENT_USER}
     decision: REDESIGN

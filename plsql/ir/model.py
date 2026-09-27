@@ -205,6 +205,11 @@ class BindVariable:
     # expression in SET or VALUES is computed in the application and bound as a value instead. None means the
     # bind is a plain variable reference.
     expression: str | None = None
+    # #115: True when the value is written into the column (an INSERT's VALUES, an UPDATE's SET, MERGE's branches),
+    # not compared with it. Oracle refuses a value too long or too precise for the column only on the way in, so
+    # only a written value is checked against `column_oracle_type`. None, not False, so that a document without
+    # writes stays as it was
+    writes_column: bool | None = None
 
 
 @dataclass
@@ -383,6 +388,10 @@ class Module(Node):
     # `WHEN (OLD.status <> NEW.status)`: trigger が発火する条件。落とすと**記録される量が変わる**
     # ので、生成側は本体の前の番人として出す（#12 / trigger-patterns A-2）
     trigger_when: str | None = None
+    # a package body's initialisation section (`BEGIN ... END pkg;`), as written (#108). Oracle runs it once per
+    # session, the first time anything of the package is referenced; it had vanished without a trace. Nothing
+    # migrates it: STATE-002 asks a person, the way STATE-001 does for the package's variables
+    initialisation: str | None = None
 
     @property
     def has_package_state(self) -> bool:

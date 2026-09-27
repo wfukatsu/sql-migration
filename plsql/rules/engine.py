@@ -197,7 +197,7 @@ ROUTINE_KEYS = {
     "autonomous": bool, "controlsTransaction": bool, "packageState": bool, "moduleKind": None, "authId": None,
     "dbLink": bool, "externalPackage": bool, "callSpec": bool, "writeThenScan": bool, "recursive": bool,
     "handlesException": None, "unresolvedCallee": bool, "swallowsOthers": bool, "rowCountUntracked": bool,
-    "clockReadsAtLeast": int, "cursorLocking": bool, "saveExceptions": bool,
+    "clockReadsAtLeast": int, "cursorLocking": bool, "saveExceptions": bool, "packageInitialisation": bool,
 }
 DIAGNOSTIC_KEYS = ("hasDiagnostic", "hasAllDiagnostics", "lacksDiagnostic")
 
@@ -456,6 +456,8 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
         "controlsTransaction": lambda v: ((effects.controls_transaction if effects else False)
                                           or routine.transaction_effects.controls_transaction) is v,
         "packageState": lambda v: module.has_package_state is v,
+        # a package body with a `BEGIN ... END pkg;` section, which Oracle runs before the first call (#108)
+        "packageInitialisation": lambda v: bool(module.initialisation) is v,
         "moduleKind": lambda v: module.module_kind in _as_set(v),
         "authId": lambda v: routine.auth_id in _as_set(v),
         "dbLink": lambda v: bool(effects and effects.external.db_links) is v,

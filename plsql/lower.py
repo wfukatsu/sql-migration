@@ -125,6 +125,42 @@ def overload_ordinals(names: list[str]) -> list[int | None]:
     return out
 
 
+def _top_index(body: list[M.Statement], node: M.Statement) -> int:
+    """The index of the statement of `body` that is `node` or holds it."""
+    for index, statement in enumerate(body):
+        if statement is node or any(s is node for s in _walk([statement])):
+            return index
+    return len(body)
+
+
+def _closing_paren(text: str, open_at: int) -> int | None:
+    depth = 0
+    for index in range(open_at, len(text)):
+        if text[index] == "(":
+            depth += 1
+        elif text[index] == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def _top_level_split(inner: str) -> list[str]:
+    """`a, f(b, c), d` -> the three arguments. Literals are already blanked out by the caller."""
+    parts, depth, start = [], 0, 0
+    for index, character in enumerate(inner):
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+        elif character == "," and depth == 0:
+            parts.append(inner[start:index].strip())
+            start = index + 1
+    if inner[start:].strip():
+        parts.append(inner[start:].strip())
+    return parts
+
+
 def _read_in_a_handler(body: str, name: str) -> bool:
     """Whether an exception handler in `body` (the text after `EXCEPTION WHEN`) mentions `name`."""
     return any(re.search(rf"\b{re.escape(name)}\b", part, re.I)
@@ -281,6 +317,18 @@ class _Lowerer:
                 module.routines.append(self._routine(body, module=name, ordinal=ordinal))
             module.routines.extend(self.lifted)
             self.lifted, self.module_routines = [], set()
+            # `BEGIN ... END pkg;` after the routines: run once per session, on the package's first reference. It
+            # used to vanish without IR or diagnostic, and `pi.rate` was AUTO in a package whose initialisation
+            # raised (#108). Kept as written, and STATE-002 makes every routine of the package REDESIGN
+            statements = _children(context, "Seq_of_statementsContext")
+            if statements:
+                handlers = _children(context, "Exception_handlerContext")
+                module.initialisation = "BEGIN\n" + "\n".join(_text(s) for s in statements) + (
+                    "\nEXCEPTION\n" + "\n".join(_text(h) for h in handlers) if handlers else "")
+                module.add("WARN", "PACKAGE_INIT",
+                           f"package {name} has an initialisation section: Oracle runs it once per session, the first "
+                           "time the package is referenced, before the routine that was called. It is not migrated; "
+                           "what it sets up (and any exception it raises) is a design decision (STATE-002, #108)")
         return module
 
     def _standalone(self, context: ParserRuleContext) -> M.Module:
@@ -332,7 +380,14 @@ class _Lowerer:
             # a cursor the enclosing routine opens and this one fetches (6-11) is one cursor in two methods; an
             # exception raised here is caught out there
             return f"uses the enclosing routine's cursor or exception {', '.join(shared + exceptions)}"
-        assigned = [n for n in captured if n not in cursors and not self._carriable(visible[n], text, n)]
+        # an enclosing variable handed to an OUT / IN OUT parameter of a call is written too: carried IN, the
+        # callee's write landed on the lifted routine's copy and the caller kept 0 (#105). A call whose parameter
+        # modes nothing here knows may write it or not, so such a routine is not lifted
+        written, unknown = self._written_through_calls(lifted, text, module, set(captured) - set(cursors))
+        if unknown:
+            return f"hands the enclosing routine's {', '.join(unknown)} to a call whose parameter modes are unknown"
+        assigned = [n for n in captured
+                    if n not in cursors and (n in written or not self._carriable(visible[n], text, n))]
         handled = [n for n in assigned if _read_in_a_handler(outer_body, n)]
         if handled:
             # Oracle's nested subprogram changes the variable itself, so a change before an exception survives it;
@@ -353,6 +408,82 @@ class _Lowerer:
         self.__dict__.setdefault("lifted", []).append(lifted)
         return None
 
+    def _written_through_calls(self, lifted: M.Routine, text: str, module: str,
+                               captured: set[str]) -> tuple[set[str], list[str]]:
+        """Which of `captured` the lifted routine hands to an OUT / IN OUT parameter, and which it hands to a call
+        statement whose parameter modes are unknown (a routine outside this file, #105).
+
+        A call statement is read from the IR; a function inside an expression from the text, and only when it is a
+        routine this file declares -- anything else there is a built-in (NVL, TO_CHAR), a collection element or a
+        constructor, none of which writes its argument. Only an argument that is the variable itself (or one of
+        its fields) can be an OUT target: `c + 1` is a value."""
+        from .builtins import BUILTINS
+
+        written: set[str] = set()
+        unknown: list[str] = []
+
+        def target(argument: str) -> tuple[str | None, str]:
+            named = re.match(r"^\s*([A-Za-z][\w$#]*)\s*=>\s*(.+)$", argument, re.DOTALL)
+            value = named.group(2) if named else argument
+            bare = re.fullmatch(r"\s*([A-Za-z][\w$#]*)(?:\s*\.\s*[A-Za-z][\w$#]*)?\s*", value)
+            name = bare.group(1).lower() if bare else None
+            return (name if name in captured else None), (named.group(1).lower() if named else "")
+
+        def visit(callee: str, arguments: list[str], statement: bool) -> None:
+            modes = self._parameter_modes(callee, module)
+            for index, argument in enumerate(arguments):
+                name, named = target(argument)
+                if name is None:
+                    continue
+                if modes is None:
+                    # an Oracle-supplied call the generator knows, DBMS_OUTPUT, or a collection method (`v.DELETE(i)`)
+                    # takes its arguments IN
+                    known_in = callee.upper() in BUILTINS or callee.upper().startswith("DBMS_OUTPUT.") \
+                        or callee.upper().rpartition(".")[2] in ("EXTEND", "DELETE", "TRIM")
+                    if statement and not known_in and name not in unknown:
+                        unknown.append(name)
+                    continue
+                if any((named and by_name.get(named) in ("OUT", "IN OUT"))
+                       or (not named and index < len(order) and order[index] in ("OUT", "IN OUT"))
+                       for order, by_name in modes):
+                    written.add(name)
+                elif named and not any(named in by_name for _, by_name in modes) and name not in unknown:
+                    unknown.append(name)   # a parameter name none of the overloads has
+
+        statements = _walk(lifted.body) + [s for h in lifted.exception_handlers for s in _walk(h.body)]
+        for statement in statements:
+            if statement.kind == "Call":
+                visit(statement.callee, list(statement.arguments), True)
+        for call in re.finditer(r"(?<![\w$#.])([A-Za-z][\w$#]*(?:\s*\.\s*[A-Za-z][\w$#]*)?)\s*\(", text):
+            callee = re.sub(r"\s+", "", call.group(1))
+            if self._parameter_modes(callee, module) is None:
+                continue
+            close = _closing_paren(text, call.end() - 1)
+            if close is not None:
+                visit(callee, _top_level_split(text[call.end():close]), False)
+        return written, unknown
+
+    def _parameter_modes(self, callee: str, module: str) -> "list[tuple[list[str], dict[str, str]]] | None":
+        """The directions of each overload's parameters, in order and by name; None when this file does not
+        declare the routine (#105)."""
+        if self.symbols is None:
+            return None
+        parts = [p.strip().lower() for p in callee.split(".")]
+        key = ".".join(parts[-2:]) if len(parts) > 1 else f"{module}.{parts[0]}"
+        overloads = self.symbols.overloads.get(key)
+        if not overloads:
+            return None
+        owner, _, name = key.rpartition(".")
+        out = []
+        for ordinal in ([None] if len(overloads) == 1 else range(1, len(overloads) + 1)):
+            scope = self.symbols.scopes.get(routine_id_of(owner, name, ordinal))
+            if scope is None:
+                return None
+            parameters = [s for s in scope.symbols.values() if s.kind == "parameter"]
+            out.append(([s.direction or "IN" for s in parameters],
+                        {s.name.lower(): s.direction or "IN" for s in parameters}))
+        return out
+
     @staticmethod
     def _carriable(holder, text: str, name: str) -> bool:
         """Whether the enclosing routine's `name` can be handed to the lifted routine as an argument (#80). It
@@ -363,6 +494,9 @@ class _Lowerer:
         if re.search(word + r"\s*:=", text, re.I) or re.search(word + r"\s*\.\s*[A-Za-z][\w$#]*\s*:=", text, re.I):
             return False
         if re.search(r"\bINTO\b[^;]*" + word, text, re.I):
+            return False
+        # `EXECUTE IMMEDIATE ... USING OUT c` / `USING IN OUT c` writes it too (#105)
+        if re.search(r"\bUSING\b[^;]*\bOUT\s+" + word, text, re.I):
             return False
         return True
 
@@ -509,7 +643,10 @@ class _Lowerer:
                          f"a nested subprogram that {reason} is not lowered; whatever it does (COMMIT included) is "
                          "invisible to the rules, so the routine cannot be AUTO while it is present")
                 routine.body.insert(0, node)
-            self._inline_dynamic_blocks(routine, ids)
+            handlers = " ".join(re.sub(r"'(?:[^']|'')*'|--[^\n]*", " ", _text(h)) for h in _descend(
+                body, {"Exception_handlerContext"}, stop={"BodyContext", "BlockContext"}))
+            self._inline_dynamic_blocks(routine, ids, module or name,
+                                        re.sub(r"'(?:[^']|'')*'|--[^\n]*", " ", _text(body)), handlers)
             self._carry_captured(routine)
             self.routine_id = routine_id   # lowering a nested one moved it
             # the routine's own handlers, not every handler inside it: a nested block keeps its own (#18)
@@ -1024,7 +1161,8 @@ class _Lowerer:
                                           "static statement may not have; confirm the caller is allowed to run this")
         return node
 
-    def _inline_dynamic_blocks(self, routine: M.Routine, ids) -> None:
+    def _inline_dynamic_blocks(self, routine: M.Routine, ids, module: str = "", text: str = "",
+                               handlers: str = "") -> None:
         """`stmt := 'BEGIN p(:x); END;'; EXECUTE IMMEDIATE stmt USING b;` (#87, oracle-plsql-docs 7-1, 7-2, 7-4).
 
         #52 inlined a constant block only when the literal was written in the EXECUTE IMMEDIATE itself; one kept in a
@@ -1032,6 +1170,12 @@ class _Lowerer:
         gives exactly one value -- a string literal that is a block, in its declaration or one assignment, and that
         nothing reads INTO -- is that constant, and the block is inlined the same way. Any other variable may hold
         something else at run time and stays dynamic.
+
+        "Exactly one value" means every way PL/SQL writes a variable (#107): `pick(stmt)` with an OUT parameter
+        (or a call whose modes are unknown), `USING OUT stmt`, a nested procedure that assigns it, an assignment in
+        the routine's own handlers (lowered after this, so read from `handlers`), a nested block that declares
+        another `stmt`. The one assignment has to sit in the routine's own statement list, before the EXECUTE
+        IMMEDIATE: inside an IF, the variable is NULL on the other path. Any of those and it stays dynamic.
         """
         statements = _walk(routine.body)
         dynamic = [s for s in statements if s.kind == "DynamicSql" and s.constant_sql is None
@@ -1039,19 +1183,41 @@ class _Lowerer:
         if not dynamic:
             return
         values: dict[str, list[str | None]] = {}
+        where: dict[str, M.Statement] = {}
         for declaration in routine.declarations:
             if declaration.initial is not None:
                 values.setdefault(declaration.name.lower(), []).append(declaration.initial)
         for statement in statements:
             if statement.kind == "Assignment" and statement.target:
                 values.setdefault(statement.target.strip().lower(), []).append(statement.expression)
+                where[statement.target.strip().lower()] = statement
             for target in getattr(statement, "into_targets", None) or []:
                 values.setdefault(target.strip().lower(), []).append(None)
+            for bind in getattr(statement, "using", None) or []:
+                if (bind.direction or "IN").upper() != "IN":
+                    values.setdefault((bind.plsql_variable or bind.name or "").lower(), []).append(None)
+            for declaration in getattr(statement, "declarations", None) or []:
+                values.setdefault(declaration.name.lower(), []).extend([None, None])   # another variable
         for parameter in routine.parameters:
             values.setdefault(parameter.name.lower(), []).append(None)
+        locals_ = {d.name.lower() for d in routine.declarations if d.declaration_kind == "variable"}
+        written, unknown = self._written_through_calls(routine, text, module, locals_)
+        lifted = [r for r in self.__dict__.get("lifted", []) if r.enclosing == routine.id]
+        for name in locals_:
+            if name in written or name in unknown \
+                    or any(name in r.__dict__.get("assigned", set()) for r in lifted) \
+                    or re.search(rf"\b{re.escape(name)}\b", handlers, re.IGNORECASE):
+                values.setdefault(name, []).append(None)
         replacements = {}
         for node in dynamic:
-            written = values.get(node.expression.lower(), [])
+            name = node.expression.lower()
+            written = values.get(name, [])
+            if name not in locals_:
+                continue   # a parameter or a package variable: whoever calls may have put anything there
+            assignment = where.get(name)
+            if assignment is not None and (assignment not in routine.body
+                                           or routine.body.index(assignment) > _top_index(routine.body, node)):
+                continue   # assigned on one path only, or after the EXECUTE IMMEDIATE
             literal = re.fullmatch(r"\s*'((?:[^']|'')*)'\s*", written[0] or "") if len(written) == 1 else None
             constant = literal.group(1).replace("''", "'") if literal else None
             if constant is None or not DYNAMIC_BLOCK.match(constant) or node.into_targets:
