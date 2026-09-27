@@ -65,7 +65,7 @@ def _general(routine: M.Routine, symbols: SymbolTable, module: str | None, schem
     Each OPEN becomes the read of the cursor's query (`SqlOperation.opens_cursor`), and the FETCH / CLOSE stay:
     the generator walks the rows the OPEN read, one per FETCH, and answers the attributes from where it is. Only a
     cursor this routine opens itself is taken -- one opened elsewhere (a package cursor across calls) is session
-    state -- and not one a FETCH ... BULK COLLECT reads, which is a different read.
+    state. A FETCH ... BULK COLLECT [LIMIT n] takes the next n rows (#67).
     """
     statements = _walk_all(routine.body) + [s for h in routine.exception_handlers for s in _walk_all(h.body)]
     opens: dict[str, list[M.Statement]] = {}
@@ -74,8 +74,7 @@ def _general(routine: M.Routine, symbols: SymbolTable, module: str | None, schem
             opens.setdefault(_cursor_name(statement.cursor), []).append(statement)
     for cursor, nodes in opens.items():
         fetches = [s for s in statements if s.kind == "Fetch" and _cursor_name(s.cursor) == cursor]
-        if any(s.bulk_limit or any(d.code == "BULK_COLLECT" for d in s.diagnostics) or not s.into_targets
-               for s in fetches):
+        if any(not s.into_targets for s in fetches):
             continue
         replacements = {}
         for node in nodes:
@@ -357,23 +356,58 @@ def _first_row(statements: list[M.Statement], index: int, routine: M.Routine, sy
         return None
     consumed = 2
     branch: M.Statement | None = None
-    if run[consumed].kind == "If" and _guards(run[consumed], cursor, NOTFOUND):
+    if consumed < len(run) and run[consumed].kind == "If" and _guards(run[consumed], cursor, NOTFOUND):
         branch = run[consumed]
         consumed += 1
-    if consumed >= len(run) or run[consumed].kind != "CloseCursor" or \
-            _cursor_name(run[consumed].cursor) != cursor:
+    closed = consumed < len(run) and run[consumed].kind == "CloseCursor" and _cursor_name(run[consumed].cursor) == cursor
+    if closed:
+        consumed += 1
+    elif not (any(d.code == "BULK_COLLECT" for d in run[1].diagnostics) and not run[1].bulk_limit
+              and not _uses_cursor(run[consumed:], cursor)):
+        # a BULK COLLECT with no LIMIT has read every row: a cursor nothing uses afterwards is done with, closed or
+        # not (12-22 leaves it open). Anything else needs its CLOSE to be this shape
         return None
-    consumed += 1
     query = _query(cursor, list(run[0].arguments), routine, symbols, module, schema,
                    opened=getattr(run[0], "query_sql", None))
     if query is None:
         return None
+    bulk = any(d.code == "BULK_COLLECT" for d in run[1].diagnostics)
+    if bulk:
+        # `FETCH c BULK COLLECT INTO names, sals [LIMIT n]` (6-27, 12-22, #67): the rows, not the first one. Read as
+        # the first row, a row's column was cast to the collection. A LIMIT that is not a number is left alone
+        limit = (run[1].bulk_limit or "").strip()
+        if limit and not limit.isdigit():
+            return None
+        operation = _operation(run[1], routine, _limit_n(query, int(limit)) if limit else query, run[1].into_targets)
+        if operation is None:
+            return None
+        operation.cardinality = "MANY"
+        operation.add("WARN", "BULK_COLLECT", "BULK COLLECT needs a row limit and a memory bound")
+        return ([operation] + ([branch] if branch is not None else []), consumed, cursor)
     operation = _operation(run[1], routine, _limit_one(query), run[1].into_targets)
     if operation is None:
         return None
     operation.cardinality = "AT_MOST_ONE"
     operation.not_found_flag = cursor
     return ([operation] + ([branch] if branch is not None else []), consumed, cursor)
+
+
+def _uses_cursor(statements: list[M.Statement], cursor: str) -> bool:
+    """Whether any of these statements uses the cursor: OPEN / FETCH / CLOSE it, or read one of its attributes."""
+    for statement in _walk_all(statements):
+        if _cursor_name(getattr(statement, "cursor", None)) == cursor:
+            return True
+        if re.search(rf"\b{re.escape(cursor)}\s*%", repr(statement), re.IGNORECASE):
+            return True
+    return False
+
+
+def _limit_n(sql: str, rows: int) -> str:
+    """The same query, the first `rows` rows only."""
+    tree = sqlglot.parse_one(sql, dialect="oracle")
+    if tree.args.get("limit") is None:
+        tree.set("limit", exp.Limit(expression=exp.Literal.number(rows)))
+    return tree.sql(dialect="oracle")
 
 
 def _limit_one(sql: str) -> str:

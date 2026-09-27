@@ -980,6 +980,20 @@ public final class Plsql {
       return null;
     }
 
+    /**
+     * {@code FETCH c BULK COLLECT INTO ... [LIMIT n]} (#67): the next n rows, or every row left when there is no
+     * limit. %NOTFOUND is TRUE when fewer than n came back -- the last chunk, even a non-empty one -- as Oracle has it.
+     */
+    public java.util.List<Object[]> fetchMany(Object limit) {
+      open();
+      int n = isNull(limit) ? Integer.MAX_VALUE : num(limit).intValueExact();
+      if (n < 1) throw new ValueError("numeric or value error: LIMIT must be a positive integer");
+      java.util.List<Object[]> out = new java.util.ArrayList<>();
+      while (out.size() < n && position < rows.size()) out.add(rows.get(position++));
+      found = isNull(limit) ? !out.isEmpty() : out.size() == n;
+      return out;
+    }
+
     public void close() {
       open();
       rows = null;
@@ -1406,6 +1420,13 @@ public final class Plsql {
   public static java.util.List<Object[]> arrays(java.util.List<?> rows) {
     java.util.List<Object[]> out = new java.util.ArrayList<>(rows.size());
     for (Object row : rows) out.add(row instanceof Object[] a ? a : ((java.util.List<?>) row).toArray());
+    return out;
+  }
+
+  /** BULK COLLECT into an INDEX BY PLS_INTEGER table: the values keyed 1 .. n, as Oracle fills it (#67, #93). */
+  public static <T> java.util.Map<Integer, T> indexed(java.util.List<T> values) {
+    java.util.TreeMap<Integer, T> out = new java.util.TreeMap<>();
+    for (int i = 0; i < values.size(); i++) out.put(i + 1, values.get(i));
     return out;
   }
 

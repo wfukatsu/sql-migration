@@ -2037,16 +2037,7 @@ def _sql_statement(file: JavaFile, statement: M.SqlOperation, routine: M.Routine
         # "no rows" and "many rows" into exceptions the original never raised. The repository returns every row;
         # collection i takes column i. A collection of records, or a target that is not a local collection, is
         # refused rather than guessed.
-        holders = [_holder(routine, t) for t in targets]
-        if len(targets) != len(statement.into_columns or targets) or any(
-                h is None or not _collection_kind(h) or "RECORD(" in (h.type.resolved or "").upper() for h in holders):
-            raise Untranslatable([f"BULK COLLECT INTO {', '.join(targets)}"], statement.original_sql)
-        file.add_import("com.scalar.migrate.plsql.Plsql")
-        with file.block("") as f:   # its own scope: a routine may BULK COLLECT more than once
-            f.line(f"var bulk_ = repository.{method}({arguments});")
-            for index, (target, holder) in enumerate(zip(targets, holders)):
-                element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
-                f.line(f"{_local(target)} = Plsql.column(bulk_, {index}, {element}.class);")
+        _bulk_into(file, statement, routine, targets, f"repository.{method}({arguments})")
         return
     if targets and statement.cardinality == "AT_MOST_ONE":
         _first_row(file, statement, routine, method, arguments, targets)
@@ -2227,6 +2218,48 @@ def _first_row(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, me
         _assign_row(f, routine, targets, row)
 
 
+def _bulk_into(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, targets: list[str], rows: str) -> None:
+    """BULK COLLECT INTO: every row read, into the targets (#66, #67).
+
+    Several collections take a column each; one collection of records (`TABLE OF c1%ROWTYPE`, 12-23) takes a
+    record built from each row. An INDEX BY PLS_INTEGER target is a Map (#93), numbered from 1 as Oracle numbers
+    it; a nested table or VARRAY is a List. A target that is not a local collection is refused, not guessed.
+    """
+    holders = [_holder(routine, t) for t in targets]
+    if any(h is None or not _collection_kind(h) for h in holders):
+        raise Untranslatable([f"BULK COLLECT INTO {', '.join(targets)}"], statement.original_sql)
+    file.add_import("com.scalar.migrate.plsql.Plsql")
+    records = _element_record(holders[0].type.resolved) if len(targets) == 1 else None
+    if records is None and (len(targets) != len(getattr(statement, "into_columns", None) or targets) or any(
+            "RECORD(" in (h.type.resolved or "").upper() for h in holders)):
+        raise Untranslatable([f"BULK COLLECT INTO {', '.join(targets)}"], statement.original_sql)
+    with file.block("") as f:   # its own scope: a routine may BULK COLLECT more than once
+        f.line(f"var bulk_ = {rows};")
+        if records is not None:
+            holder = holders[0]
+            element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
+            if element == "Object":
+                raise Untranslatable([f"BULK COLLECT INTO {targets[0]}"], statement.original_sql)
+            f.add_import(*java_type(holder.type.resolved).imports, "java.util.List", "java.util.ArrayList")
+            f.line(f"List<{element}> rows_ = new ArrayList<>();")
+            with f.block("for (Object[] row_ : bulk_)") as g:
+                fields = record_columns(records)
+                for _, kind in fields:
+                    g.add_import(*java_type(kind).imports)
+                values = ", ".join(_into(g, f"row_[{i}]", java_type(kind).name) for i, (_, kind) in enumerate(fields))
+                g.line(f"rows_.add(new {element}({values}));")
+            f.line(f"{_local(targets[0])} = {_collected(holder, 'rows_')};")
+            return
+        for index, (target, holder) in enumerate(zip(targets, holders)):
+            element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
+            f.line(f"{_local(target)} = {_collected(holder, f'Plsql.column(bulk_, {index}, {element}.class)')};")
+
+
+def _collected(holder, values: str) -> str:
+    """A List of values as the target collection's own kind: an INDEX BY table is a Map keyed 1 .. n (#93)."""
+    return f"Plsql.indexed({values})" if _collection_kind(holder) == "map" else values
+
+
 def _planned_into(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, method: str, arguments: str,
                   targets: list[str]) -> None:
     """A query the plan runs (ScalarDB fetches, H2 computes the rest) read INTO variables (#83).
@@ -2242,15 +2275,7 @@ def _planned_into(file: JavaFile, statement: M.SqlOperation, routine: M.Routine,
     file.add_import("com.scalar.migrate.plsql.Plsql")
     rows = f"Plsql.arrays(repository.{method}({arguments}).rows())"
     if statement.cardinality == "MANY":
-        holders = [_holder(routine, t) for t in targets]
-        if len(targets) != len(statement.into_columns or targets) or any(
-                h is None or not _collection_kind(h) or "RECORD(" in (h.type.resolved or "").upper() for h in holders):
-            raise Untranslatable([f"BULK COLLECT INTO {', '.join(targets)}"], statement.original_sql)
-        with file.block("") as f:
-            f.line(f"var bulk_ = {rows};")
-            for index, (target, holder) in enumerate(zip(targets, holders)):
-                element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
-                f.line(f"{_local(target)} = Plsql.column(bulk_, {index}, {element}.class);")
+        _bulk_into(file, statement, routine, targets, rows)
         return
     with file.block("") as f:
         f.comment(f"SELECT INTO {', '.join(targets)}, through the plan")
@@ -2310,6 +2335,12 @@ def _fetch(file: JavaFile, statement: M.CursorStatement, routine: M.Routine) -> 
     """`FETCH c INTO ...` of a cursor whose OPEN read its rows (#81). No row leaves the targets as they were."""
     cursor = (statement.cursor or "").split("(")[0].strip().lower()
     file.add_import("com.scalar.migrate.plsql.Plsql")
+    if any(d.code == "BULK_COLLECT" for d in statement.diagnostics):
+        # FETCH ... BULK COLLECT INTO ... [LIMIT n]: the next n rows into the collections (#67)
+        limit = _expr(file, statement.bulk_limit, routine, None) if statement.bulk_limit else "null"
+        _bulk_into(file, statement, routine, list(statement.into_targets),
+                   f"{_cursor_state(cursor)}.fetchMany({limit})")
+        return
     with file.block("") as f:   # its own scope: a routine fetches more than once
         f.line(f"Object[] row_ = {_cursor_state(cursor)}.fetch();")
         with f.block("if (row_ != null)") as g:

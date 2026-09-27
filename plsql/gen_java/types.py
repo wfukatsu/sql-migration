@@ -62,8 +62,11 @@ def _shape(resolved: str) -> str:
     return re.sub(r"\s+", "", resolved or "").lower()
 
 
-def set_record_types(types: dict[str, str]) -> None:
-    """{type name: its resolved `RECORD(...)`}."""
+def set_record_types(types: dict[str, str], elements: dict[str, str] | None = None) -> None:
+    """{type name: its resolved `RECORD(...)`}, and {collection type name: the `RECORD(...)` it holds}.
+
+    A collection of `c1%ROWTYPE` (12-23) holds a record no TYPE names: its class is named after the collection
+    (`NameSet` -> `NamesetRow`) unless a named RECORD type has the same shape (#67)."""
     by_shape: dict[str, str] = {}
     clashing: set[str] = set()
     for name, resolved in types.items():
@@ -71,6 +74,10 @@ def set_record_types(types: dict[str, str]) -> None:
         if key in by_shape and by_shape[key] != cls:
             clashing.add(key)
         by_shape.setdefault(key, cls)
+    for name, resolved in (elements or {}).items():
+        key = _shape(resolved)
+        if key not in by_shape and key not in clashing:
+            by_shape[key] = java_class_name(name.rpartition(".")[2]) + "Row"
     _RECORD_CLASSES.set({k: v for k, v in by_shape.items() if k not in clashing})
 
 
