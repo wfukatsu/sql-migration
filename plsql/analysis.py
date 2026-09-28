@@ -348,10 +348,10 @@ def build_call_graph(program: M.Program) -> CallGraph:
             for statement in statements:
                 if statement.kind == "Call" and (statement.callee or "").strip().lower() in hidden:
                     statement.resolved_to = None
-                    if not any(d.code == "CALL_TO_UNLOWERED" for d in statement.diagnostics):
-                        statement.add("WARN", "CALL_TO_UNLOWERED",
-                                      f"calls {statement.callee.strip()}, the subprogram this routine declares and that "
-                                      "is not lowered -- not the module's routine of the same name")
+                    # the code the unlowered subprogram itself carries: the routine is not generated either way
+                    if not any(d.code == "UNSUPPORTED_CONSTRUCT" for d in statement.diagnostics):
+                        statement.add("WARN", "UNSUPPORTED_CONSTRUCT",
+                                      f"calls {statement.callee.strip()}, {UNLOWERED_CALL}")
                     continue
                 if statement.kind == "Call":
                     resolved = _resolve(statement.callee, by_name, module.name, statement.arguments or [])
@@ -470,6 +470,9 @@ def _expressions(statement: M.Statement) -> list[str]:
         out.append(branch.condition)
     out.extend(getattr(statement, "arguments", []) or [])
     return out
+
+
+UNLOWERED_CALL = "the subprogram this routine declares and that is not lowered -- not the module's routine of the same name"
 
 
 def _unlowered_subprograms(statements: list[M.Statement]) -> set[str]:

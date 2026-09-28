@@ -188,7 +188,9 @@ def _collect(node, facts: Facts, context: tuple[str, ...], triggers: set[str]) -
     elif kind == "Call":
         # lowering が織り込んだ trigger の呼び出しは原文に無い。trigger は「発火する trigger」に定義から出す
         if callee.split(".")[0] not in triggers:
-            inner = any(d.get("code") == "CALL_TO_UNLOWERED" for d in node.get("diagnostics") or [])
+            # plsql.analysis: a call of a nested subprogram that is not lowered is left unresolved, with this message
+            inner = any(d.get("code") == "UNSUPPORTED_CONSTRUCT" and "not the module's routine" in (d.get("message") or "")
+                        for d in node.get("diagnostics") or [])
             facts.calls.append({"line": _line(node), "callee": f"{facts.id} の中の {callee}" if inner else callee,
                                 "resolved": bool(node.get("resolvedTo")), "inner": inner,
                                 "arguments": node.get("arguments") or [], "when": where})
