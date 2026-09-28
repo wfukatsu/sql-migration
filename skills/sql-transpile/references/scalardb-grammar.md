@@ -177,7 +177,7 @@ ERROR になった読み取り文（SELECT、UNION などの集合演算、CTE �
 | `PLAN_FETCH` | INFO | ScalarDB からの取得 1 つずつ（アクセスパスと取得用の SQL） |
 | `PLAN_RESIDUAL` | INFO | H2 が元の SQL を実行すること（H2 の互換モード、パターン、索引の有無） |
 | `PLAN_CROSS_PARTITION` | WARN | 取得のどれかにクロスパーティション走査が要る |
-| `PLAN_UNRESOLVED` | WARN | 計画の中に、表か列を解決できなかった所がある |
+| `PLAN_UNRESOLVED` | WARN / INFO | WARN は、計画の中に表か列を解決できなかった所がある（`java:` で始まるものは H2 で表せない所）。`python:` で始まるものは INFO で、Python の参照実装（SQLite）だけの制限。Java のランタイム（H2）には関係しないので、計画を直す理由にはならない |
 | `PLAN` | INFO | 分解できなかった理由 |
 
 ### 取得コストの見積もり
@@ -269,7 +269,7 @@ ERROR になった読み取り文（SELECT、UNION などの集合演算、CTE �
 | `STATEMENT` / `UNPARSED` | ERROR | ScalarDB SQL に無い種類の文。SQLGlot が文として解析しなかったもの（ビュー、トリガー、シーケンス、GRANT、セッションの設定など） | 設計を変えるか、ScalarDB の管理手段で行う |
 | `TABLE` | ERROR | 表名が来るべき所に表名が無い | 文を見直す |
 | `ROWID` | ERROR | `ROWID` / `ROWSCN` / `ORA_ROWSCN` | 主キーで行を特定する |
-| `PARSE` / `UNSUPPORTED` | ERROR | Source 方言として読めない / ScalarDB SQL の生成器が出せない構文が残った | `--source` を確かめる / 書き直す |
+| `PARSE` / `UNSUPPORTED` | ERROR | Source 方言として読めない（文でなく式として読めたもの、たとえば綴りを誤った `SELEC * FRM t` も含む。メッセージは `not a SQL statement`） / ScalarDB SQL の生成器が出せない構文が残った | `--source` と綴りを確かめる / 書き直す |
 
 ### アプリ側に移す処理
 
