@@ -49,7 +49,7 @@ PL/SQL を解析して事実を出し、原文を読んで動作を書き、書�
   文ごとに原文の位置（`` `ファイル:行` ``）を添える。位置を添えられない文は、原文に根拠が無い
 - **原文から読み取れないことを、もっともらしく埋めない。** 業務上の意図、呼び出し元の事情、実データの
   件数は原文に書いていない。分からないことは「確かめたいこと」に問いとして書く
-- **解析できなかったファイルは仕様書に入らない。** 索引の先頭に出る。黙って進めず、利用者に伝える
+- **解析できなかったファイルと、読まなかったファイルは仕様書に入らない。** どちらも索引の先頭に出る。黙って進めず、利用者に伝える
 - 参照資料は必要になったときだけ読む:
 
   | 資料 | 読むとき |
@@ -116,13 +116,20 @@ AskUserQuestion を使うときは、先に本文で 1〜5 を説明し、推奨
 `--schema <DDL>` は、DDL が `<src>/schema.sql` 以外にあるときに渡す。ScalarDB の schema と `limits.yaml` は
 渡さない（移行先の話であって、現行の仕様ではない）。
 
-標準エラーの最終行 `MODULES= ROUTINES= STALE=` を読む。
+`plsql.cli` の終了コード: 0 = すべて解析できた、1 = 解析できなかったファイルがある（コマンドの失敗ではない。下の表の
+`failedFiles` を見る）、2 = 解析するものが無い（ディレクトリが無い、PL/SQL のファイルが 1 つも無い。標準エラーに理由）。
+読む拡張子は `.pks` `.spc`（仕様）、`.pkb` `.bdy` `.pck` `.plb` `.prc` `.fnc` `.trg` `.pls`、PL/SQL を作る `.sql`。
+object type（`.tps` `.tpb` `.typ`）と、知らない拡張子で `CREATE PACKAGE` などを含むファイルは読まず、標準エラーの
+`warning: not analysed:` と `inventory.json` の `kpi.skippedFiles` に理由つきで出る。
+
+`spec_facts.py facts` の標準エラーの最終行 `MODULES= ROUTINES= STALE= FAILED= SKIPPED=` を読む。
 
 | 出力 | 意味 | 次の手 |
 |---|---|---|
-| `STALE=0` | — | Step 3 へ |
+| `STALE=0 FAILED=0 SKIPPED=0` | — | `<src>` にあるファイルの数と `inventory.json` の `kpi.totalFiles` が合うかを見て、Step 3 へ |
+| `SKIPPED=` が 0 でない（`kpi.skippedFiles`） | 読まなかったファイルがある。その routine は仕様書に入らない | ファイル名と理由を利用者に伝える。拡張子の付け違いなら、名前を変えてよいかを聞く（原文は利用者のもの） |
 | `IR に無くなった節が残っている: <file>: <id>` | 原文から消えた（か、名前が変わった）routine の節が仕様書に残っている | 消すか、名前の変わった routine へ文章を移すかを利用者に確かめる。自分で消さない |
-| `<out>/analysis/inventory.json` の `kpi.failedFiles` が空でない | 解析できなかったファイルがある | ファイル名を利用者に伝える。その routine は仕様書に入らない。原文を直せるか（SQL*Plus の指示の混入、別言語の混在）を一緒に見る |
+| `FAILED=` が 0 でない（`<out>/analysis/inventory.json` の `kpi.failedFiles`） | 解析できなかったファイルがある | ファイル名を利用者に伝える。その routine は仕様書に入らない。原文を直せるか（SQL*Plus の指示の混入、別言語の混在）を一緒に見る |
 | `kpi.typeResolutionRate` が 1 未満 | `%TYPE` / `%ROWTYPE` が解けていない | DDL が足りない。Step 1 に戻って聞く |
 
 ### Step 3: 原文を読んで、文章を書く

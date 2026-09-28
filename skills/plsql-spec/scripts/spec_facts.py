@@ -507,6 +507,10 @@ def index_facts(modules: list[dict], facts: dict[str, Facts], inventory: dict) -
     if failed:
         out += ["**解析できなかったファイル（この仕様書に入っていない）**: "
                 + "、".join(f"`{x if isinstance(x, str) else x.get('file', x)}`" for x in failed), ""]
+    skipped = (inventory.get("kpi") or {}).get("skippedFiles") or []
+    if skipped:
+        out += ["**読まなかったファイル（この仕様書に入っていない）**: "
+                + "、".join(f"`{x['file']}`（{x['reason']}）" for x in skipped), ""]
     out += ["module", ""] + _table(["module", "種類", "routine 数", "仕様"], [
         [f"`{m['name']}`", m.get("moduleKind"), len(m.get("routines") or []), f"[{m['name']}.md]({m['name']}.md)"]
         for m in modules])
@@ -593,7 +597,13 @@ def cmd_facts(args) -> int:
         stale += [f"{name}: {block_id}" for block_id in gone]
     for entry in stale:
         print(f"IR に無くなった節が残っている（消すかどうかは人が決める）: {entry}", file=sys.stderr)
-    print(f"MODULES={len(modules)} ROUTINES={len(facts)} STALE={len(stale)}", file=sys.stderr)
+    kpi = inventory.get("kpi") or {}
+    for failed in kpi.get("failedFiles") or []:
+        print(f"解析できなかったファイル（仕様書に入らない）: {failed}", file=sys.stderr)
+    for skipped in kpi.get("skippedFiles") or []:
+        print(f"読まなかったファイル（仕様書に入らない）: {skipped['file']}: {skipped['reason']}", file=sys.stderr)
+    print(f"MODULES={len(modules)} ROUTINES={len(facts)} STALE={len(stale)} "
+          f"FAILED={len(kpi.get('failedFiles') or [])} SKIPPED={len(kpi.get('skippedFiles') or [])}", file=sys.stderr)
     return 0
 
 
