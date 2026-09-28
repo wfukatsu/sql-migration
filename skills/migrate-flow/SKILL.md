@@ -114,7 +114,10 @@ AskUserQuestion を使うときは、推奨を先頭に置いて「（推奨）�
 .venv/bin/python skills/migrate-flow/scripts/flow.py init --out <out> --kind plsql --src <src> --scalardb-schema <scalardb-schema.json> --limits <limits.yaml> --record <record.yaml>
 ```
 
-まだ無いファイル（`limits.yaml`、記録）も、作る予定の場所を渡しておく。SQL は
+まだ無いファイル（`limits.yaml`、記録）も、作る予定の場所を渡しておく。`limits.yaml` が無ければ、`init` が決定の無い
+`limits.yaml`（コメントだけ）を作る（Step 2 の生成と解析は、無いファイルを `--limits` に渡すと止まる）。記録は
+Step 2 の `decision_items.py scan --write` が作る。DDL が `<src>/schema.sql` 以外にあるなら `--schema <DDL>` も渡す
+（`spec` の指紋に入る。Step 1 の `plsql.cli` にも同じ `--schema` を渡す）。SQL は
 `--kind sql --src <入力.sql> --source-dialect oracle --target-dialect scalardb`。
 
 **plsql-spec / plsql-migrate / sql-transpile を単独で先に流してある**ときは、その成果物は別の場所にある。
@@ -252,6 +255,7 @@ sql-migration のリポジトリにだけあるので、2 のテストはリポ�
 | `approve` が「承認に出せない」 | 出た理由（未記入、古い事実、図が無い、変換できなかった文）を直す。承認を先に取らない |
 | `approve` が「順に承認する」 | 前の段階が承認されていないか、承認のあとで変わった。`status` で確かめ、前の段階から |
 | 状態が「承認が古い」 | 承認のあとで中身が変わった。差分を利用者に示し、承認を取り直す。前の内容に戻すのが正しいこともある |
+| 状態が「承認済み（検査が通らない）」 | 承認した中身は同じだが、指紋に入らない入力（解析、比較の結果）が変わって検査が通らない。出た理由を直す（`facts` を回し直すなど）。直して中身が変われば「承認が古い」になるので、取り直す |
 | 利用者が承認しない | 何が足りないかを聞いて直す。承認されないまま次の段階の判断を問わない |
 | 前の段階に戻る変更（現行の仕様の誤りが変換のあとで見つかった、など） | 仕様書を直す → `spec` が古くなる → 以降の承認も、その変更が効くなら取り直す。何が効くかを利用者に説明する |
 

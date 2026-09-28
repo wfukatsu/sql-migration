@@ -35,6 +35,10 @@ SKILLS = Path(__file__).resolve().parents[2]
 STAGES = ("spec", "decisions", "converted")
 TITLES = {"spec": "現行の仕様", "decisions": "人の判断", "converted": "変換後の仕様", "test": "テスト"}
 UNWRITTEN = "（未記入"
+EMPTY_LIMITS = """\
+# 移行の決定（行数の上限、行ロック、トランザクションの割り方など）。書き方は plsql-migrate の references/operations.md。
+# flow.py init が作った。まだ決定は無い。人の判断が決まったら書き足し、生成・解析・確認項目の拾い直しを回す。
+"""
 HEADER = """\
 # 移行の流れの状態。skills/migrate-flow/scripts/flow.py が読み書きする。
 # 承認には 承認した人 と 日付 が要る。指紋は承認したときのファイルの中身で、あとで変わると承認は古くなる。
@@ -304,12 +308,19 @@ def _redesign_answers(inputs: dict, out: Path) -> dict[str, list[str]] | None:
     return {r["routine"]: list((r.get("redesign") or {}).get("open") or []) for r in routines if r.get("redesign")}
 
 
+FAILING = "承認済み（検査が通らない）"
+
+
 def stage_state(state: dict, out: Path, stage: str) -> tuple[str, list[str]]:
     approval = (state.get("approvals") or {}).get(stage)
     problems = problems_of(state, out, stage)
     if approval:
         if approval.get("指紋") != fingerprint(_targets(state, out, stage)):
             return "承認が古い", ["承認のあとで中身が変わった。見直して、承認を取り直す"] + problems
+        if problems:
+            # 指紋に入らない入力（解析、比較の結果）が変わって検査が通らなくなった。承認した中身は同じでも、
+            # その中身がもう事実と合わないので、テストには進ませない（2026-09-28 のレビュー M4）
+            return FAILING, problems
         return "承認済み", []
     return ("承認待ち", []) if not problems else ("作業中", problems)
 
@@ -324,7 +335,16 @@ def cmd_init(args) -> int:
             inputs[key] = getattr(args, key) if key.endswith("_dialect") else str(Path(getattr(args, key)).resolve())
     if not Path(args.src).exists():
         raise FlowError(f"{args.src} が無い")
+    created = None
+    if args.kind == "plsql" and args.limits and not Path(args.limits).exists():
+        # 初めての移行では、決定はまだ無い。無いファイルを --limits に渡すと plsql.generate と plsql.cli が止まるので、
+        # 決定の無い limits.yaml を作っておく（決定は Step 2 で書き足す。2026-09-28 のレビュー M3）
+        created = Path(args.limits)
+        created.parent.mkdir(parents=True, exist_ok=True)
+        created.write_text(EMPTY_LIMITS, encoding="utf-8")
     save(out, {"inputs": inputs, "approvals": (existing or {}).get("approvals") or {}, "test": (existing or {}).get("test")})
+    if created:
+        print(f"{created} が無かったので、決定の無い limits.yaml を作った（決定は Step 2 で書き足す）")
     print(f"{_state_path(out)} を書いた。次: 現行の仕様を調べる（status で確かめられる）")
     return 0
 
@@ -421,7 +441,8 @@ def cmd_status(args) -> int:
         print("\n未決の判断（承認する人に見せる）: " + "、".join(remaining))
     if next_step:
         stage, name = next_step
-        action = {"作業中": "を仕上げる", "承認待ち": "を利用者に見せて、承認を求める", "承認が古い": "を見直して、承認を取り直す"}[name]
+        action = {"作業中": "を仕上げる", "承認待ち": "を利用者に見せて、承認を求める", "承認が古い": "を見直して、承認を取り直す",
+                  FAILING: "の検査が通らない理由を直す（直して中身が変われば、承認を取り直す）"}[name]
         print(f"\n次にすること: {TITLES[stage]}{action}")
     elif not test:
         print("\n次にすること: テストを実施する（gate が 0 を返す）")
