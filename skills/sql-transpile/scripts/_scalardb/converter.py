@@ -216,30 +216,35 @@ def _split_statements(text: str, dialect: str) -> list[str]:
     glued itself to the next statement and both became one parse error. And a PL/SQL block ends at its `/`, not at
     its first semicolon -- split on semicolons, `END` came out as a statement of its own (a column reference, so
     "converted") and the rest of the script was lost. A block is kept whole; the converters refuse it by name.
+    A block (or a WITH FUNCTION query) that follows ordinary statements in the same segment -- `SELECT ...;` and
+    then `BEGIN ... END;` and `/` -- runs from where it starts to the `/` (or the end of the script), as SQL*Plus
+    reads it; only the statements before it are cut at their semicolons (#146).
     """
     text = text.removeprefix("\ufeff")
-    if dialect != "oracle" or not _SLASH_LINE.search(text) and not PLSQL_BLOCK.match(text):
+    if dialect != "oracle":
         return _split_on_semicolons(text, dialect)
     stmts = []
     for segment in _SLASH_LINE.split(text):
         if PLSQL_BLOCK.match(segment):
             stmts.append(segment.strip())
         else:
-            chunks = _split_on_semicolons(segment, dialect)
-            for i, chunk in enumerate(chunks):
-                if WITH_PLSQL.match(chunk):
-                    # WITH FUNCTION ... runs up to the `/` that ends this segment: everything after it is its body
-                    chunks = chunks[:i] + [";\n".join(chunks[i:])]
-                    break
-            stmts.extend(chunks)
-    return stmts
+            stmts.extend(_split_on_semicolons(segment, dialect, until_plsql=True))
+    return [s for s in stmts if s]
 
 
-def _split_on_semicolons(text: str, dialect: str) -> list[str]:
+def _starts_plsql(text: str, pos: int) -> bool:
+    return bool(PLSQL_BLOCK.match(text, pos) or WITH_PLSQL.match(text, pos))
+
+
+def _split_on_semicolons(text: str, dialect: str, until_plsql: bool = False) -> list[str]:
+    """``text`` cut at its top-level semicolons. With ``until_plsql``, a statement that starts a PL/SQL block or a
+    WITH FUNCTION query takes the rest of ``text``: its semicolons end PL/SQL statements."""
     tokens = sqlglot.tokenize(text, read=dialect)
     stmts, start = [], 0
     for tok in tokens:
         if tok.token_type == TokenType.SEMICOLON:
+            if until_plsql and _starts_plsql(text, start):
+                break
             chunk = text[start:tok.start].strip()
             if chunk:
                 stmts.append(chunk)

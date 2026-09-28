@@ -164,7 +164,7 @@ Java の入口と constructor、引数の対応、例外、**原文の文 → Re
 
 任意の方言どうし（SQLGlot の 32 方言）または ScalarDB SQL に変換します。素の `sqlglot.transpile()` が黙って通してしまう構文（`ROWNUM`、Oracle の外部結合 `(+)`、`CONNECT BY`、`NEXTVAL` など）を直すか、理由付きで報告します。
 
-- Oracle の入力は SQL*Plus のスクリプトとして読みます: `/` だけの行は文の切れ目で、PL/SQL のブロック（`CREATE … PROCEDURE / FUNCTION / PACKAGE / TRIGGER`、無名ブロック）は `/` までを 1 つにまとめて ERROR `PLSQL_BLOCK` にします（変換しません。plsql-migrate の仕事です）。`END` のように式として解析できてしまう断片は OK にしません
+- Oracle の入力は SQL*Plus のスクリプトとして読みます: `/` だけの行は文の切れ目で、PL/SQL のブロック（`CREATE … PROCEDURE / FUNCTION / PACKAGE / TRIGGER`、無名ブロック）は、前に `;` で終わる文があっても、始まる所から `/` までを 1 つにまとめて ERROR `PLSQL_BLOCK` にします（変換しません。plsql-migrate の仕事です）。`END` のように式として解析できてしまう断片は OK にしません
 - 終了コードは 0 = ERROR の文なし / 1 = ERROR の文あり / 2 = 入力の誤り（無いファイル、UTF-8 でない、形の違う `--schema`、不正な `--session-time-zone`、変換する文が無い）。**2 のときレポートは書きません**。UTF-8 の BOM は読み飛ばします
 - レポートの名前に Target は入らないので、同じ入力を別の Target へ変換するときは `--out-dir` を分けます。`--plan-dir` の計画は、実行のたびにその入力のものを作り直します（前の実行の計画を残しません）
 - 指摘コードの意味は `references/scalardb-grammar.md` と `references/dialect-notes.md` にあります。変換器が出すコードがすべてどこかに載っていることを、テストが確かめます（コードを足したら表にも足すことになります）

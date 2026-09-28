@@ -104,7 +104,7 @@ Target が MySQL、Source が MySQL 以外のとき。
 | `ROWID` | Source が Oracle | 疑似列 `ROWID`。主キーで行を特定する形に書き換える |
 | `KEEP` | Source が Oracle | `MAX(x) KEEP (DENSE_RANK FIRST ORDER BY y)`。ウィンドウ関数で書き換える（下の例） |
 | `PLSQL` | Source が Oracle | `DBMS_OUTPUT`・`DBMS_LOB` など `DBMS_` で始まるパッケージの呼び出し。アプリケーション側の実装に置き換える。SQLGlot が標準の関数に写すもの（`DBMS_RANDOM.VALUE` → `RANDOM()`）は出ない |
-| `PLSQL_BLOCK` | Source が Oracle | PL/SQL のブロック（`CREATE … PROCEDURE / FUNCTION / PACKAGE / TRIGGER`、`DECLARE` / `BEGIN` の無名ブロック）。`/` だけの行までを 1 つとして扱い、変換しない。plsql-migrate スキルで移行する |
+| `PLSQL_BLOCK` | Source が Oracle | PL/SQL のブロック（`CREATE … PROCEDURE / FUNCTION / PACKAGE / TRIGGER`、`DECLARE` / `BEGIN` の無名ブロック）。始まる所から `/` だけの行（無ければスクリプトの終わり）までを 1 つとして扱い、変換しない。前に `;` で終わる SQL 文があっても同じ。plsql-migrate スキルで移行する |
 | `PG_CATALOG` | Source が PostgreSQL | `::regclass`・`::regtype`・`::regproc`・`::oid` へのキャスト。Target には無い |
 | `TRIGGER` / `PROCEDURE` / `FUNCTION` | すべて | トリガー・ストアドプロシージャ・ユーザー定義関数の DDL。方言差が大きく機械変換の対象外。Target の手続き言語で書き直す |
 | `WITH_TIES` | Target が Oracle・PostgreSQL・SQL Server 以外 | `FETCH … WITH TIES`。`LIMIT n` にすると n 番目と同順位の行が落ちる。`RANK() OVER (ORDER BY …) <= n` で絞る形に書き直す |
