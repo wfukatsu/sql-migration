@@ -35,6 +35,9 @@ if str(ROOT) not in sys.path:
 from plsql.triggers import fires_on  # noqa: E402  trigger が掛かるかは、書く側に織り込む lowering と同じ規則で決める
 
 UNWRITTEN = "（未記入"
+UNWRITTEN_ANY = re.compile(r"[（(]未記入")   # 半角の括弧で書いた「(未記入: あとで)」も未記入である
+# 文章の中の原文の位置 `ファイル:行`。事実の欄に出ないファイル（仕様の .pks など）の引用も拾う
+CITABLE = re.compile(r"(?<![\w./-])([\w$#.-]+\.(?:pks|pkb|spc|bdy|pck|plb|prc|fnc|trg|pls|sql|tps|tpb|typ)):(\d+)", re.I)
 PROSE_SECTIONS = (
     ("動作", "原文を上から読み、何をどの順で行うかを業務の言葉で書く。文ごとに原文の位置（`ファイル:行`）を添える"),
     ("業務ルール", "条件分岐・計算・既定値から読み取れる規則を 1 行ずつ。原文の位置を添える。推測は「確かめたいこと」へ"),
@@ -112,7 +115,11 @@ def _type(t: dict | None) -> str:
     if not t:
         return ""
     oracle, resolved = t.get("oracle") or "", t.get("resolved") or ""
-    return f"{oracle}（= {resolved}）" if resolved and resolved != oracle else oracle
+    # SUBTYPE … NOT NULL は IR の型に `nullable: false` として残る（#144 M4）
+    extra = "、NOT NULL" if t.get("nullable") is False else ""
+    if resolved and resolved != oracle:
+        return f"{oracle}（= {resolved}{extra}）"
+    return f"{oracle}（NOT NULL）" if extra else oracle
 
 
 def _one_line(text: str, width: int = 110) -> str:
@@ -122,6 +129,8 @@ def _one_line(text: str, width: int = 110) -> str:
 
 # 原文から来た文の id（`<routine>#stmt-3`、`#handler-1`、カーソルの問い合わせ `#stmt-5#query`）
 FROM_SOURCE = re.compile(r"#(?:stmt|handler)-\d+(?:#query)?$")
+# 手続きから推し量った DDL のファイル名（SKILL.md: `schema.inferred.sql` として --schema に渡す）
+INFERRED_DDL = re.compile(r"inferred", re.I)
 # GOTO を組み直した塊（#139）: `<routine>#goto-1`。塊の後ろの自動の EXIT は `#goto-1.exit`
 GOTO_BLOCK = re.compile(r"#goto-\d+$")
 UNPARSED_CODE = re.compile(r"RAISE_APPLICATION_ERROR\s*\(\s*(-\d+)", re.I)
@@ -179,7 +188,9 @@ def _collect(node, facts: Facts, context: tuple[str, ...], triggers: set[str]) -
     elif kind == "Call":
         # lowering が織り込んだ trigger の呼び出しは原文に無い。trigger は「発火する trigger」に定義から出す
         if callee.split(".")[0] not in triggers:
-            facts.calls.append({"line": _line(node), "callee": callee, "resolved": bool(node.get("resolvedTo")),
+            inner = any(d.get("code") == "CALL_TO_UNLOWERED" for d in node.get("diagnostics") or [])
+            facts.calls.append({"line": _line(node), "callee": f"{facts.id} の中の {callee}" if inner else callee,
+                                "resolved": bool(node.get("resolvedTo")), "inner": inner,
                                 "arguments": node.get("arguments") or [], "when": where})
     elif kind in ("Commit", "Rollback", "Savepoint"):
         facts.transaction.append({"line": _line(node), "kind": kind.upper(), "savepoint": node.get("savepoint"), "when": where})
@@ -240,7 +251,12 @@ def load(analysis: Path) -> tuple[list[dict], dict[str, Facts], dict]:
     inventory_path = analysis / "inventory.json"
     inventory = json.loads(inventory_path.read_text(encoding="utf-8")) if inventory_path.exists() else {}
     modules = program.get("modules") or []
-    triggers = {m["name"] for m in modules if m.get("moduleKind") == "trigger"}
+    # 解析できなかったファイルの module は、IR に残っていても仕様書に入れない。中身が壊れていて（`Unsupported`、
+    # 途中までの文）、索引の「この仕様書に入っていない」とも食い違う（#144 M3）
+    failed = {Path(str(x if isinstance(x, str) else x.get("file", ""))).name
+              for x in (inventory.get("kpi") or {}).get("failedFiles") or []}
+    triggers = {m["name"] for m in modules if m.get("moduleKind") == "trigger"}   # 織り込んだ呼び出しを見分ける
+    modules = [m for m in modules if (m.get("sourceRange") or {}).get("file") not in failed]
     facts: dict[str, Facts] = {}
     for module in modules:
         for routine in module.get("routines") or []:
@@ -475,7 +491,7 @@ def flow_diagram(routine: dict, file: str) -> list[str]:
 
 
 def _ident(prefix: str, name: str) -> str:
-    return prefix + re.sub(r"\W", "_", name)
+    return prefix + re.sub(r"[^A-Za-z0-9_]", "_", name)   # Mermaid の ID は ASCII にしておく
 
 
 def data_diagram(facts: list[Facts], by_module: bool) -> list[str]:
@@ -562,6 +578,9 @@ def routine_facts(f: Facts) -> str:
     else:
         head = f"- 種類: {f.kind}" + (f"（{f.visibility}）" if f.visibility else "")
     out.append(head + (f" / 戻り値: `{f.returns}`" if f.returns else "") + (" / **自律トランザクション**" if f.autonomous else ""))
+    if f.node.get("authId") == "CURRENT_USER":
+        # 表の名前を、定義した利用者ではなく呼び出した利用者のスキーマで解く。読み書きする表が呼び出し元で変わりうる
+        out.append("- 権限: 呼び出した利用者（AUTHID CURRENT_USER）。表の名前は呼び出した利用者のスキーマで解く")
     if f.carried:
         out.append(f"- 外側の `{f.enclosing}` の変数・引数を、引数で受けずに直接使う: " + "、".join(f"`{c}`" for c in f.carried))
     if f.called_by:
@@ -592,7 +611,8 @@ def routine_facts(f: Facts) -> str:
             [_at(f, t["line"]), t["kind"] + (f" {t['savepoint']}" if t["savepoint"] else ""), t["when"]] for t in f.transaction])
     if f.calls:
         out += ["", "呼び出す routine", ""] + _table(["位置", "呼び先", "引数", "条件"], [
-            [_at(f, c["line"]), f"`{c['callee']}`" + ("" if c["resolved"] else "（解決できず）"),
+            [_at(f, c["line"]), f"`{c['callee']}`" + ("（解析できなかった入れ子の subprogram）"
+                                                       if c.get("inner") else "" if c["resolved"] else "（解決できず）"),
              "、".join(f"`{a}`" for a in c["arguments"]), c["when"]] for c in f.calls])
     if f.fires:
         out += ["", "発火する trigger（書き込む表と事象、`UPDATE OF` の列で絞ったもの。WHEN があれば、条件を満たす行だけで発火する）", ""] \
@@ -614,8 +634,11 @@ def routine_facts(f: Facts) -> str:
 
 def module_facts(module: dict, facts: dict[str, Facts]) -> str:
     where = module.get("sourceRange") or {}
+    # 仕様（.pks）で宣言したものは、そのファイルに位置がある（#144 M4）
+    files = dict.fromkeys([where.get("file", "")] + [(d.get("sourceRange") or {}).get("file", "")
+                                                      for d in module.get("declarations") or []])
     out = ["**事実**（IR から機械的に出した。手で書き換えない）", "",
-           f"- 種類: {module.get('moduleKind')} / 原文: `{where.get('file', '')}`"]
+           f"- 種類: {module.get('moduleKind')} / 原文: " + "、".join(f"`{x}`" for x in files if x)]
     if module.get("moduleKind") == "trigger":
         columns = module.get("trigger_columns") or []
         out.append(f"- 発火: `{module.get('triggerTable')}` の {module.get('triggerTiming')} {module.get('triggerEvent')}"
@@ -627,9 +650,12 @@ def module_facts(module: dict, facts: dict[str, Facts]) -> str:
                    + ("。WHEN を満たす行を書いたときだけ発火する" if writers and module.get("triggerWhen") else ""))
     state = [d for d in module.get("declarations") or [] if module.get("moduleKind") == "package"]
     if state:
-        out += ["", "package の変数・定数（セッションの間、値が残る）", ""] + _table(["名前", "種類", "型", "初期値"], [
-            [f"`{d.get('name')}`", d.get("declarationKind"), f"`{_type(d.get('type'))}`",
-             f"`{_one_line(d['initial'], 60)}`" if d.get("initial") else None] for d in state])
+        out += ["", "package の変数・定数・型（変数はセッションの間、値が残る。SUBTYPE はここに出ない。仕様の原文を読む）", ""] \
+            + _table(["名前", "種類", "型", "初期値", "位置"], [
+                [f"`{d.get('name')}`", d.get("declarationKind"), f"`{_type(d.get('type'))}`" if _type(d.get("type")) else None,
+                 f"`{_one_line(d['initial'], 60)}`" if d.get("initial") else None,
+                 f"`{(d.get('sourceRange') or {}).get('file')}:{(d.get('sourceRange') or {}).get('startLine')}`"
+                 if (d.get("sourceRange") or {}).get("file") else None] for d in state])
     routines = [r["id"] for r in module.get("routines") or []]
     mine = [facts[r] for r in routines if r in facts]
     picture = data_diagram(mine, by_module=False)
@@ -649,6 +675,14 @@ def index_facts(modules: list[dict], facts: dict[str, Facts], inventory: dict) -
     if skipped:
         out += ["**読まなかったファイル（この仕様書に入っていない）**: "
                 + "、".join(f"`{x['file']}`（{x['reason']}）" for x in skipped), ""]
+    # 型（`%TYPE` の中身）と制約の出どころ（#144 M7）。推し量った DDL は、事実と区別がつくように名前で分ける
+    snapshot = inventory.get("schemaSnapshot")
+    if not snapshot:
+        out += ["- 型を解いた DDL: **無し**（`%TYPE` / `%ROWTYPE` の中身と、表の制約は分かっていない）", ""]
+    elif INFERRED_DDL.search(snapshot.split("@")[0]):
+        out += [f"- 型を解いた DDL: `{snapshot}` — **手続きから推し量った DDL**。型の欄の `（= …）` は原文の事実ではない", ""]
+    else:
+        out += [f"- 型を解いた DDL: `{snapshot}`", ""]
     out += ["module", ""] + _table(["module", "種類", "routine 数", "仕様"], [
         [f"`{m['name']}`", m.get("moduleKind"), len(m.get("routines") or []), f"[{m['name']}.md]({m['name']}.md)"]
         for m in modules])
@@ -766,25 +800,67 @@ def cmd_facts(args) -> int:
 
 
 def _sections(text: str) -> dict[str, str]:
-    """routine の ID → その節の文章（事実の欄を除いたもの）。"""
+    """routine の ID → その節の文章（事実の欄を除いたもの）。
+
+    節は、事実の欄の終わりから、次の事実の欄の見出し（その欄の直前の `## ` の行）まで。文章の中に `## 補足` を
+    書いても、そこで節は切れない（以前は `## ` で切っていて、その下の文章は誰の節でもなくなった。#144 M5）。"""
+    blocks = list(BLOCK.finditer(text))
     found = {}
-    for part in re.split(r"(?m)^## ", text)[1:]:
-        match = BLOCK.search(part)
-        if match and not match.group("id").startswith("module:") and match.group("id") != "index":
-            found[match.group("id")] = BLOCK.sub("", part)
+    for index, match in enumerate(blocks):
+        block_id = match.group("id")
+        if index + 1 < len(blocks):
+            following = blocks[index + 1].start()
+            heading = text.rfind("\n## ", match.end(), following)
+            stop = heading if heading != -1 else following
+        else:
+            stop = len(text)
+        if not block_id.startswith("module:") and block_id != "index":
+            found[block_id] = text[match.end():stop]
     return found
 
 
-def check(modules: list[dict], facts: dict[str, Facts], inventory: dict, out: Path) -> tuple[list[str], int]:
+def _subsections(prose: str) -> dict[str, str]:
+    """`### 動作` などの見出し → その下の文章。"""
+    parts = re.split(r"(?m)^###\s+(.+?)\s*$", prose)
+    return {parts[i].strip(): parts[i + 1] for i in range(1, len(parts) - 1, 2)}
+
+
+def _mentions(word: str, prose: str) -> bool:
+    """単語として出てくるか（`shelf` は `shelf_log` の中では数えない）。"""
+    return re.search(rf"(?<![\w$#-]){re.escape(word)}(?![\w$#])", prose, re.I) is not None
+
+
+def _source_lengths(src: Path | None) -> dict[str, int] | None:
+    """`--src` のファイル名 → 行数。引用の行が原文の中にあるかを、仕様（.pks）も含めて確かめるのに使う。"""
+    if src is None:
+        return None
+    if not src.is_dir():
+        raise InputError(f"--src {src} がディレクトリでない")
+    lengths = {}
+    for path in sorted(p for p in src.rglob("*") if p.is_file() and CITABLE.search(p.name + ":1")):
+        try:
+            lengths[path.name] = len(path.read_text(encoding="utf-8", errors="replace").splitlines())
+        except OSError:
+            continue
+    return lengths
+
+
+def check(modules: list[dict], facts: dict[str, Facts], inventory: dict, out: Path,
+          src: Path | None = None) -> tuple[list[str], int]:
     problems, unwritten = [], 0
-    files = {f.file for f in facts.values() if f.file}
-    citation = re.compile(r"(?<![\w./-])(" + "|".join(re.escape(x) for x in sorted(files, key=len, reverse=True)) + r"):(\d+)") if files else None
+    # 引用できるファイルと、その行の範囲。`--src` があれば原文の行数、無ければ IR の分かる範囲（routine と module の
+    # ファイルだけ。仕様のファイルは宣言の行しか IR に無いので、範囲は確かめない）
+    lengths = _source_lengths(src)
     ranges: dict[str, int] = {}
     for f in facts.values():
         ranges[f.file] = max(ranges.get(f.file, 0), f.end)
+    known = set(ranges)
     for module in modules:
         where = module.get("sourceRange") or {}
         ranges[where.get("file", "")] = max(ranges.get(where.get("file", ""), 0), where.get("endLine", 0))
+        known |= {(d.get("sourceRange") or {}).get("file", "") for d in module.get("declarations") or []}
+    if lengths is not None:
+        ranges, known = dict(lengths), set(lengths)
     for name, (_, blocks) in documents(modules, facts, inventory).items():
         path = out / name
         if not path.exists():
@@ -799,25 +875,36 @@ def check(modules: list[dict], facts: dict[str, Facts], inventory: dict, out: Pa
                 problems.append(f"{name}: `{block_id}` の事実の欄が IR と違う（原文が変わったか、手で書き換えた。facts を回し、文章を見直す）")
         for block_id in sorted(set(current) - {b for b, _, _ in blocks}):
             problems.append(f"{name}: `{block_id}` は IR に無い（原文から消えた routine の節が残っている）")
-        holes = text.count(UNWRITTEN)
+        holes = len(UNWRITTEN_ANY.findall(text))
         unwritten += holes
         if holes:
             problems.append(f"{name}: 未記入が {holes} か所")
         prose_all = BLOCK.sub("", text)
-        for file, line in (citation.findall(prose_all) if citation else []):
-            if not 1 <= int(line) <= ranges.get(file, 0):
-                problems.append(f"{name}: 引用 `{file}:{line}` は原文の範囲（1〜{ranges.get(file, 0)} 行）の外")
+        for file, line in CITABLE.findall(prose_all):
+            if file not in known:
+                problems.append(f"{name}: 引用 `{file}:{line}` のファイルは原文に無い")
+            elif file in ranges and not 1 <= int(line) <= ranges[file]:
+                problems.append(f"{name}: 引用 `{file}:{line}` は原文の範囲（1〜{ranges[file]} 行）の外")
         for routine_id, prose in _sections(text).items():
             f = facts.get(routine_id)
-            if f is None or UNWRITTEN in prose:
+            if f is None or UNWRITTEN_ANY.search(prose):
                 continue
+            parts = _subsections(prose)
+            for title, _ in PROSE_SECTIONS:
+                if title not in parts:
+                    problems.append(f"{name}: `{routine_id}` に「{title}」の節（`### {title}`）が無い")
+                elif not parts[title].strip():
+                    problems.append(f"{name}: `{routine_id}` の「{title}」が空（無ければ「なし」と書く）")
             for code in f.error_codes:
-                if str(code) not in prose:
+                if not re.search(rf"(?<![\w-]){code}(?!\d)", prose):
                     problems.append(f"{name}: `{routine_id}` の文章にエラーコード {code} が出てこない")
+            for exception in sorted({r["exception"] for r in f.raises if r["code"] is None and r["exception"]}):
+                if not _mentions(exception, prose):
+                    problems.append(f"{name}: `{routine_id}` の文章に、上げる例外 {exception} が出てこない")
             for table, ops in sorted(f.tables.items()):
-                if ops - {"R"} and table.lower() not in prose.lower():
+                if ops - {"R"} and not _mentions(table, prose):
                     problems.append(f"{name}: `{routine_id}` の文章に、書き込む表 `{table}` が出てこない")
-            cited = [int(line) for file, line in (citation.findall(prose) if citation else []) if file == f.file]
+            cited = [int(line) for file, line in CITABLE.findall(prose) if file == f.file]
             if not cited:
                 problems.append(f"{name}: `{routine_id}` の文章に原文の位置（`{f.file}:行`）が 1 つも無い")
             for line in cited:
@@ -828,7 +915,7 @@ def check(modules: list[dict], facts: dict[str, Facts], inventory: dict, out: Pa
 
 def cmd_check(args) -> int:
     modules, facts, inventory = load(Path(args.analysis))
-    problems, unwritten = check(modules, facts, inventory, Path(args.out_dir))
+    problems, unwritten = check(modules, facts, inventory, Path(args.out_dir), Path(args.src) if args.src else None)
     for problem in problems:
         print(problem)
     print(f"ROUTINES={len(facts)} UNWRITTEN={unwritten} PROBLEMS={len(problems)}", file=sys.stderr)
@@ -843,6 +930,9 @@ def main(argv: list[str] | None = None) -> int:
         command = sub.add_parser(name, help=text)
         command.add_argument("--analysis", required=True, help="python -m plsql.cli の --out-dir（program.ir.json がある）")
         command.add_argument("--out-dir", required=True, help="仕様書（Markdown）のディレクトリ")
+        if name == "check":
+            command.add_argument("--src", help="PL/SQL のディレクトリ。あれば、引用 `ファイル:行` を原文の行数で確かめる"
+                                               "（仕様の .pks の引用も）。無ければ IR で分かる範囲だけ")
         command.set_defaults(func=func)
     args = parser.parse_args(argv)
     try:
