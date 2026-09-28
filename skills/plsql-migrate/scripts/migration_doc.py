@@ -689,7 +689,14 @@ def routine_facts(r: Routine, p: Project) -> str:
             [f"`{r.file}:{c['line']}`", f"**{c['kind']}**" if c["kind"] in (MEANING, UNKNOWN) else c["kind"], c["what"], f"`{c['code']}`"]
             for c in changes])
     else:
-        out += ["- 文の書き換えは無い（SQL はそのまま移行先で動く）"]
+        # 診断の付かない書き換え（SYSTIMESTAMP を先に求めて bind する、など）はありうるので、「書き換えは無い」とは言わない（#145）
+        out += ["- 文に付いた診断は無い（診断の付かない書き換え——時刻をアプリで求めて渡す、など——はありうる。"
+                "生成された Java で確かめる）"]
+    refused = (p.report.get("refused") or {}).get(r.id) or []
+    if refused:
+        # 外部の呼び出しのように診断の付かない文でも、生成コードが断るなら呼ぶとそこで止まる（#145）
+        out += ["", "**生成コードが断る文**（呼ぶとそこで `UnsupportedOperationException` になる）: "
+                + "、".join(f"`{x}`" for x in refused)]
     picture = change_diagram(r)
     if picture:
         out += ["", "文の対応（赤 = 意味が変わる、黄 = 形が変わるが結果は同じ、灰 = 未分類、無色 = そのまま）", ""] + picture

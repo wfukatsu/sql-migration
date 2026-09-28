@@ -44,7 +44,9 @@ SKILL.md の Step 7 で、`migration_doc.py facts` が作った文書の `（未
 |---|---|
 | `ROW_LOCK` / `OPTIMISTIC`（`rowLocks.optimistic`） | 待たせる・即座に断る → commit で弾く。呼び出し側に再試行が要る |
 | `RMW_SPLIT` | `SET col = col ± x` を、読んでからアプリで計算して書く 2 文に割った。同じトランザクションの中なので結果は同じ |
-| `NOW` | `SYSDATE` はアプリの時計（`Plsql.sysdate()`）、`SYSTIMESTAMP` と `USER` は呼び出し側が渡す `AuditContext` |
+| `NOW` | `SYSDATE` はアプリの時計（`Plsql.sysdate()`）、`SYSTIMESTAMP` と `USER` は呼び出し側が渡す `AuditContext`。**`NOW` が出ないこともある**: PL/SQL の式として先に計算して bind する文（`INSERT … VALUES (SYSTIMESTAMP)` など）には付かない。事実の欄が「文に付いた診断は無い」でも、原文に `SYSDATE` / `SYSTIMESTAMP` / `USER` があれば、生成された Java（`audit.now()`、`Plsql.sysdate()`）で確かめて書く |
+| 生成コードが断る文（事実の欄の「生成コードが断る文」。generation-report の `refused`） | 外部の package の呼び出し（`CALL-001`）、変換できなかった文、ScalarDB が受け付けない文。呼ぶとそこで `UnsupportedOperationException` になる。診断が付かないこともあるので、この一覧で書く |
+| ScalarDB SQL が受け付けない形（`PROJECTION`、`RMW`、`EXPR` など） | 事実の欄の区分は文の行き先で決まる。実行計画に回った文は結果が同じ（性能だけが変わる）、断った文は移行先で動かない |
 | `TRANSACTION_IN_ROUTINE`（`transactions.perIteration` / `separate`） | routine の中の COMMIT が消え、1 反復 = 1 トランザクションの部品に割れた。回すのは呼び出し側 |
 | `transactions.callerBoundary` | routine の中の COMMIT / ROLLBACK / SAVEPOINT は出さず、呼び出し側が commit / rollback する。途中の ROLLBACK が戻していた分は、呼び出し側が戻さないかぎり残る（意味が変わる決定） |
 | `scanRows` | 先に全部読む routine に行数の上限が付いた。超えると例外で止まる（Oracle では止まらなかった） |
