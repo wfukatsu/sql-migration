@@ -6,13 +6,21 @@ description: >-
   (3) 変換後の仕様と「何がどう変わったか」を Markdown と図にまとめ、承認をもらう → (4) 3 つの承認が
   そろってから、テストを実施する。各段階の中身は plsql-spec / plsql-migrate / sql-transpile が受け持ち、
   このスキルは順番、承認の記録（承認した人・日付・承認したときの中身の指紋）、テストの関門を受け持つ。
-  承認のあとで中身（`spec` は原文も含む）が変わると承認は古くなり、テストには進めない。
-  使うとき: PL/SQL / SQL の移行を頼まれ、どこまでやるかが指定されていないとき、移行の続き・進み具合・承認の記録・テストしてよいかを聞かれたとき。対象外: 1 つの段階だけの依頼（仕様だけ = plsql-spec、変換だけ = plsql-migrate / sql-transpile）、性能測定。
+  承認のあとで中身（`spec` は原文も、`decisions` は生成された Java・変換後の SQL と schema も含む）が変わると
+  承認は古くなり、テストには進めない。
+  使うとき: 仕様の調査から承認・テストまでを通す移行を頼まれたとき（業務の担当や移行の責任者の承認をはさむ、
+  テストの前に承認をそろえる）、`out/migrate/<名前>/flow.yaml` のある移行の続き・進み具合・承認の記録・
+  テストしてよいかを聞かれたとき。
+  使い分け: 現行の仕様書だけ = plsql-spec。PL/SQL を Java に変換するだけ（承認の記録が要らない）= plsql-migrate。
+  SQL の方言の変換・ScalarDB 用の SQL への変換だけ（数文でも、ファイル 1 つでも）= sql-transpile。
+  迷ったら、承認をはさむ流れにするかを利用者に聞く。対象外: 性能測定、実 DB での比較だけの依頼。
 when_to_use: >-
-  "PL/SQL を移行して", "この SQL を ScalarDB に移行して", "移行を最初から最後までやって", "仕様の調査から
-  テストまで", "移行の続きをやって", "いまどこまで進んだ", "承認を記録して", "テストしてよいか",
-  "migrate this end to end"。PL/SQL / SQL の変換を頼まれ、どこまでやるかが指定されていなければ、これを使う。
-  対象外: 1 つの段階だけの依頼（仕様だけ = plsql-spec、変換だけ = plsql-migrate / sql-transpile）、性能測定。
+  "移行を最初から最後までやって", "仕様の調査からテストまで", "承認をもらいながら移行して",
+  "承認をはさんで PL/SQL を移行して", "移行の続きをやって", "移行はいまどこまで進んだ",
+  "移行の承認を記録して", "移行のテストに進んでよいか", "migrate this end to end with approvals"。
+  範囲の言い回しの無い「PL/SQL を移行して」は、承認をはさむ流れにするか、変換だけ（plsql-migrate）かを聞いてから始める。
+  対象外: 1 つの段階だけの依頼（仕様だけ = plsql-spec、変換だけ = plsql-migrate、SQL の方言の変換 = sql-transpile）、
+  性能測定。
 # 利用者の承認を 3 回もらう対話のスキルなので context: fork にはしない
 allowed-tools:
   - Read
@@ -21,7 +29,11 @@ allowed-tools:
   - Write
   - Edit
   - Skill
-  - Bash(.venv/bin/python skills/migrate-flow/scripts/flow.py *)
+  # approve と tested は入れない: 承認とテストの結果の記録は、実行のたびに利用者の許可を求める（2 つ目の確認）
+  - Bash(.venv/bin/python skills/migrate-flow/scripts/flow.py status *)
+  - Bash(.venv/bin/python skills/migrate-flow/scripts/flow.py gate *)
+  - Bash(.venv/bin/python skills/migrate-flow/scripts/flow.py init *)
+  - Bash(.venv/bin/python skills/migrate-flow/scripts/flow.py adopt *)
   - Bash(.venv/bin/python -m plsql.cli *)
   - Bash(.venv/bin/python -m plsql.generate *)
   - Bash(.venv/bin/python skills/plsql-spec/scripts/spec_facts.py *)
@@ -54,13 +66,19 @@ flowchart LR
   言ったら、「判断を求めるときの形」で、飛ばすと何が起きるかを示して確かめる
 - **承認するのは利用者であって、あなたではない。** `flow.py approve` を打つのは、利用者がその段階の成果物を
   見て「承認する」と言ってからである。`--by` には承認した人の役割を書く。分からなければ聞く。
-  「よさそう」「次へ」は承認である。「あとで見る」は承認ではない
+  承認の問いを出したあとの返事で、成果物を見たうえでの「よさそう」「次へ」は承認である。問いを出す前の「次へ」や、
+  見ていないままの「次へ」は承認ではない（見る所を示して確かめる）。「あとで見る」は承認ではない
+- **承認とテストの結果は、利用者の許可のもとで記録する。** `flow.py approve` と `flow.py tested` は `allowed-tools` に
+  入れていない。打つ前に、何を記録するか（段階、`--by`、`--date`、`--with-open` の理由、テストの結果）を本文で示し、
+  利用者の許可を得てから実行する（Claude Code では実行のたびに確認が出る。確認の出ない環境でも、同じく先に聞く）。
+  **`flow.yaml` を手で書き換えない。** 承認は `approve` でだけ、テストの結果は `tested` でだけ記録する
 - **承認は中身に付く。** 承認のあとで原文・仕様書・決定・文書を書き換えると、その承認は「古い」になる。直したら、
   何を変えたかを利用者に示して、承認を取り直す。黙って取り直さない
 - **各段階の中身は、その段階のスキルの手順に従う。** このスキルに書いてあるのは、つなぎ方と、置き場所と、
   承認の取り方だけである。段階に入るときに、そのスキルの SKILL.md を読む（Skill ツールで呼んでもよい）
-- **途中から再開できる。** 会話が変わっても、`flow.py status` が段階ごとの状態と次にすることを返す。
-  依頼を受けたら、まず `<out>/flow.yaml` があるかを見る
+- **途中から再開できる。** 会話が変わっても、`flow.py status` が入力の場所（`src`、`limits`、記録、schema、比較）、
+  段階ごとの状態、次にすることと次のコマンドを返す。依頼を受けたら、まず `<out>/flow.yaml` があるかを見る。
+  `<out>` の名前が分からなければ、`out/migrate/*/flow.yaml` を Glob で探し、どれの続きかを利用者に確かめる
 
   | 資料 | 読むとき |
   |---|---|
@@ -104,7 +122,10 @@ AskUserQuestion を使うときは、推奨を先頭に置いて「（推奨）�
 .venv/bin/python skills/migrate-flow/scripts/flow.py init --out <out> --kind plsql --src <src> --scalardb-schema <scalardb-schema.json> --limits <limits.yaml> --record <record.yaml>
 ```
 
-まだ無いファイル（`limits.yaml`、記録）も、作る予定の場所を渡しておく。SQL は
+まだ無いファイル（`limits.yaml`、記録）も、作る予定の場所を渡しておく。`limits.yaml` が無ければ、`init` が決定の無い
+`limits.yaml`（コメントだけ）を作る（Step 2 の生成と解析は、無いファイルを `--limits` に渡すと止まる）。記録は
+Step 2 の `decision_items.py scan --write` が作る。DDL が `<src>/schema.sql` 以外にあるなら `--schema <DDL>` も渡す
+（`spec` の指紋に入る。Step 1 の `plsql.cli` にも同じ `--schema` を渡す）。SQL は
 `--kind sql --src <入力.sql> --source-dialect oracle --target-dialect scalardb`。
 
 **plsql-spec / plsql-migrate / sql-transpile を単独で先に流してある**ときは、その成果物は別の場所にある。
@@ -117,7 +138,10 @@ AskUserQuestion を使うときは、推奨を先頭に置いて「（推奨）�
 `--generated` の中に `--docs` があれば、docs は `<out>/docs` にだけ写る。`status` が「まだ無い」と言う段階では、
 どの引数で取り込めるかも案内する。
 
-`status` の標準エラーの最終行 `STAGE=` が、いまの段階である。その Step から続ける。
+`status` の標準エラーの最終行 `STAGE=` が、いまの段階である。その Step から続ける。標準出力の「次のコマンド」は、
+`flow.yaml` の入力を埋めた 1 行である（`approve` のときは、利用者の承認と許可を得てから打つ）。
+「別の人に確かめる」で承認を待つ間の問いや、利用者が答えた「確かめたいこと」は `flow.yaml` には残らない。仕様書・
+文書・記録（`案`・`メモ`）に書いておく。
 
 ### Step 1: 現行の仕様を調べる → 承認 `spec`
 
@@ -152,13 +176,16 @@ plsql-migrate の Step 1〜6 に従う。出力先は `<out>/generated`:
 
 2 行目（決定を適用した解析）は、**REDESIGN の routine が決まったかどうか**を `flow.py` が読むために要る。判定は決定の
 あとも REDESIGN のままで、`limits.yaml` に答えの無いルールが残っているかは、この解析の `decisions.json` にしか無い。
-`limits.yaml` を変えたら、生成と一緒にこれも回し直す（古いと「決めたかどうかが分からない」と出る）。
+3 行目（確認項目）は、生成物から「生成コードの外で決めること」を拾って記録に未決として足す。**`limits.yaml` を変えたら、
+この 3 行をまとめて回し直す**。解析が古いと「決めたかどうかが分からない」と出る。確認項目を拾い直さないと、
+生成し直して新しく出た項目（行ロックを楽観制御にすると BIZ-4・BIZ-5・CALL-5 など）が記録に無いので、`flow.py` は
+`decisions` を承認に出さない（「生成物から出た確認項目のうち N が記録に無い」。`--with-open` でも通らない）。
 
 判断を問うときは、**承認済みの現行の仕様を根拠に使う**: 「現行は在庫の行をロックして待たせています
-（`spec/create_order.md` の動作 2）。移行先では…」。判断で `limits.yaml` が変わったら生成し直す。
+（`spec/create_order.md` の動作 2）。移行先では…」。判断で `limits.yaml` が変わったら、上の 3 行を回し直す。
 
 判断が出そろったら、決まったこと（誰が・いつ・何を）と、**決まっていないこと**（未決の項目、REVIEW のままの
-routine、`limits.yaml` に答えの無い REDESIGN）を並べて、承認を求める。未決を残したまま進めるかどうかは利用者が決める。残すなら理由を控える:
+routine、`limits.yaml` に答えの無い REDESIGN、ScalarDB が受け付けない文）を並べて、承認を求める。未決を残したまま進めるかどうかは利用者が決める。残すなら理由を控える:
 
 ```bash
 .venv/bin/python skills/migrate-flow/scripts/flow.py approve decisions --out <out> --by <役割> --date <YYYY-MM-DD> --with-open "<残したまま進める理由>"
@@ -214,12 +241,14 @@ sql-migration のリポジトリにだけあるので、2 のテストはリポ�
 .venv/bin/python skills/migrate-flow/scripts/flow.py tested --out <out> --result pass --report <plsql-diff.json>
 ```
 
-`tested` は `--report` のファイルを `flow.yaml` の `inputs.evidence` に控える（`converted` の検査が、文書と同じ比較を
+`--report` は在るファイルでなければならず、PL/SQL では比較の報告（`plsql-diff.json`）の形でなければ終了コード 2 で
+断られる（何も記録されない）。`tested` は `--report` のファイルを `flow.yaml` の `inputs.evidence` に控える（`converted` の検査が、文書と同じ比較を
 見るようになる）。テストのあと、比較の結果を文書に入れる: Step 3 の `facts` と `check` に**同じファイルを**
 `--evidence <plsql-diff.json>` で足して回し直し、「制限」と「どのように移行したか」を実際の結果に書き直す。
 **文書が変わるので `converted` の承認は古くなる**。変えたところ（比較の結果が入った）を示して、承認を取り直す。
 `converted` だけを取り直すかぎり、テストの結果は残る（`spec` か `decisions` を取り直すと、テストは消える——
-確かめた相手が変わったからである。テストからやり直す）。
+確かめた相手が変わったからである。テストからやり直す）。入力を直すために `init` を回し直しても、承認とテストの結果、
+控えた比較（`inputs.evidence`）は残る。
 
 ### Step 5: 報告する
 
@@ -239,7 +268,9 @@ sql-migration のリポジトリにだけあるので、2 のテストはリポ�
 | `approve` が「承認に出せない」 | 出た理由（未記入、古い事実、図が無い、変換できなかった文）を直す。承認を先に取らない |
 | `approve` が「順に承認する」 | 前の段階が承認されていないか、承認のあとで変わった。`status` で確かめ、前の段階から |
 | 状態が「承認が古い」 | 承認のあとで中身が変わった。差分を利用者に示し、承認を取り直す。前の内容に戻すのが正しいこともある |
+| 状態が「承認済み（検査が通らない）」 | 承認した中身は同じだが、指紋に入らない入力（解析、比較の結果）が変わって検査が通らない。出た理由を直す（`facts` を回し直すなど）。直して中身が変われば「承認が古い」になるので、取り直す |
 | 利用者が承認しない | 何が足りないかを聞いて直す。承認されないまま次の段階の判断を問わない |
+| `flow.py` が終了コード 2（`flow.yaml が壊れている`、`報告の形でない`、`想定外のエラー`） | 実行エラーで、`gate` の「まだ」（1）とは別。標準エラーの理由と次の手に従う。`flow.yaml` が壊れていたら版管理から戻すか、壊れた項目を消して `init` を回し直す（消した承認は取り直し）。手で承認を書き足さない |
 | 前の段階に戻る変更（現行の仕様の誤りが変換のあとで見つかった、など） | 仕様書を直す → `spec` が古くなる → 以降の承認も、その変更が効くなら取り直す。何が効くかを利用者に説明する |
 
 ## Output
