@@ -47,7 +47,7 @@ PL/SQL を読んで ScalarDB 向けの Java を生成し、生成器が決めず
 ## Important
 
 - **作業ディレクトリは sql-migration リポジトリのルート**。コマンドはここから `.venv/bin/python` で実行する
-- **プラグインとして入れたとき（作業ディレクトリが sql-migration のチェックアウトでないとき）**: このスキルの場所は `${CLAUDE_SKILL_DIR}`（置き換わらない環境では、この SKILL.md のあるディレクトリ）で、その 2 つ上が `<root>`。下のコマンドは `.venv/bin/python` を `<root>/bin/python` に、`skills/…` で始まるスクリプトのパスを `<root>/` からのパスに読み替え、**利用者のプロジェクトを作業ディレクトリにしたまま**動かす（`-m plsql.cli` などはそのままでよい。`bin/python` が `<root>` を import の経路に入れる）。入力と `<out>` は利用者のプロジェクトの側に置き、`<root>` の中には書かない（プラグインの更新で消える）。初回は `bin/python` が仮想環境を作るので 1 分ほどかかる。**`runtime-java/`（Step 0 の `runtime-java/gradlew`）と `docs/`（`docs/plsql-migration/…` など、下で読めと書いた文書）で始まるパスも `<root>/` からのパスに読み替える**（どちらもプラグインに入っている）。`fixtures/…`・`samples/…`・`difftest/…` は sql-migration のリポジトリにだけあり、プラグインには含まれない。それを前提にした手順は、リポジトリで作業するときにだけ使う。`allowed-tools` はリポジトリのルートから動かす形（`.venv/bin/python …`）で書いてあるので、プラグインの形（`<root>/bin/python …`）のコマンドには合わず、毎回許可を求められる。利用者が煩わしいと言えば、`<root>/bin/python` を設定で許可する方法を案内する（許可するかは利用者が決める）
+- **プラグインとして入れたとき（作業ディレクトリが sql-migration のチェックアウトでないとき）**: このスキルの場所は `${CLAUDE_SKILL_DIR}`（置き換わらない環境では、この SKILL.md のあるディレクトリ）で、その 2 つ上が `<root>`。下のコマンドは `.venv/bin/python` を `<root>/bin/python` に、`skills/…` で始まるスクリプトのパスを `<root>/` からのパスに読み替え、**利用者のプロジェクトを作業ディレクトリにしたまま**動かす（`-m plsql.cli` などはそのままでよい。`bin/python` が `<root>` を import の経路に入れる）。入力と `<out>` は利用者のプロジェクトの側に置き、`<root>` の中には書かない（プラグインの更新で消える）。初回は `bin/python` が仮想環境を作るので 1 分ほどかかる。**`runtime-java/`（Step 0 の `runtime-java/gradlew`）と `docs/`（`docs/plsql-migration/…` など、下で読めと書いた文書）で始まるパスも `<root>/` からのパスに読み替える**（どちらもプラグインに入っている）。`fixtures/…`・`samples/…`・`difftest/…` は sql-migration のリポジトリにだけあり、プラグインには含まれない。それを前提にした手順は、リポジトリで作業するときにだけ使う。`allowed-tools` は、リポジトリのルートから動かす形（`.venv/bin/python …`）とプラグインの形（`*/bin/python */skills/…`）の両方を持つ
 - **migrate-flow で続ける予定なら**、生成の `--out-dir` を `out/migrate/<名前>/generated`、文書を `out/migrate/<名前>/docs` にしておくと写し直しが要らない。別の場所に作ったものは `flow.py adopt --generated … --docs …` で取り込める
 - **Claude Code 以外（Codex など）で動かすとき**: `allowed-tools` と `when_to_use`（sql-transpile では `model` / `effort` も）は Claude Code 用で、ほかでは無視される。Read / Grep / Bash などの道具の名前は、その環境の同じ働きの道具に読み替える。AskUserQuestion が無ければ、同じ内容（推奨を先頭に、選択肢ごとの影響つき）を本文で聞き、答えを待つ
 - **変換は `plsql.generate` に任せ、Java を自分で書き起こさない。** 生成器は決めてよいことだけを決め、
@@ -373,3 +373,10 @@ Step 3 で「利用者に問うもの」に分けた routine を、ルール ID 
 | `<record.yaml>` | 記録（ID ごとに 状態 / 決定 / 決めた人 / 日付 / 記録先 / 案 / 出た） |
 | `<out>/docs/README.md` | 変換後のコードの文書: アーキテクチャ / 使い方 / 制限 / どのように移行したか |
 | `<out>/docs/<module>.md` | routine ごとの 事実（判定・引数の対応・例外・文の対応・決定・比較の結果）/ 仕様 / 移行で変わったこと / 制限と注意 |
+  # プラグインとして入れたとき: <root>/bin/python と <root>/skills/... の形（先頭の * は公式の権限ルールで使える）
+  - Bash(*/bin/python -c *)
+  - Bash(*/runtime-java/gradlew --version*)
+  - Bash(*/bin/python -m plsql.generate *)
+  - Bash(*/bin/python -m plsql.cli *)
+  - Bash(*/bin/python */skills/plsql-migrate/scripts/decision_items.py *)
+  - Bash(*/bin/python */skills/plsql-migrate/scripts/migration_doc.py *)

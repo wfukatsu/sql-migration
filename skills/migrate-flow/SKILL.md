@@ -281,3 +281,14 @@ sql-migration のリポジトリにだけあるので、2 のテストはリポ�
 | `<out>/spec/` | 現行の仕様（plsql-spec） |
 | `<out>/generated/` | 変換の結果と確認一覧（plsql-migrate） |
 | `<out>/docs/` | 変換後の仕様と、何がどう変わったか（plsql-migrate Step 7） |
+  # プラグインとして入れたとき: <root>/bin/python と <root>/skills/... の形（先頭の * は公式の権限ルールで使える）
+  - Bash(*/bin/python */skills/migrate-flow/scripts/flow.py status *)
+  - Bash(*/bin/python */skills/migrate-flow/scripts/flow.py gate *)
+  - Bash(*/bin/python */skills/migrate-flow/scripts/flow.py init *)
+  - Bash(*/bin/python */skills/migrate-flow/scripts/flow.py adopt *)
+  - Bash(*/bin/python -m plsql.cli *)
+  - Bash(*/bin/python -m plsql.generate *)
+  - Bash(*/bin/python */skills/plsql-spec/scripts/spec_facts.py *)
+  - Bash(*/bin/python */skills/plsql-migrate/scripts/decision_items.py *)
+  - Bash(*/bin/python */skills/plsql-migrate/scripts/migration_doc.py *)
+  - Bash(*/bin/python */skills/sql-transpile/scripts/transpile.py *)
