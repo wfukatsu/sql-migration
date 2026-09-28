@@ -354,15 +354,90 @@ CHANGES = {
     "ACCESS": (INFO, "アクセスパス（GET / パーティション走査）"),
     "CONFIG": (INFO, "読み取り専用のトランザクションにできる"),
     "COST": (INFO, "取得コストの見積もり"),
+    "PARSE_RECOVERED": (MEANING, "構文の誤りのあるファイルから、解析器が復元した木で下ろした。文が抜けているか読み違えている。ソースを直す"),
+    # ScalarDB で動くかを調べる側（scalardb_migrate）が付けるもののうち、文が動くかどうかに依らないもの（#145）
+    "APP_SEMANTICS": (MEANING, "アプリで処理する部分で Oracle と意味が変わりうる（診断のメッセージを読む）"),
+    "BIND_ORDER": (MEANING, "書き換えで位置の bind の並びが変わった・重なった。値の対応を確かめる"),
+    "CHECK": (MEANING, "CHECK 制約が移行先に無い。アプリで守る"),
+    "COL_OPT": (MEANING, "列の制約を落とした"),
+    "CONSTRAINT": (MEANING, "制約を落とした。アプリで守る"),
+    "DEFAULT": (MEANING, "列の DEFAULT が無くなった。値はアプリが渡す"),
+    "FK": (MEANING, "外部キーが移行先に無い（参照の整合を保証しない）"),
+    "ILIKE": (MEANING, "ILIKE を LIKE にした。大文字と小文字を区別するようになる"),
+    "INSERT_COLS": (MEANING, "列を並べていない INSERT。ScalarDB は表の定義の順に当てる。列を並べる"),
+    "NOT_NULL": (MEANING, "NOT NULL が無くなる。アプリで守る"),
+    "NO_WHERE": (MEANING, "WHERE の無い DELETE / UPDATE。すべてのパーティションを走査する"),
+    "NULLS": (MEANING, "NULLS FIRST / LAST を落とした。NULL の並ぶ位置が変わりうる"),
+    "PLAN_CROSS_PARTITION": (MEANING, "実行計画の取得がパーティションをまたぐ走査になる（RDBMS が下にあるときだけ使える。件数に比例して遅い）"),
+    "PLAN_UNRESOLVED": (MEANING, "実行計画が読む列が ScalarDB の schema に無い。その列は取得できない"),
+    "REPLACE": (MEANING, "REPLACE INTO を UPSERT にした。並べていない列の扱いが違う"),
+    "TZ_ASSUMED_UTC": (MEANING, "時刻帯の無い日時を TIMESTAMPTZ の列に UTC として書く。移行元のセッションの時刻帯と違いうる"),
+    "UNIQUE": (MEANING, "一意性が保証されない（二次インデックスは一意を守らない）"),
+    "ROW_LIMIT": (MEANING, "実行計画が読む行数が、計画の行数の上限を超える見積もり"),
+    "COST_DEADLINE": (MEANING, "実行計画の見積もり時間が ScalarDB Cluster の期限を超える"),
+    "FULL_SCAN": (MEANING, "実行計画の取得が表の全件を読む"),
+    "ALTER_TYPE": (SHAPE, "列の型の変更。受け付けるかは下のデータベースによる"),
+    "BOOL_LIT": (SHAPE, "TRUE / FALSE を列の型の数で書いた"),
+    "COMMA_JOIN": (SHAPE, "カンマの結合を INNER JOIN に書き換えた"),
+    "DATE_LIT": (SHAPE, "日付・日時のリテラルを ScalarDB の形に書き換えた"),
+    "IN": (SHAPE, "IN のリストを = の OR に展開した"),
+    "LIKE": (SHAPE, "LIKE に ESCAPE を足した（Oracle と同じ意味にする）"),
+    "NAMESPACE": (SHAPE, "スキーマ名を ScalarDB の namespace にした"),
+    "ONLY": (SHAPE, "ONLY を落とした（ScalarDB の表に継承は無い）"),
+    "DESIGN": (INFO, "キーの設計の提案"),
+    "HINT": (INFO, "オプティマイザのヒントを落とした（アクセスパスは ScalarDB が選ぶ）"),
+    "KEYS": (INFO, "主キーからパーティションキーとクラスタリングキーを選んだ"),
+    "MODIFIER": (INFO, "サーバへの助言だけの修飾を落とした"),
+    "PLAN": (INFO, "実行計画に分けられるかの判断"),
+    "SCHEMA": (INFO, "表の定義が無く、アクセスパスを調べていない"),
+    "SEMANTICS": (INFO, "照合順序など、結果の意味についての注意"),
+    "TABLE_OPTS": (INFO, "表のオプションを落とした"),
+}
+# ScalarDB SQL が書かれたままの形を受け付けないときのコード（scalardb_migrate の fail、#145）。変わることは文の行き先で
+# 決まる: 実行計画に回った文（PLANNED）は取得して H2 で元の SQL を実行するので結果は同じ、断った文（ERROR）は移行先で動かない。
+# 書き換えて通った文（OK / WARN）は形だけが変わる
+CAPABILITY = {
+    "AGG": "集約関数の種類・引数の式", "AGG_DISTINCT": "COUNT(DISTINCT …)", "ALTER": "ALTER TABLE", "AUTO_INC": "自動採番の列",
+    "CLAUSE": "句（flashback 問合せ、TABLESAMPLE など）", "COL_COL": "列どうしの比較", "CTE": "WITH 句",
+    "DATE_FMT": "日付の書式", "DDL": "DDL", "DELETE": "DELETE の ORDER BY / LIMIT", "DELETE_JOIN": "結合する DELETE",
+    "DISTINCT": "SELECT DISTINCT", "DO_NOTHING": "ON CONFLICT DO NOTHING", "DROP_INDEX": "DROP INDEX",
+    "EXPR": "リテラルと bind 以外の値（式・関数）", "FROM": "FROM の副問合せ", "GENERATED": "生成列",
+    "GROUP": "GROUP BY の式・集計の階層", "HIERARCHICAL": "CONNECT BY（階層問合せ）", "IDENT": "識別子（予約語など）",
+    "INDEX": "インデックス", "INSERT": "INSERT の変種", "INSERT_IGNORE": "INSERT IGNORE", "INSERT_SELECT": "INSERT … SELECT",
+    "INTERNAL": "変換器の内部エラー", "JOIN": "結合の形", "JOIN_KEY": "キーでない列の結合", "JOIN_ON": "結合の条件",
+    "KEEP": "KEEP (DENSE_RANK …)", "MERGE": "MERGE", "NORMAL_FORM": "条件の正規化", "NOT": "否定",
+    "NO_CROSS_PARTITION": "パーティションをまたぐ走査", "OFFSET": "OFFSET", "ORACLE_JOIN_MARK": "Oracle の (+) 外部結合",
+    "ORDER": "ORDER BY の式", "ORDER_STORAGE": "並べ替えを伴う全パーティションの走査", "OR_KEYS": "キーへの OR / IN",
+    "PIVOT": "PIVOT / UNPIVOT", "PK": "主キー", "PK_UPDATE": "主キーの列の更新", "PLSQL_BLOCK": "PL/SQL のブロック",
+    "PRED": "条件の形", "PROJECTION": "選択リストの式", "RESERVED_COLUMN": "ScalarDB が予約した列名",
+    "RESIDUAL_H2": "H2 でも実行できない構文", "RETURNING": "RETURNING", "RMW": "列を読む SET の式",
+    "ROWID": "ROWID", "SAVEPOINT": "SAVEPOINT", "SEQUENCE": "sequence", "SET": "SET 句", "SET_OP": "UNION / INTERSECT / EXCEPT",
+    "STATEMENT": "文の種類", "SUBQUERY": "副問合せ", "TABLE": "表の指定", "TEMP": "一時表", "TOKENIZE": "文への分割",
+    "TYPE": "列の型", "UNPARSED": "文の種類", "UNSUPPORTED": "関数・構文", "UPDATE": "UPDATE の ORDER BY / LIMIT",
+    "UPDATE_JOIN": "結合する UPDATE", "UPSERT": "UPSERT の条件", "WINDOW": "窓関数", "WITH_PLSQL": "WITH 句の PL/SQL 関数",
 }
 ORDER = {MEANING: 0, UNKNOWN: 1, SHAPE: 2, INFO: 3}
+
+
+def classify(code: str, message: str, status: str | None = None) -> tuple[str, str]:
+    """診断コード → (区分, 変わること)。ScalarDB が受け付けない形のコードは、文の行き先（status）で区分が決まる。"""
+    if code in CHANGES:
+        return CHANGES[code]
+    if code in CAPABILITY:
+        what = f"ScalarDB SQL が受け付けない形（{CAPABILITY[code]}）"
+        if status == "PLANNED":
+            return SHAPE, what + "。実行計画（ScalarDB から取得して H2 で元の SQL を実行）で動かす"
+        if status == "ERROR":
+            return MEANING, what + "。この文は移行先で動かない（生成コードは断る）"
+        return SHAPE, what + "を、受け付ける形に書き換えた"
+    return UNKNOWN, _short(message, 100)
 
 
 def _changes(r: Routine) -> list[dict]:
     rows = []
     for s in r.statements:
         for _, code, message in s["diagnostics"]:
-            kind, what = CHANGES.get(code, (UNKNOWN, _short(message, 100)))
+            kind, what = classify(code, message, s.get("status"))
             if kind != INFO:
                 rows.append({"line": s["line"], "code": code, "kind": kind, "what": what})
     return sorted(rows, key=lambda x: (ORDER[x["kind"]], x["line"] or 0))
