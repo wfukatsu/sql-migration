@@ -19,7 +19,8 @@ SQL を一度 AST に抽象化してから Target 向けに生成し直す。素
 終了コード:
     0 = ERROR の文なし
     1 = ERROR の文あり (手作業が要る)
-    2 = 実行エラー (ファイルが無い、方言名が不正など)
+    2 = 入力の誤り (ファイルが無い、方言名が不正など)。レポートは出ていない
+    3 = 異常終了 (sqlglot などの依存が読み込めない、変換器の想定外の失敗)。レポートは出ていない
 
 出力の最終 3 行は機械可読:
     TOTAL=21
@@ -37,14 +38,23 @@ from pathlib import Path
 # スキル単体で動かすため、同梱モジュールを import パスに載せる
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import sqlglot  # noqa: E402
+EXIT_ABNORMAL = 3   # 1 は「ERROR の文がある」、2 は「入力の誤り」。どちらでもない失敗をこれで返す
 
-import generic  # noqa: E402
-import report  # noqa: E402
-from _scalardb.appside import parse_expected_rows  # noqa: E402
-from _scalardb.converter import convert_script as scalardb_convert  # noqa: E402
-from _scalardb.schema import SchemaRegistry  # noqa: E402
-from _scalardb.types import session_zone  # noqa: E402
+try:
+    import sqlglot  # noqa: E402
+
+    import generic  # noqa: E402
+    import report  # noqa: E402
+    from _scalardb.appside import parse_expected_rows  # noqa: E402
+    from _scalardb.converter import convert_script as scalardb_convert  # noqa: E402
+    from _scalardb.schema import SchemaRegistry  # noqa: E402
+    from _scalardb.types import session_zone  # noqa: E402
+except ImportError as _e:
+    # トレースバックで終わると Python は 1 を返し、「ERROR の文あり」と区別がつかない（#146 M7）
+    print(f"依存を読み込めません（{_e}）。sqlglot の入った Python で動かしてください: "
+          "リポジトリなら .venv/bin/python、プラグインなら <root>/bin/python、"
+          "スキルだけを写したなら pip install sqlglot==30.18.0", file=sys.stderr)
+    sys.exit(EXIT_ABNORMAL)
 
 SCALARDB_ONLY = ("keys", "storage", "plan_dir", "expected_rows", "h2_indexes", "session_time_zone")
 
@@ -179,8 +189,21 @@ def main(argv: list[str] | None = None) -> int:
     return 1 if s["error"] else 0
 
 
-if __name__ == "__main__":
+def run(argv: list[str] | None = None) -> int:
+    """main を呼び、想定外の例外を終了コード 3 にする。Python の既定（トレースバックで 1）では、「ERROR の文あり」と
+    区別がつかず、無いレポートを読みに行くことになる。"""
     try:
-        sys.exit(main())
+        return main(argv)
     except KeyboardInterrupt:
-        sys.exit(2)
+        print("中断しました。レポートは出ていません", file=sys.stderr)
+        return EXIT_ABNORMAL
+    except Exception:  # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        print("変換器が想定外の失敗をしました（終了コード 3）。レポートは出ていません。"
+              "上のメッセージと入力を添えて報告してください", file=sys.stderr)
+        return EXIT_ABNORMAL
+
+
+if __name__ == "__main__":
+    sys.exit(run())
