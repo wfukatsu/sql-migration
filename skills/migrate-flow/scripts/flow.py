@@ -319,6 +319,11 @@ def open_items(state: dict, out: Path) -> list[str]:
         credited = _analysed_verdicts(out)
         found += [f"REVIEW: {routine}" for routine, v in sorted(verdicts.items())
                   if v.get("verdict") == "REVIEW" and credited.get(routine) != "AUTO"]
+        refused = ((json.loads(report.read_text(encoding="utf-8")).get("summary") or {}).get("unsupportedSql") or 0)
+        if refused:
+            # 生成物に `throw new UnsupportedOperationException(...)` として残る文。テストで確実に落ちるので、
+            # 残したまま進めるなら利用者がそう決めたことを控える（2026-09-28 のレビュー M8）
+            found.append(f"ScalarDB が受け付けない文: {refused}（生成物では UnsupportedOperationException を投げる）")
         redesigns = sorted(routine for routine, v in verdicts.items() if v.get("verdict") == "REDESIGN")
         answered = _redesign_answers(state["inputs"], out) if redesigns else {}
         for routine in redesigns:
@@ -384,6 +389,11 @@ def cmd_init(args) -> int:
             inputs[key] = getattr(args, key) if key.endswith("_dialect") else str(Path(getattr(args, key)).resolve())
     if not Path(args.src).exists():
         raise FlowError(f"{args.src} が無い")
+    kept = (existing or {}).get("inputs") if isinstance((existing or {}).get("inputs"), dict) else {}
+    if not args.evidence and isinstance(kept.get("evidence"), str):
+        # `tested` が控えた比較。入力を直すために init を回し直しても消さない。消すと、比較の結果を入れた文書が
+        # 「古い事実」になり、`converted` を取り直せなくなる（2026-09-28 のレビュー M7）
+        inputs["evidence"] = kept["evidence"]
     created = None
     if args.kind == "plsql" and args.limits and not Path(args.limits).exists():
         # 初めての移行では、決定はまだ無い。無いファイルを --limits に渡すと plsql.generate と plsql.cli が止まるので、
@@ -394,7 +404,11 @@ def cmd_init(args) -> int:
     save(out, {"inputs": inputs, "approvals": (existing or {}).get("approvals") or {}, "test": (existing or {}).get("test")})
     if created:
         print(f"{created} が無かったので、決定の無い limits.yaml を作った（決定は Step 2 で書き足す）")
-    print(f"{_state_path(out)} を書いた。次: 現行の仕様を調べる（status で確かめられる）")
+    if (existing or {}).get("approvals"):
+        print(f"{_state_path(out)} を書いた。承認とテストの結果は残した（入力が変わった段階は「承認が古い」と出る）。"
+              "次: status で段階ごとの状態を確かめる")
+    else:
+        print(f"{_state_path(out)} を書いた。次: 現行の仕様を調べる（status で確かめられる）")
     return 0
 
 

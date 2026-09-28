@@ -174,7 +174,7 @@ plsql-migrate の Step 1〜6 に従う。出力先は `<out>/generated`:
 （`spec/create_order.md` の動作 2）。移行先では…」。判断で `limits.yaml` が変わったら、上の 3 行を回し直す。
 
 判断が出そろったら、決まったこと（誰が・いつ・何を）と、**決まっていないこと**（未決の項目、REVIEW のままの
-routine、`limits.yaml` に答えの無い REDESIGN）を並べて、承認を求める。未決を残したまま進めるかどうかは利用者が決める。残すなら理由を控える:
+routine、`limits.yaml` に答えの無い REDESIGN、ScalarDB が受け付けない文）を並べて、承認を求める。未決を残したまま進めるかどうかは利用者が決める。残すなら理由を控える:
 
 ```bash
 .venv/bin/python skills/migrate-flow/scripts/flow.py approve decisions --out <out> --by <役割> --date <YYYY-MM-DD> --with-open "<残したまま進める理由>"
@@ -236,7 +236,8 @@ sql-migration のリポジトリにだけあるので、2 のテストはリポ�
 `--evidence <plsql-diff.json>` で足して回し直し、「制限」と「どのように移行したか」を実際の結果に書き直す。
 **文書が変わるので `converted` の承認は古くなる**。変えたところ（比較の結果が入った）を示して、承認を取り直す。
 `converted` だけを取り直すかぎり、テストの結果は残る（`spec` か `decisions` を取り直すと、テストは消える——
-確かめた相手が変わったからである。テストからやり直す）。
+確かめた相手が変わったからである。テストからやり直す）。入力を直すために `init` を回し直しても、承認とテストの結果、
+控えた比較（`inputs.evidence`）は残る。
 
 ### Step 5: 報告する
 

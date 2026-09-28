@@ -36,6 +36,8 @@
 
 - 記録の項目で `状態: 未決` のもの（PL/SQL・SQL とも）
 - 生成の報告で判定が REVIEW の routine。ただし `<out>/generated/analysis/decisions.json` が AUTO と言うものは除く（PL/SQL）
+- ScalarDB が受け付けない文（生成の報告の `summary.unsupportedSql`。生成物では `UnsupportedOperationException` を
+  投げるので、テストで確実に落ちる）（PL/SQL）
 - 判定が REDESIGN で、`limits.yaml` に答えの無いルールが残っている routine（PL/SQL）。`<out>/generated/analysis` が
   無いか `limits.yaml` より古いと、「決めたかどうかが分からない」として未決に数える
 
