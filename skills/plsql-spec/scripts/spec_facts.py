@@ -6,10 +6,10 @@
     python skills/plsql-spec/scripts/spec_facts.py facts --analysis out/plsql-spec/analysis \\
         --out-dir out/plsql-spec/spec
 
-    # 書き上がった仕様書を確かめる（未記入、事実の欄の古さ、文章に出てこないエラーコードと表、
-    # 原文に無い位置の引用）
+    # 書き上がった仕様書を確かめる（未記入、事実の欄の古さ、節の見出しの欠け、文章に出てこないエラーコード・例外・表、
+    # 原文に無い位置の引用）。--src があれば、引用の行を原文の行数で確かめる
     python skills/plsql-spec/scripts/spec_facts.py check --analysis out/plsql-spec/analysis \\
-        --out-dir out/plsql-spec/spec
+        --out-dir out/plsql-spec/spec --src <PL/SQL のディレクトリ>
 
 事実の欄（`<!-- facts:begin ID -->` から `<!-- facts:end ID -->` まで）は、IR から機械的に出したもので、
 読んだ人の解釈を含まない。文章（動作・業務ルール・エラーと例外・確かめたいこと）は、原文を読んで書く。
@@ -243,6 +243,23 @@ def _goto_labels(node) -> set[str]:
     return found
 
 
+def _conditional_compilation(sarif: Path) -> dict[str, list[str]]:
+    """ファイル名 → 条件付きコンパイルを解いたときの仮定（`$$debug=None、DBMS_DB_VERSION 19.0`）。"""
+    if not sarif.exists():
+        return {}
+    found: dict[str, list[str]] = {}
+    for run_ in json.loads(sarif.read_text(encoding="utf-8")).get("runs") or []:
+        for result in run_.get("results") or []:
+            if result.get("ruleId") != "CONDITIONAL_COMPILATION":
+                continue
+            text = (result.get("message") or {}).get("text") or ""
+            what = re.search(r"（([^）]*)）", text)
+            for location in result.get("locations") or []:
+                uri = ((location.get("physicalLocation") or {}).get("artifactLocation") or {}).get("uri") or ""
+                found.setdefault(Path(uri).name, []).append(what.group(1) if what else text)
+    return found
+
+
 def load(analysis: Path) -> tuple[list[dict], dict[str, Facts], dict]:
     ir_path = analysis / "program.ir.json"
     if not ir_path.exists():
@@ -251,6 +268,13 @@ def load(analysis: Path) -> tuple[list[dict], dict[str, Facts], dict]:
     inventory_path = analysis / "inventory.json"
     inventory = json.loads(inventory_path.read_text(encoding="utf-8")) if inventory_path.exists() else {}
     modules = program.get("modules") or []
+    # `$IF $$flag` は、解析が仮定したフラグと DB の版で片方だけが残り、落とした側は IR に無い。その仮定は
+    # diagnostics.sarif にだけある（ファイル単位）。module の事実に出す（#144 M2）
+    assumed = _conditional_compilation(analysis / "diagnostics.sarif")
+    for module in modules:
+        files = {(module.get("sourceRange") or {}).get("file")} | {
+            (d.get("sourceRange") or {}).get("file") for d in module.get("declarations") or []}
+        module["_assumed"] = [message for file in sorted(f for f in files if f) for message in assumed.get(file, [])]
     # 解析できなかったファイルの module は、IR に残っていても仕様書に入れない。中身が壊れていて（`Unsupported`、
     # 途中までの文）、索引の「この仕様書に入っていない」とも食い違う（#144 M3）
     failed = {Path(str(x if isinstance(x, str) else x.get("file", ""))).name
@@ -639,6 +663,9 @@ def module_facts(module: dict, facts: dict[str, Facts]) -> str:
                                                       for d in module.get("declarations") or []])
     out = ["**事実**（IR から機械的に出した。手で書き換えない）", "",
            f"- 種類: {module.get('moduleKind')} / 原文: " + "、".join(f"`{x}`" for x in files if x)]
+    for assumption in module.get("_assumed") or []:
+        out.append(f"- **条件付きコンパイル（`$IF`）を仮定で解いた**: {assumption}。仮定で落ちた側の文は、下の欄と図に無い。"
+                   "本番のフラグ（PLSQL_CCFLAGS）と DB の版で、動く側が変わる")
     if module.get("moduleKind") == "trigger":
         columns = module.get("trigger_columns") or []
         out.append(f"- 発火: `{module.get('triggerTable')}` の {module.get('triggerTiming')} {module.get('triggerEvent')}"
