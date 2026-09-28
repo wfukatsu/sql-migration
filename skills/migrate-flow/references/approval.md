@@ -23,7 +23,7 @@
 | 段階 | 検査（`kind: plsql`） | 検査（`kind: sql`） |
 |---|---|---|
 | `spec` | `<out>/spec/*.md` があること。plsql-spec の `spec_facts.py check` と同じ検査（未記入が無い、事実の欄が解析と合う）。Mermaid の塊が閉じていて、図が 1 つ以上あること | `<out>/spec/*.md` があること。文字列 `（未記入` が無いこと。Mermaid の塊が閉じていて、図が 1 つ以上あること |
-| `decisions` | `<out>/generated/generation-report.json` があり、変換できなかった文（`summary.untranslatedStatements`）が 0 であること | `<out>/converted/*.report.json` があり、ERROR の文の 1 つずつに記録の項目 `SQL-<番号>` があること |
+| `decisions` | `<out>/generated/generation-report.json` があり、変換できなかった文（`summary.untranslatedStatements`）が 0 であること。生成物から出た確認項目（plsql-migrate の `decision_items.py scan` と同じ見分け方）が、記録にすべてあること（無い・「対象外」のままなら、`scan --write` を回し直すまで断る） | `<out>/converted/*.report.json` があり、ERROR の文の 1 つずつに記録の項目 `SQL-<番号>` があること |
 | `converted` | `<out>/docs/*.md` があること。plsql-migrate の `migration_doc.py check` と同じ検査（`flow.yaml` の入力と `<out>/generated/analysis` を使う）。Mermaid の塊と図は `spec` と同じ | `<out>/docs/*.md` があること。`（未記入` と Mermaid は `spec` と同じ |
 
 どちらの `kind` でも、記録（`--record`）で `状態: 決定` の項目に `決めた人` と `日付` が無ければ `decisions` は断られる。

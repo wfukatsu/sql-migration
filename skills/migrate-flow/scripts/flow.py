@@ -197,6 +197,7 @@ def problems_of(state: dict, out: Path, stage: str) -> list[str]:
             summary = report.get("summary") or {}
             if summary.get("untranslatedStatements"):
                 found.append(f"変換できなかった文が {summary['untranslatedStatements']} 残っている")
+            found += _unpicked_items(inputs, out, record)
         else:
             # 記録のファイルを渡してあるだけでは足りない。変換できなかった文の 1 つずつに、どう扱うかの項目が要る
             for report in (f for f in files if f.name.endswith(".report.json") and f.parent == out / "converted"):
@@ -222,6 +223,35 @@ def problems_of(state: dict, out: Path, stage: str) -> list[str]:
             return [str(e) + ADOPT_HINT.format(what="--generated <dir>")] + found
         found = doc.check(loaded, out / "docs")[0] + [f for f in found if "未記入" not in f]
     return found
+
+
+SCAN_HINT = ("生成し直したら、確認項目も拾い直す: decision_items.py scan --generated <out>/generated --limits <limits.yaml> "
+             "--scalardb-schema <scalardb-schema.json> --record <record.yaml> --write --out <out>/generated/decision-items.md")
+
+
+def _unpicked_items(inputs: dict, out: Path, record: dict[str, dict]) -> list[str]:
+    """生成物から出た確認項目（plsql-migrate の decision_items.py が拾うもの）のうち、記録に無いもの。
+
+    `limits.yaml` を変えて生成し直すと、新しい項目が出ることがある（行ロックを楽観制御にすると BIZ-4・BIZ-5・CALL-5）。
+    `scan --write` を回し直さないと記録に載らず、誰にも問わないまま `decisions` を承認できた（2026-09-28 のレビュー H2）。
+    ここでは記録を書き換えずに同じ見分け方で拾い、記録に無い（または「対象外」のままの）項目を問題として返す。
+    """
+    generated = out / "generated"
+    if not any(generated.rglob("*.java")):
+        return []
+    items = _script("plsql-migrate", "decision_items")
+    doc_path = Path(items.DEFAULT_DOC)
+    if not doc_path.exists():
+        return [f"確認項目の定義（{doc_path}）が無いので、生成物から出た項目を拾えない"]
+    given = {key: Path(inputs[key]) if inputs.get(key) and Path(inputs[key]).is_file() else None
+             for key in ("limits", "scalardb_schema")}
+    tree = items.Tree.load(generated, given["limits"], given["scalardb_schema"])
+    fired = items.detect(items.read_doc(doc_path), tree)
+    unpicked = [item for item in fired if item not in record or (record[item] or {}).get("状態") == "対象外"]
+    if not unpicked:
+        return []
+    where = "" if inputs.get("record") else "。記録の場所が flow.yaml に無い（init --record で渡す）"
+    return [f"生成物から出た確認項目のうち {len(unpicked)} が記録に無い: {'、'.join(unpicked)}{where}。{SCAN_HINT}"]
 
 
 def open_items(state: dict, out: Path) -> list[str]:
