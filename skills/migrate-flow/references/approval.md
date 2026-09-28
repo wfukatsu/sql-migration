@@ -64,6 +64,10 @@ SKILL.md の「判断を求めるときの形」で聞く。承認の場合の�
 .venv/bin/python skills/migrate-flow/scripts/flow.py approve <spec|decisions|converted> --out <out> --by <役割> --date <YYYY-MM-DD> [--note "<条件>"] [--with-open "<未決のまま進める理由>"]
 ```
 
+`approve` と `tested` は SKILL.md の `allowed-tools` に入っていない。打つ前に、記録する中身（段階、`--by`、`--date`、
+`--note`、`--with-open` の理由）を本文で示し、利用者の許可を得てから実行する。`flow.yaml` を手で書き換えて承認を
+残さない。
+
 | 引数 | 書くこと |
 |---|---|
 | `--by`（必須） | 承認した人の役割（「業務担当」「移行責任者」）。利用者が名乗った役割をそのまま使う。分からなければ聞く |

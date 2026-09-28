@@ -22,7 +22,11 @@ allowed-tools:
   - Write
   - Edit
   - Skill
-  - Bash(.venv/bin/python skills/migrate-flow/scripts/flow.py *)
+  # approve と tested は入れない: 承認とテストの結果の記録は、実行のたびに利用者の許可を求める（2 つ目の確認）
+  - Bash(.venv/bin/python skills/migrate-flow/scripts/flow.py status *)
+  - Bash(.venv/bin/python skills/migrate-flow/scripts/flow.py gate *)
+  - Bash(.venv/bin/python skills/migrate-flow/scripts/flow.py init *)
+  - Bash(.venv/bin/python skills/migrate-flow/scripts/flow.py adopt *)
   - Bash(.venv/bin/python -m plsql.cli *)
   - Bash(.venv/bin/python -m plsql.generate *)
   - Bash(.venv/bin/python skills/plsql-spec/scripts/spec_facts.py *)
@@ -55,7 +59,12 @@ flowchart LR
   言ったら、「判断を求めるときの形」で、飛ばすと何が起きるかを示して確かめる
 - **承認するのは利用者であって、あなたではない。** `flow.py approve` を打つのは、利用者がその段階の成果物を
   見て「承認する」と言ってからである。`--by` には承認した人の役割を書く。分からなければ聞く。
-  「よさそう」「次へ」は承認である。「あとで見る」は承認ではない
+  承認の問いを出したあとの返事で、成果物を見たうえでの「よさそう」「次へ」は承認である。問いを出す前の「次へ」や、
+  見ていないままの「次へ」は承認ではない（見る所を示して確かめる）。「あとで見る」は承認ではない
+- **承認とテストの結果は、利用者の許可のもとで記録する。** `flow.py approve` と `flow.py tested` は `allowed-tools` に
+  入れていない。打つ前に、何を記録するか（段階、`--by`、`--date`、`--with-open` の理由、テストの結果）を本文で示し、
+  利用者の許可を得てから実行する（Claude Code では実行のたびに確認が出る。確認の出ない環境でも、同じく先に聞く）。
+  **`flow.yaml` を手で書き換えない。** 承認は `approve` でだけ、テストの結果は `tested` でだけ記録する
 - **承認は中身に付く。** 承認のあとで原文・仕様書・決定・文書を書き換えると、その承認は「古い」になる。直したら、
   何を変えたかを利用者に示して、承認を取り直す。黙って取り直さない
 - **各段階の中身は、その段階のスキルの手順に従う。** このスキルに書いてあるのは、つなぎ方と、置き場所と、
