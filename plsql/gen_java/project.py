@@ -172,7 +172,8 @@ def _remove_stale(source_root: Path, written: set[Path]) -> list[Path]:
     return removed
 
 
-def write(project: GeneratedProject, decisions: dict[str, Decision] | None = None) -> list[Path]:
+def write(project: GeneratedProject, decisions: dict[str, Decision] | None = None,
+          unconverted: list[dict] | None = None) -> list[Path]:
     written: list[Path] = []
     source_root = project.root / SOURCE_ROOT
     for file in project.files:
@@ -235,6 +236,10 @@ def write(project: GeneratedProject, decisions: dict[str, Decision] | None = Non
     diagnostics = _diagnostic_codes(project.program)
     if diagnostics:
         payload["diagnostics"] = diagnostics
+    if unconverted:
+        # source files that did not parse (#145): absent from the output, or present only as far as the parser
+        # recovered. Written only when there are some, so a clean run's report is unchanged
+        payload["unconvertedFiles"] = unconverted
     report.write_text(json.dumps(payload, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     written.append(report)
     return written

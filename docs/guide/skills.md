@@ -66,7 +66,7 @@ Claude Code と Codex での違い:
 |---|---|---|
 | migrate-flow | 移行を決まった順で最後まで進める（仕様 → 承認 → 変換と判断 → 承認 → 変換後の仕様 → 承認 → テスト） | [SKILL.md](../../skills/migrate-flow/SKILL.md)、[承認の求め方](../../skills/migrate-flow/references/approval.md)、[SQL 文だけの移行](../../skills/migrate-flow/references/sql.md) |
 | plsql-spec | 既存の PL/SQL のいまの動作を仕様書にする | [SKILL.md](../../skills/plsql-spec/SKILL.md)、[仕様書の書き方](../../skills/plsql-spec/references/writing.md)、[例](../../skills/plsql-spec/examples/create_order/README.md) |
-| plsql-migrate | PL/SQL を Java に変換し、人の判断を記録し、変換後の文書を作る | [SKILL.md](../../skills/plsql-migrate/SKILL.md)、[業務ロジックとの整合](../../skills/plsql-migrate/references/alignment.md)、[変換後の文書の書き方](../../skills/plsql-migrate/references/documenting.md)、[運用の手順](../../skills/plsql-migrate/references/operations.md)、[例](../../skills/plsql-migrate/examples/create_order/README.md) |
+| plsql-migrate | PL/SQL を Java に変換し、人の判断を記録し、変換後の文書を作る | [SKILL.md](../../skills/plsql-migrate/SKILL.md)、[ルール ID から決めることへ](../../skills/plsql-migrate/references/decisions-by-rule.md)、[業務ロジックとの整合](../../skills/plsql-migrate/references/alignment.md)、[変換後の文書の書き方](../../skills/plsql-migrate/references/documenting.md)、[運用の手順](../../skills/plsql-migrate/references/operations.md)、[例](../../skills/plsql-migrate/examples/create_order/README.md) |
 | sql-transpile | SQL を任意の方言どうし、または ScalarDB SQL に変換する | [SKILL.md](../../skills/sql-transpile/SKILL.md)、[scalardb-grammar.md](../../skills/sql-transpile/references/scalardb-grammar.md)、[dialect-notes.md](../../skills/sql-transpile/references/dialect-notes.md)、[app-side-notes.md](../../skills/sql-transpile/references/app-side-notes.md)、[運用](../../skills/sql-transpile/references/operations.md) |
 
 スキルの仕組み（段階と承認、事実の欄と文章、人への確認）は [アーキテクチャ](../design/architecture.md) の 10 章と 14 章にあります。
@@ -147,6 +147,19 @@ PL/SQL を `plsql.generate` で Java に変換し（コンパイルと行数上�
 残した問い——[生成コードの外で決めること](../plsql-migration/plsql-decisions-outside-generator.md) の OPS / CALL / BIZ 項目——を
 生成物から拾って、利用者に確認し、決めた人と日付つきで記録します。BIZ 項目は routine ごとに「移行で何が変わるか」を
 業務の言葉にし、業務文書と照らして整合を確かめます。リポジトリの中で動きます（`plsql/` を使う）。
+変換だけ・確認だけ・文書だけのように段階を指定した依頼で使います。範囲を決めずに「PL/SQL を移行して」と頼まれたときは
+migrate-flow が受け持ち、その中でこのスキルの手順を使います。
+
+生成の結果は 2 組の判定で読みます。`rules:` はルールだけの判定、`verdict:` は実 DB の比較（証拠）の確信度を掛けた
+最終の判定で、生成器は証拠を読まないので `verdict:` の AUTO は 0 になります。ルールで AUTO の routine は「実 DB で
+比べていない」だけで、利用者に問うことはありません。ルールが REVIEW / REDESIGN にした routine は、ルール ID ごとに
+`limits.yaml` のどの決定で進めるか、直し方か受け入れるかを聞きます（[対応表](../../skills/plsql-migrate/references/decisions-by-rule.md)）。
+
+`plsql.generate` の終了コード: 0 = すべて済み、1 = 行数上限の決定漏れ・コンパイルの失敗・AUTO の routine を生成しきれない、
+2 = 入力の誤り（`limits.yaml` が無い・読めない、知らない節やキー、空の理由、ソースに無い routine id。理由を出して
+何も書かない）、3 = ほかは通ったが解析できなかったファイルがある（構文の誤り、`:OLD` に代入する trigger。
+`generation-report.json` の `unconvertedFiles` に残り、変換後の文書の「制限」に出る）。`plsql.cli` は 0 / 1（解析できなかった
+ファイルがある）/ 2（入力の誤り）です。
 
 ```bash
 .venv/bin/python skills/plsql-migrate/scripts/decision_items.py scan --generated out/plsql \

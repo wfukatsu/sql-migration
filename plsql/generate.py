@@ -9,6 +9,12 @@ Exit status is 1 when a routine the rules called AUTO could not be generated cle
 REDESIGN, statements ScalarDB refuses -- is written with its refusal in place and reported, because those are
 findings, not failures of the run.
 
+Exit status is 3 when the run is otherwise clean but a source file could not be parsed (a syntax error, or a
+trigger that assigns to `:OLD`, which Oracle refuses too -- ORA-04085). Those files are not, or not wholly, in the
+output, and a 0 let that pass unnoticed (#145). 1 wins over 3; the files are named either way, on stdout and as
+`unconvertedFiles` in generation-report.json. 2 is an input error: a usage error, or a limits.yaml that cannot be
+read (#145).
+
 "Cleanly" also means "nobody is guessing": `--limits-strict` fails the run when a rule asked for the row
 limit to be checked and nobody decided one -- the built-in default is the value that means nobody did (#19).
 
@@ -65,6 +71,15 @@ def main(argv: list[str] | None = None) -> int:
     args.handover = args.handover or args.handover_anyway
 
     root = Path(args.root)
+    if args.limits:
+        from .limits import LimitsError, validate
+
+        try:
+            validate(args.limits)
+        except LimitsError as error:
+            # an input error, not a crash: the reason and the file, and the run stops before anything is written
+            print(f"limits.yaml の誤り: {error}", file=sys.stderr)
+            return 2
     schema = args.schema or (str(root / "schema.sql") if (root / "schema.sql").exists() else None)
     scalardb = args.scalardb_schema
     if scalardb is None:
@@ -112,6 +127,19 @@ def main(argv: list[str] | None = None) -> int:
                               boundaries=Boundaries.load(args.limits) if args.limits else Boundaries(),
                               package_state=PackageState.load(args.limits) if args.limits else None,
                               constraints=Constraints.load(args.limits) if args.limits else None)
+    if args.limits:
+        from .limits import unknown_routines
+
+        stray = unknown_routines(args.limits, {r.id for m in analysis.program.modules for r in m.routines})
+        if stray:
+            # a decision for a routine the source does not have changes nothing, and the routine it meant stays
+            # undecided -- stop before writing, as for any other error in the file (#145)
+            print(f"limits.yaml の誤り: {args.limits} の決定に、ソースに無い routine がある:", file=sys.stderr)
+            for line in stray:
+                print(f"  {line}", file=sys.stderr)
+            print("routine id は <package>.<routine>（単独の procedure / function / trigger は名前だけ）で書く",
+                  file=sys.stderr)
+            return 2
     decisions = decide(analysis.program, analyse_program(analysis.program), RuleSet.load(), Evidence())
     if args.handover and not args.handover_anyway:
         blockers = _handover_blockers(analysis.program, decisions, args.limits)
@@ -127,7 +155,8 @@ def main(argv: list[str] | None = None) -> int:
     trigger_checks, types, namespaces = _trigger_checks(analysis, scalardb)
     project = generate(analysis.program, args.out_dir, args.package, decisions, plans,
                        trigger_checks, types, namespaces)
-    written = write(project, decisions)
+    unconverted = _unconverted(analysis)
+    written = write(project, decisions, unconverted=unconverted)
 
     summary = project.summary()
     auto = [r for r, d in decisions.items() if d.rule_verdict == "AUTO"]
@@ -158,6 +187,7 @@ def main(argv: list[str] | None = None) -> int:
         for routine in undecided:
             print(f"  the rules ask for a row limit and nobody decided one: {routine}")
         _print_no_limits_file(undecided, limits)
+        _print_unconverted(unconverted)
     failed = bool(dirty) or bool(undecided) or (report is not None and not report.ok)
     if args.quiet and failed:
         # `--quiet` means "say nothing when it goes well". A run that returns 1 and says nothing about why is
@@ -169,7 +199,39 @@ def main(argv: list[str] | None = None) -> int:
         _print_no_limits_file(undecided, limits, stream=sys.stderr)
         if report is not None and not report.ok:
             _print_compile(report, decisions, stream=sys.stderr)
-    return 1 if failed else 0
+    if args.quiet and unconverted:
+        _print_unconverted(unconverted, stream=sys.stderr)
+    if failed:
+        return 1
+    return 3 if unconverted else 0
+
+
+def _unconverted(analysis) -> list[dict]:
+    """Source files that did not parse, with the error codes that say why (#145).
+
+    `ORA_04085` (a trigger assigning to `:OLD`) drops the unit: Oracle could not create it either, so there is
+    nothing to convert. A syntax error (`PARSE`) leaves the routines the parser recovered, held below AUTO -- the
+    text it skipped is not in them. Either way the output is not the whole source, and whoever reads the output
+    has to be told which files are missing from it.
+    """
+    out = []
+    for parsed in analysis.parsed:
+        if parsed.ok:
+            continue
+        errors = [i for i in parsed.all_issues() if i.severity == "ERROR"]
+        codes = sorted({i.code for i in errors}) or ["EMPTY"]
+        out.append({"file": parsed.file, "codes": codes,
+                    "converted": "none" if "ORA_04085" in codes or not parsed.units else "partial",
+                    "first": str(errors[0]) if errors else "no PL/SQL unit in the file"})
+    return out
+
+
+def _print_unconverted(unconverted: list[dict], stream=None) -> None:
+    out = stream or sys.stdout
+    for item in unconverted:
+        what = "not converted" if item["converted"] == "none" else "converted from the recovered parse only"
+        print(f"  source file not parsed ({', '.join(item['codes'])}), {what}: {item['file']}", file=out)
+        print(f"    {item['first']}", file=out)
 
 
 def _handover_blockers(program, decisions: dict, limits_path) -> list[str]:
