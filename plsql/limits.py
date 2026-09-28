@@ -388,3 +388,124 @@ class DbLinks:
 
     def why(self, link: str) -> str | None:
         return self.reasons.get(link.lower())
+
+
+# --- checking the file (#145) -------------------------------------------------------------------------------
+#
+# Each loader above reads its own section and ignores the rest, so a misspelt section (`rowlocks:`), a routine id
+# that is not in the source (`pkg_shop.reserv`) or a decision with no reason (`pkg_shop.reserve:` -> the string
+# "None") all went through with exit 0: the decision looked recorded and changed nothing. `validate` runs once,
+# before the loaders, and names what is wrong; `unknown_routines` needs the parsed program and runs after the parse.
+
+class LimitsError(ValueError):
+    """limits.yaml cannot be used as it is. The message says where and why, for the person who wrote it."""
+
+
+# section -> its keys (None: the keys are names the user chooses -- routine ids, link names)
+SECTIONS: dict[str, set[str] | None] = {
+    "scanRows": {"default", "routines", "notLimited"},
+    "rowLocks": {"optimistic"},
+    "transactions": {"perIteration", "separate", "callerBoundary"},
+    "dynamicTables": None,
+    "ddl": {"omit"},
+    "packageState": {"carried"},
+    "constraints": {"enforce"},
+    "dbLinks": None,
+    "conditionalCompilation": {"flags", "dbVersion"},
+}
+# the places whose value is the reason for the decision: an empty one is a decision nobody explained
+REASONED = [("scanRows", "notLimited"), ("rowLocks", "optimistic"), ("transactions", "perIteration"),
+            ("transactions", "separate"), ("transactions", "callerBoundary"), ("ddl", "omit"),
+            ("packageState", "carried"), ("constraints", "enforce")]
+# the places keyed by routine id
+ROUTINE_KEYED = [("scanRows", "routines"), ("scanRows", "notLimited"), ("rowLocks", "optimistic"),
+                 ("transactions", "perIteration"), ("transactions", "separate"),
+                 ("transactions", "callerBoundary"), ("ddl", "omit"), ("dynamicTables", None)]
+
+
+def _read(path: str | Path) -> dict:
+    file = Path(path)
+    if not file.exists():
+        raise LimitsError(f"{file} が無い。まだ決定が無ければ --limits を外して回す（決めたら作って渡す）")
+    try:
+        data = yaml.safe_load(file.read_text(encoding="utf-8"))
+    except yaml.YAMLError as error:
+        mark = getattr(error, "problem_mark", None)
+        where = f" {mark.line + 1} 行目" if mark is not None else ""
+        raise LimitsError(f"{file}{where}: YAML として読めない（{getattr(error, 'problem', None) or error}）") from None
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise LimitsError(f"{file}: 最上位は節の名前の対応（scanRows: … など）でなければならない")
+    return data
+
+
+def validate(path: str | Path) -> None:
+    """Refuse a limits.yaml the generator would misread, with the reason. Raises LimitsError."""
+    file = Path(path)
+    data = _read(file)
+    unknown = sorted(str(k) for k in data if k not in SECTIONS)
+    if unknown:
+        hints = [f"{k}（{_near(k, SECTIONS)} のこと？）" if _near(k, SECTIONS) else k for k in unknown]
+        raise LimitsError(f"{file}: 知らない節 {', '.join(hints)}。生成器が読むのは {', '.join(SECTIONS)} だけで、"
+                          f"ほかの節は黙って無視される")
+    for section, keys in SECTIONS.items():
+        value = data.get(section)
+        if value is None:
+            continue
+        if not isinstance(value, dict):
+            raise LimitsError(f"{file}: {section} は対応（キー: 値）で書く")
+        if keys is None:
+            continue
+        extra = sorted(str(k) for k in value if k not in keys)
+        if extra:
+            raise LimitsError(f"{file}: {section} に知らないキー {extra}。書けるのは {sorted(keys)}")
+        for key in keys - {"default", "dbVersion"}:
+            if value.get(key) is not None and not isinstance(value[key], dict):
+                raise LimitsError(f"{file}: {section}.{key} は対応（id: 値）で書く")
+    for section, key in REASONED:
+        for name, why in ((data.get(section) or {}).get(key) or {}).items():
+            if not str(why if why is not None else "").strip():
+                raise LimitsError(f"{file}: {section}.{key}.{name} に理由が無い。決定の理由を値として書く"
+                                  f"（`{name}: <誰がなぜ決めたか>`）")
+    # the loaders' own checks (numbers, overlaps, dbLinks' namespace), turned into the same kind of error
+    try:
+        Limits.load(file)
+        Boundaries.load(file)
+        DbLinks.load(file)
+        DynamicDdl.load(file)
+    except (ValueError, TypeError) as error:
+        raise LimitsError(f"{file}: {error}") from None
+    cc = data.get("conditionalCompilation") or {}
+    major, _, minor = str(cc.get("dbVersion", "19.0")).partition(".")
+    if not major.isdigit() or (minor and not minor.isdigit()):
+        raise LimitsError(f"{file}: conditionalCompilation.dbVersion は \"19.0\" の形で書く（{cc.get('dbVersion')!r}）")
+
+
+def unknown_routines(path: str | Path, routine_ids) -> list[str]:
+    """Routine ids limits.yaml decides for that the source does not have, each with the nearest real id.
+
+    Such a decision changes nothing: the id is compared as written. It is usually a typo or a routine renamed
+    since, and the routine it meant is left undecided without anybody noticing.
+    """
+    data = _read(path)
+    known = set(routine_ids)
+    out = []
+    for section, key in ROUTINE_KEYED:
+        entries = data.get(section) or {}
+        if key is not None:
+            entries = entries.get(key) or {}
+        where = f"{section}.{key}" if key else section
+        for name in entries:
+            if str(name) not in known:
+                near = _near(str(name), known)
+                out.append(f"{where}.{name}" + (f"（{near} のこと？）" if near else ""))
+    return out
+
+
+def _near(word: str, candidates) -> str | None:
+    from difflib import get_close_matches
+
+    lowered = {str(c).lower(): str(c) for c in candidates}
+    found = get_close_matches(str(word).lower(), list(lowered), n=1, cutoff=0.75)
+    return lowered[found[0]] if found else None

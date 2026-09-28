@@ -44,7 +44,7 @@ INDEX_PROSE = (
     ("usage", "使い方", "呼び出し側が用意するもの（接続、採番、`AuditContext`）と、1 回の呼び出しの書き方（開始 → 呼ぶ → commit / "
                      "rollback → 衝突の再試行）をコード例つきで書く。コード例は生成された constructor と method の形に合わせる"),
     ("limits", "制限", "できないこと・Oracle と違うこと・確かめていないことを、読んだ人が踏まないように書く。判定が AUTO でない "
-                     "routine、受け入れた差、比較が観ていない振る舞い、未決の項目を落とさない"),
+                     "routine、受け入れた差、比較が観ていない振る舞い、未決の項目、変換していないファイルを落とさない"),
     ("how", "どのように移行したか", "解析 → 判定 → 決定 → 生成 → 実 DB での比較の流れを、この案件で実際に起きたことで書く。"
                                "どの決定を誰がいつしたか、何を確かめて何を確かめていないか"),
 )
@@ -103,6 +103,8 @@ class Project:
     evidence: dict
     record: dict
     other_files: list[str]
+    # 解析できなかったファイル（#145）。routine を歩くだけでは、落ちた trigger は文書に 1 行も出ない
+    unconverted: list[dict] = field(default_factory=list)
 
 
 def _sql(target) -> str:
@@ -239,7 +241,20 @@ def load(args) -> Project:
                              for path, text in java.items() if "/application/" in path
                              for m in METHOD.finditer(text) if m.group("visibility") == "public"
                              and m.group("name").startswith(stem) and m.group("name")[len(stem):][:1].isupper()]
-    return Project(generated, report, java, program.get("modules") or [], routines, limits, evidence, record, other)
+    return Project(generated, report, java, program.get("modules") or [], routines, limits, evidence, record, other,
+                   _unconverted(report, Path(args.analysis)))
+
+
+def _unconverted(report: dict, analysis: Path) -> list[dict]:
+    """解析できなかったファイル。generation-report の `unconvertedFiles`（理由のコードつき）を使い、無ければ
+    解析の `inventory.json` の `failedFiles`（名前だけ）で補う。古い生成器の出力でも抜けないようにする。"""
+    if report.get("unconvertedFiles"):
+        return list(report["unconvertedFiles"])
+    inventory = analysis / "inventory.json"
+    if not inventory.exists():
+        return []
+    failed = (json.loads(inventory.read_text(encoding="utf-8")).get("kpi") or {}).get("failedFiles") or []
+    return [{"file": Path(f).name, "codes": [], "converted": None, "first": ""} for f in failed]
 
 
 # --- Markdown -------------------------------------------------------------------------------------------------
@@ -504,6 +519,12 @@ def limits_facts(p: Project) -> str:
            "- 判定: " + " / ".join(f"{k} {v}" for k, v in sorted(counts.items())),
            f"- 変換できなかった文 {summary.get('untranslatedStatements', 0)} / ScalarDB が受け付けない SQL "
            f"{summary.get('unsupportedSql', 0)} / 実行計画に回した文 {summary.get('plannedSql', 0)}"]
+    if p.unconverted:
+        out += ["", "**変換していないファイル**（解析できなかった。生成物に無いか、解析器が読み飛ばした部分が欠けている）", ""]
+        out += _table(["ファイル", "理由", "生成物", "最初の誤り"], [
+            [f"`{u['file']}`", "<br>".join(f"`{c}`: {CHANGES.get(c, (None, '—'))[1]}" for c in u.get("codes") or []) or "—",
+             {"none": "無い", "partial": "読めた部分だけ（AUTO にしない）"}.get(u.get("converted"), "—"),
+             _short(u.get("first", ""), 140)] for u in p.unconverted])
     open_ = [r for r in p.routines.values() if r.verdict.get("verdict") in ("REVIEW", "REDESIGN")]
     if open_:
         out += ["", "AUTO でない routine", ""] + _table(["routine", "判定", "理由"], [
@@ -685,7 +706,10 @@ def cmd_facts(args) -> int:
         stale += [f"{name}: {block_id}" for block_id in gone]
     for entry in stale:
         print(f"生成物に無くなった節が残っている（消すかどうかは人が決める）: {entry}", file=sys.stderr)
-    print(f"MODULES={len(p.modules)} ROUTINES={len(p.routines)} STALE={len(stale)}", file=sys.stderr)
+    for u in p.unconverted:
+        print(f"変換していないファイル（「制限」に書く）: {u['file']} {' '.join(u.get('codes') or [])}", file=sys.stderr)
+    print(f"MODULES={len(p.modules)} ROUTINES={len(p.routines)} STALE={len(stale)} UNCONVERTED={len(p.unconverted)}",
+          file=sys.stderr)
     return 0
 
 
@@ -732,6 +756,9 @@ def check(p: Project, out: Path) -> tuple[list[str], int]:
                     for s in r.scenarios:
                         if (s.get("accepted") or s.get("differences")) and s["name"] not in prose:
                             problems.append(f"{name}: 「制限」の文章に、Oracle と違うシナリオ `{s['name']}` が出てこない")
+                for u in p.unconverted:
+                    if u["file"] not in prose:
+                        problems.append(f"{name}: 「制限」の文章に、変換していないファイル `{u['file']}` が出てこない")
                 if not p.evidence and "比較" not in prose:
                     problems.append(f"{name}: 「制限」の文章に、実 DB で比べていないことが書かれていない")
             elif block_id == "how":

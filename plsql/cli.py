@@ -9,7 +9,8 @@ A decisions file written without it reports every routine as REVIEW or worse -- 
 question was never asked. `difftest/plsql_diff.py --full --json ...` writes the file that answers it.
 
 Exit status is 1 when anything failed to parse, so the command can gate a pipeline. Unresolved types and
-warnings do not fail the run: Phase 1 exists to show them, not to hide the run behind them.
+warnings do not fail the run: Phase 1 exists to show them, not to hide the run behind them. 2 is an input error:
+a usage error, or a limits.yaml that cannot be read as the generator reads it (#145).
 """
 
 from __future__ import annotations
@@ -57,6 +58,14 @@ def main(argv: list[str] | None = None) -> int:
         scalardb = str(candidate) if candidate.exists() else None
     from . import redesign
 
+    if args.limits:
+        from .limits import LimitsError, validate
+
+        try:
+            validate(args.limits)
+        except LimitsError as error:
+            print(f"limits.yaml の誤り: {error}", file=sys.stderr)
+            return 2
     project = redesign.Decided.load(args.limits) if args.limits else None
     from .limits import conditional_compilation
 
