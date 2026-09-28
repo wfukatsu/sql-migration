@@ -481,10 +481,60 @@ def _tree_digest(root: Path, ignore=None) -> str:
     return digest.hexdigest()
 
 
+PY = ".venv/bin/python"   # SKILL.md のコマンドと同じ書き方。プラグインでは <root>/bin/python と <root>/skills/… に読み替える
+
+
+def next_command(state: dict, out: Path, stage: str, name: str, problems: list[str]) -> str | None:
+    """次に流すコマンドの 1 行。会話の文脈を失って再開するときに、Step 2・3 に要る入力の場所まで出す（レビュー M9）。
+
+    承認とテストの記録（`approve` / `tested`）は、利用者の許可を得てから打つものなので、そう添える。
+    """
+    inputs, o = state["inputs"], str(out)
+    given = {key: inputs.get(key) or f"<{placeholder}>" for key, placeholder in
+             (("src", "src"), ("limits", "limits.yaml"), ("record", "record.yaml"), ("scalardb_schema", "scalardb-schema.json"))}
+    plsql = inputs["kind"] == "plsql"
+    unfinished = [p for p in problems if not p.startswith("承認のあとで中身が変わった")]
+    if name in ("承認待ち", "承認が古い") and not unfinished:
+        with_open = ' --with-open "<残したまま進める理由>"（未決を残すと利用者が決めたときだけ）' \
+            if stage == "decisions" and open_items(state, out) else ""
+        return (f"{PY} skills/migrate-flow/scripts/flow.py approve {stage} --out {o} --by <役割> --date <YYYY-MM-DD>"
+                f"{with_open}（成果物を利用者に見せ、承認と記録の許可を得てから）")
+    if stage == "spec":
+        if not plsql:
+            return None   # SQL の仕様書は手で書く（references/sql.md の段階 1）
+        schema = f" --schema {inputs['schema']}" if inputs.get("schema") else ""
+        if not (out / "spec-analysis" / "program.ir.json").exists():
+            return f"{PY} -m plsql.cli {given['src']}{schema} --out-dir {o}/spec-analysis --quiet"
+        verb = "facts" if not list((out / "spec").glob("*.md")) else "check"
+        return f"{PY} skills/plsql-spec/scripts/spec_facts.py {verb} --analysis {o}/spec-analysis --out-dir {o}/spec"
+    if stage == "decisions":
+        if not plsql:
+            return (f"{PY} skills/sql-transpile/scripts/transpile.py {given['src']} --source {inputs.get('source_dialect') or '<方言>'} "
+                    f"--target {inputs.get('target_dialect') or 'scalardb'} --out-dir {o}/converted --plan-dir {o}/converted/plans")
+        if any("記録に無い" in p for p in problems):
+            return (f"{PY} skills/plsql-migrate/scripts/decision_items.py scan --generated {o}/generated --limits {given['limits']} "
+                    f"--scalardb-schema {given['scalardb_schema']} --record {given['record']} --write --out {o}/generated/decision-items.md")
+        return (f"{PY} -m plsql.generate {given['src']} --scalardb-schema {given['scalardb_schema']} --limits {given['limits']} "
+                f"--out-dir {o}/generated --verify-compile --limits-strict")
+    if not plsql:
+        return None   # SQL の変換後の文書は手で書く（references/sql.md の段階 3）
+    evidence = f" --evidence {inputs['evidence']}" if inputs.get("evidence") else ""
+    verb = "facts" if not list((out / "docs").glob("*.md")) else "check"
+    return (f"{PY} skills/plsql-migrate/scripts/migration_doc.py {verb} --src {given['src']} --generated {o}/generated "
+            f"--analysis {o}/generated/analysis --limits {given['limits']} --record {given['record']}{evidence} --out-dir {o}/docs")
+
+
 def cmd_status(args) -> int:
     out = Path(args.out)
     state = load(out)
-    print(f"# 移行の流れ — {state['inputs']['kind']} / {state['inputs']['src']}\n")
+    inputs = state["inputs"]
+    print(f"# 移行の流れ — {inputs['kind']} / {inputs['src']}\n")
+    # 再開に要る入力の場所（Step 2・3 のコマンドに渡すもの）。会話が変わっても、ここから拾える
+    print("| 入力 | 場所 |\n|---|---|")
+    for key in ("src", "schema", "scalardb_schema", "limits", "record", "evidence", "source_dialect", "target_dialect"):
+        if inputs.get(key):
+            print(f"| `{key}` | `{inputs[key]}` |")
+    print()
     print("| 段階 | 状態 | 承認 |\n|---|---|---|")
     next_step, details = None, []
     for stage in STAGES:
@@ -494,7 +544,7 @@ def cmd_status(args) -> int:
         print(f"| {TITLES[stage]}（`{stage}`） | {name} | {who} |")
         details += [f"- `{stage}`: {p}" for p in problems]
         if next_step is None and name != "承認済み":
-            next_step = (stage, name)
+            next_step = (stage, name, problems)
     test = state.get("test") or {}
     print(f"| テスト | {test.get('結果', 'まだ')} | {test.get('日付', '—')} |")
     if details:
@@ -503,12 +553,18 @@ def cmd_status(args) -> int:
     if remaining:
         print("\n未決の判断（承認する人に見せる）: " + "、".join(remaining))
     if next_step:
-        stage, name = next_step
+        stage, name, problems = next_step
         action = {"作業中": "を仕上げる", "承認待ち": "を利用者に見せて、承認を求める", "承認が古い": "を見直して、承認を取り直す",
                   FAILING: "の検査が通らない理由を直す（直して中身が変われば、承認を取り直す）"}[name]
         print(f"\n次にすること: {TITLES[stage]}{action}")
+        command = next_command(state, out, stage, name, problems)
+        if command:
+            print(f"次のコマンド: `{command}`")
     elif not test:
-        print("\n次にすること: テストを実施する（gate が 0 を返す）")
+        print("\n次にすること: テストを実施する（gate が 0 を返す。始める前に、配備するものと書き込む先を利用者に確かめる）")
+        print(f"次のコマンド: `{PY} skills/migrate-flow/scripts/flow.py gate --out {out}`")
+    elif test.get("結果") == "fail":
+        print("\n次にすること: 差を分ける（生成物の誤りか、移行で意味が変わる既知の差か）。SKILL.md Step 4 の「結果を読む」")
     print(f"STAGE={next_step[0] if next_step else 'test'}", file=sys.stderr)
     return 0
 
