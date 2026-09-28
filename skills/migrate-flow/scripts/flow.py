@@ -15,7 +15,8 @@
 通っていなければ受け付けない。承認したときのファイルの指紋を控えるので、**承認のあとで中身が変わると、
 承認は「古い」になり、`gate` は通らない**。承認されていないものをテストしない、が、この流れの約束である。
 
-終了コード: 0 = よい / 1 = まだ（`gate`、検査の通らない `approve`）/ 2 = 実行エラー。
+終了コード: 0 = よい / 1 = まだ（`gate`、検査の通らない `approve`）/ 2 = 実行エラー（入力や `flow.yaml` が読めない・
+壊れている、報告の形が違う）。2 のときは標準エラーに理由と次の手を出す。1 と 2 を取り違えないこと。
 """
 
 from __future__ import annotations
@@ -62,13 +63,60 @@ def _state_path(out: Path) -> Path:
     return out / "flow.yaml"
 
 
+BROKEN = "版管理から戻すか、壊れた項目を消して init を回し直す（消した承認は取り直しになる）。flow.yaml は flow.py だけが書く"
+PATH_INPUTS = ("src", "schema", "scalardb_schema", "limits", "record", "evidence")
+
+
+def _read_state(path: Path, inputs_too: bool = True) -> dict:
+    """`flow.yaml` を読み、形を確かめる。崩れていれば、どこがどう崩れていて次に何をするかを言う（終了コード 2）。
+
+    以前は `inputs` が dict かどうかしか見ず、ほかの崩れ方は traceback（終了コード 1 = `gate` の「まだ」と同じ）に
+    なった。`test: pass` のように、`gate` が 0 を返してしまう崩れ方もあった（2026-09-28 のレビュー M5）。
+    """
+    try:
+        state = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as e:
+        raise FlowError(f"{path} が YAML として読めない（{str(e).splitlines()[0]}）。{BROKEN}") from None
+    if state is None:
+        return {}
+    if not isinstance(state, dict):
+        raise FlowError(f"{path} が壊れている: 最上位が「名前: 値」の形でない。{BROKEN}")
+    found = []
+    approvals = state.get("approvals")
+    if approvals is not None and not isinstance(approvals, dict):
+        found.append("approvals が「段階: 承認」の形でない")
+    for stage, approval in (approvals if isinstance(approvals, dict) else {}).items():
+        if stage not in STAGES:
+            found.append(f"approvals の {stage} は段階（{' / '.join(STAGES)}）でない")
+        elif approval is not None and not (isinstance(approval, dict) and isinstance(approval.get("指紋"), str)):
+            found.append(f"approvals.{stage} に 指紋 が無い")
+    test = state.get("test")
+    if test is not None and not (isinstance(test, dict) and test.get("結果") in ("pass", "fail")
+                                 and isinstance(test.get("承認の指紋") or {}, dict)):
+        found.append("test が「結果: pass / fail」と「承認の指紋」を持つ形でない")
+    inputs = state.get("inputs")
+    if inputs_too and inputs is not None:
+        if not isinstance(inputs, dict):
+            found.append("inputs が「名前: 値」の形でない")
+        else:
+            if inputs.get("kind") not in ("plsql", "sql"):
+                found.append(f"inputs.kind が plsql / sql でない（{inputs.get('kind')!r}）")
+            found += [f"inputs.{key} がファイルの場所（文字列）でない" for key in PATH_INPUTS
+                      if key in inputs and not isinstance(inputs[key], str)]
+            if not isinstance(inputs.get("src"), str):
+                found.append("inputs.src が無い")
+    if found:
+        raise FlowError(f"{path} が壊れている: {'、'.join(found)}。{BROKEN}")
+    return state
+
+
 def load(out: Path) -> dict:
     path = _state_path(out)
     if not path.exists():
-        raise FlowError(f"{path} が無い。先に init を回す")
-    state = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raise FlowError(f"{path} が無い。先に init を回す（<out> が違うなら、out/migrate/*/flow.yaml を探す）")
+    state = _read_state(path)
     if not isinstance(state.get("inputs"), dict):
-        raise FlowError(f"{path} に inputs が無い")
+        raise FlowError(f"{path} に inputs が無い。init を回し直す（承認は残る）")
     return state
 
 
@@ -327,7 +375,8 @@ def stage_state(state: dict, out: Path, stage: str) -> tuple[str, list[str]]:
 
 def cmd_init(args) -> int:
     out = Path(args.out)
-    existing = yaml.safe_load(_state_path(out).read_text(encoding="utf-8")) if _state_path(out).exists() else {}
+    # inputs は作り直すので、崩れていてもよい（init で直せる）。承認とテストの結果は引き継ぐので、崩れていれば断る
+    existing = _read_state(_state_path(out), inputs_too=False) if _state_path(out).exists() else {}
     inputs = {"kind": args.kind, "src": str(Path(args.src).resolve())}
     for key in ("schema", "scalardb_schema", "limits", "record", "evidence", "source_dialect", "target_dialect"):
         if getattr(args, key):
@@ -513,9 +562,32 @@ def cmd_gate(args) -> int:
     return 1 if blocked else 0
 
 
+def _check_report(state: dict, report: str) -> Path:
+    """`tested --report` のファイルを確かめる。無いファイルや形の違う JSON を控えると、そのあとの `status` と `gate` が
+    文書の検査で止まり、`flow.yaml` を手で直すしかなかった（2026-09-28 のレビュー M6）。"""
+    path = Path(report).resolve()
+    if not path.is_file():
+        raise FlowError(f"{report} が無い。比較の報告のファイルを渡す（まだ無いなら、テストを流してから記録する）")
+    if state["inputs"]["kind"] != "plsql":
+        return path
+    shape = ("実 DB の比較の報告（plsql-diff.json: 変種 → {variant, scenarios: {シナリオ: 結果}}）の形でない。"
+             "difftest の plsql_compare.py が書いたファイルを渡す")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, UnicodeDecodeError) as e:
+        raise FlowError(f"{report} が JSON として読めない（{e}）。{shape}") from None
+    variants = list(data.values()) if isinstance(data, dict) else []
+    if not variants or not all(isinstance(v, dict) and isinstance(v.get("scenarios"), dict)
+                               and all(isinstance(s, dict) for s in v["scenarios"].values()) for v in variants):
+        raise FlowError(f"{report} は{shape}")
+    return path
+
+
 def cmd_tested(args) -> int:
     out = Path(args.out)
     state = load(out)
+    if args.report:
+        args.report = str(_check_report(state, args.report))
     if cmd_gate(args) != 0:
         print("承認がそろっていないので、テストの結果は記録しない")
         return 1
@@ -523,10 +595,10 @@ def cmd_tested(args) -> int:
                      "承認の指紋": {stage: state["approvals"][stage]["指紋"] for stage in STAGES}}
     if args.note:
         state["test"]["メモ"] = args.note
-    if state["inputs"]["kind"] == "plsql" and args.report and Path(args.report).exists():
+    if state["inputs"]["kind"] == "plsql" and args.report:
         # 比較の結果を文書に入れる（migration_doc.py の --evidence）と、事実の欄が変わる。`converted` の検査が
         # 同じ比較を見ていなければ、文書は「古い事実」になり、承認を取り直せない
-        state["inputs"]["evidence"] = args.report = str(Path(args.report).resolve())
+        state["inputs"]["evidence"] = args.report
     save(out, state)
     print(f"テストの結果（{args.result}）を記録した")
     if state["inputs"].get("evidence") == args.report and args.report:
@@ -584,6 +656,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except (json.JSONDecodeError, yaml.YAMLError, UnicodeDecodeError) as e:
         print(f"入力が読めない: {type(e).__name__}: {e}", file=sys.stderr)
+        return 2
+    except Exception as e:   # noqa: BLE001 -- 想定外でも 1（gate の「まだ」）と取り違えない終わり方をする
+        print(f"想定外のエラーで止まった（{type(e).__name__}: {e}）。flow.yaml と入力のファイル（status の inputs）を"
+              f"確かめる。直らなければ、このメッセージを添えて報告する", file=sys.stderr)
         return 2
 
 
