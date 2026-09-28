@@ -76,8 +76,8 @@ SKILL.md の「判断を求めるときの形」で聞く。承認の場合の�
 | 名前 | 中身 |
 |---|---|
 | `承認した人`、`日付` | `--by`、`--date` |
-| `指紋` | 承認した時点の対象ファイルの中身から取った値（SHA-256 の先頭 16 桁） |
-| `対象` | 指紋を取ったファイルの一覧 |
+| `指紋` | 承認した時点の対象ファイルの名前・長さ・中身から取った値（SHA-256 の先頭 16 桁） |
+| `対象` | 指紋を取ったファイルの一覧（置き場所からの相対、または入力の種類 `limits` / `record` / `scalardb_schema` / `schema`） |
 | `未決のまま進める` | `項目`（未決の一覧）と `理由`（`--with-open`）。未決があったときだけ |
 | `メモ` | `--note`。付けたときだけ |
 
@@ -87,9 +87,12 @@ SKILL.md の「判断を求めるときの形」で聞く。承認の場合の�
 
 | 段階 | 指紋の対象 |
 |---|---|
-| `spec` | `<out>/spec/*.md`（直下だけ）と、原文（`--src` のファイル、またはディレクトリの下の全ファイル。`.` で始まるものは除く） |
-| `decisions` | `limits.yaml`、記録（`--record`）、変換の報告（PL/SQL は `<out>/generated/generation-report.json`、SQL は `<out>/converted/*.report.json`） |
+| `spec` | `<out>/spec/*.md`（直下だけ）と、原文（`--src` のファイル、またはディレクトリの下の全ファイル。`.` で始まるものは除く）。`init --schema` で渡した DDL |
+| `decisions` | `limits.yaml`、記録（`--record`）、`scalardb-schema.json`（`--scalardb-schema`）と、**生成物の全体**: PL/SQL は `<out>/generated/` の下の全ファイル（生成された Java、`db/*.sql`、`generation-report.json`。解析の `analysis/` と確認一覧の `decision-items.md` は除く）、SQL は `<out>/converted/` の下の全ファイル（変換後の SQL、`*.report.json`、`plans/`） |
 | `converted` | `<out>/docs/*.md`（直下だけ） |
+
+テストで確かめるのは生成物なので、承認のあとで生成物を手で直しても、別の schema や `limits.yaml` で生成し直しても、
+`decisions` は古くなる。指紋は置き場所からの相対の名前で取るので、同じ中身を別の場所へ写しても古くはならない。
 
 取り直すときは、何を変えたかを利用者に示してから `approve` を打ち直す。`flow.py` は、前の段階の承認を取り直しても、
 あとの段階の承認を古くはしない。変更があとの段階に効くかどうかは、利用者に説明して、取り直すかを決めてもらう。

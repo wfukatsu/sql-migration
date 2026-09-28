@@ -2,7 +2,7 @@
 """移行の一連の流れ（現行仕様 → 変換と判断 → 変換後の仕様 → 承認 → テスト）の、いまどこにいるかを持つ。
 
     python skills/migrate-flow/scripts/flow.py init --out out/migrate/shop --kind plsql \\
-        --src fixtures/plsql-external/create_order/src --scalardb-schema … --limits … [--record …] [--evidence …]
+        --src fixtures/plsql-external/create_order/src --scalardb-schema … --limits … [--record …] [--schema …] [--evidence …]
     python ... status  --out out/migrate/shop                  # 段階ごとの状態と、次にすること
     python ... approve --out out/migrate/shop spec --by 業務担当 --date 2026-09-20
     python ... gate    --out out/migrate/shop                  # 0 = テストしてよい / 1 = まだ
@@ -73,17 +73,57 @@ def save(out: Path, state: dict) -> None:
     _state_path(out).write_text(HEADER + yaml.safe_dump(state, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
 
-def _files(state: dict, out: Path, stage: str) -> list[Path]:
-    """その段階で承認されるもの。指紋はこのファイルの中身から取る。"""
+def _targets(state: dict, out: Path, stage: str) -> list[tuple[str, Path]]:
+    """その段階で承認されるもの（名前とファイル）。指紋は、この名前と中身から取る。
+
+    名前は置き場所からの相対（`spec/README.md`、`src/create_order.prc`、`generated/src/main/...`）か、入力の種類
+    （`limits`、`record`、`scalardb_schema`、`schema`）である。絶対パスを使わないので、同じ中身を別の場所へ写しても
+    承認は古くならない。
+    """
     inputs = state["inputs"]
     if stage == "spec":
-        # 原文も入れる。仕様書は原文の写しなので、原文が変われば、承認した仕様はもう現行の仕様ではない
-        return sorted((out / "spec").glob("*.md")) + _sources(inputs)
+        # 原文も入れる。仕様書は原文の写しなので、原文が変われば、承認した仕様はもう現行の仕様ではない。
+        # src の外にある DDL（plsql.cli の --schema）も、事実の欄（表と列）の出どころなので入れる
+        pages = [(f"spec/{f.name}", f) for f in sorted((out / "spec").glob("*.md"))]
+        return pages + _source_targets(inputs) + _input_targets(inputs, ("schema",))
     if stage == "converted":
-        return sorted((out / "docs").glob("*.md"))
-    chosen = [inputs.get("limits"), inputs.get("record")]
-    reports = [out / "generated" / "generation-report.json"] if inputs["kind"] == "plsql" else sorted((out / "converted").glob("*.report.json"))
-    return [Path(f) for f in chosen if f and Path(f).exists()] + [r for r in reports if r.exists()]
+        return [(f"docs/{f.name}", f) for f in sorted((out / "docs").glob("*.md"))]
+    # decisions: 決定（limits・記録）と、それで生成したもの。テストで確かめる当のもの（生成された Java、db/*.sql、
+    # 変換後の SQL と実行計画）と生成の入力（scalardb-schema.json）も入れる。承認のあとで生成物を手で直しても、
+    # 別の schema で生成し直しても、承認は古くなる（2026-09-28 のレビュー H1）
+    if inputs["kind"] == "plsql":
+        produced = _tree_targets(out, "generated", skip=("analysis", "decision-items.md"))
+    else:
+        produced = _tree_targets(out, "converted")
+    return _input_targets(inputs, ("limits", "record", "scalardb_schema")) + produced
+
+
+def _files(state: dict, out: Path, stage: str) -> list[Path]:
+    return [path for _, path in _targets(state, out, stage)]
+
+
+def _input_targets(inputs: dict, keys: tuple[str, ...]) -> list[tuple[str, Path]]:
+    return [(key, Path(inputs[key])) for key in keys if inputs.get(key) and Path(inputs[key]).is_file()]
+
+
+def _tree_targets(out: Path, folder: str, skip: tuple[str, ...] = ()) -> list[tuple[str, Path]]:
+    """`<out>/<folder>` の下の全ファイル。`skip` の名前で始まるもの（決定の前の一覧、解析）と、`.` で始まるものは除く。"""
+    root = out / folder
+    if not root.is_dir():
+        return []
+    found = []
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root)
+        if path.is_file() and relative.parts[0] not in skip and not any(part.startswith(".") for part in relative.parts):
+            found.append((f"{folder}/{relative.as_posix()}", path))
+    return found
+
+
+def _source_targets(inputs: dict) -> list[tuple[str, Path]]:
+    src = Path(inputs.get("src") or "")
+    if src.is_file():
+        return [(f"src/{src.name}", src)]
+    return [(f"src/{f.relative_to(src).as_posix()}", f) for f in _sources(inputs)]
 
 
 def _sources(inputs: dict) -> list[Path]:
@@ -107,11 +147,13 @@ def _record(inputs: dict) -> dict[str, dict]:
     return items
 
 
-def fingerprint(files: list[Path]) -> str:
+def fingerprint(targets: list[tuple[str, Path]]) -> str:
+    """名前・長さ・中身から取る。長さで区切るので、隣り合うファイルの境目がずれても同じ値にならない。"""
     digest = hashlib.sha256()
-    for path in files:
-        digest.update(path.name.encode())
-        digest.update(path.read_bytes())
+    for name, path in targets:
+        data = path.read_bytes()
+        digest.update(f"{name}\0{len(data)}\0".encode())
+        digest.update(data)
     return digest.hexdigest()[:16]
 
 
@@ -146,7 +188,7 @@ def problems_of(state: dict, out: Path, stage: str) -> list[str]:
             found = facts.check(modules, routines, inventory, out / "spec")[0] + [f for f in found if "未記入" not in f]
         return found
     if stage == "decisions":
-        if not files or not any(f.name.endswith("report.json") for f in files):
+        if not any(f.name.endswith("report.json") and f.parent in (out / "generated", out / "converted") for f in files):
             return ["変換がまだ済んでいない（変換の報告が無い）" + ADOPT_HINT.format(
                 what="--generated <dir>" if inputs["kind"] == "plsql" else "--converted <dir>")]
         found, record = [], _record(inputs)
@@ -157,7 +199,7 @@ def problems_of(state: dict, out: Path, stage: str) -> list[str]:
                 found.append(f"変換できなかった文が {summary['untranslatedStatements']} 残っている")
         else:
             # 記録のファイルを渡してあるだけでは足りない。変換できなかった文の 1 つずつに、どう扱うかの項目が要る
-            for report in (f for f in files if f.name.endswith(".report.json")):
+            for report in (f for f in files if f.name.endswith(".report.json") and f.parent == out / "converted"):
                 failed = [s for s in json.loads(report.read_text(encoding="utf-8")).get("results", []) if s.get("status") == "ERROR"]
                 missing = [f"SQL-{s.get('index')}" for s in failed if f"SQL-{s.get('index')}" not in record]
                 if missing:
@@ -236,7 +278,7 @@ def stage_state(state: dict, out: Path, stage: str) -> tuple[str, list[str]]:
     approval = (state.get("approvals") or {}).get(stage)
     problems = problems_of(state, out, stage)
     if approval:
-        if approval.get("指紋") != fingerprint(_files(state, out, stage)):
+        if approval.get("指紋") != fingerprint(_targets(state, out, stage)):
             return "承認が古い", ["承認のあとで中身が変わった。見直して、承認を取り直す"] + problems
         return "承認済み", []
     return ("承認待ち", []) if not problems else ("作業中", problems)
@@ -246,7 +288,7 @@ def cmd_init(args) -> int:
     out = Path(args.out)
     existing = yaml.safe_load(_state_path(out).read_text(encoding="utf-8")) if _state_path(out).exists() else {}
     inputs = {"kind": args.kind, "src": str(Path(args.src).resolve())}
-    for key in ("scalardb_schema", "limits", "record", "evidence", "source_dialect", "target_dialect"):
+    for key in ("schema", "scalardb_schema", "limits", "record", "evidence", "source_dialect", "target_dialect"):
         if getattr(args, key):
             # どこから呼んでも同じファイルを指すようにする（相対のままだと、別の場所から呼んだときに指紋が変わる）
             inputs[key] = getattr(args, key) if key.endswith("_dialect") else str(Path(getattr(args, key)).resolve())
@@ -378,8 +420,8 @@ def cmd_approve(args) -> int:
         print("未決の判断が残っている: " + "、".join(remaining))
         print("残したまま進めると利用者が決めたなら、その理由を --with-open に書く（承認に控える）")
         return 1
-    approval = {"承認した人": args.by, "日付": args.date, "指紋": fingerprint(_files(state, out, args.stage)),
-                "対象": [str(f) for f in _files(state, out, args.stage)]}
+    approval = {"承認した人": args.by, "日付": args.date, "指紋": fingerprint(_targets(state, out, args.stage)),
+                "対象": [name for name, _ in _targets(state, out, args.stage)]}
     if remaining:
         approval["未決のまま進める"] = {"項目": remaining, "理由": args.with_open}
     if args.note:
@@ -447,6 +489,7 @@ def main(argv: list[str] | None = None) -> int:
     init = sub.add_parser("init", help="入力を控える（承認は消さない）")
     init.add_argument("--kind", required=True, choices=("plsql", "sql"))
     init.add_argument("--src", required=True, help="PL/SQL のディレクトリ、または SQL のファイル")
+    init.add_argument("--schema", help="src の外にある Oracle の DDL（plsql.cli の --schema）。spec の指紋に入る")
     init.add_argument("--scalardb-schema", dest="scalardb_schema")
     init.add_argument("--limits")
     init.add_argument("--record")
