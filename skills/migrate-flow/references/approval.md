@@ -23,7 +23,7 @@
 | 段階 | 検査（`kind: plsql`） | 検査（`kind: sql`） |
 |---|---|---|
 | `spec` | `<out>/spec/*.md` があること。plsql-spec の `spec_facts.py check` と同じ検査（未記入が無い、事実の欄が解析と合う）。Mermaid の塊が閉じていて、図が 1 つ以上あること | `<out>/spec/*.md` があること。文字列 `（未記入` が無いこと。Mermaid の塊が閉じていて、図が 1 つ以上あること |
-| `decisions` | `<out>/generated/generation-report.json` があり、変換できなかった文（`summary.untranslatedStatements`）が 0 であること | `<out>/converted/*.report.json` があり、ERROR の文の 1 つずつに記録の項目 `SQL-<番号>` があること |
+| `decisions` | `<out>/generated/generation-report.json` があり、変換できなかった文（`summary.untranslatedStatements`）が 0 であること。生成物から出た確認項目（plsql-migrate の `decision_items.py scan` と同じ見分け方）が、記録にすべてあること（無い・「対象外」のままなら、`scan --write` を回し直すまで断る） | `<out>/converted/*.report.json` があり、ERROR の文の 1 つずつに記録の項目 `SQL-<番号>` があること |
 | `converted` | `<out>/docs/*.md` があること。plsql-migrate の `migration_doc.py check` と同じ検査（`flow.yaml` の入力と `<out>/generated/analysis` を使う）。Mermaid の塊と図は `spec` と同じ | `<out>/docs/*.md` があること。`（未記入` と Mermaid は `spec` と同じ |
 
 どちらの `kind` でも、記録（`--record`）で `状態: 決定` の項目に `決めた人` と `日付` が無ければ `decisions` は断られる。
@@ -36,6 +36,8 @@
 
 - 記録の項目で `状態: 未決` のもの（PL/SQL・SQL とも）
 - 生成の報告で判定が REVIEW の routine。ただし `<out>/generated/analysis/decisions.json` が AUTO と言うものは除く（PL/SQL）
+- ScalarDB が受け付けない文（生成の報告の `summary.unsupportedSql`。生成物では `UnsupportedOperationException` を
+  投げるので、テストで確実に落ちる）（PL/SQL）
 - 判定が REDESIGN で、`limits.yaml` に答えの無いルールが残っている routine（PL/SQL）。`<out>/generated/analysis` が
   無いか `limits.yaml` より古いと、「決めたかどうかが分からない」として未決に数える
 
@@ -64,6 +66,10 @@ SKILL.md の「判断を求めるときの形」で聞く。承認の場合の�
 .venv/bin/python skills/migrate-flow/scripts/flow.py approve <spec|decisions|converted> --out <out> --by <役割> --date <YYYY-MM-DD> [--note "<条件>"] [--with-open "<未決のまま進める理由>"]
 ```
 
+`approve` と `tested` は SKILL.md の `allowed-tools` に入っていない。打つ前に、記録する中身（段階、`--by`、`--date`、
+`--note`、`--with-open` の理由）を本文で示し、利用者の許可を得てから実行する。`flow.yaml` を手で書き換えて承認を
+残さない。
+
 | 引数 | 書くこと |
 |---|---|
 | `--by`（必須） | 承認した人の役割（「業務担当」「移行責任者」）。利用者が名乗った役割をそのまま使う。分からなければ聞く |
@@ -76,8 +82,8 @@ SKILL.md の「判断を求めるときの形」で聞く。承認の場合の�
 | 名前 | 中身 |
 |---|---|
 | `承認した人`、`日付` | `--by`、`--date` |
-| `指紋` | 承認した時点の対象ファイルの中身から取った値（SHA-256 の先頭 16 桁） |
-| `対象` | 指紋を取ったファイルの一覧 |
+| `指紋` | 承認した時点の対象ファイルの名前・長さ・中身から取った値（SHA-256 の先頭 16 桁） |
+| `対象` | 指紋を取ったファイルの一覧（置き場所からの相対、または入力の種類 `limits` / `record` / `scalardb_schema` / `schema`） |
 | `未決のまま進める` | `項目`（未決の一覧）と `理由`（`--with-open`）。未決があったときだけ |
 | `メモ` | `--note`。付けたときだけ |
 
@@ -87,9 +93,15 @@ SKILL.md の「判断を求めるときの形」で聞く。承認の場合の�
 
 | 段階 | 指紋の対象 |
 |---|---|
-| `spec` | `<out>/spec/*.md`（直下だけ）と、原文（`--src` のファイル、またはディレクトリの下の全ファイル。`.` で始まるものは除く） |
-| `decisions` | `limits.yaml`、記録（`--record`）、変換の報告（PL/SQL は `<out>/generated/generation-report.json`、SQL は `<out>/converted/*.report.json`） |
+| `spec` | `<out>/spec/*.md`（直下だけ）と、原文（`--src` のファイル、またはディレクトリの下の全ファイル。`.` で始まるものは除く）。`init --schema` で渡した DDL |
+| `decisions` | `limits.yaml`、記録（`--record`）、`scalardb-schema.json`（`--scalardb-schema`）と、**生成物の全体**: PL/SQL は `<out>/generated/` の下の全ファイル（生成された Java、`db/*.sql`、`generation-report.json`。解析の `analysis/` と確認一覧の `decision-items.md` は除く）、SQL は `<out>/converted/` の下の全ファイル（変換後の SQL、`*.report.json`、`plans/`） |
 | `converted` | `<out>/docs/*.md`（直下だけ） |
+
+テストで確かめるのは生成物なので、承認のあとで生成物を手で直しても、別の schema や `limits.yaml` で生成し直しても、
+`decisions` は古くなる。指紋は置き場所からの相対の名前で取るので、同じ中身を別の場所へ写しても古くはならない。
+
+指紋に入らない入力（`spec-analysis/`、`generated/analysis/`、`inputs.evidence`）が変わって、承認した段階の検査が
+通らなくなったときは、状態は「承認済み（検査が通らない）」になり、`gate` は閉じる。
 
 取り直すときは、何を変えたかを利用者に示してから `approve` を打ち直す。`flow.py` は、前の段階の承認を取り直しても、
 あとの段階の承認を古くはしない。変更があとの段階に効くかどうかは、利用者に説明して、取り直すかを決めてもらう。

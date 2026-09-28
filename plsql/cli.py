@@ -9,7 +9,10 @@ A decisions file written without it reports every routine as REVIEW or worse -- 
 question was never asked. `difftest/plsql_diff.py --full --json ...` writes the file that answers it.
 
 Exit status is 1 when anything failed to parse, so the command can gate a pipeline. Unresolved types and
-warnings do not fail the run: Phase 1 exists to show them, not to hide the run behind them.
+warnings do not fail the run: Phase 1 exists to show them, not to hide the run behind them. 2 is an input error:
+a usage error, a limits.yaml that cannot be read as the generator reads it (#145), or nothing to analyse -- the
+directory is not there, or holds no PL/SQL source (#144). A PL/SQL file that is not read (an object type, a suffix
+the tool does not know) is named on stderr and in inventory.json `kpi.skippedFiles`.
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ from pathlib import Path
 
 from . import fingerprint, review
 from .analysis import analyse as analyse_program
-from .report import analyse, inventory, write, write_call_graph
+from .report import BODY_SUFFIXES, SPEC_SUFFIXES, analyse, inventory, write, write_call_graph
 from .rules.engine import RuleSet, decide
 
 
@@ -46,6 +49,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--quiet", action="store_true", help="print nothing but the exit status")
     args = parser.parse_args(argv)
 
+    # a directory that is not there, or one with no PL/SQL in it, used to give rc=0 and an empty report -- a
+    # specification with nothing in it that looked like one with everything in it (Issue #144 H6)
+    if not Path(args.root).is_dir():
+        print(f"error: {args.root} is not a directory (the PL/SQL sources are read from a directory)", file=sys.stderr)
+        return 2
+
     schema = args.schema
     if schema is None:
         candidate = Path(args.root) / "schema.sql"
@@ -57,6 +66,14 @@ def main(argv: list[str] | None = None) -> int:
         scalardb = str(candidate) if candidate.exists() else None
     from . import redesign
 
+    if args.limits:
+        from .limits import LimitsError, validate
+
+        try:
+            validate(args.limits)
+        except LimitsError as error:
+            print(f"limits.yaml の誤り: {error}", file=sys.stderr)
+            return 2
     project = redesign.Decided.load(args.limits) if args.limits else None
     from .limits import conditional_compilation
 
@@ -64,6 +81,13 @@ def main(argv: list[str] | None = None) -> int:
     analysis = analyse(args.root, schema, scalardb_schema=scalardb, **(project.for_analysis() if project else {}))
     data = inventory(analysis)
     kpi, totals = data["kpi"], data["totals"]
+    for skipped in kpi.get("skippedFiles", []):
+        # said even with --quiet: a file left out is a hole in whatever is made from this run
+        print(f"warning: not analysed: {skipped['file']}: {skipped['reason']}", file=sys.stderr)
+    if not kpi["totalFiles"]:
+        print(f"error: no PL/SQL source under {args.root} (read: {', '.join(sorted(BODY_SUFFIXES | set(SPEC_SUFFIXES)))}, "
+              "and .sql that creates a package body, procedure, function or trigger)", file=sys.stderr)
+        return 2
 
     if not args.quiet:
         print(f"modules={totals['modules']} routines={totals['routines']} statements={totals['statements']}")

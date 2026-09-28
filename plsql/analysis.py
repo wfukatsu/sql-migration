@@ -338,10 +338,21 @@ def build_call_graph(program: M.Program) -> CallGraph:
                 + [p.default for p in routine.parameters if p.default] \
                 + [d.initial for st in statements for d in getattr(st, "declarations", []) or []
                    if d.initial and d.declaration_kind != "cursor"]
+            # a subprogram this routine declares but lowering could not lift (its name is the module's routine's, #144
+            # H3): a bare call of that name is the inner one in Oracle. Bound to the module's routine it read as a call
+            # of code that does something else (another error code); it is left unresolved instead
+            hidden = _unlowered_subprograms(statements)
             for expression in initialisers:
-                graph.calls[routine.id] |= _called_in(expression, by_name, module.name, routine.id, declared)
+                graph.calls[routine.id] |= _called_in(expression, by_name, module.name, routine.id, declared, hidden)
                 graph.external[routine.id] |= external_in(expression, module.name, declared)
             for statement in statements:
+                if statement.kind == "Call" and (statement.callee or "").strip().lower() in hidden:
+                    statement.resolved_to = None
+                    # the code the unlowered subprogram itself carries: the routine is not generated either way
+                    if not any(d.code == "UNSUPPORTED_CONSTRUCT" for d in statement.diagnostics):
+                        statement.add("WARN", "UNSUPPORTED_CONSTRUCT",
+                                      f"calls {statement.callee.strip()}, {UNLOWERED_CALL}")
+                    continue
                 if statement.kind == "Call":
                     resolved = _resolve(statement.callee, by_name, module.name, statement.arguments or [])
                     if resolved is not None:
@@ -360,7 +371,7 @@ def build_call_graph(program: M.Program) -> CallGraph:
                         for name in _CALLABLE.findall(expression):
                             if overloaded(name, by_name, module.name):
                                 _unresolved_overload(statement, name)
-                    for resolved in _called_in(expression, by_name, module.name, routine.id, declared):
+                    for resolved in _called_in(expression, by_name, module.name, routine.id, declared, hidden):
                         graph.calls[routine.id].add(resolved)
                     if statement.kind != "SqlOperation":   # SQL has its own functions; the converter judges those
                         graph.external[routine.id] |= external_in(expression, module.name, declared)
@@ -461,19 +472,37 @@ def _expressions(statement: M.Statement) -> list[str]:
     return out
 
 
+UNLOWERED_CALL = "the subprogram this routine declares and that is not lowered -- not the module's routine of the same name"
+
+
+def _unlowered_subprograms(statements: list[M.Statement]) -> set[str]:
+    """The names of the nested subprograms among `statements` that lowering left as Unsupported."""
+    names: set[str] = set()
+    for statement in statements:
+        if statement.kind == "Unsupported" and getattr(statement, "construct", "") == "NestedSubprogram":
+            named = re.match(r"\s*(?:PROCEDURE|FUNCTION)\s+([A-Za-z][\w$#]*)", statement.text or "", re.IGNORECASE)
+            if named:
+                names.add(named.group(1).lower())
+    return names
+
+
 def _called_in(expression: str, by_name: dict[str, str], module: str, caller: str,
-               declared: set[str] | frozenset[str] = frozenset()) -> set[str]:
+               declared: set[str] | frozenset[str] = frozenset(),
+               hidden: set[str] | frozenset[str] = frozenset()) -> set[str]:
     """Self-calls count. Direct recursion is a self-edge, and excluding it hides the plainest recursion there is.
-    `declared` are the caller's own names: a variable hides a parameterless function of the same name."""
+    `declared` are the caller's own names: a variable hides a parameterless function of the same name. `hidden` are
+    the caller's own subprograms that were not lowered: a bare call of one is not the module's routine."""
     found: set[str] = set()
     for name in _CALLABLE.findall(expression):
+        if name.lower() in hidden:
+            continue
         resolved = _resolve(name, by_name, module)
         if resolved is not None:
             found.add(resolved)
     no_args = getattr(by_name, "no_args", None)
     if no_args:
         for name in _BARE_NAME.findall(re.sub(r"'(?:[^']|'')*'", "''", expression)):
-            if name.lower() in declared:
+            if name.lower() in declared or name.lower() in hidden:
                 continue
             resolved = _resolve(name, by_name, module)
             if resolved in no_args:

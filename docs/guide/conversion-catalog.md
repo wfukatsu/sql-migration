@@ -362,7 +362,7 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 | Oracle | 外部結合 `(+)`、`ROWNUM`、`CONNECT BY`、`KEEP`、`MINUS` | 上の各表 |
 | Oracle | 整数型、`FLOAT`、`DATE`、精度なし `NUMBER`、`LONG`、`LONG RAW`、`XMLTYPE` | すべて WARN `TYPE`（上の「データ型」） |
 | Oracle | `/` だけの行 | 文の切れ目として扱う |
-| Oracle | PL/SQL のブロック（`CREATE PROCEDURE` など、`BEGIN` / `DECLARE` の無名ブロック） | ERROR `PLSQL_BLOCK`。PL/SQL の移行ツールで扱う |
+| Oracle | PL/SQL のブロック（`CREATE PROCEDURE` など、`BEGIN` / `DECLARE` の無名ブロック） | ERROR `PLSQL_BLOCK`。始まる所から `/` までを 1 文にする（前に `;` で終わる文があっても割らない）。PL/SQL の移行ツールで扱う |
 | Oracle | `WITH FUNCTION ...`（WITH 句の PL/SQL） | ERROR `WITH_PLSQL`。関数をアプリに移せば、問い合わせは変換か実行計画にできる |
 | PostgreSQL | `ILIKE`、`ONLY`、`DISTINCT ON`、`BETWEEN SYMMETRIC`、`FILTER`、`$1` | 上の各表 |
 | PostgreSQL | `ON CONFLICT` | `UPSERT INTO` か ERROR（上の書き込みの表） |
@@ -384,7 +384,7 @@ ERROR か PLANNED になった読み取り文には、変換器が最初につ�
 | `APP_SEMANTICS` | WARN | アプリで書き直すときに結果を変えないための注意（`LAG` / `LEAD`、0 除算、`ROUND`、集約と NULL、順位、NULL と文字列の並び、`SYS_CONNECT_BY_PATH`、`LEVEL`、`ADD_MONTHS`、日付の書式、現在時刻、空文字列）。ERROR の文にだけ付く |
 | `DESIGN` | INFO | 設計の提案（表定義を渡す、階層の事前計算、GROUP BY のキーでの集計表、結合列のキーか索引、JDBC 以外ではキーを持たせる、分析の問い合わせには ScalarDB Analytics） |
 | `PLAN_FETCH` / `PLAN_RESIDUAL` | INFO | 実行計画の取得 1 つずつと、H2 が元の SQL を実行すること |
-| `PLAN_CROSS_PARTITION` / `PLAN_UNRESOLVED` | WARN | 取得にクロスパーティション SCAN が要る / 表か列を解決できない所がある |
+| `PLAN_CROSS_PARTITION` / `PLAN_UNRESOLVED` | WARN | 取得にクロスパーティション SCAN が要る / 表か列を解決できない所がある（`python:` で始まるものは INFO。Python の参照実装（SQLite）だけの制限で、Java のランタイムには関係しない） |
 | `PLAN` | INFO | 実行計画に分けられなかった理由 |
 | `COST` / `CONFIG` | INFO | 取得コストの見積もり（`--expected-rows`）と推奨設定。クロスパーティション SCAN になる変換済みの SELECT にも付く |
 | `ROW_LIMIT` | WARN | 取得の見込み行数が上限（既定 1 万行、`--row-limit`）を超える |
@@ -401,7 +401,7 @@ ERROR か PLANNED になった読み取り文には、変換器が最初につ�
 | `CREATE USER` など、SQLGlot が文として解析しないもの | ERROR `UNPARSED` | `ALTER TABLE` は操作ごとに読み直す（上の DDL） |
 | `GRANT`、`SET search_path ...`、MySQL の `SET NAMES`、`SAVEPOINT` | ERROR `STATEMENT` | 名前つきトランザクションとセーブポイントは ERROR `SAVEPOINT` の場合もある |
 | PL/SQL のブロック、`WITH FUNCTION` | ERROR `PLSQL_BLOCK` / `WITH_PLSQL` | 上の「方言ごとの差」 |
-| 移行元の方言として読めない文 | ERROR `PARSE` | `--source` を確かめる |
+| 移行元の方言として読めない文。文でなく式として読めたもの（綴りを誤った `SELEC * FRM t` など） | ERROR `PARSE` | `--source` と綴りを確かめる |
 | ScalarDB SQL の生成器が出せない構文が残った | ERROR `UNSUPPORTED` | |
 | 引用符の閉じ忘れなどで文に分けられない | ERROR `TOKENIZE` | ファイル全体で 1 件 |
 | 変換器が想定していなかった文 | ERROR `INTERNAL` | その文だけが ERROR になり、残りは変換を続ける |

@@ -28,18 +28,54 @@ from .source import Issue
 from .symbols import OracleSchema, SymbolTable, build, public_routines
 
 SARIF_LEVEL = {"ERROR": "error", "WARN": "warning", "INFO": "note"}
-BODY_SUFFIXES = {".pkb", ".prc", ".fnc", ".trg", ".pls"}
-SPEC_SUFFIX = ".pks"
+# `.bdy` / `.spc` are the body and the specification as Toad and PL/SQL Developer save them, `.pck` one file with
+# both, `.plb` a body (often the wrapped one, which then fails to parse and is named as such). Leaving them out
+# lost a whole package without a word: parseRate stayed 1.0 over the files that were read (Issue #144 H6)
+BODY_SUFFIXES = {".pkb", ".bdy", ".pck", ".prc", ".fnc", ".trg", ".pls", ".plb"}
+SPEC_SUFFIXES = (".pks", ".spc")
+SPEC_SUFFIX = SPEC_SUFFIXES[0]
+# the specification and the body of an object type: not analysed. Said so (`skippedFiles`), never skipped quietly
+TYPE_SUFFIXES = {".tps", ".tpb", ".typ"}
 # a `.sql` file is a body when it creates a PL/SQL unit. The schema DDL is `.sql` too, which is why the suffix
 # alone cannot decide -- but skipping every `.sql` left a routine kept in one out of the analysis without a word
 _CREATES_UNIT = re.compile(r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:(?:NON)?EDITIONABLE\s+)?"
                            r"(?:PACKAGE\s+BODY|PROCEDURE|FUNCTION|TRIGGER)\b", re.IGNORECASE | re.MULTILINE)
 
 
-def _sibling(path: Path, suffix: str) -> Path | None:
-    """`pkg_a.PKS` beside `pkg_a.pkb`: the same stem, the suffix in any case."""
+def _sibling(path: Path, suffix: "str | tuple[str, ...]") -> Path | None:
+    """`pkg_a.PKS` beside `pkg_a.pkb`: the same stem, the suffix in any case (`.spc` beside `.bdy` too)."""
+    suffixes = (suffix,) if isinstance(suffix, str) else suffix
     return next((p for p in sorted(path.parent.iterdir())
-                 if p.stem == path.stem and p.suffix.lower() == suffix and p != path), None)
+                 if p.stem == path.stem and p.suffix.lower() in suffixes and p != path), None)
+
+
+# what a file that is not read would have to hold to be a PL/SQL source someone expected to be analysed
+_CREATES_ANYTHING = re.compile(r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:(?:NON)?EDITIONABLE\s+)?"
+                               r"(?:PACKAGE|PROCEDURE|FUNCTION|TRIGGER|TYPE)\b", re.IGNORECASE | re.MULTILINE)
+
+
+def skipped_sources(root: Path) -> list[dict]:
+    """The files under `root` that hold PL/SQL but are not analysed, each with why (Issue #144 H6). A file that
+    holds no `CREATE PACKAGE / PROCEDURE / FUNCTION / TRIGGER / TYPE` (a README, a YAML) is not PL/SQL and is not
+    listed; neither is a `.sql` (the schema's DDL is one, and one that creates a unit is read)."""
+    out = []
+    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+        suffix = path.suffix.lower()
+        if suffix in BODY_SUFFIXES or suffix in SPEC_SUFFIXES or suffix == ".sql":
+            continue
+        if suffix in TYPE_SUFFIXES:
+            out.append({"file": path.relative_to(root).as_posix(),
+                        "reason": "object type の仕様・本体（CREATE TYPE）は解析しない"})
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if _CREATES_ANYTHING.search(text):
+            out.append({"file": path.relative_to(root).as_posix(),
+                        "reason": f"拡張子 {path.suffix or '（無し）'} は読まない。PL/SQL なら .pks / .pkb / .prc / "
+                                  f".fnc / .trg などに名前を変える"})
+    return out
 
 
 def source_bodies(root: Path, schema_ddl: str | Path | None = None) -> list[Path]:
@@ -70,6 +106,7 @@ class Analysis:
     symbols: list[SymbolTable] = field(default_factory=list)
     schema: OracleSchema | None = None
     capability: "object | None" = None   # CapabilityReport when P2-4 has run
+    skipped: list[dict] = field(default_factory=list)   # PL/SQL files that were not read, each with why
 
     def issues(self) -> list[Issue]:
         out: list[Issue] = []
@@ -105,6 +142,38 @@ class Analysis:
 
     def routines(self) -> list[tuple[M.Module, M.Routine]]:
         return [(m, r) for m in self.program.modules for r in m.routines]
+
+
+def _public_in_same_file(parsed: ParsedFile) -> set[str]:
+    """The routine names a CREATE PACKAGE in this very file declares (a `.pck`). Empty when it holds none."""
+    from .symbols import PACKAGE_SPEC, _child, _descend, _text
+
+    names: set[str] = set()
+    for unit in parsed.units:
+        if unit.tree is None:
+            continue
+        for spec in _descend(unit.tree, {PACKAGE_SPEC}):
+            for context in _descend(spec, {"Procedure_specContext", "Function_specContext"}):
+                identifier = _child(context, "IdentifierContext")
+                if identifier is not None:
+                    names.add(_text(identifier).lower())
+    return names
+
+
+def _merge_spec_and_body(modules: list[M.Module]) -> list[M.Module]:
+    """A file with both CREATE PACKAGE and CREATE PACKAGE BODY lowers to two modules of one name: the
+    specification's declarations (types, variables, constants) belong to the body's module, as they do when a
+    `.pks` sits beside it."""
+    bodies = {m.name.lower(): m for m in modules if m.module_kind == "package" and m.routines}
+    out = []
+    for module in modules:
+        body = bodies.get(module.name.lower())
+        if module.module_kind == "package" and not module.routines and body is not None and body is not module:
+            known = {d.name.lower() for d in body.declarations}
+            body.declarations.extend(d for d in module.declarations if d.name.lower() not in known)
+            continue
+        out.append(module)
+    return out
 
 
 def _resolve_package_types(program: M.Program, table: SymbolTable, schema: OracleSchema | None = None) -> None:
@@ -222,8 +291,9 @@ def _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundarie
                         schema_snapshot=schema.snapshot if schema else None)
     analysis = Analysis(program=program, schema=schema)
 
+    analysis.skipped = skipped_sources(root) if root.is_dir() else []
     for body in source_bodies(root, schema_ddl):
-        spec = _sibling(body, SPEC_SUFFIX)
+        spec = _sibling(body, SPEC_SUFFIXES)
         public: set[str] = set()
         if spec is not None:
             # the specification is parsed for its public names, and counted: KPI-1's denominator is every
@@ -232,10 +302,14 @@ def _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundarie
             analysis.parsed.append(parsed_spec)
             public = public_routines(parsed_spec)
         parsed = parse_file(body)
+        if spec is None:
+            # a `.pck` (or a `.sql`) may hold the specification and the body in one file: the public names are the
+            # ones its own CREATE PACKAGE declares
+            public = _public_in_same_file(parsed)
         symbols = build(parsed, schema, public, spec=parsed_spec if spec is not None else None)
         analysis.parsed.append(parsed)
         analysis.symbols.append(symbols)
-        modules = lower_file(parsed, symbols, schema, public)
+        modules = _merge_spec_and_body(lower_file(parsed, symbols, schema, public))
         if spec is not None:
             # what the specification declares (a constant, an exception, a type) is the package's too: without
             # it `c_max_raise_pct` was an unknown name in every body that read it (#46, samples/oracle-samples)
@@ -248,8 +322,8 @@ def _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundarie
         program.unresolved.extend(symbols.unresolved)
 
     # a specification with no body is still an asset: it declares an interface nothing implements here
-    for spec in sorted(p for p in root.rglob("*") if p.suffix.lower() == SPEC_SUFFIX):
-        if _sibling(spec, ".pkb") is not None:
+    for spec in sorted(p for p in root.rglob("*") if p.suffix.lower() in SPEC_SUFFIXES):
+        if _sibling(spec, (".pkb", ".bdy")) is not None:
             continue
         parsed = parse_file(spec)
         analysis.parsed.append(parsed)
@@ -411,6 +485,8 @@ def inventory(analysis: Analysis) -> dict:
         "kpi": {
             "parseRate": round(parse.rate, 4),
             "parsedFiles": parse.parsed, "totalFiles": parse.total, "failedFiles": parse.failed,
+            # only when there are any, so an inventory of sources that are all read stays as it was
+            **({"skippedFiles": analysis.skipped} if analysis.skipped else {}),
             "typeResolutionRate": round(len(resolved) / len(typed), 4) if typed else 1.0,
             "typedSymbols": len(typed), "resolvedSymbols": len(resolved),
         },

@@ -177,6 +177,71 @@ def _oracle_partition_extension(t: exp.Table, dialect: str) -> str | None:
     return f"{word} ({', '.join(c.sql(dialect=dialect) for c in alias.args['columns'])})"
 
 
+def spell_long_raw(src: str, dialect: str) -> str:
+    """Oracle's `LONG RAW` spelled `LONG_RAW`, which SQLGlot reads as a user-defined type (types.py maps it to
+    BLOB). SQLGlot cannot parse the two words at all (`Expecting )`, #142). Read from the tokens, so a string
+    or a comment is left as it is, and padded to the same length: `written_type` reads the source at the
+    offsets the parser recorded. Shared with the skill's generic-target path (#146)."""
+    if dialect != "oracle" or not re.search(r"\bLONG\s+RAW\b", src, re.I):
+        return src
+    try:
+        tokens = [t for t in sqlglot.tokenize(src, read=dialect)]
+    except TokenError:
+        return src
+    out = src
+    for first, second in zip(tokens, tokens[1:]):
+        if first.token_type == TokenType.STRING or second.token_type == TokenType.STRING:
+            continue
+        if first.text.upper() == "LONG" and second.text.upper() == "RAW":
+            span = second.end - first.start + 1
+            out = out[:first.start] + "LONG_RAW".ljust(span) + out[second.end + 1:]
+    return out
+
+
+def flashback_clause(src: str, dialect: str) -> str | None:
+    """`AS OF TIMESTAMP` / `AS OF SCN` / `VERSIONS BETWEEN` in an Oracle statement, read from its tokens (so
+    not from a string or a comment); None when there is none or the text cannot be tokenized."""
+    if dialect != "oracle":
+        return None
+    try:
+        words = [t.text.upper() for t in sqlglot.tokenize(src, read=dialect) if t.token_type != TokenType.STRING]
+    except TokenError:
+        return None
+    for i in range(len(words) - 2):
+        if words[i:i + 2] == ["AS", "OF"] and words[i + 2] in ("TIMESTAMP", "SCN"):
+            return f"AS OF {words[i + 2]}"
+        if words[i:i + 2] == ["VERSIONS", "BETWEEN"] and words[i + 2] in ("TIMESTAMP", "SCN"):
+            return f"VERSIONS BETWEEN {words[i + 2]}"
+    return None
+
+
+def written_type(cd: exp.ColumnDef, text: str | None) -> str | None:
+    """The type name of ``cd`` as the source spells it (LONG, BINARY_FLOAT ...), read from ``text`` -- the SQL
+    the definition was parsed from. SQLGlot reads some Oracle names as another type and keeps no spelling."""
+    end = cd.this.meta.get("end") if isinstance(cd.this, exp.Identifier) else None
+    if end is None or not text:
+        return None
+    m = re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*)", text[end + 1:])
+    return m.group(1) if m else None
+
+
+# what SQLGlot returns for a statement. Anything else is an expression it managed to read -- `END` (a column),
+# `SELEC * FRM t` (an alias), `(1, 2)` (a tuple) -- and converting it would count broken input as converted (#146)
+STATEMENT_TYPES = tuple(getattr(exp, name) for name in (
+    "Query", "DML", "DDL", "Command", "Transaction", "Commit", "Rollback", "Set", "Use", "Show", "Grant", "Revoke",
+    "Comment", "Analyze", "Describe", "Pragma", "TruncateTable", "Alter", "Drop", "Cache", "Uncache", "LoadData",
+    "Refresh", "Kill", "Execute", "Lock", "Declare", "Summarize", "Detach", "Attach", "Install", "Export", "Values")
+    if hasattr(exp, name))
+
+
+def is_statement(node: exp.Expression) -> bool:
+    return isinstance(node, STATEMENT_TYPES)
+
+
+NOT_A_STATEMENT = ("not a SQL statement: it parsed only as an expression (a misspelled keyword, a statement cut at "
+                   "the wrong place, or a fragment of PL/SQL)")
+
+
 def _bad_join_mark_rewrite(node: exp.Expression) -> bool:
     """sqlglot's eliminate_join_marks() mishandles (+) on the FROM-side table: it emits a CROSS JOIN and duplicates
     the table. Detect that so the statement is reported for manual rewriting instead of silently wrong SQL."""
@@ -216,30 +281,35 @@ def _split_statements(text: str, dialect: str) -> list[str]:
     glued itself to the next statement and both became one parse error. And a PL/SQL block ends at its `/`, not at
     its first semicolon -- split on semicolons, `END` came out as a statement of its own (a column reference, so
     "converted") and the rest of the script was lost. A block is kept whole; the converters refuse it by name.
+    A block (or a WITH FUNCTION query) that follows ordinary statements in the same segment -- `SELECT ...;` and
+    then `BEGIN ... END;` and `/` -- runs from where it starts to the `/` (or the end of the script), as SQL*Plus
+    reads it; only the statements before it are cut at their semicolons (#146).
     """
     text = text.removeprefix("\ufeff")
-    if dialect != "oracle" or not _SLASH_LINE.search(text) and not PLSQL_BLOCK.match(text):
+    if dialect != "oracle":
         return _split_on_semicolons(text, dialect)
     stmts = []
     for segment in _SLASH_LINE.split(text):
         if PLSQL_BLOCK.match(segment):
             stmts.append(segment.strip())
         else:
-            chunks = _split_on_semicolons(segment, dialect)
-            for i, chunk in enumerate(chunks):
-                if WITH_PLSQL.match(chunk):
-                    # WITH FUNCTION ... runs up to the `/` that ends this segment: everything after it is its body
-                    chunks = chunks[:i] + [";\n".join(chunks[i:])]
-                    break
-            stmts.extend(chunks)
-    return stmts
+            stmts.extend(_split_on_semicolons(segment, dialect, until_plsql=True))
+    return [s for s in stmts if s]
 
 
-def _split_on_semicolons(text: str, dialect: str) -> list[str]:
+def _starts_plsql(text: str, pos: int) -> bool:
+    return bool(PLSQL_BLOCK.match(text, pos) or WITH_PLSQL.match(text, pos))
+
+
+def _split_on_semicolons(text: str, dialect: str, until_plsql: bool = False) -> list[str]:
+    """``text`` cut at its top-level semicolons. With ``until_plsql``, a statement that starts a PL/SQL block or a
+    WITH FUNCTION query takes the rest of ``text``: its semicolons end PL/SQL statements."""
     tokens = sqlglot.tokenize(text, read=dialect)
     stmts, start = [], 0
     for tok in tokens:
         if tok.token_type == TokenType.SEMICOLON:
+            if until_plsql and _starts_plsql(text, start):
+                break
             chunk = text[start:tok.start].strip()
             if chunk:
                 stmts.append(chunk)
@@ -307,15 +377,15 @@ class StatementConverter:
         if self.dialect == "oracle" and PLSQL_BLOCK.match(src):
             res.kind, res.status = "PLSQL_BLOCK", "ERROR"
             res.issues.append(Issue("ERROR", "PLSQL_BLOCK", "a PL/SQL block (stored program or anonymous block) is not a SQL "
-                                                            "statement; migrate it with the PL/SQL tooling (python -m plsql.generate)"))
+                                                            "statement; migrate it with the plsql-migrate skill (python -m plsql.generate)"))
             return res
-        src = self._long_raw(src)
+        src = spell_long_raw(src, self.dialect)
         self._parsed = src
         try:
             node = sqlglot.parse_one(src, read=self.dialect)
         except ParseError as e:
             res.kind, res.status = "PARSE_ERROR", "ERROR"
-            flashback = self._flashback(src)
+            flashback = flashback_clause(src, self.dialect)
             if flashback:
                 # SQLGlot cannot read Oracle's flashback query at all; say what the statement asks for instead of
                 # where the parser stopped
@@ -326,6 +396,10 @@ class StatementConverter:
             res.issues.append(Issue("ERROR", "PARSE", str(e).splitlines()[0]))
             return res
         res.kind = type(node).__name__.upper()
+        if not is_statement(node):
+            res.status = "ERROR"
+            res.issues.append(Issue("ERROR", "PARSE", NOT_A_STATEMENT))
+            return res
         binds = _number_positional_binds(node)
         notes = appside.converted_notes(node, self.dialect)   # read from the source, before any rewrite adds to it
         try:
@@ -364,42 +438,6 @@ class StatementConverter:
         if res.status == "WARN" and isinstance(node, exp.Select) and any(i.code == "CROSS_PARTITION" for i in res.issues):
             self._cost(res, [(_from(node).this.name, "CROSS_PARTITION")], row_limit=None)
         return res
-
-    def _long_raw(self, src: str) -> str:
-        """Oracle's `LONG RAW` spelled `LONG_RAW`, which SQLGlot reads as a user-defined type (types.py maps it to
-        BLOB). SQLGlot cannot parse the two words at all (`Expecting )`, #142). Read from the tokens, so a string
-        or a comment is left as it is, and padded to the same length: `_written_type` reads the source at the
-        offsets the parser recorded."""
-        if self.dialect != "oracle" or not re.search(r"\bLONG\s+RAW\b", src, re.I):
-            return src
-        try:
-            tokens = [t for t in sqlglot.tokenize(src, read=self.dialect)]
-        except TokenError:
-            return src
-        out = src
-        for first, second in zip(tokens, tokens[1:]):
-            if first.token_type == TokenType.STRING or second.token_type == TokenType.STRING:
-                continue
-            if first.text.upper() == "LONG" and second.text.upper() == "RAW":
-                span = second.end - first.start + 1
-                out = out[:first.start] + "LONG_RAW".ljust(span) + out[second.end + 1:]
-        return out
-
-    def _flashback(self, src: str) -> str | None:
-        """`AS OF TIMESTAMP` / `AS OF SCN` / `VERSIONS BETWEEN` in an Oracle statement, read from its tokens (so
-        not from a string or a comment); None when there is none or the text cannot be tokenized."""
-        if self.dialect != "oracle":
-            return None
-        try:
-            words = [t.text.upper() for t in sqlglot.tokenize(src, read=self.dialect) if t.token_type != TokenType.STRING]
-        except TokenError:
-            return None
-        for i in range(len(words) - 2):
-            if words[i:i + 2] == ["AS", "OF"] and words[i + 2] in ("TIMESTAMP", "SCN"):
-                return f"AS OF {words[i + 2]}"
-            if words[i:i + 2] == ["VERSIONS", "BETWEEN"] and words[i + 2] in ("TIMESTAMP", "SCN"):
-                return f"VERSIONS BETWEEN {words[i + 2]}"
-        return None
 
     def _check_bind_order(self, binds: int, out: list) -> None:
         """Positional binds are bound by position, so a rewrite that moves or copies one changes what the caller
@@ -468,7 +506,9 @@ class StatementConverter:
                                                         f"(pattern {plan.pattern}, H2 indexes "
                                                         f"{'on' if self.h2_indexes else 'off'})"))
         for u in plan.unresolved:
-            res.issues.append(Issue("WARN", "PLAN_UNRESOLVED", u))
+            # `python: ...` is a limit of the Python reference executor (SQLite) only; the Java runtime runs the
+            # residual on H2 and is not affected, so it is no reason to review the plan (#146)
+            res.issues.append(Issue("INFO" if u.startswith("python:") else "WARN", "PLAN_UNRESOLVED", u))
         if plan.guardrails["requires_cross_partition_scan"]:
             res.issues.append(Issue("WARN", "PLAN_CROSS_PARTITION", "a fetch needs a cross-partition scan"))
         res.plan["recommended_config"] = self._cost(res, [(f.table, f.access_path) for f in plan.fetch], self.row_limit)
@@ -624,14 +664,7 @@ class StatementConverter:
         return ".".join(quoted(part) for part in self._table_name(t).split("."))
 
     def _written_type(self, cd: exp.ColumnDef, text: str | None = None) -> str | None:
-        """The type name of ``cd`` as the source spells it (LONG, BINARY_FLOAT ...), read from ``text`` -- the SQL
-        the definition was parsed from. SQLGlot reads some Oracle names as another type and keeps no spelling."""
-        text = self._parsed if text is None else text
-        end = cd.this.meta.get("end") if isinstance(cd.this, exp.Identifier) else None
-        if end is None or not text:
-            return None
-        m = re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*)", text[end + 1:])
-        return m.group(1) if m else None
+        return written_type(cd, self._parsed if text is None else text)
 
     def _map_type(self, cd: exp.ColumnDef, text: str | None = None):
         return map_type(cd.kind, self.dialect, self._written_type(cd, text))

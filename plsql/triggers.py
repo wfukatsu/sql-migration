@@ -438,14 +438,36 @@ def _table(tree: exp.Expression) -> str | None:
 
 
 def _fires(trigger: Trigger, kind: str, tree: exp.Expression) -> bool:
+    return _fires_on(trigger.events, trigger.columns, kind, tree)
+
+
+def _fires_on(events: set[str], columns: list[str], kind: str, tree: exp.Expression) -> bool:
     if kind == "MERGE":
-        return bool(trigger.events & {"INSERT", "UPDATE", "DELETE"})   # どの枝が走るかは行ごとに決まる
-    if kind not in trigger.events:
+        return bool(events & {"INSERT", "UPDATE", "DELETE"})   # どの枝が走るかは行ごとに決まる
+    if kind not in events:
         return False
-    if kind == "UPDATE" and trigger.columns:
+    if kind == "UPDATE" and columns:
         # `UPDATE OF status` は status を SET していない更新には掛からない
-        return bool({c.lower() for c in _assignments(tree)} & {c.lower() for c in trigger.columns})
+        return bool({c.lower() for c in _assignments(tree)} & {c.lower() for c in columns})
     return True
+
+
+def fires_on(event: str | None, columns: list[str] | None, kind: str, sql: str | None) -> bool | None:
+    """Whether a write of `kind` (INSERT / UPDATE / DELETE / MERGE), whose SQL is `sql`, fires a trigger on `event`
+    (`UPDATE`, `INSERT OR UPDATE`) with `UPDATE OF columns` -- the same rule `rewrite` weaves calls by, for a reader
+    of the IR (the plsql-spec skill, #144). None when it hangs on the SET columns and the SQL does not parse.
+    A WHEN clause is not decided here: it depends on the row's values."""
+    events = {e.strip() for e in (event or "").upper().split(" OR ") if e.strip()}
+    kind = (kind or "").upper()
+    if kind == "UPDATE" and columns and kind in events:
+        try:
+            tree = sqlglot.parse_one(sql or "", dialect="oracle")
+        except Exception:
+            return None
+        if not isinstance(tree, exp.Update):
+            return None
+        return _fires_on(events, list(columns), kind, tree)
+    return _fires_on(events, list(columns or []), kind, None)
 
 
 def _assignments(tree: exp.Expression) -> dict[str, str]:

@@ -21,6 +21,12 @@ SQLGlot は、Source の構文を Target が持っていなくても、例外を
 | `empno DIV 4` | MySQL → Oracle | `CAST(empno / 4 AS INT)` | 切り捨てが四捨五入になる（7499 DIV 4 が 1875） |
 | `DATE '1981-01-01'` | PostgreSQL → Oracle | `CAST('1981-01-01' AS DATE)` | Oracle の既定の日付書式に依存して失敗する |
 | `` `emp` `` | MySQL → Oracle | `"emp"` | 大文字小文字を区別する名前になり、表が見つからない |
+| `l LONG`（列の型） | Oracle → PostgreSQL | `l BIGINT` | 文字列の列が整数の列になる。`NCLOB`・`XMLTYPE`・`RAW(16)` は元の名前のまま出て構文エラー |
+| `f FLOAT` / `r REAL`（列の型） | Oracle → PostgreSQL | `REAL` | 単精度になり、有効桁が落ちる |
+| `FROM emp PARTITION (p1)` | Oracle → PostgreSQL | `FROM emp AS PARTITION(p1)` | 表の別名 `PARTITION` と読まれ、`emp` の列が見つからない |
+| `ALTER SESSION SET …`、`ALTER TABLE t MODIFY (c VARCHAR2(10))`、`ALTER TABLE t DROP (a, b)` | Oracle → PostgreSQL | そのまま（SQLGlot が解析できず `Command` として文面を持つ） | 構文エラー。往復検証も `Command` として読めるので通ってしまう |
+| `ALTER TABLE emp ADD c INT, DROP d`、`CREATE DATABASE shop` | MySQL → Oracle | そのまま | 構文エラー、または別の意味の文 |
+| `flag TINYINT(1)` | MySQL → PostgreSQL / Oracle | `SMALLINT(1)` | 構文エラー（表示幅は MySQL にしか無い） |
 
 `(+)` だけは `unsupported_level=ErrorLevel.RAISE` で検出できる。残りは SQLGlot が未対応と認識していないので、どのエラーレベルでも検出されない。このスキルは前処理で直せるものを直し、直せないものを下のコードで報告する。
 
@@ -104,7 +110,7 @@ Target が MySQL、Source が MySQL 以外のとき。
 | `ROWID` | Source が Oracle | 疑似列 `ROWID`。主キーで行を特定する形に書き換える |
 | `KEEP` | Source が Oracle | `MAX(x) KEEP (DENSE_RANK FIRST ORDER BY y)`。ウィンドウ関数で書き換える（下の例） |
 | `PLSQL` | Source が Oracle | `DBMS_OUTPUT`・`DBMS_LOB` など `DBMS_` で始まるパッケージの呼び出し。アプリケーション側の実装に置き換える。SQLGlot が標準の関数に写すもの（`DBMS_RANDOM.VALUE` → `RANDOM()`）は出ない |
-| `PLSQL_BLOCK` | Source が Oracle | PL/SQL のブロック（`CREATE … PROCEDURE / FUNCTION / PACKAGE / TRIGGER`、`DECLARE` / `BEGIN` の無名ブロック）。`/` だけの行までを 1 つとして扱い、変換しない。plsql-migrate スキルで移行する |
+| `PLSQL_BLOCK` | Source が Oracle | PL/SQL のブロック（`CREATE … PROCEDURE / FUNCTION / PACKAGE / TRIGGER`、`DECLARE` / `BEGIN` の無名ブロック）。始まる所から `/` だけの行（無ければスクリプトの終わり）までを 1 つとして扱い、変換しない。前に `;` で終わる SQL 文があっても同じ。plsql-migrate スキルで移行する |
 | `PG_CATALOG` | Source が PostgreSQL | `::regclass`・`::regtype`・`::regproc`・`::oid` へのキャスト。Target には無い |
 | `TRIGGER` / `PROCEDURE` / `FUNCTION` | すべて | トリガー・ストアドプロシージャ・ユーザー定義関数の DDL。方言差が大きく機械変換の対象外。Target の手続き言語で書き直す |
 | `WITH_TIES` | Target が Oracle・PostgreSQL・SQL Server 以外 | `FETCH … WITH TIES`。`LIMIT n` にすると n 番目と同順位の行が落ちる。`RANK() OVER (ORDER BY …) <= n` で絞る形に書き直す |
@@ -171,11 +177,29 @@ Oracle の `WITH FUNCTION … / PROCEDURE …`（WITH 句の中の PL/SQL）は�
 
 関数一覧は Target のバージョンに依存する。作り直し方は `operations.md`。
 
+### 文の種類・DDL・型（Source と Target が違うとき）
+
+| コード | 重要度 | 意味 | 次の手 |
+|---|---|---|---|
+| `UNPARSED` | ERROR | SQLGlot が文として解析できず、文面のまま持った文（`ALTER SESSION`、`CREATE SYNONYM`、`VACUUM`、`CREATE EXTENSION` など）。文面のまま出すと Target の文法として確かめられないので、変換しない | Target の同じ働きの文に書き直すか、移行の対象から外す |
+| `ADMIN` | WARN | 権限・セッション・統計の管理文（`GRANT`・`REVOKE`・`SET`・`USE`・`ANALYZE`）。形だけ写した。権限や設定項目の名前は Target で違う | Target で同じ働きをするか確かめる |
+| `ADMIN` | ERROR | Target に無い文（`SHOW`、Oracle・PostgreSQL への `USE`） | 接続の設定か、Target の同じ働きの文（`ALTER SESSION SET CURRENT_SCHEMA`、`SET search_path`）で行う |
+| `DDL` | ERROR | Oracle への `CREATE / DROP DATABASE`・`CREATE / DROP SCHEMA`。Oracle では別の意味の文になる | ユーザ（スキーマ）として作る |
+| `DDL` | WARN | MySQL の `CREATE / DROP DATABASE` を MySQL 以外へ。MySQL の DATABASE は Target のスキーマに当たる | `CREATE SCHEMA` にするか確かめる |
+| `ALTER` | INFO | 操作の並んだ `ALTER TABLE`（`ADD c INT, DROP d`、Oracle の `ADD (a …, b …)`・`DROP (a, b)`）を、操作ごとの文に分けた。SQLGlot が読めない Oracle の `MODIFY` と `DROP (…)` も、操作ごとに読み直して Target の構文にした | まとめて 1 つの変更にはならない |
+| `ALTER` | ERROR | Target の構文に読み替えられない操作（型を変えない `MODIFY (c NOT NULL)`、MySQL の `CHANGE a b 型`、MySQL 以外への `ADD INDEX`、Oracle への `ALTER COLUMN … SET DEFAULT`、SQL Server への名前の変更） | メッセージの書き方で書き直す |
+| `ALTER_TYPE` | WARN | 列の型の変更（Oracle の `MODIFY (c 型)`、MySQL の `MODIFY c 型`）。PostgreSQL へは `ALTER COLUMN … SET DATA TYPE`、Oracle へは `MODIFY (c 型)`、MySQL へは `MODIFY COLUMN`。既存の値の変換規則は Target で違う。MySQL の `MODIFY COLUMN` は書かなかった NOT NULL・DEFAULT を外す | 既存の値が新しい型に入るか確かめる |
+| `COL_OPT` | WARN | `MODIFY` の NOT NULL・DEFAULT・制約を写していない（型の変更だけを写した） | Target で付け直す |
+| `TYPE` | INFO | Oracle の `RAW(n)`（PostgreSQL は `BYTEA`、MySQL・SQL Server は `VARBINARY(n)`）、`NCLOB`（`TEXT`、MySQL は `LONGTEXT`、SQL Server は `NVARCHAR(MAX)`）、`FLOAT`・`REAL`（倍精度）を Target の型に写した。MySQL の整数の表示幅（`INT(11)`・`TINYINT(1)`）を外した | `TINYINT(1)` を真偽値に使っているなら `BOOLEAN` にするか確かめる |
+| `TYPE` | WARN | Oracle の `LONG`（SQLGlot は `BIGINT` と読む）を文字列の型（`TEXT`、MySQL は `LONGTEXT`、SQL Server は `VARCHAR(MAX)`）に、`LONG RAW` をバイト列の型（`BYTEA`・`LONGBLOB`・`VARBINARY(MAX)`）に、`XMLTYPE` を PostgreSQL・SQL Server の `XML` に写した | データを移すときは Oracle 側で `TO_LOB` を通す。`XMLTYPE` のメソッドは写らない |
+| `TYPE` | ERROR | Target に対応する型が無い（PostgreSQL・SQL Server 以外への `XMLTYPE`、`UROWID`・`ROWID`・`BFILE`） | 文字列の型に持ち替え、操作はアプリケーション側で行う |
+| `CLAUSE` | ERROR | 表のパーティションを名指しで読む句（Oracle の `t PARTITION (p1)`・`SUBPARTITION`、MySQL の `t PARTITION (p1)`）と、Oracle のフラッシュバック問合せ（`AS OF TIMESTAMP` / `AS OF SCN` / `VERSIONS BETWEEN`）。Target に無い | パーティションキーの条件（WHERE）で絞る。過去の版は履歴表で持つ |
+
 ### 解析・生成・検証の段階（ERROR）
 
 | コード | 意味 | 次の手 |
 |---|---|---|
-| `PARSE` | 元の SQL を Source 方言として読めなかった。空の文や、文でなく式として読めたもの（文の切れ目のずれ、PL/SQL の断片）も含む | `--source` が実際の方言と合っているか確かめる |
+| `PARSE` | 元の SQL を Source 方言として読めなかった。空の文や、文でなく式として読めたもの（`SELEC * FRM t` のようなキーワードの綴りの誤り、文の切れ目のずれ、PL/SQL の断片）も含む | `--source` が実際の方言と合っているか、綴りが正しいかを確かめる |
 | `GENERATE` | SQLGlot の生成器が予期しない例外を出した。メッセージに例外の種類が出る | 文を手で書き換える |
 | `ROUNDTRIP` | 生成した SQL を Target 方言として読み直せなかった。SQLGlot の生成器の不具合か、Target 方言の対応不足 | 同上 |
 

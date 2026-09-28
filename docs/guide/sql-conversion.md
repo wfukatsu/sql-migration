@@ -44,6 +44,10 @@ SQL 文を ScalarDB SQL に変換し、変換できない読み取り文を実�
 | **PLANNED** | ScalarDB SQL にはできないが、実行計画（取得 → H2）で動かせる | 行数と応答時間を確認する |
 | **ERROR** | 自動では移行できない | レポートの対応案に沿ってアプリ側で実装する |
 
+- 文でなく式としてしか読めない入力（`END` だけの断片、綴りを誤った `SELEC * FRM t` など）は ERROR `PARSE`（`not a SQL statement`）です
+- Oracle の入力は SQL*Plus のスクリプトとして読みます。PL/SQL のブロックと `WITH FUNCTION` の問合せは、前に `;` で終わる文があっても、始まる所から `/` だけの行（無ければ終わり）までを 1 文にして ERROR `PLSQL_BLOCK` / `WITH_PLSQL` にします
+- 実行計画の `PLAN_UNRESOLVED` は、表か列を解決できない所があると WARN です。`python:` で始まるものは INFO で、Python の参照実装（SQLite）だけの制限です。Java のランタイム（H2）には関係しません
+
 ## データ型の対応
 
 `CREATE TABLE` と `ALTER TABLE ... ADD / MODIFY COLUMN` の列の型は、`scalardb_migrate/types.py` の `map_type()` が ScalarDB の 11 型

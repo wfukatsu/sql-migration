@@ -2,7 +2,7 @@
 """移行の一連の流れ（現行仕様 → 変換と判断 → 変換後の仕様 → 承認 → テスト）の、いまどこにいるかを持つ。
 
     python skills/migrate-flow/scripts/flow.py init --out out/migrate/shop --kind plsql \\
-        --src fixtures/plsql-external/create_order/src --scalardb-schema … --limits … [--record …] [--evidence …]
+        --src fixtures/plsql-external/create_order/src --scalardb-schema … --limits … [--record …] [--schema …] [--evidence …]
     python ... status  --out out/migrate/shop                  # 段階ごとの状態と、次にすること
     python ... approve --out out/migrate/shop spec --by 業務担当 --date 2026-09-20
     python ... gate    --out out/migrate/shop                  # 0 = テストしてよい / 1 = まだ
@@ -15,7 +15,8 @@
 通っていなければ受け付けない。承認したときのファイルの指紋を控えるので、**承認のあとで中身が変わると、
 承認は「古い」になり、`gate` は通らない**。承認されていないものをテストしない、が、この流れの約束である。
 
-終了コード: 0 = よい / 1 = まだ（`gate`、検査の通らない `approve`）/ 2 = 実行エラー。
+終了コード: 0 = よい / 1 = まだ（`gate`、検査の通らない `approve`）/ 2 = 実行エラー（入力や `flow.yaml` が読めない・
+壊れている、報告の形が違う）。2 のときは標準エラーに理由と次の手を出す。1 と 2 を取り違えないこと。
 """
 
 from __future__ import annotations
@@ -35,6 +36,10 @@ SKILLS = Path(__file__).resolve().parents[2]
 STAGES = ("spec", "decisions", "converted")
 TITLES = {"spec": "現行の仕様", "decisions": "人の判断", "converted": "変換後の仕様", "test": "テスト"}
 UNWRITTEN = "（未記入"
+EMPTY_LIMITS = """\
+# 移行の決定（行数の上限、行ロック、トランザクションの割り方など）。書き方は plsql-migrate の references/operations.md。
+# flow.py init が作った。まだ決定は無い。人の判断が決まったら書き足し、生成・解析・確認項目の拾い直しを回す。
+"""
 HEADER = """\
 # 移行の流れの状態。skills/migrate-flow/scripts/flow.py が読み書きする。
 # 承認には 承認した人 と 日付 が要る。指紋は承認したときのファイルの中身で、あとで変わると承認は古くなる。
@@ -58,13 +63,60 @@ def _state_path(out: Path) -> Path:
     return out / "flow.yaml"
 
 
+BROKEN = "版管理から戻すか、壊れた項目を消して init を回し直す（消した承認は取り直しになる）。flow.yaml は flow.py だけが書く"
+PATH_INPUTS = ("src", "schema", "scalardb_schema", "limits", "record", "evidence")
+
+
+def _read_state(path: Path, inputs_too: bool = True) -> dict:
+    """`flow.yaml` を読み、形を確かめる。崩れていれば、どこがどう崩れていて次に何をするかを言う（終了コード 2）。
+
+    以前は `inputs` が dict かどうかしか見ず、ほかの崩れ方は traceback（終了コード 1 = `gate` の「まだ」と同じ）に
+    なった。`test: pass` のように、`gate` が 0 を返してしまう崩れ方もあった（2026-09-28 のレビュー M5）。
+    """
+    try:
+        state = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as e:
+        raise FlowError(f"{path} が YAML として読めない（{str(e).splitlines()[0]}）。{BROKEN}") from None
+    if state is None:
+        return {}
+    if not isinstance(state, dict):
+        raise FlowError(f"{path} が壊れている: 最上位が「名前: 値」の形でない。{BROKEN}")
+    found = []
+    approvals = state.get("approvals")
+    if approvals is not None and not isinstance(approvals, dict):
+        found.append("approvals が「段階: 承認」の形でない")
+    for stage, approval in (approvals if isinstance(approvals, dict) else {}).items():
+        if stage not in STAGES:
+            found.append(f"approvals の {stage} は段階（{' / '.join(STAGES)}）でない")
+        elif approval is not None and not (isinstance(approval, dict) and isinstance(approval.get("指紋"), str)):
+            found.append(f"approvals.{stage} に 指紋 が無い")
+    test = state.get("test")
+    if test is not None and not (isinstance(test, dict) and test.get("結果") in ("pass", "fail")
+                                 and isinstance(test.get("承認の指紋") or {}, dict)):
+        found.append("test が「結果: pass / fail」と「承認の指紋」を持つ形でない")
+    inputs = state.get("inputs")
+    if inputs_too and inputs is not None:
+        if not isinstance(inputs, dict):
+            found.append("inputs が「名前: 値」の形でない")
+        else:
+            if inputs.get("kind") not in ("plsql", "sql"):
+                found.append(f"inputs.kind が plsql / sql でない（{inputs.get('kind')!r}）")
+            found += [f"inputs.{key} がファイルの場所（文字列）でない" for key in PATH_INPUTS
+                      if key in inputs and not isinstance(inputs[key], str)]
+            if not isinstance(inputs.get("src"), str):
+                found.append("inputs.src が無い")
+    if found:
+        raise FlowError(f"{path} が壊れている: {'、'.join(found)}。{BROKEN}")
+    return state
+
+
 def load(out: Path) -> dict:
     path = _state_path(out)
     if not path.exists():
-        raise FlowError(f"{path} が無い。先に init を回す")
-    state = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raise FlowError(f"{path} が無い。先に init を回す（<out> が違うなら、out/migrate/*/flow.yaml を探す）")
+    state = _read_state(path)
     if not isinstance(state.get("inputs"), dict):
-        raise FlowError(f"{path} に inputs が無い")
+        raise FlowError(f"{path} に inputs が無い。init を回し直す（承認は残る）")
     return state
 
 
@@ -73,17 +125,57 @@ def save(out: Path, state: dict) -> None:
     _state_path(out).write_text(HEADER + yaml.safe_dump(state, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
 
-def _files(state: dict, out: Path, stage: str) -> list[Path]:
-    """その段階で承認されるもの。指紋はこのファイルの中身から取る。"""
+def _targets(state: dict, out: Path, stage: str) -> list[tuple[str, Path]]:
+    """その段階で承認されるもの（名前とファイル）。指紋は、この名前と中身から取る。
+
+    名前は置き場所からの相対（`spec/README.md`、`src/create_order.prc`、`generated/src/main/...`）か、入力の種類
+    （`limits`、`record`、`scalardb_schema`、`schema`）である。絶対パスを使わないので、同じ中身を別の場所へ写しても
+    承認は古くならない。
+    """
     inputs = state["inputs"]
     if stage == "spec":
-        # 原文も入れる。仕様書は原文の写しなので、原文が変われば、承認した仕様はもう現行の仕様ではない
-        return sorted((out / "spec").glob("*.md")) + _sources(inputs)
+        # 原文も入れる。仕様書は原文の写しなので、原文が変われば、承認した仕様はもう現行の仕様ではない。
+        # src の外にある DDL（plsql.cli の --schema）も、事実の欄（表と列）の出どころなので入れる
+        pages = [(f"spec/{f.name}", f) for f in sorted((out / "spec").glob("*.md"))]
+        return pages + _source_targets(inputs) + _input_targets(inputs, ("schema",))
     if stage == "converted":
-        return sorted((out / "docs").glob("*.md"))
-    chosen = [inputs.get("limits"), inputs.get("record")]
-    reports = [out / "generated" / "generation-report.json"] if inputs["kind"] == "plsql" else sorted((out / "converted").glob("*.report.json"))
-    return [Path(f) for f in chosen if f and Path(f).exists()] + [r for r in reports if r.exists()]
+        return [(f"docs/{f.name}", f) for f in sorted((out / "docs").glob("*.md"))]
+    # decisions: 決定（limits・記録）と、それで生成したもの。テストで確かめる当のもの（生成された Java、db/*.sql、
+    # 変換後の SQL と実行計画）と生成の入力（scalardb-schema.json）も入れる。承認のあとで生成物を手で直しても、
+    # 別の schema で生成し直しても、承認は古くなる（2026-09-28 のレビュー H1）
+    if inputs["kind"] == "plsql":
+        produced = _tree_targets(out, "generated", skip=("analysis", "decision-items.md"))
+    else:
+        produced = _tree_targets(out, "converted")
+    return _input_targets(inputs, ("limits", "record", "scalardb_schema")) + produced
+
+
+def _files(state: dict, out: Path, stage: str) -> list[Path]:
+    return [path for _, path in _targets(state, out, stage)]
+
+
+def _input_targets(inputs: dict, keys: tuple[str, ...]) -> list[tuple[str, Path]]:
+    return [(key, Path(inputs[key])) for key in keys if inputs.get(key) and Path(inputs[key]).is_file()]
+
+
+def _tree_targets(out: Path, folder: str, skip: tuple[str, ...] = ()) -> list[tuple[str, Path]]:
+    """`<out>/<folder>` の下の全ファイル。`skip` の名前で始まるもの（決定の前の一覧、解析）と、`.` で始まるものは除く。"""
+    root = out / folder
+    if not root.is_dir():
+        return []
+    found = []
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root)
+        if path.is_file() and relative.parts[0] not in skip and not any(part.startswith(".") for part in relative.parts):
+            found.append((f"{folder}/{relative.as_posix()}", path))
+    return found
+
+
+def _source_targets(inputs: dict) -> list[tuple[str, Path]]:
+    src = Path(inputs.get("src") or "")
+    if src.is_file():
+        return [(f"src/{src.name}", src)]
+    return [(f"src/{f.relative_to(src).as_posix()}", f) for f in _sources(inputs)]
 
 
 def _sources(inputs: dict) -> list[Path]:
@@ -107,11 +199,13 @@ def _record(inputs: dict) -> dict[str, dict]:
     return items
 
 
-def fingerprint(files: list[Path]) -> str:
+def fingerprint(targets: list[tuple[str, Path]]) -> str:
+    """名前・長さ・中身から取る。長さで区切るので、隣り合うファイルの境目がずれても同じ値にならない。"""
     digest = hashlib.sha256()
-    for path in files:
-        digest.update(path.name.encode())
-        digest.update(path.read_bytes())
+    for name, path in targets:
+        data = path.read_bytes()
+        digest.update(f"{name}\0{len(data)}\0".encode())
+        digest.update(data)
     return digest.hexdigest()[:16]
 
 
@@ -146,7 +240,7 @@ def problems_of(state: dict, out: Path, stage: str) -> list[str]:
             found = facts.check(modules, routines, inventory, out / "spec")[0] + [f for f in found if "未記入" not in f]
         return found
     if stage == "decisions":
-        if not files or not any(f.name.endswith("report.json") for f in files):
+        if not any(f.name.endswith("report.json") and f.parent in (out / "generated", out / "converted") for f in files):
             return ["変換がまだ済んでいない（変換の報告が無い）" + ADOPT_HINT.format(
                 what="--generated <dir>" if inputs["kind"] == "plsql" else "--converted <dir>")]
         found, record = [], _record(inputs)
@@ -155,9 +249,10 @@ def problems_of(state: dict, out: Path, stage: str) -> list[str]:
             summary = report.get("summary") or {}
             if summary.get("untranslatedStatements"):
                 found.append(f"変換できなかった文が {summary['untranslatedStatements']} 残っている")
+            found += _unpicked_items(inputs, out, record)
         else:
             # 記録のファイルを渡してあるだけでは足りない。変換できなかった文の 1 つずつに、どう扱うかの項目が要る
-            for report in (f for f in files if f.name.endswith(".report.json")):
+            for report in (f for f in files if f.name.endswith(".report.json") and f.parent == out / "converted"):
                 failed = [s for s in json.loads(report.read_text(encoding="utf-8")).get("results", []) if s.get("status") == "ERROR"]
                 missing = [f"SQL-{s.get('index')}" for s in failed if f"SQL-{s.get('index')}" not in record]
                 if missing:
@@ -182,6 +277,35 @@ def problems_of(state: dict, out: Path, stage: str) -> list[str]:
     return found
 
 
+SCAN_HINT = ("生成し直したら、確認項目も拾い直す: decision_items.py scan --generated <out>/generated --limits <limits.yaml> "
+             "--scalardb-schema <scalardb-schema.json> --record <record.yaml> --write --out <out>/generated/decision-items.md")
+
+
+def _unpicked_items(inputs: dict, out: Path, record: dict[str, dict]) -> list[str]:
+    """生成物から出た確認項目（plsql-migrate の decision_items.py が拾うもの）のうち、記録に無いもの。
+
+    `limits.yaml` を変えて生成し直すと、新しい項目が出ることがある（行ロックを楽観制御にすると BIZ-4・BIZ-5・CALL-5）。
+    `scan --write` を回し直さないと記録に載らず、誰にも問わないまま `decisions` を承認できた（2026-09-28 のレビュー H2）。
+    ここでは記録を書き換えずに同じ見分け方で拾い、記録に無い（または「対象外」のままの）項目を問題として返す。
+    """
+    generated = out / "generated"
+    if not any(generated.rglob("*.java")):
+        return []
+    items = _script("plsql-migrate", "decision_items")
+    doc_path = Path(items.DEFAULT_DOC)
+    if not doc_path.exists():
+        return [f"確認項目の定義（{doc_path}）が無いので、生成物から出た項目を拾えない"]
+    given = {key: Path(inputs[key]) if inputs.get(key) and Path(inputs[key]).is_file() else None
+             for key in ("limits", "scalardb_schema")}
+    tree = items.Tree.load(generated, given["limits"], given["scalardb_schema"])
+    fired = items.detect(items.read_doc(doc_path), tree)
+    unpicked = [item for item in fired if item not in record or (record[item] or {}).get("状態") == "対象外"]
+    if not unpicked:
+        return []
+    where = "" if inputs.get("record") else "。記録の場所が flow.yaml に無い（init --record で渡す）"
+    return [f"生成物から出た確認項目のうち {len(unpicked)} が記録に無い: {'、'.join(unpicked)}{where}。{SCAN_HINT}"]
+
+
 def open_items(state: dict, out: Path) -> list[str]:
     """人の判断のうち、まだ決まっていないもの: 記録の未決の項目と、判定が REVIEW のままの routine
     （REVIEW は「人が決めると生成コードが変わる」という意味である）。残したまま進めるなら、その理由を承認に控える。"""
@@ -195,6 +319,11 @@ def open_items(state: dict, out: Path) -> list[str]:
         credited = _analysed_verdicts(out)
         found += [f"REVIEW: {routine}" for routine, v in sorted(verdicts.items())
                   if v.get("verdict") == "REVIEW" and credited.get(routine) != "AUTO"]
+        refused = ((json.loads(report.read_text(encoding="utf-8")).get("summary") or {}).get("unsupportedSql") or 0)
+        if refused:
+            # 生成物に `throw new UnsupportedOperationException(...)` として残る文。テストで確実に落ちるので、
+            # 残したまま進めるなら利用者がそう決めたことを控える（2026-09-28 のレビュー M8）
+            found.append(f"ScalarDB が受け付けない文: {refused}（生成物では UnsupportedOperationException を投げる）")
         redesigns = sorted(routine for routine, v in verdicts.items() if v.get("verdict") == "REDESIGN")
         answered = _redesign_answers(state["inputs"], out) if redesigns else {}
         for routine in redesigns:
@@ -232,28 +361,54 @@ def _redesign_answers(inputs: dict, out: Path) -> dict[str, list[str]] | None:
     return {r["routine"]: list((r.get("redesign") or {}).get("open") or []) for r in routines if r.get("redesign")}
 
 
+FAILING = "承認済み（検査が通らない）"
+
+
 def stage_state(state: dict, out: Path, stage: str) -> tuple[str, list[str]]:
     approval = (state.get("approvals") or {}).get(stage)
     problems = problems_of(state, out, stage)
     if approval:
-        if approval.get("指紋") != fingerprint(_files(state, out, stage)):
+        if approval.get("指紋") != fingerprint(_targets(state, out, stage)):
             return "承認が古い", ["承認のあとで中身が変わった。見直して、承認を取り直す"] + problems
+        if problems:
+            # 指紋に入らない入力（解析、比較の結果）が変わって検査が通らなくなった。承認した中身は同じでも、
+            # その中身がもう事実と合わないので、テストには進ませない（2026-09-28 のレビュー M4）
+            return FAILING, problems
         return "承認済み", []
     return ("承認待ち", []) if not problems else ("作業中", problems)
 
 
 def cmd_init(args) -> int:
     out = Path(args.out)
-    existing = yaml.safe_load(_state_path(out).read_text(encoding="utf-8")) if _state_path(out).exists() else {}
+    # inputs は作り直すので、崩れていてもよい（init で直せる）。承認とテストの結果は引き継ぐので、崩れていれば断る
+    existing = _read_state(_state_path(out), inputs_too=False) if _state_path(out).exists() else {}
     inputs = {"kind": args.kind, "src": str(Path(args.src).resolve())}
-    for key in ("scalardb_schema", "limits", "record", "evidence", "source_dialect", "target_dialect"):
+    for key in ("schema", "scalardb_schema", "limits", "record", "evidence", "source_dialect", "target_dialect"):
         if getattr(args, key):
             # どこから呼んでも同じファイルを指すようにする（相対のままだと、別の場所から呼んだときに指紋が変わる）
             inputs[key] = getattr(args, key) if key.endswith("_dialect") else str(Path(getattr(args, key)).resolve())
     if not Path(args.src).exists():
         raise FlowError(f"{args.src} が無い")
+    kept = (existing or {}).get("inputs") if isinstance((existing or {}).get("inputs"), dict) else {}
+    if not args.evidence and isinstance(kept.get("evidence"), str):
+        # `tested` が控えた比較。入力を直すために init を回し直しても消さない。消すと、比較の結果を入れた文書が
+        # 「古い事実」になり、`converted` を取り直せなくなる（2026-09-28 のレビュー M7）
+        inputs["evidence"] = kept["evidence"]
+    created = None
+    if args.kind == "plsql" and args.limits and not Path(args.limits).exists():
+        # 初めての移行では、決定はまだ無い。無いファイルを --limits に渡すと plsql.generate と plsql.cli が止まるので、
+        # 決定の無い limits.yaml を作っておく（決定は Step 2 で書き足す。2026-09-28 のレビュー M3）
+        created = Path(args.limits)
+        created.parent.mkdir(parents=True, exist_ok=True)
+        created.write_text(EMPTY_LIMITS, encoding="utf-8")
     save(out, {"inputs": inputs, "approvals": (existing or {}).get("approvals") or {}, "test": (existing or {}).get("test")})
-    print(f"{_state_path(out)} を書いた。次: 現行の仕様を調べる（status で確かめられる）")
+    if created:
+        print(f"{created} が無かったので、決定の無い limits.yaml を作った（決定は Step 2 で書き足す）")
+    if (existing or {}).get("approvals"):
+        print(f"{_state_path(out)} を書いた。承認とテストの結果は残した（入力が変わった段階は「承認が古い」と出る）。"
+              "次: status で段階ごとの状態を確かめる")
+    else:
+        print(f"{_state_path(out)} を書いた。次: 現行の仕様を調べる（status で確かめられる）")
     return 0
 
 
@@ -326,10 +481,60 @@ def _tree_digest(root: Path, ignore=None) -> str:
     return digest.hexdigest()
 
 
+PY = ".venv/bin/python"   # SKILL.md のコマンドと同じ書き方。プラグインでは <root>/bin/python と <root>/skills/… に読み替える
+
+
+def next_command(state: dict, out: Path, stage: str, name: str, problems: list[str]) -> str | None:
+    """次に流すコマンドの 1 行。会話の文脈を失って再開するときに、Step 2・3 に要る入力の場所まで出す（レビュー M9）。
+
+    承認とテストの記録（`approve` / `tested`）は、利用者の許可を得てから打つものなので、そう添える。
+    """
+    inputs, o = state["inputs"], str(out)
+    given = {key: inputs.get(key) or f"<{placeholder}>" for key, placeholder in
+             (("src", "src"), ("limits", "limits.yaml"), ("record", "record.yaml"), ("scalardb_schema", "scalardb-schema.json"))}
+    plsql = inputs["kind"] == "plsql"
+    unfinished = [p for p in problems if not p.startswith("承認のあとで中身が変わった")]
+    if name in ("承認待ち", "承認が古い") and not unfinished:
+        with_open = ' --with-open "<残したまま進める理由>"（未決を残すと利用者が決めたときだけ）' \
+            if stage == "decisions" and open_items(state, out) else ""
+        return (f"{PY} skills/migrate-flow/scripts/flow.py approve {stage} --out {o} --by <役割> --date <YYYY-MM-DD>"
+                f"{with_open}（成果物を利用者に見せ、承認と記録の許可を得てから）")
+    if stage == "spec":
+        if not plsql:
+            return None   # SQL の仕様書は手で書く（references/sql.md の段階 1）
+        schema = f" --schema {inputs['schema']}" if inputs.get("schema") else ""
+        if not (out / "spec-analysis" / "program.ir.json").exists():
+            return f"{PY} -m plsql.cli {given['src']}{schema} --out-dir {o}/spec-analysis --quiet"
+        verb = "facts" if not list((out / "spec").glob("*.md")) else "check"
+        return f"{PY} skills/plsql-spec/scripts/spec_facts.py {verb} --analysis {o}/spec-analysis --out-dir {o}/spec"
+    if stage == "decisions":
+        if not plsql:
+            return (f"{PY} skills/sql-transpile/scripts/transpile.py {given['src']} --source {inputs.get('source_dialect') or '<方言>'} "
+                    f"--target {inputs.get('target_dialect') or 'scalardb'} --out-dir {o}/converted --plan-dir {o}/converted/plans")
+        if any("記録に無い" in p for p in problems):
+            return (f"{PY} skills/plsql-migrate/scripts/decision_items.py scan --generated {o}/generated --limits {given['limits']} "
+                    f"--scalardb-schema {given['scalardb_schema']} --record {given['record']} --write --out {o}/generated/decision-items.md")
+        return (f"{PY} -m plsql.generate {given['src']} --scalardb-schema {given['scalardb_schema']} --limits {given['limits']} "
+                f"--out-dir {o}/generated --verify-compile --limits-strict")
+    if not plsql:
+        return None   # SQL の変換後の文書は手で書く（references/sql.md の段階 3）
+    evidence = f" --evidence {inputs['evidence']}" if inputs.get("evidence") else ""
+    verb = "facts" if not list((out / "docs").glob("*.md")) else "check"
+    return (f"{PY} skills/plsql-migrate/scripts/migration_doc.py {verb} --src {given['src']} --generated {o}/generated "
+            f"--analysis {o}/generated/analysis --limits {given['limits']} --record {given['record']}{evidence} --out-dir {o}/docs")
+
+
 def cmd_status(args) -> int:
     out = Path(args.out)
     state = load(out)
-    print(f"# 移行の流れ — {state['inputs']['kind']} / {state['inputs']['src']}\n")
+    inputs = state["inputs"]
+    print(f"# 移行の流れ — {inputs['kind']} / {inputs['src']}\n")
+    # 再開に要る入力の場所（Step 2・3 のコマンドに渡すもの）。会話が変わっても、ここから拾える
+    print("| 入力 | 場所 |\n|---|---|")
+    for key in ("src", "schema", "scalardb_schema", "limits", "record", "evidence", "source_dialect", "target_dialect"):
+        if inputs.get(key):
+            print(f"| `{key}` | `{inputs[key]}` |")
+    print()
     print("| 段階 | 状態 | 承認 |\n|---|---|---|")
     next_step, details = None, []
     for stage in STAGES:
@@ -339,7 +544,7 @@ def cmd_status(args) -> int:
         print(f"| {TITLES[stage]}（`{stage}`） | {name} | {who} |")
         details += [f"- `{stage}`: {p}" for p in problems]
         if next_step is None and name != "承認済み":
-            next_step = (stage, name)
+            next_step = (stage, name, problems)
     test = state.get("test") or {}
     print(f"| テスト | {test.get('結果', 'まだ')} | {test.get('日付', '—')} |")
     if details:
@@ -348,11 +553,18 @@ def cmd_status(args) -> int:
     if remaining:
         print("\n未決の判断（承認する人に見せる）: " + "、".join(remaining))
     if next_step:
-        stage, name = next_step
-        action = {"作業中": "を仕上げる", "承認待ち": "を利用者に見せて、承認を求める", "承認が古い": "を見直して、承認を取り直す"}[name]
+        stage, name, problems = next_step
+        action = {"作業中": "を仕上げる", "承認待ち": "を利用者に見せて、承認を求める", "承認が古い": "を見直して、承認を取り直す",
+                  FAILING: "の検査が通らない理由を直す（直して中身が変われば、承認を取り直す）"}[name]
         print(f"\n次にすること: {TITLES[stage]}{action}")
+        command = next_command(state, out, stage, name, problems)
+        if command:
+            print(f"次のコマンド: `{command}`")
     elif not test:
-        print("\n次にすること: テストを実施する（gate が 0 を返す）")
+        print("\n次にすること: テストを実施する（gate が 0 を返す。始める前に、配備するものと書き込む先を利用者に確かめる）")
+        print(f"次のコマンド: `{PY} skills/migrate-flow/scripts/flow.py gate --out {out}`")
+    elif test.get("結果") == "fail":
+        print("\n次にすること: 差を分ける（生成物の誤りか、移行で意味が変わる既知の差か）。SKILL.md Step 4 の「結果を読む」")
     print(f"STAGE={next_step[0] if next_step else 'test'}", file=sys.stderr)
     return 0
 
@@ -378,8 +590,8 @@ def cmd_approve(args) -> int:
         print("未決の判断が残っている: " + "、".join(remaining))
         print("残したまま進めると利用者が決めたなら、その理由を --with-open に書く（承認に控える）")
         return 1
-    approval = {"承認した人": args.by, "日付": args.date, "指紋": fingerprint(_files(state, out, args.stage)),
-                "対象": [str(f) for f in _files(state, out, args.stage)]}
+    approval = {"承認した人": args.by, "日付": args.date, "指紋": fingerprint(_targets(state, out, args.stage)),
+                "対象": [name for name, _ in _targets(state, out, args.stage)]}
     if remaining:
         approval["未決のまま進める"] = {"項目": remaining, "理由": args.with_open}
     if args.note:
@@ -420,9 +632,32 @@ def cmd_gate(args) -> int:
     return 1 if blocked else 0
 
 
+def _check_report(state: dict, report: str) -> Path:
+    """`tested --report` のファイルを確かめる。無いファイルや形の違う JSON を控えると、そのあとの `status` と `gate` が
+    文書の検査で止まり、`flow.yaml` を手で直すしかなかった（2026-09-28 のレビュー M6）。"""
+    path = Path(report).resolve()
+    if not path.is_file():
+        raise FlowError(f"{report} が無い。比較の報告のファイルを渡す（まだ無いなら、テストを流してから記録する）")
+    if state["inputs"]["kind"] != "plsql":
+        return path
+    shape = ("実 DB の比較の報告（plsql-diff.json: 変種 → {variant, scenarios: {シナリオ: 結果}}）の形でない。"
+             "difftest の plsql_compare.py が書いたファイルを渡す")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, UnicodeDecodeError) as e:
+        raise FlowError(f"{report} が JSON として読めない（{e}）。{shape}") from None
+    variants = list(data.values()) if isinstance(data, dict) else []
+    if not variants or not all(isinstance(v, dict) and isinstance(v.get("scenarios"), dict)
+                               and all(isinstance(s, dict) for s in v["scenarios"].values()) for v in variants):
+        raise FlowError(f"{report} は{shape}")
+    return path
+
+
 def cmd_tested(args) -> int:
     out = Path(args.out)
     state = load(out)
+    if args.report:
+        args.report = str(_check_report(state, args.report))
     if cmd_gate(args) != 0:
         print("承認がそろっていないので、テストの結果は記録しない")
         return 1
@@ -430,10 +665,10 @@ def cmd_tested(args) -> int:
                      "承認の指紋": {stage: state["approvals"][stage]["指紋"] for stage in STAGES}}
     if args.note:
         state["test"]["メモ"] = args.note
-    if state["inputs"]["kind"] == "plsql" and args.report and Path(args.report).exists():
+    if state["inputs"]["kind"] == "plsql" and args.report:
         # 比較の結果を文書に入れる（migration_doc.py の --evidence）と、事実の欄が変わる。`converted` の検査が
         # 同じ比較を見ていなければ、文書は「古い事実」になり、承認を取り直せない
-        state["inputs"]["evidence"] = args.report = str(Path(args.report).resolve())
+        state["inputs"]["evidence"] = args.report
     save(out, state)
     print(f"テストの結果（{args.result}）を記録した")
     if state["inputs"].get("evidence") == args.report and args.report:
@@ -447,6 +682,7 @@ def main(argv: list[str] | None = None) -> int:
     init = sub.add_parser("init", help="入力を控える（承認は消さない）")
     init.add_argument("--kind", required=True, choices=("plsql", "sql"))
     init.add_argument("--src", required=True, help="PL/SQL のディレクトリ、または SQL のファイル")
+    init.add_argument("--schema", help="src の外にある Oracle の DDL（plsql.cli の --schema）。spec の指紋に入る")
     init.add_argument("--scalardb-schema", dest="scalardb_schema")
     init.add_argument("--limits")
     init.add_argument("--record")
@@ -490,6 +726,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except (json.JSONDecodeError, yaml.YAMLError, UnicodeDecodeError) as e:
         print(f"入力が読めない: {type(e).__name__}: {e}", file=sys.stderr)
+        return 2
+    except Exception as e:   # noqa: BLE001 -- 想定外でも 1（gate の「まだ」）と取り違えない終わり方をする
+        print(f"想定外のエラーで止まった（{type(e).__name__}: {e}）。flow.yaml と入力のファイル（status の inputs）を"
+              f"確かめる。直らなければ、このメッセージを添えて報告する", file=sys.stderr)
         return 2
 
 

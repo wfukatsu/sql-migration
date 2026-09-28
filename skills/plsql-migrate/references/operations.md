@@ -18,7 +18,7 @@ Oracle との突き合わせは、sql-migration のリポジトリで作業す�
 | `…/domain/` | 行と戻り値の record、エラーコードごとの例外（`RAISE_APPLICATION_ERROR` のコードは `<Module>Error<code>Exception`） |
 | `db/trigger-check-baseline.sql` | 照合の控えの表（移行で足す表） |
 | `db/restrict-direct-writes.sql` | 直接の書き込みを禁じる `REVOKE` の雛形（`<other_user>` は OPS-6 で決める） |
-| `generation-report.json` | `summary`（件数）/ `errorCodes` / `verdicts`（routine ごとの `verdict` と `reasons` など）/ `diagnostics`（routine ごとの診断コード） |
+| `generation-report.json` | `summary`（件数）/ `errorCodes` / `verdicts`（routine ごとの `verdict`・`ruleVerdict`・`reasons` など）/ `refused`（routine → 生成コードが断る文の id）/ `diagnostics`（routine ごとの診断コード）/ `unconvertedFiles`（解析できなかったファイル。あるときだけ） |
 
 ## limits.yaml の書き方
 
@@ -60,7 +60,22 @@ dbLinks:
   warehouse_link:
     namespace: warehouse          # 必須: その link の表を置く ScalarDB の namespace
     reason: <理由>
+conditionalCompilation:           # ソースに $IF があるとき。移行元の PLSQL_CCFLAGS と版（利用者に聞く）
+  flags: {shop_debug: false, trace_level: 2}   # 書いていないフラグは NULL として解かれる（Oracle と同じ）
+  dbVersion: "19.0"               # 書かなければ 19.0。$$PLSQL_VERSION / DBMS_DB_VERSION の比較に効く
 ```
+
+書ける節とキーは上のものだけで、`plsql.generate` と `plsql.cli` は読む前に確かめる（#145）。次のどれかがあると、
+理由を標準エラーに出して**終了 2** で止まり、何も書かない:
+
+- 知らない節・キー（`rowlocks:`、`optimistc:` など。近い名前があれば「〜のこと？」と添える）
+- 理由の要る所（`notLimited`、`rowLocks.optimistic`、`transactions.*`、`ddl.omit`、`packageState.carried`、
+  `constraints.enforce`）の空の値
+- ソースに無い routine id（打ち間違い、名前の変わった routine。近い id を添える）
+- 正の整数でない行数、`routines` と `notLimited` の重なり、2 つ以上の `transactions.*` に書いた routine、
+  `namespace` の無い `dbLinks`、`"19.0"` の形でない `dbVersion`、YAML として読めないファイル、無いファイル
+
+止まったら、最後の行を利用者に見せ、直す値を聞いてから直す（決定の中身を推し量って書き換えない）。
 
 routine 名・表名・理由は形を示すためのもので、実際には原文と利用者の答えから取る。各決定で生成物と振る舞いが
 どう変わるかは `references/documenting.md` の「診断・決定の言い換え」にある。

@@ -38,7 +38,10 @@ from sqlglot.optimizer.annotate_types import annotate_types
 from sqlglot.optimizer.qualify import qualify
 from sqlglot.transforms import eliminate_distinct_on, eliminate_join_marks
 
-from _scalardb.converter import PLSQL_BLOCK, Issue, Result, _bad_join_mark_rewrite, _flatten, _split_statements, _unparen
+from _scalardb.converter import (PLSQL_BLOCK, Issue, Result, StatementConverter, Unconvertible,
+                                  _bad_join_mark_rewrite, _flatten, _oracle_partition_extension, _split_statements,
+                                  _unparen, flashback_clause, is_statement, spell_long_raw, written_type)
+from _scalardb.schema import SchemaRegistry
 
 CATALOG_DIR = Path(__file__).resolve().parent / "catalogs"
 FROM_KEY = "from_" if "from_" in exp.Select.arg_types else "from"
@@ -198,12 +201,273 @@ def _check_source(node: exp.Expression, source: str, target: str, issues: list[I
             if cast.to.sql().upper() in ("REGCLASS", "REGTYPE", "REGPROC", "OID"):
                 _add(issues, "ERROR", "PG_CATALOG", "PostgreSQL のシステムカタログ型へのキャスト。変換先には無い")
 
+    for t in node.find_all(exp.Table):
+        extension = _oracle_partition_extension(t, source)
+        alias = t.args.get("alias")
+        if extension is None and source == "oracle" and isinstance(t.parent, exp.Schema) \
+                and isinstance(alias, exp.TableAlias) and alias.name.upper() in ("PARTITION", "SUBPARTITION"):
+            # INSERT INTO t PARTITION (p1): (p1) は INSERT の列の並びとして Schema の側に付く
+            extension = f"{alias.name.upper()} ({', '.join(e.sql(dialect=source) for e in t.parent.expressions)})"
+        if extension:
+            # SQLGlot は `emp PARTITION (p1)` を、列の並び (p1) を持つ別名 PARTITION と読む。出力は
+            # `emp AS PARTITION(p1)` になり、PostgreSQL では emp の列の名前が別名で隠れる
+            _add(issues, "ERROR", "CLAUSE",
+                 f"表の {extension}（Oracle のパーティション拡張名）。{target} には無く、SQLGlot は表の別名 PARTITION と"
+                 "読むので、出力のまま動かすと列が見つからない。パーティションキーの条件（WHERE）で絞る形に書き換える")
+        elif t.args.get("partition") is not None and source != target:
+            _add(issues, "ERROR", "CLAUSE",
+                 f"表の {t.args['partition'].sql(dialect=source)}（パーティションを名指しで読む句）。{target} では書けない。"
+                 "パーティションキーの条件（WHERE）で絞る形に書き換える")
+
     if isinstance(node, exp.Create):
         kind = (node.args.get("kind") or "").upper()
         if kind == "SEQUENCE" and target in KNOWN_TARGETS and target not in SEQUENCE_TARGETS:
             _add(issues, "ERROR", "SEQUENCE", f"{target} にはシーケンスが無い。変換先の採番機能に置き換える")
         elif kind in ("TRIGGER", "PROCEDURE", "FUNCTION"):
             _add(issues, "ERROR", kind, f"{kind} は方言差が大きく機械変換の対象外。変換先の手続き言語で書き直す")
+
+
+# ---------------------------------------------------------------------------------------------
+# 2b. 文の種類の検査（SQLGlot が読めなかった文、管理文、DATABASE）
+# ---------------------------------------------------------------------------------------------
+# 権限・セッション・統計の管理文。Source と Target で文法と、効く範囲（権限の名前、設定の項目）が違う
+ADMIN_STATEMENTS = (exp.Grant, exp.Revoke, exp.Set, exp.Use, exp.Analyze)
+NO_USE_TARGETS = {"oracle", "postgres"}
+
+
+def _check_statement_kind(node: exp.Expression, source: str, target: str, issues: list[Issue]) -> None:
+    """文の形は読めても、Target の文として確かめられないものを拾う。
+
+    SQLGlot は読めない文を Command にして文面のまま持ち、そのまま出力する。往復検証も Command として読めるので通り、
+    Target の文法として正しいかは誰も確かめていなかった（`ALTER SESSION`、`CREATE SYNONYM`、`VACUUM` など）。
+    ALTER TABLE は _alter_actions が操作ごとに読み直すので、ここには来ない。
+    """
+    if isinstance(node, exp.Command):
+        words = " ".join(node.sql(dialect=source).split()[:2])
+        _add(issues, "ERROR", "UNPARSED",
+             f"SQLGlot が文として解析できない（{words} …）。文面のまま出力することになり、{target} の文法として確かめられない。"
+             f"{target} の同じ働きの文（セッションの設定、シノニム、保守の文など）に書き直すか、移行の対象から外す")
+        return
+    if isinstance(node, exp.Show) or (isinstance(node, exp.Use) and target in NO_USE_TARGETS):
+        _add(issues, "ERROR", "ADMIN",
+             f"{type(node).__name__.upper()} 文は {target} に無い。接続の設定か、{target} の同じ働きの文"
+             "（ALTER SESSION SET CURRENT_SCHEMA、SET search_path、カタログ表の検索など）で行う")
+        return
+    if isinstance(node, ADMIN_STATEMENTS):
+        _add(issues, "WARN", "ADMIN",
+             f"権限・セッション・統計の管理文（{type(node).__name__.upper()}）。{source} と {target} では文法と、"
+             f"効く範囲（権限や設定項目の名前）が違う。形だけ写したので、{target} で同じ働きをするか確かめる")
+    if isinstance(node, (exp.Create, exp.Drop)):
+        kind = str(node.args.get("kind") or "").upper()
+        verb = "CREATE" if isinstance(node, exp.Create) else "DROP"
+        if kind == "DATABASE" and target == "oracle":
+            _add(issues, "ERROR", "DDL",
+                 f"{verb} DATABASE。Oracle の CREATE DATABASE はデータベース全体（インスタンスの入れ物）を作る別の文で、"
+                 f"{source} の DATABASE（表の入れ物）には当たらない。Oracle ではユーザ（スキーマ）として作る")
+        elif kind == "SCHEMA" and target == "oracle":
+            _add(issues, "ERROR", "DDL",
+                 f"{verb} SCHEMA。Oracle のスキーマはユーザと同じもので、CREATE USER / DROP USER で扱う"
+                 "（Oracle の CREATE SCHEMA は複数の表とビューを 1 度に作る別の文）")
+        elif kind == "DATABASE" and source == "mysql" and target != "mysql":
+            _add(issues, "WARN", "DDL",
+                 f"MySQL の {verb} DATABASE は、{target} ではスキーマに当たる。{target} の {verb} DATABASE は"
+                 f"別のデータベースを{'作る' if verb == 'CREATE' else '消す'}ので、{verb} SCHEMA のほうが意味が近い")
+
+
+# ---------------------------------------------------------------------------------------------
+# 2c. 型（SQLGlot が別の型として読む Oracle の型、MySQL の整数の表示幅）
+# ---------------------------------------------------------------------------------------------
+# Target ごとの型の綴り。表に無い Target は default を使う。None は Target に対応する型が無い
+_TYPE_SPELLINGS = {
+    # 2 GB までの文字列（Oracle の LONG）
+    "long_text": {"mysql": "LONGTEXT", "tsql": "VARCHAR(MAX)", "snowflake": "VARCHAR", "bigquery": "STRING",
+                  "default": "TEXT"},
+    "nclob": {"mysql": "LONGTEXT", "tsql": "NVARCHAR(MAX)", "snowflake": "VARCHAR", "bigquery": "STRING",
+              "default": "TEXT"},
+    # 2 GB までのバイト列（Oracle の LONG RAW）
+    "long_binary": {"postgres": "BYTEA", "mysql": "LONGBLOB", "tsql": "VARBINARY(MAX)", "snowflake": "BINARY",
+                    "bigquery": "BYTES", "default": "BLOB"},
+    # 長さつきのバイト列（Oracle の RAW(n)）
+    "raw": {"postgres": "BYTEA", "mysql": "VARBINARY({n})", "tsql": "VARBINARY({n})", "snowflake": "BINARY({n})",
+            "bigquery": "BYTES({n})", "default": "BLOB"},
+    "xml": {"postgres": "XML", "tsql": "XML", "default": None},
+    "double": {"mysql": "DOUBLE", "tsql": "FLOAT(53)", "duckdb": "DOUBLE", "snowflake": "DOUBLE", "bigquery": "FLOAT64",
+               "sqlite": "REAL", "default": "DOUBLE PRECISION"},
+}
+
+
+def _type_for(family: str, target: str, n: str | None = None) -> exp.DataType | None:
+    table = _TYPE_SPELLINGS[family]
+    spelling = table.get(target, table["default"])
+    if spelling is None:
+        return None
+    if "{n}" in spelling:
+        spelling = spelling.format(n=n) if n else spelling.split("(")[0]
+    return exp.DataType.build(spelling, dialect=target)
+
+
+def _written(dt: exp.DataType, text: str) -> str:
+    """型の元の綴り。SQLGlot は LONG を BIGINT、REAL と BINARY_FLOAT を FLOAT と読み、綴りを残さない。"""
+    parent = dt.parent
+    if isinstance(parent, exp.ColumnDef) and parent.args.get("kind") is dt:
+        return (written_type(parent, parent.meta.get("parsed_from") or text) or "").upper()
+    if isinstance(parent, exp.AlterColumn):
+        return (parent.meta.get("written") or "").upper()
+    return ""
+
+
+def _fix_types(node: exp.Expression, text: str, source: str, target: str, issues: list[Issue]) -> None:
+    """素の SQLGlot が黙って別の型にするものを、Target の型に写すか ERROR にする。
+
+    - Oracle の LONG は SQLGlot が BIGINT と読むので、文字列の列が整数の列になる
+    - Oracle の LONG RAW・NCLOB・XMLTYPE・RAW(n) は利用者定義の型として、元の名前のまま出る
+    - Oracle の FLOAT（2 進 126 桁）と REAL（2 進 63 桁）は FLOAT になり、PostgreSQL では単精度の REAL になる
+    - MySQL の整数の表示幅（INT(11)、TINYINT(1)）は PostgreSQL・Oracle に無い
+    """
+    notes: dict[str, list[str]] = {"INFO": [], "WARN": []}   # 同じ重要度の TYPE は 1 件にまとめて出す
+    if source == "oracle" and target != "oracle":
+        for dt in list(node.find_all(exp.DataType)):
+            written = _written(dt, text)
+            kind = str(dt.args.get("kind") or "").upper() if dt.this == exp.DataType.Type.USERDEFINED else ""
+            n = dt.expressions[0].sql() if dt.expressions else None
+            new, severity, message = None, "INFO", ""
+            if dt.this == exp.DataType.Type.BIGINT and written == "LONG":
+                new, severity = _type_for("long_text", target), "WARN"
+                message = ("Oracle の LONG（2 GB までの文字列、旧式の型）。SQLGlot は整数（BIGINT）と読むので、そのままでは"
+                           "文字列の列が整数の列になる。データを移すときは Oracle 側で TO_LOB か CLOB への変換を通す")
+            elif kind == "LONG_RAW":
+                new, severity = _type_for("long_binary", target), "WARN"
+                message = ("Oracle の LONG RAW（2 GB までのバイト列、旧式の型）。データを移すときは Oracle 側で TO_LOB か"
+                           "BLOB への変換を通す")
+            elif kind == "NCLOB":
+                new, message = _type_for("nclob", target), "Oracle の NCLOB（各国語文字の大きな文字列）"
+            elif kind == "RAW":
+                new, message = _type_for("raw", target, n), f"Oracle の RAW({n or ''})（長さつきのバイト列）"
+            elif kind == "XMLTYPE":
+                new = _type_for("xml", target)
+                if new is None:
+                    _add(issues, "ERROR", "TYPE", f"Oracle の XMLTYPE。{target} に XML の型が無い。文字列（CLOB 相当）に"
+                                                  "持ち替え、XML の操作（EXTRACT、XMLQUERY など）はアプリケーション側で行う")
+                    continue
+                severity = "WARN"
+                message = "Oracle の XMLTYPE。XMLTYPE のメソッド（.extract() など）と XPath の関数は写らない"
+            elif kind in ("UROWID", "ROWID", "BFILE"):
+                how = "主キーで行を特定する形に" if "ROWID" in kind else "ファイルの場所を文字列で持つ形に"
+                _add(issues, "ERROR", "TYPE", f"Oracle の {kind} 型。{target} に対応する型が無い。{how}書き換える")
+                continue
+            elif dt.this == exp.DataType.Type.FLOAT and not dt.expressions and written in ("FLOAT", "REAL"):
+                new = _type_for("double", target)
+                message = (f"Oracle の {written}（2 進 {126 if written == 'FLOAT' else 63} 桁）。SQLGlot の FLOAT は"
+                           f"{target} で単精度になりうるので、倍精度にした。Oracle の {written} は 10 進の数なので、"
+                           "値を丸めずに持つ必要があるなら NUMERIC にする")
+            if new is None:
+                continue
+            dt.replace(new)
+            note = f"{message}。{target} では {new.sql(dialect=target)} にした"
+            if note not in notes[severity]:
+                notes[severity].append(note)
+    if source == "mysql" and target != "mysql":
+        widths = [dt for dt in node.find_all(exp.DataType) if dt.this in exp.DataType.INTEGER_TYPES and dt.expressions]
+        for dt in widths:
+            dt.set("expressions", [])
+        if widths:
+            notes["INFO"].append(f"MySQL の整数型の表示幅（INT(11)、TINYINT(1) など）を外した。{target} には無く、値の範囲は"
+                                 "変わらない。TINYINT(1) を真偽値に使っているなら、Target の BOOLEAN にするか確かめる")
+    for severity, messages in notes.items():
+        if messages:
+            _add(issues, severity, "TYPE", " / ".join(messages))
+
+
+# ---------------------------------------------------------------------------------------------
+# 2d. ALTER TABLE（操作ごとに読み直し、1 操作 1 文にする）
+# ---------------------------------------------------------------------------------------------
+INDEX_ACTION = re.compile(r"ADD\s+(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?(?:INDEX|KEY)\b", re.I)
+
+
+def _alter_actions(node: exp.Expression, text: str, source: str, target: str,
+                   issues: list[Issue]) -> exp.Alter | None:
+    """ALTER TABLE を操作の並びとして読む。ALTER TABLE でなければ None。
+
+    SQLGlot が読めなかった操作（Oracle の MODIFY (c 型)・DROP (a, b)、MySQL の ADD c INT, DROP d）は、ScalarDB の
+    経路と同じ読み方（操作ごとに読み直す）を使う。読み直せない操作は ERROR ALTER にして、空の操作の Alter を返す。
+    """
+    if isinstance(node, exp.Alter):
+        if str(node.args.get("kind") or "").upper() != "TABLE":
+            return None
+        if not any(isinstance(a, exp.Command) for a in node.args.get("actions") or []):
+            return node
+    elif not (isinstance(node, exp.Command) and re.match(r"\s*ALTER\s+TABLE\b", text, re.I)):
+        return None
+    reader = StatementConverter(source, SchemaRegistry(), {}, decompose=False)
+    reader._parsed = text
+    try:
+        alter = reader._alter_from_text(text)
+    except Unconvertible as e:
+        _add(issues, "ERROR", "ALTER", f"ALTER TABLE の操作を {target} の構文に読み替えられない（{e}）。"
+                                       f"操作ごとに {target} の構文で書き直す")
+        return exp.Alter(this=exp.to_table("x"), kind="TABLE", actions=[])
+    if any(i.code == "COL_OPT" for i in reader.issues):
+        _add(issues, "WARN", "COL_OPT", "MODIFY の NOT NULL・DEFAULT・制約は写していない。型の変更だけを写したので、"
+                                        f"{target} で付け直す")
+    return alter
+
+
+def _alter_statements(alter: exp.Alter, source: str, target: str, issues: list[Issue]) -> list[str]:
+    """操作を 1 つずつの ALTER TABLE にして Target の文面を返す。読み替えられない操作は ERROR にする。"""
+    table = alter.this
+    tname = table.sql(dialect=target)
+
+    def one(action: exp.Expression) -> str:
+        return exp.Alter(this=table.copy(), kind="TABLE", actions=[action.copy()]).sql(
+            dialect=target, unsupported_level=ErrorLevel.RAISE)
+
+    out: list[str] = []
+    for act in alter.args.get("actions") or []:
+        if isinstance(act, exp.Schema):   # Oracle の ADD (c1 型, c2 型)
+            for item in act.expressions:
+                if isinstance(item, exp.ColumnDef):
+                    out.append(one(item))
+                else:
+                    _add(issues, "ERROR", "ALTER", f"ALTER TABLE ADD ({item.sql(dialect=source)[:60]}) を読み替えられない。"
+                                                   f"{target} の構文で書き直す")
+        elif isinstance(act, exp.ColumnDef):
+            out.append(one(act))
+        elif isinstance(act, exp.Drop) and str(act.args.get("kind") or "").upper() == "COLUMN":
+            columns = [act.this] if act.this is not None else list(act.args.get("tables") or [])
+            for col in columns:
+                out.append(one(exp.Drop(kind="COLUMN", tables=[col], exists=act.args.get("exists"))))
+        elif isinstance(act, exp.ModifyColumn) or (isinstance(act, exp.AlterColumn) and act.args.get("dtype") is not None):
+            if isinstance(act, exp.ModifyColumn) and act.args.get("rename_from") is not None:
+                _add(issues, "ERROR", "ALTER", "列名と型を同時に変える CHANGE。RENAME COLUMN と型の変更の 2 文に分けて書く")
+                continue
+            col = act.this.this if isinstance(act, exp.ModifyColumn) else act.this
+            dtype = act.this.args.get("kind") if isinstance(act, exp.ModifyColumn) else act.args["dtype"]
+            if dtype is None:
+                _add(issues, "ERROR", "ALTER", f"列 {col.name} の MODIFY に型が無い。{target} の構文で書き直す")
+                continue
+            if target == "oracle":
+                out.append(f"ALTER TABLE {tname} MODIFY ({col.sql(dialect=target)} {dtype.sql(dialect=target)})")
+            else:
+                out.append(one(exp.AlterColumn(this=col, dtype=dtype)))
+            reset = "。MySQL の MODIFY COLUMN は、書かなかった NOT NULL・DEFAULT を外す" if target == "mysql" else ""
+            _add(issues, "WARN", "ALTER_TYPE",
+                 f"列の型の変更。既存の値を新しい型へ変換する規則と、変換できない値の扱いが {target} で違う{reset}")
+        elif isinstance(act, exp.AlterColumn):   # SET DEFAULT / DROP NOT NULL など
+            if target == "oracle":
+                _add(issues, "ERROR", "ALTER", f"ALTER COLUMN {act.this.name} …（型以外の変更）。Oracle では "
+                                               "MODIFY (列 DEFAULT … / NOT NULL) で書く")
+            else:
+                out.append(one(act))
+        elif isinstance(act, (exp.RenameColumn, exp.AlterRename)) and target == "tsql":
+            _add(issues, "ERROR", "ALTER", "名前の変更。SQL Server は ALTER TABLE ではなく sp_rename で変える")
+        elif isinstance(act, exp.AddConstraint) and target != "mysql" and INDEX_ACTION.match(act.sql(dialect=source)):
+            _add(issues, "ERROR", "ALTER", f"ALTER TABLE {act.sql(dialect=source)[:60]}（索引の追加）。{target} では "
+                                           "CREATE INDEX で作る")
+        else:
+            out.append(one(act))
+    if len(out) > 1:
+        _add(issues, "INFO", "ALTER", "操作の並んだ ALTER TABLE を、操作ごとの文に分けた（まとめて 1 つの変更にはならない）")
+    return out
 
 
 # ---------------------------------------------------------------------------------------------
@@ -928,29 +1192,55 @@ def convert_statement(stmt: str, source: str, target: str, schema: dict | None =
         return Result(index=0, source_sql=src, kind="PLSQL_BLOCK", status="ERROR",
                       issues=[Issue("ERROR", "PLSQL_BLOCK", "PL/SQL のブロック（ストアドプログラムか無名ブロック）。SQL 文ではないので、"
                                                             "このスキルでは変換しない。plsql-migrate スキルで移行する")])
+    # Oracle の LONG RAW は 2 語のままでは SQLGlot が読めないので、同じ長さの LONG_RAW にしてから読む（ScalarDB の経路と共通）
+    parsed = spell_long_raw(src, source) if source != target else src
     try:
-        node = sqlglot.parse_one(src, read=source)
+        node = sqlglot.parse_one(parsed, read=source)
     except ParseError as e:
+        flashback = flashback_clause(src, source) if source != target else None
+        if flashback:
+            # SQLGlot はフラッシュバック問合せを読めない。パーサが止まった位置より、文が何を求めているかを伝える
+            return Result(index=0, source_sql=src, kind="PARSE_ERROR", status="ERROR",
+                          issues=[Issue("ERROR", "CLAUSE",
+                                        f"{flashback}（Oracle のフラッシュバック問合せ。過去の時点の行を読む）。{target} には"
+                                        "同じ機能が無い。要る履歴はアプリケーションか履歴表で持ち、その表を読む形に書き換える")])
         return Result(index=0, source_sql=src, kind="PARSE_ERROR", status="ERROR",
                       issues=[Issue("ERROR", "PARSE", str(e).splitlines()[0][:200])])
     if node is None:
         return Result(index=0, source_sql=src, kind="UNKNOWN", status="ERROR",
                       issues=[Issue("ERROR", "PARSE", "空の文として解析された")])
-    if isinstance(node, (exp.Column, exp.Identifier, exp.Literal, exp.Binary, exp.Unary, exp.Func)):
-        # `END` や `x + 1` は式として解析できてしまう。文ではないものを OK にすると、壊れた入力が変換率を上げる
+    if not is_statement(node):
+        # `END` や `x + 1`、綴りを誤った `SELEC * FRM t`（別名として読める）は式として解析できてしまう。
+        # 文ではないものを OK にすると、壊れた入力が変換率を上げる
         return Result(index=0, source_sql=src, kind=type(node).__name__.upper(), status="ERROR",
-                      issues=[Issue("ERROR", "PARSE", "SQL の文ではなく、式として解析された（文の切れ目がずれているか、PL/SQL の断片）")])
+                      issues=[Issue("ERROR", "PARSE", "SQL の文ではなく、式として解析された（キーワードの綴りの誤り、"
+                                                      "文の切れ目のずれ、PL/SQL の断片）")])
     kind = type(node).__name__.upper()
 
     converted: list[str] = []
+    alter = _alter_actions(node, parsed, source, target, issues) if source != target else None
     if source == target:   # 同じ方言への変換は整形し直すだけ
         out = node.sql(dialect=target)
         converted = [out]
         _check_roundtrip(out, target, issues)
+    elif alter is not None:
+        # ALTER TABLE は操作ごとに Target の文にする。SQLGlot が読めなかった操作を文面のまま通さない
+        kind = "ALTER"
+        _fix_types(alter, parsed, source, target, issues)
+        _fix_caseless_quotes(alter, source, target)
+        if not any(i.severity == "ERROR" for i in issues):
+            try:
+                converted = _alter_statements(alter, source, target, issues)
+                for out in converted:
+                    _check_roundtrip(out, target, issues)
+            except UnsupportedError as e:
+                _add(issues, "ERROR", "UNSUPPORTED", str(e).splitlines()[0][:200])
     else:
         src_funcs = _source_functions(node)   # 前処理で構文木が変わる前に集める
+        _check_statement_kind(node, source, target, issues)
         _check_source(node, source, target, issues)
         if not any(i.severity == "ERROR" for i in issues):
+            _fix_types(node, parsed, source, target, issues)
             node = _preprocess(node, source, target, issues, schema, case_insensitive)
             _check_rownum_left(node, source, target, issues)
         if not any(i.severity == "ERROR" for i in issues):

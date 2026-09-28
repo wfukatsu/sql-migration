@@ -21,24 +21,29 @@ when_to_use: >-
 # セッションのモデルで受ける。利用者に方言や照合順序を確かめることがあるので context: fork にはしない。
 model: sonnet
 effort: medium
+# 上の 3 つはチェックアウトで作業するとき、下の 3 つはプラグインとして入れたとき（<root>/bin/python <root>/skills/...）の形
 allowed-tools:
   - Read
   - Bash(.venv/bin/python -c "import sqlglot*)
   - Bash(.venv/bin/python skills/sql-transpile/scripts/transpile.py *)
   - Bash(.venv/bin/python skills/sql-transpile/scripts/vendor_sync.py --check)
+  - Bash(*/bin/python -c "import sqlglot*)
+  - Bash(*/bin/python */skills/sql-transpile/scripts/transpile.py *)
+  - Bash(*/bin/python */skills/sql-transpile/scripts/vendor_sync.py --check)
 ---
 
 # sql-transpile — SQL 方言変換
 
-> **実行場所**: このファイルのコマンドと `allowed-tools` は、sql-migration リポジトリのルートから動かす形（`.venv/bin/python skills/sql-transpile/scripts/...`）で書いてある。スキルのディレクトリは `scalardb_migrate/` を import しない（ScalarDB 変換は `scripts/_scalardb/` の同梱コピーで動く）ので別のプロジェクトへコピーしても変換できるが、そのときは Python（sqlglot 入り）とスクリプトのパスを置いた場所に合わせて読み替え、`allowed-tools` も合わせて直す。
+> **実行場所**: このファイルのコマンドは、sql-migration のチェックアウトのルートから動かす形（`.venv/bin/python skills/sql-transpile/scripts/...`）で書いてある。プラグインとして入れたときの読み替えは下の Important の 2 つ目。`allowed-tools` は両方の形を許している。スキルのディレクトリは `scalardb_migrate/` を import しない（ScalarDB 変換は `scripts/_scalardb/` の同梱コピーで動く）ので、スキルのディレクトリだけを別の場所へコピーしても変換できる。そのときは Python（`pip install sqlglot==30.18.0` したもの）とスクリプトのパスを置いた場所に合わせて読み替え、`allowed-tools` も合わせて直す。
 
 SQL を Source 方言で読んで AST に抽象化し、Target 方言または ScalarDB SQL として生成し直す。
 変換できたかどうかを 1 文ずつ判定し、理由と変換率をレポートにまとめる。
 
 ## Important
 
-- **作業ディレクトリは sql-migration リポジトリのルート**。すべてのコマンドはここから `.venv/bin/python` で実行する
-- **プラグインとして入れたとき（作業ディレクトリが sql-migration のチェックアウトでないとき）**: このスキルの場所は `${CLAUDE_SKILL_DIR}`（置き換わらない環境では、この SKILL.md のあるディレクトリ）で、その 2 つ上が `<root>`。下のコマンドは `.venv/bin/python` を `<root>/bin/python` に、`skills/…` で始まるスクリプトのパスを `<root>/` からのパスに読み替え、**利用者のプロジェクトを作業ディレクトリにしたまま**動かす（`-m plsql.cli` などはそのままでよい。`bin/python` が `<root>` を import の経路に入れる）。入力と `<out>` は利用者のプロジェクトの側に置き、`<root>` の中には書かない（プラグインの更新で消える）。初回は `bin/python` が仮想環境を作るので 1 分ほどかかる。`fixtures/…`・`samples/…`・`difftest/…` は sql-migration のリポジトリにだけあり、プラグインには含まれない。それを前提にした手順は、リポジトリで作業するときにだけ使う
+- **作業ディレクトリは、どこで動かすかで 2 通りある**。どちらでも、スキルの場所へ `cd` しない
+  - **sql-migration のチェックアウトで作業するとき**: 作業ディレクトリはリポジトリのルート。下のコマンドをそのまま、ここから `.venv/bin/python` で実行する
+  - **プラグインとして入れたとき（作業ディレクトリが sql-migration のチェックアウトでないとき）**: **利用者のプロジェクトを作業ディレクトリにしたまま**動かす。このスキルの場所は `${CLAUDE_SKILL_DIR}`（置き換わらない環境では、この SKILL.md のあるディレクトリ）で、その 2 つ上が `<root>`。下のコマンドは `.venv/bin/python` を `<root>/bin/python` に、`skills/…` で始まるスクリプトのパスを `<root>/skills/…` に読み替える。入力と `--out-dir` / `--plan-dir` は利用者のプロジェクトからの相対パスにし、`<root>` の中には書かない（プラグインの更新で消える）。初回は `bin/python` が仮想環境を作るので 1 分ほどかかる。`samples/…` はリポジトリにだけあり、プラグインには含まれない
 - **Claude Code 以外（Codex など）で動かすとき**: `allowed-tools` と `when_to_use`（sql-transpile では `model` / `effort` も）は Claude Code 用で、ほかでは無視される。Read / Grep / Bash などの道具の名前は、その環境の同じ働きの道具に読み替える。AskUserQuestion が無ければ、同じ内容（推奨を先頭に、選択肢ごとの影響つき）を本文で聞き、答えを待つ
 - **変換はスクリプトに任せ、SQL を自分で変換しない**。このスキルのターンでやるのは、スクリプトの実行、レポートの要約、利用者への確認まで。ERROR の文の書き換えやアプリ側の Java 実装は、利用者が求めたら次の依頼として受ける
 - **素の `sqlglot.transpile()` は信用しない**。Oracle → PostgreSQL で `ROWNUM`・`CONNECT BY`・`NEXTVAL`・`ROWID` はそのまま出力へ通り、`(+)` 外部結合は内部結合に化けて結果が静かに変わる。このスキルは前処理でこれらを直すか、直せないものを ERROR として報告する
@@ -118,8 +123,9 @@ SQL を Source 方言で読んで AST に抽象化し、Target 方言または S
 | 終了コード | 意味 | 次の手 |
 |---|---|---|
 | 0 | ERROR の文なし | Step 4 は WARN の確認だけ |
-| 1 | ERROR の文あり | Step 4 で手作業の要る文を示す |
+| 1 | ERROR の文あり（最終行は `RATE=`） | Step 4 で手作業の要る文を示す |
 | 2 | 入力の誤り（無いファイル、UTF-8 でないファイル、読めない `--schema`、形式の違う引数、**変換する文が 1 つも無い**） | Error Handling へ。レポートは出ていない |
+| 3 | 異常終了（sqlglot などの依存を読み込めない、変換器の想定外の失敗、中断） | 標準エラーを読んで Error Handling へ。レポートは出ていないので読みに行かない |
 
 1 文の変換中に変換器が想定外の失敗をしても、その文が ERROR `INTERNAL` になるだけで、残りの文は変換される（終了コード 1）。
 閉じていない文字列などでスクリプトを文に分けられないときは、全体が 1 件の ERROR `TOKENIZE` になる。
@@ -140,6 +146,9 @@ ScalarDB を Target にしたときは、`vendor_sync.py --check` も実行す�
    - `EMPTY_STRING` / `DATE_TIME`: Oracle は `''` を NULL として扱い、DATE は時刻を持つ。その列で空文字と NULL を区別しているか、時刻を使っているかを尋ねる
    - `COLLATION`: 大文字小文字を区別しない比較を保つ必要があるか尋ねる。必要なら `--mysql-case-insensitive` で再変換する
    - `FUNC_PORTABILITY`: 名前の出た関数が Target にあるか、利用者定義の関数かを確かめる
+   - `TYPE` / `ALTER_TYPE` / `COL_OPT`（汎用 Target）: Oracle の `LONG`・`LONG RAW`・`XMLTYPE` を写した型と、列の型の変更。既存のデータを移せるか（`TO_LOB` が要るか）、`MODIFY` で落とした NOT NULL・DEFAULT を付け直すかを確かめる
+   - `ADMIN` / `DDL`（汎用 Target）: 権限・セッションの文や DATABASE は、Target で同じ働きをするか確かめる
+   - `PLAN_UNRESOLVED`（ScalarDB）: WARN は計画に解決できない表・列がある。`python:` で始まるものは INFO で、Python の参照実装だけの制限なので伝えなくてよい
    - `ROWNUM`: ORDER BY を伴う場合は件数の意味が変わりうる。元の意図を確かめる
 4. **出力ファイルの場所**
 
@@ -149,14 +158,16 @@ ERROR の文の書き換えを頼まれたら、書き換え後の SQL をもう
 
 | 状況 | 対処 |
 |---|---|
-| `ModuleNotFoundError: sqlglot` | リポジトリルートで実行しているか確認し、`.venv/bin/pip install -r requirements.txt` |
-| 終了コード 2「ファイルが見つかりません」 | 入力パスをリポジトリルートからの相対パスで指定し直す |
+| Step 0 の `ModuleNotFoundError: sqlglot`、終了コード 3「依存を読み込めません」 | チェックアウトならリポジトリのルートで実行しているか確かめ、`.venv/bin/pip install -r requirements.txt`。プラグインなら `<root>/bin/python` を使っているか確かめる（初回は仮想環境を作る）。スキルだけを写したなら `pip install sqlglot==30.18.0` |
+| 終了コード 3「想定外の失敗」 | 変換器の不具合。標準エラーのメッセージと入力を添えて報告するよう利用者に伝える |
+| 終了コード 2「ファイルが見つかりません」 | 入力パスを、作業ディレクトリ（チェックアウトならリポジトリのルート、プラグインなら利用者のプロジェクト）からの相対パスで指定し直す |
 | 終了コード 2「UTF-8 として読めません」 | 利用者に文字コードを確認し、`iconv -f <元の文字コード> -t UTF-8` で変換してから渡す |
 | 終了コード 2「変換する文がありません」 | 空のファイルか、コメントだけのファイル。渡すファイルが合っているか確認する |
 | ERROR `INTERNAL` | 変換器の不具合。その文を手作業の対象として示し、文を添えて報告するよう利用者に伝える |
 | ERROR `TOKENIZE` | メッセージの位置の近くで、文字列リテラルの引用符が閉じているか確認する |
 | `invalid choice` | 方言名の綴りを直す。`--help` の末尾に一覧がある |
-| `PARSE` の ERROR が大量に出る | `--source` が実際の方言と違う可能性が高い。方言を確認する |
+| `PARSE` の ERROR が大量に出る | `--source` が実際の方言と違う可能性が高い。方言を確認する（1 文だけなら、キーワードの綴りの誤りも疑う） |
+| `UNPARSED` の ERROR（汎用 Target） | SQLGlot が文として読めない文（`ALTER SESSION`、`CREATE SYNONYM` など）。文面のまま出すと Target で確かめられないので変換しない。Target の同じ働きの文に書き直すか、移行の対象から外すかを利用者に尋ねる |
 | `DIVISION` の WARN が大量に出る | 表定義が無い。`CREATE TABLE` を入力に含めるか `--schema` を渡して再変換する |
 | 利用者定義の関数が `FUNC_PORTABILITY` になる | 仕様どおり。Target にも同じ関数を作るか確認する |
 | ScalarDB Target で型の WARN が多い | Source が oracle / postgres / mysql 以外だと型対応表の精度が落ちる。標準エラーの注意書きを伝える |
