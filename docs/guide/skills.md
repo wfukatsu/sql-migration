@@ -130,14 +130,27 @@ ln -s "$PWD/skills/migrate-flow" ~/.claude/skills/migrate-flow        # Claude C
 （事実の欄。lowering が足した文は除く。IF / ELSIF / CASE の分岐とループの中も、そこへ至る条件つきで拾う。
 読み書きする表は SQL そのものから出すので、ScalarDB の schema を渡さない解析でも入る）、動作・業務ルール・エラー時の振る舞い・確かめたいことは原文を読んで、
 原文の位置（`ファイル:行`）つきで書きます。処理の流れの図は、CASE の分岐（ELSE が無ければ `CASE_NOT_FOUND`）と、
-ループを抜ける `EXIT` / 先頭へ戻る `CONTINUE` も線で描きます。事実の欄は作り直しても文章に触れません。`check` は、未記入、古い事実、
-文章に出てこないエラーコードと表、routine の範囲の外を指す引用を問題として返します。
+ループを抜ける `EXIT` / 先頭へ戻る `CONTINUE` も線で描きます。ラベルつきの `EXIT outer` は名前のループを抜け、
+GOTO は GOTO の箱からラベルの箱への矢印で描きます（解析器が組み直した形ではなく、原文の飛び方）。
+発火する trigger は、表と事象に加えて `UPDATE OF <列>` で絞り（lowering が書く側に trigger を織り込むときと同じ規則）、
+`WHEN` 句は「発火の条件」として出します。入れ子の procedure / function は、宣言した routine の中のものとして書き
+（持ち上げで足した引数は出さない）、解析できなかった部分（package の routine と同じ名前の入れ子の手続きなど）は
+範囲とエラーコードを事実の欄の先頭に出します。AUTHID CURRENT_USER、SUBTYPE の NOT NULL、条件付きコンパイル（`$IF`）を
+仮定で解いたこと、型を解いた DDL（推し量った DDL なら、そう）も事実の欄に出ます。事実の欄は作り直しても文章に触れません。
+`check` は、未記入、古い事実、routine の節の 4 つの見出しの欠けと空、文章に（単語として）出てこないエラーコード・例外・書く表、
+routine の範囲や原文の外を指す引用、原文に無いファイルの引用を問題として返します（`--src` を渡すと、仕様の `.pks` の
+引用も原文の行数で確かめます）。
+
+`plsql.cli` は `.pks` `.spc`（仕様）と `.pkb` `.bdy` `.pck` `.plb` `.prc` `.fnc` `.trg` `.pls`、PL/SQL を作る `.sql` を読みます。
+object type（`.tps` `.tpb` `.typ`）と、知らない拡張子で `CREATE PACKAGE` などを含むファイルは読まず、標準エラーと
+`inventory.json` の `kpi.skippedFiles` に理由つきで出します（仕様書の索引にも出ます）。ディレクトリが無いときと、
+PL/SQL が 1 つも無いときは終了コード 2 です。解析できなかったファイル（終了コード 1）は仕様書の頁を作りません。
 書き上がった例は [`skills/plsql-spec/examples/create_order/`](../../skills/plsql-spec/examples/create_order/README.md) にあります。
 
 ```bash
 .venv/bin/python -m plsql.cli fixtures/plsql-external/create_order/src --out-dir out/plsql-spec/create_order/analysis --quiet
 .venv/bin/python skills/plsql-spec/scripts/spec_facts.py facts --analysis out/plsql-spec/create_order/analysis --out-dir out/plsql-spec/create_order/spec
-.venv/bin/python skills/plsql-spec/scripts/spec_facts.py check --analysis out/plsql-spec/create_order/analysis --out-dir out/plsql-spec/create_order/spec
+.venv/bin/python skills/plsql-spec/scripts/spec_facts.py check --analysis out/plsql-spec/create_order/analysis --out-dir out/plsql-spec/create_order/spec --src fixtures/plsql-external/create_order/src
 ln -s "$PWD/skills/plsql-spec" ~/.claude/skills/plsql-spec            # Claude Code から使う
 ```
 

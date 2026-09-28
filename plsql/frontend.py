@@ -162,7 +162,8 @@ def parse_file(path: str | Path) -> ParsedFile:
     return parse_text(text, path.name)
 
 
-SOURCE_SUFFIXES = {".pks", ".pkb", ".prc", ".fnc", ".trg", ".pls", ".sql"}
+# `.spc` / `.bdy` / `.pck` / `.plb` as well: the names Toad and PL/SQL Developer give them (report.BODY_SUFFIXES)
+SOURCE_SUFFIXES = {".pks", ".spc", ".pkb", ".bdy", ".pck", ".plb", ".prc", ".fnc", ".trg", ".pls", ".sql"}
 
 
 def parse_directory(root: str | Path, suffixes: set[str] | None = None) -> list[ParsedFile]:
