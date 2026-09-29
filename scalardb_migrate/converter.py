@@ -1059,6 +1059,7 @@ class StatementConverter:
             s.set("having", exp.Having(this=self._build_condition(s.args["having"].this, "HAVING", allow_agg=True)))
         # ORDER BY
         if s.args.get("order"):
+            self._order_by_aliases(s)
             for o in s.args["order"].expressions:
                 if o.args.get("nulls_first") is not None:
                     if re.search(r"NULLS\s+(FIRST|LAST)", self._source, re.I):
@@ -1082,11 +1083,69 @@ class StatementConverter:
             self.info("LIMIT", f"FETCH FIRST {count.sql()} ROWS ONLY rewritten to LIMIT {count.sql()}")
         elif isinstance(lim, exp.Limit) and not _is_literal(lim.expression):
             self.fail("LIMIT", "LIMIT must be a literal or bind marker")
+        self._check_limit(s)
         grouped = bool(s.args.get("group")) or any(_is_aggregate(p.this if isinstance(p, exp.Alias) else p)
                                                    for p in s.expressions)
         self._access_path(self._meta(from_.this), s.args["where"].this if s.args.get("where") else None,
                           s.args.get("order"), ctx, grouped)
         return s
+
+    def _check_limit(self, s: exp.Select) -> None:
+        """ScalarDB SQL reads `LIMIT 0` as "no limit": `SELECT ... LIMIT 0` returned every row where the source
+        returns none (measured on ScalarDB Cluster 3.19, #147). A count of 0 or less goes to a plan, whose H2 returns
+        no rows; a bind can be 0 at run time, which is said."""
+        lim = s.args.get("limit")
+        if not isinstance(lim, exp.Limit) or lim.expression is None:
+            return
+        count = _unparen(lim.expression)
+        if isinstance(count, (exp.Placeholder, exp.Parameter)):
+            self.warn("LIMIT", f"LIMIT {count.sql()}: ScalarDB SQL reads LIMIT 0 as no limit, so a bound 0 returns "
+                               f"every row where the source returns none. Skip the query in the application when "
+                               f"the value is 0 or less")
+            return
+        negative = isinstance(count, exp.Neg)
+        number = count.this if negative else count
+        if isinstance(number, exp.Literal) and not number.is_string:
+            try:
+                value = -float(number.name) if negative else float(number.name)
+            except ValueError:
+                return
+            if value <= 0:
+                self.fail("LIMIT", f"the source returns no rows here (a limit of {count.sql()}), but ScalarDB SQL reads "
+                                   f"LIMIT 0 as no limit and would return every row. Skip the query in the "
+                                   f"application")
+
+    def _order_by_aliases(self, s: exp.Select) -> None:
+        """An ORDER BY name is a select-list alias first in Oracle, PostgreSQL and MySQL; ScalarDB SQL reads it as a
+        table column (`SELECT name AS salary ... ORDER BY salary` sorted by salary) or refuses a column alias
+        (DB-SQL-10002). The alias is replaced with what it names -- a column, or an aggregate, which ScalarDB
+        accepts in ORDER BY (#147)."""
+        aliases = {}
+        for p in s.expressions:
+            if isinstance(p, exp.Alias) and p.alias:
+                aliases.setdefault(p.alias.lower(), p.this)
+        if not aliases:
+            return
+        for o in s.args["order"].expressions:
+            target = o.this
+            if isinstance(target, exp.Column) and not target.table:
+                name = target.name
+            elif isinstance(target, exp.Identifier):
+                name = target.name
+            else:
+                continue
+            inner = aliases.get(name.lower())
+            if inner is None or not (isinstance(inner, exp.Column) or _is_aggregate(inner)):
+                continue
+            if isinstance(inner, exp.Column) and inner.name.lower() == name.lower():
+                continue
+            also_column = self._column_type_by_name(name) is not None
+            if isinstance(inner, exp.Column) or also_column:
+                why = (f"{name} is also a column, and ScalarDB SQL would sort by the column" if also_column
+                       else "ScalarDB SQL does not resolve select-list aliases of columns in ORDER BY")
+                self.info("ORDER", f"ORDER BY {name} names the select-list alias of {inner.sql(dialect=self.dialect)}; "
+                                   f"written as ORDER BY {inner.sql(dialect=self.dialect)} ({why})")
+                o.set("this", inner.copy())
 
     def _check_projection(self, p: exp.Expression) -> None:
         inner = p.this if isinstance(p, exp.Alias) else p
@@ -1333,6 +1392,10 @@ class StatementConverter:
                     self.fail("ROWNUM", f"unsupported ROWNUM predicate '{u.sql()}'")
                 if s.args.get("limit"):
                     self.fail("ROWNUM", "both ROWNUM and LIMIT/FETCH present")
+                if n <= 0:
+                    # LIMIT 0 is "no limit" in ScalarDB SQL: the rewrite would return every row (#147)
+                    self.fail("LIMIT", f"'{u.sql()}' returns no rows in the source, but LIMIT {n} is no limit in "
+                                       f"ScalarDB SQL and would return every row. Skip the query in the application")
                 s.set("limit", exp.Limit(expression=exp.Literal.number(n)))
                 self.warn("ROWNUM", f"'{u.sql()}' rewritten to LIMIT {n}. Note: Oracle applies ROWNUM before ORDER BY, "
                                     f"ScalarDB LIMIT applies after ORDER BY")
