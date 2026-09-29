@@ -136,7 +136,11 @@ def _decisions(limits: dict, path: str = "") -> list[tuple[str, str, str]]:
     """limits.yaml を (決定の種類, 対象, 値・理由) の並びにする。対象は routine の id（`dbLinks` は link の名前）。"""
     out = []
     for key, value in (limits or {}).items():
-        if isinstance(value, dict) and path != "dbLinks":
+        if isinstance(value, dict) and path == "dynamicSql":
+            # #165: {holes: {hole: [values]}, reason}: one row per routine, as a person reads it
+            holes = "; ".join(f"{h}: {'、'.join(map(str, v or []))}" for h, v in (value.get("holes") or {}).items())
+            out.append((path, str(key), f"{holes} / reason: {' '.join(str(value.get('reason') or '').split())}"))
+        elif isinstance(value, dict) and path != "dbLinks":
             out += _decisions(value, f"{path}.{key}" if path else str(key))
         elif isinstance(value, dict):
             out.append((path, str(key), " / ".join(f"{k}: {' '.join(str(v).split())}" for k, v in value.items())))

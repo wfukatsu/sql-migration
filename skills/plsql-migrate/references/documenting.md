@@ -52,7 +52,7 @@ SKILL.md の Step 7 で、`migration_doc.py facts` が作った文書の `（未
 | `scanRows` | 先に全部読む routine に行数の上限が付いた。超えると例外で止まる（Oracle では止まらなかった） |
 | `TRIGGER_APPLIED` / `TRIGGER_CALL` | trigger は、生成コードが書く経路でだけ動く。PL/SQL の外からの書き込みには掛からない（照合で追う） |
 | `TRIGGER_INLINED` | 採番 trigger を INSERT の値として織り込んだ。キーを渡さない INSERT は、生成コードの外の経路では採番されない |
-| `dynamicTables` | 動的 SQL の表名は一覧にあるものだけ。それ以外は実行時に拒否する |
+| `dynamicTables` / `dynamicSql` | 動的 SQL の表名・列名・並べ替えの向きなど、連結する値は一覧にあるものだけ。それ以外は実行時に拒否する |
 | `DYN_STATIC` / `DYN_INLINED` | 文字列が定数の動的 SQL を静的な文として下ろした（`RETURNING INTO` 付きの DML、`OPEN FOR '定数'`、動的 PL/SQL ブロック）。`EXECUTE IMMEDIATE` の実行者の権限で走っていたことは `DYN_PRIVILEGE` に残る |
 | `OBJECT_BUILT` / `TABLE_COLLECTION` / `PIPELINED` | スキーマのオブジェクト型は Java の record。コンストラクタを選ぶ SELECT は列を読んでアプリで組み、`TABLE(コレクション)` を 1 つだけ読む問合せは List を回して絞り・並べ（#135）、PIPELINED 関数は List をまとめて返す（行が出るそばから読むのではない） |
 | `DBMS_SQL_STATIC` | 定数の問合せを PARSE する DBMS_SQL の一連を、静的な cursor FOR ループにした |

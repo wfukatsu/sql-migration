@@ -724,7 +724,8 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | 畳んだ文が trigger・制約のある表へ書く | 文はそのまま生成し、trigger の呼び出しも制約の検査も入れない | trigger は TRG-002（REDESIGN）、制約は CONS-001 / CONS-002（REVIEW） | 静的な文に書き直せば、trigger の呼び出しと検査が入ります（#148） |
 | 本体で定数を代入・連結した変数（`v_sql := '...'; v_sql := v_sql \|\| '...'`） | とりうる文（8 通りまで）を全部生成し、実行時に条件で選ぶ | 同上 | 宣言部の初期値で組んだ文字列はたどりません（生成で確認）。条件の変数を途中で書き換えると断ります |
 | 表名などの識別子を連結（`'... FROM ' \|\| p_tab`） | 決定が無ければ断る。`dynamicTables` に表名を書けば表ごとの文を生成し、`UPPER(p_tab)` で選ぶ | DYN-001（REDESIGN） | 書いていない表名は `IllegalArgumentException`（生成で確認）。`plsql.cli --limits` の判定も表ごとの文を見るので、展開できた文に DYN-002 は付きません |
-| 列名・ORDER BY の式や方向・WHERE の断片・PL/SQL ブロックの routine 名を連結（`' WHERE ' \|\| p_col \|\| ' = :1'`、`' ORDER BY ' \|\| p_col \|\| ' ' \|\| p_dir`、`'BEGIN ' \|\| l_fn \|\| '(...); END;'`） | 決定が無ければ断る。連結する項が 1 つなら、`dynamicTables` に受け付ける名前（列名でもよい）を書けば名前ごとの文を生成する | DYN-001（REDESIGN、設計書 §6.8。#157 までは DYN-002） | 項が 2 つ以上（列と方向など）や WHERE の断片そのものは `dynamicTables` では書けません。allowlist 型の query builder に作り直します |
+| 列名・ORDER BY の式や方向・WHERE の断片・PL/SQL ブロックの routine 名を連結（`' WHERE ' \|\| p_col \|\| ' = :1'`、`' ORDER BY ' \|\| p_col \|\| ' ' \|\| p_dir`、`'BEGIN ' \|\| l_fn \|\| '(...); END;'`） | 決定が無ければ断る。連結する項が 1 つなら、`dynamicTables` に受け付ける名前（列名でもよい）を書けば名前ごとの文を生成する | DYN-001（REDESIGN、設計書 §6.8。#157 までは DYN-002） | 項が 2 つ以上（列と方向など）は下の行の `dynamicSql` で決めます。WHERE の断片そのものは列挙できないので、allowlist 型の query builder に作り直します |
+| 連結する項（穴）が 2 つ以上（`' ORDER BY ' \|\| p_sort_col \|\| ' ' \|\| p_sort_dir`。変数に組んでから `EXECUTE IMMEDIATE v_sql` する形も同じ） | `dynamicSql` に穴ごとの一覧を書けば、値の組み合わせごとに静的な文を生成し、実行時に値で選ぶ。1 文 64 通りまで（`MAX_HOLE_COMBINATIONS`） | DYN-001 は REDESIGN のまま。すべての穴に一覧があって展開できたときだけ決定済み。一覧の無い穴があれば未決定のまま、どの穴かを言う（診断 `DYN_HOLES_UNDECIDED`、`redesign.openReasons`） | 識別子・キーワードの位置の穴（列名、ASC / DESC）は大文字小文字を区別せずに、値の位置（引用符の中など）の穴は区別して比べます。一覧に無い値は `IllegalArgumentException`（生成したコードを H2 で動かして確認、#165）。連結したあとで穴の変数を書き換える文は展開しません。`dynamicTables` だけでは、穴が 2 つの文は決定済みになりません（#157 で見つかった食い違い） |
 | 値を連結（`'... = ''' \|\| p \|\| ''''`、`'... = ' \|\| p_id`、`IN (' \|\| p_list \|\| ')'`） | 断る | DYN-002（REVIEW） | 連結した項が文のどこに入るか（値か識別子か）は、項ごとに前後の SQL から判定します（`plsql/dynamic.py` の `holes`） |
 | 動的な DDL（`'CREATE TABLE ...'` など） | 断る。`ddl.omit` に書けば省く | DYN-004（REDESIGN）。`ddl.omit` に書いた routine は当たりません | スキーマは Schema Loader が持ちます。Oracle の DDL は前後で COMMIT します |
 | 動的な `'TRUNCATE TABLE t'`（STORAGE の指定だけは付いてよい） | 全行の DELETE（`DELETE FROM t`）にする | 診断 `TRUNCATE_AS_DELETE`（INFO）。外部キーが指す表なら CONS-002 | Oracle の TRUNCATE は前後で COMMIT して取り消せませんが、移行先の DELETE はトランザクションの一部で、失敗すれば一緒に戻ります。DELETE の trigger は Oracle と同じく掛けません。Oracle は外部キーが指す表の TRUNCATE を ORA-02266 で断ります（#154） |
@@ -815,7 +816,8 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `scanRows.default` / `routines` / `notLimited` | cursor の行を読む所に上限の検査を入れる | CUR-002 → CUR-OPT-002、BULK-003 → BULK-OPT-003 | `notLimited` でも既定値の検査は「暫定の網」として残ります（生成で確認） |
 | `rowLocks.optimistic` | 行ロックを落とす。列を読む UPDATE・RETURNING・MERGE を読んでから書く形に割る | SQL-001 / SEM-006 が外れ、SEM-011 の注記。LOCK-* は REDESIGN のまま | 前提は SERIALIZABLE で動かすこと（CALL-7、#157） |
 | `transactions.perIteration` / `separate` / `callerBoundary` | トランザクションの節を参照 | TX-* は REDESIGN のまま（決定済み） | 1 つの routine に 1 つだけ書けます |
-| `dynamicTables` | 識別子を 1 つ連結する動的 SQL を、書いた名前（表名・列名）ごとの文にする | DYN-001 は REDESIGN のまま。表ごとの文を判定するので、展開できた文の DYN-002 は外れる（`plsql.cli --limits` も同じ） | |
+| `dynamicTables` | 識別子を 1 つ連結する動的 SQL を、書いた名前（表名・列名）ごとの文にする | DYN-001 は REDESIGN のまま。表ごとの文を判定するので、展開できた文の DYN-002 は外れる（`plsql.cli --limits` も同じ） | 穴が 2 つ以上の文には効かない（`dynamicSql` を使う） |
+| `dynamicSql.<routine>.holes` / `reason` | 連結する箇所（穴）ごとに書いた値の、組み合わせごとの文にする。穴の名前は連結している変数（引数か局所変数。`DBMS_ASSERT` で包んでいれば中の変数） | DYN-001 は REDESIGN のまま。routine の DYN-001 の文がすべて展開できたときだけ決定済み。展開できた文の DYN-002 は外れる | `reason` は必須。1 文 64 通りまで。一覧の無い穴・上限を超える組み合わせは、未決定のまま理由を言う（#165） |
 | `ddl.omit` | 動的な DDL を省く | | |
 | `packageState.carried` | package 変数を引数と結果で運ぶ | STATE-001 は REDESIGN のまま | |
 | `constraints.enforce` | NOT NULL / CHECK / 外部キーの検査を書く前に入れる。親をキーで消す DELETE には子を数える検査を入れる | CONS-001 が外れる。UNIQUE と、キーで名指さない親の DELETE、`ON DELETE CASCADE` / `SET NULL` は検査せず CONS-002 | |
@@ -837,7 +839,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | STATE-001 | REDESIGN | package 変数を（呼び出し経由を含めて）読み書きする | `packageState.carried` |
 | STATE-002 | REDESIGN | package 本体の初期化部 | 置き場所を人が決める（生成しない） |
 | AUTHID-001 | REDESIGN | routine の `AUTHID CURRENT_USER`（package の仕様に書いたものは本体の routine すべて） | 認証・認可を別に設計する |
-| DYN-001 | REDESIGN | 識別子や SQL の構文を実行時に組む動的 SQL（表名・列名・ORDER BY の式と方向・WHERE の断片・PL/SQL ブロックの routine 名。値の位置だけなら DYN-002） | `dynamicTables`（連結する項が 1 つのとき）。ほかは query builder に作り直す |
+| DYN-001 | REDESIGN | 識別子や SQL の構文を実行時に組む動的 SQL（表名・列名・ORDER BY の式と方向・WHERE の断片・PL/SQL ブロックの routine 名。値の位置だけなら DYN-002） | `dynamicTables`（連結する項が 1 つのとき）、`dynamicSql`（穴ごとの一覧。すべての穴に要る）。WHERE の断片などは query builder に作り直す |
 | DYN-003 | REDESIGN | `DBMS_SQL`（定数の問合せに書き換えられなかったもの） | 実行ログから文を洗い出す |
 | DYN-004 | REDESIGN | 畳んだ動的 SQL が DDL（`CREATE`、`DROP`、`ALTER` など。表だけの `TRUNCATE TABLE` は全行の DELETE にするので当たらない） | `ddl.omit`（省いてよい DDL のとき） |
 | LOWER-002 | REDESIGN | ブロックとループに組み直せなかった `GOTO`（範囲が交差して入れ子にできない、Oracle が拒む飛び先） | 制御構造を組み直す |

@@ -25,7 +25,7 @@ Oracle の SQL / PL/SQL を ScalarDB へ移すとき、**生成器が決めら�
 | 6 | trigger の掛け方 | `TRG-001` `TRG-002` | 書く側が呼ぶ（生成コードの経路だけ）/ 手で Service へ移す / 捨てる | 書く側が呼び、網羅は照合で追う | trigger-patterns、TriggerChecks |
 | 7 | package 変数（セッション状態）と初期化部 | `STATE-001` `STATE-002`（`PACKAGE_INIT`） | 呼び出し側が運ぶ / トランザクション context / Singleton の field。初期化部は起動時の処理として手で移す | 呼び出し側が運ぶ。初期化部は生成しない（#108） | `packageState.carried` |
 | 8 | CHECK / FOREIGN KEY の代わり | `CONSTRAINT_UNDECIDED` | 表ごとに guard を生成 / 全表で生成 / アプリの検証に任せる | 表ごとに決めて guard | `constraints.enforce` |
-| 9 | 動的 SQL の表名・列名・並べ替えと DDL | `DYN-001`、DDL の拒否 | 受け付ける名前を列挙 / query builder に作り直す / 断る。routine の中の DDL は省く / 断る | 列挙できるなら列挙。データに残らない DDL は省く | `dynamicTables` / `ddl.omit` |
+| 9 | 動的 SQL の表名・列名・並べ替えと DDL | `DYN-001`、DDL の拒否 | 受け付ける名前を列挙 / query builder に作り直す / 断る。routine の中の DDL は省く / 断る | 列挙できるなら列挙。データに残らない DDL は省く | `dynamicTables` / `dynamicSql` / `ddl.omit` |
 | 10 | DB link 越しの操作 | `LINK-001` | 別 namespace として同じトランザクション / 分散トランザクションの設計 | 同じクラスタに載るなら namespace | `dbLinks` |
 | 11 | `USER` / `SYSTIMESTAMP` / `SYSDATE` | `NOW` `AuditContext` | 呼び出し側が渡す / 実行環境から黙って取る | 呼び出し側が渡す | 呼び出し側の設計書 |
 | 12 | `''` と NULL | `EMPTY_STRING` | Oracle と同じく同一視 / 移行後は区別 | 同一視のまま | 設計書 |
@@ -173,7 +173,8 @@ view への INSTEAD OF trigger は、本体は単体で生成できる（:NEW / 
 
 | 選択肢 | Pros | Cons |
 |---|---|---|
-| 受け付ける表名を列挙（`dynamicTables`） | 有限の変種に畳めて静的な SQL と同じ経路に乗る。それ以外は実行時に拒否 | 列挙できない（表名が入力で決まる）なら使えない |
+| 受け付ける表名を列挙（`dynamicTables`） | 有限の変種に畳めて静的な SQL と同じ経路に乗る。それ以外は実行時に拒否 | 列挙できない（表名が入力で決まる）なら使えない。連結する箇所が 1 つの文だけ |
+| 連結する箇所ごとに列挙（`dynamicSql`、#165） | ORDER BY の列と向きのように箇所が 2 つ以上でも、組み合わせごとの静的な文に畳める | すべての箇所に一覧が要る。組み合わせは 1 文 64 通りまで。理由（`reason`）が必須 |
 | 断る（REDESIGN） | 推測しない | 動かない |
 
 文字列が定数の動的 SQL は決めなくても静的な文として下ろす（#52）。`RETURNING INTO` 付きの DML は静的な

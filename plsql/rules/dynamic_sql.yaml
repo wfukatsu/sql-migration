@@ -8,7 +8,8 @@ rules:
   # ごとに、組み上がる文の中の位置を plsql/dynamic.py の holes が判定する。表・列・ORDER BY の式と方向・WHERE の断片・
   # PL/SQL ブロックの routine 名に穴があれば当たる。値の位置（引用符の中、比較の右辺、IN の並び、VALUES など）だけなら
   # 当たらず、DYN-002 のまま。以前は表の位置（FROM / INTO / TABLE / JOIN / UPDATE の直後）だけを見ていた。
-  # limits.yaml の dynamicTables（穴が 1 つの文の、受け付ける名前の一覧）があれば、REDESIGN のまま「決定済み」になる
+  # limits.yaml の dynamicTables（穴が 1 つの文の、受け付ける名前の一覧）か dynamicSql（穴ごとの一覧。#165）で、routine の
+  # DYN-001 の文がすべて展開できれば、REDESIGN のまま「決定済み」になる。展開できない文があれば未決定のまま
   - id: DYN-001
     match: {statementKind: DynamicSql, constantSql: false, identifierInterpolation: true}
     decision: REDESIGN
@@ -18,6 +19,7 @@ rules:
       - allowlist 型の query builder にする（受け付ける表名・列名・並べ替えを列挙し、それ以外は拒否する）
       - 有限 variant なら variant ごとに静的な query にする
       - 穴が 1 つなら、受け付ける名前を limits.yaml の dynamicTables に書くと、名前ごとの静的な文を生成する
+      - 穴が 2 つ以上（ORDER BY の列と方向など）なら、limits.yaml の dynamicSql に穴ごとの一覧を書くと、組み合わせごとの静的な文を生成する（1 文 64 通りまで）
     requiredTests:
       - dynamic_sql_variants
 
