@@ -177,7 +177,8 @@ untranslated statements 1  SQL ScalarDB refuses 1  planned 0
   それに証拠（実 DB での比較）の確信度を掛けた最終の判定（同じく `verdict`）。生成器は証拠を読まないので、
   **`verdict:` の AUTO は必ず 0** で、ルールでは AUTO の routine は `verdict:` では REVIEW に数えられる（理由は
   `confidence factor testEvidence is 0`）。これは失敗ではなく「実 DB でまだ比べていない」という意味である
-- 3 行目は、変換できなかった文・ScalarDB が受け付けない SQL・実行計画（取得して H2 で実行）に回した文の数
+- 3 行目は、変換できなかった文・ScalarDB が受け付けない SQL・実行計画（取得して H2 で実行）に回した文の数。ScalarDB のスキーマ無しで回すと、3 行目は `SQL not checked against ScalarDB (no --scalardb-schema)` になる
+  （SQL を照らしても変換してもいない。「断った文 0」ではない）
 
 | 終了コード・出力 | 意味 | 次の手 |
 |---|---|---|
