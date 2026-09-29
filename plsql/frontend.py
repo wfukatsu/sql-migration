@@ -23,6 +23,24 @@ strategy only when SLL reports trouble. The fallback is what keeps the result co
 LL accepts, so its failure is a signal to retry, never a diagnosis. On this corpus 3 of 48 units need it, and the
 two stages together are about 5x faster than parsing everything with LL.
 
+## Two decisions are answered without looking ahead to the closing parenthesis
+
+`NVL(a, b)` matches two alternatives of `unary_expression_core` token for token: `standard_function` (the grammar
+names NVL, SUBSTR, GREATEST, ...) and `atom` (a call of anything named NVL). ANTLR cannot tell them apart before
+the closing parenthesis, so it looks ahead that far -- and inside, each nested built-in forks the same way again.
+The first parse of a shape doubled to tripled with every level: `NVL(SUBSTR(TRIM(UPPER(...))))` took 13 s, NVL six
+deep 65 s, and the public Logger package about 50 s (#152, review H2). A second parse of the same shape is instant
+(the DFA cache), but that cache does not outlive the process. The `function_argument*` loop of
+`general_element_part` (`upper(x)`: is the `(` another argument list?) costs seconds the same way on first sight.
+
+So the fast stages take `standard_function` for `<built-in name> (`, and enter the loop at `(`, without the
+lookahead (`_Shortcuts`). Each is the alternative ANTLR itself picks whenever it fits: an ambiguity goes to the
+lower-numbered alternative, and a loop is greedy. A parse that succeeds this way is therefore the parse the plain
+prediction gives. Some names take a narrower form there than a call does (`CHR` wants `USING NCHAR_CS`,
+`COALESCE` a column): when a parse fails inside a shortcut, that name (or that `(`) is predicted the plain way from
+then on in the unit, and the stage is run again. A failure no shortcut explains falls through to the next stage,
+ending with the plain LL parse that has always decided (and reported) what does not parse.
+
 ## Warm the process, do not fork it
 
 Parsing the whole corpus costs ~14 s in a fresh process and ~0.2 s on the second pass in the same one: ANTLR
@@ -38,7 +56,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from antlr4 import CommonTokenStream, InputStream, ParserRuleContext
+from antlr4.atn.ATNState import StarLoopEntryState
+from antlr4.atn.ParserATNSimulator import ParserATNSimulator
 from antlr4.atn.PredictionMode import PredictionMode
+from antlr4.atn.Transition import RuleTransition
 from antlr4.error.ErrorListener import ErrorListener
 from antlr4.error.Errors import ParseCancellationException
 from antlr4.error.ErrorStrategy import BailErrorStrategy
@@ -95,7 +116,118 @@ class _Collector(ErrorListener):
             SourceRange(where.file, where.line, where.line, where.column, where.column + 1)))
 
 
-def _new_parser(text: str, listener: ErrorListener | None) -> PlSqlParser:
+class _Shortcuts(ParserATNSimulator):
+    """Two decisions answered without the lookahead, where the plain prediction explodes (see the module doc).
+
+    * `unary_expression_core` at `<built-in name> (`: `standard_function`. Only for the names `standard_function`
+      spells out itself (not the ones it reaches through `regular_id`), and only when no lower alternative (CASE,
+      EXISTS, ...) can start with the same token.
+    * the `function_argument*` loop of `general_element_part` at `(`: another argument list.
+
+    Each is the alternative the plain prediction picks whenever it is viable (the lowest-numbered one, and a loop
+    is greedy). `excluded` holds what a failed run blamed on a shortcut -- a name, or the position of a `(` --
+    which is predicted the plain way from then on.
+    """
+
+    _ready = False
+    _function_decision = _argument_decision = -1
+    _function_alternative = _argument_alternative = 0
+    _names: frozenset[int] = frozenset()
+
+    @classmethod
+    def prepare(cls) -> None:
+        if cls._ready:
+            return
+        atn, rules = PlSqlParser.atn, PlSqlParser
+        state = next(s for s in atn.decisionToState if s.ruleIndex == rules.RULE_unary_expression_core)
+        entered = [_rules_entered(t.target) for t in state.transitions]
+        alternative = next(i for i, r in enumerate(entered) if rules.RULE_standard_function in r)
+        lower: set[int] = set()
+        for transition in state.transitions[:alternative]:
+            lower |= set(atn.nextTokens(transition.target))
+        functions = {rules.RULE_standard_function, rules.RULE_string_function, rules.RULE_numeric_function_wrapper,
+                     rules.RULE_numeric_function, rules.RULE_json_function, rules.RULE_other_function}
+        cls._names = frozenset(_leading_terminals(atn.ruleToStartState[rules.RULE_standard_function], functions)
+                               - lower)
+        cls._function_alternative = alternative + 1   # ANTLR numbers alternatives from 1
+        cls._function_decision = state.decision
+        loop = next(s for s in atn.decisionToState
+                    if s.ruleIndex == rules.RULE_general_element_part and isinstance(s, StarLoopEntryState))
+        assert rules.RULE_function_argument in _rules_entered(loop.transitions[0].target) and not loop.nonGreedy
+        cls._argument_decision, cls._argument_alternative = loop.decision, 1   # 1 enters the loop, 2 leaves it
+        cls._ready = True
+
+    def __init__(self, *args, excluded: "set[tuple[str, int]] | None" = None) -> None:
+        super().__init__(*args)
+        self.excluded = excluded if excluded is not None else set()
+        self.names: dict[int, int] = {}   # token index of each name taken as standard_function -> its token type
+        self.arguments: set[int] = set()  # token index of each `(` taken as an argument list
+
+    def adaptivePredict(self, input, decision, outerContext):  # noqa: N802 - ANTLR's name
+        if decision == self._function_decision and input.LA(2) == PlSqlLexer.LEFT_PAREN:
+            name = input.LA(1)
+            if name in self._names and ("name", name) not in self.excluded:
+                self.names[input.index] = name
+                return self._function_alternative
+        elif decision == self._argument_decision and input.LA(1) == PlSqlLexer.LEFT_PAREN \
+                and ("argument", input.index) not in self.excluded:
+            self.arguments.add(input.index)
+            return self._argument_alternative
+        return super().adaptivePredict(input, decision, outerContext)
+
+    def culprit(self, error: BaseException) -> "tuple[str, int] | None":
+        """The innermost shortcut the failure happened inside, if any."""
+        # BailErrorStrategy raises ParseCancellationException(the RecognitionException)
+        cause = error.args[0] if isinstance(error, ParseCancellationException) and error.args else error
+        context = getattr(cause, "ctx", None)
+        while context is not None:
+            start = context.start.tokenIndex if context.start is not None else None
+            if isinstance(context, PlSqlParser.Unary_expression_coreContext) and start in self.names:
+                return ("name", self.names[start])
+            if isinstance(context, PlSqlParser.Function_argumentContext) and start in self.arguments:
+                return ("argument", start)
+            context = context.parentCtx
+        return None
+
+
+def _rules_entered(state) -> set[int]:
+    """The rules an alternative enters before its first token."""
+    out, seen, stack = set(), set(), [state]
+    while stack:
+        current = stack.pop()
+        if current.stateNumber in seen:
+            continue
+        seen.add(current.stateNumber)
+        for transition in current.transitions:
+            if isinstance(transition, RuleTransition):
+                out.add(transition.target.ruleIndex)
+            elif transition.isEpsilon:
+                stack.append(transition.target)
+    return out
+
+
+def _leading_terminals(state, rules: set[int]) -> set[int]:
+    """The tokens written literally at the start of an alternative of `rules` (entered only through `rules`)."""
+    out, seen, stack = set(), set(), [state]
+    while stack:
+        current = stack.pop()
+        if current.stateNumber in seen:
+            continue
+        seen.add(current.stateNumber)
+        for transition in current.transitions:
+            if isinstance(transition, RuleTransition):
+                if transition.target.ruleIndex in rules:
+                    stack.append(transition.target)
+            elif transition.isEpsilon:
+                stack.append(transition.target)
+            elif transition.label is not None:
+                out |= set(transition.label)
+    return out
+
+
+def _new_parser(text: str, listener: ErrorListener | None,
+                shortcuts: "set[tuple[str, int]] | None" = None) -> PlSqlParser:
+    """`shortcuts`: None for the plain prediction, or what not to take without the lookahead (`_Shortcuts`)."""
     lexer = PlSqlLexer(InputStream(text))
     lexer.removeErrorListeners()
     if listener is not None:
@@ -104,21 +236,48 @@ def _new_parser(text: str, listener: ErrorListener | None) -> PlSqlParser:
     parser.removeErrorListeners()
     if listener is not None:
         parser.addErrorListener(listener)
+    if shortcuts is not None:
+        _Shortcuts.prepare()
+        parser._interp = _Shortcuts(parser, parser.atn, parser.decisionsToDFA, parser.sharedContextCache,
+                                    excluded=shortcuts)
     return parser
+
+
+# a run that keeps failing inside shortcuts is given up to the next stage: each retry parses the unit again
+_RETRIES = 8
+
+
+def _bail(unit: Unit, mode: int, excluded: "set[tuple[str, int]]"):
+    """A fast stage: no listeners (its errors are not diagnoses), bail on the first problem, None when it fails.
+
+    A failure inside a shortcut adds it to `excluded` and runs again."""
+    for _ in range(_RETRIES + 1):
+        parser = _new_parser(unit.text, None, shortcuts=excluded)
+        parser._interp.predictionMode = mode
+        parser._errHandler = BailErrorStrategy()
+        try:
+            return parser.sql_script()
+        except (ParseCancellationException, RecursionError, Exception) as error:  # noqa: BLE001 - next stage decides
+            blamed = parser._interp.culprit(error)
+            if blamed is None or blamed in excluded:
+                return None
+            excluded.add(blamed)
+    return None
 
 
 def parse_unit(unit: Unit) -> ParsedUnit:
     """Parse one unit. Never raises: a failure comes back as an ERROR issue."""
-    # stage 1: SLL, bail on the first problem, no listeners (its errors are not diagnoses)
-    parser = _new_parser(unit.text, None)
-    parser._interp.predictionMode = PredictionMode.SLL
-    parser._errHandler = BailErrorStrategy()
-    try:
-        return ParsedUnit(unit=unit, tree=parser.sql_script())
-    except (ParseCancellationException, RecursionError, Exception):  # noqa: BLE001 - stage 2 decides
-        pass
+    excluded: set[tuple[str, int]] = set()   # shortcuts this unit does not take (`_Shortcuts`)
+    # stage 1: SLL
+    tree = _bail(unit, PredictionMode.SLL, excluded)
+    if tree is not None:
+        return ParsedUnit(unit=unit, tree=tree)
+    # stage 2: the full strategy, still bailing: a unit SLL cannot take, without the plain lookahead of stage 3
+    tree = _bail(unit, PredictionMode.LL, excluded)
+    if tree is not None:
+        return ParsedUnit(unit=unit, tree=tree, used_fallback=True)
 
-    # stage 2: the full strategy, collecting diagnostics
+    # stage 3: the full strategy with the plain prediction, collecting diagnostics
     collector = _Collector(unit)
     parser = _new_parser(unit.text, collector)
     try:
