@@ -104,22 +104,24 @@ snapshot ファイルから読みます。誰も取っていない値は「未�
 
 ## クイックスタート
 
+入力は、リポジトリに入れてある小さな題材 [docs/quickstart/](docs/quickstart/README.md)（図書の貸出。合成の SQL と PL/SQL の package 1 つ）です。
+公開の GitHub の版でも、そのまま動きます。自分の SQL で試すときは、パスを差し替えてください。
+
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt          # sqlglot / pytest / duckdb
+python3 -m venv .venv                               # Python 3.10 以上
+.venv/bin/pip install -r requirements.txt
 
 # SQL を変換する（DB 不要）
-.venv/bin/python -m scalardb_migrate.cli samples/oracle.sql --source oracle --out-dir out --plan-dir out/plans
+.venv/bin/python -m scalardb_migrate.cli docs/quickstart/library.sql --source oracle --out-dir out --plan-dir out/plans
 
 # PL/SQL を解析して判定を見る（DB 不要）
-.venv/bin/python -m plsql.cli fixtures/plsql-external/create_order/src --out-dir out/plsql-first
-
-# テスト
-.venv/bin/python -m pytest -q
+.venv/bin/python -m plsql.cli docs/quickstart/plsql/src --scalardb-schema docs/quickstart/plsql/scalardb-schema.json \
+    --out-dir out/plsql-first
 ```
 
-出力の読み方、実行計画の確認（Java 17）、Java のテストは [はじめに](docs/guide/getting-started.md)、実 DB での突き合わせ（Docker と ScalarDB Cluster の
-トライアルライセンス）は [検証環境](docs/guide/verification.md) にあります。
+出力の読み方、実行計画の確認（Java 17）、移行の前の調査の画面は [はじめに](docs/guide/getting-started.md)、実 DB での突き合わせ（Docker と ScalarDB Cluster の
+トライアルライセンス）は [検証環境](docs/guide/verification.md) にあります。テスト（`pytest`、`gradlew test`）と実 DB のハーネスは、
+開発側のリポジトリにだけあります（下の「リポジトリ構成」）。
 
 ---
 
@@ -209,7 +211,7 @@ samples/                   変換の入力例。tutorial/ はチュートリア�
                            **非公開**: GitLab のリポジトリにだけ置く
 spikes/                    残りの処理を H2 / SQLite / DuckDB で実行する初期の検証
 tests/                     変換ツールとスキルのテスト
-docs/                      文書。入口は docs/README.md（guide/ 使い方、design/ 設計、plsql-migration/ 人が決めること、
+docs/                      文書。入口は docs/README.md（guide/ 使い方、quickstart/ クイックスタートの入力（合成）、design/ 設計、plsql-migration/ 人が決めること、
                            examples/ 移行例、reports/ 検証レポート、slides/ 説明資料の生成元、diagrams/ draw.io の図（SQL 変換と PL/SQL 変換の構成））
 ```
 

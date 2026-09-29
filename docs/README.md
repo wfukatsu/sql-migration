@@ -5,6 +5,7 @@
 ```text
 docs/
   guide/             使い方（まずここ）
+  quickstart/        はじめに・クイックスタートの入力（図書の貸出。合成の SQL と PL/SQL）
   design/            仕組みと設計、決定の記録
   plsql-migration/   PL/SQL の移行で人が決めること（パターン別）
   examples/          個別の SQL をどう移したかの例
