@@ -1441,9 +1441,11 @@ public final class Plsql {
       java.util.List<Object> list = (java.util.List<Object>) raw;
       int i = num(at).intValueExact();
       if (i < 1) throw new SubscriptOutsideLimit();
-      // an INDEX BY PLS_INTEGER table takes any key: the List grows to it, the skipped slots being gaps. (A nested
-      // table would raise SUBSCRIPT_BEYOND_COUNT here; both are Lists, so the lenient rule serves both)
-      while (list.size() < i) list.add(GAP);
+      // only a nested table or a VARRAY is a List: an INDEX BY table is a Map since #93. Past COUNT is
+      // SUBSCRIPT_BEYOND_COUNT, as in Oracle (`nt(4) := x` with COUNT 3; EXTEND first). It used to fill the gap
+      // and grow, silently -- `set(list, 100_000_000, x)` built a List of a hundred million slots (#149).
+      // A deleted element inside COUNT takes the value again, as Oracle's does
+      if (i > list.size()) throw new SubscriptBeyondCount();
       list.set(i - 1, value);
       return;
     }
