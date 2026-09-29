@@ -1,0 +1,9 @@
+# What the tools need to run: the SQL converter (scalardb_migrate/, skills/sql-transpile), the PL/SQL tools
+# (plsql/) and the skills' scripts. bin/python installs exactly the lock compiled from this file, requirements.txt.
+# After changing a line here, compile the locks again (the command is at the top of each of them):
+#   uv pip compile requirements.in -o requirements.txt --universal --python-version 3.10 --generate-hashes
+# and the same for requirements-dev.in and requirements-difftest.in, which include this file.
+sqlglot==30.18.0
+antlr4-python3-runtime==4.13.2
+PyYAML==6.0.3
+jsonschema==4.26.0

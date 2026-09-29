@@ -8,6 +8,10 @@
 # In a checkout that has .venv/ (the README's setup), that interpreter is used as is. Otherwise a virtualenv is
 # created once, outside the plugin cache (the cache is replaced on every plugin update), and rebuilt when
 # requirements.txt changes. PYTHONPATH carries the repository root so `-m plsql.*` resolves from anywhere.
+#
+# requirements.txt holds only what the tools need to run (no pytest, hypothesis or duckdb), every package
+# transitive ones included pinned with hashes (compiled from requirements.in). pip checks each download against
+# them and takes wheels only, so nothing from PyPI runs a build script on the user's machine (#152).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -27,8 +31,14 @@ if [ ! -x "$VENV/bin/python" ] || [ "$(cat "$STAMP" 2>/dev/null || true)" != "$W
     echo "sql-migration: preparing the Python environment at $VENV (first run, or requirements.txt changed)"
     PY="${SQL_MIGRATION_PYTHON:-python3}"
     command -v "$PY" >/dev/null || { echo "sql-migration: $PY not found. Install Python 3.10+ or set SQL_MIGRATION_PYTHON"; exit 127; }
+    # the lowest version the tools run on (CI runs the tests on it too); older ones fail later, and less clearly
+    "$PY" -c 'import sys; sys.exit(sys.version_info < (3, 10))' || {
+      echo "sql-migration: $PY is Python $("$PY" -c 'import platform; print(platform.python_version())'). Python 3.10+ is needed: install it or set SQL_MIGRATION_PYTHON"
+      exit 1
+    }
     "$PY" -m venv "$VENV"
-    "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check -r "$ROOT/requirements.txt"
+    "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: \
+      -r "$ROOT/requirements.txt"
     echo "$WANT" > "$STAMP"
   } >&2
 fi
