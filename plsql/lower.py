@@ -152,6 +152,50 @@ def subtype_parts(context: ParserRuleContext,
     return out
 
 
+def lifted_name(name: str, outer: str, module_routines: set[str]) -> str:
+    """The name a nested subprogram is lifted under (#160). Its own, unless a routine of the module -- or the enclosing
+    routine itself -- has that name: then `<outer>_<name>`. PL/SQL resolves the name inside the enclosing routine to
+    the nested one (measured on 26ai: `f(1)` there is the nested f, `pkg.f(1)` the package's; a sibling declared
+    before it cannot call either, PLS-00313), so the calls there are renamed with it (`_Lowerer._lift`). The symbol
+    table gives its scope the same id through this function."""
+    name, outer = name.lower(), outer.lower()
+    return f"{outer}_{name}" if name in module_routines or name == outer else name
+
+
+def _renamed_calls(node, old: str, new: str) -> None:
+    """A call to the nested subprogram `old` written in the scope it is visible in, renamed to the name it is lifted
+    under (#160): every PL/SQL expression of the statements, not their SQL -- a nested subprogram cannot be called
+    from SQL (PLS-00231), so `f` there is a column or a schema function -- nor a qualified `pkg.f`, a field `r.f`, a
+    named argument `f => 1` or a string literal."""
+    import dataclasses
+
+    word = re.compile(rf"(?<![\w$#.\"]){re.escape(old)}(?![\w$#])(?!\s*(?:\.|=>))", re.I)
+
+    def rewrite(text: str) -> str:
+        parts = re.split(r"('(?:[^']|'')*')", text)
+        return "".join(p if i % 2 else word.sub(new, p) for i, p in enumerate(parts))
+
+    if isinstance(node, list):
+        for i, item in enumerate(node):
+            if isinstance(item, str):
+                node[i] = rewrite(item)
+            else:
+                _renamed_calls(item, old, new)
+        return
+    if not dataclasses.is_dataclass(node) or isinstance(node, M.SqlOperation):
+        return
+    for f in dataclasses.fields(node):
+        if f.name in ("id", "kind", "source_range", "name", "label", "diagnostics", "resolved_to", "constant_sql",
+                      "variants", "variant_statements", "query_sql", "type", "return_type", "parameters", "enclosing",
+                      "visibility", "routine_kind", "auth_id", "call_spec", "declared_name"):
+            continue
+        value = getattr(node, f.name)
+        if isinstance(value, str):
+            setattr(node, f.name, rewrite(value))
+        elif isinstance(value, list) or dataclasses.is_dataclass(value):
+            _renamed_calls(value, old, new)
+
+
 def _routine_name(context: ParserRuleContext) -> str:
     identifier = _child(context, "IdentifierContext") or _child(context, "Procedure_nameContext") \
         or _child(context, "Function_nameContext")
@@ -397,6 +441,35 @@ class _Lowerer:
         self.lifted = []
         return module
 
+    def _note_rename(self, nested: ParserRuleContext, module: str, begin: int,
+                     renames: "list[tuple[str, str, int]]") -> None:
+        """Remember a nested subprogram `_lift` just lifted under another name (#160): what it was written as, what
+        it is now, and where in `self.lifted` its scope starts -- itself, what was lifted out of it, and every later
+        sibling, which PL/SQL lets call it."""
+        lifted = self.__dict__.get("lifted", [])[-1]
+        declared = _routine_name(nested)
+        if lifted.name != declared:
+            texts = self.__dict__.setdefault("_source_text", {})
+            texts[lifted.id] = texts.get(routine_id_of(module, declared), "")
+            renames.append((declared, lifted.name, begin))
+
+    def _follow_renames(self, renames: "list[tuple[str, str, int]]", scope: list, lifted: bool = True) -> None:
+        """Point the calls in a renamed nested subprogram's scope at the name it is lifted under (#160): `scope`, the
+        enclosing statements, and (with `lifted`) the routines lifted from the rename on, with their source text,
+        which `_carry_captured` reads for the calls between them."""
+        for old, new, begin in renames:
+            for node in scope:
+                _renamed_calls(node, old, new)
+            if not lifted:
+                continue
+            for routine in self.__dict__.get("lifted", [])[begin:]:
+                _renamed_calls(routine, old, new)
+                texts = self.__dict__.setdefault("_source_text", {})
+                if routine.id in texts:
+                    holder = [texts[routine.id]]
+                    _renamed_calls(holder, old, new)
+                    texts[routine.id] = holder[0]
+
     def _lift(self, nested: ParserRuleContext, outer: M.Routine, module: str, outer_body: str = "",
               blocks: "list[tuple[list[str], list[M.Declaration]]]" = (), hidden: set[str] = frozenset()) -> str | None:
         """Lower a subprogram from `outer`'s declare section -- or from the DECLARE of a block nested in its body,
@@ -408,11 +481,17 @@ class _Lowerer:
         only fetches is handed to it as the cursor's state (6-11, #138). A name it reaches by qualifying it with
         `outer`'s name (`check_credit.rating`, past a local of the same name) or with a block's label is handed
         under another name."""
-        name = _routine_name(nested)
-        taken = {r.name.lower() for r in self.__dict__.get("lifted", [])} | self.__dict__.get("module_routines", set())
-        if name.lower() in taken or name.lower() == outer.name.lower():
+        declared = _routine_name(nested)
+        module_routines = self.__dict__.get("module_routines", set())
+        taken = {r.name.lower() for r in self.__dict__.get("lifted", [])} | module_routines
+        # one named as a routine of the module, or as the enclosing routine, is lifted under `<outer>_<name>` and
+        # the calls in its scope follow it (#160); one named as another lifted subprogram is still refused
+        name = lifted_name(declared, outer.name, module_routines)
+        if name in taken or name == outer.name.lower():
             return f"shares its name with another routine of the module ({name})"
-        lifted = self._routine(nested, module=module)
+        lifted = self._routine(nested, module=module, name=name)
+        if name != declared:
+            lifted.declared_name = declared
         own = {p.name.lower() for p in lifted.parameters} | {d.name.lower() for d in lifted.declarations}
         holders = {h.name.lower(): h for h in list(outer.parameters) + list(outer.declarations)}
         for _, declarations in blocks:
@@ -684,8 +763,9 @@ class _Lowerer:
         return module
 
     # -- routines ------------------------------------------------------------------------------------------
-    def _routine(self, context: ParserRuleContext, module: str | None, ordinal: int | None = None) -> M.Routine:
-        name = _routine_name(context)
+    def _routine(self, context: ParserRuleContext, module: str | None, ordinal: int | None = None,
+                 name: str | None = None) -> M.Routine:
+        name = name or _routine_name(context)   # a nested subprogram may be lifted under another name (#160)
         routine_id = routine_id_of(module, name, ordinal)
         # `Function_bodyContext` in a package, `Create_function_bodyContext` standalone: the second has a lower-case
         # f, so a standalone function was lowered as a procedure -- `void`, with `return 1;` inside it
@@ -743,12 +823,15 @@ class _Lowerer:
             # #80: one that reads nothing of this routine's own is lifted to a private routine of the module --
             # the shape of a package's private procedure, which every later stage already handles. One that
             # reads this routine's variables, parameters or types would need them carried and stays Unsupported
+            renames: list[tuple[str, str, int]] = []
             for nested in _descend(context, NESTED_SUBPROGRAMS, stop={"BodyContext"}):
                 self.__dict__.setdefault("_source_text", {})[routine_id_of(module or name, _routine_name(nested))] = \
                     re.sub(r"'(?:[^']|'')*'|--[^\n]*", " ", _text(nested))
+                begin = len(self.__dict__.get("lifted", []))
                 reason = self._lift(nested, routine, module or name,
                                     re.sub(r"'(?:[^']|'')*'|--[^\n]*", " ", _text(body)))
                 if reason is None:
+                    self._note_rename(nested, module or name, begin, renames)
                     continue
                 node = M.Unsupported(id=ids.next("stmt"), kind="Unsupported", source_range=self._range(nested),
                                      text=_text(nested), construct="NestedSubprogram")
@@ -756,6 +839,7 @@ class _Lowerer:
                          f"a nested subprogram that {reason} is not lowered; whatever it does (COMMIT included) is "
                          "invisible to the rules, so the routine cannot be AUTO while it is present")
                 routine.body.insert(0, node)
+            self._follow_renames(renames, [routine.body])
             handlers = " ".join(re.sub(r"'(?:[^']|'')*'|--[^\n]*", " ", _text(h)) for h in _descend(
                 body, {"Exception_handlerContext"}, stop={"BodyContext", "BlockContext"}))
             self._inline_dynamic_blocks(routine, ids, module or name,
@@ -766,6 +850,7 @@ class _Lowerer:
             for handler in _descend(body, {"Exception_handlerContext"},
                                     stop={"BodyContext", "BlockContext"}):
                 routine.exception_handlers.append(self._handler(handler, ids))
+            self._follow_renames(renames, [routine.exception_handlers], lifted=False)
         # #11: an explicit cursor that takes the first row, or counts, is not a scan. Rewriting it here rather
         # than in the generator means the query it becomes goes through the converter and the capability check
         # like any other statement -- which is the whole point of doing it at all.
@@ -900,15 +985,19 @@ class _Lowerer:
             # inner variable, where Oracle's subprogram reads this block's
             hidden = {d.name.lower() for s in _walk(node.body) for d in getattr(s, "declarations", None) or []}
             routine_id = self.routine_id
+            renames: list[tuple[str, str, int]] = []
             for nested in nested_subprograms:
                 reason = "is declared in a nested block of a routine that is not lowered"
                 if enclosing is not None:
                     self.__dict__.setdefault("_source_text", {})[
                         routine_id_of(enclosing["module"], _routine_name(nested))] = \
                         re.sub(r"'(?:[^']|'')*'|--[^\n]*", " ", _text(nested))
+                    begin = len(self.__dict__.get("lifted", []))
                     reason = self._lift(nested, enclosing["routine"], enclosing["module"], enclosing["text"],
                                         blocks=list(enclosing["blocks"]) + [frame], hidden=hidden)
                     self.routine_id = routine_id   # lowering the nested one moved it
+                    if reason is None:
+                        self._note_rename(nested, enclosing["module"], begin, renames)
                 if reason is None:
                     continue
                 unsupported = M.Unsupported(id=ids.next("stmt"), kind="Unsupported", source_range=self._range(nested),
@@ -920,6 +1009,9 @@ class _Lowerer:
         for handler in _descend(body, {"Exception_handlerContext"},
                                 stop={"BodyContext", "BlockContext"}):
             node.exception_handlers.append(self._handler(handler, ids))
+        if inner is not None:
+            # the block's statements and handlers call a renamed subprogram by the name it is lifted under (#160)
+            self._follow_renames(renames, [node.body, node.exception_handlers])
         return node
 
     def _handler(self, context: ParserRuleContext, ids: M.IdFactory) -> M.ExceptionHandler:

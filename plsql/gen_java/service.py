@@ -622,6 +622,15 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
                 if carried:
                     # a lifted local subprogram takes the enclosing variables it reads after its own (#80)
                     names[f"{r.name.lower()}#extra"] = ",".join(carried)
+        if module.module_kind == "package":
+            # `pkg.f(1)` in the package's own routine: the package-level f, reached past a nested subprogram of the
+            # same name (#160) -- or written out for no reason. Only a routine that is not lifted has the name
+            for r in module.routines:
+                if r.enclosing or overload_of(r) is not None:
+                    continue
+                for suffix in ("", "#parameters", "#refused", "#extra"):
+                    if f"{r.name.lower()}{suffix}" in names:
+                        names[f"{module.name.lower()}.{r.name.lower()}{suffix}"] = names[f"{r.name.lower()}{suffix}"]
         # a trigger declares its locals on the module, not on the body, and a package-level cursor is visible
         # to every routine; leaving them out reports real names as unknown
         # a package-level variable is session state (STATE-001): there is no field to assign, so a reference
