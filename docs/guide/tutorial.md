@@ -3,17 +3,21 @@
 [文書の入口](../README.md) ｜ [はじめに](getting-started.md) ｜ **チュートリアル** ｜ [SQL の変換](sql-conversion.md) ｜ [PL/SQL の変換](plsql-conversion.md) ｜ [スキル](skills.md) ｜ [検証環境](verification.md)
 
 サンプルの Oracle SQL と PL/SQL（ポイントカード）を、スキルを使って ScalarDB に移し、実 DB で Oracle と同じ結果になることを確かめるまでを、順にたどります。
-**2026-09-20 に実際に通した記録**で、途中でツールが断った文、人が決めたこと、見つかって直した不具合も、起きた順に書いてあります。
+**2026-09-20 に開発側のリポジトリで実際に通した記録**で、途中でツールが断った文、人が決めたこと、見つかって直した不具合も、起きた順に書いてあります。
+
+> **公開の GitHub の版で読んでいる方へ**: サンプル（`samples/tutorial/`）、通した結果、実 DB のハーネス（`difftest/`）は開発側のリポジトリにだけあり、
+> 公開の版には入っていません。この文書は手順の形（何を頼み、何が返り、人が何を決めるか）として読んでください。手元で動かせる小さな題材は
+> [はじめに](getting-started.md) の [docs/quickstart/](../quickstart/README.md) です。
 
 | | |
 |---|---|
-| サンプル | [`samples/tutorial/`](../../samples/tutorial/) — `sql/points.sql`（20 文）、`plsql/src/`（package `pkg_points`、routine 4） |
-| 通した結果 | [`samples/tutorial/result/`](../../samples/tutorial/result/) — 変換レポート、現行の仕様、変換後の仕様、実 DB の比較 |
+| サンプル | `samples/tutorial/`（開発側のリポジトリだけ） — `sql/points.sql`（20 文）、`plsql/src/`（package `pkg_points`、routine 4） |
+| 通した結果 | `samples/tutorial/result/`（開発側のリポジトリだけ） — 変換レポート、現行の仕様、変換後の仕様、実 DB の比較 |
 | 使うスキル | 第 1 部: `sql-transpile`。第 2 部: `migrate-flow`（中で `plsql-spec` と `plsql-migrate` を使う） |
 | 要るもの | 第 1 部の変換と、第 2 部の段階 1〜3 は Python だけ（コンパイルの確認に Java 17）。実 DB の突き合わせ（1.3 と 2.5）は Docker と ScalarDB Cluster のトライアルライセンス（[検証環境](verification.md)） |
 
 スキルは Claude Code か Codex から自然文で呼びます（入れ方は [スキル](skills.md)）。下の各節の「頼み方」がそれで、「動くコマンド」はスキルがその中で打っているものです。
-コマンドだけをたどっても同じ結果になります。
+開発側のリポジトリでは、コマンドだけをたどっても同じ結果になります（実 DB の比較の証拠が古くなったときの扱いは 2.5 の終わり）。
 
 ---
 
@@ -47,7 +51,7 @@ oracle → scalardb: 20 文 / OK 7 / WARN 6 / PLANNED 4 / ERROR 3
 ```
 
 終了コードは 1（ERROR の文がある）。出力は `points.scalardb.sql`（変換後の SQL）、`points.report.md`（文ごとの判定と理由）、`plans/*.plan.json`（実行計画）です
-（通した結果: [`result/sql/`](../../samples/tutorial/result/sql/points.report.md)）。
+（通した結果: `result/sql/`（`samples/tutorial/result/sql/points.report.md`、開発側のリポジトリだけ））。
 
 ### 1.2 結果を読む
 
@@ -65,7 +69,7 @@ oracle → scalardb: 20 文 / OK 7 / WARN 6 / PLANNED 4 / ERROR 3
 ### 1.3 実 DB で確かめる
 
 判定が実際の動作と合うかを、移行元の Oracle と ScalarDB Cluster で同じデータに同じ問い合わせを流して比べます。読み取り文と表の DDL だけを
-[`points-check.sql`](../../samples/tutorial/sql/points-check.sql) に、データを `points-check.data.json` に置いてあります。
+`points-check.sql`（`samples/tutorial/sql/points-check.sql`、開発側のリポジトリだけ） に、データを `points-check.data.json` に置いてあります。
 
 ```bash
 .venv/bin/python difftest/run.py samples/tutorial/sql/points-check.sql --dialect oracle --fetcher jdbc --restart-cluster
@@ -105,7 +109,7 @@ flowchart LR
   A["1. 現行の仕様"] --> A1{{"承認 spec"}} --> B["2. 変換と人の判断"] --> B1{{"承認 decisions"}} --> C["3. 変換後の仕様"] --> C1{{"承認 converted"}} --> D["4. テスト"]
 ```
 
-プロジェクトの形は [`fixtures/plsql-external/`](../../fixtures/plsql-external/README.md) と同じです: `src/`（`schema.sql` と PL/SQL）、`scalardb-schema.json`、
+プロジェクトの形は `fixtures/plsql-external/`（開発側のリポジトリだけ） と同じです: `src/`（`schema.sql` と PL/SQL）、`scalardb-schema.json`、
 `limits.yaml`（決定）、`decisions-outside-generator.yaml`（記録）、`scenarios/`、`golden/`。作業ディレクトリ（`out/migrate/tutorial-points/`）は消してよく、決定と記録は原文のそばに残ります。
 
 ```bash
@@ -128,7 +132,7 @@ P=samples/tutorial/plsql; O=out/migrate/tutorial-points
 原文を読んで、原文の位置（`` `pkg_points.pkb:74` ``）つきで書きます。`check` は未記入、古い事実、文章に出てこないエラーコードと表、routine の範囲の外を指す引用を返します。
 
 - 最初の `check`: `UNWRITTEN=18`。書き上げたあと、`add_points` の節から `use_points` の行を引いた 1 か所が「routine の範囲の外」と指摘され、直して `PROBLEMS=0`
-- 書き上がった仕様: [`result/plsql/spec/`](../../samples/tutorial/result/plsql/spec/README.md)。ランクの遷移は、事実の欄の図では伝わらないので状態遷移図を足しました
+- 書き上がった仕様: `result/plsql/spec/`（`samples/tutorial/result/plsql/spec/`、開発側のリポジトリだけ）。ランクの遷移は、事実の欄の図では伝わらないので状態遷移図を足しました
 
 **原文を読んで初めて分かったこと**（仕様書の「確かめたいこと」。承認する人が見る中心です）:
 
@@ -169,7 +173,7 @@ P=samples/tutorial/plsql; O=out/migrate/tutorial-points
 | 現行 | 会員の行をロックし、同時の利用を待たせて直列にする（コメント: 「残高がマイナスにならないよう」） |
 | 決定 | **楽観制御 + 呼び出し側が衝突だけを再試行**（移行責任者、2026-09-20）。同じトランザクションの中で読んで書くので、同時の利用は commit で片方が衝突（`DB-CORE-20013`）として弾かれ、残高はマイナスにならない |
 | 採らなかった案 | 決めずに残す → `use_points` は実行時に例外を投げるコードのままで、テストできない |
-| 記録先 | [`limits.yaml`](../../samples/tutorial/plsql/limits.yaml) の `rowLocks.optimistic`（**理由つき**。理由の無い決定は決定として扱われない） |
+| 記録先 | `limits.yaml`（`samples/tutorial/plsql/limits.yaml`、開発側のリポジトリだけ） の `rowLocks.optimistic`（**理由つき**。理由の無い決定は決定として扱われない） |
 
 `limits.yaml` を書いて生成し直すと、断られる文は 0 になりました。ここで**生成器の不具合が 1 件**見つかりました: `rank_of(v_balance)` の `v_balance` は `NUMBER(10)` の列の型（Java では `Long`）、
 `rank_of` の引数は `NUMBER`（`BigDecimal`）で、生成された Java がコンパイルできませんでした（`--verify-compile` が routine を名指しして止めます）。
@@ -224,7 +228,7 @@ untranslated statements 0  SQL ScalarDB refuses 0  planned 0
 ```
 
 `README.md`（アーキテクチャ / 使い方 / 制限 / どのように移行したか）と、module ごとの文書（routine ごとの 仕様 / 移行で変わったこと / 制限と注意）ができます
-（通した結果: [`result/plsql/docs/`](../../samples/tutorial/result/plsql/docs/README.md)）。`check` は、AUTO でない routine・決定・受け入れた差を文章が落としていないか、
+（通した結果: `result/plsql/docs/`（`samples/tutorial/result/plsql/docs/`、開発側のリポジトリだけ））。`check` は、AUTO でない routine・決定・受け入れた差を文章が落としていないか、
 生成物に無い Java の名前を引いていないかを見ます（今回の指摘は「制限の文章に routine の完全な名前が出てこない」の 3 件）。
 
 承認する人が見る所:
@@ -237,7 +241,7 @@ untranslated statements 0  SQL ScalarDB refuses 0  planned 0
 ### 2.4 段階 4 の前に: シナリオを起こす
 
 3 つの承認がそろうと、テストの関門が開きます（`flow.py gate` の最終行が `GATE=open`）。シナリオは**承認済みの現行の仕様から起こします**——「業務ルール」と「エラーと例外」の 1 行が
-1 シナリオで、境界は両側を取ります。13 本（[`scenarios/`](../../samples/tutorial/plsql/scenarios/)）:
+1 シナリオで、境界は両側を取ります。13 本（`samples/tutorial/plsql/scenarios/`（開発側のリポジトリだけ））:
 
 | routine | シナリオ |
 |---|---|
@@ -289,6 +293,9 @@ verdicts        {'AUTO': 3, 'REDESIGN': 1}
 
 **AUTO は「無人で生成してよい」という判定で、実 DB で一致した証拠があって初めて付きます。** `use_points` は決定のあとも REDESIGN のままです（行ロックというルールが当たった事実は変わらない）が、
 決定済みで、実 DB でも一致しています。証拠は、原文か生成器が変わると「古い」になり、判定は REVIEW に戻ります。
+commit してある証拠（`samples/tutorial/result/plsql/evidence.json`）は 2026-09-27 の生成器で取ったものです。その後の生成器の変更（2026-09-28）で古くなり、
+いまのコードに渡すと `{'REDESIGN': 1, 'REVIEW': 3}` になります（`whyNotAuto` に「比較のあとで生成器か実行時ヘルパが変わった」と出る）。
+AUTO 3 を再現するには、上の 2.5 の手順で capture を取り直します。
 
 最後に、比較の結果を文書に入れます（`migration_doc.py` に同じ `--evidence` を足して `facts` と `check`）。**文書が変わるので `converted` の承認は古くなり**、変えた所
 （「まだ確かめていない」→ 実際の結果）を示して取り直しました。`converted` だけを取り直すかぎり、テストの結果は残ります。
@@ -323,6 +330,6 @@ Oracle と一致した、というのが、ここで言えることのすべて�
 
 ## 自分の PL/SQL で試すには
 
-1. `src/schema.sql`（Oracle の DDL）と PL/SQL、`scalardb-schema.json`（キーの設計つき）を 1 つのディレクトリに置く（[プロジェクトの形](../../fixtures/plsql-external/README.md)）
+1. `src/schema.sql`（Oracle の DDL）と PL/SQL、`scalardb-schema.json`（キーの設計つき）を 1 つのディレクトリに置く（プロジェクトの形（`fixtures/plsql-external/`、開発側のリポジトリだけ））
 2. Claude Code か Codex で **「このディレクトリの PL/SQL を ScalarDB に移行して」** と頼む（`migrate-flow` が段階 1 から進め、承認と判断を求めてくる）
 3. SQL 文だけなら **「この SQL を Oracle から ScalarDB 用に変換して」**（`sql-transpile`）。承認つきで進めたければ `migrate-flow` に SQL のファイルを渡す（[SQL 文だけの移行](../../skills/migrate-flow/references/sql.md)）

@@ -47,7 +47,8 @@ dependencies {
     // SLF4J provider for ScalarDB's logging (slf4j-api 2.0.x comes with ScalarDB): warnings and errors to stderr,
     // configured in src/main/resources/simplelogger.properties
     runtimeOnly 'org.slf4j:slf4j-simple:2.0.18'
-    runtimeOnly 'org.postgresql:postgresql:42.7.4'
+    // the version the lock file holds: 42.7.4 was written here while the lock resolved 42.7.13 (#149)
+    runtimeOnly 'org.postgresql:postgresql:42.7.13'
     if (!coreOnly) {
         // ScalarDB SQL JDBC driver + Cluster client SDK: used by JdbcFetcher (requires ScalarDB Cluster, licensed)
         runtimeOnly "com.scalar-labs:scalardb-sql-jdbc:${scalardbVersion}"
@@ -56,6 +57,27 @@ dependencies {
         runtimeOnly 'com.mysql:mysql-connector-j:8.4.0'
         // Oracle JDBC: used ONLY by the benchmark (Bench.java) to time the migration-source database from the same JVM
         runtimeOnly 'com.oracle.database.jdbc:ojdbc11:23.5.0.24.07'
+    }
+
+    // Versions with known advisories that ScalarDB 3.19.1 brings along, raised to the fixed ones (#149; OSV, checked
+    // 2026-09-29 on both lock files). They come from ScalarDB's storage adapters and the Cluster client (TLS, gRPC,
+    // the cloud SDKs), and whether this runtime's use reaches them was not examined; the raise costs nothing, and a
+    // generated application should not ship them. Minor / patch raises within the line ScalarDB uses:
+    //   netty 4.1.135-136 -> 4.1.138 (GHSA-c4c3-7fpv-j4q5 SNI bypass, GHSA-fccg-mwvh-qqg4, -8c42-7qj2-3j46, -mfg7-5gfp-c4w3)
+    //   bouncycastle 1.82 -> 1.86 (GHSA-9pwp-9qqc-pr26 name constraints bypass and four more)
+    //   jackson 2.19.2 -> 2.21.7 (GHSA-j3rv-43j4-c7qm, -rmj7-2vxq-3g9f and nine more; the 2.19 line has no fix)
+    //   micrometer 1.15.1 -> 1.15.12, httpclient5 5.6.2 -> 5.6.4
+    // Left as it is: mssql-jdbc 12.8.2.jre8. OSV lists GHSA-m494-w24q-6f7w for it, but the advisory's fix IS 12.8.2
+    // (as 12.8.2.jre11); the scanner orders the `.jre8` suffix before `.jre11`. A false positive, not a raise.
+    // `gradle dependencies --write-locks` (and again with -PcoreOnly) renews the two lock files after a change here.
+    implementation platform('io.netty:netty-bom:4.1.138.Final')
+    implementation platform('com.fasterxml.jackson:jackson-bom:2.21.7')
+    constraints {
+        implementation 'org.bouncycastle:bcprov-jdk18on:1.86'
+        implementation 'org.bouncycastle:bcpkix-jdk18on:1.86'
+        implementation 'org.bouncycastle:bcutil-jdk18on:1.86'
+        implementation 'io.micrometer:micrometer-core:1.15.12'
+        implementation 'org.apache.httpcomponents.client5:httpclient5:5.6.4'
     }
 
     testImplementation platform('org.junit:junit-bom:5.14.4')

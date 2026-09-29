@@ -51,6 +51,8 @@ class TableMeta:
     # column -> the type the residual engine uses instead of the ScalarDB one (TypeMapping.residual_type). Known only
     # when the table comes from the source DDL; a Schema Loader file has ScalarDB types and nothing else
     residual_types: dict[str, str] = field(default_factory=dict)
+    # columns the source DDL declares NOT NULL (ScalarDB drops the constraint). Known only from the source DDL
+    not_null: set[str] = field(default_factory=set)
 
     @property
     def primary_key(self) -> list[str]:

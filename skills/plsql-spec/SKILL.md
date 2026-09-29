@@ -26,10 +26,10 @@ allowed-tools:
   - Glob
   - Write
   - Edit
-  - Bash(.venv/bin/python -c *)
+  - Bash(.venv/bin/python skills/plsql-spec/scripts/check_env.py)
   - Bash(.venv/bin/python -m plsql.cli *)
   - Bash(.venv/bin/python skills/plsql-spec/scripts/spec_facts.py *)
-  - Bash(*/bin/python -c *)
+  - Bash(*/bin/python */skills/plsql-spec/scripts/check_env.py)
   - Bash(*/bin/python -m plsql.cli *)
   - Bash(*/bin/python */skills/plsql-spec/scripts/spec_facts.py *)
   - Bash(mmdc *)
@@ -100,7 +100,7 @@ AskUserQuestion を使うときは、先に本文で 1〜5 を説明し、推奨
 ### Step 0: 環境を確かめる
 
 ```bash
-.venv/bin/python -c "import sqlglot, yaml; print('ok')"
+.venv/bin/python skills/plsql-spec/scripts/check_env.py
 ```
 
 ### Step 1: 入力を確定する

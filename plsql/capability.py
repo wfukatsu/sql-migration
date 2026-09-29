@@ -30,9 +30,9 @@ from scalardb_migrate.schema import SchemaRegistry
 
 from .analysis import ProgramAnalysis
 from .ir import model as M
-from .lower import _walk, walk_scoped
+from .lower import _walk, walk_scoped, with_variants
 from .source import Issue
-from .dynamic import annotate as annotate_dynamic, bind_using
+from .dynamic import expand as expand_dynamic
 from .sqlbridge import analyse as analyse_sql
 from .limits import RowLocks
 from .symbols import OracleSchema
@@ -79,7 +79,7 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
             # row, not a column (#10). A routine-level handler is outside every loop, so its scope is empty.
             scoped = walk_scoped(routine.body) + [(s, {}) for h in routine.exception_handlers
                                                   for s in _walk(h.body)]
-            statements = [s for s, _ in scoped]
+            statements = with_variants([s for s, _ in scoped])
             # A routine whose read was locked (`SELECT ... FOR UPDATE`) must not have its write quietly
             # rewritten: the lock was what made the read-modify-write safe, and conversion drops it
             # (WARN ROW_LOCK). Leaving the write as something ScalarDB refuses keeps the loss visible at the
@@ -114,20 +114,18 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
                 if statement.kind == "DynamicSql":
                     # P4-7: a dynamic statement whose text is knowable becomes ordinary SQL, one per variant,
                     # and is then converted and checked like anything else. Enumerating without converting
-                    # would show a reader plain SQL that nothing had looked at.
-                    for index, variant in enumerate(annotate_dynamic(routine, statement, module) or [], start=1):
-                        # `USING` は**位置で**束縛される。placeholder を渡す変数の名前に直して
-                        # おくと、畳んだ文がそのあと静的な文とまったく同じ道を通る（P4-7）
-                        operation = M.SqlOperation(
-                            id=f"{statement.id}#variant-{index}", kind="SqlOperation",
-                            source_range=statement.source_range,
-                            original_sql=bind_using(variant.sql, statement.using),
-                            binds=list(statement.using), into_targets=list(statement.into_targets))
+                    # would show a reader plain SQL that nothing had looked at. The variants are made before the
+                    # lowering (`dynamic.fold`, #148 H1); a program that did not go through it is folded here
+                    variants = statement.variant_statements if statement.variants else \
+                        expand_dynamic(routine, statement, module)
+                    for operation in variants:
                         result = analyse_sql(operation, scope=routine.id, symbols=symbols,
                                              registry=registry, storage=storage, lift=not locked,
                                              loop_variables=loop_variables)
-                        statement.variant_statements.append(operation)
                         report.statuses[operation.id] = result.status
+                        if result.access_path:
+                            # the write-then-scan walk tells a keyed read from a scan by this, as for static SQL
+                            report.access_paths[operation.id] = result.access_path
                         report.issues.extend(
                             Issue(i["severity"], i["code"], i["message"], statement.source_range)
                             for i in result.issues)
@@ -291,6 +289,10 @@ def scan_after_write(program: M.Program, report: CapabilityReport) -> list[tuple
 
     def scans(statement: M.Statement, written: set[str]) -> list[str]:
         """The tables in `written` that the statement reads other than by key."""
+        variants = getattr(statement, "variant_statements", None) or []
+        if variants:
+            # a folded dynamic statement runs one of its variants, each read by its own access path (#148 H1)
+            return sorted({t for v in variants for t in scans(v, written)})
         if statement.kind == "SqlOperation" and is_key_access(report.access_paths.get(statement.id)):
             return []   # key access after a write is fine
         return [t for t in statement.read_set if t in written]
@@ -388,7 +390,7 @@ def annotate(program: M.Program, report: CapabilityReport) -> None:
     fact, `rules/scalardb_capability.yaml` says what it means.
     """
     by_id = {s.id: s for m in program.modules for r in m.routines
-             for s in _walk(r.body) + [x for h in r.exception_handlers for x in _walk(h.body)]}
+             for s in with_variants(_walk(r.body) + [x for h in r.exception_handlers for x in _walk(h.body)])}
     for _, table, sql_id in scan_after_write(program, report):
         statement = by_id.get(sql_id)
         if statement is None:

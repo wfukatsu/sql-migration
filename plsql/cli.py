@@ -78,6 +78,11 @@ def main(argv: list[str] | None = None) -> int:
     from .limits import conditional_compilation
 
     conditional_compilation(args.limits)   # before the parse: `$IF` is resolved there (#118)
+    from .dynamic import set_omitted_ddl
+    from .limits import DynamicDdl
+
+    # the DDL a person decided to leave out is not refused (DYN-004), as `plsql.generate` does not generate it (#148)
+    set_omitted_ddl((DynamicDdl.load(args.limits) if args.limits else DynamicDdl()).omit)
     analysis = analyse(args.root, schema, scalardb_schema=scalardb, **(project.for_analysis() if project else {}))
     data = inventory(analysis)
     kpi, totals = data["kpi"], data["totals"]

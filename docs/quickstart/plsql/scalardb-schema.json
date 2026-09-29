@@ -1,0 +1,6 @@
+{
+  "library.books": {"transaction": true, "partition-key": ["book_id"],
+    "columns": {"book_id": "BIGINT", "title": "TEXT", "shelf": "TEXT", "status": "TEXT", "updated_at": "TIMESTAMP"}},
+  "library.loans": {"transaction": true, "partition-key": ["loan_id"], "secondary-index": ["member_id"],
+    "columns": {"loan_id": "BIGINT", "book_id": "BIGINT", "member_id": "BIGINT", "lent_at": "TIMESTAMP", "due_at": "TIMESTAMP", "returned_at": "TIMESTAMP"}}
+}

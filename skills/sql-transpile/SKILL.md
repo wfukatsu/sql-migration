@@ -24,10 +24,10 @@ effort: medium
 # 上の 3 つはチェックアウトで作業するとき、下の 3 つはプラグインとして入れたとき（<root>/bin/python <root>/skills/...）の形
 allowed-tools:
   - Read
-  - Bash(.venv/bin/python -c "import sqlglot*)
+  - Bash(.venv/bin/python skills/sql-transpile/scripts/check_env.py)
   - Bash(.venv/bin/python skills/sql-transpile/scripts/transpile.py *)
   - Bash(.venv/bin/python skills/sql-transpile/scripts/vendor_sync.py --check)
-  - Bash(*/bin/python -c "import sqlglot*)
+  - Bash(*/bin/python */skills/sql-transpile/scripts/check_env.py)
   - Bash(*/bin/python */skills/sql-transpile/scripts/transpile.py *)
   - Bash(*/bin/python */skills/sql-transpile/scripts/vendor_sync.py --check)
 ---
@@ -67,7 +67,7 @@ SQL を Source 方言で読んで AST に抽象化し、Target 方言または S
 ### Step 0: 環境を確認する
 
 ```bash
-.venv/bin/python -c "import sqlglot; print('sqlglot', sqlglot.__version__)"
+.venv/bin/python skills/sql-transpile/scripts/check_env.py
 ```
 
 失敗したら `.venv/bin/pip install -r requirements.txt` を案内する。
@@ -128,7 +128,7 @@ SQL を Source 方言で読んで AST に抽象化し、Target 方言または S
 | 3 | 異常終了（sqlglot などの依存を読み込めない、変換器の想定外の失敗、中断） | 標準エラーを読んで Error Handling へ。レポートは出ていないので読みに行かない |
 
 1 文の変換中に変換器が想定外の失敗をしても、その文が ERROR `INTERNAL` になるだけで、残りの文は変換される（終了コード 1）。
-閉じていない文字列などでスクリプトを文に分けられないときは、全体が 1 件の ERROR `TOKENIZE` になる。
+閉じていない文字列などでスクリプトを文に分けられないとき、ScalarDB を Target にしたときは `;` で終わる行ごとに分けて、読めた文は変換し、読めない文だけが ERROR `TOKENIZE` になる。ほかの Target では全体が 1 件の ERROR `TOKENIZE` になる。Oracle の q 引用（`q'[it's]'`）は分ける前に通常のリテラル（`'it''s'`）に直すので、どちらでも読める。
 
 ScalarDB を Target にしたときは、`vendor_sync.py --check` も実行する。終了コード 1 なら同梱コピーが本体と食い違っているので、利用者に伝える（取り込み方は `references/operations.md` の「sql-migration のリポジトリで作業するとき」）。最終行が `VENDOR_DRIFT=n/a`（終了コード 0）なら、スキルがリポジトリの外に置かれていて比べる本体が無い。変換は同梱コピーで動くので、そのまま進める。
 

@@ -308,4 +308,4 @@ ddl:
 
 - [生成コードの外で決めること](plsql-decisions-outside-generator.md) — 運用（OPS）・呼び出し側（CALL）・業務（BIZ）の確認項目
 - [トランザクションと行ロック](plsql-transaction-patterns.md)、[cursor](plsql-cursor-patterns.md)、[trigger](plsql-trigger-patterns.md) — 各判断の実測と実装
-- [samples/oracle-samples](../../samples/oracle-samples/README.md) — 構文カタログで実際に判断した記録（2026-09-24〜26）
+- `samples/oracle-samples/`（開発側のリポジトリだけ） — 構文カタログで実際に判断した記録（2026-09-24〜26）

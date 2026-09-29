@@ -5,6 +5,7 @@
 ```text
 docs/
   guide/             使い方（まずここ）
+  quickstart/        はじめに・クイックスタートの入力（図書の貸出。合成の SQL と PL/SQL）
   design/            仕組みと設計、決定の記録
   plsql-migration/   PL/SQL の移行で人が決めること（パターン別）
   examples/          個別の SQL をどう移したかの例
@@ -16,7 +17,8 @@ docs/
 
 1. [README](../README.md) — 何をするツールか、全体像、前提と制約
 2. [はじめに](guide/getting-started.md) — 準備と、DB なしで試せる最初の変換
-3. [チュートリアル](guide/tutorial.md) — サンプルの Oracle SQL と PL/SQL を、スキルで ScalarDB に移して実 DB で確かめるまでの、実際に通した記録
+3. [チュートリアル](guide/tutorial.md) — サンプルの Oracle SQL と PL/SQL を、スキルで ScalarDB に移して実 DB で確かめるまでの、開発側のリポジトリで実際に通した記録。
+   サンプルと実 DB のハーネスは公開の GitHub の版に入っていないので、公開の版で読むときは手順の形として読む
 4. 目的に合うガイド
    - SQL 文を移す → [SQL の変換と実行計画](guide/sql-conversion.md)
    - PL/SQL を移す → [PL/SQL → Java 変換](guide/plsql-conversion.md)
@@ -50,9 +52,9 @@ docs/
 | 文書 | 内容 |
 |---|---|
 | [はじめに](guide/getting-started.md) | 準備、最初の SQL 変換、実行計画の確認、最初の PL/SQL 解析、テスト |
-| [チュートリアル](guide/tutorial.md) | サンプル（`samples/tutorial/`）を sql-transpile と migrate-flow で最後まで通した記録。断られた文、人の判断、承認の取り直し、実 DB の比較（SQL 9/10、PL/SQL 13/13）、見つけて直した不具合 |
-| [Oracle 構文カタログの検証](../samples/oracle-samples/README.md) | Oracle 公式ドキュメントの構成に沿った構文カタログ（SQL 4 本 + PL/SQL 3 本、約 1,700 行）を変換と実 DB 比較に通した記録（2026-09-24〜25）。構文ごとに「そのまま移る / 実行計画 / アプリへ / 人が決める」のどれになるか、実 DB の結果、直した不具合 22 件（Issue #30〜#45）、サンプル自体の不備 3 点 |
-| [Oracle PL/SQL 言語リファレンスの例の検証](../samples/oracle-plsql-docs/README.md) | Oracle PL/SQL 言語リファレンス 12c R1 の例 420 すべてを、Oracle 26ai で文書の結果と照合し、変換して実 DB（Oracle と ScalarDB Cluster）で比べた記録（2026-09-26）。実行した 282 例で一致 77、黙って結果が変わる 10 例（サブタイプの制約、IN の NULL、CHAR の空白埋めなど。#59〜#64 で直して一致 87）、未対応で止まる構文と javac エラーの内訳、証拠つきの AUTO 55 例がすべて一致。2026-09-27 に #59〜#94 をすべて直して一致 170、変換の仕組みのレビューで見つけた #95〜#116 を直して一致 172（並びの決まらない 2 例で 170〜172 を行き来する）、証拠つきの AUTO 104 例がすべて一致。公開の PL/SQL（#15）で見つけた過適合も直した。2026-09-28 に変換の一覧を作るときに見つけた #121〜#130 を直して一致 171、変換できないものの実装（#131〜#142）で一致 189、証拠つきの AUTO 120 例がすべて一致 |
+| [チュートリアル](guide/tutorial.md) | サンプル（`samples/tutorial/`）を sql-transpile と migrate-flow で最後まで通した、**開発側のリポジトリでの記録**（サンプルと結果は公開の版に入っていない）。断られた文、人の判断、承認の取り直し、実 DB の比較（SQL 9/10、PL/SQL 13/13）、見つけて直した不具合 |
+| Oracle 構文カタログの検証（`samples/oracle-samples/`、開発側のリポジトリだけ） | Oracle 公式ドキュメントの構成に沿った構文カタログ（SQL 4 本 + PL/SQL 3 本、約 1,700 行）を変換と実 DB 比較に通した記録（2026-09-24〜25）。構文ごとに「そのまま移る / 実行計画 / アプリへ / 人が決める」のどれになるか、実 DB の結果、直した不具合 22 件（Issue #30〜#45）、サンプル自体の不備 3 点 |
+| Oracle PL/SQL 言語リファレンスの例の検証（`samples/oracle-plsql-docs/`、開発側のリポジトリだけ） | Oracle PL/SQL 言語リファレンス 12c R1 の例 420 すべてを、Oracle 26ai で文書の結果と照合し、変換して実 DB（Oracle と ScalarDB Cluster）で比べた記録。実行した 282 例で一致 189、一致 189、証拠つきの AUTO 120 例はすべて一致（2026-09-29）。経緯（直した Issue と数の移り変わり）はリンク先の README にある |
 | [SQL の変換と実行計画](guide/sql-conversion.md) | `scalardb_migrate.cli` のオプション・出力・判定、`residual-runner` のサブコマンド |
 | [PL/SQL → Java 変換](guide/plsql-conversion.md) | 判定の考え方、コマンド、出力、corpus 上の現在地 |
 | [SQL と PL/SQL の変換の一覧](guide/conversion-catalog.md) | 構文・関数・データ型・文・例外などの項目ごとに、変換後の形、判定と指摘コード（ルール ID）、Oracle との違いを引ける表 |
@@ -88,33 +90,33 @@ REVIEW / REDESIGN を塞いでいるのは、変換できない構文ではな�
 | [移行の判断ポイント早見表](plsql-migration/plsql-decision-guide.md) | これまでに判断した 17 のポイントを 1 か所に。選択肢の Pros / Cons と「どういうときに何を選ぶか」、`limits.yaml` の記録の形 |
 | [業務ロジックとの整合の問い](plsql-migration/plsql-biz-alignment-questions.md) | corpus の BIZ 項目を、routine ごとの具体的な問いにしたもの |
 
-書き上がった文書の例: [現行の仕様（plsql-spec）](../skills/plsql-spec/examples/create_order/README.md)、[変換後の文書（plsql-migrate）](../skills/plsql-migrate/examples/create_order/README.md)。
-corpus の説明は [fixtures/plsql/](../fixtures/plsql/README.md)（[キーの設計](../fixtures/plsql/KEY-DESIGN.md)、[シナリオ](../fixtures/plsql/scenarios/README.md)、[golden](../fixtures/plsql/golden/README.md)、[rule-cases](../fixtures/plsql/rule-cases/README.md)）、
-corpus の外の routine を流す手順は [fixtures/plsql-external/](../fixtures/plsql-external/README.md)、ANTLR 文法の版は [plsql/grammar/VERSIONS.md](../plsql/grammar/VERSIONS.md) にあります。
+書き上がった文書の例（現行の仕様は `skills/plsql-spec/examples/create_order/`、変換後の文書は `skills/plsql-migrate/examples/create_order/`）は、開発側のリポジトリにだけあります。
+corpus の説明（`fixtures/plsql/` の README、キーの設計、シナリオ、golden、rule-cases）と、corpus の外の routine を流す手順（`fixtures/plsql-external/`）は、
+開発側のリポジトリにだけあります。ANTLR 文法の版は [plsql/grammar/VERSIONS.md](../plsql/grammar/VERSIONS.md) にあります。
 
 ## 個別の SQL の移行例（`examples/`）
 
 `CONNECT BY` + CTE + ウィンドウ関数の SQL を、ScalarDB SQL での取得と Java での集計に分解した例と、その性能の調整を
 `examples/` に置いています（部署別の月次受注集計、顧客別受注ランキング。どちらも合成の題材）。`examples/` は公開していません
-（開発側のリポジトリだけにあります）。
+（開発側のリポジトリにだけあります）。
 
 ## 検証レポート
 
 `reports/` の文書は、**その日付に実 DB で測った記録**です。数値は Apple M3 Pro 上の Docker（1 ノードの ScalarDB Cluster、単一クライアント）のもので、
-取り直した日は各文書の先頭にあります。「計画」は、対になる報告の測り方（ケースの設計、適性の基準、構成）を定めた文書で、ハーネスのコードが §番号で参照します。
+取り直した日は各文書の先頭にあります。**`reports/` は公開していません**（開発側のリポジトリにだけあります）。下の表は、どんな記録があるかの一覧です。「計画」は、対になる報告の測り方（ケースの設計、適性の基準、構成）を定めた文書で、ハーネスのコードが §番号で参照します。
 
 | 分類 | 文書 | 内容 |
 |---|---|---|
-| 互換性 | [テスト報告](reports/test-report.md) | 差分テスト（PostgreSQL 15 文 / Oracle 17 文）。ScalarDB SQL 経路ですべて一致 |
-| 互換性 | [Oracle 固有 SQL の検証](reports/oracle-sql-report.md) | Oracle 固有の構文・関数 79 文を機能カテゴリ別に確かめた結果 |
-| 互換性 | [sql-transpile の課題と解決方法](reports/transpile-fix-research.md) | 9 通りの方言ペアを実 DB で動かして見つけた課題と、直したあとの実測 |
-| 性能 | [Oracle 直接実行との比較](reports/bench-report.md) | 同じ SQL の互換性と応答時間。性能測定の方法と基準値 |
-| 性能 | [DML テスト SQL のベンチマーク](reports/dml-benchmark-report.md) | 3 方言 × 51 文の変換と、移行元 DB 直接 vs ScalarDB Cluster。H2 の索引の効果 |
-| 性能 | [変換できない文の対応案・並列取得・H2 の索引](reports/dml-followup-research.md) | 書き込み計画、並列取得、`scan_fetch_size` の効果 |
-| 性能 | [変換ツールの新旧比較](reports/app-side-benchmark-comparison.md) | アプリ側分析の導入前後。日付範囲の押し下げの効果、アプリ側 Java と Oracle の一致 |
-| バックエンド | [バックエンドの比較（まとめ）](reports/scalardb-backend-comparison.md) | ScalarDB のバックエンドを PostgreSQL / Oracle / Cassandra にしたときの互換性と性能。**まずこれ** |
-| バックエンド | [Cassandra: 計画](reports/cassandra-verification-plan.md) / [報告](reports/cassandra-verification-report.md) | どの形のクエリが NoSQL バックエンドに向くかの適性表と、設定の落とし穴 |
-| バックエンド | [Oracle バックエンド: 計画](reports/oracle-backend-verification-plan.md) | 移行元の Oracle をそのまま ScalarDB のバックエンドにする構成。結果はまとめに入っている |
+| 互換性 | テスト報告（`reports/test-report.md`） | 差分テスト（PostgreSQL 15 文 / Oracle 17 文）。ScalarDB SQL 経路ですべて一致 |
+| 互換性 | Oracle 固有 SQL の検証（`reports/oracle-sql-report.md`） | Oracle 固有の構文・関数 79 文を機能カテゴリ別に確かめた結果 |
+| 互換性 | sql-transpile の課題と解決方法（`reports/transpile-fix-research.md`） | 9 通りの方言ペアを実 DB で動かして見つけた課題と、直したあとの実測 |
+| 性能 | Oracle 直接実行との比較（`reports/bench-report.md`） | 同じ SQL の互換性と応答時間。性能測定の方法と基準値 |
+| 性能 | DML テスト SQL のベンチマーク（`reports/dml-benchmark-report.md`） | 3 方言 × 51 文の変換と、移行元 DB 直接 vs ScalarDB Cluster。H2 の索引の効果 |
+| 性能 | 変換できない文の対応案・並列取得・H2 の索引（`reports/dml-followup-research.md`） | 書き込み計画、並列取得、`scan_fetch_size` の効果 |
+| 性能 | 変換ツールの新旧比較（`reports/app-side-benchmark-comparison.md`） | アプリ側分析の導入前後。日付範囲の押し下げの効果、アプリ側 Java と Oracle の一致 |
+| バックエンド | バックエンドの比較（まとめ）（`reports/scalardb-backend-comparison.md`） | ScalarDB のバックエンドを PostgreSQL / Oracle / Cassandra にしたときの互換性と性能。**まずこれ** |
+| バックエンド | Cassandra: 計画（`reports/cassandra-verification-plan.md`） / 報告（`reports/cassandra-verification-report.md`） | どの形のクエリが NoSQL バックエンドに向くかの適性表と、設定の落とし穴 |
+| バックエンド | Oracle バックエンド: 計画（`reports/oracle-backend-verification-plan.md`） | 移行元の Oracle をそのまま ScalarDB のバックエンドにする構成。結果はまとめに入っている |
 
 ## 図と説明資料
 

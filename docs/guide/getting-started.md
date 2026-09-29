@@ -3,48 +3,60 @@
 [文書の入口](../README.md) ｜ [はじめに](getting-started.md) ｜ [チュートリアル](tutorial.md) ｜ [SQL の変換](sql-conversion.md) ｜ [PL/SQL の変換](plsql-conversion.md) ｜ [スキル](skills.md) ｜ [検証環境](verification.md)
 
 準備から、DB を使わずに試せるところまでを順に進めます。ここまでは Docker も ScalarDB のライセンスも要りません。
+入力には、リポジトリに入れてある小さな題材 [docs/quickstart/](../quickstart/README.md)（図書の貸出。合成の SQL 16 文と PL/SQL の package 1 つ）を使います。
+公開の GitHub の版でも、手順 1〜5 はそのまま動きます。自分の SQL や PL/SQL で試すときは、パスを差し替えてください。
 
 | 手順 | 要るもの |
 |---|---|
-| 1〜3. SQL を変換し、実行計画を確かめる | Python 3、（実行計画の確認だけ）Java 17 |
-| 4. PL/SQL を解析して判定を見る | Python 3 |
-| 5. テストを回す | Python 3、Java 17 |
-| その先: 実 DB での突き合わせ | Docker、ScalarDB Cluster のトライアルライセンス（[検証環境](verification.md)） |
+| 1〜3. SQL を変換し、実行計画を確かめる | Python 3.10 以上、（実行計画の確認だけ）Java 17 |
+| 4. PL/SQL を解析して判定を見る | Python 3.10 以上 |
+| 5. 移行の前に、いまの姿を見る | Python 3.10 以上、ブラウザ |
+| 6. テストを回す（開発側のリポジトリだけ） | Python 3.10 以上、Java 17 |
+| その先: 実 DB での突き合わせ（開発側のリポジトリだけ） | Docker、ScalarDB Cluster のトライアルライセンス（[検証環境](verification.md)） |
 
 ## 1. 準備
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt          # sqlglot / pytest / duckdb
-.venv/bin/pip install -r requirements-difftest.txt # DB ドライバ。difftest/ のハーネスを動かすときだけ
+.venv/bin/pip install -r requirements-dev.txt      # 変換ツールの依存と pytest / hypothesis
+.venv/bin/pip install -r requirements-difftest.txt # DB ドライバと DuckDB。difftest/ のハーネスを動かすときだけ
 (cd runtime-java && ./gradlew installDist)          # Java 17。実行計画を動かすときだけ
 ```
+
+`.venv/bin/python` の代わりに `bin/python` も使えます（どの作業ディレクトリからでも動き、仮想環境が無ければ作ります。スキルはこちらを使います）。
+実 DB のハーネス（`difftest/`）とその依存（`requirements-difftest.txt`）は、開発側のリポジトリにだけあります。
 
 ## 2. SQL を変換する
 
 ```bash
-.venv/bin/python -m scalardb_migrate.cli samples/oracle.sql --source oracle --out-dir out --plan-dir out/plans
+.venv/bin/python -m scalardb_migrate.cli docs/quickstart/library.sql --source oracle --out-dir out --plan-dir out/plans
 ```
 
 ```text
-[  3] OK    CREATE       CREATE INDEX idx_emp_deptno ON emp (deptno)
-        INFO  INDEX: index name 'idx_emp_deptno' dropped: ScalarDB identifies indexes by table + column
-        => CREATE INDEX ON emp (deptno)
-[  4] ERROR CREATE       CREATE SEQUENCE emp_seq START WITH 1
+[  3] OK    CREATE       CREATE INDEX idx_loans_member ON loans (member_id)
+        INFO  INDEX: index name 'idx_loans_member' dropped: ScalarDB identifies indexes by table + column
+        => CREATE INDEX ON loans (member_id)
+[  4] ERROR CREATE       CREATE SEQUENCE loan_seq START WITH 1
         ERROR DDL: CREATE SEQUENCE is not supported (no views, sequences, triggers, procedures in ScalarDB)
-[  8] PLANNED SELECT       SELECT e.ename, NVL(e.sal, 0) AS sal FROM emp e WHERE e.deptno IN (10,
-        ERROR PROJECTION: main query: expressions in the select list (NVL(e.sal, 0)) -- compute them in the application
-        INFO  PLAN_FETCH: CROSS_PARTITION: SELECT empno, ename, sal, deptno FROM emp WHERE (deptno = 10 OR deptno = 20 OR deptno = 30)
+[  5] OK    SELECT       SELECT book_id, title, status FROM books WHERE book_id = :book_id
+        INFO  ACCESS: SELECT: full primary key specified -> GET (single record)
+        => SELECT book_id, title, status FROM books WHERE book_id = :book_id
+[  7] PLANNED SELECT       SELECT title, NVL(updated_at, DATE '2000-01-01') AS last_update FROM b
+        ERROR PROJECTION: main query: expressions in the select list (NVL(updated_at, TO_DATE('2000-01-01', 'YYYY-MM-DD'))) -- compute them in the application
+        INFO  PLAN_FETCH: CROSS_PARTITION: SELECT book_id, title, shelf, updated_at FROM books WHERE shelf = 'A1'
         INFO  PLAN_RESIDUAL: H2 Oracle mode runs the original SQL (pattern P1, H2 indexes off)
         WARN  PLAN_CROSS_PARTITION: a fetch needs a cross-partition scan
+...
+16 statements: OK=7 WARN=5 PLANNED=1 ERROR=3
 ```
 
 文ごとに判定が付きます。`--out-dir` には変換後の SQL（`.scalardb.sql`）、レポート（`.report.md` / `.json`）、スキーマ（`.schema.json`）、
-`--plan-dir` には実行計画（`.plan.json`）が出ます。ERROR の文が 1 つでもあると終了コードは 1 です（上の例は `CREATE SEQUENCE` があるので 1）。
+`--plan-dir` には実行計画（`.plan.json`）が出ます。ERROR の文が 1 つでもあると終了コードは 1 です（上の例は `CREATE SEQUENCE`、
+`loan_seq.NEXTVAL`、`SET returned_at = SYSDATE` の 3 文が ERROR なので 1）。
 
 | 判定 | 意味 |
 |---|---|
-| **OK** / **WARN** | ScalarDB SQL に変換できた（WARN は意味や性能に注意がある） |
+| **OK** / **WARN** | ScalarDB SQL に変換できた（WARN は意味や性能に注意がある。上の題材では、パーティションをまたぐ走査や `ROWNUM` の書き換え） |
 | **PLANNED** | ScalarDB SQL にはできないが、実行計画（ScalarDB から取得 → H2 で元の SQL）で動かせる |
 | **ERROR** | 自動では移行できない。レポートに理由と対応案が出る |
 
@@ -53,29 +65,34 @@ python3 -m venv .venv
 ## 3. 実行計画をオフラインで確かめる
 
 ```bash
-runtime-java/build/install/residual-runner/bin/residual-runner validate --plan out/plans/oracle.8.plan.json
+runtime-java/build/install/residual-runner/bin/residual-runner validate --plan out/plans/library.7.plan.json
 ```
 
-H2 で元の SQL がコンパイルできることだけを確かめます。実際に ScalarDB から取得して動かすのは [検証環境](verification.md) を立ててからです。
+H2 で元の SQL がコンパイルできることだけを確かめます（`{"problems":[],"ok":true,"unresolved":[]}` が出ます）。実際に ScalarDB から取得して動かすのは、
+[検証環境](verification.md) を立ててからです。
 
 ## 4. PL/SQL を解析して判定を見る
 
 ```bash
-.venv/bin/python -m plsql.cli fixtures/plsql-external/create_order/src --out-dir out/plsql-first
+.venv/bin/python -m plsql.cli docs/quickstart/plsql/src --scalardb-schema docs/quickstart/plsql/scalardb-schema.json \
+    --out-dir out/plsql-first
 ```
 
 ```text
-parse rate      100.0%  (1/1 files)
-type resolution 100.0%  (7/7 typed symbols)
-scalardb        50.0% runnable  {'WARN': 1, 'ERROR': 2, 'OK': 1}
-verdicts        {'REDESIGN': 1}  (no --evidence: nothing can be AUTO)
+parse rate      100.0%  (2/2 files)
+type resolution 100.0%  (13/13 typed symbols)
+scalardb        85.7% runnable  {'OK': 5, 'WARN': 1, 'ERROR': 1}
+verdicts        {'REDESIGN': 1, 'REVIEW': 2}  (no --evidence: nothing can be AUTO)
 ```
 
 routine ごとに **AUTO**（無人で生成してよい）/ **REVIEW**（人が確認する）/ **REDESIGN**（設計を決め直す）が付きます。
 AUTO は実 Oracle と実 ScalarDB で結果が一致した証拠（`--evidence`）が無ければ付かないので、DB なしの解析では AUTO は出ません。
-`out/plsql-first/unresolved.md` に、REVIEW / REDESIGN の理由と、受け入れに要るテストが出ます。
+`out/plsql-first/unresolved.md` に、REVIEW / REDESIGN の理由と、受け入れに要るテストが出ます。この題材では、本の行を
+`FOR UPDATE` でロックする `lend_book` が REDESIGN（`LOCK-001`。代わりの設計、たとえば楽観制御と再試行を人が決める）、
+残りの 2 つは証拠が無いので REVIEW です。
 
-サンプルをスキルで最後まで通した記録は [チュートリアル](tutorial.md)。Java の生成、証拠の取り方、判定の読み方は [PL/SQL → Java 変換](plsql-conversion.md)。Claude Code や Codex から、仕様の調査 → 承認 → 変換 → 承認 → テストの順に
+サンプルをスキルで最後まで通した記録は [チュートリアル](tutorial.md)（開発側のリポジトリで通した記録）。Java の生成、証拠の取り方、判定の読み方は
+[PL/SQL → Java 変換](plsql-conversion.md)。Claude Code や Codex から、仕様の調査 → 承認 → 変換 → 承認 → テストの順に
 進めるなら [スキル](skills.md) の migrate-flow を使います。
 
 ## 5. 移行の前に、いまの姿を見る
@@ -83,13 +100,18 @@ AUTO は実 Oracle と実 ScalarDB で結果が一致した証拠（`--evidence`
 どの PL/SQL と SQL がどのテーブルを触るのか、その行はどこか、判定はなぜそうなったのかを、1 つの HTML で見られます。上の 4 の解析結果をそのまま使います（DB は要りません）。
 
 ```bash
-.venv/bin/python -m plsql.explorer out/plsql-first --src fixtures/plsql-external/create_order/src --out out/plsql-first/explorer.html
-open out/plsql-first/explorer.html
+.venv/bin/python -m plsql.explorer out/plsql-first --src docs/quickstart/plsql/src --sql docs/quickstart/library.sql \
+    --out out/plsql-first/explorer.html
+open out/plsql-first/explorer.html      # macOS。ほかの OS では、このファイルをブラウザで開く
 ```
 
-DB にしかない情報（制約、外部キー、索引、行数、統計、DB で動いているコード）は、実 DB で 1 回だけ流す SELECT だけの収集スクリプトの snapshot から読みます。渡さなければ、その欄は「未取得」と出ます。snapshot つきの例（合成データの fixture）と、snapshot の取り方は [Migration Explorer](explorer.md)。
+DB にしかない情報（制約、外部キー、索引、行数、統計、DB で動いているコード）は、実 DB で 1 回だけ流す SELECT だけの収集スクリプトの snapshot から読みます。
+渡さなければ、その欄は「未取得」と出ます。snapshot の中身と取り方は [Migration Explorer](explorer.md)（収集スクリプトは開発側のリポジトリにだけあります）。
 
-## 6. テスト
+## 6. テスト（開発側のリポジトリだけ）
+
+テスト（`tests/`）、corpus（`fixtures/`）、実 DB のハーネス（`difftest/`）は、開発側のリポジトリにだけあります。公開の GitHub の版には入っていないので、
+この節のコマンドは開発側のリポジトリで流します。
 
 DB の要らないテスト（pytest、同梱コピーの一致（`vendor_sync.py --check`）、Java の単体テスト）は、merge の前に手元で
 回します。main へ merge したあとは、開発側の CI も同じものを回します。DB の要る検証（`difftest/`）は手で回します。

@@ -49,7 +49,7 @@ flowchart LR
 | plsql-spec スキル | `skills/plsql-spec/` | 既存の PL/SQL を調べ、いまの動作を Markdown の仕様書にまとめる Claude Code スキル。引数・表・SQL・エラーコード・trigger などの事実は IR から出し、動作と業務ルールは原文の位置つきで書き、`check` で突き合わせる |
 | plsql-migrate スキル | `skills/plsql-migrate/` | PL/SQL を Java に変換し、生成コードの外で決めること（運用・呼び出し側・業務ロジックとの整合）を確認して記録する Claude Code スキル。利用者に判断を求めるときは、推奨・理由・選択肢ごとの影響・決めないとどうなるかを示してから聞く。最後に、変換後のコードの文書（アーキテクチャ・仕様・使い方・制限・どのように移行したか）を `<out>/docs/` にまとめる |
 | sql-transpile スキル | `skills/sql-transpile/` | 任意の SQLGlot 方言どうし、または ScalarDB SQL への変換を行う Claude Code スキル（`scalardb_migrate/` を import せず、同梱コピーで動く） |
-| 検証基盤 | `difftest/` | Docker Compose の DB 群と、差分テスト・ベンチマーク・スキルの実行検証のハーネス |
+| 検証基盤 | `difftest/` | Docker Compose の DB 群と、差分テスト・ベンチマーク・スキルの実行検証のハーネス（開発側のリポジトリだけ） |
 
 ---
 
@@ -104,22 +104,24 @@ snapshot ファイルから読みます。誰も取っていない値は「未�
 
 ## クイックスタート
 
+入力は、リポジトリに入れてある小さな題材 [docs/quickstart/](docs/quickstart/README.md)（図書の貸出。合成の SQL と PL/SQL の package 1 つ）です。
+公開の GitHub の版でも、そのまま動きます。自分の SQL で試すときは、パスを差し替えてください。
+
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt          # sqlglot / pytest / duckdb
+python3 -m venv .venv                               # Python 3.10 以上
+.venv/bin/pip install -r requirements-dev.txt      # 変換ツールの依存と pytest / hypothesis
 
 # SQL を変換する（DB 不要）
-.venv/bin/python -m scalardb_migrate.cli samples/oracle.sql --source oracle --out-dir out --plan-dir out/plans
+.venv/bin/python -m scalardb_migrate.cli docs/quickstart/library.sql --source oracle --out-dir out --plan-dir out/plans
 
 # PL/SQL を解析して判定を見る（DB 不要）
-.venv/bin/python -m plsql.cli fixtures/plsql-external/create_order/src --out-dir out/plsql-first
-
-# テスト
-.venv/bin/python -m pytest -q
+.venv/bin/python -m plsql.cli docs/quickstart/plsql/src --scalardb-schema docs/quickstart/plsql/scalardb-schema.json \
+    --out-dir out/plsql-first
 ```
 
-出力の読み方、実行計画の確認（Java 17）、Java のテストは [はじめに](docs/guide/getting-started.md)、実 DB での突き合わせ（Docker と ScalarDB Cluster の
-トライアルライセンス）は [検証環境](docs/guide/verification.md) にあります。
+出力の読み方、実行計画の確認（Java 17）、移行の前の調査の画面は [はじめに](docs/guide/getting-started.md)、実 DB での突き合わせ（Docker と ScalarDB Cluster の
+トライアルライセンス）は [検証環境](docs/guide/verification.md) にあります。テスト（`pytest`、`gradlew test`）と実 DB のハーネスは、
+開発側のリポジトリにだけあります（下の「リポジトリ構成」）。
 
 ---
 
@@ -127,26 +129,29 @@ python3 -m venv .venv
 
 | 目的 | 文書 |
 |---|---|
-| まず動かす | [はじめに](docs/guide/getting-started.md)、[チュートリアル](docs/guide/tutorial.md)（サンプルの SQL と PL/SQL をスキルで移し、実 DB で確かめるまで） |
+| まず動かす | [はじめに](docs/guide/getting-started.md)、[チュートリアル](docs/guide/tutorial.md)（サンプルの SQL と PL/SQL をスキルで移し、実 DB で確かめるまで。開発側のリポジトリで通した記録） |
 | SQL 文を移す | [SQL の変換と実行計画](docs/guide/sql-conversion.md)、[変換ルールと指摘コード](skills/sql-transpile/references/scalardb-grammar.md)、[方言ごとの注意](skills/sql-transpile/references/dialect-notes.md) |
 | PL/SQL を移す | [PL/SQL → Java 変換](docs/guide/plsql-conversion.md)、[人が決めること（cursor / トランザクション / trigger / 生成コードの外）](docs/README.md#plsql-の移行で人が決めることplsql-migration) |
 | Claude Code / Codex から進める | [スキル](docs/guide/skills.md) |
 | 実 DB で確かめる | [検証環境](docs/guide/verification.md) |
 | 仕組みを知る | [アーキテクチャと仕組み](docs/design/architecture.md)、[KPI・AUTO 禁止条件・確信度](docs/design/plsql-kpi.md)、[設計と決定の記録](docs/README.md#仕組みと設計design) |
-| 移行の例を見る | [個別の SQL の移行例](docs/README.md#個別の-sql-の移行例examples)、[現行の仕様の例](skills/plsql-spec/examples/create_order/README.md)、[変換後の文書の例](skills/plsql-migrate/examples/create_order/README.md) |
-| 測った結果を見る | [検証レポートの一覧](docs/README.md#検証レポート) |
+| 移行の例を見る | 個別の SQL の移行例（`docs/examples/`）、現行の仕様の例（`skills/plsql-spec/examples/create_order/`）、変換後の文書の例（`skills/plsql-migrate/examples/create_order/`）。どれも開発側のリポジトリにだけある |
+| 測った結果を見る | [検証レポートの一覧](docs/README.md#検証レポート)（レポートそのものは開発側のリポジトリだけ） |
 
 ---
 
 ## 主な検証結果
 
-| 検証 | 結果 | 詳細 |
+実 DB で測った記録（`docs/reports/`）は、開発側のリポジトリにだけあります。数値は Apple M3 Pro 上の Docker（1 ノードの ScalarDB Cluster、単一クライアント）のものです。
+仕組みから見た性能の特性は [アーキテクチャの 13 章](docs/design/architecture.md#13-性能の特性) にあります。
+
+| 検証 | 結果 | 詳細（開発側のリポジトリだけ） |
 |---|---|---|
-| 差分テスト（PostgreSQL 15 文 / Oracle 17 文） | ScalarDB SQL 経路ですべて一致（15/15、17/17） | [test-report](docs/reports/test-report.md) |
-| DML テスト SQL（3 方言 × 51 文） | ScalarDB で実行できるのは 31〜32 文。書き込み 3〜6 ms（COMMIT 込み）、キーの読み取り 4〜6 ms、実行計画の読み取り 0.6 秒前後 | [dml-benchmark-report](docs/reports/dml-benchmark-report.md) |
-| H2 の索引（`--h2-indexes`） | 3 表結合（2 万注文・5 万明細）が 26〜28 秒 → 1.7〜1.9 秒 | [dml-benchmark-report](docs/reports/dml-benchmark-report.md) 3.4 |
-| 並列取得 | 表の並列取得は 1.2〜1.3 倍、`scan_fetch_size` 10 → 1000 で 1.5〜2.4 倍 | [dml-followup-research](docs/reports/dml-followup-research.md) |
-| バックエンドの比較 | PostgreSQL と Oracle は同じ互換性。Cassandra はパーティションをまたぐ走査の制約で読める文が減る | [scalardb-backend-comparison](docs/reports/scalardb-backend-comparison.md) |
+| 差分テスト（PostgreSQL 15 文 / Oracle 17 文） | ScalarDB SQL 経路ですべて一致（15/15、17/17） | `docs/reports/test-report.md` |
+| DML テスト SQL（3 方言 × 51 文） | ScalarDB で実行できるのは 31〜32 文。書き込み 3〜6 ms（COMMIT 込み）、キーの読み取り 4〜6 ms、実行計画の読み取り 0.6 秒前後 | `docs/reports/dml-benchmark-report.md` |
+| H2 の索引（`--h2-indexes`） | 3 表結合（2 万注文・5 万明細）が 26〜28 秒 → 1.7〜1.9 秒 | `docs/reports/dml-benchmark-report.md` 3.4 |
+| 並列取得 | 表の並列取得は 1.2〜1.3 倍、`scan_fetch_size` 10 → 1000 で 1.5〜2.4 倍 | `docs/reports/dml-followup-research.md` |
+| バックエンドの比較 | PostgreSQL と Oracle は同じ互換性。Cassandra はパーティションをまたぐ走査の制約で読める文が減る | `docs/reports/scalardb-backend-comparison.md` |
 
 ---
 
@@ -154,6 +159,8 @@ python3 -m venv .venv
 
 公開の GitHub 版には、変換するコード（変換器・生成した Java のランタイム・スキル）とドキュメントだけを入れている
 （`bin/github-paths.txt`）。テスト、検証ハーネス、corpus、サンプルは含まない。
+下の構成のうち `difftest/`、`fixtures/`、`samples/`、`spikes/`、`tests/` と、`docs/` の `examples/`・`reports/`・`slides/`、スキルの `examples/` は、
+開発側のリポジトリ（非公開）にだけある。
 
 ```text
 scalardb_migrate/          変換ツール
@@ -202,14 +209,14 @@ difftest/                  検証基盤（docker-compose.yml、conf/、cases/、
   catalog_snapshot.py        Oracle の 1 スキーマのカタログを SELECT だけで書き出す（単一ファイル。Migration Explorer が読む）
 fixtures/plsql/            PL/SQL の corpus、シナリオ、golden、判定の期待値、記録した意味論
 fixtures/explorer/         Migration Explorer の fixture（FK・view・trigger を持つ小さなスキーマと、実 DB で取った 3 つの snapshot）
-fixtures/plsql-external/   corpus の外から受け取った routine（KPI には入れない）。実 DB のハーネスを `--project` で向ける
+fixtures/plsql-external/   corpus の外の routine（自作。KPI には入れない）。実 DB のハーネスを `--project` で向ける
 samples/                   変換の入力例。tutorial/ はチュートリアルのサンプル（Oracle の SQL と PL/SQL）と、通した結果（result/）。
                            oracle-samples/ は Oracle の構文カタログ（SQL 4 本 + PL/SQL 3 本、約 1,700 行）を SQL 変換・PL/SQL 変換・実 DB 比較に通した記録（2026-09-24、README.md）
                            oracle-plsql-docs/ は Oracle PL/SQL 言語リファレンス 12c R1 の例 420 を PL/SQL 変換・実 DB 比較に通した記録（2026-09-26、README.md）
                            **非公開**: GitLab のリポジトリにだけ置く
 spikes/                    残りの処理を H2 / SQLite / DuckDB で実行する初期の検証
 tests/                     変換ツールとスキルのテスト
-docs/                      文書。入口は docs/README.md（guide/ 使い方、design/ 設計、plsql-migration/ 人が決めること、
+docs/                      文書。入口は docs/README.md（guide/ 使い方、quickstart/ クイックスタートの入力（合成）、design/ 設計、plsql-migration/ 人が決めること、
                            examples/ 移行例、reports/ 検証レポート、slides/ 説明資料の生成元、diagrams/ draw.io の図（SQL 変換と PL/SQL 変換の構成））
 ```
 

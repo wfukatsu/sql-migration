@@ -140,8 +140,19 @@ final class Values {
     }
   }
 
-  /** Whether {@code v} can be written as a value of {@code type} without changing it (whole, and in range). */
+  /**
+   * Whether {@code v} can be written as a value of {@code type} without changing it (whole, and in range), and
+   * whether the storage would compare it the way the source database does.
+   *
+   * <p>A number against a TEXT column is not: Oracle converts the column ({@code TO_NUMBER(code) = 5}), so
+   * {@code '05'}, {@code ' 5'} and {@code '5.0'} match {@code = 5} and {@code '10'} matches {@code > 9}, while the
+   * pushed-down {@code TextColumn "5"} compares strings and never fetched those rows (#149). A string against a
+   * FLOAT / DOUBLE column is not either ({@link #column} takes a Number there). Such a predicate stays with the
+   * residual SQL, which applies it on a wider fetch.
+   */
   static boolean representable(DataType type, Object v) {
+    if (type == DataType.TEXT) return !(v instanceof Number);
+    if (type == DataType.FLOAT || type == DataType.DOUBLE) return v instanceof Number;
     if (type != DataType.INT && type != DataType.BIGINT) return true;
     try {
       long n = whole("", v);

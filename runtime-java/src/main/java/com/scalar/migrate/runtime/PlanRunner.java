@@ -59,6 +59,27 @@ public final class PlanRunner {
     return execute(plan, CoreFetcher.joining(tx, admin), params);
   }
 
+  /**
+   * The binds of a plan, as the generated code passes them: {@code params("p_a", a, "p_b", b)}.
+   *
+   * <p>A NULL argument is an ordinary bind in PL/SQL ({@code WHERE (:p IS NULL OR col = :p)}), and
+   * {@code Plsql.bind} hands NULL and {@code ''} over as null. The generated code built the map with
+   * {@code Map.of}, which throws a NullPointerException on a null value, takes at most ten pairs, and rejects a
+   * name given twice (#149). This one keeps the order, accepts null, and names the duplicate.
+   */
+  public static Map<String, Object> params(Object... namesAndValues) {
+    if (namesAndValues.length % 2 != 0) {
+      throw new IllegalArgumentException("params takes name, value pairs: " + namesAndValues.length + " arguments");
+    }
+    Map<String, Object> out = new java.util.LinkedHashMap<>();
+    for (int i = 0; i < namesAndValues.length; i += 2) {
+      String name = (String) namesAndValues[i];
+      if (out.containsKey(name)) throw new IllegalArgumentException("bind given twice: " + name);
+      out.put(name, namesAndValues[i + 1]);
+    }
+    return out;
+  }
+
   /** Run a plan inside a ScalarDB SQL (JDBC) transaction the caller owns. */
   public static Result join(Connection conn, Plan plan, Map<String, Object> params) throws Exception {
     return execute(plan, JdbcFetcher.joining(conn), params);

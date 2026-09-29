@@ -19,7 +19,12 @@ flowchart LR
 
 ## 1. snapshot を取る（DB に入れる人がやること）
 
-`difftest/catalog_snapshot.py` の **1 ファイルだけ**を渡せば済みます。リポジトリのほかのコードは要りません。必要なのは Python 3.9 以上と `pip install oracledb` です。既定の thin モードでは Oracle クライアントは要りません。
+`difftest/catalog_snapshot.py` の **1 ファイルだけ**を渡せば済みます。リポジトリのほかのコードは要りません。
+
+> **このスクリプトは開発側のリポジトリにだけあります。** 公開の GitHub の版には `difftest/` が入っていないので、公開の版だけでは snapshot を取れません
+> （画面は作れますが、DB にしかない欄は「未取得」になります）。スクリプトを公開の範囲に入れるかは、まだ決めていません。
+
+必要なのは Python 3.9 以上と `pip install oracledb` です。既定の thin モードでは Oracle クライアントは要りません。
 
 ```bash
 export SRC_ORACLE_HOST=db.example SRC_ORACLE_PORT=1521 SRC_ORACLE_SERVICE=ORCLPDB1
@@ -97,7 +102,7 @@ DB が Native Network Encryption を必須にしていると、thin モードで
 
 終了コードは、0 = 作れた、1 = 作れたが警告がある、2 = 入力が誤っていて作らなかった、です。
 
-fixture で試すには:
+fixture（開発側のリポジトリの `fixtures/explorer/`。公開の版では、[はじめに](getting-started.md) の 5 の題材で snapshot なしの画面を試せます）で試すには:
 
 ```bash
 .venv/bin/python -m plsql.cli fixtures/explorer/src --out-dir out/explore/analysis --quiet
@@ -160,7 +165,7 @@ open out/explore/explorer.html
 - 実行統計（`V$SQL`、AWR）は取りません。どの SQL が何回流れているかは分かりません
 - 対象は Oracle 12.2 以降です
 
-## 5. fixture を取り直す（リポジトリを直す人向け）
+## 5. fixture を取り直す（リポジトリを直す人向け。開発側のリポジトリだけ）
 
 `fixtures/explorer/` の 3 つの snapshot は、検証用の Oracle（[検証環境](verification.md) の `source-oracle`）で実際に取ったものです。収集スクリプトか fixture のスキーマを変えたら取り直します。
 
