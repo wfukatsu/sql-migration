@@ -50,6 +50,7 @@ public class Residual implements AutoCloseable {
    *     the index memory (about 1.6x the rows, docs/reports/dml-followup-research.md).
    */
   public Residual(String mode, boolean buildIndexes) throws Exception {
+    englishDateNames();
     this.buildIndexes = buildIndexes;
     // the mode comes from a plan file and goes into a JDBC URL, where `;INIT=...` would run whatever it says
     this.mode = MODES.stream().filter(m -> m.equalsIgnoreCase(mode)).findFirst()
@@ -70,6 +71,29 @@ public class Residual implements AutoCloseable {
       s.execute("GRANT SELECT ON SCHEMA PUBLIC TO " + READER);
     }
     reader = DriverManager.getConnection(url, READER, password);
+  }
+
+  static boolean englishNames;   // package-private: the test starts over as a fresh JVM would
+
+  /**
+   * Make H2 read and write month and day names in English, whatever the JVM's locale. H2 keeps one process-wide table
+   * of them (TO_DATE's {@code MON} / {@code MONTH}, TO_CHAR's {@code MON}, {@code DAY}, {@code DY}, {@code AM}) and
+   * fills it on first use from the default FORMAT locale: on a Japanese JVM {@code TO_DATE('17-NOV-1981',
+   * 'DD-MON-YYYY')} failed ("Tried to parse one of '[1月, 2月, ...]'") and TO_CHAR wrote {@code 17-11月-1981}
+   * (H2 2.5.250, #160). Oracle's default NLS_DATE_LANGUAGE is AMERICAN, and PostgreSQL's to_char writes English
+   * names unless asked for TM. The table is filled once, with the default locale switched to US for that moment.
+   */
+  static synchronized void englishDateNames() {
+    if (englishNames) return;
+    java.util.Locale before = java.util.Locale.getDefault(java.util.Locale.Category.FORMAT);
+    try {
+      java.util.Locale.setDefault(java.util.Locale.Category.FORMAT, java.util.Locale.US);
+      org.h2.expression.function.ToCharFunction.clearNames();
+      org.h2.expression.function.ToCharFunction.getDateNames(org.h2.expression.function.ToCharFunction.MONTHS);
+    } finally {
+      java.util.Locale.setDefault(java.util.Locale.Category.FORMAT, before);
+    }
+    englishNames = true;
   }
 
   static String identifier(String kind, String name) {

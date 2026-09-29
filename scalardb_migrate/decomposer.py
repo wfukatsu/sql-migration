@@ -925,8 +925,12 @@ class Decomposer:
                     raise PlanBlocked([("RESIDUAL_H2", f"{fmt_call.sql(dialect=self.dialect)}: the format has a "
                                                        f"specifier H2 cannot write (or is not a constant); format the "
                                                        f"value in the application")])
-                fmt_call.replace(exp.Anonymous(this="FORMATDATETIME",
-                                               expressions=[fmt_call.this.copy(), exp.Literal.string(java)]))
+                args = [fmt_call.this.copy(), exp.Literal.string(java)]
+                if re.search(r"MMM|E|a", re.sub(r"'[^']*'", "", java)):
+                    # month and day names and AM/PM follow the JVM's locale unless named: 17 11月 1981 火 午後 on a
+                    # Japanese JVM (H2 2.5.250). MySQL writes them in English (lc_time_names en_US) (#160)
+                    args.append(exp.Literal.string("en"))
+                fmt_call.replace(exp.Anonymous(this="FORMATDATETIME", expressions=args))
                 notes.append("java: DATE_FORMAT rewritten to FORMATDATETIME for H2")
                 changed = True
         if self.dialect == "postgres":
