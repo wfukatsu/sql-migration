@@ -55,7 +55,7 @@ def set_limits(limits: Limits) -> None:
 
 
 def _loop_rows(file: JavaFile, name: str, loop: M.Loop, result: RepositoryFile, domain_package: str,
-               routine_id: str | None = None) -> None:
+               routine_id: str | None = None, record: str | None = None) -> None:
     """A cursor FOR loop's query, as a method returning every row.
 
     Every row, not a streaming cursor. An Oracle cursor holds its position across the transaction; ScalarDB has
@@ -64,7 +64,7 @@ def _loop_rows(file: JavaFile, name: str, loop: M.Loop, result: RepositoryFile, 
     an unbounded cursor nobody counted.
     """
     statement = loop.query
-    record = _record_for(name)
+    record = record or _record_for(name)
     file.add_import(f"{domain_package}.{record}", "java.util.ArrayList", "java.util.HashMap",
                     "java.util.List", "java.util.Map", "com.scalar.migrate.runtime.Residual")
     parameters, _ = _parameters(file, statement)
@@ -233,7 +233,8 @@ def generate_module(module: M.Module, package: str, domain_package: str) -> Repo
                     if statement.target_status == "ERROR":
                         _unsupported(f, loop_method(routine, loop), statement, result)
                     else:
-                        _loop_rows(f, loop_method(routine, loop), loop, result, domain_package, routine.id)
+                        _loop_rows(f, loop_method(routine, loop), loop, result, domain_package, routine.id,
+                                   loop_record(routine, loop))
                     continue
                 _method(f, routine, statement, result)
     return result
@@ -295,7 +296,21 @@ def _record_for(method: str) -> str:
 
 
 def loop_record(routine: M.Routine, loop: M.Loop) -> str:
-    return _record_for(loop_method(routine, loop))
+    """The row record of a loop's rows. The OPENs of one OUT cursor share the first one's (#160): the argument is
+    one List, assigned at each OPEN."""
+    return _record_for(loop_method(routine, rows_into_first(routine, loop)))
+
+
+def rows_into_first(routine: M.Routine, loop: M.Loop) -> M.Loop:
+    """The first loop that reads into the same OUT cursor argument as `loop` (#160); `loop` itself otherwise."""
+    into = (getattr(loop, "rows_into", None) or "").lower()
+    if not into:
+        return loop
+    from ..lower import _walk
+
+    return next((s for s in _walk(routine.body) + [x for h in routine.exception_handlers for x in _walk(h.body)]
+                 if s.kind == "Loop" and (getattr(s, "rows_into", None) or "").lower() == into
+                 and s.query is not None), loop)
 
 
 def out_rows(routine: M.Routine) -> dict[str, str]:

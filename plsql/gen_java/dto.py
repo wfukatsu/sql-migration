@@ -222,9 +222,14 @@ def dtos_for(module: M.Module, package: str) -> list[Dto]:
                                 note=f"Oracle のオブジェクト型 {name}（CREATE TYPE … AS OBJECT）。コンストラクタは new {java_class_name(name)}(…)")
             if record is not None:
                 out.append(record)
+        from .repository import loop_record
+        records: set[str] = set()
         for loop in _loops(routine):
+            if loop_record(routine, loop) in records:
+                continue   # the OPENs of one OUT cursor share one row record (#160)
             record = loop_row_record(routine, loop, package, source)
             if record is not None:
+                records.add(record.file.name)
                 out.append(record)
         result = result_record(routine, package, source)
         if result is not None:

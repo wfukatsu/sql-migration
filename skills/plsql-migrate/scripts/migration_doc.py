@@ -306,6 +306,7 @@ CHANGES = {
     "TRIGGER_NOT_APPLIED": (MEANING, "trigger が掛かる書き込みだが、生成コードでは掛けていない"),
     "TRIGGER_REDESIGN": (MEANING, "書き込む行を書き換える trigger を書く値に畳み込めない。trigger の再設計が要る"),
     "OVERLOAD_UNRESOLVED": (MEANING, "引数の数と名前からオーバーロードの版を決められない呼び出し。どの版かを確かめる"),
+    "CUR_OUT_REFUSED": (MEANING, "OUT 引数の cursor 変数を、行の List として呼び出し側へ渡せない（routine の中で FETCH / CLOSE する、列の違う問合せで OPEN する）。生成コードはこの OPEN を断っているので、渡し方を決めて書き直す（#160）"),
     "CALL_NOT_HOISTED": (MEANING, "OUT 引数のある関数を、条件で評価されるかが変わる位置（AND / OR の右辺、CASE の分岐、ELSIF の条件）で呼んでいる。生成コードは断っているので、if に分けて書き直す"),
     "GOTO": (MEANING, "ブロックとループに組み直せなかった GOTO。生成しないので、制御の流れを組み直す"),
     "GOTO_NOT_RESTRUCTURED": (MEANING, "GOTO をブロックとループに組み直せない理由（範囲が交差する、Oracle が拒む飛び先）"),

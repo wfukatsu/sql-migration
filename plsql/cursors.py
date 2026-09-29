@@ -19,6 +19,7 @@ recognised stays as the OPEN / FETCH / CLOSE nodes it was, which the generator r
 
 from __future__ import annotations
 
+import contextvars
 import dataclasses
 import re
 
@@ -46,9 +47,16 @@ def rewrite(routine: M.Routine, symbols: SymbolTable | None, module: str | None 
     _named_cursor_loops(routine, symbols, module, schema)
     _drop_order_nobody_reads(routine, schema)
     rewritten: set[str] = set()
-    routine.body = _sequence(routine.body, routine, symbols, module, schema, rewritten)
-    for handler in routine.exception_handlers:
-        handler.body = _sequence(handler.body, routine, symbols, module, schema, rewritten)
+    # #160: whether each OUT cursor argument can be handed over, decided on the routine as written -- before the
+    # first of its OPENs is replaced and the others are left to be compared with nothing
+    verdicts = {p.name.lower(): _out_verdict(routine, p, schema) for p in _out_cursors(routine)}
+    token = _OUT_VERDICTS.set({name: (verdict, len(_out_uses(routine, name))) for name, verdict in verdicts.items()})
+    try:
+        routine.body = _sequence(routine.body, routine, symbols, module, schema, rewritten)
+        for handler in routine.exception_handlers:
+            handler.body = _sequence(handler.body, routine, symbols, module, schema, rewritten)
+    finally:
+        _OUT_VERDICTS.reset(token)
     if rewritten:
         # `IF c%ISOPEN THEN CLOSE c; END IF;` guarded a cursor that no longer exists. Left in place it is a
         # reference to nothing, and the generator would refuse the handler it sits in.
@@ -56,6 +64,7 @@ def rewrite(routine: M.Routine, symbols: SymbolTable | None, module: str | None 
         for handler in routine.exception_handlers:
             handler.body = _drop_isopen(handler.body, rewritten)
     _general(routine, symbols, module, schema)
+    _refuse_out_cursors(routine, verdicts)
 
 
 # --- D. any other shape (#81) ----------------------------------------------------------------------------
@@ -322,6 +331,12 @@ def _sequence(statements: list[M.Statement], routine: M.Routine, symbols: Symbol
     out: list[M.Statement] = []
     index = 0
     while index < len(statements):
+        if _refused_out(statements[index]):
+            # #160: an OUT cursor argument the routine reads from or closes is not a local cursor to rewrite as
+            # one: the caller was handed it. Left as it is, so the refusal stands where it was written
+            out.append(statements[index])
+            index += 1
+            continue
         match = _first_row(statements, index, routine, symbols, module, schema) or \
             _count(statements, index, routine, symbols, module, schema) or \
             _chunks(statements, index, routine, symbols, module, schema) or \
@@ -710,21 +725,23 @@ def _opened_out(statements: list[M.Statement], index: int, routine: M.Routine, s
     gets the rows, a List of the query's row record, and the result record carries it. Before this the OPEN read the
     rows into a cursor state of the routine's own, and the argument stayed null -- the caller got nothing.
 
-    Only one OPEN of the argument, and no FETCH or CLOSE of it here: the routine that reads from the cursor it
-    hands over, or opens it on more than one query, is a different shape (each query would be its own row record).
+    More than one OPEN of the argument (#160, option A): Oracle hands the caller the cursor of the **last** OPEN
+    that ran (measured on 26ai 23.26.3). Each OPEN becomes its own read into the argument, so whichever runs last
+    is what the result record carries -- in sequence, in IF / ELSE branches, in a handler. It is taken only when
+    every OPEN selects the same columns, typed the same: the List has one row record (the first OPEN's), and a
+    query of other columns would need another. A FETCH or a CLOSE of the argument inside the routine is not this
+    shape either; `_out_verdict` says why, and `_refuse_out_cursors` makes the refusal visible.
     """
     statement = statements[index]
     if statement.kind != "OpenCursor" or not getattr(statement, "query_sql", None):
         return None
     cursor = _cursor_name(statement.cursor)
-    parameter = next((p for p in routine.parameters if p.name.lower() == cursor), None)
-    if parameter is None or parameter.direction not in ("OUT", "IN OUT") or parameter.type is None \
-            or not any(REF_CURSOR.match(t or "") for t in (parameter.type.oracle, parameter.type.resolved)):
+    parameter = next((p for p in _out_cursors(routine) if p.name.lower() == cursor), None)
+    if parameter is None:
         return None
-    everything = _walk_all(routine.body) + [s for h in routine.exception_handlers for s in _walk_all(h.body)]
-    uses = [s for s in everything if s.kind in ("OpenCursor", "Fetch", "CloseCursor")
-            and _cursor_name(s.cursor) == cursor]
-    if uses != [statement]:
+    verdict, opens = (_OUT_VERDICTS.get() or {}).get(cursor) or \
+        (_out_verdict(routine, parameter, schema), len(_out_uses(routine, cursor)))
+    if verdict is not None:
         return None
     query = _query(cursor, [], routine, symbols, module, schema, opened=statement.query_sql)
     if query is None or not _is_query(query):
@@ -736,8 +753,114 @@ def _opened_out(statements: list[M.Statement], index: int, routine: M.Routine, s
                   variable=row, query=operation, body=[], cursor=f"{row} IN ({query})", rows_into=parameter.name)
     loop.add("INFO", "CUR_RETURNED",
              f"OUT 引数の cursor 変数 {parameter.name} は呼び出し側へ渡されていた。移行先に渡せる cursor は無いので、"
-             f"行を読んで List を結果の record に入れる（呼び出し側は cursor から FETCH する代わりに List を受け取る）")
+             f"行を読んで List を結果の record に入れる（呼び出し側は cursor から FETCH する代わりに List を受け取る）"
+             + (f"。{parameter.name} は {opens} か所で OPEN される。Oracle は最後に走った OPEN を渡すので、OPEN ごとに"
+                f"行を読んで引数に入れ直す（どの OPEN も同じ列を選ぶ。#160）" if opens > 1 else ""))
     return ([loop], 1, cursor)
+
+
+# #160: each OUT cursor argument's verdict (None: hand the rows over) and how many OPENs it has, as written, while
+# `rewrite` walks the routine
+_OUT_VERDICTS: "contextvars.ContextVar[dict[str, tuple[str | None, int]] | None]" = \
+    contextvars.ContextVar("out_cursor_verdicts", default=None)
+
+
+def _refused_out(statement: M.Statement) -> bool:
+    """Whether `statement` opens an OUT cursor argument whose verdict is a refusal (#160)."""
+    if statement.kind != "OpenCursor":
+        return False
+    entry = (_OUT_VERDICTS.get() or {}).get(_cursor_name(statement.cursor))
+    return entry is not None and entry[0] is not None
+
+
+def _out_cursors(routine: M.Routine) -> list[M.Parameter]:
+    """The routine's OUT / IN OUT arguments of a cursor variable type (SYS_REFCURSOR, a REF CURSOR)."""
+    return [p for p in routine.parameters if p.direction in ("OUT", "IN OUT") and p.type is not None
+            and any(REF_CURSOR.match(t or "") for t in (p.type.oracle, p.type.resolved))]
+
+
+def _out_uses(routine: M.Routine, cursor: str, kinds: tuple[str, ...] = ("OpenCursor",)) -> list[M.Statement]:
+    everything = _walk_all(routine.body) + [s for h in routine.exception_handlers for s in _walk_all(h.body)]
+    return [s for s in everything if s.kind in kinds and _cursor_name(s.cursor) == cursor]
+
+
+def _out_verdict(routine: M.Routine, parameter: M.Parameter, schema: OracleSchema | None) -> str | None:
+    """None when every OPEN of the OUT cursor `parameter` can hand its rows over as a List; else why not (#160).
+
+    What Oracle does with the refused shapes (measured on Oracle AI Database 26ai, 23.26.3, 2026-09-30):
+
+    * FETCH inside the routine: the caller reads on from the row after the ones the routine took, and
+      `%ROWCOUNT` goes on counting from there. A List of every row would hand the caller rows it never saw.
+    * CLOSE inside the routine: the caller's first FETCH raises ORA-01001 (`%ISOPEN` is false). No List stands
+      for a closed cursor, and an empty one or null would be a silent answer where Oracle raises -- so it is
+      refused, not reproduced. A CLOSE followed by another OPEN (Oracle then hands that OPEN) is refused too:
+      telling the two apart needs the order they run in, on every path.
+    * OPENs of different columns: the caller gets the last one's columns, whichever that is. One List has one
+      row record, so which record the caller gets would be decided at run time.
+    """
+    cursor = parameter.name.lower()
+    if _out_uses(routine, cursor, ("Fetch",)):
+        return (f"OUT 引数の cursor 変数 {parameter.name} を routine の中で FETCH している。Oracle では呼び出し側は"
+                f"その続きの行から読み、%ROWCOUNT も続きから数える。全部の行の List では渡せない（#160）")
+    if _out_uses(routine, cursor, ("CloseCursor",)):
+        return (f"OUT 引数の cursor 変数 {parameter.name} を routine の中で CLOSE している。Oracle では呼び出し側の"
+                f"最初の FETCH が ORA-01001 になる。閉じた cursor に当たる List は無いので断る（#160）")
+    opens = _out_uses(routine, cursor)
+    if len(opens) < 2:
+        return None
+    shapes = [_projection(getattr(s, "query_sql", None), schema) for s in opens]
+    if any(shape is None for shape in shapes) or any(shape != shapes[0] for shape in shapes[1:]):
+        return (f"OUT 引数の cursor 変数 {parameter.name} を、選ぶ列の違う問合せで {len(opens)} 回 OPEN している"
+                f"（または列を読み取れない）。Oracle では最後に走った OPEN の列が呼び出し側へ渡る。1 つの List の"
+                f"行の型は 1 つなので渡せない（#160）")
+    return None
+
+
+def _projection(sql: str | None, schema: OracleSchema | None) -> list[tuple[str, str]] | None:
+    """The columns a query selects, each with the Java type its row record gives it -- what decides whether two
+    OPENs can share one row record (`gen_java.dto.loop_row_record` builds the record from the same two lists)."""
+    from .columns import select_columns, select_names
+    from .gen_java.dto import loop_component_type
+    from .sqlbridge import _oracle_type
+
+    if not sql:
+        return None
+    try:
+        tree = sqlglot.parse_one(sql.strip().rstrip(";"), dialect="oracle")
+    except Exception:  # noqa: BLE001 - a query we cannot read has no shape to compare
+        return None
+    columns = select_columns(tree)
+    names = select_names(sql.strip().rstrip(";"))
+    tables = [t.name.lower() for t in tree.find_all(exp.Table) if t.name]
+    shape = []
+    for index, column in enumerate(columns):
+        name = column or (names[index] if index < len(names) else None)
+        if name is None:
+            return None
+        oracle = _oracle_type(schema, tables, column) if column else None
+        shape.append((name.lower(), loop_component_type(oracle).name))
+    return shape or None
+
+
+def _refuse_out_cursors(routine: M.Routine, verdicts: dict[str, str | None]) -> None:
+    """Every OPEN of an OUT cursor argument that did not become a read into it carries `CUR_OUT_REFUSED` (#160).
+
+    Such an OPEN reads into a cursor state of the routine's own, and the argument would go back null: the caller
+    silently got nothing. The diagnostic is what the rules (CUR-004) see, and what the generator refuses the OPEN on.
+    """
+    for parameter in _out_cursors(routine):
+        cursor = parameter.name.lower()
+        everything = _walk_all(routine.body) + [s for h in routine.exception_handlers for s in _walk_all(h.body)]
+        left = [s for s in everything if (s.kind == "OpenCursor" and _cursor_name(s.cursor) == cursor)
+                or (s.kind == "SqlOperation" and (getattr(s, "opens_cursor", None) or "").lower() == cursor)]
+        if not left:
+            continue
+        reason = verdicts.get(cursor) or \
+            (f"OUT 引数の cursor 変数 {parameter.name} の OPEN を、呼び出し側へ渡す行に読み替えられなかった"
+             f"（問合せを読めない）。このままでは引数が null で返る（#160）")
+        for statement in left:
+            if not any(d.code == "CUR_OUT_REFUSED" for d in statement.diagnostics):
+                statement.add("ERROR", "CUR_OUT_REFUSED", reason)
 
 
 def _walk_all(statements: list[M.Statement]) -> list[M.Statement]:
