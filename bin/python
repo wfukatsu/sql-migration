@@ -31,12 +31,13 @@ if [ ! -x "$VENV/bin/python" ] || [ "$(cat "$STAMP" 2>/dev/null || true)" != "$W
     echo "sql-migration: preparing the Python environment at $VENV (first run, or requirements.txt changed)"
     PY="${SQL_MIGRATION_PYTHON:-python3}"
     command -v "$PY" >/dev/null || { echo "sql-migration: $PY not found. Install Python 3.10+ or set SQL_MIGRATION_PYTHON"; exit 127; }
-    # the lowest version the tools run on (CI runs the tests on it too); older ones fail later, and less clearly
+    # the lowest version the tools run on (requirements.txt is compiled for it); older ones fail later, and less clearly
     "$PY" -c 'import sys; sys.exit(sys.version_info < (3, 10))' || {
       echo "sql-migration: $PY is Python $("$PY" -c 'import platform; print(platform.python_version())'). Python 3.10+ is needed: install it or set SQL_MIGRATION_PYTHON"
       exit 1
     }
-    "$PY" -m venv "$VENV"
+    # --clear: a rebuild must not keep what an older requirements.txt put there (pytest, duckdb before #152)
+    "$PY" -m venv --clear "$VENV"
     "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: \
       -r "$ROOT/requirements.txt"
     echo "$WANT" > "$STAMP"

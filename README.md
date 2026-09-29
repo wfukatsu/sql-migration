@@ -106,7 +106,7 @@ snapshot ファイルから読みます。誰も取っていない値は「未�
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt          # sqlglot / pytest / duckdb
+.venv/bin/pip install -r requirements-dev.txt      # 変換ツールの依存と pytest / hypothesis
 
 # SQL を変換する（DB 不要）
 .venv/bin/python -m scalardb_migrate.cli samples/oracle.sql --source oracle --out-dir out --plan-dir out/plans
