@@ -54,7 +54,7 @@ docs/
 | [はじめに](guide/getting-started.md) | 準備、最初の SQL 変換、実行計画の確認、最初の PL/SQL 解析、テスト |
 | [チュートリアル](guide/tutorial.md) | サンプル（`samples/tutorial/`）を sql-transpile と migrate-flow で最後まで通した、**開発側のリポジトリでの記録**（サンプルと結果は公開の版に入っていない）。断られた文、人の判断、承認の取り直し、実 DB の比較（SQL 9/10、PL/SQL 13/13）、見つけて直した不具合 |
 | Oracle 構文カタログの検証（`samples/oracle-samples/`、開発側のリポジトリだけ） | Oracle 公式ドキュメントの構成に沿った構文カタログ（SQL 4 本 + PL/SQL 3 本、約 1,700 行）を変換と実 DB 比較に通した記録（2026-09-24〜25）。構文ごとに「そのまま移る / 実行計画 / アプリへ / 人が決める」のどれになるか、実 DB の結果、直した不具合 22 件（Issue #30〜#45）、サンプル自体の不備 3 点 |
-| Oracle PL/SQL 言語リファレンスの例の検証（`samples/oracle-plsql-docs/`、開発側のリポジトリだけ） | Oracle PL/SQL 言語リファレンス 12c R1 の例 420 すべてを、Oracle 26ai で文書の結果と照合し、変換して実 DB（Oracle と ScalarDB Cluster）で比べた記録。実行した 282 例で一致 189、証拠つきの AUTO 120 例はすべて一致（2026-09-29）。経緯（直した Issue と数の移り変わり）はリンク先の README にある |
+| Oracle PL/SQL 言語リファレンスの例の検証（`samples/oracle-plsql-docs/`、開発側のリポジトリだけ） | Oracle PL/SQL 言語リファレンス 12c R1 の例 420 すべてを、Oracle 26ai で文書の結果と照合し、変換して実 DB（Oracle と ScalarDB Cluster）で比べた記録。実行した 282 例で一致 192、証拠つきの AUTO 120 例はすべて一致（2026-09-30）。経緯（直した Issue と数の移り変わり）はリンク先の README にある |
 | [SQL の変換と実行計画](guide/sql-conversion.md) | `scalardb_migrate.cli` のオプション・出力・判定、`residual-runner` のサブコマンド |
 | [PL/SQL → Java 変換](guide/plsql-conversion.md) | 判定の考え方、コマンド、出力、corpus 上の現在地 |
 | [SQL と PL/SQL の変換の一覧](guide/conversion-catalog.md) | 構文・関数・データ型・文・例外などの項目ごとに、変換後の形、判定と指摘コード（ルール ID）、Oracle との違いを引ける表 |
