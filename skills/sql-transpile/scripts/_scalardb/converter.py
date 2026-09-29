@@ -693,7 +693,7 @@ class StatementConverter:
             fmt = e.args.get("format")
             if fmt is not None and not isinstance(fmt, exp.Literal):
                 self.fail("DATE_FMT", f"{ctx}: {e.sql(dialect=self.dialect)}: the format is not a constant")
-            iso = iso_temporal_literal(e.this.name, fmt.name if fmt is not None else None)
+            iso = iso_temporal_literal(e.this.name, fmt.name if fmt is not None else None, self.dialect)
             if iso is None:
                 self.fail("DATE_FMT", f"{ctx}: {e.sql(dialect=self.dialect)} cannot be rewritten as a ScalarDB literal "
                                       f"(YYYY-MM-DD [HH:MM:SS.FFF]); convert the value in the application and bind it")
@@ -702,6 +702,10 @@ class StatementConverter:
                                       f"reads it with the session's date format; '{iso}' is written as it stands")
             else:
                 self.info("DATE_LIT", f"{ctx}: {e.sql(dialect=self.dialect)} written as the plain literal '{iso}'")
+                if self.dialect == "oracle" and re.search(r"RR(?!RR)|%y", fmt.name) and not re.search(r"\d{4}", e.this.name):
+                    # RR is relative to the year the statement runs in; the literal fixes today's answer (#147)
+                    self.info("DATE_LIT", f"{ctx}: the two-digit year of '{e.this.name}' is read by Oracle's rule for "
+                                          f"the current year ({'RR: nearest century' if 'R' in fmt.name else 'YY: this century'})")
             return exp.Literal.string(iso)
         if isinstance(e, (exp.CurrentTimestamp, exp.CurrentDate, exp.CurrentTime)) or \
                 (isinstance(e, exp.Anonymous) and e.name.upper() in ("SYSDATE", "SYSTIMESTAMP", "NOW", "GETDATE")):

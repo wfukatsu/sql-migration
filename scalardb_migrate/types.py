@@ -221,24 +221,55 @@ def is_iso_temporal(text: str) -> bool:
     return bool(_ISO_TEMPORAL.fullmatch(text))
 
 
-def iso_temporal_literal(text: str, fmt: str | None) -> str | None:
+def two_digit_year(yy: int, rule: str, this_year: int | None = None) -> int:
+    """The year a two-digit year means. ``rule``: "RR" (Oracle: the century nearest the current year), "YY"
+    (Oracle: the current century) or "pivot70" (PostgreSQL and MySQL: 00-69 are 20xx, 70-99 are 19xx)."""
+    this_year = this_year or datetime.now().year
+    century = this_year // 100 * 100
+    if rule == "YY":
+        return century + yy
+    if rule == "RR":
+        if this_year % 100 < 50:
+            return century + yy if yy < 50 else century - 100 + yy
+        return century + 100 + yy if yy < 50 else century + yy
+    return 2000 + yy if yy < 70 else 1900 + yy
+
+
+def iso_temporal_literal(text: str, fmt: str | None, dialect: str | None = None) -> str | None:
     """The ISO text of ``TO_DATE(text, fmt)``, or None when it cannot be worked out here.
 
     ``fmt`` is the strftime form SQLGlot gives every dialect's format model. Without a format the source database
     reads the text with its session settings (NLS_DATE_FORMAT), which this tool cannot see: only text that is
-    already ISO is passed through. Format elements with no strftime counterpart (RR, FF, ...) are refused rather
+    already ISO is passed through. Format elements with no strftime counterpart (FF, ...) are refused rather
     than guessed.
+
+    A two-digit year follows the source's rule, not Python's (which reads 00-68 as 20xx): Oracle's ``YY`` is the
+    current century and ``RR`` the century nearest the current year (``81`` is 1981 in 2026), ``RRRR`` takes four
+    digits as written and two like ``RR``; PostgreSQL's and MySQL's two-digit year is 1970-2069 (#147).
     """
     if fmt is None:
         return text if is_iso_temporal(text) else None
     if fmt.startswith("%Y-%m-%d") and is_iso_temporal(text):
         return text   # the ANSI literal TIMESTAMP '...' arrives with the ISO format, fraction or not
     fmt = re.sub(r"\.FF\d?$", ".%f", fmt)
+    rule = None
+    if "RRRR" in fmt:
+        four = fmt.replace("RRRR", "%Y")
+        found = iso_temporal_literal(text, four, dialect)
+        if found is not None:
+            return found
+        fmt, rule = fmt.replace("RRRR", "%y"), "RR"
+    elif "RR" in fmt:
+        fmt, rule = fmt.replace("RR", "%y"), "RR"
+    elif "%y" in fmt:
+        rule = "YY" if dialect == "oracle" else "pivot70"
     directives = re.findall(r"%(.)", fmt)
-    if re.search(r"[A-Za-z]", re.sub(r"%.", "", fmt)) or not set(directives) <= _STRPTIME_DIRECTIVES:
+    if re.search(r"[A-Za-z]", re.sub(r"%.", "", fmt)) or not set(directives) <= _STRPTIME_DIRECTIVES | {"y"}:
         return None
     try:
         parsed = datetime.strptime(text, fmt)
+        if rule:
+            parsed = parsed.replace(year=two_digit_year(parsed.year % 100, rule))
     except ValueError:
         return None
     if not set(directives) & _CLOCK_DIRECTIVES:

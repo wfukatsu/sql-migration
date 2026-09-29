@@ -145,7 +145,7 @@ def _flatten(e: exp.Expression, op: type) -> list[exp.Expression]:
     return [e]
 
 
-def _literal_value(e: exp.Expression):
+def _literal_value(e: exp.Expression, dialect: str | None = None):
     """Python value for a literal / bind marker, or raise NotDecomposable."""
     e = _unparen(e)
     if isinstance(e, exp.Literal):
@@ -153,7 +153,7 @@ def _literal_value(e: exp.Expression):
             return e.name
         return float(e.name) if "." in e.name or "e" in e.name.lower() else int(e.name)
     if isinstance(e, exp.Neg) and isinstance(e.this, exp.Literal):
-        v = _literal_value(e.this)
+        v = _literal_value(e.this, dialect)
         return -v
     if isinstance(e, exp.Null):
         return None
@@ -174,7 +174,7 @@ def _literal_value(e: exp.Expression):
         return e.this.name
     if isinstance(e, (exp.StrToDate, exp.StrToTime, exp.TsOrDsToDate)) and isinstance(e.this, exp.Literal):
         fmt = e.args.get("format")
-        iso = iso_temporal_literal(e.this.name, fmt.name if fmt is not None else None) \
+        iso = iso_temporal_literal(e.this.name, fmt.name if fmt is not None else None, dialect) \
             if fmt is None or isinstance(fmt, exp.Literal) else None
         if iso is None:
             raise NotDecomposable(f"{e.sql()} cannot be rewritten as a ScalarDB literal (YYYY-MM-DD [HH:MM:SS.FFF])")
@@ -490,14 +490,15 @@ class Decomposer:
             # row (#103). The residual SQL applies it, so it is not pushed down
             if isinstance(leaf, exp.Between) and isinstance(leaf.this, exp.Column) and not leaf.args.get("symmetric"):
                 return self._own(leaf.this, scope, alias, "BETWEEN",
-                                 [_literal_value(leaf.args["low"]), _literal_value(leaf.args["high"])])
+                                 [_literal_value(leaf.args["low"], self.dialect),
+                                  _literal_value(leaf.args["high"], self.dialect)])
             if type(leaf) in COMPARE_OPS:
                 op = COMPARE_OPS[type(leaf)]
                 lhs, rhs = leaf.this, leaf.expression
                 if isinstance(rhs, exp.Column) and not isinstance(lhs, exp.Column):
                     lhs, rhs, op = rhs, lhs, FLIP_OPS[op]
                 if isinstance(lhs, exp.Column) and not isinstance(_unparen(rhs), exp.Column):
-                    return self._own(lhs, scope, alias, op, _literal_value(rhs))
+                    return self._own(lhs, scope, alias, op, _literal_value(rhs, self.dialect))
         except NotDecomposable:
             return None
         return None
@@ -509,7 +510,7 @@ class Decomposer:
         return Predicate(col.name, op, value)
 
     def _like(self, like: exp.Like, scope: Scope, alias: str, op: str) -> Predicate | None:
-        p = self._own(like.this, scope, alias, op, _literal_value(like.expression))
+        p = self._own(like.this, scope, alias, op, _literal_value(like.expression, self.dialect))
         # Oracle has no default LIKE escape character, ScalarDB's is `\`: `name LIKE 'a\_%'` fetched as written
         # did not read the row 'a\xb' (#103). ESCAPE '' where the converter's _oracle_like adds it
         if p is not None and self.dialect == "oracle" and (not isinstance(p.value, str) or "\\" in p.value):
@@ -766,6 +767,32 @@ class Decomposer:
                     pattern.replace(exp.Anonymous(this="REPLACE", expressions=[
                         pattern.copy(), exp.Literal.string("\\"), exp.Literal.string("\\\\")]))
                     changed = True
+        if self.dialect in ("oracle", "mysql"):
+            # H2 divides two integers as integers in every mode; Oracle and MySQL answer a fraction. Fetched INT /
+            # BIGINT columns are NUMERIC in H2 already (Residual.columnType), but COUNT(*), LENGTH(...) and integer
+            # literals are not: COUNT(*) / 4 was 0 and 7 / 2 was 3 where Oracle answers 0.5 and 3.5 (#147, H2 2.5.250).
+            # NUMERIC(19) keeps a whole number exact and divides with a fraction; a decimal operand needs nothing
+            for div in list(node.find_all(exp.Div)):
+                right = _unparen(div.expression)
+                if _whole_number(div.this) and not (isinstance(right, exp.Literal) and not right.is_int):
+                    div.set("this", exp.Cast(this=div.this.copy(), to=exp.DataType.build("DECIMAL(19)")))
+                    changed = True
+        if self.dialect == "oracle":
+            # Oracle's RR is the century nearest the current year ('81' is 1981 in 2026); H2 reads it as this century
+            # (2081). A constant is worked out here, as the converter does; anything else cannot be planned (#147)
+            for conv in list(node.find_all(exp.StrToDate, exp.StrToTime)):
+                fmt = conv.args.get("format")
+                if not isinstance(fmt, exp.Literal) or not re.search(r"(?<!R)RR(?!R)", fmt.name):
+                    continue
+                iso = iso_temporal_literal(conv.this.name, fmt.name, "oracle") \
+                    if isinstance(conv.this, exp.Literal) and conv.this.is_string else None
+                if iso is None or "." in iso:
+                    raise PlanBlocked([("RESIDUAL_H2", f"{conv.sql(dialect=self.dialect)}: H2 reads the RR year as the "
+                                                       f"current century, Oracle as the nearest one; convert the value in "
+                                                       f"the application, or use a four-digit year (YYYY / RRRR)")])
+                full = iso if " " in iso else iso + " 00:00:00"
+                conv.replace(sqlglot.parse_one(f"TO_DATE('{full}', 'YYYY-MM-DD HH24:MI:SS')", read="oracle"))
+                changed = True
         for sub in list(node.find_all(exp.Sub)):  # date - date -> fractional days (Oracle) instead of an INTERVAL (H2)
             if self._is_datelike(sub.this) and self._is_datelike(sub.expression):
                 sub.replace(exp.Anonymous(this="DAYS_BETWEEN", expressions=[sub.this, sub.expression]))
@@ -842,6 +869,23 @@ class Decomposer:
                  ("ORDER_STORAGE", "P13"), ("OR_KEYS", "P14"), ("NO_CROSS_PARTITION", "P15")]
         found = [p for c, p in order if c in codes]
         return "+".join(dict.fromkeys(found)) if found else "P1"
+
+
+def _whole_number(e: exp.Expression) -> bool:
+    """Whether H2 types ``e`` as an integer although it comes from no fetched column: an integer literal, COUNT,
+    a string length or position, an EXTRACT, ROWNUM, and +, -, *, MOD over those."""
+    e = _unparen(e)
+    if isinstance(e, exp.Literal):
+        return not e.is_string and e.is_int
+    if isinstance(e, (exp.Count, exp.Length, exp.StrPosition, exp.Extract)):
+        return True
+    if isinstance(e, exp.Column):
+        return e.name.upper() == "ROWNUM" and not e.table
+    if isinstance(e, exp.Neg):
+        return _whole_number(e.this)
+    if isinstance(e, (exp.Add, exp.Sub, exp.Mul, exp.Mod)):
+        return _whole_number(e.this) and _whole_number(e.expression)
+    return False
 
 
 def _mysql_fmt_to_java(fmt: str) -> str:
