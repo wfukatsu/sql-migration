@@ -25,6 +25,38 @@ import java.util.Objects;
 public final class Plsql {
   private Plsql() {}
 
+  // --- the source database's NLS settings (#157) ------------------------------------------------------------------
+
+  private static volatile Nls nls = Nls.AMERICAN;
+  private static boolean nlsDecided;
+
+  /**
+   * The NLS settings the project decided in limits.yaml (`nls:`). The generated code calls this once per class,
+   * before any routine runs, with the same settings everywhere; two different settings in one JVM are two source
+   * databases' sessions mixed, and are refused rather than letting the last one win. Without a call the runtime
+   * writes what Oracle writes with its defaults ({@link Nls#AMERICAN}).
+   */
+  public static synchronized void useNls(Nls settings) {
+    Objects.requireNonNull(settings, "settings");
+    if (nlsDecided && !nls.equals(settings)) {
+      throw new IllegalStateException("NLS settings already set to " + nls + "; refusing " + settings
+          + " (two projects with different NLS decisions in one JVM)");
+    }
+    nls = settings;
+    nlsDecided = true;
+  }
+
+  /** The NLS settings in force: the decided ones, or Oracle's defaults. */
+  public static Nls nls() {
+    return nls;
+  }
+
+  /** For tests: back to Oracle's defaults, as if nothing had been decided. */
+  static synchronized void resetNls() {
+    nls = Nls.AMERICAN;
+    nlsDecided = false;
+  }
+
   public static boolean isNull(Object value) {
     return value == null || (value instanceof String s && s.isEmpty());
   }
@@ -151,11 +183,9 @@ public final class Plsql {
     if (value == null) return "";
     if (value instanceof BigDecimal d) {
       // Oracle's implicit TO_CHAR writes no zero before the point: 0.5 is '.5' and -0.5 is '-.5'. With Java's
-      // "0.5", every `'...' || number` below one came out one character longer than Oracle's
-      String plain = d.stripTrailingZeros().toPlainString();
-      if (plain.startsWith("0.")) return plain.substring(1);
-      if (plain.startsWith("-0.")) return "-" + plain.substring(2);
-      return plain;
+      // "0.5", every `'...' || number` below one came out one character longer than Oracle's. The point is the
+      // session's decimal character: '1234,5' with NLS_NUMERIC_CHARACTERS ',.' (#157)
+      return OracleFormat.minimal(d, nls);
     }
     // a Float is only ever a BINARY_FLOAT / SIMPLE_FLOAT: Oracle writes those as 4.0E+000, not as a NUMBER (#91)
     if (value instanceof Float f) return binaryText(f.doubleValue(), 9);
@@ -177,36 +207,28 @@ public final class Plsql {
     return String.valueOf(value);
   }
 
-  private static final String[] MONTHS =
-      {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
-
-  /** A DATE as NLS_DATE_FORMAT DD-MON-RR writes it: 05-JAN-99. The time of day is not written. */
+  /**
+   * A DATE as NLS_DATE_FORMAT writes it: 05-JAN-99 with Oracle's defaults, the project's NLS_DATE_FORMAT when it
+   * decided one (#157).
+   */
   static String dateText(LocalDateTime d) {
-    return String.format("%02d-%s-%02d", d.getDayOfMonth(), MONTHS[d.getMonthValue() - 1], Math.floorMod(d.getYear(), 100));
+    return OracleFormat.datetime(d, OracleFormat.DateKind.DATE, nls.dateFormat(), nls, 0);
   }
 
   /**
    * TO_CHAR of a TIMESTAMP(precision) or TIMESTAMP WITH TIME ZONE, or `'...' || t` with one, as NLS_TIMESTAMP_FORMAT
-   * DD-MON-RR HH.MI.SSXFF AM (and _TZ_FORMAT's TZR) write it: 26-SEP-26 09.30.00.500000 AM +09:00. FF is as many
-   * digits as the declared precision, and TIMESTAMP(0) has no fraction at all (#94).
+   * (and NLS_TIMESTAMP_TZ_FORMAT) write it: 26-SEP-26 09.30.00.500000 AM +09:00 with Oracle's defaults. FF is as
+   * many digits as the declared precision, and TIMESTAMP(0) has no fraction at all, radix character included (#94).
    */
   public static String timestampText(Object value, int precision) {
     if (isNull(value)) return "";
-    LocalDateTime t;
-    String zone = "";
     if (value instanceof java.time.OffsetDateTime o) {
-      t = o.toLocalDateTime();
-      int seconds = o.getOffset().getTotalSeconds();
-      zone = String.format(" %s%02d:%02d", seconds < 0 ? "-" : "+", Math.abs(seconds) / 3600, Math.abs(seconds) / 60 % 60);
-    } else if (value instanceof LocalDateTime l) {
-      t = l;
-    } else {
-      return text(value);
+      return OracleFormat.datetime(o, OracleFormat.DateKind.TIMESTAMP_TZ, nls.timestampTzFormat(), nls, precision);
     }
-    int hour = t.getHour() % 12 == 0 ? 12 : t.getHour() % 12;
-    String fraction = precision > 0 ? "." + String.format("%09d", t.getNano()).substring(0, Math.min(precision, 9)) : "";
-    return dateText(t) + String.format(" %02d.%02d.%02d", hour, t.getMinute(), t.getSecond()) + fraction
-        + (t.getHour() < 12 ? " AM" : " PM") + zone;
+    if (value instanceof LocalDateTime l) {
+      return OracleFormat.datetime(l, OracleFormat.DateKind.TIMESTAMP, nls.timestampFormat(), nls, precision);
+    }
+    return text(value);
   }
 
   /** TO_CHAR of a BINARY_DOUBLE / SIMPLE_DOUBLE, or `'...' || d` with one: 17 significant digits (#91). */
@@ -553,26 +575,35 @@ public final class Plsql {
     return OracleNumbers.round40(operator.apply(num(a), num(b)));
   }
 
-  /** {@code TO_CHAR(value, format)}. Only the formats the corpus uses are mapped; the rest raise. */
+  /**
+   * {@code TO_CHAR(value, format)}: Oracle's format models, under the project's NLS settings (#157, {@link
+   * OracleFormat}). A number (text is read as one first, ORA-06502 when it is not) takes a number model, a
+   * date-time a date model. A LocalDateTime the generator could not type as a DATE or a TIMESTAMP comes here; one
+   * it could goes to {@link #textDate} / {@link #textTimestamp}, because FF and X are ORA-01821 on a DATE.
+   */
   public static String text(Object value, String format) {
-    if (value == null) return null;
-    String pattern = switch (format.toUpperCase()) {
-      case "YYYY-MM-DD" -> "yyyy-MM-dd";
-      case "YYYY-MM-DD HH24:MI:SS" -> "yyyy-MM-dd HH:mm:ss";
-      case "YYYYMM" -> "yyyyMM";
-      case "YYYY" -> "yyyy";
-      default -> throw new UnsupportedOperationException("TO_CHAR format not mapped: " + format);
-    };
-    java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern(pattern);
-    if (value instanceof LocalDateTime d) return d.format(formatter);
-    if (value instanceof java.time.LocalDate d) return d.atStartOfDay().format(formatter);
-    if (value instanceof java.time.OffsetDateTime d) return d.toLocalDateTime().format(formatter);
-    if (value instanceof java.time.Instant d) return d.atOffset(java.time.ZoneOffset.UTC).toLocalDateTime().format(formatter);
-    // A date format applied to something that is not a date. It used to fall through to text(value) and return
-    // the value's default rendering -- `TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD')` gave `2026-09-19T15:11:33.746771Z`,
-    // a wrong string and no error
-    throw new UnsupportedOperationException(
-        "TO_CHAR(" + value.getClass().getSimpleName() + ", '" + format + "') is not mapped");
+    if (isNull(value) || isNull(format)) return null;
+    if (value instanceof CharSequence) value = num(value);
+    if (value instanceof Number) return OracleFormat.number(num(value), format, nls);
+    if (value instanceof java.time.temporal.Temporal) {
+      return OracleFormat.datetime(value, OracleFormat.DateKind.UNKNOWN, format, nls, 9);
+    }
+    throw new IllegalArgumentException("TO_CHAR(" + value.getClass().getSimpleName() + ", '" + format + "')");
+  }
+
+  /** {@code TO_CHAR(d, format)} of a value declared DATE: FF, X and the zone elements are ORA-01821. */
+  public static String textDate(Object value, String format) {
+    if (isNull(value) || isNull(format)) return null;
+    return OracleFormat.datetime(value, OracleFormat.DateKind.DATE, format, nls, 9);
+  }
+
+  /**
+   * {@code TO_CHAR(t, format)} of a value declared TIMESTAMP (or WITH TIME ZONE): a bare FF writes nine digits,
+   * whatever the declared precision -- PL/SQL's TO_CHAR takes the unconstrained type (measured on 26ai).
+   */
+  public static String textTimestamp(Object value, String format) {
+    if (isNull(value) || isNull(format)) return null;
+    return OracleFormat.datetime(value, OracleFormat.DateKind.TIMESTAMP, format, nls, 9);
   }
 
   /**
@@ -582,6 +613,13 @@ public final class Plsql {
    */
   private static BigDecimal num(Object value) {
     try {
+      if (value instanceof CharSequence text && nls.decimal() != '.') {
+        // the session's decimal character is the only one an implicit conversion reads: '1234,5' with ',.', and
+        // '1234.5' is then ORA-06502 (#157, measured)
+        String s = text.toString();
+        if (s.indexOf('.') >= 0) throw new NumberFormatException(s);
+        value = s.replace(nls.decimal(), '.');
+      }
       return OracleNumbers.toBigDecimal(value);
     } catch (NumberFormatException e) {
       throw new ValueError("character to number conversion error");
@@ -593,9 +631,13 @@ public final class Plsql {
     return isNull(value) ? null : num(value);
   }
 
-  /** TO_NUMBER(value, format): a format model is not mapped, and guessing one would read '1,234' two ways. */
+  /**
+   * TO_NUMBER(value, format) in PL/SQL: text the model does not describe is ORA-06502, which VALUE_ERROR catches
+   * (#157, {@link OracleFormat#parseNumber}). A number is written as text first, as Oracle converts it.
+   */
   public static BigDecimal toNumber(Object value, Object format) {
-    throw new UnsupportedOperationException("TO_NUMBER(value, '" + format + "') is not mapped");
+    if (isNull(value) || isNull(format)) return null;
+    return OracleFormat.parseNumber(text(value), text(format), nls);
   }
 
   /** Coerce to Oracle's NUMBER. Generated code uses it wherever a literal or a ternary lands in a NUMBER. */
@@ -2182,7 +2224,7 @@ public final class Plsql {
 
   /** TO_DATE(text[, format]). Without a format the session's NLS_DATE_FORMAT, DD-MON-RR in English. */
   public static LocalDateTime toDate(Object value) {
-    return toDate(value, "DD-MON-RR");
+    return toDate(value, nls.dateFormat());
   }
 
   /**
@@ -2207,7 +2249,7 @@ public final class Plsql {
 
   /** TO_TIMESTAMP(text): the session's NLS_TIMESTAMP_FORMAT, DD-MON-RR HH.MI.SSXFF AM (#140). */
   public static LocalDateTime toTimestamp(Object value) {
-    return toTimestamp(value, "DD-MON-RR HH.MI.SSXFF AM");
+    return toTimestamp(value, nls.timestampFormat());
   }
 
   /**
@@ -2277,6 +2319,7 @@ public final class Plsql {
     int second = 0;
     int nano = 0;
     boolean twelve = false;
+    boolean fourDigitRr = false;
     Boolean afternoon = null;
     int[] at = {0};
     int i = 0;
@@ -2301,6 +2344,7 @@ public final class Plsql {
         int start = at[0];
         int y = digits(input, at, 4);
         year = at[0] - start <= 2 ? rr(y, now.getYear()) : y;   // RR given four digits takes them as they are
+        fourDigitRr = at[0] - start > 2;
         i += 2;
       } else if (rest.startsWith("YY")) {
         year = now.getYear() / 100 * 100 + digits(input, at, 2);
@@ -2308,6 +2352,15 @@ public final class Plsql {
       } else if (rest.startsWith("MONTH") || rest.startsWith("MON")) {
         month = monthName(input, at);
         i += rest.startsWith("MONTH") ? 5 : 3;
+      } else if (rest.startsWith("MM") && at[0] < input.length() && Character.isLetter(input.charAt(at[0]))) {
+        // MM reads a month's name too, as MON reads MONTH and MONTH reads MON (Oracle's conversion rules, measured);
+        // a word that is not one is ORA-01858, a letter where a digit was expected
+        try {
+          month = monthName(input, at);
+        } catch (FunctionError e) {
+          throw nonNumeric();
+        }
+        i += 2;
       } else if (rest.startsWith("MM")) {
         month = digits(input, at, 2);
         if (month < 1 || month > 12) throw dateError(-1843, "An invalid month was specified.");
@@ -2342,15 +2395,23 @@ public final class Plsql {
         nano = Integer.parseInt((fraction + "000000000").substring(0, 9));
         i += sized ? 3 : 2;
       } else if (timestamp && rest.startsWith("X")) {
-        // the radix character. Anything else stops the reading there: '03,5' with SSXFF is ORA-01830 (26ai)
-        if (input.charAt(at[0]) != '.') break;
+        // the session's radix character. Anything else stops the reading there: '03,5' with SSXFF is ORA-01830 (26ai)
+        if (input.charAt(at[0]) != nls.decimal()) break;
         at[0]++;
         i += 1;
       } else if (rest.startsWith("AM") || rest.startsWith("PM")) {
-        String marker = input.substring(at[0], Math.min(at[0] + 2, input.length())).toUpperCase(java.util.Locale.ROOT);
-        if (!marker.equals("AM") && !marker.equals("PM")) throw dateError(-1855, "AM/A.M. or PM/P.M. required");
-        afternoon = marker.equals("PM");
-        at[0] += 2;
+        // the session's language: AM / PM, 午前 / 午後 (#157)
+        String rest2 = input.substring(at[0]).toUpperCase(java.util.Locale.ROOT);
+        Nls.Names names = nls.names();
+        if (rest2.startsWith(names.am())) {
+          afternoon = false;
+          at[0] += names.am().length();
+        } else if (rest2.startsWith(names.pm())) {
+          afternoon = true;
+          at[0] += names.pm().length();
+        } else {
+          throw dateError(-1855, "AM/A.M. or PM/P.M. required");
+        }
         i += 2;
       } else if (Character.isLetterOrDigit(f.charAt(i))) {
         throw new UnsupportedOperationException("TO_DATE format element not mapped: " + model.substring(i));
@@ -2361,6 +2422,8 @@ public final class Plsql {
       }
     }
     if (at[0] < input.length()) {
+      // after RR read four digits, what is left over is ORA-01861 rather than ORA-01830 (26ai, measured)
+      if (fourDigitRr) throw dateError(-1861, "literal does not match format string");
       throw dateError(-1830, "Date format picture ends before converting entire input string.");
     }
     if (twelve) hour = hour % 12 + (Boolean.TRUE.equals(afternoon) ? 12 : 0);
@@ -2386,22 +2449,29 @@ public final class Plsql {
     return twoDigits < 50 ? century + 100 + twoDigits : century + twoDigits;
   }
 
-  /** A month's English name, full or its first three letters, in any case: 'January' and 'jan' are both 1. */
+  /**
+   * A month's name in the session's language, full or abbreviated, in any case: 'January' and 'jan' are both 1 in
+   * English, '9月' is 9 in Japanese (#157). The longest name that matches wins, so '10月' is not read as '1月'.
+   */
   private static int monthName(String input, int[] at) {
     String rest = input.substring(at[0]).toUpperCase(java.util.Locale.ROOT);
-    for (java.time.Month month : java.time.Month.values()) {
-      if (rest.startsWith(month.name())) {
-        at[0] += month.name().length();
-        return month.getValue();
+    Nls.Names names = nls.names();
+    int best = -1;
+    int length = 0;
+    for (java.util.List<String> list : java.util.List.of(names.months(), names.shortMonths())) {
+      for (int m = 0; m < list.size(); m++) {
+        String name = list.get(m);
+        if (name.length() > length && rest.startsWith(name)) {
+          best = m + 1;
+          length = name.length();
+        }
       }
     }
-    for (int m = 0; m < MONTHS.length; m++) {
-      if (rest.startsWith(MONTHS[m])) {
-        at[0] += 3;
-        return m + 1;
-      }
-    }
-    throw dateError(-1843, "An invalid month was specified.");
+    if (best < 0) throw dateError(-1843, "An invalid month was specified.");
+    at[0] += length;
+    // a name as TO_CHAR writes it is padded ('1月 ', 'MAY      '): the blanks after it belong to it
+    while (at[0] < input.length() && input.charAt(at[0]) == ' ') at[0]++;
+    return best;
   }
 
   /** ADD_MONTHS: the last day of a month stays the last day (31-JAN + 1 month is 28/29-FEB, 28-FEB + 1 is 31-MAR). */
