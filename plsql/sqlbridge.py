@@ -219,10 +219,14 @@ def lift_expressions(tree: exp.Expression, binds: list[BindVariable], scope: str
     * **only functions the runtime implements are lifted.** Lifting an unimplemented one would replace a clear
       conversion error with Java that does not compile, which is worse.
     """
-    for parent, expressions in _value_positions(tree):
+    once = {id(e) for _, expressions in _evaluated_once(tree) for e in expressions}
+    positions = _value_positions(tree) + [p for p in _evaluated_once(tree) if isinstance(p[0], exp.Select)]
+    for parent, expressions in positions:
         for i, value in enumerate(list(expressions)):
             if not _liftable(value):
                 continue
+            if value.find(exp.ToNumber) is not None and id(value) not in once:
+                continue   # Oracle evaluates it only for a row that reaches it (#167): TO_NUMBER_IN_SQL says so
             placeholder = _unique(f"expr{len(binds) + 1}", {b.name: b for b in binds})
             binds.append(BindVariable(name=placeholder, direction="IN",
                                       expression=_as_plsql(value, binds)))
@@ -241,6 +245,35 @@ def _as_plsql(value: exp.Expression, binds: list[BindVariable]) -> str:
         if bind.plsql_variable:
             rendered = re.sub(rf":{re.escape(bind.name)}\b", bind.plsql_variable, rendered)
     return rendered
+
+
+def _evaluated_once(tree: exp.Expression) -> list[tuple[exp.Expression, list]]:
+    """The positions Oracle evaluates exactly once, whatever the tables hold (#167, the user's decision 2026-09-30
+    「その位置では先に計算しない」): an INSERT's VALUES (not a MERGE branch's), and the select list of a SELECT from
+    DUAL (or from nothing) with no WHERE, GROUP BY or HAVING. Only there is a TO_NUMBER computed before the statement.
+
+    Measured on 26ai: `INSERT ... VALUES (TO_NUMBER('100.00', '9G999'))` and `SELECT TO_NUMBER('100.00', '9G999')
+    INTO n FROM dual` raise ORA-01722 every time, while `UPDATE t SET c = TO_NUMBER('x') WHERE id = 2` with no row 2,
+    and `SELECT COUNT(*) ... WHERE c = TO_NUMBER('x')` over an empty table, raise nothing -- computed first, they
+    would raise where Oracle does not."""
+    out: list[tuple[exp.Expression, list]] = []
+    if isinstance(tree, exp.Insert):
+        values = tree.expression
+        for tuple_ in (values.expressions if isinstance(values, exp.Values) else []):
+            out.append((tuple_, tuple_.expressions))
+    if isinstance(tree, exp.Select) and _from_dual(tree) and not any(
+            tree.args.get(k) for k in ("where", "group", "having", "joins", "connect", "qualify")):
+        out.append((tree, [e.this if isinstance(e, exp.Alias) else e for e in tree.expressions
+                           if (e.this if isinstance(e, exp.Alias) else e).find(exp.ToNumber) is not None]))
+    return out
+
+
+def _from_dual(select: exp.Select) -> bool:
+    source = select.args.get("from") or select.args.get("from_")
+    if source is None:
+        return True
+    table = source.this
+    return isinstance(table, exp.Table) and table.name.lower() == "dual" and not table.db
 
 
 def _value_positions(tree: exp.Expression) -> list[tuple[exp.Expression, list]]:
@@ -345,22 +378,16 @@ def _function_name(node: exp.Expression) -> str:
         type(node).__name__, str(name).upper())
 
 
-# the positions Oracle evaluates once per row that reaches them, not once per statement (#167, measured on 26ai):
-# `UPDATE t SET c = TO_NUMBER('x') WHERE id = 2` with no row 2, and `SELECT COUNT(*) ... WHERE c = TO_NUMBER('x')`
-# over an empty table, raise nothing. Computed before the statement, the unreadable value raises all the same.
-# Only an INSERT's VALUES is evaluated exactly once, whatever the table holds
-
-
 def _to_number_issues(tree: exp.Expression, binds: list[BindVariable], operation: SqlOperation) -> list[Issue]:
     """What became of the statement's TO_NUMBER (#167).
 
-    Lifted (its arguments come from outside the statement): the application computes it under the project's NLS and
-    raises INVALID_NUMBER as the statement did (TO_NUMBER_HOISTED), which makes a handler for it reachable (EXC-001).
-    Where Oracle evaluates it only for a row that reaches it -- an UPDATE's SET, a WHERE, a MERGE branch -- an
-    unreadable value now raises even when no row matches (TO_NUMBER_BEFORE_ROWS, SEM-016).
+    Lifted (its arguments come from outside the statement, and Oracle evaluates it once whatever the tables hold,
+    `_evaluated_once`): the application computes it under the project's NLS and raises INVALID_NUMBER as the
+    statement did (TO_NUMBER_HOISTED), which makes a handler for it reachable (EXC-001).
 
-    Left in the SQL (it reads a column, carries the NLS argument or DEFAULT ... ON CONVERSION ERROR, or sits in a
-    select list): the target evaluates it or refuses the statement, as before -- TO_NUMBER_IN_SQL says so."""
+    Left in the SQL (it reads a column, carries the NLS argument or DEFAULT ... ON CONVERSION ERROR, sits where Oracle
+    evaluates it only for a row that reaches it, or in another position): the target evaluates it or refuses the
+    statement, as before -- TO_NUMBER_IN_SQL says why."""
     out: list[Issue] = []
     lifted = [b for b in binds if b.expression and re.search(r"\bTO_NUMBER\s*\(", b.expression, re.IGNORECASE)]
     if lifted:
@@ -369,17 +396,17 @@ def _to_number_issues(tree: exp.Expression, binds: list[BindVariable], operation
                          f"{expressions}: computed by the application before the statement (Plsql.sqlToNumber, under "
                          f"the project's NLS) and bound as a value; an unreadable value raises INVALID_NUMBER "
                          f"(ORA-01722) as the SQL statement does, not VALUE_ERROR", operation.source_range))
-        if isinstance(tree, (exp.Update, exp.Delete, exp.Merge, exp.Select)):
-            out.append(Issue("WARN", "TO_NUMBER_BEFORE_ROWS",
-                             f"{expressions}: Oracle evaluates this only for a row that reaches it, so an unreadable "
-                             f"value raises INVALID_NUMBER only when a row matches. Computed before the statement, "
-                             f"it raises even when none does", operation.source_range))
+    row_dependent = {id(v) for _, expressions in _value_positions(tree) for v in expressions}
     for node in tree.find_all(exp.ToNumber):
         text = node.sql(dialect="oracle")
         if any(isinstance(n, exp.Column) and not _is_pseudo_column(n) for n in node.walk()):
             why = "it reads a column, which only the database holds"
         elif node.args.get("nlsparam") is not None or node.args.get("default") is not None:
             why = "the runtime has no NLS argument or DEFAULT ... ON CONVERSION ERROR for it"
+        elif any(id(a) in row_dependent for a in [node, *node.iter_expressions()] + list(_ancestors(node))):
+            why = ("Oracle evaluates it only for a row that reaches it (an UPDATE's SET, a WHERE, a MERGE branch): "
+                   "computed before the statement, an unreadable value would raise INVALID_NUMBER even when no row "
+                   "matches, which Oracle does not")
         else:
             why = "it is not in a position the generator computes (a VALUES / SET value or a side of a WHERE comparison)"
         out.append(Issue("INFO", "TO_NUMBER_IN_SQL",
@@ -388,6 +415,13 @@ def _to_number_issues(tree: exp.Expression, binds: list[BindVariable], operation
                          f"INVALID_NUMBER, so the statement's verdict stays with its SQL rule (SQL-001 / SQL-002)",
                          operation.source_range))
     return out
+
+
+def _ancestors(node: exp.Expression):
+    parent = node.parent
+    while parent is not None:
+        yield parent
+        parent = parent.parent
 
 
 def _target_name(node: exp.Expression) -> str:
