@@ -271,11 +271,11 @@ def _diagnostic_codes(program: M.Program | None) -> dict[str, list[str]]:
     for module in program.modules:
         for routine in module.routines:
             codes = {d.code for d in routine.diagnostics}
-            for statement in _walk(routine.body):
+            for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
                 codes.update(d.code for d in statement.diagnostics)
-            for handler in routine.exception_handlers:
-                for statement in _walk(handler.body):
-                    codes.update(d.code for d in statement.diagnostics)
+                # a folded dynamic statement's own (TRUNCATE_AS_DELETE, TRIGGER_NOT_APPLIED, ...: #148, #154)
+                for variant in getattr(statement, "variant_statements", None) or []:
+                    codes.update(d.code for d in variant.diagnostics)
             if codes:
                 out[routine.id] = sorted(codes)
     return dict(sorted(out.items()))

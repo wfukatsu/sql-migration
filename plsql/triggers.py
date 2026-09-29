@@ -275,8 +275,8 @@ def _dynamic(statement: M.Statement, found: dict[str, list[Trigger]]) -> None:
     which is what the rule reads (TRG-002) -- the statement used to pass as if the table had no trigger."""
     for variant in getattr(statement, "variant_statements", None) or []:
         kind = (variant.sql_kind or "").upper()
-        if kind not in ("INSERT", "UPDATE", "DELETE", "MERGE"):
-            continue
+        if kind not in ("INSERT", "UPDATE", "DELETE", "MERGE") or _truncated(variant):
+            continue   # a TRUNCATE made a DELETE (#154) fires no trigger in Oracle
         try:
             tree = sqlglot.parse_one(variant.original_sql or "", dialect="oracle")
         except Exception:
@@ -287,6 +287,11 @@ def _dynamic(statement: M.Statement, found: dict[str, list[Trigger]]) -> None:
                 variant.add("WARN", "TRIGGER_NOT_APPLIED",
                             f"{trigger.module.name} が掛かる書き込みだが、**掛けていない**。動的 SQL の文には trigger の"
                             f"呼び出しを織り込まない（#148）。静的な文に書き直せば織り込む")
+
+
+def _truncated(variant: M.Statement) -> bool:
+    from .dynamic import TRUNCATE_AS_DELETE
+    return any(d.code == TRUNCATE_AS_DELETE for d in variant.diagnostics)
 
 
 def _apply(statement: M.Statement, routine: M.Routine, found: dict[str, list[Trigger]],

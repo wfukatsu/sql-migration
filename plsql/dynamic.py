@@ -408,6 +408,13 @@ DDL = re.compile(r"^\s*(CREATE|DROP|ALTER|TRUNCATE|RENAME|GRANT|REVOKE|COMMENT|A
                  r"DISASSOCIATE|PURGE|FLASHBACK)\b", re.IGNORECASE)
 
 
+# `TRUNCATE TABLE t` alone (storage clauses allowed): made the DELETE of every row (#154, the user's decision)
+TRUNCATE = re.compile(r"^\s*TRUNCATE\s+TABLE\s+(?P<table>[A-Za-z_][\w$#]*(?:\.[A-Za-z_][\w$#]*)?)"
+                      r"(?:\s+(?:(?:DROP|REUSE)(?:\s+ALL)?\s+STORAGE|(?:PRESERVE|PURGE)\s+MATERIALIZED\s+VIEW\s+LOG))*"
+                      r"\s*;?\s*$", re.IGNORECASE)
+TRUNCATE_AS_DELETE = "TRUNCATE_AS_DELETE"
+
+
 def fold(program: M.Program) -> None:
     """#148 H1: fold every dynamic statement whose text is knowable, **before** the lowering that works on statements.
 
@@ -435,6 +442,9 @@ def expand(routine: M.Routine, statement: M.DynamicSql, module: M.Module | None 
         # `USING` は**位置で**束縛される。placeholder を渡す変数の名前に直しておくと、畳んだ文がそのあと
         # 静的な文とまったく同じ道を通る（P4-7）
         sql = bind_using(variant.sql, statement.using)
+        truncated = TRUNCATE.match(sql)
+        if truncated:
+            sql = f"DELETE FROM {truncated.group('table')}"
         keyword = re.match(r"\s*([A-Za-z]+)", sql)
         operation = M.SqlOperation(id=f"{statement.id}#variant-{index}", kind="SqlOperation",
                                    source_range=statement.source_range, original_sql=sql,
@@ -443,7 +453,12 @@ def expand(routine: M.Routine, statement: M.DynamicSql, module: M.Module | None 
         mark_row_lock(operation, sql)
         operation.read_set, operation.write_set = _tables(sql)
         ddl = DDL.match(sql)
-        if ddl:
+        if truncated:
+            operation.add("INFO", TRUNCATE_AS_DELETE,
+                          f"TRUNCATE TABLE {truncated.group('table')} を全行の DELETE にした（#154）。Oracle の TRUNCATE は"
+                          f"前後で COMMIT し、取り消せない。移行先の DELETE はこのトランザクションの一部で、失敗すれば"
+                          f"ほかの書き込みと一緒に戻る。DELETE の trigger は Oracle と同じく掛けない")
+        elif ddl:
             why = omitted_ddl(routine.id)
             if why:
                 operation.add("INFO", "DYNAMIC_DDL_OMITTED",
