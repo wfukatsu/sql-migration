@@ -21,6 +21,7 @@ Oracle の cursor は**トランザクションをまたいで保持される位
 | F. `BULK COLLECT LIMIT` | 明示的な分割読み | n 件ずつ配るループ | 走査行数の上限（LIMIT はもうメモリを守らない） |
 | H. cursor 変数（`OPEN rc FOR q` … FETCH … CLOSE） | A〜C・F と同じ形に、OPEN の問合せで当てる。IF の分岐ごとに別の問合せで開く形は分岐ごとのループ | 生成する（上限つき） | routine ごとの上限値（#44） |
 | I. cursor 変数を呼び出し側へ返す（`OPEN rc FOR q; RETURN rc;`） | 行を読んで `List<行の record>` を返す | 生成する（上限つき） | 呼び出し側の受け取り方が変わる（FETCH → List）。上限値 |
+| I'. OUT 引数の cursor 変数（`OPEN p_rc FOR q`） | 行を読んで結果の record に `List<行の record>` で入れる。2 回以上 OPEN するなら、同じ列のときだけ OPEN ごとに入れ直す（最後の OPEN が渡る） | 生成する（上限つき）。routine の中で FETCH / CLOSE する形、列の違う OPEN は断る（CUR-004） | 断った形は渡し方の再設計（#125 / #160） |
 
 ---
 
@@ -323,6 +324,20 @@ A〜C・F の形をそのまま当てる。`IF … THEN OPEN rc FOR q1; ELSE OPE
 `OPEN rc FOR q; RETURN rc;` は cursor を呼び出し側へ渡す形で、移行先に渡せる cursor は無い。行を読んで `List<行の record>` を返す method にし、
 呼び出し側の受け取り方が変わることを signature で見せる（`public List<GetByDeptLoop1Row> getByDept(...)`）。
 実 DB の証拠: samples/oracle-samples の `b04_4_4_ref_cursor` が一致（2026-09-25）。
+
+OUT 引数の cursor 変数（`OPEN p_rc FOR q`、#125）も同じ理由で、行を読んで結果の record に `List<行の record>` で入れる。
+Oracle の動き（26ai 23.26.3、2026-09-30 に実測。呼び出し側が FETCH した）と、それぞれの扱い（#160、2026-09-30 の利用者の決定「断ってから A を足す」）:
+
+| routine の中の形 | Oracle で呼び出し側が受け取るもの | 生成器 |
+|---|---|---|
+| 2 回以上 OPEN（続けて、IF / ELSE、handler）。どれも同じ列 | 最後に走った OPEN の行 | OPEN ごとに行を読んで引数に入れ直す（案 A）。行の record は最初の OPEN のものを共有する |
+| 列の違う問合せで OPEN | 最後に走った OPEN の列と行 | 断る（List の行の型は 1 つ） |
+| OPEN のあと FETCH | FETCH した行の続き。%ROWCOUNT も続きから数える | 断る（全部の行の List では位置を渡せない） |
+| OPEN のあと CLOSE | `%ISOPEN` は偽、最初の FETCH で ORA-01001 | 断る（閉じた cursor に当たる List は無い。空の List や null は黙った答えになる） |
+| OPEN、CLOSE、もう一度 OPEN | 後の OPEN の行 | 断る（CLOSE が後の OPEN の前にあることを経路ごとに見ていない） |
+
+断った形は OPEN に `CUR_OUT_REFUSED` の診断を付け、生成コードはその OPEN で `UnsupportedOperationException` を投げ、CUR-004（REDESIGN）が routine を AUTO にしない。
+以前はどれも routine の中の cursor に読むだけで、引数は null で返り、FETCH も CLOSE も無い 2 回の OPEN は AUTO だった。
 
 ## 共通して決めておくこと
 

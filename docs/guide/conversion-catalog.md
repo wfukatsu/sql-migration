@@ -639,7 +639,9 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `SYS_REFCURSOR` を `OPEN rc FOR SELECT ...; RETURN rc;` | 行の `List<...Row>` を返すメソッド | 行数上限は CUR-002 と同じ | 呼び出し側は FETCH の代わりに List を受け取ります（生成で確認） |
 | 局所の `SYS_REFCURSOR` を OPEN して FETCH するループ | cursor FOR ループ | CUR-002 | 生成で確認 |
 | `OPEN rc FOR '定数の文字列' USING p` | 静的な問合せとして生成 | なし | 生成で確認 |
-| OUT 引数の `SYS_REFCURSOR`（`OPEN p_rc FOR SELECT ...`） | 行を読み、`List<...Row>` を結果の record の要素にして返す | 行数上限は CUR-002 と同じ | `RETURN rc` の形と同じく、呼び出し側は FETCH の代わりに List を受け取ります。routine の中でその cursor から FETCH する形や、2 回以上 OPEN する形はこの形にしません。その形では OPEN が routine の中の cursor の状態に読むだけで、結果の record の引数は null のままです（CUR-001 で REVIEW）。Oracle では最後の OPEN が渡り（別の列の問合せでも）、routine の中で FETCH した行の続きから呼び出し側が読みます（%ROWCOUNT も続きから。26ai で確認）。行の型と位置をどう渡すかは未決です（#160） |
+| OUT 引数の `SYS_REFCURSOR`（`OPEN p_rc FOR SELECT ...`） | 行を読み、`List<...Row>` を結果の record の要素にして返す | 行数上限は CUR-002 と同じ | `RETURN rc` の形と同じく、呼び出し側は FETCH の代わりに List を受け取ります（生成で確認） |
+| OUT 引数の `SYS_REFCURSOR` を 2 回以上 OPEN する（続けて、IF / ELSE の分岐で、handler で）。どの OPEN も同じ列を選ぶ | OPEN ごとに行を読んで引数に入れ直す。結果の record は最後に走った OPEN の行を持つ。行の record は最初の OPEN のものを共有する | 行数上限は CUR-002 と同じ | Oracle は最後に走った OPEN を呼び出し側へ渡します（26ai 23.26.3 で確認）。前の OPEN の行も読むので、行数上限はどの OPEN にも掛かります。列は名前と、行の record での Java の型で比べます（#160。生成した Java を H2 で動かして確認） |
+| OUT 引数の `SYS_REFCURSOR` を routine の中で FETCH する、CLOSE する、または列の違う問合せで OPEN する | 断る。OPEN の所で `UnsupportedOperationException` を投げる（理由つき） | CUR-004（REDESIGN） | Oracle では、FETCH した routine の呼び出し側は続きの行から読み（%ROWCOUNT も続きから）、CLOSE した routine の呼び出し側は最初の FETCH で ORA-01001 になり、列の違う OPEN は最後に走った OPEN の列が渡ります（26ai 23.26.3 で確認）。どれも全部の行の List 1 つでは表せないので、黙って null を返さずに断ります。CLOSE したあとでもう一度 OPEN する形（Oracle は後の OPEN を渡す）も、経路ごとの順序を見ないと区別できないので断ります。以前は routine の中の cursor に読むだけで、引数は null で返っていました（#160） |
 | `FOR UPDATE` の cursor、`WHERE CURRENT OF c` | 行ロックの節を参照 | LOCK-001 / LOCK-002（REDESIGN） | |
 
 ### コレクション
@@ -868,6 +870,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | CUR-001 | REVIEW | 書き換えられなかった明示 cursor の OPEN / FETCH / CLOSE | |
 | CUR-002 | REVIEW | 行数上限の決まっていない cursor FOR ループ | `scanRows` |
 | CUR-003 | REVIEW | 先読みに書き換えた明示 cursor で、routine が COMMIT などを持つ | |
+| CUR-004 | REDESIGN | OUT 引数の `SYS_REFCURSOR` を routine の中で FETCH / CLOSE する、または列の違う問合せで OPEN する（生成器が断る） | 読んだ行と残りの行の渡し方を決めて書き直す。CLOSE を消す。問合せごとに OUT 引数を分ける |
 | BULK-001 | REVIEW | `BULK COLLECT` を含む SQL 文 | |
 | BULK-003 | REVIEW | 行数上限の決まっていない分割読み | `scanRows` |
 | EXC-001 | REVIEW | `DUP_VAL_ON_INDEX`、`INVALID_NUMBER`、`VALUE_ERROR` の handler。`PRAGMA EXCEPTION_INIT` でそれらや制約の誤り（-1400、-2290、-2291、-2292 など）の番号に結んだ例外の handler | 読んでから選ぶ形、事前の検査に書き直す。CHECK と外部キーは `constraints.enforce` |
