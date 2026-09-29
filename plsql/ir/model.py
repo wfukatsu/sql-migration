@@ -375,6 +375,9 @@ class Routine(Node):
     # the routine whose declare section this one was written in (`DECLARE PROCEDURE p IS ...`), lifted to a private
     # routine of the same module (#80). Only the enclosing routine can call it, so it is not a program-wide name
     enclosing: str | None = None
+    # the name the source wrote, for one lifted under another: a nested subprogram named as a routine of the module
+    # or as the enclosing routine becomes `<enclosing>_<name>` (#160)
+    declared_name: str | None = None
     # `AS LANGUAGE JAVA NAME '...'` / `LANGUAGE C` / `EXTERNAL`: a call specification, whose body is code outside
     # PL/SQL (#69). Nothing here can be migrated from the source; the rules say REDESIGN
     call_spec: str | None = None

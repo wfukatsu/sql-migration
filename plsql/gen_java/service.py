@@ -498,7 +498,7 @@ def _mutable(resolved: str | None) -> bool:
 
 
 # a value nothing else holds yet: copying it again would only cost
-_FRESH = re.compile(r"^(?:null|new\s|Plsql\.(?:table|indexBy|column|indexed|copy)\()")
+_FRESH = re.compile(r"^(?:null|new\s|Plsql\.(?:table|varray|varrayOf|indexBy|column|indexed|copy)\()")
 
 
 def _copied(file: JavaFile, value: str, resolved: str | None) -> str:
@@ -556,6 +556,9 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
                 element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
                 names[f"{holder.name.lower()}#constructor"] = kind
                 names[f"{holder.name.lower()}#element"] = element
+                bound = re.search(r"\bLIMIT\s+(\d+)$", holder.type.resolved or "")
+                if bound:
+                    names[f"{holder.name.lower()}#varray"] = bound.group(1)   # its constructor keeps the bound (#160)
             continue
         if kind:
             names[f"{holder.name.lower()}#collection"] = kind
@@ -567,6 +570,8 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
             if kind == "list" and holder.type is not None and "%" not in (holder.type.oracle or ""):
                 names[f"{(holder.type.oracle or '').strip().lower()}#constructor"] = kind
                 names[f"{(holder.type.oracle or '').strip().lower()}#element"] = element
+                if bound:
+                    names[f"{(holder.type.oracle or '').strip().lower()}#varray"] = bound.group(1)
     # CHAR(n) locals hold blank-padded text (#62); comparing one with a literal or another CHAR is blank-padded too.
     # PLS_INTEGER locals: arithmetic between two of them is 32-bit (#60)
     for holder in list(routine.parameters) + list(routine.declarations) + trigger_locals:
@@ -617,6 +622,15 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
                 if carried:
                     # a lifted local subprogram takes the enclosing variables it reads after its own (#80)
                     names[f"{r.name.lower()}#extra"] = ",".join(carried)
+        if module.module_kind == "package":
+            # `pkg.f(1)` in the package's own routine: the package-level f, reached past a nested subprogram of the
+            # same name (#160) -- or written out for no reason. Only a routine that is not lifted has the name
+            for r in module.routines:
+                if r.enclosing or overload_of(r) is not None:
+                    continue
+                for suffix in ("", "#parameters", "#refused", "#extra"):
+                    if f"{r.name.lower()}{suffix}" in names:
+                        names[f"{module.name.lower()}.{r.name.lower()}{suffix}"] = names[f"{r.name.lower()}{suffix}"]
         # a trigger declares its locals on the module, not on the body, and a package-level cursor is visible
         # to every routine; leaving them out reports real names as unknown
         # a package-level variable is session state (STATE-001): there is no field to assign, so a reference
@@ -949,6 +963,9 @@ def _guarded(file: JavaFile, handlers: list[M.ExceptionHandler], body: list[M.St
     if any(getattr(s, "loop_kind", None) == "forall" for s in _walk(body)):
         # ORA-22160, which only a FORALL raises: listed only where one is, so no other routine changes (#136)
         helpers = helpers + ((None, "ElementNotExist", -22160),)
+    if any(re.search(r"\bBULK\s+COLLECT\b", getattr(s, "original_sql", None) or "", re.IGNORECASE) for s in _walk(body)):
+        # ORA-22165, a BULK COLLECT into a VARRAY of more rows than its bound (#160): listed only where one is
+        helpers = helpers + ((None, "IndexOutOfRange", -22165),)
     # only a body that calls one of the functions raising it can see a FunctionError (#140)
     function_errors = any(_FUNCTION_ERRORS.search(text) for s in _walk(body) for text in _expression_texts(s))
     for oracle, helper, code in helpers:
@@ -1190,11 +1207,13 @@ def _element_type(resolved: str | None, depth: int = 1) -> str | None:
     """The element type of a collection type's text, `depth` subscripts in (`TABLE OF TABLE OF NUMBER`, 2 -> NUMBER)."""
     for _ in range(depth):
         match = re.match(r"^\s*(?:TABLE|VARRAY\s*\(\s*\d+\s*\)|VARYING\s+ARRAY\s*\(\s*\d+\s*\))\s+OF\s+(.+?)"
-                         r"(?:\s+INDEX\s+BY\s+[\w$#]+(?:\s*\(\s*\d+\s*\))?)?\s*$",
+                         r"(?:\s+INDEX\s+BY\s+[\w$#]+(?:\s*\(\s*\d+\s*\))?)?(?:\s+LIMIT\s+\d+)?\s*$",
                          resolved or "", re.IGNORECASE | re.DOTALL)
         if match is None:
             return None
         resolved = match.group(1)
+        if resolved.startswith("(") and resolved.endswith(")"):
+            resolved = resolved[1:-1]   # a collection element is in parentheses (#160)
     return resolved
 
 
@@ -1751,7 +1770,10 @@ def _block(file: JavaFile, statement: M.Block, routine: M.Routine, result: Servi
         for d in statement.declarations:
             if d.declaration_kind not in ("type", "exception", "cursor"):
                 qualified[f"{label}.{d.name}"] = renamed[d.name]
-    _BLOCK_LOCALS.set({**outer, **renamed, **qualified})
+    # a block's own declaration hides a loop index's 32-bit mark of the same name (#160)
+    _BLOCK_LOCALS.set({**{k: v for k, v in outer.items()
+                          if not any(k.lower() == f"{d.name.lower()}#pls_integer" for d in statement.declarations)},
+                       **renamed, **qualified})
     outer_holders = _BLOCK_HOLDERS.get()
     _BLOCK_HOLDERS.set(outer_holders + tuple(statement.declarations))
     outer_qualified = _QUALIFIED_NAMES.get()
@@ -1857,7 +1879,8 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
     if index_name:
         # `outer_loop.i` is this loop's index past an inner loop's i (4-22, #138)
         qualified = {f"{statement.label}.{index_name}": index} if statement.label else {}
-        _BLOCK_LOCALS.set({**outer_locals, index_name: index, **qualified})
+        # the index is a PLS_INTEGER: `i + 1` at 2147483647 is ORA-01426 (Oracle 26ai, #160)
+        _BLOCK_LOCALS.set({**outer_locals, index_name: index, f"{index_name.lower()}#pls_integer": "1", **qualified})
     outer_qualified = _QUALIFIED_NAMES.get()
     if index_name and statement.label:
         _QUALIFIED_NAMES.set({**outer_qualified, f"{statement.label}.{index_name}".lower(): (index, None)})
@@ -3139,8 +3162,12 @@ def _appended(target: str, values: str) -> str:
 
 
 def _collected(holder, values: str) -> str:
-    """A List of values as the target collection's own kind: an INDEX BY table is a Map keyed 1 .. n (#93)."""
-    return f"Plsql.indexed({values})" if _collection_kind(holder) == "map" else values
+    """A List of values as the target collection's own kind: an INDEX BY table is a Map keyed 1 .. n (#93), a VARRAY
+    a List that keeps its bound -- more rows than the bound is ORA-22165, and a later EXTEND past it ORA-06532 (#160)."""
+    if _collection_kind(holder) == "map":
+        return f"Plsql.indexed({values})"
+    bound = re.search(r"\bLIMIT\s+(\d+)$", holder.type.resolved or "") if holder.type is not None else None
+    return f"Plsql.varrayOf({bound.group(1)}, {values})" if bound else values
 
 
 def _planned_into(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, method: str, arguments: str,

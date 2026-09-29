@@ -1089,6 +1089,47 @@ public final class Plsql {
   }
 
   /**
+   * A VARRAY: a 1-based List that knows its declared bound (#160). EXTEND past the bound, and a subscript past it,
+   * raise SUBSCRIPT_OUTSIDE_LIMIT (ORA-06532) as Oracle does; a plain List (a nested table) has no bound. The bound
+   * travels with the value -- through a parameter, an assignment (a copy), an element of an outer collection --
+   * the way it does with Oracle's type.
+   */
+  public static final class Varray<E> extends java.util.ArrayList<E> {
+    private final int limit;
+
+    public Varray(int limit) {
+      this.limit = limit;
+    }
+
+    public int limit() {
+      return limit;
+    }
+  }
+
+  /**
+   * {@code t(a, b, c)} of a {@code VARRAY(limit)} type. More elements than the bound is ORA-06532 (26ai:
+   * {@code t(1, 2, 3)} of a VARRAY(2)).
+   */
+  @SafeVarargs
+  public static <E> java.util.List<E> varray(int limit, E... elements) {
+    if (elements.length > limit) throw new SubscriptOutsideLimit();
+    Varray<E> out = new Varray<>(limit);
+    for (E element : elements) out.add(copy(element));
+    return out;
+  }
+
+  /**
+   * The rows a BULK COLLECT read, into a {@code VARRAY(limit)}: more of them than the bound is ORA-22165, as
+   * Oracle 26ai raises it ({@code given index [3] must be in the range of [1] to [2]}).
+   */
+  public static <E> java.util.List<E> varrayOf(int limit, java.util.List<E> values) {
+    if (values.size() > limit) throw new IndexOutOfRange(limit + 1, limit);
+    Varray<E> out = new Varray<>(limit);
+    out.addAll(values);
+    return out;
+  }
+
+  /**
    * A PL/SQL value copy. {@code n2 := n1} copies a collection in PL/SQL, and so does storing it into a record or
    * another collection, and passing it IN OUT without NOCOPY; a Java List or Map is shared, so a change through
    * one name showed through the other (#111). Collections are copied deeply -- a collection of collections, a
@@ -1098,7 +1139,9 @@ public final class Plsql {
   @SuppressWarnings("unchecked")
   public static <T> T copy(T value) {
     if (value instanceof java.util.List<?> list) {
-      java.util.List<Object> out = new java.util.ArrayList<>(list.size());
+      // a VARRAY keeps its bound: `w := v; w.EXTEND` past it is ORA-06532 on 26ai too (#160)
+      java.util.List<Object> out = list instanceof Varray<?> varray
+          ? new Varray<>(varray.limit()) : new java.util.ArrayList<>(list.size());
       for (Object element : list) out.add(element == GAP ? GAP : copy(element));
       return (T) out;
     }
@@ -1187,6 +1230,13 @@ public final class Plsql {
   public static final class SubscriptOutsideLimit extends OracleError {
     public SubscriptOutsideLimit() {
       super(-6532, "ORA-06532: subscript outside of limit");
+    }
+  }
+
+  /** ORA-22165, a BULK COLLECT into a VARRAY of more rows than its bound (#160); it has no predefined name. */
+  public static final class IndexOutOfRange extends OracleError {
+    public IndexOutOfRange(int index, int limit) {
+      super(-22165, "ORA-22165: given index [" + index + "] must be in the range of [1] to [" + limit + "]");
     }
   }
 
@@ -1421,7 +1471,7 @@ public final class Plsql {
     if (isNull(at)) throw new ValueError("NULL index table key value");
     if (collection instanceof java.util.List<?> list) {
       int i = num(at).intValueExact();
-      if (i < 1) throw new SubscriptOutsideLimit();
+      if (i < 1 || list instanceof Varray<?> varray && i > varray.limit()) throw new SubscriptOutsideLimit();
       if (i > list.size()) throw new SubscriptBeyondCount();
       Object element = list.get(i - 1);
       if (element == GAP) throw new NoDataFound();
@@ -1440,7 +1490,8 @@ public final class Plsql {
     if (collection instanceof java.util.List<?> raw) {
       java.util.List<Object> list = (java.util.List<Object>) raw;
       int i = num(at).intValueExact();
-      if (i < 1) throw new SubscriptOutsideLimit();
+      // past a VARRAY's bound is SUBSCRIPT_OUTSIDE_LIMIT, within it but past COUNT SUBSCRIPT_BEYOND_COUNT (26ai)
+      if (i < 1 || list instanceof Varray<?> varray && i > varray.limit()) throw new SubscriptOutsideLimit();
       // only a nested table or a VARRAY is a List: an INDEX BY table is a Map since #93. Past COUNT is
       // SUBSCRIPT_BEYOND_COUNT, as in Oracle (`nt(4) := x` with COUNT 3; EXTEND first). It used to fill the gap
       // and grow, silently -- `set(list, 100_000_000, x)` built a List of a hundred million slots (#149).
@@ -1462,7 +1513,19 @@ public final class Plsql {
     if (collection == null) throw collectionIsNull();
     if (!(collection instanceof java.util.List<?>)) throw new IllegalStateException("EXTEND on an associative array");
     java.util.List<Object> list = (java.util.List<Object>) collection;
-    for (int i = num(n).intValueExact(); i > 0; i--) list.add(null);
+    int count = num(n).intValueExact();
+    withinLimit(list, count);
+    for (int i = count; i > 0; i--) list.add(null);
+  }
+
+  /**
+   * EXTEND(n) of a VARRAY past its bound: ORA-06532, and nothing is added (26ai: EXTEND(3) of a VARRAY(3) holding
+   * one element leaves COUNT at 1). A nested table has no bound (#160).
+   */
+  private static void withinLimit(java.util.List<?> list, int count) {
+    if (list instanceof Varray<?> varray && count > 0 && list.size() + (long) count > varray.limit()) {
+      throw new SubscriptOutsideLimit();
+    }
   }
 
   public static void delete(Object collection) {
@@ -1493,6 +1556,7 @@ public final class Plsql {
       throw new SubscriptBeyondCount();
     }
     Object element = list.get(from - 1);
+    withinLimit(list, num(n).intValueExact());
     // each new element is a copy of its own: a collection of collections must not share one inner List (#111)
     for (int k = num(n).intValueExact(); k > 0; k--) list.add(copy(element));
   }
@@ -2853,7 +2917,7 @@ public final class Plsql {
    */
   @SuppressWarnings("unchecked")
   public static <T> java.util.List<T> appended(Object prior, java.util.List<T> more) {
-    java.util.List<T> out = new java.util.ArrayList<>();
+    java.util.List<T> out = prior instanceof Varray<?> varray ? new Varray<>(varray.limit()) : new java.util.ArrayList<>();
     if (prior instanceof java.util.Map<?, ?> m) out.addAll((java.util.Collection<T>) m.values());
     else if (prior instanceof java.util.List<?> l) out.addAll((java.util.List<T>) l);
     out.addAll(more);

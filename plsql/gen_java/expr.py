@@ -97,7 +97,7 @@ KEYWORDS = {"AND", "OR", "NOT", "NULL", "IS", "TRUE", "FALSE", "MOD", "BETWEEN",
 # collection methods (`v.FIRST`, `v.NEXT(k)`, `v.EXTEND`): the generated List does not have them (#40)
 COLLECTION_ATTRIBUTES = {"FIRST", "LAST", "NEXT", "PRIOR", "EXISTS", "DELETE", "EXTEND", "TRIM", "LIMIT", "COUNT"}
 # what each becomes on a local collection the scope knows (`name#collection`), see Plsql (#45). LIMIT is not
-# here: the VARRAY bound is not kept, so it stays unknown
+# here: it is the declared bound, read from the scope (`v#limit`)
 COLLECTION_METHODS = {"COUNT": "count", "FIRST": "first", "LAST": "last", "NEXT": "next", "PRIOR": "prior",
                       "EXISTS": "exists", "DELETE": "delete", "EXTEND": "extend", "TRIM": "trimTable"}
 
@@ -427,11 +427,13 @@ class _Parser:
     @staticmethod
     def _int32_result(left: str | None, right: str | None, operator: str) -> str | None:
         """The 32-bit arithmetic `left operator right` is done in, or None for NUMBER arithmetic. SIMPLE_INTEGER
-        with SIMPLE_INTEGER (or a literal) wraps in two's complement; with a PLS_INTEGER, or PLS_INTEGER with either,
-        it raises ORA-01426 past the range. Division yields a NUMBER, and two literals are left to NUMBER."""
-        if operator == "/" or left is None or right is None or (left == right == "literal"):
+        with SIMPLE_INTEGER (or an integer literal) wraps in two's complement; with a PLS_INTEGER, or PLS_INTEGER
+        with either, it raises ORA-01426 past the range. Division yields a NUMBER. Two integer literals are PLS_INTEGER
+        arithmetic too: `2147483647 + 1` and `65536 * 65536` are ORA-01426 (Oracle 26ai, #160); a negated literal is
+        a PLS_INTEGER expression, not a literal (`s + (-1)` raises where `s - 1` wraps)."""
+        if operator == "/" or left is None or right is None:
             return None
-        if {left, right} <= {"simple", "literal"}:
+        if {left, right} <= {"simple", "literal"} and "simple" in (left, right):
             return "simple"
         return "pls"
 
@@ -488,12 +490,34 @@ class _Parser:
                 self.result.imports.add(HELPER_IMPORT)
                 base = f"{HELPER}.power({base}, {exponent})"
             return base
+        sign = self.position
         operator = self.take()[1]
+        start = self.position
         operand = self.parse_unary()
+        kind = self._int32(start)
         if operator == "+":
+            if kind in ("pls", "simple"):
+                self._int32_span(sign, kind)
             return operand   # Oracle の単項プラスは値を変えない
         self.result.imports.add(HELPER_IMPORT)
-        return f"{HELPER}.neg({operand})"
+        negated = f"{HELPER}.neg({operand})"
+        # the sign of a 32-bit integer is 32-bit arithmetic too (Oracle 26ai, #160): `-p` of -2147483648 is
+        # ORA-01426, `-s` of a SIMPLE_INTEGER wraps back to -2147483648, and `-1` is a PLS_INTEGER expression
+        if kind == "simple":
+            self._int32_span(sign, "simple")
+            return f"Integer.valueOf(((Number) {negated}).intValue())"
+        if kind == "pls":
+            self._int32_span(sign, "pls")
+            return f"{HELPER}.plsInteger({negated})"
+        if kind == "literal":
+            self._int32_span(sign, "pls")   # a literal's negation cannot leave the range
+        return negated
+
+    def _int32_span(self, start: int, kind: str) -> None:
+        """Remember that the tokens from `start` to here are 32-bit arithmetic of `kind` (see `_int32`)."""
+        if not hasattr(self, "_int32_spans"):
+            self._int32_spans = {}
+        self._int32_spans[(start, self.position)] = kind
 
     def _as_text(self, start: int, rendered: str) -> str:
         """The operand parsed from `start`, as the text Oracle writes for it when it is one local whose Java type does
@@ -805,6 +829,10 @@ class _Parser:
             self.result.imports.add(HELPER_IMPORT)
             if self.scope.get(f"{plsql_name.lower()}#element") == "BigDecimal":
                 arguments = [a if a == "null" or a.startswith(f"{HELPER}.dec(") else f"{HELPER}.dec({a})" for a in arguments]
+            bound = self.scope.get(f"{plsql_name.lower()}#varray")
+            if bound:
+                # a VARRAY's constructor: the List keeps the bound, so EXTEND past it raises ORA-06532 (#160)
+                return f"{HELPER}.varray({', '.join([bound] + arguments)})"
             return f"{HELPER}.table({', '.join(arguments)})"
         if collection:
             self.result.imports.add(HELPER_IMPORT)

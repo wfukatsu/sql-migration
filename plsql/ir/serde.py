@@ -56,6 +56,7 @@ _CAMEL = {
     "expression": "expression",
     "variants": "variants",
     "jump_label": "jumpLabel",
+    "declared_name": "declaredName",
 }
 _SNAKE = {v: k for k, v in _CAMEL.items()}
 

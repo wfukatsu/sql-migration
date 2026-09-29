@@ -474,6 +474,12 @@
             "null"
           ]
         },
+        "declaredName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "call_spec": {
           "type": [
             "string",

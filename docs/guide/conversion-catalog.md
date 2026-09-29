@@ -468,7 +468,7 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | 引数の既定値（`DEFAULT`） | 呼び出し文でも式の中の function 呼び出しでも、省いた引数に既定値を補って渡す。リテラル（NULL・数・文字列・TRUE / FALSE）はそのまま書き、式（`DEFAULT SYSDATE`、`DEFAULT pkg.c_limit`、`DEFAULT next_no()`）は呼ばれる側の Service に作る `defaultOf<Routine><引数>()` を呼んで渡す | 省いた `DEFAULT SYSDATE` は、呼ぶ側の時計の読みとして SEM-007 に数える（呼び出し文のとき） | Oracle と同じく、省いた呼び出しのたびに、呼ばれる側の宣言の場所の名前で評価します。すべての引数に既定値がある function は、括弧なしの呼び出し（`pkg.label \|\| 'x'`）でも補います。package の**変数**を既定値に持つもの（`DEFAULT g_level`）は、`packageState.carried` で運ぶと決めたときだけ、呼ぶ側が運んでいる値を渡します（省く呼び出しをする routine も運ぶ側になります）。決めていなければ、既定値が `USER` / `SYSTIMESTAMP` を読むとき、sequence を採るとき、routine を呼ぶ既定値を 2 つ以上省くとき（Oracle は評価の順を決めていない）は、今までどおりその文を断ります（生成で確認、#141） |
 | 名前付き引数（`p_a => 1`） | 呼び出し文でも式の中の function 呼び出しでも、引数の順に並べ替えて渡す | なし | 式の中で並べ替えるのは、同じ package の routine と、ほかの module の routine（オーバーロードの無いもの）です（生成で確認） |
 | オーバーロード | 版ごとに番号を付けたメソッド（`fmt` → `fmt1`、`fmt2`） | 呼び出しがどの版か決まらないと CALL-002（REVIEW） | 引数の数と名前だけで選びます。型だけが違う版は選べません（生成で確認） |
-| 宣言部の入れ子の procedure / function（入れ子のブロックの DECLARE に書いたものを含む） | 外側の変数を引数で運ぶ private メソッドに持ち上げる。外側の routine が開いた cursor を FETCH するものには、その cursor の状態（`Plsql.Cursor`）を引数で渡す | なし | 持ち上げられないもの（名前がほかの routine と重なる、外側の例外を使う、外側と同じ cursor を両方で FETCH する、外側の handler が読む変数に代入する、内側のブロックが同じ名前を宣言し直す）は LOWER-001（REVIEW）。型だけが違うオーバーロードは持ち上げません（生成で確認） |
+| 宣言部の入れ子の procedure / function（入れ子のブロックの DECLARE に書いたものを含む） | 外側の変数を引数で運ぶ private メソッドに持ち上げる。外側の routine が開いた cursor を FETCH するものには、その cursor の状態（`Plsql.Cursor`）を引数で渡す。package の routine や外側の routine と同じ名前のものは `<外側の名前>_<名前>` で持ち上げ、それが見える範囲（外側の本体と handler、自分自身、後に宣言した兄弟）の呼び出しをその名前に向ける | なし | 同じ名前の入れ子は、外側の routine の中では入れ子のほうを、`pkg.f` と書けば package のほうを、ほかの routine は package のほうを呼びます（Oracle 26ai で確認、#160）。持ち上げられないもの（名前がほかの入れ子の subprogram と重なる、外側の例外を使う、外側と同じ cursor を両方で FETCH する、外側の handler が読む変数に代入する、内側のブロックが同じ名前を宣言し直す）は LOWER-001（REVIEW）。型だけが違うオーバーロードは持ち上げません（生成で確認） |
 | ラベル・routine 名で修飾した名前（`<<outer>>` の `outer.x`、ループの `outer_loop.i`、`dept_name.department_name`） | 修飾が指す宣言の Java 名。内側で隠された変数は Java の別名（`x_2` など）で宣言されているので、修飾した参照はもとの `x` を指す | なし | PL/SQL の文・式・INTO の先で解決します。SQL 文の中でブロックのラベルで修飾した名前は、まだ列として読むので断られます（生成で確認） |
 | 別の package の routine の呼び出し | 呼ばれる側の Service をコンストラクタで受け取って呼ぶ | 呼び先の判定を引き継ぐ | 生成で確認 |
 | package の定数（`CONSTANT`） | `private static final` のフィールド | なし | 値がリテラルの定数だけです。値が式の定数（`gc_line_feed CONSTANT VARCHAR2(1) := chr(10)`）はフィールドにせず、それを読む文を断ります（以前は無いフィールドを参照する Java になっていた）（生成で確認） |
@@ -519,8 +519,8 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `x IS NULL` / `IS NOT NULL` | `Plsql.isNull(x)` / `Plsql.isNotNull(x)` | なし | `''` も NULL です |
 | `a \|\| b` | `Plsql.concat(a, b)` | なし | NULL は空文字として扱い、結果が空なら NULL です |
 | `+`、`-`、`*`、`/` | `Plsql.add`、`sub`、`mul`、`div` | なし | NULL は NULL を返します。結果は NUMBER と同じく 40 桁に丸めます。0 で割ると ORA-01476（`Plsql.ZeroDivide`） |
-| PLS_INTEGER どうし、PLS_INTEGER と 32 ビットに収まる整数リテラルの `+`、`-`、`*` | 1 回の演算ごとに `Plsql.plsInteger(...)` | なし | 途中で 32 ビットを超えると ORA-01426 です（`v + 1 - 1` は v が 2147483647 なら例外。最後に範囲へ戻っても同じ。Oracle 26ai で確認）。`/` と、32 ビットを超えるリテラルとの演算は NUMBER です |
-| SIMPLE_INTEGER どうし、SIMPLE_INTEGER と整数リテラルの `+`、`-`、`*` | 1 回の演算ごとに下位 32 ビットを取る（`Integer.valueOf(((Number) ...).intValue())`） | なし | 2 の補数で折り返します。PLS_INTEGER と混ぜた演算は PLS_INTEGER として扱います（Oracle で未確認） |
+| PLS_INTEGER（FOR ループの添字を含む）どうし、PLS_INTEGER と 32 ビットに収まる整数リテラル、整数リテラルどうしの `+`、`-`、`*`、単項の `-` | 1 回の演算ごとに `Plsql.plsInteger(...)` | なし | 途中で 32 ビットを超えると ORA-01426 です（`v + 1 - 1` は v が 2147483647 なら例外。最後に範囲へ戻っても同じ。`2147483647 + 1` や `65536 * 65536` のようにリテラルだけでも同じ。-2147483648 の `-p` も同じ）。`/` と、32 ビットを超えるリテラルや NUMBER との演算は NUMBER です（Oracle 26ai で 53 通りを確認、#160） |
+| SIMPLE_INTEGER どうし、SIMPLE_INTEGER と整数リテラルの `+`、`-`、`*`、SIMPLE_INTEGER の単項の `-` | 1 回の演算ごとに下位 32 ビットを取る（`Integer.valueOf(((Number) ...).intValue())`） | なし | 2 の補数で折り返します（`s * 2147483647` も、-2147483648 の `-s` も）。PLS_INTEGER と混ぜた演算（`s + p`、`p + s`、`s * p`）は PLS_INTEGER として ORA-01426 になります。符号を付けたリテラルは PLS_INTEGER の式なので、`s - 1` は折り返し、`s + (-1)` は ORA-01426 です。左から順に型が決まるので、`s + 1 + p` は先に折り返し、`p + s + 1` は例外です（Oracle 26ai で確認、#160） |
 | 中置の `n MOD j` | `Plsql.mod(n, j)`（関数の `MOD(n, j)` と同じ） | なし | `*` と `/` と同じ強さで結びます（`a + b MOD 3 * 2` は `a + ((b MOD 3) * 2)`） |
 | `DATE + n`、`DATE - n`、`DATE - DATE` | `Plsql.add` / `Plsql.sub` | なし | 日数の足し引きです。DATE どうしの差は日数（小数つき）です |
 | 単項の `-x` | `Plsql.neg(x)` | なし | |
@@ -636,7 +636,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `SYS_REFCURSOR` を `OPEN rc FOR SELECT ...; RETURN rc;` | 行の `List<...Row>` を返すメソッド | 行数上限は CUR-002 と同じ | 呼び出し側は FETCH の代わりに List を受け取ります（生成で確認） |
 | 局所の `SYS_REFCURSOR` を OPEN して FETCH するループ | cursor FOR ループ | CUR-002 | 生成で確認 |
 | `OPEN rc FOR '定数の文字列' USING p` | 静的な問合せとして生成 | なし | 生成で確認 |
-| OUT 引数の `SYS_REFCURSOR`（`OPEN p_rc FOR SELECT ...`） | 行を読み、`List<...Row>` を結果の record の要素にして返す | 行数上限は CUR-002 と同じ | `RETURN rc` の形と同じく、呼び出し側は FETCH の代わりに List を受け取ります。routine の中でその cursor から FETCH する形や、2 回以上 OPEN する形はこの形にしません（生成で確認） |
+| OUT 引数の `SYS_REFCURSOR`（`OPEN p_rc FOR SELECT ...`） | 行を読み、`List<...Row>` を結果の record の要素にして返す | 行数上限は CUR-002 と同じ | `RETURN rc` の形と同じく、呼び出し側は FETCH の代わりに List を受け取ります。routine の中でその cursor から FETCH する形や、2 回以上 OPEN する形はこの形にしません。その形では OPEN が routine の中の cursor の状態に読むだけで、結果の record の引数は null のままです（CUR-001 で REVIEW）。Oracle では最後の OPEN が渡り（別の列の問合せでも）、routine の中で FETCH した行の続きから呼び出し側が読みます（%ROWCOUNT も続きから。26ai で確認）。行の型と位置をどう渡すかは未決です（#160） |
 | `FOR UPDATE` の cursor、`WHERE CURRENT OF c` | 行ロックの節を参照 | LOCK-001 / LOCK-002（REDESIGN） | |
 
 ### コレクション
@@ -646,11 +646,11 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `TABLE OF x INDEX BY VARCHAR2(n)` | `Map<String, x>`（`Plsql.indexBy()`、キー順の TreeMap） | なし | FIRST / NEXT はキー順に回ります（生成で確認） |
 | `TABLE OF x INDEX BY PLS_INTEGER` | `Map<Integer, x>` | なし | 0 や負のキーも取れます（生成で確認） |
 | `TABLE OF x`（ネスト表） | `List<x>`（1 始まり）。コンストラクタ `t(1, 2)` は `Plsql.table(...)` | なし | 初期化しないと `null` で、使うと ORA-06531 |
-| `VARRAY(n) OF x` | `List<x>` | なし | `v.LIMIT` は定数 n になります（生成で確認） |
-| 要素の読み `v(i)` / 書き `v(i) := x` | `Plsql.at(v, i)` / `Plsql.set(v, i, x)` | なし | 範囲外は ORA-06532 / ORA-06533、無いキーは NO_DATA_FOUND、NULL のキーは ORA-06502 |
+| `VARRAY(n) OF x` | `List<x>`。コンストラクタ `t(1, 2)` は `Plsql.varray(n, ...)` で、上限 n を持つ List（`Plsql.Varray`）を作る。BULK COLLECT で入れるときは `Plsql.varrayOf(n, ...)` | なし | `v.LIMIT` は定数 n になります。上限は代入（複製）・引数・外側のコレクションの要素になっても値について回ります。n を超える要素のコンストラクタ、n を超える EXTEND、n を超える添字は ORA-06532（EXTEND は 1 つも足しません）。n を超える行の BULK COLLECT は ORA-22165（Oracle 26ai で確認、#160） |
+| 要素の読み `v(i)` / 書き `v(i) := x` | `Plsql.at(v, i)` / `Plsql.set(v, i, x)` | なし | 1 未満と VARRAY の上限を超える添字は ORA-06532、COUNT を超える添字は ORA-06533、無いキーは NO_DATA_FOUND、NULL のキーは ORA-06502 |
 | `COUNT`、`FIRST`、`LAST`、`NEXT(i)`、`PRIOR(i)`、`EXISTS(i)` | `Plsql.count`、`first`、`last`、`next`、`prior`、`exists` | なし | 生成で確認 |
 | `DELETE`、`DELETE(i)`、`DELETE(i, j)` | `Plsql.delete` | なし | ネスト表の途中の DELETE は隙間として持ちます |
-| `EXTEND`、`EXTEND(n)`、`EXTEND(n, i)`、`TRIM`、`TRIM(n)` | `Plsql.extend`、`Plsql.trimTable` | なし | 生成で確認 |
+| `EXTEND`、`EXTEND(n)`、`EXTEND(n, i)`、`TRIM`、`TRIM(n)` | `Plsql.extend`、`Plsql.trimTable` | なし | VARRAY の上限を超える EXTEND は ORA-06532（上の VARRAY の行）。生成で確認 |
 | ネスト表どうしの `=` | 要素を多重集合として比べる | なし | |
 | コレクションの代入 | 値を複製する | なし | PL/SQL の代入は複製なので |
 | record の要素・コレクションの要素の record の field への代入 | record を作り直して置き換える | なし | |
