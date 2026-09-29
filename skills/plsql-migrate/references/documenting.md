@@ -63,7 +63,7 @@ SKILL.md の Step 7 で、`migration_doc.py facts` が作った文書の `（未
 | `constraints.enforce.<table>` | 移行先に無い CHECK / FOREIGN KEY を書く側で評価する表。CHECK は書く値で式を評価し、FOREIGN KEY は親を先に読み、違反は Oracle と同じ番号（-2290 / -2291）の例外になる。書かない表は `CONSTRAINT_UNDECIDED` で、アプリ側の検証に任せたことが見える |
 | `packageState.carried` | package 変数（セッション状態）は呼び出し側が運ぶ。その変数を読み書きする routine（呼び先経由も含む）は IN OUT 引数として受け取り、結果で返す |
 | `dbLinks` | DB link の先の表は、別の namespace として同じトランザクションで書く |
-| `EXC-001` | `DUP_VAL_ON_INDEX` / `INVALID_NUMBER` / `VALUE_ERROR` の handler は、移行先では走らない。重複 INSERT はその文では弾かれず、commit 時の衝突として返る |
+| `EXC-001` | `DUP_VAL_ON_INDEX` / `INVALID_NUMBER` / `VALUE_ERROR` の handler は、移行先では走らない。重複 INSERT はその文では弾かれず、commit 時の衝突として返る。SQL の中の TO_NUMBER を生成コードが計算する routine では INVALID_NUMBER は走る（EXC-001 は当たらない） |
 | 例外で抜けたとき | Oracle の文単位のロールバックは無い。呼び出し側が rollback しなければ、途中までの書き込みが残る |
 
 `transactions.separate` の routine を呼ぶ Service は、constructor で `SeparateTransactions`（runtime-java）を受け取り、

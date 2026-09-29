@@ -84,8 +84,8 @@ conditionalCompilation:
 
 日付・数値と文字の変換（`TO_CHAR` / `TO_NUMBER` / `TO_DATE`、`'…' || d`、`n := '1,5'`）は、移行元のセッションの NLS
 （言語、地域、書式、小数点と桁区切り、通貨）で結果が変わります。これもツールからは見えないので、決めていなければ
-生成コードは Oracle の既定（AMERICAN / AMERICA、`DD-MON-RR`）で書き、言語に依る書式（SEM-008）と書式なしの日付の
-文字化（SEM-012）を REVIEW にします。確かめた値を `limits.yaml` に書くと、生成した Service がその設定をランタイムに
+生成コードは Oracle の既定（AMERICAN / AMERICA、`DD-MON-RR`、小数点は `.`）で書き、言語に依る書式（SEM-008）と、
+書式なしの日付や小数を持てる数値の文字化（SEM-012。数値は #167 から）を REVIEW にします。確かめた値を `limits.yaml` に書くと、生成した Service がその設定をランタイムに
 渡し（`Plsql.useNls`）、ランタイムが計算する変換の SEM-008 / SEM-012 が外れます（#157。書けるキーと値は
 [変換の一覧](conversion-catalog.md#プロジェクトの決定limitsyamlと生成物)）:
 
