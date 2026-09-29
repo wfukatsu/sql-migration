@@ -66,7 +66,8 @@ public class Residual implements AutoCloseable {
    *     {@code date_trunc('week', DATE '2024-01-03')} is {@code 2024-01-01 00:00:00+09}, and a timestamptz of
    *     {@code 2024-01-03 20:30:00+00} casts to DATE {@code 2024-01-04} with EXTRACT(HOUR) 5 (PostgreSQL 16.15). The
    *     H2 session runs in that zone and TIMESTAMPTZ values are loaded at its offset (the same instants), and H2
-   *     2.5.250 then answers the same (#160).
+   *     2.5.250 then answers the same (#160). MySQL reads a TIMESTAMP (TIMESTAMPTZ in ScalarDB) in its session
+   *     time_zone the same way, and its plans carry the zone too (#169).
    */
   public Residual(String mode, boolean buildIndexes, String timeZone) throws Exception {
     englishDateNames();

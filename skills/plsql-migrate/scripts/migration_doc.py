@@ -393,6 +393,7 @@ CHANGES = {
     "DATE_LIT": (SHAPE, "日付・日時のリテラルを ScalarDB の形に書き換えた"),
     "TYPE_LIT": (SHAPE, "リテラルを列の型に合わせた（数字の文字列を数に、整数の列の範囲の境界、四捨五入）"),
     "IN": (SHAPE, "IN のリストを = の OR に展開した"),
+    "KEY_NEQ": (SHAPE, "クラスタリングキーの列の <> を範囲 2 つ（< の OR >）にした。ScalarDB SQL 3.19.1 は <> で内部エラーになる（#168）"),
     "LIKE": (SHAPE, "LIKE に ESCAPE を足した（Oracle と同じ意味にする）"),
     "NAMESPACE": (SHAPE, "スキーマ名を ScalarDB の namespace にした"),
     "ONLY": (SHAPE, "ONLY を落とした（ScalarDB の表に継承は無い）"),
