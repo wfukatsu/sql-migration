@@ -21,7 +21,7 @@
 
 | ルール ID | 何が起きているか | 聞くこと | 答えを書く所（`limits.yaml`） | 決める人 |
 |---|---|---|---|---|
-| LOCK-001 / LOCK-002 | 行ロック（`FOR UPDATE`、`NOWAIT`、`SKIP LOCKED`）。ScalarDB に行ロックは無い | この routine を楽観制御（同時の書き込みは commit で弾かれ、呼び出し側が再試行する）へ移してよいか。再試行してよい操作か（冪等か）、業務例外と衝突を呼び出し側が区別できるか | `rowLocks.optimistic.<routine>: <理由>` | 呼び出し |
+| LOCK-001 / LOCK-002 | 行ロック（`FOR UPDATE`、`NOWAIT`、`SKIP LOCKED`）。ScalarDB に行ロックは無い | この routine を楽観制御（同時の書き込みは commit で弾かれ、呼び出し側が再試行する）へ移してよいか。再試行してよい操作か（冪等か）、業務例外と衝突を呼び出し側が区別できるか。ロックして読んだだけで書かない行があるなら、SERIALIZABLE で動かせるか（SNAPSHOT では write skew が通る。CALL-7） | `rowLocks.optimistic.<routine>: <理由>` | 呼び出し |
 | SQL-001（`SET c = c + x` の RMW） / SEM-006（割っていない MERGE） | 列を読む SET 式・MERGE は ScalarDB SQL に渡せない | 同じトランザクションの中で読んでから書く 2 文に割ってよいか（衝突は commit で弾かれる） | `rowLocks.optimistic.<routine>` | 呼び出し |
 | TX-001 | routine の中の COMMIT / ROLLBACK / SAVEPOINT | 境界をどこに引くか: 1 反復 = 1 トランザクション（perIteration）/ 呼び出し側の境界へ移す（callerBoundary。途中の ROLLBACK が戻していた分は残る）/ 自律（separate） | `transactions.perIteration` / `callerBoundary` / `separate` の 1 つ | 業務 + 呼び出し |
 | TX-003 / BULK-002 | ループの中の COMMIT、`FORALL … SAVE EXCEPTIONS` | 1 反復（1 要素）ずつ確定してよいか。途中で止まったとき、確定した分が残ることを業務が受け入れるか。再実行したとき二重にならないか | `transactions.perIteration.<routine>` | 業務 |

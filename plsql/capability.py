@@ -91,6 +91,9 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
                 # 安全なのは同じトランザクションの中で読んで書くからで、衝突は Consensus Commit が
                 # 弾く（P3-4 で実測）。決めた人がいるので、拒否を続ける理由が無くなった。
                 # 決めていない routine は今までどおり拒否する。
+                # 弾かれるのは**書いた**行の衝突だけである。ロックして読んだだけの行の変更まで弾くのは
+                # SERIALIZABLE のときだけで、SNAPSHOT / READ_COMMITTED では write skew が通る（#157。
+                # spike #158 で、生成したコードを 3.19.1 の実クラスタに流して確かめた）。前提として書き残す。
                 locked = False
                 for statement in statements:
                     if statement.kind == "SqlOperation" and getattr(statement, "locking_mode", None):
@@ -98,7 +101,10 @@ def check(program: M.Program, registry: SchemaRegistry, symbols: SymbolTable | N
                                       f"行ロックを落として楽観制御へ移すと決めてある"
                                       f"（{(row_locks or RowLocks()).why(routine.id)}）。"
                                       f"**弾かれた衝突を再試行するのは呼び出し側の責務**である"
-                                      f"（計画 §9 / #9）")
+                                      f"（計画 §9 / #9）。FOR UPDATE と同じ保証になるのは、呼び出し側が"
+                                      f"**SERIALIZABLE** で動かすときだけである。SNAPSHOT / READ_COMMITTED "
+                                      f"では、読んだだけで書かない行を他が変えても commit が通る（write skew。"
+                                      f"CALL-7 / #157、spike #158 で実測）")
             indexes = _numeric_indexes(routine.body)
             for statement, loops in scoped:
                 loop_variables = _loop_fields(loops)

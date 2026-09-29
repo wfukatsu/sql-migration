@@ -795,7 +795,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 |---|---|---|---|
 | `SELECT ... FOR UPDATE [NOWAIT / WAIT n / SKIP LOCKED]` | SQL から `FOR UPDATE` を外して生成する。決定が無い routine では、読んだ値を使う式を SQL の外で先に計算しないので、その値で書く UPDATE は ScalarDB に断られる | LOCK-001（REDESIGN）。断られた文は SQL-001 | ロックが守っていた「読んで、判断して、書く」を黙って進めないためです（生成で確認） |
 | cursor の宣言の `FOR UPDATE` | 同上 | LOCK-001、LOCK-002（REDESIGN） | 生成で確認 |
-| `rowLocks.optimistic` に書いた routine | ロックを落とし、同じトランザクションの中で読んでから書く | 判定は REDESIGN のまま（決定済み） | 衝突は commit で弾かれ、再試行は呼び出し側の責務です。NOWAIT の「すぐ分かる」は「commit で分かる」に変わります（生成で確認） |
+| `rowLocks.optimistic` に書いた routine | ロックを落とし、同じトランザクションの中で読んでから書く | 判定は REDESIGN のまま（決定済み） | 衝突は commit で弾かれ、再試行は呼び出し側の責務です。NOWAIT の「すぐ分かる」は「commit で分かる」に変わります（生成で確認）。**FOR UPDATE と同じ保証になるのは SERIALIZABLE で動かすときだけ**です。SNAPSHOT / READ_COMMITTED では、ロックして読んだだけで書かない行を他が変えても commit が通ります（write skew。3.19.1 の実クラスタで確認、#157）。生成コードのロックを落とした文にこの前提のコメントが付き、決めることは CALL-7 です |
 | `WHERE CURRENT OF c` | 読んだ行のキーで UPDATE / DELETE | 同上 | 生成で確認 |
 | 読んだ値で計算して書く（`SET c = c + x`） | SQL 文の節の「列を読む式の UPDATE」を参照 | | |
 
@@ -806,7 +806,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | limits.yaml の項目 | 生成物の変化 | 判定への影響（ルール ID） | 注意 |
 |---|---|---|---|
 | `scanRows.default` / `routines` / `notLimited` | cursor の行を読む所に上限の検査を入れる | CUR-002 → CUR-OPT-002、BULK-003 → BULK-OPT-003 | `notLimited` でも既定値の検査は「暫定の網」として残ります（生成で確認） |
-| `rowLocks.optimistic` | 行ロックを落とす。列を読む UPDATE・RETURNING・MERGE を読んでから書く形に割る | SQL-001 / SEM-006 が外れ、SEM-011 の注記。LOCK-* は REDESIGN のまま | |
+| `rowLocks.optimistic` | 行ロックを落とす。列を読む UPDATE・RETURNING・MERGE を読んでから書く形に割る | SQL-001 / SEM-006 が外れ、SEM-011 の注記。LOCK-* は REDESIGN のまま | 前提は SERIALIZABLE で動かすこと（CALL-7、#157） |
 | `transactions.perIteration` / `separate` / `callerBoundary` | トランザクションの節を参照 | TX-* は REDESIGN のまま（決定済み） | 1 つの routine に 1 つだけ書けます |
 | `dynamicTables` | 識別子を 1 つ連結する動的 SQL を、書いた名前（表名・列名）ごとの文にする | DYN-001 は REDESIGN のまま。表ごとの文を判定するので、展開できた文の DYN-002 は外れる（`plsql.cli --limits` も同じ） | |
 | `ddl.omit` | 動的な DDL を省く | | |

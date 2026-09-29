@@ -103,6 +103,38 @@ for (int attempt = 0; ; attempt++) {
 
 **業務例外と衝突を混ぜないこと。** 在庫不足（-20030）は再試行しても結果が変わらない。
 
+### 前提（2026-09-30 / #157）: SERIALIZABLE で動かすこと
+
+**楽観制御が `FOR UPDATE` と同じ保証になるのは、SERIALIZABLE のときだけである。** Consensus Commit が commit で
+弾くのは**書いた行**の衝突である。`FOR UPDATE` はそれに加えて、**読んだだけで書かない行**も commit まで他に変えさせ
+ない。楽観制御でそれを確かめるのは SERIALIZABLE（読んだ行が commit までに変わっていないかを見る）だけで、ScalarDB の
+既定の SNAPSHOT と READ_COMMITTED では write skew が通る。
+
+ScalarDB 3.19.1 の実クラスタで、`rowLocks.optimistic` で生成したコードを 2 つ同時に流して確かめた（#157、
+spike #158）。「相手の医師が当番なら自分は外れる」（相手の行を `FOR UPDATE` で読み、自分の行を書く）を 2 人が同時に
+呼ぶと:
+
+| | 1 つ目 | 2 つ目 | 結果 |
+|---|---|---|---|
+| Oracle（`FOR UPDATE`） | 外れる | 1 つ目の commit まで待ち、相手が外れたのを見て業務例外 | 1 人が当番に残る |
+| ScalarDB SNAPSHOT | commit | commit | **2 人とも外れる**（write skew） |
+| ScalarDB READ_COMMITTED | commit | commit | **2 人とも外れる** |
+| ScalarDB SERIALIZABLE | commit | commit で `DB-CORE-20022`（anti-dependency）| 1 人が当番に残る（弾かれた側は再試行で業務例外になる） |
+
+同じ行を読んで書く形（`reserve` の「在庫を読んで減らす」、採番）は、どの分離レベルでも 2 つ目が `DB-CORE-20013` で
+弾かれ、差は出ない。fixtures の `rowLocks.optimistic` の routine はどれもロックした行を書くが、`promote` には書かずに
+戻る経路がある（「同じ tier なら何もしない」）。その経路のあとに呼び出し側が同じトランザクションで他の行を書くなら、
+同じ問題になる。
+
+* 分離レベルは呼び出し側がトランザクションを始めるときに決まるので、生成コードは確かめられない。ロックを落とした
+  文には、この前提をコメントで書く（「FOR UPDATE を落とした（rowLocks.optimistic）……」）。診断 `OPTIMISTIC` の
+  文言にも入れた
+* 決めることは「生成コードの外で決めること」の **CALL-7** である: クラスタ全体を SERIALIZABLE にするか、その routine を
+  呼ぶトランザクションだけ `BEGIN WITH 'cc-transaction-isolation' = 'SERIALIZABLE'` で始めるか、routine を読んで
+  「ロックした行を必ず書く」と確かめて SNAPSHOT のままにするか。JDBC の `setTransactionIsolation` は ScalarDB SQL の
+  ドライバでは何もしない
+* 比較ハーネスの検証クラスタ（`difftest/conf`）は SERIALIZABLE なので、比較では差が見えない
+
 ## B. 待たない（`NOWAIT`）
 
 ```sql
