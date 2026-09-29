@@ -46,7 +46,7 @@ SQL 文の各項目を、変換器（`scalardb_migrate/`）がどう扱うかの
 
 ### データ型
 
-`CREATE TABLE` と `ALTER TABLE` の列の型を、ScalarDB の 11 型に対応させます。指摘コードはすべて `TYPE` です。ERROR の型があると、その `CREATE TABLE` は変換しません。
+`CREATE TABLE` と `ALTER TABLE` の列の型を、ScalarDB の 11 型に対応させます。指摘コードはすべて `TYPE` です。ERROR の型があると、その `CREATE TABLE` は変換しません。10 進を DOUBLE にした列（下の表の `NUMBER(p, s)`、精度なし `NUMBER` / `NUMERIC`、`MONEY`、Oracle の `FLOAT` / `REAL`）は、同じスクリプトの `CREATE TABLE` から元の型を覚えておき、その列の `SUM` / `AVG` に WARN `TYPE` を付けます（「集約・ウィンドウ」、#161）。
 
 | 元の書き方 | 変換後 | 判定と指摘コード | 注意 |
 |---|---|---|---|
@@ -228,6 +228,7 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 | 元の書き方 | 変換後 | 判定と指摘コード | 注意 |
 |---|---|---|---|
 | `COUNT(*)` / `COUNT(1)` / `COUNT(col)` / `SUM` / `AVG` / `MIN` / `MAX`（引数が列） | そのまま | OK | |
+| `SUM(col)` / `AVG(col)`、`col` は 10 進を DOUBLE にした列（`NUMBER(10, 2)` など） | そのまま | WARN `TYPE`。元の型が分からない DOUBLE の列（`--schema` の ScalarDB のスキーマだけを渡したとき）は INFO `TYPE` | ScalarDB は DOUBLE の和・平均を 2 進の浮動小数で計算するので、元の DB の 10 進の結果と末尾の桁が違いうる（0.1 + 0.2 は 0.30000000000000004）。正確な 10 進が要るなら、値を取ってアプリで `BigDecimal` で足すか、設計が許せば小数を保つ型（10^s 倍した整数を BIGINT）にする。元の型が分からないときは「元が 10 進なら」と条件つきで同じことを言う。元が 2 進の浮動小数（`BINARY_DOUBLE`、`BINARY_FLOAT`、`DOUBLE PRECISION`、PostgreSQL・MySQL の `REAL` / `FLOAT`）の列と、`MIN` / `MAX` / `COUNT` には出さない。実行計画（PLANNED）では、残りの SQL（H2）が集約する列に同じ指摘を出す（`STDDEV` / `VARIANCE` も）。ただし `NUMBER(p, s)`（p ≤ 38）は H2 に `NUMERIC(p, s)` として入り 10 進で足すので出さない。精度なし `NUMBER` のように `NUMERIC(p, s)` で入れられない列と、元の型が分からない列に出る（#161） |
 | `COUNT(DISTINCT dept_id)` | — | PLANNED（`AGG_DISTINCT`） | |
 | `SUM(salary * 2)`（引数が式） | — | PLANNED（`AGG`） | |
 | そのほかの集約（`LISTAGG`、`STDDEV` など） | — | PLANNED（`AGG`） | |
@@ -254,10 +255,10 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 | 種類 | 元の書き方（例） | 注意 |
 |---|---|---|
 | 文字列 | `SUBSTR`、`UPPER`、`LENGTH`、連結 `\|\|` | Oracle の空文字列 `''` は NULL（変換できた文にも WARN `SEMANTICS`）。MySQL の文字列比較は大文字小文字を区別しない（INFO `SEMANTICS`） |
-| 数値 | `ROUND(salary)`、`salary / 2` | 丸めは 0 から遠いほうへ（-2.5 は -3）。0 で割ったときは方言で違う（Oracle は失敗、MySQL は NULL）。アプリで書くときの注意として `APP_SEMANTICS` に出る |
-| 日付 | `ADD_MONTHS(hired, 1)`、`TRUNC(hired, 'MM')`、日付どうしの引き算 | `ADD_MONTHS` は月末をそろえる（`APP_SEMANTICS`）。実行計画では H2 向けに `TRUNC(d, 'MM')` を `DATE_TRUNC('MONTH', d)` に書き換える。週（Oracle の `IW` / `WW` / `W`、PostgreSQL の `date_trunc('week', d)`）は H2 の `DATE_TRUNC('WEEK')` が日曜始まりなので、始まりの曜日を合わせた `DATEADD` の式にする。`TRUNC(d, 'DAY')`（`DY`、`D` も）は週の始まりを NLS_TERRITORY が決めるので計画にせず ERROR `RESIDUAL_H2`（`IW` を使うか、アプリで計算する）。H2 が書き換えられない単位も同じ。小数秒の無い `TIMESTAMP '...'` は、H2 が `FF6` の書式で読めないので、小数秒の無い書式で書く（#153）。日付どうしの引き算は Oracle なら `DAYS_BETWEEN`（小数の日数）、PostgreSQL の DATE どうしなら `DATEDIFF('DAY', b, a)`、MySQL（YYYYMMDD の数の引き算）は ERROR `RESIDUAL_H2` |
-| 書式・変換 | `TO_CHAR(hired, 'YYYY-MM')`、MySQL の `DATE_FORMAT`、`CAST(x AS ...)`、`name::text` | 日付の書式はセッションのタイムゾーンと言語に従う（`APP_SEMANTICS`）。実行計画では MySQL の `DATE_FORMAT` を H2 の `FORMATDATETIME` に書き換える（`'%Y年%m月%d日'` のような文字も書ける。H2 に無い `%U` などは ERROR `RESIDUAL_H2`）。値の位置の `CAST('5' AS NUMBER)` は ERROR `UNSUPPORTED` |
-| 割り算 | `COUNT(*) / 4`、`7 / 2`、`COUNT(*) * 100 / 3` | Oracle・MySQL の実行計画では、H2 が整数どうしを整数で割らないよう、列から来ない整数（整数リテラル、`COUNT`、`LENGTH` など）の左辺を `CAST(... AS NUMBER(19))` で包む。PostgreSQL は整数の割り算のまま |
+| 数値 | `ROUND(salary)`、`salary / 2`、MySQL の `empno DIV 4` | 丸めは 0 から遠いほうへ（-2.5 は -3）。0 で割ったときは方言で違う（Oracle は失敗、MySQL は NULL）。MySQL の `DIV` は 0 の方向へ切り捨てる（指摘文は元の `DIV` の形で式を出す。SQLGlot が書き戻す `CAST(a / b AS SIGNED)` は四捨五入なので、それで書かない。#161）。アプリで書くときの注意として `APP_SEMANTICS` に出る |
+| 日付 | `ADD_MONTHS(hired, 1)`、`TRUNC(hired, 'MM')`、日付どうしの引き算 | `ADD_MONTHS` は月末をそろえる（`APP_SEMANTICS`）。実行計画では H2 向けに `TRUNC(d, 'MM')` を `DATE_TRUNC('MONTH', d)` に書き換える。週（Oracle の `IW` / `WW` / `W`、PostgreSQL の `date_trunc('week', d)`）は H2 の `DATE_TRUNC('WEEK')` が日曜始まりなので、始まりの曜日を合わせた `DATEADD` の式にする。PostgreSQL の `date_trunc(単位, DATE の値)` は、PostgreSQL が DATE をセッションの TimeZone の 0 時の timestamptz にして返す（timestamptz の `CAST(.. AS DATE)`、`EXTRACT(HOUR ..)`、`to_char` もセッションの TimeZone で答える）。`--session-time-zone` を渡すと PostgreSQL の計画に `residual.java.time_zone` としてゾーンが載り、ランタイムは H2 のセッションをそのゾーンで開いて TIMESTAMPTZ の値もそのゾーンの時差で入れる（瞬間は同じ）。Asia/Tokyo なら `date_trunc('week', DATE '2024-01-03')` は PostgreSQL と同じ `2024-01-01 00:00:00+09` になる（PostgreSQL 16.15 と H2 2.5.250 で確認、夏時間のある America/Los_Angeles も同じ。#160）。渡さないと H2 のセッションは UTC で、移行元のセッションが UTC 以外なら返す値が違う（`2024-01-01 00:00:00+00`。DATE との比較や並べ替えの結果は同じ）。Oracle と MySQL の計画にはゾーンを載せない。`TRUNC(d, 'DAY')`（`DY`、`D` も）は週の始まりを NLS_TERRITORY が決めるので計画にせず ERROR `RESIDUAL_H2`（`IW` を使うか、アプリで計算する）。H2 が書き換えられない単位も同じ。小数秒の無い `TIMESTAMP '...'` は、H2 が `FF6` の書式で読めないので、小数秒の無い書式で書く（#153）。日付どうしの引き算は Oracle なら `DAYS_BETWEEN`（小数の日数）、PostgreSQL の DATE どうしなら `DATEDIFF('DAY', b, a)`、MySQL（YYYYMMDD の数の引き算）は ERROR `RESIDUAL_H2` |
+| 書式・変換 | `TO_CHAR(hired, 'YYYY-MM')`、MySQL の `DATE_FORMAT`、`CAST(x AS ...)`、`name::text` | 日付の書式はセッションのタイムゾーンと言語に従う（`APP_SEMANTICS`）。実行計画では MySQL の `DATE_FORMAT` を H2 の `FORMATDATETIME` に書き換える（`'%Y年%m月%d日'` のような文字も書ける。H2 に無い `%U` などは ERROR `RESIDUAL_H2`）。月や曜日の名前（Oracle の `MON` / `DAY` / `DY` / `AM`、MySQL の `%b` / `%a` / `%p`）は、計画を動かす JVM の言語設定によらず英語で読み書きする（Oracle の NLS_DATE_LANGUAGE の既定 AMERICAN、MySQL の lc_time_names の既定 en_US と同じ。日本語の JVM では H2 が `NOV` を読めなかった、#160）。値の位置の `CAST('5' AS NUMBER)` は ERROR `UNSUPPORTED` |
+| 割り算 | `COUNT(*) / 4`、`7 / 2`、`COUNT(*) * 100 / 3`、`c / 4`（`c` は派生表・CTE の `COUNT(*)`） | Oracle・MySQL の実行計画では、H2 が整数どうしを整数で割らないよう、取得した列から来ない整数（整数リテラル、`COUNT`、`LENGTH` など、それらの `MAX` / `MIN` / `SUM`、それを返すスカラー副問合せ、それを持つ派生表・CTE の列）の左辺を `CAST(... AS NUMBER(19))` で包む（#160）。修飾の無い列名で FROM に複数の表があると、どの表の列か決められないので包まない。PostgreSQL は整数の割り算のまま |
 | NULL の処理 | `NVL`、`COALESCE`、MySQL の `IFNULL` | 集約は NULL を除き、全部 NULL なら NULL（`APP_SEMANTICS`） |
 | 条件 | `CASE WHEN ...`、`DECODE` | |
 | 現在時刻 | `SYSDATE`、`SYSTIMESTAMP`、`CURRENT_TIMESTAMP`、`CURRENT_DATE`、`NOW()` | WHERE では PLANNED（`NOW`）、値では ERROR `NOW`。時刻はアプリで計算してバインドする。移行元ではデータベースサーバーの時計を使う |
@@ -282,7 +283,7 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 | TEXT の列に数値（INSERT・SET） | 書いたとおりの文字列 | WARN `TYPE_LIT` | 移行元は自分の数の書式で文字にする |
 | TIMESTAMP 列に日付だけ（`DATE '2024-01-01'`） | `'2024-01-01 00:00:00'` | OK（INFO `DATE_LIT`） | |
 | TIMESTAMPTZ 列に時差つき（`'... 10:00:00+09:00'`） | UTC の `'2024-01-01 01:00:00 Z'` | OK（INFO `DATE_LIT`） | |
-| TIMESTAMPTZ 列に時差なし | UTC と見なして末尾 `Z` | WARN `TZ_ASSUMED_UTC` | `--session-time-zone Asia/Tokyo` を渡すと、その地域の時刻として UTC に直す（INFO `DATE_LIT`） |
+| TIMESTAMPTZ 列に時差なし | UTC と見なして末尾 `Z` | WARN `TZ_ASSUMED_UTC` | `--session-time-zone Asia/Tokyo` を渡すと、その地域の時刻として UTC に直す（INFO `DATE_LIT`）。PostgreSQL の実行計画では、H2 もそのゾーンで動かす（`residual.java.time_zone`、#160） |
 | 時差の無い列（DATE / TIMESTAMP）に時差つきの値 | 時差を落とす | WARN `DATE_LIT` | |
 | INT / BIGINT 列に `TRUE` / `FALSE` | `1` / `0` | OK（INFO `BOOL_LIT`） | |
 
@@ -401,8 +402,9 @@ ERROR か PLANNED になった読み取り文には、変換器が最初につ�
 |---|---|---|
 | `CTE`・`SUBQUERY`・`SET_OP`・`HIERARCHICAL`・`WINDOW`・`KEEP`・`PIVOT`・`DISTINCT`・`OFFSET`・`PROJECTION`・`GROUP`・`PRED`・`NOW`・`ORDER` | ERROR | アプリに移す構文を、場所（主問い合わせ、WITH の名前、副問い合わせ）つきで全部挙げる |
 | `RESIDUAL_H2` | ERROR | H2 が実行できない構文（`CONNECT BY`、`ROLLUP` など、`PIVOT` / `UNPIVOT`、`KEEP`、`FULL OUTER JOIN`、`LATERAL`、`SAMPLE`、再帰 WITH の `SEARCH`、`JSON_TABLE`）。実行計画を作らない |
-| `APP_SEMANTICS` | WARN | アプリで書き直すときに結果を変えないための注意（`LAG` / `LEAD`、0 除算、`ROUND`、集約と NULL、順位、NULL と文字列の並び、`SYS_CONNECT_BY_PATH`、`LEVEL`、`ADD_MONTHS`、日付の書式、現在時刻、空文字列）。ERROR の文にだけ付く |
+| `APP_SEMANTICS` | WARN | アプリで書き直すときに結果を変えないための注意（`LAG` / `LEAD`、0 除算、MySQL の `DIV`、`ROUND`、集約と NULL、順位、NULL と文字列の並び、`SYS_CONNECT_BY_PATH`、`LEVEL`、`ADD_MONTHS`、日付の書式、現在時刻、空文字列）。ERROR の文にだけ付く |
 | `DESIGN` | INFO | 設計の提案（表定義を渡す、階層の事前計算、GROUP BY のキーでの集計表、結合列のキーか索引、JDBC 以外ではキーを持たせる、分析の問い合わせには ScalarDB Analytics） |
+| `TYPE` | WARN / INFO | 残りの SQL（H2）が DOUBLE の列を `SUM` / `AVG` / `STDDEV` / `VARIANCE` で集約し、2 進の浮動小数で計算される。元が 10 進と分かれば WARN、元の型が分からなければ INFO（上の「集約・ウィンドウ」、#161） |
 | `PLAN_FETCH` / `PLAN_RESIDUAL` | INFO | 実行計画の取得 1 つずつと、H2 が元の SQL を実行すること |
 | `PLAN_CROSS_PARTITION` / `PLAN_UNRESOLVED` | WARN | 取得にクロスパーティション SCAN が要る / 表か列を解決できない所がある（`python:` で始まるものは INFO。Python の参照実装（SQLite）だけの制限で、Java のランタイムには関係しない） |
 | `PLAN` | INFO | 実行計画に分けられなかった理由 |
@@ -423,7 +425,7 @@ ERROR か PLANNED になった読み取り文には、変換器が最初につ�
 | PL/SQL のブロック、`WITH FUNCTION` | ERROR `PLSQL_BLOCK` / `WITH_PLSQL` | 上の「方言ごとの差」 |
 | 移行元の方言として読めない文。文でなく式として読めたもの（綴りを誤った `SELEC * FRM t` など） | ERROR `PARSE` | `--source` と綴りを確かめる |
 | ScalarDB SQL の生成器が出せない構文が残った | ERROR `UNSUPPORTED` | |
-| 引用符の閉じ忘れなどで文に分けられない | ERROR `TOKENIZE` | `;` で終わる行ごとに分け直し、読めた文は変換する。読めない文だけが ERROR |
+| 引用符の閉じ忘れなどで文に分けられない | ERROR `TOKENIZE` | `;` で終わる行ごとに分け直し、読めた文は変換する。読めない文だけが ERROR。ScalarDB 以外の Target（`--target postgres` など）でも同じ（#160） |
 | 変換器が想定していなかった文 | ERROR `INTERNAL` | その文だけが ERROR になり、残りは変換を続ける |
 
 逆に、そのまま通る文は `BEGIN` / `START TRANSACTION`（`BEGIN` にする）、`COMMIT`、`ROLLBACK`、`USE shop` です。
@@ -468,7 +470,7 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | 引数の既定値（`DEFAULT`） | 呼び出し文でも式の中の function 呼び出しでも、省いた引数に既定値を補って渡す。リテラル（NULL・数・文字列・TRUE / FALSE）はそのまま書き、式（`DEFAULT SYSDATE`、`DEFAULT pkg.c_limit`、`DEFAULT next_no()`）は呼ばれる側の Service に作る `defaultOf<Routine><引数>()` を呼んで渡す | 省いた `DEFAULT SYSDATE` は、呼ぶ側の時計の読みとして SEM-007 に数える（呼び出し文のとき） | Oracle と同じく、省いた呼び出しのたびに、呼ばれる側の宣言の場所の名前で評価します。すべての引数に既定値がある function は、括弧なしの呼び出し（`pkg.label \|\| 'x'`）でも補います。package の**変数**を既定値に持つもの（`DEFAULT g_level`）は、`packageState.carried` で運ぶと決めたときだけ、呼ぶ側が運んでいる値を渡します（省く呼び出しをする routine も運ぶ側になります）。決めていなければ、既定値が `USER` / `SYSTIMESTAMP` を読むとき、sequence を採るとき、routine を呼ぶ既定値を 2 つ以上省くとき（Oracle は評価の順を決めていない）は、今までどおりその文を断ります（生成で確認、#141） |
 | 名前付き引数（`p_a => 1`） | 呼び出し文でも式の中の function 呼び出しでも、引数の順に並べ替えて渡す | なし | 式の中で並べ替えるのは、同じ package の routine と、ほかの module の routine（オーバーロードの無いもの）です（生成で確認） |
 | オーバーロード | 版ごとに番号を付けたメソッド（`fmt` → `fmt1`、`fmt2`） | 呼び出しがどの版か決まらないと CALL-002（REVIEW） | 引数の数と名前だけで選びます。型だけが違う版は選べません（生成で確認） |
-| 宣言部の入れ子の procedure / function（入れ子のブロックの DECLARE に書いたものを含む） | 外側の変数を引数で運ぶ private メソッドに持ち上げる。外側の routine が開いた cursor を FETCH するものには、その cursor の状態（`Plsql.Cursor`）を引数で渡す | なし | 持ち上げられないもの（名前がほかの routine と重なる、外側の例外を使う、外側と同じ cursor を両方で FETCH する、外側の handler が読む変数に代入する、内側のブロックが同じ名前を宣言し直す）は LOWER-001（REVIEW）。型だけが違うオーバーロードは持ち上げません（生成で確認） |
+| 宣言部の入れ子の procedure / function（入れ子のブロックの DECLARE に書いたものを含む） | 外側の変数を引数で運ぶ private メソッドに持ち上げる。外側の routine が開いた cursor を FETCH するものには、その cursor の状態（`Plsql.Cursor`）を引数で渡す。package の routine や外側の routine と同じ名前のものは `<外側の名前>_<名前>` で持ち上げ、それが見える範囲（外側の本体と handler、自分自身、後に宣言した兄弟）の呼び出しをその名前に向ける | なし | 同じ名前の入れ子は、外側の routine の中では入れ子のほうを、`pkg.f` と書けば package のほうを、ほかの routine は package のほうを呼びます（Oracle 26ai で確認、#160）。持ち上げられないもの（名前がほかの入れ子の subprogram と重なる、外側の例外を使う、外側と同じ cursor を両方で FETCH する、外側の handler が読む変数に代入する、内側のブロックが同じ名前を宣言し直す）は LOWER-001（REVIEW）。型だけが違うオーバーロードは持ち上げません（生成で確認） |
 | ラベル・routine 名で修飾した名前（`<<outer>>` の `outer.x`、ループの `outer_loop.i`、`dept_name.department_name`） | 修飾が指す宣言の Java 名。内側で隠された変数は Java の別名（`x_2` など）で宣言されているので、修飾した参照はもとの `x` を指す | なし | PL/SQL の文・式・INTO の先で解決します。SQL 文の中でブロックのラベルで修飾した名前は、まだ列として読むので断られます（生成で確認） |
 | 別の package の routine の呼び出し | 呼ばれる側の Service をコンストラクタで受け取って呼ぶ | 呼び先の判定を引き継ぐ | 生成で確認 |
 | package の定数（`CONSTANT`） | `private static final` のフィールド | なし | 値がリテラルの定数だけです。値が式の定数（`gc_line_feed CONSTANT VARCHAR2(1) := chr(10)`）はフィールドにせず、それを読む文を断ります（以前は無いフィールドを参照する Java になっていた）（生成で確認） |
@@ -519,8 +521,8 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `x IS NULL` / `IS NOT NULL` | `Plsql.isNull(x)` / `Plsql.isNotNull(x)` | なし | `''` も NULL です |
 | `a \|\| b` | `Plsql.concat(a, b)` | なし | NULL は空文字として扱い、結果が空なら NULL です |
 | `+`、`-`、`*`、`/` | `Plsql.add`、`sub`、`mul`、`div` | なし | NULL は NULL を返します。結果は NUMBER と同じく 40 桁に丸めます。0 で割ると ORA-01476（`Plsql.ZeroDivide`） |
-| PLS_INTEGER どうし、PLS_INTEGER と 32 ビットに収まる整数リテラルの `+`、`-`、`*` | 1 回の演算ごとに `Plsql.plsInteger(...)` | なし | 途中で 32 ビットを超えると ORA-01426 です（`v + 1 - 1` は v が 2147483647 なら例外。最後に範囲へ戻っても同じ。Oracle 26ai で確認）。`/` と、32 ビットを超えるリテラルとの演算は NUMBER です |
-| SIMPLE_INTEGER どうし、SIMPLE_INTEGER と整数リテラルの `+`、`-`、`*` | 1 回の演算ごとに下位 32 ビットを取る（`Integer.valueOf(((Number) ...).intValue())`） | なし | 2 の補数で折り返します。PLS_INTEGER と混ぜた演算は PLS_INTEGER として扱います（Oracle で未確認） |
+| PLS_INTEGER（FOR ループの添字を含む）どうし、PLS_INTEGER と 32 ビットに収まる整数リテラル、整数リテラルどうしの `+`、`-`、`*`、単項の `-` | 1 回の演算ごとに `Plsql.plsInteger(...)` | なし | 途中で 32 ビットを超えると ORA-01426 です（`v + 1 - 1` は v が 2147483647 なら例外。最後に範囲へ戻っても同じ。`2147483647 + 1` や `65536 * 65536` のようにリテラルだけでも同じ。-2147483648 の `-p` も同じ）。`/` と、32 ビットを超えるリテラルや NUMBER との演算は NUMBER です（Oracle 26ai で 53 通りを確認、#160） |
+| SIMPLE_INTEGER どうし、SIMPLE_INTEGER と整数リテラルの `+`、`-`、`*`、SIMPLE_INTEGER の単項の `-` | 1 回の演算ごとに下位 32 ビットを取る（`Integer.valueOf(((Number) ...).intValue())`） | なし | 2 の補数で折り返します（`s * 2147483647` も、-2147483648 の `-s` も）。PLS_INTEGER と混ぜた演算（`s + p`、`p + s`、`s * p`）は PLS_INTEGER として ORA-01426 になります。符号を付けたリテラルは PLS_INTEGER の式なので、`s - 1` は折り返し、`s + (-1)` は ORA-01426 です。左から順に型が決まるので、`s + 1 + p` は先に折り返し、`p + s + 1` は例外です（Oracle 26ai で確認、#160） |
 | 中置の `n MOD j` | `Plsql.mod(n, j)`（関数の `MOD(n, j)` と同じ） | なし | `*` と `/` と同じ強さで結びます（`a + b MOD 3 * 2` は `a + ((b MOD 3) * 2)`） |
 | `DATE + n`、`DATE - n`、`DATE - DATE` | `Plsql.add` / `Plsql.sub` | なし | 日数の足し引きです。DATE どうしの差は日数（小数つき）です |
 | 単項の `-x` | `Plsql.neg(x)` | なし | |
@@ -529,8 +531,8 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | 問い合わせ指令 `$$PLSQL_UNIT`、`$$PLSQL_LINE`、`$$flag` | 単位の名前（大文字）の文字列、行番号の数、`limits.yaml` の `conditionalCompilation.flags` の値（無ければ NULL） | なし | `$$PLSQL_LINE` は読み込むときに、単位の中の行番号（`PROCEDURE` などのある行が 1）に置き換えます。桁は空白で埋め、列はずらしません。`$$PLSQL_CCFLAGS` はフラグを 1 つも決めていなければ NULL、決めていれば断ります（Oracle の書き方を再現しない）。ほかの `$$PLSQL_CODE_TYPE` などは移行元の設定なので断ります（#140） |
 | CASE 式 | 三項演算子（`Plsql.eq(p, 1) ? "one" : "many"`） | なし | 生成で確認 |
 | 文字列を NUMBER に代入 | `Plsql.dec(...)` | なし | 数値にならないと ORA-06502（`Plsql.ValueError`） |
-| 日付・TIMESTAMP を書式なしで文字にする（`'d=' \|\| d`、`TO_CHAR(d)`） | `Plsql.concat` / `Plsql.text` が Oracle の既定（`DD-MON-RR`、AMERICAN）で書く | SEM-012（REVIEW） | 移行元のセッションの NLS 設定までは確かめていません |
-| 数値を文字にする | `Plsql.text(n)` | なし | 1 未満は `.5` のように先頭の 0 を書きません（Oracle と同じ） |
+| 日付・TIMESTAMP を書式なしで文字にする（`'d=' \|\| d`、`TO_CHAR(d)`） | `Plsql.concat` / `Plsql.text` / `Plsql.timestampText` が `limits.yaml` の `nls` の `dateFormat` / `timestampFormat` / `timestampTzFormat`（決めていなければ Oracle の既定 `DD-MON-RR` など、AMERICAN）で書く | `nls` を決めていなければ SEM-012（REVIEW）。決めていれば外れる（NLS_DECIDED） | TIMESTAMP(p) の `FF` は宣言の桁、TIMESTAMP(0) は小数点ごと書きません（#94、#157） |
+| 数値を文字にする | `Plsql.text(n)` | なし | 1 未満は `.5` のように先頭の 0 を書きません（Oracle と同じ）。小数点は `nls.numericCharacters` の 1 文字目（`,.` なら `1234,5`）。文字を数値にする暗黙の変換も同じ文字を読みます（#157）。固定小数点で 100 文字を超える数は、仮数を 0 で埋めて全体を 100 文字にした指数形式で書きます（`1e100` は `1.000…000E+100`。PL/SQL の書き方で、Oracle 26ai で測った。SQL の `TO_CHAR(n)` は 40 文字で丸める別の規則。#161） |
 | 丸め（`ROUND`） | `Plsql.round`（half-up） | PL/SQL の式ならなし。移行先 DB が評価する SQL の中なら SEM-001（REVIEW） | |
 | `CAST(ts AS DATE)` | `Plsql.castDate`（秒未満を切り捨て） | 移行先 DB が評価する SQL の中なら SEM-009（REVIEW） | |
 | 空文字・`NVL`・`RTRIM` を含む SQL | 式を SQL の外へ出して bind にできれば、ランタイムが計算 | 移行先 DB がそのまま評価するなら SEM-003（REVIEW） | 書き込みの境界（`Plsql.bind`）は `''` を NULL にして渡します |
@@ -545,11 +547,14 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `ROUND`、`TRUNC`（数値・日付） | `Plsql.round`、`Plsql.trunc` | なし | |
 | `MOD`、`ABS`、`POWER`、`SQRT`、`CEIL`、`FLOOR`、`SIGN` | 同じ名前の `Plsql` の関数 | なし | |
 | `GREATEST`、`LEAST` | `Plsql.greatest`、`least` | なし | |
-| `UPPER`、`LOWER`、`INITCAP`、`LENGTH`、`SUBSTR`、`INSTR`、`REPLACE`、`LPAD`、`RPAD`、`TRIM`、`LTRIM`、`RTRIM`、`CONCAT`、`CHR`、`ASCII` | 同じ名前の `Plsql` の関数 | なし | NULL と空文字は Oracle と同じに扱います |
-| `TO_CHAR(日付, 書式)` | `Plsql.text(v, 書式)` | 書式に DAY・MON・AM など言語で変わる要素があると SEM-008（REVIEW） | 対応する書式は `YYYY-MM-DD`、`YYYY-MM-DD HH24:MI:SS`、`YYYYMM`、`YYYY` だけです。ほかは実行時に `UnsupportedOperationException` |
-| `TO_NUMBER(v)` | `Plsql.toNumber(v)` | なし | 書式つきの `TO_NUMBER(v, 書式)` は実行時に `UnsupportedOperationException` |
+| `UPPER`、`LOWER`、`INITCAP`、`LENGTH`、`SUBSTR`、`INSTR`、`REPLACE`、`LPAD`、`RPAD`、`TRIM`、`LTRIM`、`RTRIM`、`CONCAT`、`CHR`、`ASCII` | 同じ名前の `Plsql` の関数 | なし | NULL と空文字は Oracle と同じに扱います。`CHR` / `ASCII` の数はコードポイントでなく AL32UTF8 のバイト列です（`ASCII('あ')` は 14909826、`CHR(12354)` は `'0B'`。Oracle 26ai で測った、#161）。負の数と 2^32 以上の `CHR` は ORA-06502。Oracle は文字にならないバイト列（`CHR(128)`）もそのまま返しますが、ランタイムは持てないので ORA-06502 で断ります |
+| `TO_CHAR(日付, 書式)` | `Plsql.text(v, 書式)`。DATE / TIMESTAMP と宣言した変数は `Plsql.textDate` / `Plsql.textTimestamp` | 書式に DAY・MON・AM など言語で変わる要素があり、`nls` を決めていなければ SEM-008（REVIEW）。ランタイムが断る形なら SEM-015（REVIEW） | 書式モデルの全体を Oracle 26ai で測ったとおりに書きます（#157、`OracleFormat`）: `YYYY YYY YY Y RRRR RR SYYYY Y,YYY IYYY IYY IY I CC SCC Q MM MON MONTH RM WW W IW D DD DDD DY DAY J HH HH12 HH24 MI SS SSSSS FF FF1-9 X AM PM A.M. P.M. AD BC A.D. B.C. TZH TZM TZR TZD YEAR SYEAR DS DL TS`、`FM`（切り替え）、`FX`、`"文字"`、句読点、`SP` / `TH` / `SPTH`、名前の大文字小文字（`Month` → `September`）と詰め物（英語は 9 文字）。言語は `nls.dateLanguage`（AMERICAN / ENGLISH / JAPANESE）、`D` と DS / DL / TS は `nls.territory`（AMERICA / JAPAN）。Oracle が断る書式は同じ番号（ORA-01821・01801・01822）。FF・X・TZH・TZM は DATE では ORA-01821、TIMESTAMP の TZR はセッションのタイムゾーン（UTC）。PL/SQL の `TO_CHAR(t, 'FF')` は宣言の桁によらず 9 桁です。断るもの: 1582-10-15 より前の日付（Oracle はユリウス暦で数える）、型の分からない値（record の列など）で秒の端数が 0 のものへの FF・X・TZR |
+| `TO_CHAR(数値, 書式)` | `Plsql.text(v, 書式)` | ランタイムが断る形なら SEM-015（REVIEW） | 書式モデルの全体（#157）: `9 0 , . G D $ L C U S MI PR B EEEE V X RN TM TM9 TME`、`FM`。丸めは 0 から遠い方、入らなければ幅いっぱいの `#`、幅は「要素の数 + 符号の 1 桁」、`L` / `U` は 10 バイト・`C` は 7 バイト（`¥` は 2 バイトとして数える。データベースの文字コードは AL32UTF8 を前提）。`G` / `D` は `nls.numericCharacters`、`L` は `nls.currency`、`C` は `nls.isoCurrency`、`U` は `nls.dualCurrency`。Oracle が断る書式は ORA-01481。断るもの: `FM` と `B` を一緒に使う書式、数字も小数点も無い書式（`L` だけなど） |
+| `TO_NUMBER(v)` | `Plsql.toNumber(v)` | なし | 小数点は `nls.numericCharacters` の 1 文字目だけを読みます |
+| `TO_NUMBER(v, 書式)` | `Plsql.toNumber(v, 書式)` | なし | 書式どおりに読めなければ ORA-06502（`Plsql.ValueError`。VALUE_ERROR で捕まる）: 桁区切りは書式の位置に要り、`0` の桁は省けず、小数の桁は少なくてよく多いと誤り、前の空白は読み飛ばし後ろの空白は誤り、`RN`・`TM`・`V` は読めません（26ai で測定、#157）。SQL 文の中の書式つき `TO_NUMBER` は SQL の外へ出しません（出すと ORA-01722 と ORA-06502 の違いが要るため） |
 | `TO_DATE(v, 書式)` | `Plsql.toDate(v, 書式)` | なし | 要素ごとに Oracle と同じ読み方をします（桁の少ない数字、RR の世紀、省いた年月は現在、入力が時刻の要素の前で終わるのは可・日付の要素の前で終わると ORA-01840）。読めないときは Oracle と同じ番号の `Plsql.FunctionError`（ORA-01830・01841・01843・01847・01839・01850・01849・01851・01852・01855・01858）で、VALUE_ERROR では捕まりません。WHEN OTHERS では `SQLCODE` がその番号になります（#140。以前は ORA-06502） |
-| `TO_TIMESTAMP(v[, 書式])` | `Plsql.toTimestamp(v, 書式)` | なし | TO_DATE の読み方に `FF` / `FFn`（小数秒。桁が多いと ORA-01830）と `X`（小数点）を足したもの。書式を省くと `DD-MON-RR HH.MI.SSXFF AM`（#140） |
+| `TO_TIMESTAMP(v[, 書式])` | `Plsql.toTimestamp(v, 書式)` | なし | TO_DATE の読み方に `FF` / `FFn`（小数秒。桁が多いと ORA-01830）と `X`（`nls.numericCharacters` の小数点）を足したもの。書式を省くと `nls.timestampFormat`（既定 `DD-MON-RR HH.MI.SSXFF AM`、#140） |
+| `TO_DATE` の NLS | 同上 | なし | 書式を省くと `nls.dateFormat`（既定 `DD-MON-RR`）。月の名前と午前・午後は `nls.dateLanguage` のもの（JAPANESE なら `9月`、`午前`）。`MM` は月の名前も読み、名前のあとの空白は読み飛ばします。4 桁を読んだ `RR` のあとに残りがあると ORA-01861（#157） |
 | `ADD_MONTHS`、`LAST_DAY` | `Plsql.addMonths`、`lastDay` | なし | |
 | `MONTHS_BETWEEN(d1, d2)` | `Plsql.monthsBetween` | なし | 同じ日か両方が月末なら整数（時刻は無視）、ほかは 31 日を 1 か月とした小数を NUMBER と同じ 40 桁に丸めます。規則は実行計画の H2 が使う `OracleFunctions.monthsBetween` と共有します。TIMESTAMP は秒未満を落とし、文字は TO_DATE の既定の書式で読みます（#140） |
 | `EXTRACT(field FROM d)` | `Plsql.extract("YEAR", d)` | なし | YEAR・MONTH・DAY・HOUR・MINUTE・SECOND（小数つき）と、WITH TIME ZONE の TIMEZONE_HOUR・TIMEZONE_MINUTE。WITH TIME ZONE の日時の field は Oracle と同じく UTC のものです。INTERVAL（日時の差）からの EXTRACT は、生成コードでは差が日数なので断ります。TIMEZONE_REGION / ABBR も断ります（#140） |
@@ -569,7 +574,7 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `SYS_CONTEXT` | 変換しない | SEM-013（REDESIGN） | |
 | `DECODE`、`DUMP` | 変換しない（`UnsupportedOperationException`） | ルールは下がらない | Oracle でも PL/SQL の式では使えません（PLS-00204）。理由をそう書いて断ります（#140） |
 | `SYS.STANDARD.BITAND(...)` など `SYS.STANDARD.` / `STANDARD.` を付けた組み込み | 付けない名前と同じ | なし | 同じ名前の package の関数が組み込みを隠しているときの書き方です。解析の範囲に無い routine の呼び出し（CALL-001）にも数えません（#140） |
-| 対応表に無い関数（`SOUNDEX`、`NUMTODSINTERVAL`、`TO_CHAR` の書式つき、`TO_NUMBER` の書式つきなど） | 変換しない（`UnsupportedOperationException`） | ルールは下がらない | 判定は下がらないので、`AUTO but not cleanly generated` で気づきます |
+| 対応表に無い関数（`SOUNDEX`、`NUMTODSINTERVAL` など） | 変換しない（`UnsupportedOperationException`） | ルールは下がらない | 判定は下がらないので、`AUTO but not cleanly generated` で気づきます |
 
 ### 制御構造
 
@@ -614,7 +619,7 @@ PL/SQL の中の SQL 文は、Repository のメソッドになります。SQL �
 | 結合 | そのまま実行できれば Repository の 1 文 | そのまま実行できない（警告・実行計画・拒否・スキーマ無し）と SEM-005（REVIEW） | |
 | `WHERE p IS NULL OR col = p` | p が NULL のときの文と、等号で絞る文に分け、実行時に選ぶ | なし | ScalarDB SQL は bind の NULL 判定を WHERE に書けないためです |
 | DDL の `DEFAULT` 列、`IDENTITY` 列を省いた INSERT | 省いた列を INSERT に足す（IDENTITY は採番） | なし | ScalarDB は主キーの無い INSERT を断るためです |
-| CHECK 制約・外部キー・UNIQUE のある表への書き込み、子の表の外部キーが指す親の DELETE | `constraints.enforce` に書いた表だけ、書く前に検査（NOT NULL は ORA-01400 / ORA-01407、CHECK は ORA-02290、外部キーは ORA-02291 の例外。この順）。子のある親の DELETE は、外部キーが指すキーを等号で名指す DELETE なら、消す前に子の行を数えて ORA-02292（#154） | 書いていない表は診断 `CONSTRAINT_UNDECIDED` で CONS-001（REVIEW）。決めた表でも検査していないものは `CONSTRAINT_NOT_GUARDED` で CONS-002（REVIEW） | 外部キーは親の行をキーで読みます。UPDATE は書く列に掛かる制約だけを見ます。`CREATE TABLE` の中の制約、`ALTER TABLE ... ADD [CONSTRAINT 名前] CHECK / FOREIGN KEY / UNIQUE`、`CREATE UNIQUE INDEX` を読みます。名前の無い制約は `<表>_check<n>` / `<表>_fk<n>` / `<表>_unique<n>` と呼びます。NOT NULL だけの表は未決に数えません（決めた表でだけ検査します） |
+| CHECK 制約・外部キー・UNIQUE のある表への書き込み、子の表の外部キーが指す親の DELETE | `constraints.enforce` に書いた表だけ、書く前に検査（NOT NULL は ORA-01400 / ORA-01407、CHECK は ORA-02290、外部キーは ORA-02291 の例外。この順）。子のある親の DELETE は、外部キーが指すキーを等号で名指す DELETE なら、消す前に子の行を数えて ORA-02292（#154） | 書いていない表は診断 `CONSTRAINT_UNDECIDED` で CONS-001（REVIEW）。決めた表でも検査していないもの（解析器が読めない CHECK の条件や書き込みの文を含む。#161 までは黙って飛ばしていた）は `CONSTRAINT_NOT_GUARDED` で CONS-002（REVIEW） | 外部キーは親の行をキーで読みます。UPDATE は書く列に掛かる制約だけを見ます。`CREATE TABLE` の中の制約、`ALTER TABLE ... ADD [CONSTRAINT 名前] CHECK / FOREIGN KEY / UNIQUE`、`CREATE UNIQUE INDEX` を読みます。名前の無い制約は `<表>_check<n>` / `<表>_fk<n>` / `<表>_unique<n>` と呼びます。NOT NULL だけの表は未決に数えません（決めた表でだけ検査します） |
 | PL/SQL の変数と表の列が同じ名前 | そのまま生成 | SQL-003（REVIEW） | Oracle は列として読みます |
 | データ辞書（`USER_*`、`ALL_*`、`DBA_*`、`V$*`）を読む | SQL をそのまま生成 | DICT-001（REDESIGN） | 移行先には無い表です |
 | 同じトランザクションで書いた表を走査する | 生成はするが、ScalarDB が実行時に拒否 | TX-004 / SCAN-001（REDESIGN） | `ScanAfterWriteException` になります。数えるのは走査（キーで届かない読み）だけで、キーで読むのは数えません。`COMMIT` と `ROLLBACK`（`ROLLBACK TO` を除く）のあとの読みは新しいトランザクションなので数えません。どの道でも通る `COMMIT` だけが効き、IF の片方の枝や、回らないかもしれないループの中の `COMMIT` は効きません。ScalarDB のスキーマ（`--scalardb-schema`）が無いときは読み方が分からないので、書いた表の読みをすべて TX-004 にします |
@@ -636,7 +641,9 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `SYS_REFCURSOR` を `OPEN rc FOR SELECT ...; RETURN rc;` | 行の `List<...Row>` を返すメソッド | 行数上限は CUR-002 と同じ | 呼び出し側は FETCH の代わりに List を受け取ります（生成で確認） |
 | 局所の `SYS_REFCURSOR` を OPEN して FETCH するループ | cursor FOR ループ | CUR-002 | 生成で確認 |
 | `OPEN rc FOR '定数の文字列' USING p` | 静的な問合せとして生成 | なし | 生成で確認 |
-| OUT 引数の `SYS_REFCURSOR`（`OPEN p_rc FOR SELECT ...`） | 行を読み、`List<...Row>` を結果の record の要素にして返す | 行数上限は CUR-002 と同じ | `RETURN rc` の形と同じく、呼び出し側は FETCH の代わりに List を受け取ります。routine の中でその cursor から FETCH する形や、2 回以上 OPEN する形はこの形にしません（生成で確認） |
+| OUT 引数の `SYS_REFCURSOR`（`OPEN p_rc FOR SELECT ...`） | 行を読み、`List<...Row>` を結果の record の要素にして返す | 行数上限は CUR-002 と同じ | `RETURN rc` の形と同じく、呼び出し側は FETCH の代わりに List を受け取ります（生成で確認） |
+| OUT 引数の `SYS_REFCURSOR` を 2 回以上 OPEN する（続けて、IF / ELSE の分岐で、handler で）。どの OPEN も同じ列を選ぶ | OPEN ごとに行を読んで引数に入れ直す。結果の record は最後に走った OPEN の行を持つ。行の record は最初の OPEN のものを共有する | 行数上限は CUR-002 と同じ | Oracle は最後に走った OPEN を呼び出し側へ渡します（26ai 23.26.3 で確認）。前の OPEN の行も読むので、行数上限はどの OPEN にも掛かります。列は名前と、行の record での Java の型で比べます（#160。生成した Java を H2 で動かして確認） |
+| OUT 引数の `SYS_REFCURSOR` を routine の中で FETCH する、CLOSE する、または列の違う問合せで OPEN する | 断る。OPEN の所で `UnsupportedOperationException` を投げる（理由つき） | CUR-004（REDESIGN） | Oracle では、FETCH した routine の呼び出し側は続きの行から読み（%ROWCOUNT も続きから）、CLOSE した routine の呼び出し側は最初の FETCH で ORA-01001 になり、列の違う OPEN は最後に走った OPEN の列が渡ります（26ai 23.26.3 で確認）。どれも全部の行の List 1 つでは表せないので、黙って null を返さずに断ります。CLOSE したあとでもう一度 OPEN する形（Oracle は後の OPEN を渡す）も、経路ごとの順序を見ないと区別できないので断ります。以前は routine の中の cursor に読むだけで、引数は null で返っていました（#160） |
 | `FOR UPDATE` の cursor、`WHERE CURRENT OF c` | 行ロックの節を参照 | LOCK-001 / LOCK-002（REDESIGN） | |
 
 ### コレクション
@@ -646,11 +653,11 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `TABLE OF x INDEX BY VARCHAR2(n)` | `Map<String, x>`（`Plsql.indexBy()`、キー順の TreeMap） | なし | FIRST / NEXT はキー順に回ります（生成で確認） |
 | `TABLE OF x INDEX BY PLS_INTEGER` | `Map<Integer, x>` | なし | 0 や負のキーも取れます（生成で確認） |
 | `TABLE OF x`（ネスト表） | `List<x>`（1 始まり）。コンストラクタ `t(1, 2)` は `Plsql.table(...)` | なし | 初期化しないと `null` で、使うと ORA-06531 |
-| `VARRAY(n) OF x` | `List<x>` | なし | `v.LIMIT` は定数 n になります（生成で確認） |
-| 要素の読み `v(i)` / 書き `v(i) := x` | `Plsql.at(v, i)` / `Plsql.set(v, i, x)` | なし | 範囲外は ORA-06532 / ORA-06533、無いキーは NO_DATA_FOUND、NULL のキーは ORA-06502 |
+| `VARRAY(n) OF x` | `List<x>`。コンストラクタ `t(1, 2)` は `Plsql.varray(n, ...)` で、上限 n を持つ List（`Plsql.Varray`）を作る。BULK COLLECT で入れるときは `Plsql.varrayOf(n, ...)` | なし | `v.LIMIT` は定数 n になります。上限は代入（複製）・引数・外側のコレクションの要素になっても値について回ります。n を超える要素のコンストラクタ、n を超える EXTEND、n を超える添字は ORA-06532（EXTEND は 1 つも足しません）。n を超える行の BULK COLLECT は ORA-22165（Oracle 26ai で確認、#160） |
+| 要素の読み `v(i)` / 書き `v(i) := x` | `Plsql.at(v, i)` / `Plsql.set(v, i, x)` | なし | 1 未満と VARRAY の上限を超える添字は ORA-06532、COUNT を超える添字は ORA-06533、無いキーは NO_DATA_FOUND、NULL のキーは ORA-06502 |
 | `COUNT`、`FIRST`、`LAST`、`NEXT(i)`、`PRIOR(i)`、`EXISTS(i)` | `Plsql.count`、`first`、`last`、`next`、`prior`、`exists` | なし | 生成で確認 |
 | `DELETE`、`DELETE(i)`、`DELETE(i, j)` | `Plsql.delete` | なし | ネスト表の途中の DELETE は隙間として持ちます |
-| `EXTEND`、`EXTEND(n)`、`EXTEND(n, i)`、`TRIM`、`TRIM(n)` | `Plsql.extend`、`Plsql.trimTable` | なし | 生成で確認 |
+| `EXTEND`、`EXTEND(n)`、`EXTEND(n, i)`、`TRIM`、`TRIM(n)` | `Plsql.extend`、`Plsql.trimTable` | なし | VARRAY の上限を超える EXTEND は ORA-06532（上の VARRAY の行）。生成で確認 |
 | ネスト表どうしの `=` | 要素を多重集合として比べる | なし | |
 | コレクションの代入 | 値を複製する | なし | PL/SQL の代入は複製なので |
 | record の要素・コレクションの要素の record の field への代入 | record を作り直して置き換える | なし | |
@@ -717,6 +724,8 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | 畳んだ文が trigger・制約のある表へ書く | 文はそのまま生成し、trigger の呼び出しも制約の検査も入れない | trigger は TRG-002（REDESIGN）、制約は CONS-001 / CONS-002（REVIEW） | 静的な文に書き直せば、trigger の呼び出しと検査が入ります（#148） |
 | 本体で定数を代入・連結した変数（`v_sql := '...'; v_sql := v_sql \|\| '...'`） | とりうる文（8 通りまで）を全部生成し、実行時に条件で選ぶ | 同上 | 宣言部の初期値で組んだ文字列はたどりません（生成で確認）。条件の変数を途中で書き換えると断ります |
 | 表名などの識別子を連結（`'... FROM ' \|\| p_tab`） | 決定が無ければ断る。`dynamicTables` に表名を書けば表ごとの文を生成し、`UPPER(p_tab)` で選ぶ | DYN-001（REDESIGN） | 書いていない表名は `IllegalArgumentException`（生成で確認）。`plsql.cli --limits` の判定も表ごとの文を見るので、展開できた文に DYN-002 は付きません |
+| 列名・ORDER BY の式や方向・WHERE の断片・PL/SQL ブロックの routine 名を連結（`' WHERE ' \|\| p_col \|\| ' = :1'`、`' ORDER BY ' \|\| p_col \|\| ' ' \|\| p_dir`、`'BEGIN ' \|\| l_fn \|\| '(...); END;'`） | 決定が無ければ断る。連結する項が 1 つなら、`dynamicTables` に受け付ける名前（列名でもよい）を書けば名前ごとの文を生成する | DYN-001（REDESIGN、設計書 §6.8。#157 までは DYN-002） | 項が 2 つ以上（列と方向など）や WHERE の断片そのものは `dynamicTables` では書けません。allowlist 型の query builder に作り直します |
+| 値を連結（`'... = ''' \|\| p \|\| ''''`、`'... = ' \|\| p_id`、`IN (' \|\| p_list \|\| ')'`） | 断る | DYN-002（REVIEW） | 連結した項が文のどこに入るか（値か識別子か）は、項ごとに前後の SQL から判定します（`plsql/dynamic.py` の `holes`） |
 | 動的な DDL（`'CREATE TABLE ...'` など） | 断る。`ddl.omit` に書けば省く | DYN-004（REDESIGN）。`ddl.omit` に書いた routine は当たりません | スキーマは Schema Loader が持ちます。Oracle の DDL は前後で COMMIT します |
 | 動的な `'TRUNCATE TABLE t'`（STORAGE の指定だけは付いてよい） | 全行の DELETE（`DELETE FROM t`）にする | 診断 `TRUNCATE_AS_DELETE`（INFO）。外部キーが指す表なら CONS-002 | Oracle の TRUNCATE は前後で COMMIT して取り消せませんが、移行先の DELETE はトランザクションの一部で、失敗すれば一緒に戻ります。DELETE の trigger は Oracle と同じく掛けません。Oracle は外部キーが指す表の TRUNCATE を ORA-02266 で断ります（#154） |
 | 動的な PL/SQL ブロック（`'BEGIN ... END;'` の定数） | ブロックを展開して生成 | 中身の判定しだい | 生成で確認 |
@@ -793,7 +802,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 |---|---|---|---|
 | `SELECT ... FOR UPDATE [NOWAIT / WAIT n / SKIP LOCKED]` | SQL から `FOR UPDATE` を外して生成する。決定が無い routine では、読んだ値を使う式を SQL の外で先に計算しないので、その値で書く UPDATE は ScalarDB に断られる | LOCK-001（REDESIGN）。断られた文は SQL-001 | ロックが守っていた「読んで、判断して、書く」を黙って進めないためです（生成で確認） |
 | cursor の宣言の `FOR UPDATE` | 同上 | LOCK-001、LOCK-002（REDESIGN） | 生成で確認 |
-| `rowLocks.optimistic` に書いた routine | ロックを落とし、同じトランザクションの中で読んでから書く | 判定は REDESIGN のまま（決定済み） | 衝突は commit で弾かれ、再試行は呼び出し側の責務です。NOWAIT の「すぐ分かる」は「commit で分かる」に変わります（生成で確認） |
+| `rowLocks.optimistic` に書いた routine | ロックを落とし、同じトランザクションの中で読んでから書く | 判定は REDESIGN のまま（決定済み） | 衝突は commit で弾かれ、再試行は呼び出し側の責務です。NOWAIT の「すぐ分かる」は「commit で分かる」に変わります（生成で確認）。**FOR UPDATE と同じ保証になるのは SERIALIZABLE で動かすときだけ**です。SNAPSHOT / READ_COMMITTED では、ロックして読んだだけで書かない行を他が変えても commit が通ります（write skew。3.19.1 の実クラスタで確認、#157）。生成コードのロックを落とした文にこの前提のコメントが付き、決めることは CALL-7 です |
 | `WHERE CURRENT OF c` | 読んだ行のキーで UPDATE / DELETE | 同上 | 生成で確認 |
 | 読んだ値で計算して書く（`SET c = c + x`） | SQL 文の節の「列を読む式の UPDATE」を参照 | | |
 
@@ -804,14 +813,15 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | limits.yaml の項目 | 生成物の変化 | 判定への影響（ルール ID） | 注意 |
 |---|---|---|---|
 | `scanRows.default` / `routines` / `notLimited` | cursor の行を読む所に上限の検査を入れる | CUR-002 → CUR-OPT-002、BULK-003 → BULK-OPT-003 | `notLimited` でも既定値の検査は「暫定の網」として残ります（生成で確認） |
-| `rowLocks.optimistic` | 行ロックを落とす。列を読む UPDATE・RETURNING・MERGE を読んでから書く形に割る | SQL-001 / SEM-006 が外れ、SEM-011 の注記。LOCK-* は REDESIGN のまま | |
+| `rowLocks.optimistic` | 行ロックを落とす。列を読む UPDATE・RETURNING・MERGE を読んでから書く形に割る | SQL-001 / SEM-006 が外れ、SEM-011 の注記。LOCK-* は REDESIGN のまま | 前提は SERIALIZABLE で動かすこと（CALL-7、#157） |
 | `transactions.perIteration` / `separate` / `callerBoundary` | トランザクションの節を参照 | TX-* は REDESIGN のまま（決定済み） | 1 つの routine に 1 つだけ書けます |
-| `dynamicTables` | 識別子を連結する動的 SQL を表ごとの文にする | DYN-001 は REDESIGN のまま。表ごとの文を判定するので、展開できた文の DYN-002 は外れる（`plsql.cli --limits` も同じ） | |
+| `dynamicTables` | 識別子を 1 つ連結する動的 SQL を、書いた名前（表名・列名）ごとの文にする | DYN-001 は REDESIGN のまま。表ごとの文を判定するので、展開できた文の DYN-002 は外れる（`plsql.cli --limits` も同じ） | |
 | `ddl.omit` | 動的な DDL を省く | | |
 | `packageState.carried` | package 変数を引数と結果で運ぶ | STATE-001 は REDESIGN のまま | |
 | `constraints.enforce` | NOT NULL / CHECK / 外部キーの検査を書く前に入れる。親をキーで消す DELETE には子を数える検査を入れる | CONS-001 が外れる。UNIQUE と、キーで名指さない親の DELETE、`ON DELETE CASCADE` / `SET NULL` は検査せず CONS-002 | |
 | `dbLinks` | `表@link` を namespace に書き換える | LINK-001 は REDESIGN のまま | |
 | `conditionalCompilation` | 条件付きコンパイルのフラグとバージョン | | |
+| `nls` | 生成した Service がクラスの初期化で `Plsql.useNls(...)` を呼び、日付・数値と文字の変換（`TO_CHAR` / `TO_NUMBER` / `TO_DATE` / `TO_TIMESTAMP` と書式なしの変換）を決めた設定で行う | ランタイムが計算する変換の SEM-008 / SEM-012 が外れる（NLS_DECIDED）。移行先 DB が評価する SQL に残った変換は外れない | project に 1 つ。`reason` だけが必須で、書かない値は地域の既定。言語・地域はランタイムが知るものだけ書けます（#157） |
 
 ### ルールが REVIEW / REDESIGN にするもの（ルール ID ごと）
 
@@ -827,7 +837,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | STATE-001 | REDESIGN | package 変数を（呼び出し経由を含めて）読み書きする | `packageState.carried` |
 | STATE-002 | REDESIGN | package 本体の初期化部 | 置き場所を人が決める（生成しない） |
 | AUTHID-001 | REDESIGN | routine の `AUTHID CURRENT_USER`（package の仕様に書いたものは本体の routine すべて） | 認証・認可を別に設計する |
-| DYN-001 | REDESIGN | 識別子を実行時に組む動的 SQL | `dynamicTables` |
+| DYN-001 | REDESIGN | 識別子や SQL の構文を実行時に組む動的 SQL（表名・列名・ORDER BY の式と方向・WHERE の断片・PL/SQL ブロックの routine 名。値の位置だけなら DYN-002） | `dynamicTables`（連結する項が 1 つのとき）。ほかは query builder に作り直す |
 | DYN-003 | REDESIGN | `DBMS_SQL`（定数の問合せに書き換えられなかったもの） | 実行ログから文を洗い出す |
 | DYN-004 | REDESIGN | 畳んだ動的 SQL が DDL（`CREATE`、`DROP`、`ALTER` など。表だけの `TRUNCATE TABLE` は全行の DELETE にするので当たらない） | `ddl.omit`（省いてよい DDL のとき） |
 | LOWER-002 | REDESIGN | ブロックとループに組み直せなかった `GOTO`（範囲が交差して入れ子にできない、Oracle が拒む飛び先） | 制御構造を組み直す |
@@ -853,14 +863,16 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | SEM-005 | REVIEW | そのまま実行できると判定されなかった結合 | |
 | SEM-006 | REVIEW | 割っていない `MERGE` | `rowLocks.optimistic` |
 | SEM-007 | REVIEW | 時計（SYSDATE など）を、文と宣言部の初期値で合わせて 2 回以上読む | 1 回読んで使い回す |
-| SEM-008 | REVIEW | 言語で変わる `TO_CHAR` の書式 | |
+| SEM-008 | REVIEW | 言語で変わる `TO_CHAR` の書式（`nls` を決めていない、または移行先 DB が評価する SQL に残ったもの） | `nls` |
 | SEM-009 | REVIEW | 移行先 DB が評価する `CAST(... AS DATE)` | |
 | SEM-010 | REVIEW | `SYSTIMESTAMP` を列へ書く INSERT / UPDATE / MERGE | 時刻の正確さを業務で決める |
-| SEM-012 | REVIEW | 日付・TIMESTAMP を書式なしで文字にする | 書式を明示する |
+| SEM-012 | REVIEW | 日付・TIMESTAMP を書式なしで文字にする（`nls` を決めていない、または移行先 DB が評価する SQL に残ったもの） | `nls`。または書式を明示する |
 | SEM-014 | REVIEW | `DBMS_RANDOM`、`SYS_GUID` | 乱数の出所を決める |
+| SEM-015 | REVIEW | ランタイムが実装しない書式の形（`FM` と `B`、数字の無い数値書式）、型の分からない値への `FF` / `X` / `TZR` | 書式を書き直す。値を TIMESTAMP の変数に入れる |
 | CUR-001 | REVIEW | 書き換えられなかった明示 cursor の OPEN / FETCH / CLOSE | |
 | CUR-002 | REVIEW | 行数上限の決まっていない cursor FOR ループ | `scanRows` |
 | CUR-003 | REVIEW | 先読みに書き換えた明示 cursor で、routine が COMMIT などを持つ | |
+| CUR-004 | REDESIGN | OUT 引数の `SYS_REFCURSOR` を routine の中で FETCH / CLOSE する、または列の違う問合せで OPEN する（生成器が断る） | 読んだ行と残りの行の渡し方を決めて書き直す。CLOSE を消す。問合せごとに OUT 引数を分ける |
 | BULK-001 | REVIEW | `BULK COLLECT` を含む SQL 文 | |
 | BULK-003 | REVIEW | 行数上限の決まっていない分割読み | `scanRows` |
 | EXC-001 | REVIEW | `DUP_VAL_ON_INDEX`、`INVALID_NUMBER`、`VALUE_ERROR` の handler。`PRAGMA EXCEPTION_INIT` でそれらや制約の誤り（-1400、-2290、-2291、-2292 など）の番号に結んだ例外の handler | 読んでから選ぶ形、事前の検査に書き直す。CHECK と外部キーは `constraints.enforce` |
@@ -891,7 +903,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | 対応表に無い組み込み関数（`SOUNDEX`、`NUMTODSINTERVAL` など）、PL/SQL では使えない `DECODE` / `DUMP` | `UnsupportedOperationException` | 関数による | 組み込み関数の節を参照 |
 | INTERVAL 型と、日時の差からの `EXTRACT` | `UnsupportedOperationException` | 判定は下がらない | 生成コードでは日時の差が日数（数値）です |
 | Oracle と同じ意味にできない正規表現（等価クラス `[[=e=]]`、`(?` で始まる括弧、量指定子の重ね） | 実行時に `UnsupportedOperationException` | 判定は下がらない | パターンは実行時に訳すので、生成時には分かりません |
-| `TO_CHAR` の 4 つ以外の書式、書式つき `TO_NUMBER` | 実行時に `UnsupportedOperationException` | 書式による | |
+| 書式モデルのうちランタイムが実装しない形（`FM` と `B`、数字の無い数値書式、1582-10-15 より前の日付、型の分からない値の `FF` / `X` / `TZR`） | 実行時に要素を名指しした `UnsupportedOperationException` | SEM-015（生成時に分かるもの） | #157 |
 | 既定値を省いた呼び出しのうち、既定値が package の変数（`packageState.carried` の決定が無いとき）、`USER` / `SYSTIMESTAMP`、sequence を読むもの、routine を呼ぶ既定値を 2 つ以上省くもの | 同上 | 判定は下がらない | ほかの式の既定値は、呼ばれる側の `defaultOf...()` で補います（単位の節を参照） |
 | 別の package の変数の直接参照（`pkg.var`） | `UnsupportedOperationException` | STATE-001 | `packageState.carried` を書いても断ります |
 | 持ち上げられない入れ子の subprogram（単位の節の条件） | 本体ごと断る | LOWER-001（REVIEW） | |

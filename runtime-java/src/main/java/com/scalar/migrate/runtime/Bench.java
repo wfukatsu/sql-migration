@@ -242,7 +242,7 @@ public class Bench {
     Plan.Residual residual = plan.residual.get("java");
     long t0 = System.nanoTime();
     int fetched = 0;
-    try (Residual h2 = new Residual(residual.mode, residual.build_indexes || h2Indexes)) {
+    try (Residual h2 = Residual.of(residual, h2Indexes)) {
       fetcher.begin();
       try {
         for (Plan.Fetch f : plan.fetch) {

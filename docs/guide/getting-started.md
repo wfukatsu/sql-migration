@@ -114,7 +114,7 @@ DB にしかない情報（制約、外部キー、索引、行数、統計、DB
 テスト（`tests/`）、corpus（`fixtures/`）、実 DB のハーネス（`difftest/`）は、開発側のリポジトリにだけあります。公開の GitHub の版には入っていないので、
 この節のコマンドは開発側のリポジトリで流します。
 
-DB の要らないテスト（pytest、同梱コピーの一致（`vendor_sync.py --check`）、Java の単体テスト）は、merge の前に手元で
+DB の要らないテスト（pytest、Java の単体テスト）は、merge の前に手元で
 回します。main へ merge したあとは、開発側の CI も同じものを回します。DB の要る検証（`difftest/`）は手で回します。
 
 ```bash

@@ -123,7 +123,7 @@ flowchart TB
         TR["transpile.py<br/>入口"]
         GEN["generic.py<br/>任意の方言どうし"]
         RP["report.py"]
-        VEN["_scalardb/<br/>scalardb_migrate の同梱コピー"]
+        VEN["_converter.py<br/>scalardb_migrate を読む場所を決める"]
         CAT["catalogs/<br/>方言ごとの組み込み関数一覧"]
         TR --> GEN
         TR --> VEN
@@ -151,7 +151,7 @@ flowchart TB
         EXP["experiments/"]
     end
 
-    PY -. "vendor_sync.py でコピー" .-> VEN
+    VEN -- "import" --> PY
     PY -- "plan.json" --> RUN
     HAR --> PY
     HAR --> SK
@@ -332,6 +332,7 @@ classDiagram
         mode : Oracle, PostgreSQL, MySQL
         sql
         build_indexes : bool
+        time_zone : 移行元のセッションのゾーン（PostgreSQL の計画だけ、無ければ UTC）
     }
     class Guardrails {
         requires_cross_partition_scan : bool
@@ -577,7 +578,7 @@ sequenceDiagram
 
 ## 10. sql-transpile スキル
 
-任意の SQLGlot 方言どうしの変換（汎用パス）と、ScalarDB SQL への変換（同梱した `scalardb_migrate`）を 1 つの入口で扱う。
+任意の SQLGlot 方言どうしの変換（汎用パス）と、ScalarDB SQL への変換（`scalardb_migrate` そのもの）を 1 つの入口で扱う。
 
 | 約束 | 中身 |
 |---|---|
@@ -589,7 +590,7 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     IN["transpile.py<br/>--source / --target"] --> T{"target"}
-    T -- scalardb --> V["_scalardb/converter<br/>本ツールと同じ変換"]
+    T -- scalardb --> V["scalardb_migrate.converter<br/>本ツールと同じ変換"]
     T -- "その他の 32 方言" --> G1
 
     subgraph GEN["generic.py（1 文ずつ）"]
@@ -604,11 +605,17 @@ flowchart TD
     G6 --> RP
 ```
 
+スキルが読む変換器は、置かれた場所で決まる（`scripts/_converter.py`、2026-09-30 の #159 M1）。リポジトリの中（プラグインは
+リポジトリ全体）ではルートの `scalardb_migrate/` を読み、コピーは持たない。公開の GitHub の履歴にだけ、`bin/publish-github` が
+`bin/github-vendor.txt` のとおりに本体と同じ blob のコピー `scripts/_scalardb/` を置く。スキルのディレクトリだけを写した人は
+それを `scalardb_migrate` という名前で読む。どちらでも同じプロセスに変換器は 1 つだけなので、SQLGlot の方言表の `scalardb` の
+登録は衝突しない。
+
 ```mermaid
 flowchart LR
-    M["scalardb_migrate/<br/>本体"] -- "vendor_sync.py --update" --> C["skills/sql-transpile/scripts/_scalardb/<br/>同梱コピー"]
-    C -- "vendor_sync.py --check<br/>差分があれば終了コード 1" --> M
-    C --> S["スキルは scalardb_migrate/ を import しない<br/>（コマンドのパスはリポジトリのルート基準）"]
+    M["scalardb_migrate/<br/>本体"] -- "リポジトリ・プラグインの中" --> S["skills/sql-transpile/scripts<br/>_converter.py"]
+    M -- "bin/publish-github が公開する履歴に<br/>同じ blob を置く（github-vendor.txt）" --> C["公開版の scripts/_scalardb/"]
+    C -- "スキルのディレクトリだけを写したとき" --> S
 ```
 
 ---

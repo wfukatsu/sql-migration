@@ -135,6 +135,16 @@ def _is_aggregate(e: exp.Expression) -> bool:
     return isinstance(arg, (exp.Column, exp.Star, exp.Literal))
 
 
+def _decimal_source(meta: TableMeta, column: str) -> tuple[bool, str | None]:
+    """Whether a SUM / AVG of `column`, a DOUBLE of `meta`, is worth a note, and the source type to name (#161):
+    (True, "NUMBER(10, 2)") for a decimal in the source DDL, (True, None) when the source type is unknown (the table
+    came from a Schema Loader file), (False, None) for a column the source DDL declares as a binary float."""
+    if meta.decimal_columns is None:
+        return True, None
+    source = next((t for c, t in meta.decimal_columns.items() if c.lower() == column.lower()), None)
+    return source is not None, source
+
+
 def _flatten(e: exp.Expression, op: type) -> list[exp.Expression]:
     e = _unparen(e)
     if isinstance(e, op):
@@ -465,6 +475,7 @@ class StatementConverter:
         self.row_limit = row_limit
         self.h2_indexes = h2_indexes  # plans ask the runtime to build H2 indexes (joins over large fetches)
         self.issues: list[Issue] = []
+        self._aggregate_notes: list[Issue] = []   # the converted statement's DOUBLE aggregate notes (#161)
         self._spellings: dict[str, str] = {}   # table name, lower-cased -> the spelling first seen in the script
 
     # -- issue helpers ------------------------------------------------------------------------------
@@ -536,6 +547,7 @@ class StatementConverter:
 
     def _convert(self, sql: str) -> Result:
         self.issues = []
+        self._aggregate_notes = []
         self._source = sql
         self._parsed = sql   # the text the AST was parsed from (the REPLACE rewrite below changes it)
         res = Result(0, sql, "UNKNOWN")
@@ -614,6 +626,8 @@ class StatementConverter:
         query = isinstance(node, appside.QUERY_TYPES)
         if any(i.severity == "ERROR" for i in res.issues):
             res.status, res.converted = "ERROR", []
+            # a part converted before the statement failed; a plan says it again for the query H2 runs
+            res.issues = [i for i in res.issues if not any(i is n for n in self._aggregate_notes)]
             fresh = self._reparse(src) if query else None  # the converter mutated the first AST
             if fresh is not None:
                 self._inventory(res, fresh)
@@ -688,6 +702,7 @@ class StatementConverter:
         collation = appside.collation_note(fresh, self.dialect, planned=True)   # as for a converted statement (#103)
         if collation:
             res.issues.append(Issue("INFO", "SEMANTICS", collation))
+        res.issues.extend(self._plan_double_aggregates(fresh, plan.fetch))
         for f in plan.fetch:
             res.issues.append(Issue("INFO", "PLAN_FETCH", f"{f.access_path}: {f.scalardb_sql}"))
         res.issues.append(Issue("INFO", "PLAN_RESIDUAL", f"H2 {plan.residual['java']['mode']} mode runs the original SQL "
@@ -700,6 +715,33 @@ class StatementConverter:
         if plan.guardrails["requires_cross_partition_scan"]:
             res.issues.append(Issue("WARN", "PLAN_CROSS_PARTITION", "a fetch needs a cross-partition scan"))
         res.plan["recommended_config"] = self._cost(res, [(f.table, f.access_path) for f in plan.fetch], self.row_limit)
+
+    def _plan_double_aggregates(self, node: exp.Expression, fetches: list) -> list[Issue]:
+        """A SUM / AVG the plan's residual computes over a fetched DOUBLE column (#161). H2 loads a column with an
+        exact residual type (NUMBER(10,2) -> NUMERIC(10,2)) as a decimal and adds it exactly; the rest -- an
+        unconstrained NUMBER, a precision beyond 38, a table known only from the ScalarDB schema -- are DOUBLE
+        PRECISION there. A column no fetch owns (a CTE's, a derived table's) is left alone."""
+        out, seen = [], set()
+        for agg in node.find_all(*appside.ARITHMETIC_AGGREGATES):
+            for col in agg.find_all(exp.Column):
+                q = col.table.lower()
+                owners = [f for f in fetches if (not q or q in (f.alias.lower(), f.table.lower()))
+                          and any(c.lower() == col.name.lower() for c in f.column_types)]
+                if len(owners) != 1:
+                    continue
+                f = owners[0]
+                name = next(c for c in f.column_types if c.lower() == col.name.lower())
+                if f.column_types[name] != "DOUBLE" or any(c.lower() == name.lower() for c in f.residual_types):
+                    continue
+                meta = self.registry.get(f.table, f.namespace)
+                note, source = _decimal_source(meta, name) if meta is not None else (True, None)
+                text = agg.sql(dialect=self.dialect)
+                if not note or (text, name.lower()) in seen:
+                    continue
+                seen.add((text, name.lower()))
+                severity, message = appside.double_aggregate_note(text, name, source, planned=True)
+                out.append(Issue(severity, "TYPE", message))
+        return out
 
     def _source_only_syntax(self, node: exp.Expression) -> None:
         """Source-database syntax the generator would print as it stands, because SQLGlot keeps it on the node.
@@ -1413,7 +1455,36 @@ class StatementConverter:
                                                    for p in s.expressions)
         self._access_path(self._meta(from_.this), s.args["where"].this if s.args.get("where") else None,
                           s.args.get("order"), ctx, grouped)
+        self._double_aggregates(s)
         return s
+
+    def _double_aggregates(self, s: exp.Select) -> None:
+        """A SUM / AVG over a DOUBLE column that was a decimal in the source adds binary floats (#161)."""
+        seen = set()
+        for agg in s.find_all(*appside.ARITHMETIC_AGGREGATES):
+            for col in agg.find_all(exp.Column):
+                found = self._column_meta(col)
+                if found is None or found[0].columns[found[1]] != "DOUBLE":
+                    continue
+                note, source = _decimal_source(*found)
+                text = agg.sql(dialect=self.dialect)
+                if not note or (text, found[1].lower()) in seen:
+                    continue
+                seen.add((text, found[1].lower()))
+                severity, message = appside.double_aggregate_note(text, found[1], source, planned=False)
+                issue = Issue(severity, "TYPE", message)
+                self.issues.append(issue)
+                self._aggregate_notes.append(issue)
+
+    def _column_meta(self, col: exp.Column) -> tuple[TableMeta, str] | None:
+        """The table of the statement that `col` belongs to, and the column as that table spells it."""
+        for t in getattr(self, "_tables", []):
+            meta = self.registry.get(t.name, t.db or None)
+            if meta and (not col.table or col.table.lower() in ((t.alias or "").lower(), t.name.lower())):
+                for c in meta.columns:
+                    if c.lower() == col.name.lower():
+                        return meta, c
+        return None
 
     def _mysql_null_order(self, s: exp.Select) -> None:
         """MySQL sorts NULLs first for ASC and last for DESC; Oracle, PostgreSQL and ScalarDB (measured on the
@@ -2123,6 +2194,9 @@ class StatementConverter:
         meta.residual_types = {cd.this.name: exact for cd in c.this.expressions
                                if isinstance(cd, exp.ColumnDef) and cd.kind is not None
                                and (exact := self._map_type(cd).residual_type)}
+        meta.decimal_columns = {cd.this.name: source for cd in c.this.expressions
+                                if isinstance(cd, exp.ColumnDef) and cd.kind is not None
+                                and (source := self._map_type(cd).decimal_source)}
         meta.secondary_indexes.extend(inline_indexes)
         meta.not_null = {cd.this.name for cd in c.this.expressions if isinstance(cd, exp.ColumnDef)
                          and any(isinstance(k.kind, exp.NotNullColumnConstraint) and not k.kind.args.get("allow_null")

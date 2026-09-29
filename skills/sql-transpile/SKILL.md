@@ -21,20 +21,18 @@ when_to_use: >-
 # セッションのモデルで受ける。利用者に方言や照合順序を確かめることがあるので context: fork にはしない。
 model: sonnet
 effort: medium
-# 上の 3 つはチェックアウトで作業するとき、下の 3 つはプラグインとして入れたとき（<root>/bin/python <root>/skills/...）の形
+# 上の 2 つはチェックアウトで作業するとき、下の 2 つはプラグインとして入れたとき（<root>/bin/python <root>/skills/...）の形
 allowed-tools:
   - Read
   - Bash(.venv/bin/python skills/sql-transpile/scripts/check_env.py)
   - Bash(.venv/bin/python skills/sql-transpile/scripts/transpile.py *)
-  - Bash(.venv/bin/python skills/sql-transpile/scripts/vendor_sync.py --check)
   - Bash(*/bin/python */skills/sql-transpile/scripts/check_env.py)
   - Bash(*/bin/python */skills/sql-transpile/scripts/transpile.py *)
-  - Bash(*/bin/python */skills/sql-transpile/scripts/vendor_sync.py --check)
 ---
 
 # sql-transpile — SQL 方言変換
 
-> **実行場所**: このファイルのコマンドは、sql-migration のチェックアウトのルートから動かす形（`.venv/bin/python skills/sql-transpile/scripts/...`）で書いてある。プラグインとして入れたときの読み替えは下の Important の 2 つ目。`allowed-tools` は両方の形を許している。スキルのディレクトリは `scalardb_migrate/` を import しない（ScalarDB 変換は `scripts/_scalardb/` の同梱コピーで動く）ので、スキルのディレクトリだけを別の場所へコピーしても変換できる。そのときは Python（`pip install sqlglot==30.18.0` したもの）とスクリプトのパスを置いた場所に合わせて読み替え、`allowed-tools` も合わせて直す。
+> **実行場所**: このファイルのコマンドは、sql-migration のチェックアウトのルートから動かす形（`.venv/bin/python skills/sql-transpile/scripts/...`）で書いてある。プラグインとして入れたときの読み替えは下の Important の 2 つ目。`allowed-tools` は両方の形を許している。スキルはリポジトリのルートの変換器 `scalardb_migrate/` を読む（`scripts/_converter.py`）。公開の GitHub のリポジトリの `skills/sql-transpile` には、その変換器のコピー `scripts/_scalardb/` が入っている（公開するときに作る）ので、それをスキルのディレクトリだけ別の場所へコピーしても変換できる。そのときは Python（`pip install sqlglot==30.18.0` したもの）とスクリプトのパスを置いた場所に合わせて読み替え、`allowed-tools` も合わせて直す。
 
 SQL を Source 方言で読んで AST に抽象化し、Target 方言または ScalarDB SQL として生成し直す。
 変換できたかどうかを 1 文ずつ判定し、理由と変換率をレポートにまとめる。
@@ -60,7 +58,7 @@ SQL を Source 方言で読んで AST に抽象化し、Target 方言または S
   | `references/dialect-notes.md` | 汎用 Target（ScalarDB 以外）の指摘コードの意味と書き換え方を説明するとき |
   | `references/scalardb-grammar.md` | ScalarDB SQL の文法・型の対応・キー設計・実行計画・取得コストと、ScalarDB 向けの指摘コードの意味を説明するとき |
   | `references/app-side-notes.md` | アプリ側に移す処理で結果を変えないための注意（`APP_SEMANTICS`）、Java の補助クラス、H2 で動かない構文（`RESIDUAL_H2`）の書き換えを説明するとき |
-  | `references/operations.md` | 同梱コピーの確認、関数一覧の作り直し、変換の仕組みを聞かれたとき。golden での突き合わせと同梱コピーの取り込み（リポジトリで作業するときだけ） |
+  | `references/operations.md` | 関数一覧の作り直し、変換の仕組みを聞かれたとき。golden での突き合わせ（リポジトリで作業するときだけ） |
 
 ## Workflow
 
@@ -106,7 +104,7 @@ SQL を Source 方言で読んで AST に抽象化し、Target 方言または S
 | `--expected-rows t=N[:K]` | ScalarDB | 表の行数（とキーあたりの行数）が分かっている。見積もりに使う |
 | `--isolation` | ScalarDB | 分離レベルが `SERIALIZABLE`（既定）以外 |
 | `--h2-indexes` | ScalarDB | 大きな表を結合するバッチ処理。実行計画に H2 の索引を作る指定を入れる（小さな要求では遅くなる） |
-| `--session-time-zone ZONE` | ScalarDB | `TZ_ASSUMED_UTC` が出たとき。移行元のセッションのタイムゾーン（`Asia/Tokyo`、`+09:00`）を渡すと、ゾーンの無いリテラルをその時刻として読み、UTC に直す |
+| `--session-time-zone ZONE` | ScalarDB | `TZ_ASSUMED_UTC` が出たとき、または移行元が UTC 以外のセッションで動いていたとき。移行元のセッションのタイムゾーン（`Asia/Tokyo`、`+09:00`）を渡すと、ゾーンの無いリテラルをその時刻として読み、UTC に直す。PostgreSQL の実行計画では H2 もそのゾーンで動かす |
 
 例（ScalarDB、Cassandra バックエンド）:
 
@@ -128,9 +126,7 @@ SQL を Source 方言で読んで AST に抽象化し、Target 方言または S
 | 3 | 異常終了（sqlglot などの依存を読み込めない、変換器の想定外の失敗、中断） | 標準エラーを読んで Error Handling へ。レポートは出ていないので読みに行かない |
 
 1 文の変換中に変換器が想定外の失敗をしても、その文が ERROR `INTERNAL` になるだけで、残りの文は変換される（終了コード 1）。
-閉じていない文字列などでスクリプトを文に分けられないとき、ScalarDB を Target にしたときは `;` で終わる行ごとに分けて、読めた文は変換し、読めない文だけが ERROR `TOKENIZE` になる。ほかの Target では全体が 1 件の ERROR `TOKENIZE` になる。Oracle の q 引用（`q'[it's]'`）は分ける前に通常のリテラル（`'it''s'`）に直すので、どちらでも読める。
-
-ScalarDB を Target にしたときは、`vendor_sync.py --check` も実行する。終了コード 1 なら同梱コピーが本体と食い違っているので、利用者に伝える（取り込み方は `references/operations.md` の「sql-migration のリポジトリで作業するとき」）。最終行が `VENDOR_DRIFT=n/a`（終了コード 0）なら、スキルがリポジトリの外に置かれていて比べる本体が無い。変換は同梱コピーで動くので、そのまま進める。
+閉じていない文字列などでスクリプトを文に分けられないときは、どの Target でも `;` で終わる行ごとに分けて、読めた文は変換し、読めない文だけが ERROR `TOKENIZE` になる。Oracle の q 引用（`q'[it's]'`）は分ける前に通常のリテラル（`'it''s'`）に直すので、どちらでも読める。
 
 ### Step 4: 利用者に報告する
 
@@ -171,7 +167,7 @@ ERROR の文の書き換えを頼まれたら、書き換え後の SQL をもう
 | `DIVISION` の WARN が大量に出る | 表定義が無い。`CREATE TABLE` を入力に含めるか `--schema` を渡して再変換する |
 | 利用者定義の関数が `FUNC_PORTABILITY` になる | 仕様どおり。Target にも同じ関数を作るか確認する |
 | ScalarDB Target で型の WARN が多い | Source が oracle / postgres / mysql 以外だと型対応表の精度が落ちる。標準エラーの注意書きを伝える |
-| `vendor_sync.py --update` が「本体が見つかりません」 | スキルがリポジトリの外にコピーされている。同梱コピーの更新は、リポジトリ内のスキルで行う（`--check` は外でも 0 で終わる） |
+| 終了コード 3 で「変換器 scalardb_migrate が見つかりません」 | スキルのディレクトリだけを開発用のリポジトリから写した。変換器のコピーは公開の GitHub のリポジトリのスキルにだけある。リポジトリ全体（プラグイン）から動かすか、公開版の `skills/sql-transpile` を写す |
 | `RESIDUAL_H2` の ERROR | H2 で実行できない構文。アプリで実装するか、`references/app-side-notes.md` の書き換え（再帰 WITH、UNION ALL など）を案内する |
 | `FULL_SCAN` の ERROR（`--storage cassandra`） | キーで読めない表。メッセージの「read X first, then Y」に従ってキーで読むか、集計表を設ける |
 | `ROW_LIMIT` / `COST_DEADLINE` の WARN | 読む行数が多すぎる。集計表・キー範囲の追加を提案する。行数は `--expected-rows` の値なので、実際の件数を確かめる |

@@ -499,8 +499,11 @@ class _Builder:
         from .lower import _routine_name, overload_ordinals
 
         bodies = list(_descend(context, ROUTINE_BODIES))
+        # the names a nested subprogram of the same spelling is lifted away from (#160, `lifted_name`)
+        self._module_routines = {_routine_name(b) for b in bodies}
         for body, ordinal in zip(bodies, overload_ordinals([_routine_name(b) for b in bodies])):
             self._routine(body, parent=scope, module=name, ordinal=ordinal)
+        self._module_routines = set()
 
     def _standalone(self, context: ParserRuleContext) -> None:
         self._routine(context, parent=None, module=None)
@@ -512,11 +515,14 @@ class _Builder:
             self._declaration(scope, declaration)
 
     def _routine(self, context: ParserRuleContext, parent: Scope | None, module: str | None,
-                 ordinal: int | None = None) -> None:
+                 ordinal: int | None = None, lifted_as: str | None = None) -> None:
         identifier = _child(context, "IdentifierContext") or _child(context, "Procedure_nameContext") \
             or _child(context, "Function_nameContext")
-        name = _text(identifier).split(".")[-1].lower() if identifier is not None else "<anonymous>"
-        from .lower import routine_id_of
+        declared = _text(identifier).split(".")[-1].lower() if identifier is not None else "<anonymous>"
+        # a nested subprogram lifted under another name (#160): its scope is the lifted routine's, and it is
+        # declared in the enclosing scope under the name it was written with
+        name = lifted_as or declared
+        from .lower import lifted_name, routine_id_of
 
         # the same id the lowering gives the routine: overloads used to share one scope, and the second one's
         # parameters replaced the first one's
@@ -545,10 +551,13 @@ class _Builder:
         # a subprogram written in this one's declare section (#80): its own scope, inside this one's, under the id
         # the lowering lifts it to -- `<module>.<name>`, the module of a standalone routine being the routine itself
         for nested in _descend(context, ROUTINE_BODIES, stop={"BodyContext"}):
-            self._routine(nested, parent=scope, module=module or name)
+            from .lower import _routine_name
+            self._routine(nested, parent=scope, module=module or name,
+                          lifted_as=lifted_name(_routine_name(nested), name,
+                                                self.__dict__.get("_module_routines") or set()))
 
         routine_symbol = Symbol(
-            name=name, kind="routine", scope=module or "", type=returns, source_range=self._range(context),
+            name=declared, kind="routine", scope=module or "", type=returns, source_range=self._range(context),
             visibility="public" if (module is None or name in self.public) else "private",
             signature=",".join(f"{p.direction} {p.type.oracle if p.type else '?'}" for p in parameters))
         if parent is not None:
@@ -641,7 +650,13 @@ class _Builder:
         # List (#45). `VARRAY(n) OF` is a nested table with a bound the generated code does not enforce
         key = f" INDEX BY {match.group('key').strip()}" if match.group("key") else ""
         limit = f" LIMIT {match.group('limit')}" if match.group("limit") else ""
-        return TypeRef(_text(declaration).split()[1], f"TABLE OF {element.resolved or element.oracle}{key}{limit}",
+        held = element.resolved or element.oracle
+        if re.match(r"^TABLE\s+OF\s", held, re.IGNORECASE):
+            # a collection of collections: the inner one in parentheses, so that its INDEX BY / LIMIT cannot be
+            # read as the outer's -- `TABLE OF TABLE OF INTEGER LIMIT 10` was both a VARRAY(10) of nested tables and
+            # a nested table of VARRAY(10)s (#160)
+            held = f"({held})"
+        return TypeRef(_text(declaration).split()[1], f"TABLE OF {held}{key}{limit}",
                        "collection", self.table.schema_snapshot)
 
     # -- types ---------------------------------------------------------------------------------------------

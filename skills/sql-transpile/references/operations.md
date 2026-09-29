@@ -1,22 +1,22 @@
 # 保守の手順と変換の仕組み
 
-SKILL.md の Workflow から外した、ときどきしか使わない手順と、変換の仕組み。同梱コピーの確認、関数一覧の作り直し、変換の流れを聞かれたときに読む。最後の節は sql-migration のリポジトリで作業するときだけ当てはまる。
+SKILL.md の Workflow から外した、ときどきしか使わない手順と、変換の仕組み。変換器がどこから読まれるか、関数一覧の作り直し、変換の流れを聞かれたときに読む。最後の節は sql-migration のリポジトリで作業するときだけ当てはまる。
 
 ---
 
-## 同梱コピーの鮮度を確かめる（ScalarDB を Target にしたとき）
+## ScalarDB への変換器をどこから読むか
 
-ScalarDB への変換は、リポジトリ本体 `scalardb_migrate/` の 7 モジュールのコピーを `scripts/_scalardb/` に同梱して使う。スキルが本体を import しないので、スキルのディレクトリを別の場所へコピーしても変換できる。本体を直してもコピーには自動で反映されない。
+ScalarDB を Target にしたときの変換は、リポジトリ本体の変換器 `scalardb_migrate/` で行う。スキルのスクリプトは
+`scripts/_converter.py` で、置かれた場所に合わせて読み先を決める。
 
-```bash
-.venv/bin/python skills/sql-transpile/scripts/vendor_sync.py --check
-```
+| スキルの置き場所 | 読む変換器 |
+|---|---|
+| sql-migration のチェックアウト、プラグイン（リポジトリ全体が入る） | リポジトリのルートの `scalardb_migrate/`。コピーは無い |
+| 公開の GitHub のリポジトリから `skills/sql-transpile` だけを写した場所 | `scripts/_scalardb/`。公開するときに `scalardb_migrate/` の 7 モジュールから作ったコピーで、中身は本体と同じ |
 
-| 終了コード | 最終行 | 意味 |
-|---|---|---|
-| 0 | `VENDOR_DRIFT=0` | 同梱コピーは本体と一致 |
-| 0 | `VENDOR_DRIFT=n/a` | 比べる本体が無い（スキルがリポジトリの外にある）。同梱コピーで変換できるので、そのまま進める |
-| 1 | `VENDOR_DRIFT=<差分のあるモジュール数>` | 本体と食い違っている。利用者に伝える。取り込みはリポジトリの中で行う（最後の節） |
+開発用のリポジトリから `skills/sql-transpile` だけを写すと、どちらも無いので `transpile.py` は終了コード 3 で
+「変換器 scalardb_migrate が見つかりません」と止まる。コピーはリポジトリには置かず、変換器を直しても同期の作業は要らない
+（2026-09-30 まではコピーを commit し、`vendor_sync.py` で揃えていた）。
 
 ---
 
@@ -49,7 +49,7 @@ ScalarDB への変換は、リポジトリ本体 `scalardb_migrate/` の 7 モ�
 Target によって 2 つのバックエンドを使い分ける。どちらも同じ形の結果（文ごとの状態と指摘）を返すので、レポートは共通。
 
 ```
-                       ┌─ target = scalardb ──→ 同梱した ScalarDB 変換ルール一式
+                       ┌─ target = scalardb ──→ ScalarDB への変換器 scalardb_migrate
 入力 SQL ─→ 文分割 ─┤                          （DNF/CNF 正規化・キー設計・型対応・実行計画）
                        └─ target = その他 ────→ 汎用パス（下の 6 段）
 ```
@@ -70,16 +70,6 @@ Target によって 2 つのバックエンドを使い分ける。どちらも�
 ## sql-migration のリポジトリで作業するとき
 
 ここから下は、sql-migration の開発用のチェックアウトを作業ディレクトリにしているときだけ使える。`difftest/` とリポジトリ本体の `scalardb_migrate/` を使うので、プラグインとして入れたスキルからは使えない。
-
-### 同梱コピーを本体から取り込む
-
-`vendor_sync.py --check` が終了コード 1 を返したら、本体から同梱コピーを作り直す。本体の無い場所で実行すると「本体が見つかりません」で終了コード 2 になる。
-
-```bash
-.venv/bin/python skills/sql-transpile/scripts/vendor_sync.py --update
-```
-
-同梱コピーと本体は、どちらも SQLGlot のグローバルな方言表に `scalardb` という名前で方言を登録する。**同じ Python プロセスで両方を import すると後勝ちで上書きされ**、先に読んだ側の `UPSERT` の生成が `Unsupported expression type Upsert` で失敗する。スキルの実行（`transpile.py`）は同梱コピーだけを読むので影響しない。両方を比べるテストは、スキルを別プロセスで動かす。
 
 ### アプリ側の実装を Oracle の結果と突き合わせる（golden）
 

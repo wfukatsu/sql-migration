@@ -27,7 +27,7 @@ PL/SQL を変換するとき、生成器は**決めてよいことだけ**を決
 | `<routine>Targets` / `One` / `Failed` / `Start` / `Done` / `FailedBatch`（割った routine） | CALL-1〜CALL-3、BIZ-1、BIZ-2 |
 | `<routine>After` と `pAfterKey` / `pBatch` 引数（件数つきで繰り返し読む） | CALL-3、BIZ-2 |
 | 生成コードのコメント `tx.runSeparately(...)`（自律トランザクション） | CALL-4、BIZ-3 |
-| 診断 `OPTIMISTIC` / `RMW_SPLIT` / `MERGE_SPLIT`（楽観制御へ移したもの） | CALL-5、BIZ-4、BIZ-5 |
+| 診断 `OPTIMISTIC` / `RMW_SPLIT` / `MERGE_SPLIT`（楽観制御へ移したもの） | CALL-5、CALL-7、BIZ-4、BIZ-5 |
 | `AuditContext audit` 引数 | CALL-6、BIZ-6 |
 | `limits.yaml` の `scanRows.routines` の値 | BIZ-7 |
 | `limits.yaml` の `dynamicTables` | BIZ-8 |
@@ -198,6 +198,29 @@ B（拒否）/ D（別表検証）の trigger が掛かる表は、アプリ以�
 - 決めること: `user()` に何を入れるか（ログインした利用者・サービス名・代行者など）、`now()` にどの時計を使うか
 - **出たら確認**: `AuditContext audit` 引数
 - **記録先**: 呼び出し側の設計書
+
+#### CALL-7 楽観制御へ移した routine を動かす分離レベル
+
+- `rowLocks.optimistic` で `FOR UPDATE` を落とした routine が、`FOR UPDATE` と同じ保証になるのは、呼び出し側が
+  そのトランザクションを **SERIALIZABLE** で動かすときだけである。Consensus Commit が commit で弾くのは**書いた行**の
+  衝突で、ロックして**読んだだけで書かない行**を他が変えたことまで見るのは SERIALIZABLE だけである。SNAPSHOT（ScalarDB の
+  既定）と READ_COMMITTED では write skew が通る（#157。2026-09-30 に、生成したコードを ScalarDB 3.19.1 の実クラスタで
+  2 つ同時に流して確かめた: 「相手が当番なら自分は外れる」を 2 人が同時にすると、SNAPSHOT / READ_COMMITTED では 2 人とも
+  外れ、SERIALIZABLE では後の commit が `DB-CORE-20022`（anti-dependency）で弾かれる。Oracle では後の方が待ち、
+  相手が外れたのを見て業務例外になる）
+- ロックした行を同じ routine の中で必ず書くなら（`reserve` のように読んだ行を減らして書く形）、どの分離レベルでも
+  衝突は `DB-CORE-20013` で弾かれ、差は出ない。差が出るのは、ロックした行を書かない経路がある routine（例:
+  `promote` の「同じ tier なら何もしない」）と、読んだ行に基づいて**別の**行を書く routine である
+- 決めること: (a) クラスタの `scalar.db.consensus_commit.isolation_level` を SERIALIZABLE にする、(b) その routine を
+  呼ぶトランザクションだけ SERIALIZABLE で始める（ScalarDB SQL なら `BEGIN WITH 'cc-transaction-isolation' =
+  'SERIALIZABLE'`。JDBC の `setTransactionIsolation` は効かない）、(c) routine を読み、ロックした行を必ず書くので
+  SNAPSHOT のままでよいと確かめる。SERIALIZABLE は読んだ行も commit で確かめるので、弾かれる回数が増える（CALL-5 の
+  再試行と組で決める）
+- **推奨の既定は (b)**（2026-09-30 の決定）: その routine を呼ぶトランザクションだけを SERIALIZABLE で始める。ほかの処理は
+  今の分離レベルのまま動く（SERIALIZABLE は走査を commit で読み直すので、クラスタ全体に広げると遅くなる）。(a) は
+  そうした routine が多く、呼び出し側を 1 つずつ直せないときに選ぶ。(c) は routine を読んで確かめられたときだけ
+- **出たら確認**: 診断 `OPTIMISTIC`、生成コードのコメント「FOR UPDATE を落とした（rowLocks.optimistic）」
+- **記録先**: クラスタの設定（運用）、または呼び出し側の設計書
 
 ---
 

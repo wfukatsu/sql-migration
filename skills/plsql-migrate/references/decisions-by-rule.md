@@ -21,17 +21,18 @@
 
 | ルール ID | 何が起きているか | 聞くこと | 答えを書く所（`limits.yaml`） | 決める人 |
 |---|---|---|---|---|
-| LOCK-001 / LOCK-002 | 行ロック（`FOR UPDATE`、`NOWAIT`、`SKIP LOCKED`）。ScalarDB に行ロックは無い | この routine を楽観制御（同時の書き込みは commit で弾かれ、呼び出し側が再試行する）へ移してよいか。再試行してよい操作か（冪等か）、業務例外と衝突を呼び出し側が区別できるか | `rowLocks.optimistic.<routine>: <理由>` | 呼び出し |
+| LOCK-001 / LOCK-002 | 行ロック（`FOR UPDATE`、`NOWAIT`、`SKIP LOCKED`）。ScalarDB に行ロックは無い | この routine を楽観制御（同時の書き込みは commit で弾かれ、呼び出し側が再試行する）へ移してよいか。再試行してよい操作か（冪等か）、業務例外と衝突を呼び出し側が区別できるか。ロックして読んだだけで書かない行があるなら、SERIALIZABLE で動かせるか（SNAPSHOT では write skew が通る。CALL-7） | `rowLocks.optimistic.<routine>: <理由>` | 呼び出し |
 | SQL-001（`SET c = c + x` の RMW） / SEM-006（割っていない MERGE） | 列を読む SET 式・MERGE は ScalarDB SQL に渡せない | 同じトランザクションの中で読んでから書く 2 文に割ってよいか（衝突は commit で弾かれる） | `rowLocks.optimistic.<routine>` | 呼び出し |
 | TX-001 | routine の中の COMMIT / ROLLBACK / SAVEPOINT | 境界をどこに引くか: 1 反復 = 1 トランザクション（perIteration）/ 呼び出し側の境界へ移す（callerBoundary。途中の ROLLBACK が戻していた分は残る）/ 自律（separate） | `transactions.perIteration` / `callerBoundary` / `separate` の 1 つ | 業務 + 呼び出し |
 | TX-003 / BULK-002 | ループの中の COMMIT、`FORALL … SAVE EXCEPTIONS` | 1 反復（1 要素）ずつ確定してよいか。途中で止まったとき、確定した分が残ることを業務が受け入れるか。再実行したとき二重にならないか | `transactions.perIteration.<routine>` | 業務 |
 | TX-002 | `PRAGMA AUTONOMOUS_TRANSACTION` | 呼び出し側とは別のトランザクションで回してよいか（親の rollback で消えない、が保たれる） | `transactions.separate.<routine>` | 呼び出し |
 | CUR-002 / BULK-003 / BULK-001 | 行を先に全部読む（上限が要る） | 1 回に読む行数の上限（業務の数として）。上限を置かないならその理由 | `scanRows.routines.<routine>: <数>` / `scanRows.notLimited.<routine>: <理由>` | 業務 |
 | STATE-001 | package 変数（セッション状態）を読み書きする | その値を呼び出し側が持ち回ってよいか（IN OUT 引数と結果で運ぶ） | `packageState.carried.<package>: <理由>` | 呼び出し |
-| DYN-001 | 表名を実行時に組む動的 SQL | 渡されうる表名の一覧（それ以外は実行時に拒否する） | `dynamicTables.<routine>: [表名, …]` | 業務 |
+| DYN-001 | 表名・列名・ORDER BY・WHERE の断片・routine 名を実行時に組む動的 SQL | 渡されうる名前の一覧（それ以外は実行時に拒否する）。連結する項が 1 つのときだけ書ける（表名でも列名でもよい）。2 つ以上（ORDER BY の列と方向など）や WHERE の断片そのものは、query builder への作り直しを決める | `dynamicTables.<routine>: [名前, …]` | 業務 |
 | DYN-004（動的な DDL: `EXECUTE IMMEDIATE 'CREATE …'`） | ScalarDB はトランザクションの中で DDL を流さない。Oracle の DDL は前後で COMMIT する。決定が無ければ断る | その DDL がデータに何も残さない（作ってすぐ消す一時表など）ので、移行先で省いてよいか。TRUNCATE は省けない（行を消す）ので、下の「外れないもの」の DYN-004 を聞く | `ddl.omit.<routine>: <理由>` | 運用 |
 | LINK-001 | DB link 越しの操作 | link の先の表を ScalarDB の管理下に置き、別の namespace として同じトランザクションで書くか。その namespace | `dbLinks.<link>: {namespace: …, reason: …}` | 運用 |
 | CONS-001 | CHECK / 外部キー / UNIQUE が移行先に無い（子のある親の DELETE を含む） | 表ごとに、書く前に生成コードで検査するか（NOT NULL・CHECK・外部キー）、アプリに任せるか | `constraints.enforce.<表>: <理由>` | 業務 |
+| SEM-008 / SEM-012 | 言語で変わる TO_CHAR の書式（`'DAY'`、`'MON'`、`'AM'`）、書式なしで日付を文字にする所（`'…' \|\| d`、`TO_CHAR(d)`）。生成コードは決めた NLS で書き、決めていなければ Oracle の既定（AMERICAN / AMERICA）で書く | 移行元のセッションの NLS（ログオン trigger、クライアントの `NLS_LANG`、`ALTER SESSION`）: 言語、地域、日付・TIMESTAMP の書式、小数点と桁区切り、通貨。既定のままならそう確かめたこと | `nls: {reason: …, dateLanguage: …, territory: …, dateFormat: …, …}`（project に 1 つ。言語は AMERICAN / ENGLISH / JAPANESE、地域は AMERICA / JAPAN） | 運用 |
 | 診断 `CONDITIONAL_COMPILATION`（ルールではない、INFO） | `$IF` を移行元の PLSQL_CCFLAGS と版を仮定して解いた。書いていないフラグは NULL | 移行元の `PLSQL_CCFLAGS` の値と Oracle の版 | `conditionalCompilation: {flags: {…}, dbVersion: "19.0"}` | 運用 |
 
 ## limits.yaml では外れないもの（直し方か、受け入れるかを聞く）
@@ -46,13 +47,15 @@
 | SEM-013 | `SYS_CONTEXT` | 要る値（ユーザ、クライアント情報など）を呼び出し側が渡す形にしてよいか | 呼び出し |
 | SEM-014 | `DBMS_RANDOM`、`SYS_GUID` | 乱数・一意値の出所（Oracle と同じ値にはならない）を業務が受け入れるか | 業務 |
 | SEM-007 | 時計を 2 回以上読む | 1 回読んで使い回す形に直してよいか | 業務 |
-| SEM-001 / 003 / 009 / 012、SEM-008 | 移行先 DB が評価する ROUND・空文字・CAST、言語で変わる書式 | 式を SQL の外へ出すか、書式を明示するか | 業務 |
+| SEM-001 / 003 / 009、SEM-008 / 012（移行先 DB が評価する SQL に残ったもの） | 移行先 DB が評価する ROUND・空文字・CAST、言語で変わる書式。`nls` を決めても、ScalarDB / 実行計画の H2 が書く文字は決めた設定に従わない | 式を SQL の外へ出すか、書式を明示するか | 業務 |
+| SEM-015 | ランタイムが実装しない書式の形（`FM` と `B` を一緒に使う、数字の無い数値書式）、型の分からない値（record の列など）への `FF` / `X` / `TZR` | 書式を書き直すか、値を TIMESTAMP と宣言した変数に入れてから TO_CHAR するか | 呼び出し |
 | AUTHID-001 | `AUTHID CURRENT_USER`（package の仕様に書いたものは本体の routine すべて） | 呼び出した人の権限で動いていたことを、移行先の認証・認可でどう保つか | 運用 |
 | TX-004 / SCAN-001 | 同じトランザクションで書いた表を走査する（呼び先を含む）。ScalarDB は拒む | routine を境界で割るか、読み取りをキーにするか | 業務 + 呼び出し |
 | LOWER-002 | 組み直せない `GOTO` | 制御構造を元の PL/SQL で組み直すか | 呼び出し |
+| CUR-004 | OUT 引数の `SYS_REFCURSOR` を routine の中で FETCH / CLOSE する、または列の違う問合せで OPEN する（生成器が断る。Oracle では呼び出し側が続きの行から読む / ORA-01001 / 最後の OPEN の列を受け取る） | 読んだ行と残りの行をどう渡すか、CLOSE を消してよいか、問合せごとに OUT 引数を分けるか | 呼び出し |
 | LOWER-001 | 下ろせない構文（構文エラーから回復した unit を含む） | 元の PL/SQL を直すか（構文エラーなら、Step 2 の「解析できなかったファイル」と同じ） | 呼び出し |
 | STATE-002 | package 本体の初期化部 | 初期化をどこで（誰が、いつ）行うか | 呼び出し |
-| DYN-002（DDL 以外） | とりうる文を展開して確かめられなかった動的 SQL | 流れうる文（表名なら DYN-001 と同じく `dynamicTables`）と、`USING` の bind の対応・権限を確かめるか | 呼び出し |
+| DYN-002（DDL 以外） | とりうる文を展開して確かめられなかった動的 SQL | 流れうる文（表名・列名なら DYN-001 と同じく `dynamicTables`）と、`USING` の bind の対応・権限を確かめるか | 呼び出し |
 | DYN-003 | `DBMS_SQL`（定数の問合せでないもの） | 実行ログから流れる文を洗い出すか | 運用 |
 | DICT-001 | データ辞書を読む | 移行先のメタデータか設定値のどちらに置き換えるか | 運用 |
 | TRG-001 | trigger そのもの | 生成コードの外からの書き込みを、照合（OPS-1）と権限（直接の書き込みを禁じる）で追うか | 運用 |

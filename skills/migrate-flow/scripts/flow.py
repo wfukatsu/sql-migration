@@ -319,7 +319,11 @@ def open_items(state: dict, out: Path) -> list[str]:
         credited = _analysed_verdicts(out)
         found += [f"REVIEW: {routine}" for routine, v in sorted(verdicts.items())
                   if v.get("verdict") == "REVIEW" and credited.get(routine) != "AUTO"]
-        refused = ((json.loads(report.read_text(encoding="utf-8")).get("summary") or {}).get("unsupportedSql") or 0)
+        summary = json.loads(report.read_text(encoding="utf-8")).get("summary") or {}
+        refused = summary.get("unsupportedSql") or 0
+        if summary.get("sqlChecked") is False:
+            # ScalarDB のスキーマを渡さずに生成した: SQL は照らしても変換してもいない。0 件は「受け付ける」ではない（#161）
+            found.append("SQL を ScalarDB に照らしていない（--scalardb-schema を渡さずに生成した。生成物は Oracle の SQL をそのまま実行する）")
         if refused:
             # 生成物に `throw new UnsupportedOperationException(...)` として残る文。テストで確実に落ちるので、
             # 残したまま進めるなら利用者がそう決めたことを控える（2026-09-28 のレビュー M8）

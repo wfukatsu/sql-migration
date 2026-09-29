@@ -87,7 +87,7 @@ class Facts:
     def name(self) -> str:
         """見出しに出す名前。入れ子の subprogram は、どの routine の中のものかが分かる形にする。"""
         if self.enclosing:
-            return f"`{self.node.get('name') or self.id}`（`{self.enclosing}` の中で宣言）"
+            return f"`{self.node.get('declaredName') or self.node.get('name') or self.id}`（`{self.enclosing}` の中で宣言）"
         return f"`{self.id}`"
 
     @property
@@ -599,6 +599,10 @@ def routine_facts(f: Facts) -> str:
                    + (f"。原文にあるエラーコード: {'、'.join(str(c) for c in part['codes'])}" if part["codes"] else ""))
     if f.enclosing:
         head = f"- 種類: {f.kind}（`{f.enclosing}` の中で宣言した入れ子の {f.kind}。そこからしか呼べない）"
+        if f.node.get("declaredName"):
+            # package の routine と同じ名前の入れ子は、別の名前で持ち上げてある（#160）。図と呼び出しの欄はその名前
+            head += (f"。原文の名前は `{f.node['declaredName']}` で、同じ名前の routine と分けるために "
+                     f"`{f.id}` として扱う")
     elif f.kind == "trigger-body":
         head = "- 種類: trigger の本体"
     else:

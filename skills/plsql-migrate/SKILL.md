@@ -70,7 +70,8 @@ PL/SQL を読んで ScalarDB 向けの Java を生成し、生成器が決めず
 - **routine ごとの決定は `limits.yaml` に書き、生成し直す。** 行数の上限（`scanRows`）、楽観制御へ移す routine
   （`rowLocks.optimistic`）、トランザクションの境界（`transactions` の perIteration / separate / callerBoundary）、動的 SQL の表名（`dynamicTables`）、routine の中の DDL を省くか（`ddl.omit`）、package 変数の置き場（`packageState.carried`）、
   CHECK / 外部キーを書く側で検査する表（`constraints.enforce`）、DB link の行き先（`dbLinks`）、`$IF` を解く移行元の
-  PLSQL_CCFLAGS と版（`conditionalCompilation`）は生成器が読む。理由は値として書く（書き方は `references/operations.md` の
+  PLSQL_CCFLAGS と版（`conditionalCompilation`）、移行元のセッションの NLS（`nls`。日付・数値と文字の変換の言語・書式・
+  小数点・通貨）は生成器が読む。理由は値として書く（書き方は `references/operations.md` の
   「limits.yaml の書き方」）。書くのは利用者が答えてから。知らない節・空の理由・ソースに無い routine id は、生成器が
   理由つきの終了 2 で止める（→ Error Handling）。どのルール ID をどの決定で進めるかは `references/decisions-by-rule.md`
 - 参照資料は必要になったときだけ読む:
@@ -144,9 +145,10 @@ JVM が無いとき（Gradle は `runtime-java/gradlew` が取ってくる。ネ
 |---|---|---|
 | PL/SQL のディレクトリ | —（利用者のもの） | 利用者に聞く。**下のディレクトリも再帰して読む**。一部だけを変換したいなら、そのディレクトリを渡す |
 | Oracle の DDL | `<src>/schema.sql` があれば自動 | `%TYPE` / `%ROWTYPE` が解けず精度が落ちる。持っていないか聞く |
-| ScalarDB の Schema Loader JSON | `<src>/../scalardb-schema.json` があれば自動 | ScalarDB が受け付けない SQL を判定できない。聞く |
+| ScalarDB の Schema Loader JSON | `<src>/../scalardb-schema.json` があれば自動 | ScalarDB が受け付けない SQL を判定できず、SQL は変換されない（生成物は Oracle の SQL をそのまま実行する。生成は標準エラーと要約の行で `SQL not checked against ScalarDB` と言い、`generation-report.json` の `summary.sqlChecked` が `false`）。聞く |
 | routine ごとの決定（`limits.yaml`） | —（利用者の案件のもの） | **`--limits` を外して回し**、Step 3b で決まったことから作る。別の案件（corpus など）の `limits.yaml` を当てない |
 | 移行元の `PLSQL_CCFLAGS` と Oracle の版 | — | ソースに `$IF` があるときだけ要る。書かないとフラグは NULL、版は 19.0 として解かれる。「判断を求めるときの形」で聞き、`conditionalCompilation` に書く |
+| 移行元のセッションの NLS | — | SEM-008 / SEM-012 が出たときに要る。書かないと Oracle の既定（AMERICAN / AMERICA、`DD-MON-RR`）で書き、その 2 つは REVIEW のまま。「判断を求めるときの形」で聞き、`nls` に書く |
 | 出力先 | `out/plsql` | — |
 | 記録ファイル | `limits.yaml` と同じディレクトリの `decisions-outside-generator.yaml` | 新しく作る |
 
@@ -175,7 +177,8 @@ untranslated statements 1  SQL ScalarDB refuses 1  planned 0
   それに証拠（実 DB での比較）の確信度を掛けた最終の判定（同じく `verdict`）。生成器は証拠を読まないので、
   **`verdict:` の AUTO は必ず 0** で、ルールでは AUTO の routine は `verdict:` では REVIEW に数えられる（理由は
   `confidence factor testEvidence is 0`）。これは失敗ではなく「実 DB でまだ比べていない」という意味である
-- 3 行目は、変換できなかった文・ScalarDB が受け付けない SQL・実行計画（取得して H2 で実行）に回した文の数
+- 3 行目は、変換できなかった文・ScalarDB が受け付けない SQL・実行計画（取得して H2 で実行）に回した文の数。ScalarDB のスキーマ無しで回すと、3 行目は `SQL not checked against ScalarDB (no --scalardb-schema)` になる
+  （SQL を照らしても変換してもいない。「断った文 0」ではない）
 
 | 終了コード・出力 | 意味 | 次の手 |
 |---|---|---|

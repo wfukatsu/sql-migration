@@ -7,7 +7,16 @@ position types live here rather than inside one stage. Diagnostics use the same 
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
+
+# sqlglot underlines the offending token of a ParseError with ANSI escapes (`\x1b[4m...\x1b[0m`). A message is read in
+# generated Java comments and exception texts, reports and Markdown, where the escapes are noise, not emphasis (#161)
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def strip_ansi(text: str) -> str:
+    return _ANSI.sub("", text) if "\x1b" in text else text
 
 
 @dataclass(frozen=True)
@@ -70,6 +79,10 @@ class Issue:
     code: str
     message: str
     range: SourceRange | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.message, str):
+            self.message = strip_ansi(self.message)
 
     def __str__(self) -> str:
         where = f" [{self.range}]" if self.range else ""

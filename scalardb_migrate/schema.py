@@ -53,6 +53,10 @@ class TableMeta:
     residual_types: dict[str, str] = field(default_factory=dict)
     # columns the source DDL declares NOT NULL (ScalarDB drops the constraint). Known only from the source DDL
     not_null: set[str] = field(default_factory=set)
+    # column -> the source type of each DOUBLE column that was a decimal in the source (NUMBER(7,2) ...): its SUM and
+    # AVG are binary floating point on the target (#161). None when the source types are not known -- a Schema Loader
+    # file has ScalarDB types and nothing else -- and then any DOUBLE column may have been a decimal
+    decimal_columns: dict[str, str] | None = None
 
     @property
     def primary_key(self) -> list[str]:

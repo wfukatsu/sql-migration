@@ -39,6 +39,13 @@ _DOMAIN: "contextvars.ContextVar[str | None]" = contextvars.ContextVar("domain",
 _INFRA: "contextvars.ContextVar[str | None]" = contextvars.ContextVar("infra", default=None)
 # #12: trigger の本体は別の module にある。呼ぶ側はその routine を見て、引数と audit の有無を決める
 _PROGRAM: "contextvars.ContextVar[M.Program | None]" = contextvars.ContextVar("program", default=None)
+# #157: the source sessions' NLS settings the project decided (limits.yaml `nls`), or None
+_NLS: "contextvars.ContextVar[object | None]" = contextvars.ContextVar("nls", default=None)
+
+
+def set_nls(settings) -> None:
+    """The NLS decision every generated class hands to the runtime (`Plsql.useNls`), or None for none."""
+    _NLS.set(settings if settings is not None and getattr(settings, "decided", False) else None)
 # names a nested block declares (#18). They are in scope for its body and nowhere else, which is what the
 # PL/SQL says -- reading them off the routine would make a block-local visible to the whole method.
 _BLOCK_LOCALS: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("block_locals", default={})
@@ -164,6 +171,16 @@ def _generate_module(module: M.Module, package: str, repository_package: str,
             file.add_import("com.scalar.migrate.plsql.Sequences")
             f.line("private final Sequences sequences;")
         _constants(f, module)
+        nls = _NLS.get()
+        if nls is not None:
+            # #157: the text conversions follow the source sessions' NLS, decided in limits.yaml. Set before any
+            # routine of this class runs; every class of the project sets the same, and the runtime refuses two
+            file.add_import("com.scalar.migrate.plsql.Nls")
+            file.add_import("com.scalar.migrate.plsql.Plsql")
+            f.line()
+            f.comment(f"NLS: limits.yaml nls ({' '.join(str(nls.reason).split())})")
+            with f.block("static") as s:
+                s.line(f"Plsql.useNls({nls.java()});")
         f.line()
         parameters = [f"{java_class_name(module.name)}Repository repository"] + \
             [f"{java_class_name(t)}Service {java_name(t)}" for t in injected] + \
@@ -498,7 +515,7 @@ def _mutable(resolved: str | None) -> bool:
 
 
 # a value nothing else holds yet: copying it again would only cost
-_FRESH = re.compile(r"^(?:null|new\s|Plsql\.(?:table|indexBy|column|indexed|copy)\()")
+_FRESH = re.compile(r"^(?:null|new\s|Plsql\.(?:table|varray|varrayOf|indexBy|column|indexed|copy)\()")
 
 
 def _copied(file: JavaFile, value: str, resolved: str | None) -> str:
@@ -556,6 +573,9 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
                 element = re.sub(r"^(?:List|Map)<(?:[^,]+,\s*)?(.+)>$", r"\1", java_type(holder.type.resolved).name)
                 names[f"{holder.name.lower()}#constructor"] = kind
                 names[f"{holder.name.lower()}#element"] = element
+                bound = re.search(r"\bLIMIT\s+(\d+)$", holder.type.resolved or "")
+                if bound:
+                    names[f"{holder.name.lower()}#varray"] = bound.group(1)   # its constructor keeps the bound (#160)
             continue
         if kind:
             names[f"{holder.name.lower()}#collection"] = kind
@@ -567,6 +587,8 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
             if kind == "list" and holder.type is not None and "%" not in (holder.type.oracle or ""):
                 names[f"{(holder.type.oracle or '').strip().lower()}#constructor"] = kind
                 names[f"{(holder.type.oracle or '').strip().lower()}#element"] = element
+                if bound:
+                    names[f"{(holder.type.oracle or '').strip().lower()}#varray"] = bound.group(1)
     # CHAR(n) locals hold blank-padded text (#62); comparing one with a literal or another CHAR is blank-padded too.
     # PLS_INTEGER locals: arithmetic between two of them is 32-bit (#60)
     for holder in list(routine.parameters) + list(routine.declarations) + trigger_locals:
@@ -580,6 +602,12 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
         text = _text_rendering(declared)
         if text:
             names[f"{holder.name.lower()}#text"] = text
+        # #157: TO_CHAR(d, fmt) of a DATE and of a TIMESTAMP differ (FF, X, TZR are ORA-01821 on a DATE), and both
+        # are a LocalDateTime in Java: the declaration says which
+        if re.fullmatch(r"DATE", declared, re.IGNORECASE):
+            names[f"{holder.name.lower()}#datetime"] = "Date"
+        elif _TIMESTAMP_DECLARED.fullmatch(declared) and not (_TIMESTAMP_DECLARED.fullmatch(declared).group(3)):
+            names[f"{holder.name.lower()}#datetime"] = "Timestamp"
         if holder.type is not None and record_class(holder.type):
             # its field names: `name1.first` is the field, not the collection method FIRST (5-45, #82)
             names[f"{holder.name.lower()}#fields_of"] = ",".join(
@@ -617,6 +645,15 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
                 if carried:
                     # a lifted local subprogram takes the enclosing variables it reads after its own (#80)
                     names[f"{r.name.lower()}#extra"] = ",".join(carried)
+        if module.module_kind == "package":
+            # `pkg.f(1)` in the package's own routine: the package-level f, reached past a nested subprogram of the
+            # same name (#160) -- or written out for no reason. Only a routine that is not lifted has the name
+            for r in module.routines:
+                if r.enclosing or overload_of(r) is not None:
+                    continue
+                for suffix in ("", "#parameters", "#refused", "#extra"):
+                    if f"{r.name.lower()}{suffix}" in names:
+                        names[f"{module.name.lower()}.{r.name.lower()}{suffix}"] = names[f"{r.name.lower()}{suffix}"]
         # a trigger declares its locals on the module, not on the body, and a package-level cursor is visible
         # to every routine; leaving them out reports real names as unknown
         # a package-level variable is session state (STATE-001): there is no field to assign, so a reference
@@ -949,6 +986,9 @@ def _guarded(file: JavaFile, handlers: list[M.ExceptionHandler], body: list[M.St
     if any(getattr(s, "loop_kind", None) == "forall" for s in _walk(body)):
         # ORA-22160, which only a FORALL raises: listed only where one is, so no other routine changes (#136)
         helpers = helpers + ((None, "ElementNotExist", -22160),)
+    if any(re.search(r"\bBULK\s+COLLECT\b", getattr(s, "original_sql", None) or "", re.IGNORECASE) for s in _walk(body)):
+        # ORA-22165, a BULK COLLECT into a VARRAY of more rows than its bound (#160): listed only where one is
+        helpers = helpers + ((None, "IndexOutOfRange", -22165),)
     # only a body that calls one of the functions raising it can see a FunctionError (#140)
     function_errors = any(_FUNCTION_ERRORS.search(text) for s in _walk(body) for text in _expression_texts(s))
     for oracle, helper, code in helpers:
@@ -1190,11 +1230,13 @@ def _element_type(resolved: str | None, depth: int = 1) -> str | None:
     """The element type of a collection type's text, `depth` subscripts in (`TABLE OF TABLE OF NUMBER`, 2 -> NUMBER)."""
     for _ in range(depth):
         match = re.match(r"^\s*(?:TABLE|VARRAY\s*\(\s*\d+\s*\)|VARYING\s+ARRAY\s*\(\s*\d+\s*\))\s+OF\s+(.+?)"
-                         r"(?:\s+INDEX\s+BY\s+[\w$#]+(?:\s*\(\s*\d+\s*\))?)?\s*$",
+                         r"(?:\s+INDEX\s+BY\s+[\w$#]+(?:\s*\(\s*\d+\s*\))?)?(?:\s+LIMIT\s+\d+)?\s*$",
                          resolved or "", re.IGNORECASE | re.DOTALL)
         if match is None:
             return None
         resolved = match.group(1)
+        if resolved.startswith("(") and resolved.endswith(")"):
+            resolved = resolved[1:-1]   # a collection element is in parentheses (#160)
     return resolved
 
 
@@ -1424,6 +1466,8 @@ def draws_a_sequence(statement: M.Statement) -> bool:
 
 def _statement(file: JavaFile, statement: M.Statement, routine: M.Routine, result: ServiceFile) -> None:
     _source_comment(file, statement)
+    if _lock_dropped(statement):
+        file.comment(OPTIMISTIC_PREMISE)
     if _REFUSES_LATER.get() and draws_a_sequence(statement):
         # この routine は完走できない。採番だけはトランザクションを抜けるので、**引く前に止める**
         # ——拒否された routine が欠番を作らないようにする（#25 / 2026-09-18 の決定）。
@@ -1436,6 +1480,17 @@ def _statement(file: JavaFile, statement: M.Statement, routine: M.Routine, resul
             result.untranslated.append(statement.id)
         return
     try:
+        refused = next((d for d in statement.diagnostics if d.code == "CUR_OUT_REFUSED"), None)
+        if refused is not None:
+            # #160: an OUT cursor argument this OPEN cannot hand over. Reading into a cursor of the routine's own
+            # would return the argument null -- the caller silently getting nothing
+            file.comment(refused.message)
+            why = "the routine CLOSEs it" if "CLOSE" in refused.message else \
+                "the routine FETCHes from it" if "FETCH" in refused.message else \
+                "its OPENs select different columns" if "列の違う" in refused.message else "its query is not readable"
+            cursor = getattr(statement, "opens_cursor", None) or getattr(statement, "cursor", None)
+            raise Untranslatable([f"OUT cursor {cursor} cannot be handed to the caller: {why} (#160)"],
+                                 getattr(statement, "original_sql", None) or getattr(statement, "query_sql", None) or "")
         _translate_statement(file, statement, routine, result)
     except Untranslatable as e:
         file.comment(f"not translated: {e.text.strip()[:120]}")
@@ -1749,7 +1804,10 @@ def _block(file: JavaFile, statement: M.Block, routine: M.Routine, result: Servi
         for d in statement.declarations:
             if d.declaration_kind not in ("type", "exception", "cursor"):
                 qualified[f"{label}.{d.name}"] = renamed[d.name]
-    _BLOCK_LOCALS.set({**outer, **renamed, **qualified})
+    # a block's own declaration hides a loop index's 32-bit mark of the same name (#160)
+    _BLOCK_LOCALS.set({**{k: v for k, v in outer.items()
+                          if not any(k.lower() == f"{d.name.lower()}#pls_integer" for d in statement.declarations)},
+                       **renamed, **qualified})
     outer_holders = _BLOCK_HOLDERS.get()
     _BLOCK_HOLDERS.set(outer_holders + tuple(statement.declarations))
     outer_qualified = _QUALIFIED_NAMES.get()
@@ -1834,13 +1892,16 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
         index = _fresh(java_name(index_name), _taken(routine))
         low = _expr(file, numeric.group("low"), routine, result)
         high = _expr(file, numeric.group("high"), routine, result)
+        # counted in a long: an int index at 2147483647 wrapped to -2147483648 and `FOR i IN 2147483647 ..
+        # 2147483647` never ended, where Oracle runs it once (#160). The body reads the PLS_INTEGER as an int
+        at = _fresh(f"{index}At", _taken(routine))
         if numeric.group("reverse"):
-            opening = (f"{label}for (int {index} = Plsql.loopBound({high}), {index}End = Plsql.loopBound({low}); "
-                       f"{index} >= {index}End; {index}--)")
+            opening = (f"{label}for (long {at} = Plsql.loopBound({high}), {index}End = Plsql.loopBound({low}); "
+                       f"{at} >= {index}End; {at}--)")
         else:
             # `loopBound`, not `toInt`: a NULL bound is VALUE_ERROR in Oracle, and unboxing it was an NPE (#99)
-            opening = (f"{label}for (int {index} = Plsql.loopBound({low}), {index}End = Plsql.loopBound({high}); "
-                       f"{index} <= {index}End; {index}++)")
+            opening = (f"{label}for (long {at} = Plsql.loopBound({low}), {index}End = Plsql.loopBound({high}); "
+                       f"{at} <= {index}End; {at}++)")
     elif statement.loop_kind in ("cursor-for", "forall", "for"):
         # A named cursor's query is still not modelled as a statement, so there is nothing to iterate. Emitting
         # a call to a repository method that does not exist would give code that cannot compile; refusing keeps
@@ -1855,12 +1916,15 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
     if index_name:
         # `outer_loop.i` is this loop's index past an inner loop's i (4-22, #138)
         qualified = {f"{statement.label}.{index_name}": index} if statement.label else {}
-        _BLOCK_LOCALS.set({**outer_locals, index_name: index, **qualified})
+        # the index is a PLS_INTEGER: `i + 1` at 2147483647 is ORA-01426 (Oracle 26ai, #160)
+        _BLOCK_LOCALS.set({**outer_locals, index_name: index, f"{index_name.lower()}#pls_integer": "1", **qualified})
     outer_qualified = _QUALIFIED_NAMES.get()
     if index_name and statement.label:
         _QUALIFIED_NAMES.set({**outer_qualified, f"{statement.label}.{index_name}".lower(): (index, None)})
     try:
         with file.block(opening) as f:
+            if index_name:
+                f.line(f"int {index} = (int) {at};")
             _statements(f, statement.body, routine, result)
     finally:
         _LOOP_LABELS.set(outer)
@@ -2055,6 +2119,14 @@ def _forall(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Servi
         _BLOCK_LOCALS.set(outer_locals)
 
 
+def _row_shape(query: M.SqlOperation) -> list[tuple[str | None, str]]:
+    """The components a loop's row record gets from `query` (`dto.loop_row_record`): names and Java types."""
+    from .dto import loop_component_type
+
+    return [(name, loop_component_type(oracle).name)
+            for name, oracle in zip(query.into_columns or [], query.into_oracle_types or [])]
+
+
 def _reads_bulk_rowcount(routine: M.Routine) -> bool:
     return bool(re.search(r"SQL\s*%\s*BULK_ROWCOUNT", repr(routine), re.IGNORECASE))
 
@@ -2109,7 +2181,14 @@ def _cursor_for(file: JavaFile, statement: M.Loop, routine: M.Routine, result: S
         file.line(f"return {rows};")
         return
     if statement.rows_into:
-        # `OPEN p_rc FOR q` of an OUT cursor (#125): the argument, and so the result record, gets the rows
+        # `OPEN p_rc FOR q` of an OUT cursor (#125): the argument, and so the result record, gets the rows. An
+        # argument opened more than once (#160) is assigned at each OPEN: Oracle hands the caller the last one that
+        # ran, and so does the result record. All of them share the first OPEN's row record
+        from .repository import rows_into_first
+        first = rows_into_first(routine, statement)
+        if first is not statement and _row_shape(first.query) != _row_shape(query):
+            raise Untranslatable([f"OUT cursor {statement.rows_into} opened on queries of different columns (#160)"],
+                                 query.original_sql)
         file.line(f"{java_name(statement.rows_into)} = {rows};")
         return
     if statement.chunk:
@@ -2182,6 +2261,23 @@ def _scan_precedes_writes(routine: M.Routine, loop: M.Loop, tables: set[str]) ->
 def _locked_and_decided(query: M.SqlOperation) -> bool:
     """走査が行ロックを持っていて、それを楽観制御へ移すと記録されているか（capability が付けた印）。"""
     return bool(query.locking_mode) and any(d.code == "OPTIMISTIC" for d in query.diagnostics)
+
+
+# #157: 楽観制御が FOR UPDATE と同じ保証になるのは SERIALIZABLE のときだけである。Consensus Commit が commit で
+# 弾くのは**書いた**行の衝突で、ロックして読んだだけの行を他が変えたことまで見るのは SERIALIZABLE だけ
+# （SNAPSHOT / READ_COMMITTED では write skew が通る。spike #158 で、生成したコードを 3.19.1 の実クラスタに流して
+# 確かめた）。分離レベルは呼び出し側がトランザクションを始めるときに決めるので、生成コードは確かめられない。
+# ロックを落とした文の所に前提を書き、決めることは CALL-7 に置く
+OPTIMISTIC_PREMISE = (
+    "FOR UPDATE を落とした（rowLocks.optimistic）。同じ行を書く衝突は commit で弾かれる。\n"
+    "読んだだけで書かない行まで守られる（FOR UPDATE と同じ保証になる）のは、呼び出し側がこのトランザクションを\n"
+    "SERIALIZABLE で動かすときだけ。SNAPSHOT / READ_COMMITTED では write skew が通る（CALL-7 / #157）")
+
+
+def _lock_dropped(statement: M.Statement) -> bool:
+    """この文（または cursor FOR ループの読み）が、楽観制御へ移すと決めた行ロックを持っていたか。"""
+    query = statement if statement.kind == "SqlOperation" else getattr(statement, "query", None)
+    return isinstance(query, M.SqlOperation) and _locked_and_decided(query)
 
 
 _CODE_CLASSES: dict[int, dict[int, str]] = {}
@@ -3120,8 +3216,12 @@ def _appended(target: str, values: str) -> str:
 
 
 def _collected(holder, values: str) -> str:
-    """A List of values as the target collection's own kind: an INDEX BY table is a Map keyed 1 .. n (#93)."""
-    return f"Plsql.indexed({values})" if _collection_kind(holder) == "map" else values
+    """A List of values as the target collection's own kind: an INDEX BY table is a Map keyed 1 .. n (#93), a VARRAY
+    a List that keeps its bound -- more rows than the bound is ORA-22165, and a later EXTEND past it ORA-06532 (#160)."""
+    if _collection_kind(holder) == "map":
+        return f"Plsql.indexed({values})"
+    bound = re.search(r"\bLIMIT\s+(\d+)$", holder.type.resolved or "") if holder.type is not None else None
+    return f"Plsql.varrayOf({bound.group(1)}, {values})" if bound else values
 
 
 def _planned_into(file: JavaFile, statement: M.SqlOperation, routine: M.Routine, method: str, arguments: str,

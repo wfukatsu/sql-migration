@@ -28,6 +28,8 @@ optimistic-control trade the project already made (`rowLocks.optimistic`).
 
 from __future__ import annotations
 
+import re
+
 import sqlglot
 from sqlglot import exp
 
@@ -35,6 +37,7 @@ from .dynamic import TRUNCATE_AS_DELETE
 from .identity import RETURNING_INTO
 from .ir import model as M
 from .limits import Constraints
+from .source import strip_ansi
 from .symbols import ForeignKey, OracleSchema, SymbolTable
 from .triggers import _declaration, _declare
 
@@ -89,7 +92,8 @@ def _guards(statement: M.Statement, routine: M.Routine, decided: Constraints, sc
     returning = RETURNING_INTO.search(original)
     try:
         tree = sqlglot.parse_one(original[:returning.start()] if returning else original, dialect="oracle")
-    except Exception:
+    except Exception as error:
+        _unread(statement, kind, error, decided, schema)
         return []
     table = _table(tree)
     if table is None:
@@ -153,7 +157,10 @@ def _guards(statement: M.Statement, routine: M.Routine, decided: Constraints, sc
     for name, condition in checks:
         try:
             check = sqlglot.parse_one(condition, dialect="oracle")
-        except Exception:
+        except Exception as error:
+            # skipping it silently left the table unguarded with nobody told (#161, maintainability L3)
+            statement.add("WARN", "CONSTRAINT_NOT_GUARDED",
+                          f"CHECK {name}（{condition}）を読めない（{_reason(error)}）。書く前に評価していない")
             continue
         columns = {c.name.lower() for c in check.find_all(exp.Column)}
         if kind == "UPDATE" and not columns <= set(written):
@@ -222,7 +229,8 @@ def _children(statement: M.SqlOperation, decided: Constraints, schema: OracleSch
     SET NULL -- what Oracle does to the children, not a refusal -- are reported, not guarded (#148 M1)."""
     try:
         tree = sqlglot.parse_one(statement.original_sql or "", dialect="oracle")
-    except Exception:
+    except Exception as error:
+        _unread(statement, "DELETE", error, decided, schema)
         return []
     target = tree.this if isinstance(tree, exp.Delete) else None
     if not isinstance(target, exp.Table):
@@ -331,7 +339,8 @@ def _dynamic(statement: M.DynamicSql, decided: Constraints, schema: OracleSchema
             continue
         try:
             tree = sqlglot.parse_one(variant.original_sql or "", dialect="oracle")
-        except Exception:
+        except Exception as error:
+            _unread(variant, kind, error, decided, schema)
             continue
         table = _table(tree)
         if table is None:
@@ -367,6 +376,51 @@ def _truncated_parent(variant: M.SqlOperation, schema: OracleSchema) -> None:
         variant.add("WARN", "CONSTRAINT_NOT_GUARDED",
                     f"{table} を指す FOREIGN KEY（{', '.join(children)}）がある。Oracle はこの表の TRUNCATE を"
                     f" ORA-02266 で断るが、移行先の DELETE は断らない（#154）")
+
+
+# the table a write names, read from the text when sqlglot cannot read the statement
+_TARGET = re.compile(r'^\s*(?:INSERT\s+INTO|UPDATE|DELETE(?:\s+FROM)?)\s+(?:"?\w+"?\s*\.\s*)?"?(\w+)', re.IGNORECASE)
+
+
+def _reason(error: Exception) -> str:
+    text = strip_ansi(str(error)).strip()
+    return (text.splitlines()[0] if text else type(error).__name__)[:160]
+
+
+def _unread(statement: M.SqlOperation, kind: str, error: Exception, decided: Constraints,
+            schema: OracleSchema) -> None:
+    """A write the guards could not parse. It used to be skipped without a word, so a table the project decided to
+    guard lost its guard and nobody knew (#161, maintainability L3). Said as a guard not written (decided table) or
+    a decision not made (undecided), naming the constraints the table has."""
+    match = _TARGET.match(statement.original_sql or "")
+    table = match.group(1).lower() if match else None
+    reason = _reason(error)
+    if table is None:
+        if decided.enforce:
+            statement.add("WARN", "CONSTRAINT_NOT_GUARDED",
+                          f"この文を読めず（{reason}）、書く表が分からない。制約の guard を置いていない")
+        return
+    if kind == "DELETE":
+        children = [(child, key) for child, keys in schema.foreign_keys.items() for key in keys if key.parent == table]
+        names = [f"{child}.{key.name}" for child, key in children]
+        undecided = not (decided.decided(table) or any(decided.decided(child) for child, _ in children))
+    else:
+        key = set(schema.primary_key(table))
+        names = [n for n, _ in schema.checks.get(table, [])] + [k.name for k in schema.foreign_keys.get(table, [])] \
+            + [n for n, c in schema.uniques.get(table, []) if not set(c) <= key]
+        undecided = not decided.decided(table)
+        if not undecided and schema.not_null.get(table, set()) - key:
+            names.append("NOT NULL")
+    if not names:
+        return
+    if undecided:
+        statement.add("INFO", "CONSTRAINT_UNDECIDED",
+                      f"{table} {'を指す FOREIGN KEY' if kind == 'DELETE' else 'には CHECK / FOREIGN KEY / UNIQUE'}"
+                      f"（{', '.join(names)}）があるが移行先には無い。書く側で guard するかは決定である"
+                      f"（limits.yaml constraints.enforce）")
+    else:
+        statement.add("WARN", "CONSTRAINT_NOT_GUARDED",
+                      f"{table} の制約（{', '.join(names)}）を guard していない: この文を読めない（{reason}）")
 
 
 def _check_columns(condition: str) -> set[str] | None:

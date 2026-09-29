@@ -35,7 +35,7 @@ import logging
 import sys
 from pathlib import Path
 
-# スキル単体で動かすため、同梱モジュールを import パスに載せる
+# 隣の generic.py・report.py と、変換器 scalardb_migrate を読む場所（_converter.py）を import パスに載せる
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 EXIT_ABNORMAL = 3   # 1 は「ERROR の文がある」、2 は「入力の誤り」。どちらでもない失敗をこれで返す
@@ -43,17 +43,24 @@ EXIT_ABNORMAL = 3   # 1 は「ERROR の文がある」、2 は「入力の誤り
 try:
     import sqlglot  # noqa: E402
 
+    import _converter  # noqa: E402,F401  scalardb_migrate を読めるようにする
     import generic  # noqa: E402
     import report  # noqa: E402
-    from _scalardb.appside import parse_expected_rows  # noqa: E402
-    from _scalardb.converter import convert_script as scalardb_convert  # noqa: E402
-    from _scalardb.schema import SchemaRegistry  # noqa: E402
-    from _scalardb.types import session_zone  # noqa: E402
+    from scalardb_migrate.appside import parse_expected_rows  # noqa: E402
+    from scalardb_migrate.converter import convert_script as scalardb_convert  # noqa: E402
+    from scalardb_migrate.schema import SchemaRegistry  # noqa: E402
+    from scalardb_migrate.types import session_zone  # noqa: E402
 except ImportError as _e:
     # トレースバックで終わると Python は 1 を返し、「ERROR の文あり」と区別がつかない（#146 M7）
-    print(f"依存を読み込めません（{_e}）。sqlglot の入った Python で動かしてください: "
-          "リポジトリなら .venv/bin/python、プラグインなら <root>/bin/python、"
-          "スキルだけを写したなら pip install sqlglot==30.18.0", file=sys.stderr)
+    if getattr(_e, "name", "") and _e.name.split(".")[0] == "scalardb_migrate":
+        # スキルのディレクトリだけを開発用のリポジトリから写した。コピー（_scalardb/）は公開した GitHub の履歴にだけある
+        print(f"変換器 scalardb_migrate が見つかりません（{_e}）。リポジトリ全体（プラグイン）から動かすか、"
+              "スキルだけを写すなら公開の GitHub のリポジトリの skills/sql-transpile を写してください"
+              "（scripts/_scalardb/ に変換器のコピーがあります）", file=sys.stderr)
+    else:
+        print(f"依存を読み込めません（{_e}）。sqlglot の入った Python で動かしてください: "
+              "リポジトリなら .venv/bin/python、プラグインなら <root>/bin/python、"
+              "スキルだけを写したなら pip install sqlglot==30.18.0", file=sys.stderr)
     sys.exit(EXIT_ABNORMAL)
 
 SCALARDB_ONLY = ("keys", "storage", "plan_dir", "expected_rows", "h2_indexes", "session_time_zone")

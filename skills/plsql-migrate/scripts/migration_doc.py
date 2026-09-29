@@ -268,7 +268,8 @@ MEANING, SHAPE, INFO, UNKNOWN = "意味が変わる", "形が変わる（結果�
 CHANGES = {
     "ROW_LOCK": (MEANING, "行ロック（待たせる・即座に断る）が無くなる"),
     "LOCK": (MEANING, "FOR UPDATE などのロック句を外した"),
-    "OPTIMISTIC": (MEANING, "楽観制御へ移した。同時の書き込みは commit で弾かれ、呼び出し側の再試行が要る"),
+    "OPTIMISTIC": (MEANING, "楽観制御へ移した。同時の書き込みは commit で弾かれ、呼び出し側の再試行が要る。"
+                   "読んだだけの行まで FOR UPDATE と同じに守られるのは SERIALIZABLE で動かすときだけ（CALL-7）"),
     "TRANSACTION_IN_ROUTINE": (MEANING, "routine の中の COMMIT / ROLLBACK / SAVEPOINT が消え、境界が呼び出し側へ移った"),
     "PAGED": (MEANING, "対象をページごとに読む。途中で増えた行も処理されうる"),
     "CUR_SCAN": (MEANING, "カーソルを、先に行を読んでから回す形にした。行数の上限が付く"),
@@ -297,12 +298,15 @@ CHANGES = {
     "PIPELINED": (MEANING, "PIPE ROW の行を、出るそばからではなく全部そろってから List で返す"),
     "BULK_COLLECT": (MEANING, "BULK COLLECT は全部の行をメモリに読む。行数とメモリの上限を決める"),
     "PAGING_REFUSED": (MEANING, "キー順のページに割れない問合せなので 1 回で読む。走査行数の上限を超えると止まる"),
-    "IMPLICIT_DATE_TEXT": (MEANING, "書式なしで日付を文字にしている。形は Oracle の既定（DD-MON-RR）で、移行元の NLS 設定とは違いうる"),
+    "IMPLICIT_DATE_TEXT": (MEANING, "書式なしで日付を文字にしている。形は limits.yaml の nls で決めた設定、決めていなければ Oracle の既定（DD-MON-RR）で、移行元の NLS 設定とは違いうる"),
+    "NLS_DECIDED": (MEANING, "日付・数値と文字の変換を、limits.yaml の nls で決めた移行元のセッションの設定で行う。決めた設定が実際と違えば結果も違う"),
+    "FORMAT_UNSUPPORTED": (MEANING, "ランタイムが実装しない書式の形。実行時にその要素を名指しして断る"),
     "BIND_SHADOWED": (MEANING, "PL/SQL の変数と同じ名前の列がある。Oracle と同じく列として読み、変数は使わない。元の意図を確かめる"),
     "SCAN_AFTER_WRITE": (MEANING, "同じトランザクションで書いた表を走査する。ScalarDB が拒むので、この文は動かない"),
     "TRIGGER_NOT_APPLIED": (MEANING, "trigger が掛かる書き込みだが、生成コードでは掛けていない"),
     "TRIGGER_REDESIGN": (MEANING, "書き込む行を書き換える trigger を書く値に畳み込めない。trigger の再設計が要る"),
     "OVERLOAD_UNRESOLVED": (MEANING, "引数の数と名前からオーバーロードの版を決められない呼び出し。どの版かを確かめる"),
+    "CUR_OUT_REFUSED": (MEANING, "OUT 引数の cursor 変数を、行の List として呼び出し側へ渡せない（routine の中で FETCH / CLOSE する、列の違う問合せで OPEN する）。生成コードはこの OPEN を断っているので、渡し方を決めて書き直す（#160）"),
     "CALL_NOT_HOISTED": (MEANING, "OUT 引数のある関数を、条件で評価されるかが変わる位置（AND / OR の右辺、CASE の分岐、ELSIF の条件）で呼んでいる。生成コードは断っているので、if に分けて書き直す"),
     "GOTO": (MEANING, "ブロックとループに組み直せなかった GOTO。生成しないので、制御の流れを組み直す"),
     "GOTO_NOT_RESTRUCTURED": (MEANING, "GOTO をブロックとループに組み直せない理由（範囲が交差する、Oracle が拒む飛び先）"),
@@ -598,7 +602,10 @@ def limits_facts(p: Project) -> str:
     out = ["**事実**（生成物・決定・比較から機械的に出した。手で書き換えない）", "",
            "- 判定: " + " / ".join(f"{k} {v}" for k, v in sorted(counts.items())),
            f"- 変換できなかった文 {summary.get('untranslatedStatements', 0)} / ScalarDB が受け付けない SQL "
-           f"{summary.get('unsupportedSql', 0)} / 実行計画に回した文 {summary.get('plannedSql', 0)}"]
+           f"{summary.get('unsupportedSql', 0)} / 実行計画に回した文 {summary.get('plannedSql', 0)}"
+           if summary.get("sqlChecked", True) else
+           f"- 変換できなかった文 {summary.get('untranslatedStatements', 0)} / SQL は ScalarDB に照らしていない"
+           "（ScalarDB のスキーマを渡さずに生成した。生成物は Oracle の SQL をそのまま実行する）"]
     if p.unconverted:
         out += ["", "**変換していないファイル**（解析できなかった。生成物に無いか、解析器が読み飛ばした部分が欠けている）", ""]
         out += _table(["ファイル", "理由", "生成物", "最初の誤り"], [
