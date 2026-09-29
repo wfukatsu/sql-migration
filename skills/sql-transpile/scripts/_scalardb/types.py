@@ -25,6 +25,10 @@ class TypeMapping:
     # the exact type the app-side residual engine gives the column, when the ScalarDB type cannot say it: a scaled
     # decimal is a DOUBLE in ScalarDB, and a DOUBLE turns into text as 2450.0 where NUMBER(7,2) gives 2450
     residual_type: str | None = None
+    # the source type, when it is a decimal that ScalarDB stores as DOUBLE (NUMBER(7,2), unconstrained NUMBER, MONEY,
+    # Oracle FLOAT): SUM and AVG of the column are then binary floating point on the target, where the source adds
+    # decimals (#161). None for every other column, a binary float (BINARY_DOUBLE, DOUBLE PRECISION) included
+    decimal_source: str | None = None
 
 
 def _t(*names: str) -> set:
@@ -129,7 +133,8 @@ def map_type(dt: exp.DataType, source_dialect: str, written: str | None = None) 
             # Oracle FLOAT is a NUMBER with binary precision (126 bits by default, about 38 digits), not an IEEE
             # single. As a 32-bit FLOAT it kept 7 digits
             return TypeMapping("DOUBLE", "WARN", f"{raw}: Oracle FLOAT (and REAL, which is FLOAT(63)) is a decimal "
-                                                 f"NUMBER with up to 38 digits; mapped to DOUBLE (about 15 digits)")
+                                                 f"NUMBER with up to 38 digits; mapped to DOUBLE (about 15 digits)",
+                               decimal_source=raw)
         # PostgreSQL: SQLGlot reads REAL as FLOAT and FLOAT(p) as DOUBLE. Precision 1..24 is single precision
         # (REAL), 25..53 double; ScalarDB FLOAT and DOUBLE are the same two IEEE types
         if source_dialect == "postgres" and params and (params[0] or 0) > 24:
@@ -143,7 +148,7 @@ def map_type(dt: exp.DataType, source_dialect: str, written: str | None = None) 
         # a currency amount: a 64-bit integer count of the smallest unit (cents) with a fixed number of decimals
         return TypeMapping("DOUBLE", "WARN", f"{raw}: a fixed-point currency amount mapped to DOUBLE, which is not "
                                              f"exact for decimal fractions. Store the amount as a scaled integer "
-                                             f"(cents) in BIGINT instead")
+                                             f"(cents) in BIGINT instead", decimal_source=raw)
     if t in _DECIMAL:
         precision = params[0] if params else None
         scale = params[1] if len(params) > 1 else 0
@@ -154,13 +159,14 @@ def map_type(dt: exp.DataType, source_dialect: str, written: str | None = None) 
                 # and every fraction was cut off
                 return TypeMapping("DOUBLE", "WARN",
                                    f"{raw}: unconstrained {'NUMBER' if source_dialect == 'oracle' else 'NUMERIC'} "
-                                   f"mapped to DOUBLE; exact decimal precision is lost")
+                                   f"mapped to DOUBLE; exact decimal precision is lost", decimal_source=raw)
             precision, scale = 10, 0  # MySQL's default DECIMAL is (10,0)
         if scale and scale > 0:
             return TypeMapping("DOUBLE", "WARN",
                                f"{raw}: ScalarDB has no DECIMAL type; mapped to DOUBLE (precision loss). "
                                f"For money, store a scaled integer (x10^{scale}) in BIGINT instead",
-                               residual_type=f"NUMERIC({precision},{scale})" if scale <= precision <= 38 else None)
+                               residual_type=f"NUMERIC({precision},{scale})" if scale <= precision <= 38 else None,
+                               decimal_source=raw)
         if precision <= 9:
             return TypeMapping("INT", "INFO", f"{raw} -> INT (exact, fits 32-bit)")
         if precision <= 18:
