@@ -801,9 +801,13 @@ class Decomposer:
         # loads TIMESTAMPTZ values at its offset (same instant), and then answers as the source does (#160). Without
         # the field the session is UTC, as before. Oracle's plans leave it out: Oracle's DATE and TIMESTAMP carry no
         # zone, EXTRACT from a TIMESTAMP WITH TIME ZONE answers in UTC, and the PL/SQL runtime keeps every instant in
-        # UTC (plan §9, 2026-09-17). MySQL reads a TIMESTAMP in its session time_zone as PostgreSQL does, but was not
-        # measured, so it is left out too.
-        if self.dialect == "postgres" and self.session_zone_id:
+        # UTC (plan §9, 2026-09-17). MySQL's TIMESTAMP (TIMESTAMPTZ in ScalarDB) is read in the session's time_zone
+        # too: stored as 2024-01-03 20:30:00 UTC, MySQL 8.4 answered DATE 2024-01-04, HOUR 5, DATE_FORMAT
+        # '2024-01-04 05:30' and `tz > '2024-01-04 00:00:00'` true under time_zone '+09:00' / 'Asia/Tokyo', and 12 / 13
+        # (daylight saving) under America/Los_Angeles; the H2 residual in the same zone answered the same, and 20 in
+        # UTC. A DATETIME carries no zone and read the same everywhere (#169). MySQL writes offsets with ISO signs
+        # ('-05:30' is west of Greenwich), as the zone given here
+        if self.dialect in ("postgres", "mysql") and self.session_zone_id:
             java["time_zone"] = self.session_zone_id
         return {"java": java, "python": {"engine": "sqlite3", "sql": python_sql}}
 
