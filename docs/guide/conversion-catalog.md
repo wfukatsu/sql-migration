@@ -99,8 +99,9 @@ SQL 文の各項目を、変換器（`scalardb_migrate/`）がどう扱うかの
 |---|---|---|---|
 | 1 列の主キー `emp_id NUMBER(9) PRIMARY KEY` | その列をパーティションキー | OK | |
 | 複合主キー `PRIMARY KEY (customer_id, order_no)` | 先頭をパーティションキー、残りをクラスタリングキー | OK（INFO `KEYS`） | `--keys orders=customer_id/order_no` で分け方を変えられる |
-| `--keys` が無い列を指す | 変換しない | ERROR `KEYS` | |
-| 主キーの無い表 | 変換しない | ERROR `PK` | 主キーを足すか `--keys` を渡す |
+| `--keys` が無い列を指す、パーティションキーが空（`--keys t=`）、同じ列を 2 回 | 変換しない | ERROR `KEYS` | |
+| `--keys` の列が元の主キーと違う（`PRIMARY KEY (a, b)` に `--keys t=a`） | `--keys` のとおり | WARN `KEYS` | 行を区別する列が変わる。元では別の行が 1 行になる（2 回目の INSERT が失敗し、UPSERT は上書きする） |
+| 主キーの無い表 | 変換しない | ERROR `PK` | 主キーを足すか `--keys` を渡す（渡せば WARN `KEYS` で変換する） |
 | `NOT NULL` | 落とす | OK（INFO `NOT_NULL`） | アプリで守る |
 | `DEFAULT 0` | 落とす | WARN `DEFAULT` | 値はアプリが入れる |
 | `UNIQUE`（列・表の制約） | 落とす | WARN `UNIQUE` | 副次索引は一意性を守らない |
@@ -141,8 +142,13 @@ SQL 文の各項目を、変換器（`scalardb_migrate/`）がどう扱うかの
 |---|---|---|---|
 | 射影が列と `*` だけ | そのまま | OK | |
 | 射影に式・関数・`CASE`・キャスト（`SELECT salary * 2 ...`） | — | PLANNED（`PROJECTION`） | ScalarDB SQL の射影は列と集約だけ |
-| 別名 `SELECT name AS n ... ORDER BY n` | そのまま | OK | |
+| 別名 `SELECT name AS n ... ORDER BY n` | `ORDER BY name`（別名の元の列） | OK（INFO `ORDER`） | ScalarDB は列の別名を解決しない。列と同じ名前の別名（`name AS salary ... ORDER BY salary`）は列として読む。集約の別名（`COUNT(*) AS cnt ... ORDER BY cnt`）はそのまま（列と同じ名前なら `ORDER BY COUNT(*)`） |
 | `WHERE salary > 10`（列とリテラル・バインド変数） | そのまま | OK | |
+| 列の型と違うリテラル（数値の列に `'1'`、整数の列に `2.0`） | 列の型のリテラル（`1`、`2`） | OK（INFO `TYPE_LIT`） | ScalarDB は型の違うリテラルを断る（DB-SQL-10053 / 10054 / 10055） |
+| 整数の列と端数のある範囲（`emp_id < 2.5`、`> 2.5`、`BETWEEN 1.5 AND 3.5`） | `<= 2`、`>= 3`、`BETWEEN 2 AND 3` | OK（INFO `TYPE_LIT`） | `<> 2.5` は `IS NOT NULL`（WARN `TYPE_LIT`） |
+| 整数の列と端数のある値の `=`、数字でない文字列と数値の列、TEXT の列と数値（`name = 10`）、型の範囲外 | — | PLANNED（`TYPE_MISMATCH`） | 移行元は暗黙の型変換で比べる。計画の取得には押し下げない |
+| `= NULL` / `<> NULL` / `NOT IN (1, NULL)` | — | PLANNED（`NULL_CMP`） | 移行元でも行を返さない。ScalarDB は述語の NULL を断る（DB-SQL-10045）。UPDATE・DELETE では ERROR |
+| `IN (1, NULL)` | `= 1`（NULL を除く） | WARN `NULL_CMP` | NULL は移行元でも一致しない |
 | `WHERE 10 < salary` | `salary > 10` | OK | 左右を入れ替える |
 | `WHERE dept_id IN (10, 20)` | `dept_id = 10 OR dept_id = 20` | OK（INFO `IN`） | |
 | `WHERE dept_id NOT IN (10, 20)` | `dept_id <> 10 AND dept_id <> 20` | OK | |
@@ -163,6 +169,7 @@ SQL 文の各項目を、変換器（`scalardb_migrate/`）がどう扱うかの
 | `ORDER BY name` / `ORDER BY COUNT(*)` | そのまま | OK | |
 | `ORDER BY UPPER(name)`（式） | — | PLANNED（`ORDER`） | |
 | `ORDER BY name NULLS FIRST` | `NULLS` を落とす | WARN `NULLS` | NULL の並ぶ位置を確かめる |
+| MySQL の `ORDER BY salary`（NULL を持ちうる列） | そのまま | WARN `NULLS` | MySQL は昇順で NULL を最初に、ScalarDB は最後に並べる。主キーの列と、渡した DDL で `NOT NULL` の列には出さない |
 | `FOR UPDATE` / MySQL の `LOCK IN SHARE MODE` | 落とす | WARN `LOCK` | 行ロックに頼る処理は、commit 時の衝突と再試行に変わる |
 | オプティマイザヒント `/*+ ... */`、MySQL の `USE INDEX (...)` | 落とす | OK（INFO `HINT`） | |
 | MySQL の `SQL_NO_CACHE` / `STRAIGHT_JOIN` | 落とす | OK（INFO `MODIFIER`） | |
@@ -225,7 +232,7 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 | `SUM(salary * 2)`（引数が式） | — | PLANNED（`AGG`） | |
 | そのほかの集約（`LISTAGG`、`STDDEV` など） | — | PLANNED（`AGG`） | |
 | PostgreSQL の `COUNT(*) FILTER (WHERE ...)` | — | PLANNED（`PROJECTION`） | |
-| `SELECT DISTINCT` / PostgreSQL の `DISTINCT ON` | — | PLANNED（`DISTINCT`） | |
+| `SELECT DISTINCT` / PostgreSQL の `DISTINCT ON` | — | PLANNED（`DISTINCT`） | `DISTINCT ON (a) ... ORDER BY a, b DESC` のように並びの式が選択リストに無いときは、H2 が断るので、計画の残りの SQL で並びの式も選び、外側の問い合わせで元の列を返す。`*` の選択リストでは ERROR `RESIDUAL_H2` |
 | `RANK() OVER (...)` などのウィンドウ関数 | — | PLANNED（`WINDOW`） | H2 が元の SQL を実行する |
 | `MAX(x) KEEP (DENSE_RANK FIRST ORDER BY y)` | — | ERROR `KEEP`（`RESIDUAL_H2`） | `ROW_NUMBER() OVER (...) = 1` の行を選ぶ形に書き直す |
 | `GROUP BY ROLLUP` / `CUBE` / `GROUPING SETS`、MySQL の `WITH ROLLUP` | — | ERROR `GROUP`（`RESIDUAL_H2`） | 集約のレベルごとの SELECT を `UNION ALL` |
@@ -248,8 +255,9 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 |---|---|---|
 | 文字列 | `SUBSTR`、`UPPER`、`LENGTH`、連結 `\|\|` | Oracle の空文字列 `''` は NULL（変換できた文にも WARN `SEMANTICS`）。MySQL の文字列比較は大文字小文字を区別しない（INFO `SEMANTICS`） |
 | 数値 | `ROUND(salary)`、`salary / 2` | 丸めは 0 から遠いほうへ（-2.5 は -3）。0 で割ったときは方言で違う（Oracle は失敗、MySQL は NULL）。アプリで書くときの注意として `APP_SEMANTICS` に出る |
-| 日付 | `ADD_MONTHS(hired, 1)`、`TRUNC(hired, 'MM')`、日付どうしの引き算 | `ADD_MONTHS` は月末をそろえる（`APP_SEMANTICS`）。実行計画では H2 向けに `TRUNC(d, 'MM')` を `DATE_TRUNC('MONTH', d)`、日付どうしの引き算を `DAYS_BETWEEN` に書き換える |
-| 書式・変換 | `TO_CHAR(hired, 'YYYY-MM')`、MySQL の `DATE_FORMAT`、`CAST(x AS ...)`、`name::text` | 日付の書式はセッションのタイムゾーンと言語に従う（`APP_SEMANTICS`）。実行計画では MySQL の `DATE_FORMAT` を H2 の `FORMATDATETIME` に書き換える。値の位置の `CAST('5' AS NUMBER)` は ERROR `UNSUPPORTED` |
+| 日付 | `ADD_MONTHS(hired, 1)`、`TRUNC(hired, 'MM')`、日付どうしの引き算 | `ADD_MONTHS` は月末をそろえる（`APP_SEMANTICS`）。実行計画では H2 向けに `TRUNC(d, 'MM')` を `DATE_TRUNC('MONTH', d)` に書き換える。週（Oracle の `IW` / `WW` / `W`、PostgreSQL の `date_trunc('week', d)`）は H2 の `DATE_TRUNC('WEEK')` が日曜始まりなので、始まりの曜日を合わせた `DATEADD` の式にする。日付どうしの引き算は Oracle なら `DAYS_BETWEEN`（小数の日数）、PostgreSQL の DATE どうしなら `DATEDIFF('DAY', b, a)`、MySQL（YYYYMMDD の数の引き算）は ERROR `RESIDUAL_H2` |
+| 書式・変換 | `TO_CHAR(hired, 'YYYY-MM')`、MySQL の `DATE_FORMAT`、`CAST(x AS ...)`、`name::text` | 日付の書式はセッションのタイムゾーンと言語に従う（`APP_SEMANTICS`）。実行計画では MySQL の `DATE_FORMAT` を H2 の `FORMATDATETIME` に書き換える（`'%Y年%m月%d日'` のような文字も書ける。H2 に無い `%U` などは ERROR `RESIDUAL_H2`）。値の位置の `CAST('5' AS NUMBER)` は ERROR `UNSUPPORTED` |
+| 割り算 | `COUNT(*) / 4`、`7 / 2`、`COUNT(*) * 100 / 3` | Oracle・MySQL の実行計画では、H2 が整数どうしを整数で割らないよう、列から来ない整数（整数リテラル、`COUNT`、`LENGTH` など）の左辺を `CAST(... AS NUMBER(19))` で包む。PostgreSQL は整数の割り算のまま |
 | NULL の処理 | `NVL`、`COALESCE`、MySQL の `IFNULL` | 集約は NULL を除き、全部 NULL なら NULL（`APP_SEMANTICS`） |
 | 条件 | `CASE WHEN ...`、`DECODE` | |
 | 現在時刻 | `SYSDATE`、`SYSTIMESTAMP`、`CURRENT_TIMESTAMP`、`CURRENT_DATE`、`NOW()` | WHERE では PLANNED（`NOW`）、値では ERROR `NOW`。時刻はアプリで計算してバインドする。移行元ではデータベースサーバーの時計を使う |
@@ -264,10 +272,14 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 | `DATE '2024-01-01'`、PostgreSQL の `'2024-01-01'::date` | `'2024-01-01'` | OK（INFO `DATE_LIT`） | |
 | `TO_DATE('2024/01/15', 'YYYY/MM/DD')` | `'2024-01-15'` | OK（INFO `DATE_LIT`） | 書式はここで当てる |
 | 書式の無い `TO_DATE('2024-01-15')` | `'2024-01-15'` | WARN `DATE_FMT` | 移行元はセッションの日付書式で読む。ISO の形のときだけ通す |
-| `TO_DATE('24-01-15', 'RR-MM-DD')`（直せない書式） | — | ERROR `DATE_FMT`（読み取りなら PLANNED） | アプリで変換してバインドする |
+| `TO_DATE('81-11-17', 'RR-MM-DD')`（2 桁の年） | `'1981-11-17'` | OK（INFO `DATE_LIT`） | Oracle の規則で読む。`RR` は今年に近い世紀（2000〜2049 年なら 50〜99 は 19xx）、`RRRR` は 4 桁ならそのまま、`YY` は今世紀。PostgreSQL・MySQL の 2 桁の年は 1970〜2069。実行計画の H2 は `RR` を今世紀と読むので、定数は残りの SQL でも ISO に直し、列や bind の `RR` は ERROR `RESIDUAL_H2` |
+| `TO_DATE('2460000', 'J')`（直せない書式） | — | ERROR `DATE_FMT`（読み取りなら PLANNED） | アプリで変換してバインドする |
 | `TO_DATE(:s, 'YYYY-MM-DD')`（値がバインド変数） | — | ERROR `EXPR`（読み取りなら PLANNED） | |
 | DATE 列に 0 時の日時 | 日付だけ | OK（INFO `DATE_LIT`） | |
-| DATE 列に 0 時以外の日時 | 日付だけ | WARN `DATE_LIT` | 時刻は落ちる |
+| DATE 列に 0 時以外の日時（INSERT・SET） | 日付だけ | WARN `DATE_LIT` | 時刻は落ちる |
+| DATE 列と 0 時以外の日時の比較 | 同じ日付が当たる境界（`< t` → `<= 日付`、`>= t` → `> 日付`、BETWEEN の下限は翌日、`<> t` → `IS NOT NULL`） | WARN `DATE_LIT` | `= t` は常に偽なので PLANNED（`DATE_LIT`）。実行計画の取得も同じ規則で押し下げる |
+| 整数の列に小数（INSERT・SET） | 四捨五入した整数 | WARN `TYPE_LIT` | 移行元が格納する値と同じ |
+| TEXT の列に数値（INSERT・SET） | 書いたとおりの文字列 | WARN `TYPE_LIT` | 移行元は自分の数の書式で文字にする |
 | TIMESTAMP 列に日付だけ（`DATE '2024-01-01'`） | `'2024-01-01 00:00:00'` | OK（INFO `DATE_LIT`） | |
 | TIMESTAMPTZ 列に時差つき（`'... 10:00:00+09:00'`） | UTC の `'2024-01-01 01:00:00 Z'` | OK（INFO `DATE_LIT`） | |
 | TIMESTAMPTZ 列に時差なし | UTC と見なして末尾 `Z` | WARN `TZ_ASSUMED_UTC` | `--session-time-zone Asia/Tokyo` を渡すと、その地域の時刻として UTC に直す（INFO `DATE_LIT`） |
@@ -309,6 +321,8 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 | `UPDATE ... FROM` / MySQL の結合つき UPDATE | — | ERROR `UPDATE_JOIN` | |
 | `DELETE ... USING` / MySQL の結合つき DELETE | — | ERROR `DELETE_JOIN` | |
 | ORDER BY / LIMIT つきの UPDATE・DELETE | — | ERROR `UPDATE` / `DELETE` | 主キーで対象を絞る |
+| `DELETE FROM emp WHERE ROWNUM <= 10`（UPDATE も） | — | ERROR `ROWNUM` | ScalarDB に行番号は無い（DB-SQL-10002）。先に `SELECT ... LIMIT n` でキーを読み、主キーで書く |
+| Oracle の DB link（`emp@remote`、読み書きとも） | — | ERROR `DBLINK` | 実行計画も作らない。相手の表を ScalarDB に移すか、アプリから相手の DB に問い合わせる |
 | `DELETE FROM employees WHERE emp_id = 1` | そのまま | OK | WHERE の扱いは SELECT と同じ |
 | WHERE の無い UPDATE / DELETE | そのまま | WARN `NO_WHERE` | |
 | 定数 1 行をソースにする `MERGE`（両方の枝が同じ列を書く） | `UPSERT INTO` | WARN `MERGE` | |
@@ -322,12 +336,15 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 |---|---|---|---|
 | `WHERE ROWNUM <= 5` / `ROWNUM = 1` | `LIMIT 5` / `LIMIT 1` | WARN `ROWNUM` | Oracle は ORDER BY の前に数え、LIMIT は後に効く |
 | `WHERE ROWNUM < 5` | `LIMIT 4` | WARN `ROWNUM` | |
-| `WHERE ROWNUM <= :n` | `LIMIT :n` | WARN `ROWNUM` | `<` とバインド変数の組は ERROR |
+| `WHERE ROWNUM <= :n` | `LIMIT :n` | WARN `ROWNUM`、WARN `LIMIT` | `<` とバインド変数の組は ERROR。0 を渡すと ScalarDB は全件を返す |
+| `WHERE ROWNUM <= 0` / `ROWNUM < 1` | — | PLANNED（`LIMIT`） | ScalarDB SQL の `LIMIT 0` は上限なしで全件を返す。計画の H2 は 0 件を返す |
 | 集約・DISTINCT・GROUP BY・ウィンドウ関数と一緒の ROWNUM | — | PLANNED（`ROWNUM`） | ROWNUM は入力の行、LIMIT は出力の行を数える |
 | `ROWNUM > 1`、OR の中、LIMIT との併用、整数でない比較 | — | PLANNED（`ROWNUM`） | |
 | 射影の `SELECT ROWNUM, name ...` | — | PLANNED（`ROWNUM`） | ScalarDB に行番号は無い。実行計画の H2 が番号を振る。計画を作れなければ ERROR `ROWNUM` |
 | `FETCH FIRST 3 ROWS ONLY` / `FETCH FIRST ROW ONLY` | `LIMIT 3` / `LIMIT 1` | OK（INFO `LIMIT`） | |
-| `LIMIT 10` / `LIMIT ?` | そのまま | OK | |
+| `LIMIT 10` | そのまま | OK | |
+| `LIMIT ?` / `LIMIT :n` | そのまま | WARN `LIMIT` | 0 を渡すと ScalarDB は全件を返す。0 以下ならアプリで問い合わせを飛ばす |
+| `LIMIT 0` / `FETCH FIRST 0 ROWS ONLY` | — | PLANNED（`LIMIT`） | ScalarDB SQL の `LIMIT 0` は上限なし |
 | `FETCH ... WITH TIES` / `FETCH ... PERCENT` | — | PLANNED（`LIMIT`） | LIMIT では同じ順位の行が落ちる |
 | `OFFSET 10 ROWS` / `LIMIT 10 OFFSET 5` / MySQL の `LIMIT 5, 10` | — | PLANNED（`OFFSET`） | クラスタリングキーの範囲でページを送る形に直すとよい |
 
@@ -362,16 +379,19 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 | Oracle | 外部結合 `(+)`、`ROWNUM`、`CONNECT BY`、`KEEP`、`MINUS` | 上の各表 |
 | Oracle | 整数型、`FLOAT`、`DATE`、精度なし `NUMBER`、`LONG`、`LONG RAW`、`XMLTYPE` | すべて WARN `TYPE`（上の「データ型」） |
 | Oracle | `/` だけの行 | 文の切れ目として扱う |
+| Oracle | 数字の bind（`:1`、`:2`。JDBC・OCI、V$SQL の形） | そのまま通す（解析のときだけ名前に置き換え、出力と計画では `:1` に戻す） |
+| Oracle | q 引用（`q'[it's]'`、`nq'{...}'`） | 通常のリテラル（`'it''s'`）に直してから読む |
+| Oracle | DB link（`emp@remote`） | ERROR `DBLINK`（上の「INSERT / UPDATE / DELETE / MERGE」） |
 | Oracle | PL/SQL のブロック（`CREATE PROCEDURE` など、`BEGIN` / `DECLARE` の無名ブロック） | ERROR `PLSQL_BLOCK`。始まる所から `/` までを 1 文にする（前に `;` で終わる文があっても割らない）。PL/SQL の移行ツールで扱う |
 | Oracle | `WITH FUNCTION ...`（WITH 句の PL/SQL） | ERROR `WITH_PLSQL`。関数をアプリに移せば、問い合わせは変換か実行計画にできる |
 | PostgreSQL | `ILIKE`、`ONLY`、`DISTINCT ON`、`BETWEEN SYMMETRIC`、`FILTER`、`$1` | 上の各表 |
 | PostgreSQL | `ON CONFLICT` | `UPSERT INTO` か ERROR（上の書き込みの表） |
 | PostgreSQL | 精度なし `NUMERIC`、`SERIAL`、`TIMETZ`、`JSONB` | 上の「データ型」 |
-| MySQL | 文字列の比較（`=`・`<>`・`LIKE`・`IN`） | INFO `SEMANTICS`。MySQL の既定は大文字小文字を区別しない。ScalarDB は厳密に比べる |
+| MySQL | 文字列の比較（`=`・`<>`・`LIKE`・`IN`） | INFO `SEMANTICS`。MySQL の既定は大文字小文字を区別しない。ScalarDB は厳密に比べる。数値の列と比べる `'5'` は数値に直すので出さない |
 | MySQL | `REPLACE INTO`、`INSERT IGNORE`、`ON DUPLICATE KEY UPDATE` | 上の書き込みの表 |
 | MySQL | `LIMIT 5, 10`、`WITH ROLLUP`、`SQL_CALC_FOUND_ROWS` | 上の各表 |
 | MySQL | `TINYINT(1)`、符号なし整数、精度なし `DECIMAL`、`TIMESTAMP` | 上の「データ型」 |
-| すべて | NULL の並ぶ位置 | Oracle・PostgreSQL は昇順で NULL が最後、MySQL は最初。実行計画の H2 では `NULLS FIRST / LAST` を明示して元の並びを保つ |
+| すべて | NULL の並ぶ位置 | Oracle・PostgreSQL は昇順で NULL が最後、MySQL は最初。実行計画の H2 では `NULLS FIRST / LAST` を明示して元の並びを保つ。変換した MySQL の文には WARN `NULLS`（上の「SELECT の句」） |
 
 ### アプリ側に移す処理
 
@@ -403,7 +423,7 @@ ERROR か PLANNED になった読み取り文には、変換器が最初につ�
 | PL/SQL のブロック、`WITH FUNCTION` | ERROR `PLSQL_BLOCK` / `WITH_PLSQL` | 上の「方言ごとの差」 |
 | 移行元の方言として読めない文。文でなく式として読めたもの（綴りを誤った `SELEC * FRM t` など） | ERROR `PARSE` | `--source` と綴りを確かめる |
 | ScalarDB SQL の生成器が出せない構文が残った | ERROR `UNSUPPORTED` | |
-| 引用符の閉じ忘れなどで文に分けられない | ERROR `TOKENIZE` | ファイル全体で 1 件 |
+| 引用符の閉じ忘れなどで文に分けられない | ERROR `TOKENIZE` | `;` で終わる行ごとに分け直し、読めた文は変換する。読めない文だけが ERROR |
 | 変換器が想定していなかった文 | ERROR `INTERNAL` | その文だけが ERROR になり、残りは変換を続ける |
 
 逆に、そのまま通る文は `BEGIN` / `START TRANSACTION`（`BEGIN` にする）、`COMMIT`、`ROLLBACK`、`USE shop` です。

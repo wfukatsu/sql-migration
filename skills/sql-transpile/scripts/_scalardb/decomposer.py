@@ -15,6 +15,8 @@ from __future__ import annotations
 import functools
 import re
 from dataclasses import asdict, dataclass, field, replace
+from datetime import date, timedelta
+from decimal import Decimal
 from typing import Any
 
 import sqlglot
@@ -24,7 +26,7 @@ from sqlglot.transforms import eliminate_join_marks
 
 from .appside import h2_unsupported
 from .schema import SchemaRegistry, TableMeta, quoted
-from .types import fit_temporal_literal, iso_temporal_literal, session_zone
+from .types import fit_number, fit_temporal_literal, iso_temporal_literal, session_zone
 
 DEFAULT_ROW_LIMIT = 10_000
 H2_MODE = {"oracle": "Oracle", "postgres": "PostgreSQL", "mysql": "MySQL"}
@@ -145,7 +147,7 @@ def _flatten(e: exp.Expression, op: type) -> list[exp.Expression]:
     return [e]
 
 
-def _literal_value(e: exp.Expression):
+def _literal_value(e: exp.Expression, dialect: str | None = None):
     """Python value for a literal / bind marker, or raise NotDecomposable."""
     e = _unparen(e)
     if isinstance(e, exp.Literal):
@@ -153,7 +155,7 @@ def _literal_value(e: exp.Expression):
             return e.name
         return float(e.name) if "." in e.name or "e" in e.name.lower() else int(e.name)
     if isinstance(e, exp.Neg) and isinstance(e.this, exp.Literal):
-        v = _literal_value(e.this)
+        v = _literal_value(e.this, dialect)
         return -v
     if isinstance(e, exp.Null):
         return None
@@ -174,7 +176,7 @@ def _literal_value(e: exp.Expression):
         return e.this.name
     if isinstance(e, (exp.StrToDate, exp.StrToTime, exp.TsOrDsToDate)) and isinstance(e.this, exp.Literal):
         fmt = e.args.get("format")
-        iso = iso_temporal_literal(e.this.name, fmt.name if fmt is not None else None) \
+        iso = iso_temporal_literal(e.this.name, fmt.name if fmt is not None else None, dialect) \
             if fmt is None or isinstance(fmt, exp.Literal) else None
         if iso is None:
             raise NotDecomposable(f"{e.sql()} cannot be rewritten as a ScalarDB literal (YYYY-MM-DD [HH:MM:SS.FFF])")
@@ -207,6 +209,50 @@ def _fit_temporal(p: Predicate, types: dict[str, str], zone=None) -> Predicate:
         return v if change == "time" else fitted
 
     return replace(p, value=[fit(v) for v in p.value] if isinstance(p.value, list) else fit(p.value))
+
+
+def _fit_pushdown(p: Predicate, types: dict[str, str], zone=None) -> Predicate | None:
+    """``p`` as ScalarDB can evaluate it on the column's type, or None to leave it to the residual SQL (#147).
+
+    A fetch only has to read a superset of the rows the residual SQL keeps, so what cannot be written as ScalarDB
+    reads it is not pushed down: a NULL (DB-SQL-10045), a value of another type (DB-SQL-10053/10054/10055), a time of
+    day against a DATE column ("could not be parsed"). What can be fitted is, by the converter's rules."""
+    if p.op in ("IS NULL", "IS NOT NULL"):
+        return p
+    kind = next((t for c, t in types.items() if c.lower() == p.column.lower()), None)
+
+    def fit(value, op):
+        if value is None:
+            return None, None
+        if isinstance(value, dict) or kind is None:
+            return op, value
+        if p.op in ("LIKE", "NOT LIKE"):
+            return (op, value) if isinstance(value, str) else (None, None)
+        new_op, fitted, change = fit_number(kind, value, op)
+        if change in ("not_a_number", "text_compare", "out_of_range", "never", "not_null", "number_to_text"):
+            return None, None
+        if change:
+            value = float(fitted) if isinstance(fitted, Decimal) else fitted
+            op = new_op
+        if kind == "DATE" and isinstance(value, str):
+            day, how = fit_temporal_literal("DATE", value, zone)
+            if how == "time":
+                if op in ("=", "<>"):
+                    return None, None
+                if op == "low":
+                    return op, (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+                return {"<": "<=", ">=": ">"}.get(op, op), day
+        return op, value
+
+    if p.op == "BETWEEN":
+        (_, low), (_, high) = fit(p.value[0], "low"), fit(p.value[1], "high")
+        if low is None or high is None:
+            return None
+        return replace(p, value=[low, high])
+    op, value = fit(p.value, p.op)
+    if op is None:
+        return None
+    return replace(p, op=op, value=value)
 
 
 def _pred_sql(p: Predicate) -> str:
@@ -305,7 +351,10 @@ class Decomposer:
         for c in node.find_all(exp.Column):
             if c.name.upper() in ("ROWID", "ROWSCN", "ORA_ROWSCN"):
                 raise NotDecomposable(f"pseudo-column {c.name.upper()} cannot be fetched from ScalarDB")
-        from .converter import _oracle_partition_extension, _sequence_use
+        from .converter import _db_link, _oracle_partition_extension, _sequence_use
+        link = _db_link(node, self.dialect)
+        if link:
+            raise NotDecomposable(f"{link} is read over a database link; there is nothing in ScalarDB to fetch it from")
         sequence = _sequence_use(node, self.dialect)
         if sequence:
             raise NotDecomposable(f"{sequence}: a sequence value cannot be computed from fetched rows; generate it "
@@ -455,6 +504,8 @@ class Decomposer:
                     # derived table's `staff` (`COUNT(*) AS staff`): pushed into the fetch, ScalarDB said "column
                     # staff does not exist" (samples/oracle-plsql-docs 6-22, #68). The residual engine keeps it
                     p = None
+                if p is not None and meta is not None:
+                    p = _fit_pushdown(p, meta.columns, self.session_zone)
                 if p is None:
                     group = None
                     break
@@ -490,14 +541,15 @@ class Decomposer:
             # row (#103). The residual SQL applies it, so it is not pushed down
             if isinstance(leaf, exp.Between) and isinstance(leaf.this, exp.Column) and not leaf.args.get("symmetric"):
                 return self._own(leaf.this, scope, alias, "BETWEEN",
-                                 [_literal_value(leaf.args["low"]), _literal_value(leaf.args["high"])])
+                                 [_literal_value(leaf.args["low"], self.dialect),
+                                  _literal_value(leaf.args["high"], self.dialect)])
             if type(leaf) in COMPARE_OPS:
                 op = COMPARE_OPS[type(leaf)]
                 lhs, rhs = leaf.this, leaf.expression
                 if isinstance(rhs, exp.Column) and not isinstance(lhs, exp.Column):
                     lhs, rhs, op = rhs, lhs, FLIP_OPS[op]
                 if isinstance(lhs, exp.Column) and not isinstance(_unparen(rhs), exp.Column):
-                    return self._own(lhs, scope, alias, op, _literal_value(rhs))
+                    return self._own(lhs, scope, alias, op, _literal_value(rhs, self.dialect))
         except NotDecomposable:
             return None
         return None
@@ -509,7 +561,7 @@ class Decomposer:
         return Predicate(col.name, op, value)
 
     def _like(self, like: exp.Like, scope: Scope, alias: str, op: str) -> Predicate | None:
-        p = self._own(like.this, scope, alias, op, _literal_value(like.expression))
+        p = self._own(like.this, scope, alias, op, _literal_value(like.expression, self.dialect))
         # Oracle has no default LIKE escape character, ScalarDB's is `\`: `name LIKE 'a\_%'` fetched as written
         # did not read the row 'a\xb' (#103). ESCAPE '' where the converter's _oracle_like adds it
         if p is not None and self.dialect == "oracle" and (not isinstance(p.value, str) or "\\" in p.value):
@@ -712,7 +764,36 @@ class Decomposer:
 
     _TRUNC_UNITS = {"MM": "MONTH", "MON": "MONTH", "MONTH": "MONTH", "RM": "MONTH", "YYYY": "YEAR", "YEAR": "YEAR",
                     "YY": "YEAR", "Y": "YEAR", "SYYYY": "YEAR", "DD": "DAY", "DDD": "DAY", "J": "DAY", "HH": "HOUR",
-                    "HH12": "HOUR", "HH24": "HOUR", "MI": "MINUTE", "Q": "QUARTER", "IW": "WEEK", "WW": "WEEK"}
+                    "HH12": "HOUR", "HH24": "HOUR", "MI": "MINUTE", "Q": "QUARTER"}
+    # H2's DATE_TRUNC('WEEK', d) starts the week on Sunday (H2 2.5.250: 1981-11-17 -> 1981-11-15). Oracle's IW and
+    # PostgreSQL's week are ISO weeks (Monday, 1981-11-16); Oracle's WW starts on the weekday of 1 January
+    # (1981-11-12) and W on the weekday of the 1st of the month. Each is the day minus the days since its start (#147)
+    _WEEK_STARTS = {"IW": ("ISO_DAY_OF_WEEK", 1), "WW": ("DAY_OF_YEAR", 7), "W": ("DAY_OF_MONTH", 7)}
+
+    @staticmethod
+    def _week_start(d: exp.Expression, unit: str) -> exp.Expression:
+        fn, _ = Decomposer._WEEK_STARTS[unit]
+        day = exp.Anonymous(this="DATE_TRUNC", expressions=[exp.Literal.string("DAY"), d.copy()])
+        if unit == "IW":
+            back = exp.Sub(this=exp.Literal.number(1), expression=exp.Anonymous(this=fn, expressions=[d.copy()]))
+        else:
+            back = exp.Neg(this=exp.Anonymous(this="MOD", expressions=[
+                exp.Sub(this=exp.Anonymous(this=fn, expressions=[d.copy()]), expression=exp.Literal.number(1)),
+                exp.Literal.number(7)]))
+        return exp.Anonymous(this="DATEADD", expressions=[exp.Var(this="DAY"), back, day])
+
+    def _is_date_only(self, e: exp.Expression) -> bool:
+        """A DATE (no time of day): PostgreSQL's date - date is a whole number of days, H2's an INTERVAL."""
+        e = _unparen(e)
+        if isinstance(e, exp.Column):
+            sel = e.find_ancestor(exp.Select, exp.SetOperation)
+            for meta in (self.registry.get(t.name) for t in sel.find_all(exp.Table)) if sel else []:
+                if meta and any(c.lower() == e.name.lower() and ty == "DATE" for c, ty in meta.columns.items()):
+                    return True
+            return False
+        if isinstance(e, exp.Cast):
+            return e.to.this == exp.DataType.Type.DATE
+        return isinstance(e, (exp.CurrentDate, exp.TsOrDsToDate, exp.StrToDate, exp.DateStrToDate))
 
     def _is_datelike(self, e: exp.Expression) -> bool:
         e = _unparen(e)
@@ -733,9 +814,17 @@ class Decomposer:
     def _h2_rewrites(self, node: exp.Expression, notes: list[str], unresolved: list[str]) -> bool:
         """Rewrite Oracle constructs H2 Oracle mode lacks. Returns True if the AST changed."""
         changed = False
-        for dt in list(node.find_all(exp.DateTrunc)):  # TRUNC(date, 'MM') -> DATE_TRUNC('MONTH', date)
+        for dt in list(node.find_all(exp.DateTrunc, exp.TimestampTrunc)):  # TRUNC(date, 'MM') -> DATE_TRUNC('MONTH', date)
             unit = (dt.args.get("unit").name if dt.args.get("unit") else "DD").upper()
-            if unit in self._TRUNC_UNITS:
+            if self.dialect != "oracle":
+                if unit == "WEEK":   # PostgreSQL's date_trunc('week', d) is the ISO week
+                    dt.replace(self._week_start(dt.this, "IW"))
+                    changed = True
+                continue
+            if unit in self._WEEK_STARTS:
+                dt.replace(self._week_start(dt.this, unit))
+                changed = True
+            elif unit in self._TRUNC_UNITS:
                 dt.replace(exp.Anonymous(this="DATE_TRUNC", expressions=[exp.Literal.string(self._TRUNC_UNITS[unit]), dt.this]))
                 changed = True
             else:
@@ -766,10 +855,66 @@ class Decomposer:
                     pattern.replace(exp.Anonymous(this="REPLACE", expressions=[
                         pattern.copy(), exp.Literal.string("\\"), exp.Literal.string("\\\\")]))
                     changed = True
-        for sub in list(node.find_all(exp.Sub)):  # date - date -> fractional days (Oracle) instead of an INTERVAL (H2)
-            if self._is_datelike(sub.this) and self._is_datelike(sub.expression):
+        if self.dialect in ("oracle", "mysql"):
+            # H2 divides two integers as integers in every mode; Oracle and MySQL answer a fraction. Fetched INT /
+            # BIGINT columns are NUMERIC in H2 already (Residual.columnType), but COUNT(*), LENGTH(...) and integer
+            # literals are not: COUNT(*) / 4 was 0 and 7 / 2 was 3 where Oracle answers 0.5 and 3.5 (#147, H2 2.5.250).
+            # NUMERIC(19) keeps a whole number exact and divides with a fraction; a decimal operand needs nothing
+            for div in list(node.find_all(exp.Div)):
+                right = _unparen(div.expression)
+                if _whole_number(div.this) and not (isinstance(right, exp.Literal) and not right.is_int):
+                    div.set("this", exp.Cast(this=div.this.copy(), to=exp.DataType.build("DECIMAL(19)")))
+                    changed = True
+        if self.dialect == "oracle":
+            # Oracle's RR is the century nearest the current year ('81' is 1981 in 2026); H2 reads it as this century
+            # (2081). A constant is worked out here, as the converter does; anything else cannot be planned (#147)
+            for conv in list(node.find_all(exp.StrToDate, exp.StrToTime)):
+                fmt = conv.args.get("format")
+                if not isinstance(fmt, exp.Literal) or not re.search(r"(?<!R)RR(?!R)", fmt.name):
+                    continue
+                iso = iso_temporal_literal(conv.this.name, fmt.name, "oracle") \
+                    if isinstance(conv.this, exp.Literal) and conv.this.is_string else None
+                if iso is None or "." in iso:
+                    raise PlanBlocked([("RESIDUAL_H2", f"{conv.sql(dialect=self.dialect)}: H2 reads the RR year as the "
+                                                       f"current century, Oracle as the nearest one; convert the value in "
+                                                       f"the application, or use a four-digit year (YYYY / RRRR)")])
+                full = iso if " " in iso else iso + " 00:00:00"
+                conv.replace(sqlglot.parse_one(f"TO_DATE('{full}', 'YYYY-MM-DD HH24:MI:SS')", read="oracle"))
+                changed = True
+        for sub in list(node.find_all(exp.Sub)):
+            if not (self._is_datelike(sub.this) and self._is_datelike(sub.expression)):
+                continue
+            if self.dialect == "oracle":   # date - date -> fractional days (OracleFunctions) instead of an INTERVAL (H2)
                 sub.replace(exp.Anonymous(this="DAYS_BETWEEN", expressions=[sub.this, sub.expression]))
                 changed = True
+            elif self.dialect == "postgres" and self._is_date_only(sub.this) and self._is_date_only(sub.expression):
+                # DAYS_BETWEEN is registered in the Oracle mode only (`Function "DAYS_BETWEEN" not found`, #147);
+                # PostgreSQL's date - date is the whole number of days, H2's an INTERVAL
+                sub.replace(exp.Anonymous(this="DATEDIFF", expressions=[
+                    exp.Literal.string("DAY"), sub.expression, sub.this]))
+                changed = True
+            elif self.dialect == "mysql":
+                # MySQL subtracts the dates as numbers (20240301 - 20240201 = 100); H2 has nothing that does
+                raise PlanBlocked([("RESIDUAL_H2", f"{sub.sql(dialect=self.dialect)}: MySQL subtracts two dates as the "
+                                                   f"numbers YYYYMMDD, which the H2 residual engine does not; use "
+                                                   f"DATEDIFF() or compute it in the application")])
+        if self.dialect == "mysql":
+            for fmt_call in list(node.find_all(exp.TimeToStr)):
+                # H2's MySQL mode has no DATE_FORMAT. FORMATDATETIME takes a Java pattern, built on the AST so the
+                # generator doubles its quotes: written into the SQL text, '%Y年' became 'yyyy'年'' and closed the
+                # string (#147)
+                fmt = fmt_call.args.get("format")
+                java = _strftime_to_java(fmt.name) if isinstance(fmt, exp.Literal) else None
+                if java is None:
+                    raise PlanBlocked([("RESIDUAL_H2", f"{fmt_call.sql(dialect=self.dialect)}: the format has a "
+                                                       f"specifier H2 cannot write (or is not a constant); format the "
+                                                       f"value in the application")])
+                fmt_call.replace(exp.Anonymous(this="FORMATDATETIME",
+                                               expressions=[fmt_call.this.copy(), exp.Literal.string(java)]))
+                notes.append("java: DATE_FORMAT rewritten to FORMATDATETIME for H2")
+                changed = True
+        if self.dialect == "postgres":
+            changed |= self._distinct_on(node)
         if changed:
             notes.append("java: Oracle semantics made explicit for H2 (date functions, NULL ordering)")
         # Two things H2 2.5 cannot run as written, both found against a real Oracle (statements 34 and 53 of
@@ -797,19 +942,66 @@ class Decomposer:
                 changed = True
         return changed
 
+    def _distinct_on(self, node: exp.Expression) -> bool:
+        """`SELECT DISTINCT ON (a) a, b FROM t ORDER BY a, c DESC`: H2 runs DISTINCT ON only when every ORDER BY
+        expression is in the select list (`Order by expression "sal" must be in the result list`, H2 2.5.250), and
+        "the first row of each group" is written this way on purpose (#147). The missing expressions are selected
+        under names of their own, and an outer query returns the original columns in the original order."""
+        changed = False
+        for sel in list(node.find_all(exp.Select)):
+            distinct, order = sel.args.get("distinct"), sel.args.get("order")
+            if distinct is None or distinct.args.get("on") is None or order is None:
+                continue
+            projections = sel.expressions
+            inner_sql = [p.unalias().sql() for p in projections]
+            names = [p.alias_or_name for p in projections]
+
+            def position(o: exp.Ordered) -> int | None:
+                t = o.this
+                if isinstance(t, exp.Column) and not t.table and t.name in names:
+                    return names.index(t.name)
+                return inner_sql.index(t.sql()) if t.sql() in inner_sql else None
+
+            missing = [o for o in order.expressions if position(o) is None]
+            if not missing:
+                continue
+            if any(isinstance(p, exp.Star) or isinstance(p.unalias(), exp.Star) for p in projections) \
+                    or len(set(n.lower() for n in names)) != len(names) or not all(names):
+                raise PlanBlocked([("RESIDUAL_H2", "DISTINCT ON with an ORDER BY expression that is not selected, and a "
+                                                   "select list H2 cannot name one by one (* or repeated names): list "
+                                                   "the columns, or keep the first row of each group in the application")])
+            inner = sel.copy()
+            inner.set("expressions", [exp.alias_(p.unalias().copy(), f"__c{i}") for i, p in enumerate(projections)]
+                      + [exp.alias_(o.this.copy(), f"__o{j}") for j, o in enumerate(missing)])
+            for k in ("limit", "offset"):
+                inner.set(k, None)
+            outer_order = []
+            for o in order.expressions:
+                i = position(o)
+                name = f"__c{i}" if i is not None else f"__o{[id(m) for m in missing].index(id(o))}"
+                outer_order.append(exp.Ordered(this=exp.column(name), desc=o.args.get("desc"),
+                                               nulls_first=o.args.get("nulls_first")))
+            outer = exp.select(*[exp.alias_(exp.column(f"__c{i}"), p.args["alias"].copy() if isinstance(p, exp.Alias)
+                                            else p.unalias().this.copy() if isinstance(p.unalias(), exp.Column)
+                                            else n)
+                                 for i, (p, n) in enumerate(zip(projections, names))]) \
+                .from_(exp.Subquery(this=inner, alias=exp.TableAlias(this=exp.to_identifier("__d"))))
+            outer.set("order", exp.Order(expressions=outer_order))
+            for k in ("limit", "offset"):
+                if sel.args.get(k) is not None:
+                    outer.set(k, sel.args[k].copy())
+            for k in list(sel.args):
+                sel.set(k, None)
+            for k, v in outer.args.items():
+                sel.set(k, v)
+            changed = True
+        return changed
+
     def _java_residual(self, node: exp.Expression, source_sql: str, unresolved: list[str], notes: list[str]) -> str:
         work = node.copy()
         if self._h2_rewrites(work, notes, unresolved):
             self._rewritten = True
         sql = work.sql(dialect=_h2_target_dialect(self.dialect)) if self._rewritten else source_sql
-        if self.dialect == "mysql":
-            # H2 MySQL mode lacks DATE_FORMAT; FORMATDATETIME takes a Java pattern
-            def repl(m):
-                return f"FORMATDATETIME({m.group(1)}, '{_mysql_fmt_to_java(m.group(2))}')"
-            new = re.sub(r"DATE_FORMAT\(\s*([^,]+?)\s*,\s*'([^']*)'\s*\)", repl, sql, flags=re.I)
-            if new != sql:
-                notes.append("java: DATE_FORMAT rewritten to FORMATDATETIME for H2")
-                sql = new
         # strip schema qualifiers from table names: fetched tables live unqualified in H2
         for t in node.find_all(exp.Table):
             if t.db:
@@ -844,18 +1036,55 @@ class Decomposer:
         return "+".join(dict.fromkeys(found)) if found else "P1"
 
 
-def _mysql_fmt_to_java(fmt: str) -> str:
-    table = {"%Y": "yyyy", "%y": "yy", "%m": "MM", "%c": "M", "%d": "dd", "%e": "d", "%H": "HH", "%k": "H",
-             "%h": "hh", "%I": "hh", "%i": "mm", "%s": "ss", "%S": "ss", "%f": "SSSSSS", "%p": "a", "%M": "MMMM",
-             "%b": "MMM", "%W": "EEEE", "%a": "EEE", "%j": "DDD", "%%": "%"}
-    out = ""
-    i = 0
+def _whole_number(e: exp.Expression) -> bool:
+    """Whether H2 types ``e`` as an integer although it comes from no fetched column: an integer literal, COUNT,
+    a string length or position, an EXTRACT, ROWNUM, and +, -, *, MOD over those."""
+    e = _unparen(e)
+    if isinstance(e, exp.Literal):
+        return not e.is_string and e.is_int
+    if isinstance(e, (exp.Count, exp.Length, exp.StrPosition, exp.Extract)):
+        return True
+    if isinstance(e, exp.Column):
+        return e.name.upper() == "ROWNUM" and not e.table
+    if isinstance(e, exp.Neg):
+        return _whole_number(e.this)
+    if isinstance(e, (exp.Add, exp.Sub, exp.Mul, exp.Mod)):
+        return _whole_number(e.this) and _whole_number(e.expression)
+    return False
+
+
+# SQLGlot keeps a MySQL DATE_FORMAT format in strftime form (%i -> %M, %M -> %B, %c -> %-m, %T -> %H:%M:%S ...)
+_STRFTIME_TO_JAVA = {"%Y": "yyyy", "%y": "yy", "%m": "MM", "%-m": "M", "%d": "dd", "%-d": "d", "%H": "HH",
+                     "%-H": "H", "%I": "hh", "%-I": "h", "%M": "mm", "%S": "ss", "%f": "SSSSSS", "%p": "a",
+                     "%B": "MMMM", "%b": "MMM", "%A": "EEEE", "%a": "EEE", "%j": "DDD"}
+
+
+def _strftime_to_java(fmt: str) -> str | None:
+    """A Java date pattern for a strftime format, or None when a specifier has none (%U, %V, %X, %D, %w, ...).
+    Text between specifiers that Java would read as pattern letters is quoted as one run -- 'at', not 'a''t', which Java reads as a't -- with its own
+    quotes doubled."""
+    out, text, i = [], "", 0
+
+    def flush():
+        if text and re.search(r"[A-Za-z'\[\]{}#]", text):   # the characters Java reads as pattern syntax
+            out.append("'" + text.replace("'", "''") + "'")
+        elif text:
+            out.append(text)
+
     while i < len(fmt):
-        if fmt[i] == "%" and i + 1 < len(fmt) and fmt[i:i + 2] in table:
-            out += table[fmt[i:i + 2]]
-            i += 2
+        if fmt[i] == "%":
+            spec = fmt[i:i + 3] if fmt[i + 1:i + 2] == "-" else fmt[i:i + 2]
+            if spec == "%%":
+                text += "%"
+            elif spec in _STRFTIME_TO_JAVA:
+                flush()
+                text = ""
+                out.append(_STRFTIME_TO_JAVA[spec])
+            else:
+                return None
+            i += len(spec)
         else:
-            ch = fmt[i]
-            out += f"'{ch}'" if ch.isalpha() else ch
+            text += fmt[i]
             i += 1
-    return out
+    flush()
+    return "".join(out)

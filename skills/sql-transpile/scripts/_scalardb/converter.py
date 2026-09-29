@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 
 import sqlglot
 from sqlglot import exp
@@ -24,11 +25,13 @@ from . import appside
 from .decomposer import DEFAULT_ROW_LIMIT, ORDERED_SCAN_STORAGES, Decomposer, NotDecomposable, PlanBlocked, split_negate
 from .dialect import Upsert, to_scalardb_sql
 from .schema import SQL_KEYWORDS, SchemaRegistry, TableMeta, needs_quotes, quoted
-from .types import fit_temporal_literal, iso_temporal_literal, map_type, session_zone
+from .types import fit_number, fit_temporal_literal, iso_temporal_literal, map_type, session_zone
 
 AGGREGATES = (exp.Count, exp.Sum, exp.Avg, exp.Min, exp.Max)
 COMPARISONS = (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE)
 FLIP = {exp.EQ: exp.EQ, exp.NEQ: exp.NEQ, exp.GT: exp.LT, exp.LT: exp.GT, exp.GTE: exp.LTE, exp.LTE: exp.GTE}
+OP_SQL = {exp.EQ: "=", exp.NEQ: "<>", exp.GT: ">", exp.GTE: ">=", exp.LT: "<", exp.LTE: "<="}
+SQL_OP = {v: k for k, v in OP_SQL.items()}
 NEGATE = {exp.EQ: exp.NEQ, exp.NEQ: exp.EQ, exp.GT: exp.LTE, exp.LTE: exp.GT, exp.LT: exp.GTE, exp.GTE: exp.LT}
 LITERAL_TYPES = (exp.Literal, exp.Null, exp.Boolean, exp.Placeholder, exp.Parameter, exp.HexString)
 # Consensus Commit keeps its metadata in the same row, so these column names are unavailable to the application
@@ -164,6 +167,17 @@ def _sequence_use(node: exp.Expression, dialect: str) -> str | None:
     return None
 
 
+def _db_link(node: exp.Expression, dialect: str) -> str | None:
+    """The first `table@link` of an Oracle statement, as written, or None."""
+    if dialect != "oracle":
+        return None
+    for t in node.find_all(exp.Table):
+        parts = [p for p in (t.catalog, t.db, t.name) if p]
+        if any("@" in p for p in parts):
+            return ".".join(parts)
+    return None
+
+
 def _oracle_partition_extension(t: exp.Table, dialect: str) -> str | None:
     """Oracle's partition-extended name `t PARTITION (p1)` / `SUBPARTITION (p1)`, which SQLGlot reads as the table
     alias PARTITION with a column list; None for anything else. Oracle has no column list on a table alias, so the
@@ -196,6 +210,40 @@ def spell_long_raw(src: str, dialect: str) -> str:
             span = second.end - first.start + 1
             out = out[:first.start] + "LONG_RAW".ljust(span) + out[second.end + 1:]
     return out
+
+
+# Oracle's numbered binds (`:1`, `:2`) -- the form JDBC / OCI applications and V$SQL show -- are not read by SQLGlot
+# ("Required keyword: 'expression' missing"). They are given a name for the parse and get their number back in
+# everything the converter returns (#147)
+NUMBERED_BIND = "__sdbm_bind"
+
+
+def name_numbered_binds(src: str, dialect: str) -> str:
+    """``src`` with each Oracle `:1` outside strings and comments written `:__sdbm_bind1`."""
+    if dialect != "oracle" or ":" not in src:
+        return src
+    try:
+        tokens = sqlglot.tokenize(src, read=dialect)
+    except TokenError:
+        return src
+    out, last = [], 0
+    for colon, number in zip(tokens, tokens[1:]):
+        if colon.token_type == TokenType.COLON and number.token_type == TokenType.NUMBER \
+                and number.start == colon.end + 1 and number.text.isdigit():
+            out.append(src[last:number.start] + NUMBERED_BIND)
+            last = number.start
+    return "".join(out) + src[last:] if out else src
+
+
+def restore_numbered_binds(value):
+    """``value`` (text, or lists and dicts of it) with `:__sdbm_bind1` written `:1` again."""
+    if isinstance(value, str):
+        return value.replace(NUMBERED_BIND, "")
+    if isinstance(value, list):
+        return [restore_numbered_binds(v) for v in value]
+    if isinstance(value, dict):
+        return {k: restore_numbered_binds(v) for k, v in value.items()}
+    return value
 
 
 def flashback_clause(src: str, dialect: str) -> str | None:
@@ -296,6 +344,8 @@ def _split_statements(text: str, dialect: str) -> list[str]:
     reads it; only the statements before it are cut at their semicolons (#146).
     """
     text = text.removeprefix("\ufeff")
+    if dialect == "oracle":
+        text = respell_q_quotes(text)
     if dialect != "oracle":
         return _split_on_semicolons(text, dialect)
     stmts = []
@@ -305,6 +355,64 @@ def _split_statements(text: str, dialect: str) -> list[str]:
         else:
             stmts.extend(_split_on_semicolons(segment, dialect, until_plsql=True))
     return [s for s in stmts if s]
+
+
+_Q_CLOSE = {"[": "]", "(": ")", "{": "}", "<": ">"}
+_Q_START = re.compile(r"[nN]?[qQ]'(\S)")
+
+
+def respell_q_quotes(text: str) -> str:
+    """``text`` with Oracle's alternative quoting (`q'[it's]'`, `nq'{...}'`) written as ordinary literals
+    (`'it''s'`). SQLGlot's tokenizer cannot read it, and one such literal made the whole script a single
+    TOKEN_ERROR (#147). Strings, quoted names and comments are skipped as they stand."""
+    if "'" not in text:
+        return text
+    out, i, n = [], 0, len(text)
+    while i < n:
+        if text.startswith("--", i):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+        elif (m := _Q_START.match(text, i)) and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] in "_$#")):
+            close = _Q_CLOSE.get(m.group(1), m.group(1)) + "'"
+            end = text.find(close, m.end())
+            if end < 0:
+                out.append(text[i:])
+                break
+            body = text[m.end():end]
+            out.append(("N" if text[i] in "nN" else "") + "'" + body.replace("'", "''") + "'")
+            i = end + 2
+            continue
+        elif text[i] in "'\"":
+            quote, j = text[i], i + 1
+            while j < n:
+                if text[j] == quote:
+                    if text[j + 1:j + 2] == quote:
+                        j += 2
+                        continue
+                    break
+                j += 1
+            j = min(j + 1, n)
+        else:
+            j = i + 1
+        out.append(text[i:j])
+        i = j
+    return "".join(out)
+
+
+def _split_loosely(text: str, dialect: str) -> list[str]:
+    """What is left when the tokenizer cannot read the script (an unterminated string, usually): statements end
+    at a semicolon that ends a line, so the statements that can be read are still converted one by one."""
+    segments = _SLASH_LINE.split(text) if dialect == "oracle" else [text]
+    stmts = []
+    for segment in segments:
+        if dialect == "oracle" and PLSQL_BLOCK.match(segment):
+            stmts.append(segment.strip())
+            continue
+        stmts.extend(p.strip() for p in re.split(r";[ \t]*(?:\r?\n|$)", segment))
+    return [s for s in stmts if s and not _COMMENTS_ONLY.fullmatch(s)]
 
 
 def _starts_plsql(text: str, pos: int) -> bool:
@@ -366,6 +474,14 @@ class StatementConverter:
 
     # -- entry point --------------------------------------------------------------------------------
     def convert(self, sql: str) -> Result:
+        res = self._convert(sql)
+        if NUMBERED_BIND in repr((res.converted, res.plan, res.issues)):
+            res.converted = restore_numbered_binds(res.converted)
+            res.plan = restore_numbered_binds(res.plan)
+            res.issues = [Issue(i.severity, i.code, restore_numbered_binds(i.message)) for i in res.issues]
+        return res
+
+    def _convert(self, sql: str) -> Result:
         self.issues = []
         self._source = sql
         self._parsed = sql   # the text the AST was parsed from (the REPLACE rewrite below changes it)
@@ -389,10 +505,14 @@ class StatementConverter:
             res.issues.append(Issue("ERROR", "PLSQL_BLOCK", "a PL/SQL block (stored program or anonymous block) is not a SQL "
                                                             "statement; migrate it with the plsql-migrate skill (python -m plsql.generate)"))
             return res
-        src = spell_long_raw(src, self.dialect)
+        src = name_numbered_binds(spell_long_raw(src, self.dialect), self.dialect)
         self._parsed = src
         try:
             node = sqlglot.parse_one(src, read=self.dialect)
+        except TokenError as e:
+            res.kind, res.status = "TOKEN_ERROR", "ERROR"
+            res.issues.append(Issue("ERROR", "TOKENIZE", f"the statement could not be read: {str(e).splitlines()[0]}"))
+            return res
         except ParseError as e:
             res.kind, res.status = "PARSE_ERROR", "ERROR"
             flashback = flashback_clause(src, self.dialect)
@@ -427,6 +547,11 @@ class StatementConverter:
             out = self._dispatch(node)
             res.converted = [to_scalardb_sql(n) if isinstance(n, exp.Expression) else n for n in out]
             self._check_bind_order(binds, out)
+            collation = appside.collation_note(node, self.dialect)
+            if collation is None:
+                # read from the source, where `salary = '5'` compares a string; written as `salary = 5` here (the
+                # column is numeric), it compares no string and there is no collation to lose (#147)
+                notes = [(sev, msg) for sev, msg in notes if not msg.startswith("MySQL compares strings by")]
             self.issues.extend(Issue(severity, "SEMANTICS", message) for severity, message in notes)
         except Unconvertible as e:
             self.issues.append(Issue("ERROR", e.code, str(e)))
@@ -624,6 +749,13 @@ class StatementConverter:
         for col in node.find_all(exp.Column):
             if col.name.upper() in ("ROWID", "ROWSCN", "ORA_ROWSCN"):
                 self.fail("ROWID", f"pseudo-column {col.name.upper()} does not exist in ScalarDB; use the primary key")
+        link = _db_link(node, self.dialect)
+        if link:
+            # `emp@remote` came out as the table "emp@remote", which does not exist (#147). The PL/SQL side stops at
+            # LINK-001 and can map the link to a namespace by a decision
+            self.fail("DBLINK", f"{link} reads over an Oracle database link; ScalarDB has none. Migrate the remote "
+                                f"table into ScalarDB and name its namespace, or query the remote database from the "
+                                f"application")
         sequence = _sequence_use(node, self.dialect)
         if sequence:
             # only VALUES and SET were checked, so `SELECT seq.NEXTVAL FROM dual` went through as a column (#123)
@@ -703,7 +835,7 @@ class StatementConverter:
             fmt = e.args.get("format")
             if fmt is not None and not isinstance(fmt, exp.Literal):
                 self.fail("DATE_FMT", f"{ctx}: {e.sql(dialect=self.dialect)}: the format is not a constant")
-            iso = iso_temporal_literal(e.this.name, fmt.name if fmt is not None else None)
+            iso = iso_temporal_literal(e.this.name, fmt.name if fmt is not None else None, self.dialect)
             if iso is None:
                 self.fail("DATE_FMT", f"{ctx}: {e.sql(dialect=self.dialect)} cannot be rewritten as a ScalarDB literal "
                                       f"(YYYY-MM-DD [HH:MM:SS.FFF]); convert the value in the application and bind it")
@@ -712,6 +844,10 @@ class StatementConverter:
                                       f"reads it with the session's date format; '{iso}' is written as it stands")
             else:
                 self.info("DATE_LIT", f"{ctx}: {e.sql(dialect=self.dialect)} written as the plain literal '{iso}'")
+                if self.dialect == "oracle" and re.search(r"RR(?!RR)|%y", fmt.name) and not re.search(r"\d{4}", e.this.name):
+                    # RR is relative to the year the statement runs in; the literal fixes today's answer (#147)
+                    self.info("DATE_LIT", f"{ctx}: the two-digit year of '{e.this.name}' is read by Oracle's rule for "
+                                          f"the current year ({'RR: nearest century' if 'R' in fmt.name else 'YY: this century'})")
             return exp.Literal.string(iso)
         if isinstance(e, (exp.CurrentTimestamp, exp.CurrentDate, exp.CurrentTime)) or \
                 (isinstance(e, exp.Anonymous) and e.name.upper() in ("SYSDATE", "SYSTIMESTAMP", "NOW", "GETDATE")):
@@ -787,6 +923,108 @@ class StatementConverter:
     def _fit_date_literal(self, col: exp.Column, value: exp.Expression, ctx: str) -> exp.Expression:
         return self._fit_temporal_literal(col.name, value, ctx, col.table)
 
+    def _no_null(self, leaf: exp.Expression, value: exp.Expression, ctx: str) -> None:
+        """`x = NULL` is never true in the source (it is unknown), and ScalarDB refuses a NULL in a predicate
+        (DB-SQL-10045). A read goes to a plan, whose H2 answers as the source does (#147)."""
+        if isinstance(_unparen(value), exp.Null):
+            self.fail("NULL_CMP", f"{ctx}: '{leaf.sql(dialect=self.dialect)}' compares with NULL, which is never true "
+                                  f"in the source (no row matches); ScalarDB refuses a NULL in a predicate. Write IS "
+                                  f"[NOT] NULL if that was meant, or drop the condition")
+
+    def _fit_compared(self, col: exp.Column, op: str, value: exp.Expression, ctx: str) -> tuple[str, exp.Expression]:
+        """The literal of `col op value` fitted to the column's type: a number, and then a date or time. A DATE column
+        compared with a time of day moves the bound, as the time is not stored (#147)."""
+        kind = self._column_type(col)
+        op, value = self._fit_number_literal(kind, col.name, value, ctx, op)
+        if op == "IS NOT NULL":
+            return op, value
+        if kind == "DATE" and op in ("=", "<>", "<", "<=", ">", ">=", "low", "high"):
+            typed = isinstance(value, exp.Cast) and isinstance(value.this, exp.Literal)
+            lit = value.this if typed else value
+            if isinstance(lit, exp.Literal) and lit.is_string:
+                day, change = fit_temporal_literal("DATE", lit.name, self._session_zone)
+                if change == "time":
+                    return self._date_bound(col, op, day, lit.name, ctx)
+        return op, self._fit_date_literal(col, value, ctx)
+
+    def _date_bound(self, col: exp.Column, op: str, day: str, written: str, ctx: str) -> tuple[str, exp.Expression]:
+        """`d < '2024-01-01 10:30'` holds for the whole of 2024-01-01 when d has no time; dropping the time kept the
+        operator and lost that day (and `>=` gained it, `=` matched it). Measured on ScalarDB Cluster (#147)."""
+        from datetime import date, timedelta
+        if op == "=":
+            self.fail("DATE_LIT", f"{ctx}: {col.name} = '{written}' never matches: {col.name} is a ScalarDB DATE and "
+                                  f"has no time of day. Compare with the date, or keep the time in a TIMESTAMP column")
+        if op == "<>":
+            self.warn("DATE_LIT", f"{ctx}: {col.name} <> '{written}' is true for every date ({col.name} is a ScalarDB "
+                                  f"DATE and has no time of day); written as {col.name} IS NOT NULL")
+            return "IS NOT NULL", exp.Null()
+        new_op, bound = op, day
+        if op == "<":
+            new_op = "<="
+        elif op == ">=":
+            new_op = ">"
+        elif op == "low":
+            bound = (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+        before = {"low": "the BETWEEN low bound", "high": "the BETWEEN high bound"}.get(op, f"{col.name} {op}")
+        after = {"low": "", "high": ""}.get(op, f"{col.name} {new_op} ")
+        self.warn("DATE_LIT", f"{ctx}: '{written}' has a time part but {col.name} is a ScalarDB DATE; the bound is "
+                              f"moved so that the same dates match: {before} '{written}' -> {after}'{bound}'")
+        return new_op, exp.Literal.string(bound)
+
+    def _fit_number_literal(self, kind: str | None, column: str, value: exp.Expression, ctx: str,
+                            op: str) -> tuple[str, exp.Expression]:
+        """A literal made to fit a numeric or text column (types.fit_number); what cannot be written fails."""
+        e = _unparen(value)
+        negative = isinstance(e, exp.Neg) and isinstance(e.this, exp.Literal) and not e.this.is_string
+        lit = e.this if negative else e
+        if not isinstance(lit, exp.Literal) or kind is None:
+            return op, value
+        if lit.is_string:
+            raw = lit.name
+        else:
+            text = ("-" if negative else "") + lit.name
+            try:
+                raw = int(text) if re.fullmatch(r"-?\d+", text) else Decimal(text)
+            except InvalidOperation:
+                return op, value
+        new_op, fitted, change = fit_number(kind, raw, op)
+        written = value.sql(dialect=self.dialect)
+        if change is None:
+            return op, value
+        if change in ("not_a_number", "text_compare", "out_of_range", "never"):
+            why = {"not_a_number": f"{written} is not a number and {column} is {kind}",
+                   "text_compare": f"{column} is TEXT and {written} a number: the source compares them as numbers "
+                                   f"(converting every {column}), ScalarDB refuses the mix",
+                   "out_of_range": f"{written} is outside the range of ScalarDB {kind}",
+                   "never": f"{column} is a whole number ({kind}) and never equals {written}"}[change]
+            self.fail("TYPE_MISMATCH", f"{ctx}: {why}. Bind a value of the column's type, or fix the literal")
+        if change == "not_null":
+            self.warn("TYPE_LIT", f"{ctx}: {column} <> {written} is true for every whole number; written as "
+                                  f"{column} IS NOT NULL")
+            return "IS NOT NULL", exp.Null()
+        if change == "number_to_text":
+            self.warn("TYPE_LIT", f"{ctx}: the number {written} written as the text '{written}' for TEXT column "
+                                  f"{column}; the source converts it with its own number format")
+            return op, exp.Literal.string(written)
+        out = exp.Literal.number(str(fitted)) if not (isinstance(fitted, Decimal) and fitted < 0) and \
+            not (isinstance(fitted, int) and fitted < 0) else exp.Neg(this=exp.Literal.number(str(-fitted)))
+        if change == "text_to_number":
+            self.info("TYPE_LIT", f"{ctx}: {written} written as the number {fitted} for {kind} column {column}")
+        elif change == "whole":
+            self.info("TYPE_LIT", f"{ctx}: {written} written as {fitted} for {kind} column {column}")
+        elif change == "bound":
+            self.info("TYPE_LIT", f"{ctx}: {column} is a whole number ({kind}); {op} {written} written as "
+                                  f"{new_op if new_op not in ('low', 'high') else op} {fitted}")
+        elif change == "rounded":
+            self.warn("TYPE_LIT", f"{ctx}: {written} rounded to {fitted} for {kind} column {column}, as the source "
+                                  f"stores it")
+        return new_op, out
+
+    def _fit_assigned(self, column: str, value: exp.Expression, ctx: str, qualifier: str = "") -> exp.Expression:
+        """A VALUES / SET value fitted to the column it lands in: a number, and then a date or time."""
+        _, value = self._fit_number_literal(self._column_type_by_name(column, qualifier), column, value, ctx, "set")
+        return self._fit_temporal_literal(column, value, ctx, qualifier)
+
     # -- predicates ---------------------------------------------------------------------------------
     def _push_not(self, e: exp.Expression, negate: bool) -> exp.Expression:
         e, flagged = split_negate(_unparen(e))   # `x NOT LIKE p` is Like(negate=True), not Not(Like) (#102)
@@ -831,6 +1069,19 @@ class StatementConverter:
             if target.args.get("query") or not target.expressions:
                 self.fail("SUBQUERY", "IN (subquery) is not supported; fetch the inner result first and bind literals")
             col = target.this
+            values = [v for v in target.expressions if not isinstance(_unparen(v), exp.Null)]
+            if len(values) != len(target.expressions):
+                # `x IN (1, NULL)` is `x = 1 OR unknown`: the NULL never matches. `x NOT IN (1, NULL)` is never
+                # true. ScalarDB refuses a NULL in a predicate (DB-SQL-10045), so neither can be written as it stands
+                written = target.sql(dialect=self.dialect)
+                if neg or not values:
+                    self.fail("NULL_CMP", f"'{'NOT ' if neg else ''}{written}' is never true in the source (a NULL in "
+                                          f"the list makes {'NOT IN unknown for every row' if neg else 'IN unknown'}); "
+                                          f"ScalarDB refuses a NULL in a predicate. Drop the NULL from the list, or "
+                                          f"the condition")
+                self.warn("NULL_CMP", f"NULL dropped from '{written}': it never matches in the source either, and "
+                                      f"ScalarDB refuses a NULL in a predicate")
+                target.set("expressions", values)
             if neg:
                 parts = [exp.NEQ(this=col.copy(), expression=v) for v in target.expressions]
                 return exp.and_(*parts) if len(parts) > 1 else parts[0]
@@ -870,8 +1121,11 @@ class StatementConverter:
         if isinstance(leaf, exp.Between):
             if not isinstance(leaf.this, exp.Column):
                 self.fail("PRED", f"{ctx}: BETWEEN left-hand side must be a column")
-            leaf.set("low", self._value(leaf.args["low"], ctx))
-            leaf.set("high", self._value(leaf.args["high"], ctx))
+            for bound in ("low", "high"):
+                value = self._value(leaf.args[bound], ctx)
+                self._no_null(leaf, value, ctx)
+                _, value = self._fit_compared(leaf.this, bound, value, ctx)
+                leaf.set(bound, value)
             return leaf
         if type(leaf) in FLIP:
             lhs, rhs = leaf.this, leaf.expression
@@ -887,8 +1141,15 @@ class StatementConverter:
             if isinstance(rhs, exp.Column):
                 self.fail("COL_COL", f"{ctx}: column-to-column comparison '{leaf.sql(dialect=self.dialect)}' is not "
                                      f"supported (only column vs literal / bind marker)")
-            leaf.set("expression", self._fit_date_literal(lhs, self._value(rhs, ctx), ctx) if isinstance(lhs, exp.Column) else self._value(rhs, ctx))
-            return leaf
+            value = self._value(rhs, ctx)
+            self._no_null(leaf, value, ctx)
+            if not isinstance(lhs, exp.Column):
+                leaf.set("expression", value)
+                return leaf
+            op, value = self._fit_compared(lhs, OP_SQL[type(leaf)], value, ctx)
+            if op == "IS NOT NULL":
+                return exp.Not(this=exp.Is(this=lhs, expression=exp.Null()))
+            return SQL_OP[op](this=lhs, expression=value)
         if isinstance(leaf, exp.Boolean):
             self.fail("PRED", f"{ctx}: constant boolean predicates are not supported")
         self.fail("PRED", f"{ctx}: unsupported predicate '{leaf.sql(dialect=self.dialect)}'")
@@ -1069,6 +1330,8 @@ class StatementConverter:
             s.set("having", exp.Having(this=self._build_condition(s.args["having"].this, "HAVING", allow_agg=True)))
         # ORDER BY
         if s.args.get("order"):
+            self._order_by_aliases(s)
+            self._mysql_null_order(s)
             for o in s.args["order"].expressions:
                 if o.args.get("nulls_first") is not None:
                     if re.search(r"NULLS\s+(FIRST|LAST)", self._source, re.I):
@@ -1092,11 +1355,96 @@ class StatementConverter:
             self.info("LIMIT", f"FETCH FIRST {count.sql()} ROWS ONLY rewritten to LIMIT {count.sql()}")
         elif isinstance(lim, exp.Limit) and not _is_literal(lim.expression):
             self.fail("LIMIT", "LIMIT must be a literal or bind marker")
+        self._check_limit(s)
         grouped = bool(s.args.get("group")) or any(_is_aggregate(p.this if isinstance(p, exp.Alias) else p)
                                                    for p in s.expressions)
         self._access_path(self._meta(from_.this), s.args["where"].this if s.args.get("where") else None,
                           s.args.get("order"), ctx, grouped)
         return s
+
+    def _mysql_null_order(self, s: exp.Select) -> None:
+        """MySQL sorts NULLs first for ASC and last for DESC; Oracle, PostgreSQL and ScalarDB (measured on the
+        PostgreSQL backend: `ORDER BY comm` put the NULLs last) the other way. Only an explicit NULLS FIRST / LAST was
+        reported, so a MySQL `ORDER BY salary ... LIMIT n` returned other rows without a word (#147). A key column and
+        one the source DDL declares NOT NULL hold no NULL."""
+        if self.dialect != "mysql" or re.search(r"NULLS\s+(FIRST|LAST)", self._source, re.I):
+            return
+        nullable = []
+        for o in s.args["order"].expressions:
+            col = o.this
+            if not isinstance(col, exp.Column):
+                continue
+            meta = next((self.registry.get(t.name, t.db or None) for t in getattr(self, "_tables", [])
+                         if self.registry.get(t.name, t.db or None) is not None
+                         and (not col.table or col.table.lower() in ((t.alias or "").lower(), t.name.lower()))
+                         and any(c.lower() == col.name.lower() for c in self.registry.get(t.name, t.db or None).columns)),
+                        None)
+            if meta is not None and col.name.lower() in {c.lower() for c in meta.primary_key} | \
+                    {c.lower() for c in meta.not_null}:
+                continue
+            nullable.append(col.sql(dialect=self.dialect))
+        if nullable:
+            self.warn("NULLS", f"ORDER BY {', '.join(nullable)}: MySQL puts NULLs first in ascending order (last in "
+                               f"descending), ScalarDB puts them last (first). If the column can hold NULL, the rows "
+                               f"come in another order and a LIMIT keeps other rows; declare it NOT NULL in the DDL "
+                               f"given here if it cannot, or place the NULLs in the application")
+
+    def _check_limit(self, s: exp.Select) -> None:
+        """ScalarDB SQL reads `LIMIT 0` as "no limit": `SELECT ... LIMIT 0` returned every row where the source
+        returns none (measured on ScalarDB Cluster 3.19, #147). A count of 0 or less goes to a plan, whose H2 returns
+        no rows; a bind can be 0 at run time, which is said."""
+        lim = s.args.get("limit")
+        if not isinstance(lim, exp.Limit) or lim.expression is None:
+            return
+        count = _unparen(lim.expression)
+        if isinstance(count, (exp.Placeholder, exp.Parameter)):
+            self.warn("LIMIT", f"LIMIT {count.sql()}: ScalarDB SQL reads LIMIT 0 as no limit, so a bound 0 returns "
+                               f"every row where the source returns none. Skip the query in the application when "
+                               f"the value is 0 or less")
+            return
+        negative = isinstance(count, exp.Neg)
+        number = count.this if negative else count
+        if isinstance(number, exp.Literal) and not number.is_string:
+            try:
+                value = -float(number.name) if negative else float(number.name)
+            except ValueError:
+                return
+            if value <= 0:
+                self.fail("LIMIT", f"the source returns no rows here (a limit of {count.sql()}), but ScalarDB SQL reads "
+                                   f"LIMIT 0 as no limit and would return every row. Skip the query in the "
+                                   f"application")
+
+    def _order_by_aliases(self, s: exp.Select) -> None:
+        """An ORDER BY name is a select-list alias first in Oracle, PostgreSQL and MySQL; ScalarDB SQL reads it as a
+        table column (`SELECT name AS salary ... ORDER BY salary` sorted by salary) or refuses a column alias
+        (DB-SQL-10002). The alias is replaced with what it names -- a column, or an aggregate, which ScalarDB
+        accepts in ORDER BY (#147)."""
+        aliases = {}
+        for p in s.expressions:
+            if isinstance(p, exp.Alias) and p.alias:
+                aliases.setdefault(p.alias.lower(), p.this)
+        if not aliases:
+            return
+        for o in s.args["order"].expressions:
+            target = o.this
+            if isinstance(target, exp.Column) and not target.table:
+                name = target.name
+            elif isinstance(target, exp.Identifier):
+                name = target.name
+            else:
+                continue
+            inner = aliases.get(name.lower())
+            if inner is None or not (isinstance(inner, exp.Column) or _is_aggregate(inner)):
+                continue
+            if isinstance(inner, exp.Column) and inner.name.lower() == name.lower():
+                continue
+            also_column = self._column_type_by_name(name) is not None
+            if isinstance(inner, exp.Column) or also_column:
+                why = (f"{name} is also a column, and ScalarDB SQL would sort by the column" if also_column
+                       else "ScalarDB SQL does not resolve select-list aliases of columns in ORDER BY")
+                self.info("ORDER", f"ORDER BY {name} names the select-list alias of {inner.sql(dialect=self.dialect)}; "
+                                   f"written as ORDER BY {inner.sql(dialect=self.dialect)} ({why})")
+                o.set("this", inner.copy())
 
     def _check_projection(self, p: exp.Expression) -> None:
         inner = p.this if isinstance(p, exp.Alias) else p
@@ -1343,6 +1691,10 @@ class StatementConverter:
                     self.fail("ROWNUM", f"unsupported ROWNUM predicate '{u.sql()}'")
                 if s.args.get("limit"):
                     self.fail("ROWNUM", "both ROWNUM and LIMIT/FETCH present")
+                if n <= 0:
+                    # LIMIT 0 is "no limit" in ScalarDB SQL: the rewrite would return every row (#147)
+                    self.fail("LIMIT", f"'{u.sql()}' returns no rows in the source, but LIMIT {n} is no limit in "
+                                       f"ScalarDB SQL and would return every row. Skip the query in the application")
                 s.set("limit", exp.Limit(expression=exp.Literal.number(n)))
                 self.warn("ROWNUM", f"'{u.sql()}' rewritten to LIMIT {n}. Note: Oracle applies ROWNUM before ORDER BY, "
                                     f"ScalarDB LIMIT applies after ORDER BY")
@@ -1379,8 +1731,7 @@ class StatementConverter:
                 name = cols[i] if i < len(cols) else ""
                 ctx = f"VALUES column {name or i + 1}"
                 converted = self._value(v, ctx)
-                tup.expressions[i].replace(
-                    self._fit_temporal_literal(name, converted, ctx) if name else converted)
+                tup.expressions[i].replace(self._fit_assigned(name, converted, ctx) if name else converted)
         meta = self._meta(ins.this)
         if meta and cols:
             missing = [c for c in meta.primary_key if c.lower() not in {x.lower() for x in cols}]
@@ -1563,8 +1914,17 @@ class StatementConverter:
                                    "another row")
 
     # -- UPDATE / DELETE ---------------------------------------------------------------------------
+    def _no_rownum_in_dml(self, node: exp.Expression, verb: str) -> None:
+        """`DELETE FROM emp WHERE ROWNUM <= 10` (deleting in batches) went to ScalarDB with ROWNUM as a column:
+        DB-SQL-10002 The column ROWNUM does not exist (#147)."""
+        if self.dialect == "oracle" and any(c.name.upper() == "ROWNUM" and not c.table for c in node.find_all(exp.Column)):
+            self.fail("ROWNUM", f"{verb} with ROWNUM limits the rows it touches; ScalarDB has no row number. Read the "
+                                f"keys first (SELECT ... LIMIT n), then {verb} each row by its primary key in the same "
+                                f"transaction")
+
     def update(self, u: exp.Update) -> exp.Update:
         self._tables = [u.this] if isinstance(u.this, exp.Table) else []
+        self._no_rownum_in_dml(u, "UPDATE")
         if _from(u) or u.args.get("joins") or (isinstance(u.this, exp.Table) and u.this.args.get("joins")):
             self.fail("UPDATE_JOIN", "UPDATE with FROM/JOIN is not supported; SELECT the keys first, then UPDATE by key")
         if u.args.get("returning"):
@@ -1586,8 +1946,8 @@ class StatementConverter:
                                  f"do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction")
             # fitted to the column like a VALUES entry or a predicate: a date-only literal for a TIMESTAMP column, a
             # typed literal and TRUE for an INT column were all written as they stood here
-            eq.set("expression", self._fit_temporal_literal(eq.this.name, self._value(v, f"SET {eq.this.name}"),
-                                                            f"SET {eq.this.name}", eq.this.table))
+            eq.set("expression", self._fit_assigned(eq.this.name, self._value(v, f"SET {eq.this.name}"),
+                                                    f"SET {eq.this.name}", eq.this.table))
             eq.this.set("table", None)
         where = u.args.get("where")
         cond = self._build_condition(where.this, "WHERE") if where else None
@@ -1599,6 +1959,7 @@ class StatementConverter:
 
     def delete(self, d: exp.Delete) -> exp.Delete:
         self._tables = [d.this] if isinstance(d.this, exp.Table) else []
+        self._no_rownum_in_dml(d, "DELETE")
         # MySQL multi-table DELETE (DELETE t FROM t JOIN u ...): sqlglot keeps the targets in `tables` and the joins on
         # the table itself
         if d.args.get("using") or d.args.get("joins") or d.args.get("tables") or \
@@ -1676,14 +2037,30 @@ class StatementConverter:
                     self.warn("INDEX", f"inline composite index {cols} dropped (ScalarDB indexes are single-column)")
             else:
                 self.warn("DDL", f"table element '{item.sql(dialect=self.dialect)[:50]}' dropped")
-        if not pk:
-            self.fail("PK", "table has no PRIMARY KEY; ScalarDB requires a partition key (add PRIMARY KEY or pass --keys)")
+        # the hint is read before the PRIMARY KEY check: the message below tells a table without one to pass --keys,
+        # and passing it changed nothing (#147)
         hint = self.key_hints.get(bare.lower())
         if hint:
-            pkey, ckey = hint
-            unknown = [c for c in pkey + ckey if c not in columns]
+            by_name = {c.lower(): c for c in columns}
+            unknown = [c for c in hint[0] + hint[1] if c.lower() not in by_name]
             if unknown:
                 self.fail("KEYS", f"--keys references unknown columns {unknown}")
+            if not hint[0]:
+                self.fail("KEYS", f"--keys for {bare} names no partition key (write table=p1[,p2][/c1,...])")
+            pkey, ckey = [by_name[c.lower()] for c in hint[0]], [by_name[c.lower()] for c in hint[1]]
+            key = pkey + ckey
+            if len({c.lower() for c in key}) != len(key):
+                self.fail("KEYS", f"--keys for {bare} names a column twice: {key}")
+            if not pk:
+                self.warn("KEYS", f"{bare} has no PRIMARY KEY in the source; --keys makes {key} its key. Rows with the "
+                                  f"same {key} are one record in ScalarDB: a second INSERT fails and an UPSERT "
+                                  f"overwrites. Make sure the source has no such duplicates")
+            elif {c.lower() for c in key} != {c.lower() for c in pk}:
+                self.warn("KEYS", f"--keys makes {key} the key of {bare}, where the source's PRIMARY KEY is {pk}: "
+                                  f"what makes a row unique changes. Rows the source keeps apart can collide (a second "
+                                  f"INSERT fails, an UPSERT overwrites), or ones it refused are accepted")
+        elif not pk:
+            self.fail("PK", "table has no PRIMARY KEY; ScalarDB requires a partition key (add PRIMARY KEY or pass --keys)")
         else:
             pkey, ckey = pk[:1], pk[1:]
             if ckey:
@@ -1694,6 +2071,9 @@ class StatementConverter:
                                if isinstance(cd, exp.ColumnDef) and cd.kind is not None
                                and (exact := self._map_type(cd).residual_type)}
         meta.secondary_indexes.extend(inline_indexes)
+        meta.not_null = {cd.this.name for cd in c.this.expressions if isinstance(cd, exp.ColumnDef)
+                         and any(isinstance(k.kind, exp.NotNullColumnConstraint) and not k.kind.args.get("allow_null")
+                                 for k in cd.args.get("constraints") or [])}
         self.registry.add(meta)
         cols_sql = ",\n  ".join(f"{quoted(n)} {t}" for n, t in columns.items())
         if len(pkey) == 1 and not ckey:
@@ -1984,13 +2364,12 @@ def convert_script(text: str, dialect: str, registry: SchemaRegistry | None = No
     results = []
     try:
         statements = _split_statements(text, dialect)
-    except TokenError as e:
-        # the tokenizer cannot say where statements end (an unterminated string, usually), so there is nothing to
-        # convert one by one. One ERROR that says where, instead of a traceback and no report
-        failed = Result(1, text.strip()[:2000], "TOKEN_ERROR", status="ERROR")
-        failed.issues.append(Issue("ERROR", "TOKENIZE", f"the script could not be split into statements: "
-                                                        f"{str(e).splitlines()[0]}"))
-        return [failed], registry
+    except TokenError:
+        # the tokenizer cannot say where statements end (an unterminated string, usually). Split where a semicolon
+        # ends a line instead: the statements that read are converted, the one that does not is a TOKENIZE ERROR
+        # of its own -- it was one ERROR for the whole file (#147)
+        statements = _split_loosely(respell_q_quotes(text.removeprefix("\ufeff")) if dialect == "oracle"
+                                    else text.removeprefix("\ufeff"), dialect)
     for i, stmt in enumerate(statements, start=1):
         try:
             r = conv.convert(stmt)

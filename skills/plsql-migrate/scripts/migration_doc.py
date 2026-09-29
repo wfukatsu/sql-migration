@@ -380,6 +380,7 @@ CHANGES = {
     "BOOL_LIT": (SHAPE, "TRUE / FALSE を列の型の数で書いた"),
     "COMMA_JOIN": (SHAPE, "カンマの結合を INNER JOIN に書き換えた"),
     "DATE_LIT": (SHAPE, "日付・日時のリテラルを ScalarDB の形に書き換えた"),
+    "TYPE_LIT": (SHAPE, "リテラルを列の型に合わせた（数字の文字列を数に、整数の列の範囲の境界、四捨五入）"),
     "IN": (SHAPE, "IN のリストを = の OR に展開した"),
     "LIKE": (SHAPE, "LIKE に ESCAPE を足した（Oracle と同じ意味にする）"),
     "NAMESPACE": (SHAPE, "スキーマ名を ScalarDB の namespace にした"),
@@ -399,13 +400,14 @@ CHANGES = {
 CAPABILITY = {
     "AGG": "集約関数の種類・引数の式", "AGG_DISTINCT": "COUNT(DISTINCT …)", "ALTER": "ALTER TABLE", "AUTO_INC": "自動採番の列",
     "CLAUSE": "句（flashback 問合せ、TABLESAMPLE など）", "COL_COL": "列どうしの比較", "CTE": "WITH 句",
-    "DATE_FMT": "日付の書式", "DDL": "DDL", "DELETE": "DELETE の ORDER BY / LIMIT", "DELETE_JOIN": "結合する DELETE",
+    "DATE_FMT": "日付の書式", "DBLINK": "DB link", "DDL": "DDL", "DELETE": "DELETE の ORDER BY / LIMIT", "DELETE_JOIN": "結合する DELETE",
     "DISTINCT": "SELECT DISTINCT", "DO_NOTHING": "ON CONFLICT DO NOTHING", "DROP_INDEX": "DROP INDEX",
     "EXPR": "リテラルと bind 以外の値（式・関数）", "FROM": "FROM の副問合せ", "GENERATED": "生成列",
     "GROUP": "GROUP BY の式・集計の階層", "HIERARCHICAL": "CONNECT BY（階層問合せ）", "IDENT": "識別子（予約語など）",
     "INDEX": "インデックス", "INSERT": "INSERT の変種", "INSERT_IGNORE": "INSERT IGNORE", "INSERT_SELECT": "INSERT … SELECT",
     "INTERNAL": "変換器の内部エラー", "JOIN": "結合の形", "JOIN_KEY": "キーでない列の結合", "JOIN_ON": "結合の条件",
     "KEEP": "KEEP (DENSE_RANK …)", "MERGE": "MERGE", "NORMAL_FORM": "条件の正規化", "NOT": "否定",
+    "NULL_CMP": "NULL との比較（= NULL、NOT IN (…, NULL)）",
     "NO_CROSS_PARTITION": "パーティションをまたぐ走査", "OFFSET": "OFFSET", "ORACLE_JOIN_MARK": "Oracle の (+) 外部結合",
     "ORDER": "ORDER BY の式", "ORDER_STORAGE": "並べ替えを伴う全パーティションの走査", "OR_KEYS": "キーへの OR / IN",
     "PIVOT": "PIVOT / UNPIVOT", "PK": "主キー", "PK_UPDATE": "主キーの列の更新", "PLSQL_BLOCK": "PL/SQL のブロック",
@@ -413,7 +415,7 @@ CAPABILITY = {
     "RESIDUAL_H2": "H2 でも実行できない構文", "RETURNING": "RETURNING", "RMW": "列を読む SET の式",
     "ROWID": "ROWID", "SAVEPOINT": "SAVEPOINT", "SEQUENCE": "sequence", "SET": "SET 句", "SET_OP": "UNION / INTERSECT / EXCEPT",
     "STATEMENT": "文の種類", "SUBQUERY": "副問合せ", "TABLE": "表の指定", "TEMP": "一時表", "TOKENIZE": "文への分割",
-    "TYPE": "列の型", "UNPARSED": "文の種類", "UNSUPPORTED": "関数・構文", "UPDATE": "UPDATE の ORDER BY / LIMIT",
+    "TYPE": "列の型", "TYPE_MISMATCH": "列の型に合わないリテラル", "UNPARSED": "文の種類", "UNSUPPORTED": "関数・構文", "UPDATE": "UPDATE の ORDER BY / LIMIT",
     "UPDATE_JOIN": "結合する UPDATE", "UPSERT": "UPSERT の条件", "WINDOW": "窓関数", "WITH_PLSQL": "WITH 句の PL/SQL 関数",
 }
 ORDER = {MEANING: 0, UNKNOWN: 1, SHAPE: 2, INFO: 3}
