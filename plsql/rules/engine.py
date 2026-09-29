@@ -624,7 +624,21 @@ def _handled(routine: M.Routine, module: M.Module | None = None,
             raised = _raised_codes(routine, analysis)
         if code not in raised:
             out.setdefault(alias, f"{name} (EXCEPTION_INIT {code})")
+    if "INVALID_NUMBER" in out and _hoists_to_number(routine, analysis):
+        # a TO_NUMBER lifted out of SQL raises INVALID_NUMBER on the target as the statement did in Oracle (#167)
+        del out["INVALID_NUMBER"]
     return out
+
+
+def _hoists_to_number(routine: M.Routine, analysis: ProgramAnalysis | None) -> bool:
+    """Whether the routine, or what it calls, computes a TO_NUMBER lifted out of a SQL statement (TO_NUMBER_HOISTED):
+    the one place the target raises INVALID_NUMBER by itself (#167). What it calls counts because Oracle's error
+    goes up to the caller's handler, and so does the runtime's."""
+    routines = [routine]
+    if analysis is not None:
+        reached = analysis.call_graph.reachable_from(routine.id) - {routine.id}
+        routines += [r for m in analysis.program.modules for r in m.routines if r.id in reached]
+    return any(d.code == "TO_NUMBER_HOISTED" for r in routines for s in _statements(r) for d in s.diagnostics)
 
 
 def _raised_codes(routine: M.Routine, analysis: ProgramAnalysis | None) -> set[int]:

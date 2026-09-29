@@ -640,6 +640,52 @@ public final class Plsql {
     return OracleFormat.parseNumber(text(value), text(format), nls);
   }
 
+  /**
+   * TO_NUMBER(value) the generator lifted out of a SQL statement (#167): the same conversion as {@link
+   * #toNumber(Object)}, but text it cannot read is what the statement raises, ORA-01722 INVALID_NUMBER, and not
+   * PL/SQL's ORA-06502 -- so the routine's {@code WHEN INVALID_NUMBER} handler runs as it did (measured on 26ai:
+   * {@code SELECT TO_NUMBER('12x') INTO n FROM dual} is -1722, {@code n := TO_NUMBER('12x')} is -6502).
+   */
+  public static BigDecimal sqlToNumber(Object value) {
+    try {
+      return toNumber(value);
+    } catch (ValueError e) {
+      String text = text(value);
+      throw new InvalidNumber(text, text.charAt(unreadableAt(text)));
+    }
+  }
+
+  /** TO_NUMBER(value, format) lifted out of a SQL statement: ORA-01722 where PL/SQL raises ORA-06502 (#167). */
+  public static BigDecimal sqlToNumber(Object value, Object format) {
+    try {
+      return toNumber(value, format);
+    } catch (ValueError e) {
+      // with a format, Oracle names the text's first character whatever went wrong (26ai)
+      String text = text(value);
+      throw new InvalidNumber(text, text.charAt(0));
+    }
+  }
+
+  /**
+   * Where text stops being a number, as ORA-01722 names it (26ai): '12x' names 'x', '1.2.3' the second '.',
+   * ' 1 2' the '2'. Text that is a prefix of a number and nothing more ('+', ' ') names its last character.
+   */
+  private static int unreadableAt(String text) {
+    String decimal = java.util.regex.Pattern.quote(String.valueOf(nls.decimal()));
+    java.util.regex.Matcher prefix = java.util.regex.Pattern.compile(
+        "\\s*[+-]?(?:\\d+(?:" + decimal + "\\d*)?|" + decimal + "\\d+)?(?:[eE][+-]?\\d+)?\\s*").matcher(text);
+    int end = prefix.lookingAt() ? prefix.end() : 0;
+    return end < text.length() ? end : Math.max(text.length() - 1, 0);
+  }
+
+  /** ORA-01722, a SQL statement's conversion of text that is not a number (#167). */
+  public static final class InvalidNumber extends OracleError {
+    public InvalidNumber(String text, char at) {
+      super(-1722, "ORA-01722: unable to convert string value containing '" + at + "' to a number: \n"
+          + "ORA-03302: (ORA-01722 details) invalid string value: " + text);
+    }
+  }
+
   /** Coerce to Oracle's NUMBER. Generated code uses it wherever a literal or a ternary lands in a NUMBER. */
   public static BigDecimal dec(Object value) {
     return isNull(value) ? null : num(value);

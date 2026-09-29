@@ -272,6 +272,18 @@ ALWAYS = ("NO_DATA_FOUND", "TOO_MANY_ROWS", "ZERO_DIVIDE", "VALUE_ERROR")
 # A handler for one of these runs in Oracle and never here.
 NEVER_RAISED_BY_TARGET = ("DUP_VAL_ON_INDEX", "INVALID_NUMBER")
 
+# ... except INVALID_NUMBER where a TO_NUMBER was lifted out of a SQL statement (#167): the repository computes it with
+# `Plsql.sqlToNumber`, which raises ORA-01722 as the statement did, and the handler runs again.
+def hoists_to_number(program: M.Program | None) -> bool:
+    """Whether any statement of the program carries a TO_NUMBER lifted out of SQL (`sqlbridge`, TO_NUMBER_HOISTED)."""
+    if program is None:
+        return False
+    return any(d.code == "TO_NUMBER_HOISTED"
+               for m in program.modules for r in m.routines
+               for s in _walk(r.body) + [x for h in r.exception_handlers for x in _walk(h.body)]
+               for d in s.diagnostics)
+
+
 # The same, by the Oracle number a `PRAGMA EXCEPTION_INIT` binds (#148 H3), with the name rule EXC-001 knows it by.
 # The constraint errors are the database's: ScalarDB has no UNIQUE, NOT NULL, CHECK, FOREIGN KEY or column length,
 # so nothing raises them unless a guard the project decided on (`constraints.enforce`) does. -6502 is VALUE_ERROR,

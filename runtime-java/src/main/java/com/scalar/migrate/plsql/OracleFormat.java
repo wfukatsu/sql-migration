@@ -560,7 +560,9 @@ public final class OracleFormat {
       int point = m.decimalElement == 0 ? -1 : s.indexOf(decimal);
       String intPart = point < 0 ? s : s.substring(0, point);
       String fracPart = point < 0 ? "" : s.substring(point + 1);
-      if (point < 0 && m.decimalElement == 0 && s.indexOf('.') >= 0) throw new Plsql.ValueError();
+      // a model without a decimal element refuses the session's decimal character, not '.': with ',.' the '.' of
+      // '1.234' is 9G999's group separator and reads as 1234 (#167, measured on 26ai)
+      if (point < 0 && m.decimalElement == 0 && s.indexOf(nls.decimal()) >= 0) throw new Plsql.ValueError();
       if (fracPart.length() > m.fraction || !fracPart.chars().allMatch(Character::isDigit)) {
         throw new Plsql.ValueError();
       }
