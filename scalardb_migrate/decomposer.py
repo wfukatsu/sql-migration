@@ -1052,21 +1052,89 @@ class Decomposer:
         return "+".join(dict.fromkeys(found)) if found else "P1"
 
 
-def _whole_number(e: exp.Expression) -> bool:
+def _whole_number(e: exp.Expression, depth: int = 0) -> bool:
     """Whether H2 types ``e`` as an integer although it comes from no fetched column: an integer literal, COUNT,
-    a string length or position, an EXTRACT, ROWNUM, and +, -, *, MOD over those."""
+    a string length or position, an EXTRACT, ROWNUM, and +, -, *, MOD, MAX, MIN, SUM over those; a scalar subquery
+    answering one; and a column of a derived table or CTE that holds one (#160: `c / 4` over
+    `(SELECT COUNT(*) c ...)` was still integer division)."""
     e = _unparen(e)
+    if depth > 16:
+        return False
     if isinstance(e, exp.Literal):
         return not e.is_string and e.is_int
     if isinstance(e, (exp.Count, exp.Length, exp.StrPosition, exp.Extract)):
         return True
     if isinstance(e, exp.Column):
-        return e.name.upper() == "ROWNUM" and not e.table
-    if isinstance(e, exp.Neg):
-        return _whole_number(e.this)
+        if e.name.upper() == "ROWNUM" and not e.table:
+            return True
+        projection = _derived_projection(e)
+        return projection is not None and _whole_number(projection, depth + 1)
+    if isinstance(e, exp.Subquery):
+        return isinstance(e.this, exp.Select) and len(e.this.expressions) == 1 \
+            and _whole_number(_unalias(e.this.expressions[0]), depth + 1)
+    if isinstance(e, (exp.Neg, exp.Max, exp.Min, exp.Sum)):
+        return _whole_number(e.this, depth + 1)
     if isinstance(e, (exp.Add, exp.Sub, exp.Mul, exp.Mod)):
-        return _whole_number(e.this) and _whole_number(e.expression)
+        return _whole_number(e.this, depth + 1) and _whole_number(e.expression, depth + 1)
     return False
+
+
+def _unalias(e: exp.Expression) -> exp.Expression:
+    return e.this if isinstance(e, exp.Alias) else e
+
+
+def _derived_projection(col: exp.Column) -> exp.Expression | None:
+    """The expression a derived table or a CTE gives ``col`` in the query that reads it -- `COUNT(*)` for `t.c`
+    over `(SELECT COUNT(*) c FROM emp) t` -- or None: a fetched table's column, a `*`, a set operation, a column
+    the query takes from an outer query, or anything not found for certain."""
+    select = col.find_ancestor(exp.Select)
+    if select is None:
+        return None
+    sources = []   # (name, query, column names or None)
+    for src in [(select.args.get("from") or select.args.get("from_") or exp.From()).this] + \
+            [j.this for j in select.args.get("joins") or []]:
+        if isinstance(src, exp.Subquery):
+            alias = src.args.get("alias")
+            sources.append((src.alias, src.this, [c.name for c in alias.columns] if alias and alias.columns else None))
+        elif isinstance(src, exp.Table) and not src.args.get("db"):
+            cte = _cte(select, src.name)
+            if cte is not None:
+                alias = cte.args.get("alias")
+                sources.append((src.alias or src.name, cte.this,
+                                [c.name for c in alias.columns] if alias and alias.columns else None))
+            else:
+                sources.append((src.alias or src.name, None, None))
+        elif src is not None:
+            sources.append((getattr(src, "alias", "") or "", None, None))
+    name = col.name.lower()
+    if col.table:
+        sources = [s for s in sources if s[0].lower() == col.table.lower()]
+    elif len(sources) > 1:
+        return None   # which source an unqualified name comes from takes the fetched tables' columns to know
+    if len(sources) != 1 or not isinstance(sources[0][1], exp.Select):
+        return None
+    _, query, names = sources[0]
+    projections = query.expressions
+    if names is not None:
+        if len(names) != len(projections):
+            return None
+        found = [p for n, p in zip(names, projections) if n.lower() == name]
+    else:
+        found = [p for p in projections if not isinstance(p, exp.Star) and p.alias_or_name.lower() == name]
+    return _unalias(found[0]) if len(found) == 1 else None
+
+
+def _cte(node: exp.Expression, name: str) -> exp.CTE | None:
+    """The CTE called ``name`` that a table reference in ``node`` sees: the nearest WITH above it."""
+    scope = node
+    while scope is not None:
+        with_ = scope.args.get("with") or scope.args.get("with_") if isinstance(scope, exp.Expression) else None
+        if with_ is not None:
+            for cte in with_.expressions:
+                if cte.alias.lower() == name.lower():
+                    return cte
+        scope = scope.parent
+    return None
 
 
 # SQLGlot keeps a MySQL DATE_FORMAT format in strftime form (%i -> %M, %M -> %B, %c -> %-m, %T -> %H:%M:%S ...)
