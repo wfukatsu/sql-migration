@@ -163,6 +163,199 @@ def _split_concat(expression: str) -> list[str]:
     return out
 
 
+# --------------------------------------------------------------------------------------------------
+# #157 DYN-001: where in the statement a concatenated value lands.
+#
+# 設計書 §6.8 は「動的 table / column」と「動的 where / order」を REDESIGN にしている。以前の検出は表の位置
+# （FROM / INTO / TABLE / JOIN / UPDATE の直後）だけを見ていて、列名・ORDER BY・PL/SQL ブロックの routine 名を
+# 連結する文は DYN-002（REVIEW）に落ちていた。ここでは連結の「穴」（literal でない項）ごとに、組み上がる文の中の
+# 位置を判定する。値の位置（引用符の中、比較の右辺、VALUES など）は DYN-002 のまま、識別子や SQL の断片の位置は
+# DYN-001 にする。
+
+# 識別子の位置。どれかに穴があれば DYN-001（REDESIGN）
+IDENTIFIER_POSITIONS = frozenset({"object", "column", "order", "routine", "fragment", "name"})
+
+
+@dataclass(frozen=True)
+class Hole:
+    """One non-literal term spliced into a dynamic statement, and where it lands."""
+
+    text: str        # the PL/SQL expression, as written
+    position: str    # object | column | order | routine | fragment | name | value | unknown
+
+    @property
+    def identifier(self) -> bool:
+        return self.position in IDENTIFIER_POSITIONS
+
+
+# 名前を確かめる DBMS_ASSERT の関数で包んだ項は、位置を見るまでもなく識別子である。ENQUOTE_LITERAL は値
+_NAME_ASSERT = re.compile(r"^\s*(?:SYS\s*\.\s*)?DBMS_ASSERT\s*\.\s*(ENQUOTE_NAME|SIMPLE_SQL_NAME|QUALIFIED_SQL_NAME|"
+                          r"SQL_OBJECT_NAME|SCHEMA_NAME)\s*\(", re.IGNORECASE)
+_LITERAL_ASSERT = re.compile(r"^\s*(?:SYS\s*\.\s*)?DBMS_ASSERT\s*\.\s*ENQUOTE_LITERAL\s*\(", re.IGNORECASE)
+# the keyword right before the hole names an object: `DELETE FROM ' || p_tab`, `DROP SEQUENCE ' || s.name`
+_OBJECT_BEFORE = re.compile(r"\b(FROM|INTO|TABLE|JOIN|UPDATE|SEQUENCE|VIEW|INDEX|SYNONYM|PROCEDURE|FUNCTION|"
+                            r"PACKAGE|TRIGGER|CALL)$")
+_CLAUSE = re.compile(r"\b(SELECT|FROM|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|SET|VALUES|INTO|ON|BEGIN|DECLARE|"
+                     r"FETCH|OFFSET|LIMIT|UNION|INTERSECT|MINUS|RETURNING|USING|CONNECT\s+BY|START\s+WITH)\b")
+# a value follows: an operator, or a keyword that takes a value (`BETWEEN 1 AND '` is handled apart)
+_VALUE_BEFORE = re.compile(r"(<>|!=|<=|>=|:=|=|<|>|\+|-|\*|/|\|\||\b(LIKE|BETWEEN|WHEN|THEN|ELSE|LIMIT|OFFSET|FIRST|"
+                           r"NEXT|RETURN|ESCAPE))$")
+_BETWEEN_AND = re.compile(r"\bBETWEEN\s+[^\s]+\s+AND$")
+_COMPARED_AFTER = re.compile(r"^(<>|!=|<=|>=|=|<|>|\b(IS|IN|LIKE|BETWEEN|NOT)\b)")
+_PREDICATE_START = re.compile(r"(\b(WHERE|AND|OR|NOT|ON|HAVING)|\()$")
+_PLSQL_STATEMENT_START = re.compile(r"(\b(BEGIN|THEN|ELSE|LOOP|DECLARE)|;)$")
+# how many alternatives one variable may take before the rest are dropped: the positions, not the statements,
+# are what is asked, and a routine that builds more than this is REVIEW or REDESIGN anyway
+_MAX_SKELETONS = 16
+_HOLE = "\x00"
+
+
+def holes(routine: M.Routine | None, statement: M.Statement) -> list[Hole]:
+    """Every non-literal term the dynamic statement is built from, with where it lands in the statement (#157).
+
+    The string is followed through the routine's assignments, in the order they are written, ignoring the
+    branches (a variable takes every value any assignment gave it so far): `v := 'SELECT ... ORDER BY '` followed
+    by `v := v || p_col` puts `p_col` in the ORDER BY. A variable nobody assigned a string to -- a parameter, a
+    function's result, one an INTO or a call wrote -- is a hole. So is a variable that holds a bare name, even a
+    known one (`v_table := 'EMPLOYEES'; ... FROM ' || v_table`): the name is still chosen at run time, which is
+    what `dynamicTables` decides (samples/oracle-samples b06_3).
+    """
+    values: dict[str, list[tuple[tuple[str, str], ...]]] = {}
+    if routine is not None:
+        from .lower import _walk
+
+        for declaration in routine.declarations:
+            initial = getattr(declaration, "initial", None)
+            if initial and declaration.declaration_kind != "cursor":
+                values[declaration.name.lower()] = _evaluate(initial, values)
+        context = _Context(locals={p.name.lower() for p in routine.parameters}
+                                  | {d.name.lower() for d in routine.declarations}, carried={})
+        body = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
+        for other in body:
+            if other.id == statement.id:
+                break
+            if other.kind == "Assignment" and other.target and other.expression:
+                name = other.target.strip().lower()
+                if re.fullmatch(r"[\w$#]+", name):
+                    known = values.get(name, [])
+                    values[name] = list(dict.fromkeys(known + _evaluate(other.expression, values)))[:_MAX_SKELETONS]
+            elif other.kind not in ("If", "Case", "Loop", "Block"):
+                # `SELECT ... INTO v_sql`, `pick(v_sql)`: from here on the variable may hold anything
+                for name in _writes(other, context):
+                    if name in values:
+                        values[name] = list(dict.fromkeys(values[name] + [(("hole", name),)]))[:_MAX_SKELETONS]
+    found: dict[tuple[str, str], Hole] = {}
+    for skeleton in _evaluate(getattr(statement, "expression", "") or "", values):
+        for index, (kind, text) in enumerate(skeleton):
+            if kind != "hole":
+                continue
+            before = "".join(t if k == "lit" else f" {_HOLE} " for k, t in skeleton[:index])
+            after = "".join(t if k == "lit" else f" {_HOLE} " for k, t in skeleton[index + 1:])
+            hole = Hole(text=text, position=_position(text, before, after))
+            found.setdefault((hole.text, hole.position), hole)
+    return list(found.values())
+
+
+def interpolates_identifier(routine: M.Routine | None, statement: M.Statement) -> bool:
+    """DYN-001: does the dynamic statement splice something into an identifier (or a piece of SQL syntax)?"""
+    return any(hole.identifier for hole in holes(routine, statement))
+
+
+def _evaluate(expression: str, values: dict) -> list[tuple[tuple[str, str], ...]]:
+    """The skeletons an expression can make: each a list of ("lit", text) and ("hole", expression)."""
+    skeletons: list[tuple[tuple[str, str], ...]] = [()]
+    for index, term in enumerate(_terms(expression)):
+        literal = _unquote(term)
+        if literal is not None:
+            options = [(("lit", literal),)]
+        elif re.fullmatch(r"[A-Za-z][\w$#]*", term) and term.lower() in values:
+            options = values[term.lower()] or [(("hole", term),)]
+            if index > 0 and any(_bare_name(o) for o in options):
+                options = [(("hole", term),)]   # a name spliced in: chosen at run time even when it is known
+        elif re.fullmatch(r"-?\d+(\.\d+)?", term):
+            options = [(("lit", term),)]   # a number is spliced as its digits
+        else:
+            options = [(("hole", term),)]
+        skeletons = [s + o for s in skeletons for o in options][:_MAX_SKELETONS]
+    return skeletons
+
+
+def _bare_name(skeleton: tuple[tuple[str, str], ...]) -> bool:
+    """A value that is one name (or number), not a piece of SQL: `'EMPLOYEES'`, not `' AND x = 1'`."""
+    return all(kind == "lit" for kind, _ in skeleton) and \
+        re.fullmatch(r'\s*[\w$#."]+\s*', "".join(text for _, text in skeleton)) is not None
+
+
+def _terms(expression: str) -> list[str]:
+    """`a || 'b' || f(c || d)` -> ['a', "'b'", 'f(c || d)']: split on `||` outside quotes and parentheses."""
+    out, current, quoted, depth, index = [], "", False, 0, 0
+    while index < len(expression):
+        char = expression[index]
+        if char == "'":
+            quoted = not quoted
+        elif not quoted and char == "(":
+            depth += 1
+        elif not quoted and char == ")":
+            depth -= 1
+        if not quoted and depth == 0 and expression.startswith("||", index):
+            out.append(current.strip())
+            current = ""
+            index += 2
+            continue
+        current += char
+        index += 1
+    out.append(current.strip())
+    return [term for term in out if term]
+
+
+def _position(text: str, before: str, after: str) -> str:
+    """Where a hole lands, from the SQL text on either side of it."""
+    if _LITERAL_ASSERT.match(text):
+        return "value"
+    if _NAME_ASSERT.match(text):
+        return "name"
+    if before.count("'") % 2 == 1:
+        return "value"   # inside a quoted literal: `WHERE name = ''' || p || ''''`
+    bare = re.sub(r"'[^']*'", "''", before).upper()
+    tail = bare.rstrip()
+    following = re.sub(r"'[^']*'", "''", after).upper().lstrip()
+    if not tail.strip():
+        return "unknown"   # the whole statement, or what the text before it holds is not known
+    if _OBJECT_BEFORE.search(tail):
+        return "object"
+    plsql = re.match(r"\s*(BEGIN|DECLARE)\b", bare) is not None
+    if plsql and _PLSQL_STATEMENT_START.search(tail):
+        return "routine"   # `'BEGIN ' || l_fn || '(...); END;'`: the routine called, or a whole statement
+    if _BETWEEN_AND.search(tail) or _VALUE_BEFORE.search(tail):
+        return "value"
+    clauses = _CLAUSE.findall(tail)
+    clause = re.sub(r"\s+", " ", clauses[-1]) if clauses else ""
+    if clause == "ORDER BY":
+        return "order"    # a sort expression or its direction (`ORDER BY ' || p_col || ' ' || p_dir`)
+    if clause == "GROUP BY":
+        return "column"
+    if clause == "FROM" and tail.endswith(","):
+        return "object"
+    if clause == "SELECT" and re.search(r"(\b(SELECT|DISTINCT)|,|\()$", tail):
+        return "column"
+    if clause in ("INTO", "INSERT") and re.search(r"[(,]$", tail):
+        return "column"   # `INSERT INTO t (' || p_cols || ') VALUES ...`
+    if clause == "SET" and re.search(r"(\bSET|,)$", tail):
+        return "column" if following.startswith("=") else "fragment"
+    if clause in ("WHERE", "ON", "HAVING", "CONNECT BY", "START WITH"):
+        if re.search(r"\bIN\s*\($", tail):
+            return "value"   # `IN (' || p_list || ')'`: a list of values
+        if re.search(r"[\w$#]\s*\($", tail):
+            return "value"   # a function's argument
+        if _PREDICATE_START.search(tail):
+            return "column" if _COMPARED_AFTER.match(following) else "fragment"
+    if re.search(r"[(,]$", tail):
+        return "value"       # an argument, a VALUES list
+    if re.search(r"[\w$#)\"]$", tail):
+        return "fragment"    # after a complete token and no operator: `'SELECT * FROM t ' || p_clause`
+    return "unknown"
+
+
 @dataclass
 class _State:
     guard: tuple[str, ...]

@@ -33,7 +33,7 @@ import yaml
 
 from ..analysis import ProgramAnalysis
 from ..ir import model as M
-from ..lower import _walk, dynamic_texts, with_variants
+from ..lower import _walk, with_variants
 from ..source import Issue
 
 RULES_DIR = Path(__file__).parent
@@ -543,10 +543,6 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
     return True
 
 
-_INTERPOLATED_IDENTIFIER = re.compile(
-    r"(FROM|INTO|TABLE|JOIN|UPDATE)\s+'\s*\|\||(FROM|INTO|TABLE|JOIN|UPDATE)\s*'\s*\|\|", re.IGNORECASE)
-
-
 def _writes_then_scans(analysis: ProgramAnalysis) -> set[str]:
     """The routines that scan a table the same transaction wrote (AUTO prohibition 11, docs/design/plsql-kpi.md §2).
 
@@ -736,15 +732,18 @@ def _unresolved_callees(routine: M.Routine, analysis: ProgramAnalysis) -> list[s
 
 
 def _interpolates_identifier(statement: M.Statement, routine: M.Routine | None = None) -> bool:
-    """Does the dynamic SQL splice a value into an identifier position?
+    """Does the dynamic SQL splice a value into an identifier position, or a piece of SQL syntax?
 
-    This is the line between the two dynamic-SQL cases the design document separates. A statement that only
+    This is the line between the two dynamic-SQL cases the design document separates (§6.8). A statement that only
     concatenates predicates and passes values with `USING` is a finite set of variants, and can be turned into
-    static queries (REVIEW). One that builds a table name cannot: the target has to be an allowlist or a
-    dedicated repository (REDESIGN).
+    static queries (REVIEW). One that builds a table name, a column name, an ORDER BY or a WHERE fragment at run
+    time cannot: the target has to be an allowlist or a dedicated repository (REDESIGN). Until #157 only the table
+    position (right after FROM / INTO / TABLE / JOIN / UPDATE) was looked at, and a column or a sort order spliced
+    in fell to DYN-002. `dynamic.holes` says where each concatenated term lands.
     """
-    texts = dynamic_texts(routine, statement) if routine is not None else [getattr(statement, "expression", "") or ""]
-    return any(_INTERPOLATED_IDENTIFIER.search(text) for text in texts)
+    from ..dynamic import interpolates_identifier
+
+    return interpolates_identifier(routine, statement)
 
 
 def _as_set(value) -> set:

@@ -28,7 +28,7 @@
 | TX-002 | `PRAGMA AUTONOMOUS_TRANSACTION` | 呼び出し側とは別のトランザクションで回してよいか（親の rollback で消えない、が保たれる） | `transactions.separate.<routine>` | 呼び出し |
 | CUR-002 / BULK-003 / BULK-001 | 行を先に全部読む（上限が要る） | 1 回に読む行数の上限（業務の数として）。上限を置かないならその理由 | `scanRows.routines.<routine>: <数>` / `scanRows.notLimited.<routine>: <理由>` | 業務 |
 | STATE-001 | package 変数（セッション状態）を読み書きする | その値を呼び出し側が持ち回ってよいか（IN OUT 引数と結果で運ぶ） | `packageState.carried.<package>: <理由>` | 呼び出し |
-| DYN-001 | 表名を実行時に組む動的 SQL | 渡されうる表名の一覧（それ以外は実行時に拒否する） | `dynamicTables.<routine>: [表名, …]` | 業務 |
+| DYN-001 | 表名・列名・ORDER BY・WHERE の断片・routine 名を実行時に組む動的 SQL | 渡されうる名前の一覧（それ以外は実行時に拒否する）。連結する項が 1 つのときだけ書ける（表名でも列名でもよい）。2 つ以上（ORDER BY の列と方向など）や WHERE の断片そのものは、query builder への作り直しを決める | `dynamicTables.<routine>: [名前, …]` | 業務 |
 | DYN-004（動的な DDL: `EXECUTE IMMEDIATE 'CREATE …'`） | ScalarDB はトランザクションの中で DDL を流さない。Oracle の DDL は前後で COMMIT する。決定が無ければ断る | その DDL がデータに何も残さない（作ってすぐ消す一時表など）ので、移行先で省いてよいか。TRUNCATE は省けない（行を消す）ので、下の「外れないもの」の DYN-004 を聞く | `ddl.omit.<routine>: <理由>` | 運用 |
 | LINK-001 | DB link 越しの操作 | link の先の表を ScalarDB の管理下に置き、別の namespace として同じトランザクションで書くか。その namespace | `dbLinks.<link>: {namespace: …, reason: …}` | 運用 |
 | CONS-001 | CHECK / 外部キー / UNIQUE が移行先に無い（子のある親の DELETE を含む） | 表ごとに、書く前に生成コードで検査するか（NOT NULL・CHECK・外部キー）、アプリに任せるか | `constraints.enforce.<表>: <理由>` | 業務 |
@@ -52,7 +52,7 @@
 | LOWER-002 | 組み直せない `GOTO` | 制御構造を元の PL/SQL で組み直すか | 呼び出し |
 | LOWER-001 | 下ろせない構文（構文エラーから回復した unit を含む） | 元の PL/SQL を直すか（構文エラーなら、Step 2 の「解析できなかったファイル」と同じ） | 呼び出し |
 | STATE-002 | package 本体の初期化部 | 初期化をどこで（誰が、いつ）行うか | 呼び出し |
-| DYN-002（DDL 以外） | とりうる文を展開して確かめられなかった動的 SQL | 流れうる文（表名なら DYN-001 と同じく `dynamicTables`）と、`USING` の bind の対応・権限を確かめるか | 呼び出し |
+| DYN-002（DDL 以外） | とりうる文を展開して確かめられなかった動的 SQL | 流れうる文（表名・列名なら DYN-001 と同じく `dynamicTables`）と、`USING` の bind の対応・権限を確かめるか | 呼び出し |
 | DYN-003 | `DBMS_SQL`（定数の問合せでないもの） | 実行ログから流れる文を洗い出すか | 運用 |
 | DICT-001 | データ辞書を読む | 移行先のメタデータか設定値のどちらに置き換えるか | 運用 |
 | TRG-001 | trigger そのもの | 生成コードの外からの書き込みを、照合（OPS-1）と権限（直接の書き込みを禁じる）で追うか | 運用 |
