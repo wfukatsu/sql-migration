@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 
 import sqlglot
 from sqlglot import exp
@@ -24,11 +25,13 @@ from . import appside
 from .decomposer import DEFAULT_ROW_LIMIT, ORDERED_SCAN_STORAGES, Decomposer, NotDecomposable, PlanBlocked, split_negate
 from .dialect import Upsert, to_scalardb_sql
 from .schema import SQL_KEYWORDS, SchemaRegistry, TableMeta, needs_quotes, quoted
-from .types import fit_temporal_literal, iso_temporal_literal, map_type, session_zone
+from .types import fit_number, fit_temporal_literal, iso_temporal_literal, map_type, session_zone
 
 AGGREGATES = (exp.Count, exp.Sum, exp.Avg, exp.Min, exp.Max)
 COMPARISONS = (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE)
 FLIP = {exp.EQ: exp.EQ, exp.NEQ: exp.NEQ, exp.GT: exp.LT, exp.LT: exp.GT, exp.GTE: exp.LTE, exp.LTE: exp.GTE}
+OP_SQL = {exp.EQ: "=", exp.NEQ: "<>", exp.GT: ">", exp.GTE: ">=", exp.LT: "<", exp.LTE: "<="}
+SQL_OP = {v: k for k, v in OP_SQL.items()}
 NEGATE = {exp.EQ: exp.NEQ, exp.NEQ: exp.EQ, exp.GT: exp.LTE, exp.LTE: exp.GT, exp.LT: exp.GTE, exp.GTE: exp.LT}
 LITERAL_TYPES = (exp.Literal, exp.Null, exp.Boolean, exp.Placeholder, exp.Parameter, exp.HexString)
 # Consensus Commit keeps its metadata in the same row, so these column names are unavailable to the application
@@ -417,6 +420,11 @@ class StatementConverter:
             out = self._dispatch(node)
             res.converted = [to_scalardb_sql(n) if isinstance(n, exp.Expression) else n for n in out]
             self._check_bind_order(binds, out)
+            collation = appside.collation_note(node, self.dialect)
+            if collation is None:
+                # read from the source, where `salary = '5'` compares a string; written as `salary = 5` here (the
+                # column is numeric), it compares no string and there is no collation to lose (#147)
+                notes = [(sev, msg) for sev, msg in notes if not msg.startswith("MySQL compares strings by")]
             self.issues.extend(Issue(severity, "SEMANTICS", message) for severity, message in notes)
         except Unconvertible as e:
             self.issues.append(Issue("ERROR", e.code, str(e)))
@@ -781,6 +789,108 @@ class StatementConverter:
     def _fit_date_literal(self, col: exp.Column, value: exp.Expression, ctx: str) -> exp.Expression:
         return self._fit_temporal_literal(col.name, value, ctx, col.table)
 
+    def _no_null(self, leaf: exp.Expression, value: exp.Expression, ctx: str) -> None:
+        """`x = NULL` is never true in the source (it is unknown), and ScalarDB refuses a NULL in a predicate
+        (DB-SQL-10045). A read goes to a plan, whose H2 answers as the source does (#147)."""
+        if isinstance(_unparen(value), exp.Null):
+            self.fail("NULL_CMP", f"{ctx}: '{leaf.sql(dialect=self.dialect)}' compares with NULL, which is never true "
+                                  f"in the source (no row matches); ScalarDB refuses a NULL in a predicate. Write IS "
+                                  f"[NOT] NULL if that was meant, or drop the condition")
+
+    def _fit_compared(self, col: exp.Column, op: str, value: exp.Expression, ctx: str) -> tuple[str, exp.Expression]:
+        """The literal of `col op value` fitted to the column's type: a number, and then a date or time. A DATE column
+        compared with a time of day moves the bound, as the time is not stored (#147)."""
+        kind = self._column_type(col)
+        op, value = self._fit_number_literal(kind, col.name, value, ctx, op)
+        if op == "IS NOT NULL":
+            return op, value
+        if kind == "DATE" and op in ("=", "<>", "<", "<=", ">", ">=", "low", "high"):
+            typed = isinstance(value, exp.Cast) and isinstance(value.this, exp.Literal)
+            lit = value.this if typed else value
+            if isinstance(lit, exp.Literal) and lit.is_string:
+                day, change = fit_temporal_literal("DATE", lit.name, self._session_zone)
+                if change == "time":
+                    return self._date_bound(col, op, day, lit.name, ctx)
+        return op, self._fit_date_literal(col, value, ctx)
+
+    def _date_bound(self, col: exp.Column, op: str, day: str, written: str, ctx: str) -> tuple[str, exp.Expression]:
+        """`d < '2024-01-01 10:30'` holds for the whole of 2024-01-01 when d has no time; dropping the time kept the
+        operator and lost that day (and `>=` gained it, `=` matched it). Measured on ScalarDB Cluster (#147)."""
+        from datetime import date, timedelta
+        if op == "=":
+            self.fail("DATE_LIT", f"{ctx}: {col.name} = '{written}' never matches: {col.name} is a ScalarDB DATE and "
+                                  f"has no time of day. Compare with the date, or keep the time in a TIMESTAMP column")
+        if op == "<>":
+            self.warn("DATE_LIT", f"{ctx}: {col.name} <> '{written}' is true for every date ({col.name} is a ScalarDB "
+                                  f"DATE and has no time of day); written as {col.name} IS NOT NULL")
+            return "IS NOT NULL", exp.Null()
+        new_op, bound = op, day
+        if op == "<":
+            new_op = "<="
+        elif op == ">=":
+            new_op = ">"
+        elif op == "low":
+            bound = (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+        before = {"low": "the BETWEEN low bound", "high": "the BETWEEN high bound"}.get(op, f"{col.name} {op}")
+        after = {"low": "", "high": ""}.get(op, f"{col.name} {new_op} ")
+        self.warn("DATE_LIT", f"{ctx}: '{written}' has a time part but {col.name} is a ScalarDB DATE; the bound is "
+                              f"moved so that the same dates match: {before} '{written}' -> {after}'{bound}'")
+        return new_op, exp.Literal.string(bound)
+
+    def _fit_number_literal(self, kind: str | None, column: str, value: exp.Expression, ctx: str,
+                            op: str) -> tuple[str, exp.Expression]:
+        """A literal made to fit a numeric or text column (types.fit_number); what cannot be written fails."""
+        e = _unparen(value)
+        negative = isinstance(e, exp.Neg) and isinstance(e.this, exp.Literal) and not e.this.is_string
+        lit = e.this if negative else e
+        if not isinstance(lit, exp.Literal) or kind is None:
+            return op, value
+        if lit.is_string:
+            raw = lit.name
+        else:
+            text = ("-" if negative else "") + lit.name
+            try:
+                raw = int(text) if re.fullmatch(r"-?\d+", text) else Decimal(text)
+            except InvalidOperation:
+                return op, value
+        new_op, fitted, change = fit_number(kind, raw, op)
+        written = value.sql(dialect=self.dialect)
+        if change is None:
+            return op, value
+        if change in ("not_a_number", "text_compare", "out_of_range", "never"):
+            why = {"not_a_number": f"{written} is not a number and {column} is {kind}",
+                   "text_compare": f"{column} is TEXT and {written} a number: the source compares them as numbers "
+                                   f"(converting every {column}), ScalarDB refuses the mix",
+                   "out_of_range": f"{written} is outside the range of ScalarDB {kind}",
+                   "never": f"{column} is a whole number ({kind}) and never equals {written}"}[change]
+            self.fail("TYPE_MISMATCH", f"{ctx}: {why}. Bind a value of the column's type, or fix the literal")
+        if change == "not_null":
+            self.warn("TYPE_LIT", f"{ctx}: {column} <> {written} is true for every whole number; written as "
+                                  f"{column} IS NOT NULL")
+            return "IS NOT NULL", exp.Null()
+        if change == "number_to_text":
+            self.warn("TYPE_LIT", f"{ctx}: the number {written} written as the text '{written}' for TEXT column "
+                                  f"{column}; the source converts it with its own number format")
+            return op, exp.Literal.string(written)
+        out = exp.Literal.number(str(fitted)) if not (isinstance(fitted, Decimal) and fitted < 0) and \
+            not (isinstance(fitted, int) and fitted < 0) else exp.Neg(this=exp.Literal.number(str(-fitted)))
+        if change == "text_to_number":
+            self.info("TYPE_LIT", f"{ctx}: {written} written as the number {fitted} for {kind} column {column}")
+        elif change == "whole":
+            self.info("TYPE_LIT", f"{ctx}: {written} written as {fitted} for {kind} column {column}")
+        elif change == "bound":
+            self.info("TYPE_LIT", f"{ctx}: {column} is a whole number ({kind}); {op} {written} written as "
+                                  f"{new_op if new_op not in ('low', 'high') else op} {fitted}")
+        elif change == "rounded":
+            self.warn("TYPE_LIT", f"{ctx}: {written} rounded to {fitted} for {kind} column {column}, as the source "
+                                  f"stores it")
+        return new_op, out
+
+    def _fit_assigned(self, column: str, value: exp.Expression, ctx: str, qualifier: str = "") -> exp.Expression:
+        """A VALUES / SET value fitted to the column it lands in: a number, and then a date or time."""
+        _, value = self._fit_number_literal(self._column_type_by_name(column, qualifier), column, value, ctx, "set")
+        return self._fit_temporal_literal(column, value, ctx, qualifier)
+
     # -- predicates ---------------------------------------------------------------------------------
     def _push_not(self, e: exp.Expression, negate: bool) -> exp.Expression:
         e, flagged = split_negate(_unparen(e))   # `x NOT LIKE p` is Like(negate=True), not Not(Like) (#102)
@@ -825,6 +935,19 @@ class StatementConverter:
             if target.args.get("query") or not target.expressions:
                 self.fail("SUBQUERY", "IN (subquery) is not supported; fetch the inner result first and bind literals")
             col = target.this
+            values = [v for v in target.expressions if not isinstance(_unparen(v), exp.Null)]
+            if len(values) != len(target.expressions):
+                # `x IN (1, NULL)` is `x = 1 OR unknown`: the NULL never matches. `x NOT IN (1, NULL)` is never
+                # true. ScalarDB refuses a NULL in a predicate (DB-SQL-10045), so neither can be written as it stands
+                written = target.sql(dialect=self.dialect)
+                if neg or not values:
+                    self.fail("NULL_CMP", f"'{'NOT ' if neg else ''}{written}' is never true in the source (a NULL in "
+                                          f"the list makes {'NOT IN unknown for every row' if neg else 'IN unknown'}); "
+                                          f"ScalarDB refuses a NULL in a predicate. Drop the NULL from the list, or "
+                                          f"the condition")
+                self.warn("NULL_CMP", f"NULL dropped from '{written}': it never matches in the source either, and "
+                                      f"ScalarDB refuses a NULL in a predicate")
+                target.set("expressions", values)
             if neg:
                 parts = [exp.NEQ(this=col.copy(), expression=v) for v in target.expressions]
                 return exp.and_(*parts) if len(parts) > 1 else parts[0]
@@ -864,8 +987,11 @@ class StatementConverter:
         if isinstance(leaf, exp.Between):
             if not isinstance(leaf.this, exp.Column):
                 self.fail("PRED", f"{ctx}: BETWEEN left-hand side must be a column")
-            leaf.set("low", self._value(leaf.args["low"], ctx))
-            leaf.set("high", self._value(leaf.args["high"], ctx))
+            for bound in ("low", "high"):
+                value = self._value(leaf.args[bound], ctx)
+                self._no_null(leaf, value, ctx)
+                _, value = self._fit_compared(leaf.this, bound, value, ctx)
+                leaf.set(bound, value)
             return leaf
         if type(leaf) in FLIP:
             lhs, rhs = leaf.this, leaf.expression
@@ -881,8 +1007,15 @@ class StatementConverter:
             if isinstance(rhs, exp.Column):
                 self.fail("COL_COL", f"{ctx}: column-to-column comparison '{leaf.sql(dialect=self.dialect)}' is not "
                                      f"supported (only column vs literal / bind marker)")
-            leaf.set("expression", self._fit_date_literal(lhs, self._value(rhs, ctx), ctx) if isinstance(lhs, exp.Column) else self._value(rhs, ctx))
-            return leaf
+            value = self._value(rhs, ctx)
+            self._no_null(leaf, value, ctx)
+            if not isinstance(lhs, exp.Column):
+                leaf.set("expression", value)
+                return leaf
+            op, value = self._fit_compared(lhs, OP_SQL[type(leaf)], value, ctx)
+            if op == "IS NOT NULL":
+                return exp.Not(this=exp.Is(this=lhs, expression=exp.Null()))
+            return SQL_OP[op](this=lhs, expression=value)
         if isinstance(leaf, exp.Boolean):
             self.fail("PRED", f"{ctx}: constant boolean predicates are not supported")
         self.fail("PRED", f"{ctx}: unsupported predicate '{leaf.sql(dialect=self.dialect)}'")
@@ -1436,8 +1569,7 @@ class StatementConverter:
                 name = cols[i] if i < len(cols) else ""
                 ctx = f"VALUES column {name or i + 1}"
                 converted = self._value(v, ctx)
-                tup.expressions[i].replace(
-                    self._fit_temporal_literal(name, converted, ctx) if name else converted)
+                tup.expressions[i].replace(self._fit_assigned(name, converted, ctx) if name else converted)
         meta = self._meta(ins.this)
         if meta and cols:
             missing = [c for c in meta.primary_key if c.lower() not in {x.lower() for x in cols}]
@@ -1643,8 +1775,8 @@ class StatementConverter:
                                  f"do SELECT -> compute -> UPDATE with a literal inside one ScalarDB transaction")
             # fitted to the column like a VALUES entry or a predicate: a date-only literal for a TIMESTAMP column, a
             # typed literal and TRUE for an INT column were all written as they stood here
-            eq.set("expression", self._fit_temporal_literal(eq.this.name, self._value(v, f"SET {eq.this.name}"),
-                                                            f"SET {eq.this.name}", eq.this.table))
+            eq.set("expression", self._fit_assigned(eq.this.name, self._value(v, f"SET {eq.this.name}"),
+                                                    f"SET {eq.this.name}", eq.this.table))
             eq.this.set("table", None)
         where = u.args.get("where")
         cond = self._build_condition(where.this, "WHERE") if where else None

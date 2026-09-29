@@ -15,6 +15,8 @@ from __future__ import annotations
 import functools
 import re
 from dataclasses import asdict, dataclass, field, replace
+from datetime import date, timedelta
+from decimal import Decimal
 from typing import Any
 
 import sqlglot
@@ -24,7 +26,7 @@ from sqlglot.transforms import eliminate_join_marks
 
 from .appside import h2_unsupported
 from .schema import SchemaRegistry, TableMeta, quoted
-from .types import fit_temporal_literal, iso_temporal_literal, session_zone
+from .types import fit_number, fit_temporal_literal, iso_temporal_literal, session_zone
 
 DEFAULT_ROW_LIMIT = 10_000
 H2_MODE = {"oracle": "Oracle", "postgres": "PostgreSQL", "mysql": "MySQL"}
@@ -207,6 +209,50 @@ def _fit_temporal(p: Predicate, types: dict[str, str], zone=None) -> Predicate:
         return v if change == "time" else fitted
 
     return replace(p, value=[fit(v) for v in p.value] if isinstance(p.value, list) else fit(p.value))
+
+
+def _fit_pushdown(p: Predicate, types: dict[str, str], zone=None) -> Predicate | None:
+    """``p`` as ScalarDB can evaluate it on the column's type, or None to leave it to the residual SQL (#147).
+
+    A fetch only has to read a superset of the rows the residual SQL keeps, so what cannot be written as ScalarDB
+    reads it is not pushed down: a NULL (DB-SQL-10045), a value of another type (DB-SQL-10053/10054/10055), a time of
+    day against a DATE column ("could not be parsed"). What can be fitted is, by the converter's rules."""
+    if p.op in ("IS NULL", "IS NOT NULL"):
+        return p
+    kind = next((t for c, t in types.items() if c.lower() == p.column.lower()), None)
+
+    def fit(value, op):
+        if value is None:
+            return None, None
+        if isinstance(value, dict) or kind is None:
+            return op, value
+        if p.op in ("LIKE", "NOT LIKE"):
+            return (op, value) if isinstance(value, str) else (None, None)
+        new_op, fitted, change = fit_number(kind, value, op)
+        if change in ("not_a_number", "text_compare", "out_of_range", "never", "not_null", "number_to_text"):
+            return None, None
+        if change:
+            value = float(fitted) if isinstance(fitted, Decimal) else fitted
+            op = new_op
+        if kind == "DATE" and isinstance(value, str):
+            day, how = fit_temporal_literal("DATE", value, zone)
+            if how == "time":
+                if op in ("=", "<>"):
+                    return None, None
+                if op == "low":
+                    return op, (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+                return {"<": "<=", ">=": ">"}.get(op, op), day
+        return op, value
+
+    if p.op == "BETWEEN":
+        (_, low), (_, high) = fit(p.value[0], "low"), fit(p.value[1], "high")
+        if low is None or high is None:
+            return None
+        return replace(p, value=[low, high])
+    op, value = fit(p.value, p.op)
+    if op is None:
+        return None
+    return replace(p, op=op, value=value)
 
 
 def _pred_sql(p: Predicate) -> str:
@@ -455,6 +501,8 @@ class Decomposer:
                     # derived table's `staff` (`COUNT(*) AS staff`): pushed into the fetch, ScalarDB said "column
                     # staff does not exist" (samples/oracle-plsql-docs 6-22, #68). The residual engine keeps it
                     p = None
+                if p is not None and meta is not None:
+                    p = _fit_pushdown(p, meta.columns, self.session_zone)
                 if p is None:
                     group = None
                     break
