@@ -24,10 +24,10 @@ effort: medium
 # 上の 3 つはチェックアウトで作業するとき、下の 3 つはプラグインとして入れたとき（<root>/bin/python <root>/skills/...）の形
 allowed-tools:
   - Read
-  - Bash(.venv/bin/python -c "import sqlglot*)
+  - Bash(.venv/bin/python skills/sql-transpile/scripts/check_env.py)
   - Bash(.venv/bin/python skills/sql-transpile/scripts/transpile.py *)
   - Bash(.venv/bin/python skills/sql-transpile/scripts/vendor_sync.py --check)
-  - Bash(*/bin/python -c "import sqlglot*)
+  - Bash(*/bin/python */skills/sql-transpile/scripts/check_env.py)
   - Bash(*/bin/python */skills/sql-transpile/scripts/transpile.py *)
   - Bash(*/bin/python */skills/sql-transpile/scripts/vendor_sync.py --check)
 ---
@@ -67,7 +67,7 @@ SQL を Source 方言で読んで AST に抽象化し、Target 方言または S
 ### Step 0: 環境を確認する
 
 ```bash
-.venv/bin/python -c "import sqlglot; print('sqlglot', sqlglot.__version__)"
+.venv/bin/python skills/sql-transpile/scripts/check_env.py
 ```
 
 失敗したら `.venv/bin/pip install -r requirements.txt` を案内する。

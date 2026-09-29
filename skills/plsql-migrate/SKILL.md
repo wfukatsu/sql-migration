@@ -27,7 +27,7 @@ allowed-tools:
   - Glob
   - Write
   - Edit
-  - Bash(.venv/bin/python -c *)
+  - Bash(.venv/bin/python skills/plsql-migrate/scripts/check_env.py)
   - Bash(java -version*)
   - Bash(runtime-java/gradlew --version*)
   - Bash(gradle --version*)
@@ -35,6 +35,13 @@ allowed-tools:
   - Bash(.venv/bin/python -m plsql.cli *)
   - Bash(.venv/bin/python skills/plsql-migrate/scripts/decision_items.py *)
   - Bash(.venv/bin/python skills/plsql-migrate/scripts/migration_doc.py *)
+  # プラグインとして入れたとき: <root>/bin/python と <root>/skills/... の形（先頭の * は公式の権限ルールで使える）
+  - Bash(*/bin/python */skills/plsql-migrate/scripts/check_env.py)
+  - Bash(*/runtime-java/gradlew --version*)
+  - Bash(*/bin/python -m plsql.generate *)
+  - Bash(*/bin/python -m plsql.cli *)
+  - Bash(*/bin/python */skills/plsql-migrate/scripts/decision_items.py *)
+  - Bash(*/bin/python */skills/plsql-migrate/scripts/migration_doc.py *)
 ---
 
 # plsql-migrate — PL/SQL の変換と、生成コードの外で決めることの確認
@@ -119,14 +126,14 @@ PL/SQL を読んで ScalarDB 向けの Java を生成し、生成器が決めず
 ### Step 0: 環境を確かめる
 
 ```bash
-.venv/bin/python -c "import sqlglot, yaml; print('ok')"
+.venv/bin/python skills/plsql-migrate/scripts/check_env.py
 java -version
 runtime-java/gradlew --version
 ```
 
 1 行に 1 コマンドで、パイプもリダイレクトも付けない（`allowed-tools` は単独のコマンドにしか合わないので、`| head -1` を付けると毎回許可を求められる）。出力が長くても、見るのはバージョンの行だけでよい。
 
-プラグインとして入れたときは、1 行目を `<root>/bin/python -c "import sqlglot, yaml; print('ok')"`、3 行目を
+プラグインとして入れたときは、1 行目を `<root>/bin/python <root>/skills/plsql-migrate/scripts/check_env.py`、3 行目を
 `<root>/runtime-java/gradlew --version` に読み替える（作業ディレクトリは利用者のプロジェクトのまま）。
 
 JVM が無いとき（Gradle は `runtime-java/gradlew` が取ってくる。ネットワークに出られず `gradle` も無いときも同じ）、または利用者が外すよう言ったときは `--verify-compile` を外し、「コンパイルは確かめていない」と報告で明記する。
@@ -352,7 +359,7 @@ Step 3 で「利用者に問うもの」に分けた routine を、ルール ID 
 
 | 状況 | 対処 |
 |---|---|
-| `ModuleNotFoundError` | リポジトリで作業しているなら、ルートで実行しているか確かめ、`.venv/bin/pip install -r requirements.txt`。プラグインのときは `<root>/bin/python` の仮想環境（`$CLAUDE_PLUGIN_DATA/venv`、無ければ `~/.cache/sql-migration/venv`）を消して `<root>/bin/python -c "import sqlglot, yaml"` で作り直す（消すのは利用者に確かめてから） |
+| `ModuleNotFoundError` | リポジトリで作業しているなら、ルートで実行しているか確かめ、`.venv/bin/pip install -r requirements.txt`。プラグインのときは `<root>/bin/python` の仮想環境（`$CLAUDE_PLUGIN_DATA/venv`、無ければ `~/.cache/sql-migration/venv`）を消して `<root>/bin/python <root>/skills/plsql-migrate/scripts/check_env.py` で作り直す（消すのは利用者に確かめてから） |
 | `limits.yaml の誤り: …`（`plsql.generate` / `plsql.cli` の終了 2） | 知らない節・キー（「〜のこと？」が付く）、空の理由、ソースに無い routine id、数でない・負の行数、`routines` と `notLimited` の重なり、YAML の構文の誤り、無いファイル。最後の行を利用者に見せ、「判断を求めるときの形」で直す値を聞いてから直す。打ち間違いは直してよいか確かめ、理由の中身は推し量って書かない。まだ決定が無いなら `--limits` を外す |
 | `source file not parsed`（`plsql.generate` の終了 3、`plsql.cli` の終了 1） | 解析できなかったファイル。Step 2 の表のとおり、進むか直すかを聞き、進むなら報告と文書の「制限」に書く |
 | `decision_items.py` が「§0.1 の行 … の見分け方が 0 個」 | 文書に行が足されたのにスクリプトが追いついていない。`DETECTORS` に見分け方を足す（黙って飛ばさない） |
@@ -373,10 +380,3 @@ Step 3 で「利用者に問うもの」に分けた routine を、ルール ID 
 | `<record.yaml>` | 記録（ID ごとに 状態 / 決定 / 決めた人 / 日付 / 記録先 / 案 / 出た） |
 | `<out>/docs/README.md` | 変換後のコードの文書: アーキテクチャ / 使い方 / 制限 / どのように移行したか |
 | `<out>/docs/<module>.md` | routine ごとの 事実（判定・引数の対応・例外・文の対応・決定・比較の結果）/ 仕様 / 移行で変わったこと / 制限と注意 |
-  # プラグインとして入れたとき: <root>/bin/python と <root>/skills/... の形（先頭の * は公式の権限ルールで使える）
-  - Bash(*/bin/python -c *)
-  - Bash(*/runtime-java/gradlew --version*)
-  - Bash(*/bin/python -m plsql.generate *)
-  - Bash(*/bin/python -m plsql.cli *)
-  - Bash(*/bin/python */skills/plsql-migrate/scripts/decision_items.py *)
-  - Bash(*/bin/python */skills/plsql-migrate/scripts/migration_doc.py *)
