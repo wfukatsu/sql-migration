@@ -39,6 +39,13 @@ _DOMAIN: "contextvars.ContextVar[str | None]" = contextvars.ContextVar("domain",
 _INFRA: "contextvars.ContextVar[str | None]" = contextvars.ContextVar("infra", default=None)
 # #12: trigger の本体は別の module にある。呼ぶ側はその routine を見て、引数と audit の有無を決める
 _PROGRAM: "contextvars.ContextVar[M.Program | None]" = contextvars.ContextVar("program", default=None)
+# #157: the source sessions' NLS settings the project decided (limits.yaml `nls`), or None
+_NLS: "contextvars.ContextVar[object | None]" = contextvars.ContextVar("nls", default=None)
+
+
+def set_nls(settings) -> None:
+    """The NLS decision every generated class hands to the runtime (`Plsql.useNls`), or None for none."""
+    _NLS.set(settings if settings is not None and getattr(settings, "decided", False) else None)
 # names a nested block declares (#18). They are in scope for its body and nowhere else, which is what the
 # PL/SQL says -- reading them off the routine would make a block-local visible to the whole method.
 _BLOCK_LOCALS: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("block_locals", default={})
@@ -164,6 +171,16 @@ def _generate_module(module: M.Module, package: str, repository_package: str,
             file.add_import("com.scalar.migrate.plsql.Sequences")
             f.line("private final Sequences sequences;")
         _constants(f, module)
+        nls = _NLS.get()
+        if nls is not None:
+            # #157: the text conversions follow the source sessions' NLS, decided in limits.yaml. Set before any
+            # routine of this class runs; every class of the project sets the same, and the runtime refuses two
+            file.add_import("com.scalar.migrate.plsql.Nls")
+            file.add_import("com.scalar.migrate.plsql.Plsql")
+            f.line()
+            f.comment(f"NLS: limits.yaml nls ({' '.join(str(nls.reason).split())})")
+            with f.block("static") as s:
+                s.line(f"Plsql.useNls({nls.java()});")
         f.line()
         parameters = [f"{java_class_name(module.name)}Repository repository"] + \
             [f"{java_class_name(t)}Service {java_name(t)}" for t in injected] + \
@@ -585,6 +602,12 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
         text = _text_rendering(declared)
         if text:
             names[f"{holder.name.lower()}#text"] = text
+        # #157: TO_CHAR(d, fmt) of a DATE and of a TIMESTAMP differ (FF, X, TZR are ORA-01821 on a DATE), and both
+        # are a LocalDateTime in Java: the declaration says which
+        if re.fullmatch(r"DATE", declared, re.IGNORECASE):
+            names[f"{holder.name.lower()}#datetime"] = "Date"
+        elif _TIMESTAMP_DECLARED.fullmatch(declared) and not (_TIMESTAMP_DECLARED.fullmatch(declared).group(3)):
+            names[f"{holder.name.lower()}#datetime"] = "Timestamp"
         if holder.type is not None and record_class(holder.type):
             # its field names: `name1.first` is the field, not the collection method FIRST (5-45, #82)
             names[f"{holder.name.lower()}#fields_of"] = ",".join(

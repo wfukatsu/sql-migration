@@ -120,13 +120,19 @@ def main(argv: list[str] | None = None) -> int:
 
     from .limits import DbLinks
 
-    from .limits import Constraints, PackageState
+    from .limits import Constraints, NlsSettings, PackageState
 
+    # #157: the source sessions' NLS settings. Every generated class hands them to the runtime; undecided, the runtime
+    # writes Oracle's defaults and SEM-008 / SEM-012 keep asking
+    nls = NlsSettings.load(args.limits) if args.limits else NlsSettings()
+    from .gen_java.service import set_nls
+
+    set_nls(nls)
     analysis = build_analysis(root, schema, scalardb_schema=scalardb, row_locks=row_locks, limits=limits,
                               db_links=DbLinks.load(args.limits) if args.limits else None,
                               boundaries=Boundaries.load(args.limits) if args.limits else Boundaries(),
                               package_state=PackageState.load(args.limits) if args.limits else None,
-                              constraints=Constraints.load(args.limits) if args.limits else None)
+                              constraints=Constraints.load(args.limits) if args.limits else None, nls=nls)
     if args.limits:
         from .limits import unknown_routines
 

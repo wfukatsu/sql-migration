@@ -63,6 +63,17 @@ dbLinks:
 conditionalCompilation:           # ソースに $IF があるとき。移行元の PLSQL_CCFLAGS と版（利用者に聞く）
   flags: {shop_debug: false, trace_level: 2}   # 書いていないフラグは NULL として解かれる（Oracle と同じ）
   dbVersion: "19.0"               # 書かなければ 19.0。$$PLSQL_VERSION / DBMS_DB_VERSION の比較に効く
+nls:                              # 移行元のセッションの NLS（利用者に聞く。project に 1 つ。#157）
+  reason: <どう確かめたか（ログオン trigger、クライアントの NLS_LANG、ALTER SESSION）>   # 必須
+  dateLanguage: AMERICAN          # AMERICAN / ENGLISH / JAPANESE。MON / DAY / AM などの言語
+  territory: AMERICA              # AMERICA / JAPAN。D（週の始まり）、DS / DL / TS、書かない値の既定
+  dateFormat: DD-MON-RR           # 以下は書かなければ地域の既定（ALTER SESSION SET NLS_TERRITORY と同じ）
+  timestampFormat: DD-MON-RR HH.MI.SSXFF AM
+  timestampTzFormat: DD-MON-RR HH.MI.SSXFF AM TZR
+  numericCharacters: ".,"         # 小数点と桁区切り（D と G、暗黙の変換）
+  currency: "$"                   # L
+  isoCurrency: AMERICA            # C。地域の名前で書く（AMERICA は USD、JAPAN は JPY）
+  dualCurrency: "$"               # U
 ```
 
 書ける節とキーは上のものだけで、`plsql.generate` と `plsql.cli` は読む前に確かめる（#145）。次のどれかがあると、
@@ -74,6 +85,8 @@ conditionalCompilation:           # ソースに $IF があるとき。移行元
 - ソースに無い routine id（打ち間違い、名前の変わった routine。近い id を添える）
 - 正の整数でない行数、`routines` と `notLimited` の重なり、2 つ以上の `transactions.*` に書いた routine、
   `namespace` の無い `dbLinks`、`"19.0"` の形でない `dbVersion`、YAML として読めないファイル、無いファイル
+- `nls` の `reason` が無い、ランタイムが知らない言語・地域・ISO 通貨の地域、2 文字でない（同じ文字、数字、符号の）
+  `numericCharacters`、10 文字を超える通貨、日付の書式として読めない書式（`dateFormat` に FF / X / TZ* があるものも）
 
 止まったら、最後の行を利用者に見せ、直す値を聞いてから直す（決定の中身を推し量って書き換えない）。
 
