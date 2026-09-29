@@ -26,7 +26,7 @@ from sqlglot.transforms import eliminate_join_marks
 
 from .appside import h2_unsupported
 from .schema import SchemaRegistry, TableMeta, quoted
-from .types import fit_number, fit_temporal_literal, iso_temporal_literal, session_zone
+from .types import fit_number, fit_temporal_literal, iso_temporal_literal, session_zone, session_zone_id
 
 DEFAULT_ROW_LIMIT = 10_000
 H2_MODE = {"oracle": "Oracle", "postgres": "PostgreSQL", "mysql": "MySQL"}
@@ -330,6 +330,7 @@ class Decomposer:
                  storage: str = "jdbc", h2_indexes: bool = False, session_time_zone: str | None = None):
         self.dialect = dialect
         self.session_zone = session_zone(session_time_zone)   # what a TIMESTAMPTZ literal without a zone means
+        self.session_zone_id = session_zone_id(session_time_zone)
         self.registry = registry
         self.row_limit = row_limit
         self.storage = storage
@@ -759,8 +760,17 @@ class Decomposer:
         except Exception as e:  # noqa: BLE001
             python_sql = ""
             unresolved.append(f"python: sqlite transpile failed: {e}")
-        return {"java": {"engine": "h2", "mode": H2_MODE[self.dialect], "sql": java_sql, "build_indexes": self.h2_indexes},
-                "python": {"engine": "sqlite3", "sql": python_sql}}
+        java = {"engine": "h2", "mode": H2_MODE[self.dialect], "sql": java_sql, "build_indexes": self.h2_indexes}
+        # PostgreSQL does date and time arithmetic in the session's TimeZone: date_trunc of a DATE is midnight there,
+        # a timestamptz is cast to DATE, extracted and written in it. The runtime opens the H2 session in this zone and
+        # loads TIMESTAMPTZ values at its offset (same instant), and then answers as the source does (#160). Without
+        # the field the session is UTC, as before. Oracle's plans leave it out: Oracle's DATE and TIMESTAMP carry no
+        # zone, EXTRACT from a TIMESTAMP WITH TIME ZONE answers in UTC, and the PL/SQL runtime keeps every instant in
+        # UTC (plan §9, 2026-09-17). MySQL reads a TIMESTAMP in its session time_zone as PostgreSQL does, but was not
+        # measured, so it is left out too.
+        if self.dialect == "postgres" and self.session_zone_id:
+            java["time_zone"] = self.session_zone_id
+        return {"java": java, "python": {"engine": "sqlite3", "sql": python_sql}}
 
     _TRUNC_UNITS = {"MM": "MONTH", "MON": "MONTH", "MONTH": "MONTH", "RM": "MONTH", "YYYY": "YEAR", "YEAR": "YEAR",
                     "YY": "YEAR", "Y": "YEAR", "SYYYY": "YEAR", "DD": "DAY", "DDD": "DAY", "J": "DAY", "HH": "HOUR",
