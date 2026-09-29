@@ -12,6 +12,7 @@ ScalarDB SQL でも実行計画（H2）でも動かない読み取り文を、�
 |---|---|---|---|
 | `LAG` / `LEAD` | パーティション内の 1 つ前・後の**行**。行の無い期間（売上の無い月）は飛ばす | 暦の前の期間と比べてしまう | `Windows.lag` / `Windows.lead` |
 | 除算 | 0 で割ると Oracle は `ORA-01476` で文全体が失敗、PostgreSQL もエラー、MySQL は NULL（警告つき）。PostgreSQL の整数どうしは切り捨て | 黙って NULL や無限大にする | `OracleNumbers.divide`（Oracle と同じく例外を投げる） |
+| MySQL の `DIV` | 小数部を捨てる（0 の方向へ切り捨て。7 DIV 2 = 3、-7 DIV 2 = -3）。0 で割ると NULL | SQLGlot が書き戻す `CAST(a / b AS SIGNED)` や `Math.round` で計算する（MySQL の CAST も四捨五入で、`CAST(7 / 2 AS SIGNED)` は 4）。指摘文は元の `a DIV b` の形で式を出す（#161） | `BigDecimal.divide(b, 0, RoundingMode.DOWN)`、整数どうしなら `long` の `/` |
 | `ROUND` | NUMBER / NUMERIC は 0 から遠いほうへ丸める（-2.5 → -3） | `HALF_EVEN` や `double` で丸める。金額を `double` で持つ | `OracleNumbers.round`（`RoundingMode.HALF_UP`、`BigDecimal`） |
 | `SUM` / `AVG` / `MIN` / `MAX` | NULL を除く。全部 NULL なら NULL。`COUNT(col)` は NULL でない値だけを数える | 0 を返す、NULL を 0 として数える | `OracleNumbers.sum` / `avg`、`Windows.movingAverage` |
 | `RANK` / `DENSE_RANK` / `ROW_NUMBER` | 同じ値は同じ順位。NULL どうしは同じ値として扱う。`ROW_NUMBER` の同順位の順は決まっていない | 同値でも順位を進める | `Windows.rank` / `Windows.denseRank` / `Windows.rowNumber` |
