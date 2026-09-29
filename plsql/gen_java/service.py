@@ -1858,13 +1858,16 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
         index = _fresh(java_name(index_name), _taken(routine))
         low = _expr(file, numeric.group("low"), routine, result)
         high = _expr(file, numeric.group("high"), routine, result)
+        # counted in a long: an int index at 2147483647 wrapped to -2147483648 and `FOR i IN 2147483647 ..
+        # 2147483647` never ended, where Oracle runs it once (#160). The body reads the PLS_INTEGER as an int
+        at = _fresh(f"{index}At", _taken(routine))
         if numeric.group("reverse"):
-            opening = (f"{label}for (int {index} = Plsql.loopBound({high}), {index}End = Plsql.loopBound({low}); "
-                       f"{index} >= {index}End; {index}--)")
+            opening = (f"{label}for (long {at} = Plsql.loopBound({high}), {index}End = Plsql.loopBound({low}); "
+                       f"{at} >= {index}End; {at}--)")
         else:
             # `loopBound`, not `toInt`: a NULL bound is VALUE_ERROR in Oracle, and unboxing it was an NPE (#99)
-            opening = (f"{label}for (int {index} = Plsql.loopBound({low}), {index}End = Plsql.loopBound({high}); "
-                       f"{index} <= {index}End; {index}++)")
+            opening = (f"{label}for (long {at} = Plsql.loopBound({low}), {index}End = Plsql.loopBound({high}); "
+                       f"{at} <= {index}End; {at}++)")
     elif statement.loop_kind in ("cursor-for", "forall", "for"):
         # A named cursor's query is still not modelled as a statement, so there is nothing to iterate. Emitting
         # a call to a repository method that does not exist would give code that cannot compile; refusing keeps
@@ -1886,6 +1889,8 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
         _QUALIFIED_NAMES.set({**outer_qualified, f"{statement.label}.{index_name}".lower(): (index, None)})
     try:
         with file.block(opening) as f:
+            if index_name:
+                f.line(f"int {index} = (int) {at};")
             _statements(f, statement.body, routine, result)
     finally:
         _LOOP_LABELS.set(outer)
