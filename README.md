@@ -109,7 +109,7 @@ snapshot ファイルから読みます。誰も取っていない値は「未�
 
 ```bash
 python3 -m venv .venv                               # Python 3.10 以上
-.venv/bin/pip install -r requirements-dev.txt      # 変換ツールの依存と pytest / hypothesis
+.venv/bin/pip install -r requirements.txt          # 変換ツールの依存（テストの依存は開発側の requirements-dev.txt）
 
 # SQL を変換する（DB 不要）
 .venv/bin/python -m scalardb_migrate.cli docs/quickstart/library.sql --source oracle --out-dir out --plan-dir out/plans
