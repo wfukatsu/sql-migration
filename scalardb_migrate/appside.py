@@ -6,6 +6,7 @@
                       would fail at run time
   * semantic_notes()  source-engine behaviour an application-side rewrite must reproduce (verified against Oracle while
                       rewriting the department order report, docs/examples/dept-orders-scalardb-conversion.md)
+  * double_aggregate_note()  a SUM / AVG of a DOUBLE column that was (or may have been) a decimal in the source
   * design_advice()   tables and keys that would let ScalarDB serve the statement by key
   * estimate_cost()   read-cost estimate from the measured per-row scan cost (docs/reports/bench-report.md)
 
@@ -26,6 +27,10 @@ HIERARCHY_FUNCS = {"SYS_CONNECT_BY_PATH", "CONNECT_BY_ROOT", "CONNECT_BY_ISLEAF"
 NOW_FUNCS = {"SYSDATE", "SYSTIMESTAMP", "NOW", "GETDATE", "CURRENT_TIMESTAMP", "CURRENT_DATE", "LOCALTIMESTAMP"}
 OPERATORS = {exp.Div: "/", exp.Mul: "*", exp.Add: "+", exp.Sub: "-", exp.DPipe: "||", exp.Mod: "%"}
 QUERY_TYPES = (exp.Select, exp.Union, exp.Except, exp.Intersect)
+# aggregates that add the values up, and so give another answer when the values are binary floats (#161). MIN, MAX
+# and COUNT return one of the values or a count, which a DOUBLE keeps as well as the source's decimal does
+ARITHMETIC_AGGREGATES = tuple(getattr(exp, n) for n in ("Sum", "Avg", "Stddev", "StddevPop", "StddevSamp", "Variance",
+                                                        "VariancePop") if hasattr(exp, n))
 
 # Measured on ScalarDB Cluster 3.19.1 + PostgreSQL 16, SERIALIZABLE, scan_fetch_size 10, single client
 # (docs/reports/bench-report.md): scans cost ~25 us per row, key access 3-6 ms regardless of table size.
@@ -341,6 +346,28 @@ def collation_note(node: exp.Expression, dialect: str, planned: bool = False) ->
 # --------------------------------------------------------------------------------------------------
 # design advice
 # --------------------------------------------------------------------------------------------------
+
+def double_aggregate_note(aggregate: str, column: str, source: str | None, planned: bool) -> tuple[str, str]:
+    """Severity and message for `aggregate` (`SUM(sal)`) over `column`, a DOUBLE in ScalarDB (#161).
+
+    ScalarDB has no decimal type, so a NUMBER(10,2) is a DOUBLE there, and a sum or an average of DOUBLEs is computed
+    in binary floating point: 0.1 + 0.2 is 0.30000000000000004, and a total of amounts can be off in the last digits
+    where the source adds decimals exactly. `source` is the column's source type when the source DDL was given and
+    it was a decimal (a WARN); None when only the ScalarDB schema was given and the source type is unknown (an INFO,
+    said conditionally). A column known to be a binary float in the source gets no note: the caller does not ask."""
+    where = "the plan's residual (H2) computes" if planned else "ScalarDB computes"
+    fix = ("fetch the values and add them in the application with BigDecimal, or, if the design allows, map the column "
+           "to a type that keeps decimals (a scaled integer in BIGINT)")
+    if source is not None:
+        return "WARN", (f"{aggregate}: {column} is {source} in the source and DOUBLE in ScalarDB, so {where} it in "
+                        f"binary floating point, and the result can differ from the source's decimal result in the "
+                        f"last digits (0.1 + 0.2 gives 0.30000000000000004). Where the exact decimal matters, {fix}")
+    return "INFO", (f"{aggregate}: {column} is DOUBLE in ScalarDB and its source type is not known here (only the "
+                    f"ScalarDB schema was given). If it was a decimal in the source (NUMBER(p,s), NUMERIC, DECIMAL), "
+                    f"{where} it in binary floating point, and the result can differ from the source's decimal result "
+                    f"in the last digits; where the exact decimal matters, {fix}. Converting with the source CREATE "
+                    f"TABLE tells which")
+
 
 def _base_table(sel: exp.Select) -> exp.Table | None:
     from_ = sel.args.get("from_") or sel.args.get("from")

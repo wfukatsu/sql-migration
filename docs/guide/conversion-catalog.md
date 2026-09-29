@@ -46,7 +46,7 @@ SQL 文の各項目を、変換器（`scalardb_migrate/`）がどう扱うかの
 
 ### データ型
 
-`CREATE TABLE` と `ALTER TABLE` の列の型を、ScalarDB の 11 型に対応させます。指摘コードはすべて `TYPE` です。ERROR の型があると、その `CREATE TABLE` は変換しません。
+`CREATE TABLE` と `ALTER TABLE` の列の型を、ScalarDB の 11 型に対応させます。指摘コードはすべて `TYPE` です。ERROR の型があると、その `CREATE TABLE` は変換しません。10 進を DOUBLE にした列（下の表の `NUMBER(p, s)`、精度なし `NUMBER` / `NUMERIC`、`MONEY`、Oracle の `FLOAT` / `REAL`）は、同じスクリプトの `CREATE TABLE` から元の型を覚えておき、その列の `SUM` / `AVG` に WARN `TYPE` を付けます（「集約・ウィンドウ」、#161）。
 
 | 元の書き方 | 変換後 | 判定と指摘コード | 注意 |
 |---|---|---|---|
@@ -228,6 +228,7 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 | 元の書き方 | 変換後 | 判定と指摘コード | 注意 |
 |---|---|---|---|
 | `COUNT(*)` / `COUNT(1)` / `COUNT(col)` / `SUM` / `AVG` / `MIN` / `MAX`（引数が列） | そのまま | OK | |
+| `SUM(col)` / `AVG(col)`、`col` は 10 進を DOUBLE にした列（`NUMBER(10, 2)` など） | そのまま | WARN `TYPE`。元の型が分からない DOUBLE の列（`--schema` の ScalarDB のスキーマだけを渡したとき）は INFO `TYPE` | ScalarDB は DOUBLE の和・平均を 2 進の浮動小数で計算するので、元の DB の 10 進の結果と末尾の桁が違いうる（0.1 + 0.2 は 0.30000000000000004）。正確な 10 進が要るなら、値を取ってアプリで `BigDecimal` で足すか、設計が許せば小数を保つ型（10^s 倍した整数を BIGINT）にする。元の型が分からないときは「元が 10 進なら」と条件つきで同じことを言う。元が 2 進の浮動小数（`BINARY_DOUBLE`、`BINARY_FLOAT`、`DOUBLE PRECISION`、PostgreSQL・MySQL の `REAL` / `FLOAT`）の列と、`MIN` / `MAX` / `COUNT` には出さない。実行計画（PLANNED）では、残りの SQL（H2）が集約する列に同じ指摘を出す（`STDDEV` / `VARIANCE` も）。ただし `NUMBER(p, s)`（p ≤ 38）は H2 に `NUMERIC(p, s)` として入り 10 進で足すので出さない。精度なし `NUMBER` のように `NUMERIC(p, s)` で入れられない列と、元の型が分からない列に出る（#161） |
 | `COUNT(DISTINCT dept_id)` | — | PLANNED（`AGG_DISTINCT`） | |
 | `SUM(salary * 2)`（引数が式） | — | PLANNED（`AGG`） | |
 | そのほかの集約（`LISTAGG`、`STDDEV` など） | — | PLANNED（`AGG`） | |
@@ -403,6 +404,7 @@ ERROR か PLANNED になった読み取り文には、変換器が最初につ�
 | `RESIDUAL_H2` | ERROR | H2 が実行できない構文（`CONNECT BY`、`ROLLUP` など、`PIVOT` / `UNPIVOT`、`KEEP`、`FULL OUTER JOIN`、`LATERAL`、`SAMPLE`、再帰 WITH の `SEARCH`、`JSON_TABLE`）。実行計画を作らない |
 | `APP_SEMANTICS` | WARN | アプリで書き直すときに結果を変えないための注意（`LAG` / `LEAD`、0 除算、MySQL の `DIV`、`ROUND`、集約と NULL、順位、NULL と文字列の並び、`SYS_CONNECT_BY_PATH`、`LEVEL`、`ADD_MONTHS`、日付の書式、現在時刻、空文字列）。ERROR の文にだけ付く |
 | `DESIGN` | INFO | 設計の提案（表定義を渡す、階層の事前計算、GROUP BY のキーでの集計表、結合列のキーか索引、JDBC 以外ではキーを持たせる、分析の問い合わせには ScalarDB Analytics） |
+| `TYPE` | WARN / INFO | 残りの SQL（H2）が DOUBLE の列を `SUM` / `AVG` / `STDDEV` / `VARIANCE` で集約し、2 進の浮動小数で計算される。元が 10 進と分かれば WARN、元の型が分からなければ INFO（上の「集約・ウィンドウ」、#161） |
 | `PLAN_FETCH` / `PLAN_RESIDUAL` | INFO | 実行計画の取得 1 つずつと、H2 が元の SQL を実行すること |
 | `PLAN_CROSS_PARTITION` / `PLAN_UNRESOLVED` | WARN | 取得にクロスパーティション SCAN が要る / 表か列を解決できない所がある（`python:` で始まるものは INFO。Python の参照実装（SQLite）だけの制限で、Java のランタイムには関係しない） |
 | `PLAN` | INFO | 実行計画に分けられなかった理由 |
