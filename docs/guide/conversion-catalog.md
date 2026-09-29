@@ -529,8 +529,8 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | 問い合わせ指令 `$$PLSQL_UNIT`、`$$PLSQL_LINE`、`$$flag` | 単位の名前（大文字）の文字列、行番号の数、`limits.yaml` の `conditionalCompilation.flags` の値（無ければ NULL） | なし | `$$PLSQL_LINE` は読み込むときに、単位の中の行番号（`PROCEDURE` などのある行が 1）に置き換えます。桁は空白で埋め、列はずらしません。`$$PLSQL_CCFLAGS` はフラグを 1 つも決めていなければ NULL、決めていれば断ります（Oracle の書き方を再現しない）。ほかの `$$PLSQL_CODE_TYPE` などは移行元の設定なので断ります（#140） |
 | CASE 式 | 三項演算子（`Plsql.eq(p, 1) ? "one" : "many"`） | なし | 生成で確認 |
 | 文字列を NUMBER に代入 | `Plsql.dec(...)` | なし | 数値にならないと ORA-06502（`Plsql.ValueError`） |
-| 日付・TIMESTAMP を書式なしで文字にする（`'d=' \|\| d`、`TO_CHAR(d)`） | `Plsql.concat` / `Plsql.text` が Oracle の既定（`DD-MON-RR`、AMERICAN）で書く | SEM-012（REVIEW） | 移行元のセッションの NLS 設定までは確かめていません |
-| 数値を文字にする | `Plsql.text(n)` | なし | 1 未満は `.5` のように先頭の 0 を書きません（Oracle と同じ） |
+| 日付・TIMESTAMP を書式なしで文字にする（`'d=' \|\| d`、`TO_CHAR(d)`） | `Plsql.concat` / `Plsql.text` / `Plsql.timestampText` が `limits.yaml` の `nls` の `dateFormat` / `timestampFormat` / `timestampTzFormat`（決めていなければ Oracle の既定 `DD-MON-RR` など、AMERICAN）で書く | `nls` を決めていなければ SEM-012（REVIEW）。決めていれば外れる（NLS_DECIDED） | TIMESTAMP(p) の `FF` は宣言の桁、TIMESTAMP(0) は小数点ごと書きません（#94、#157） |
+| 数値を文字にする | `Plsql.text(n)` | なし | 1 未満は `.5` のように先頭の 0 を書きません（Oracle と同じ）。小数点は `nls.numericCharacters` の 1 文字目（`,.` なら `1234,5`）。文字を数値にする暗黙の変換も同じ文字を読みます（#157） |
 | 丸め（`ROUND`） | `Plsql.round`（half-up） | PL/SQL の式ならなし。移行先 DB が評価する SQL の中なら SEM-001（REVIEW） | |
 | `CAST(ts AS DATE)` | `Plsql.castDate`（秒未満を切り捨て） | 移行先 DB が評価する SQL の中なら SEM-009（REVIEW） | |
 | 空文字・`NVL`・`RTRIM` を含む SQL | 式を SQL の外へ出して bind にできれば、ランタイムが計算 | 移行先 DB がそのまま評価するなら SEM-003（REVIEW） | 書き込みの境界（`Plsql.bind`）は `''` を NULL にして渡します |
@@ -546,10 +546,13 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `MOD`、`ABS`、`POWER`、`SQRT`、`CEIL`、`FLOOR`、`SIGN` | 同じ名前の `Plsql` の関数 | なし | |
 | `GREATEST`、`LEAST` | `Plsql.greatest`、`least` | なし | |
 | `UPPER`、`LOWER`、`INITCAP`、`LENGTH`、`SUBSTR`、`INSTR`、`REPLACE`、`LPAD`、`RPAD`、`TRIM`、`LTRIM`、`RTRIM`、`CONCAT`、`CHR`、`ASCII` | 同じ名前の `Plsql` の関数 | なし | NULL と空文字は Oracle と同じに扱います |
-| `TO_CHAR(日付, 書式)` | `Plsql.text(v, 書式)` | 書式に DAY・MON・AM など言語で変わる要素があると SEM-008（REVIEW） | 対応する書式は `YYYY-MM-DD`、`YYYY-MM-DD HH24:MI:SS`、`YYYYMM`、`YYYY` だけです。ほかは実行時に `UnsupportedOperationException` |
-| `TO_NUMBER(v)` | `Plsql.toNumber(v)` | なし | 書式つきの `TO_NUMBER(v, 書式)` は実行時に `UnsupportedOperationException` |
+| `TO_CHAR(日付, 書式)` | `Plsql.text(v, 書式)`。DATE / TIMESTAMP と宣言した変数は `Plsql.textDate` / `Plsql.textTimestamp` | 書式に DAY・MON・AM など言語で変わる要素があり、`nls` を決めていなければ SEM-008（REVIEW）。ランタイムが断る形なら SEM-015（REVIEW） | 書式モデルの全体を Oracle 26ai で測ったとおりに書きます（#157、`OracleFormat`）: `YYYY YYY YY Y RRRR RR SYYYY Y,YYY IYYY IYY IY I CC SCC Q MM MON MONTH RM WW W IW D DD DDD DY DAY J HH HH12 HH24 MI SS SSSSS FF FF1-9 X AM PM A.M. P.M. AD BC A.D. B.C. TZH TZM TZR TZD YEAR SYEAR DS DL TS`、`FM`（切り替え）、`FX`、`"文字"`、句読点、`SP` / `TH` / `SPTH`、名前の大文字小文字（`Month` → `September`）と詰め物（英語は 9 文字）。言語は `nls.dateLanguage`（AMERICAN / ENGLISH / JAPANESE）、`D` と DS / DL / TS は `nls.territory`（AMERICA / JAPAN）。Oracle が断る書式は同じ番号（ORA-01821・01801・01822）。FF・X・TZH・TZM は DATE では ORA-01821、TIMESTAMP の TZR はセッションのタイムゾーン（UTC）。PL/SQL の `TO_CHAR(t, 'FF')` は宣言の桁によらず 9 桁です。断るもの: 1582-10-15 より前の日付（Oracle はユリウス暦で数える）、型の分からない値（record の列など）で秒の端数が 0 のものへの FF・X・TZR |
+| `TO_CHAR(数値, 書式)` | `Plsql.text(v, 書式)` | ランタイムが断る形なら SEM-015（REVIEW） | 書式モデルの全体（#157）: `9 0 , . G D $ L C U S MI PR B EEEE V X RN TM TM9 TME`、`FM`。丸めは 0 から遠い方、入らなければ幅いっぱいの `#`、幅は「要素の数 + 符号の 1 桁」、`L` / `U` は 10 バイト・`C` は 7 バイト（`¥` は 2 バイトとして数える。データベースの文字コードは AL32UTF8 を前提）。`G` / `D` は `nls.numericCharacters`、`L` は `nls.currency`、`C` は `nls.isoCurrency`、`U` は `nls.dualCurrency`。Oracle が断る書式は ORA-01481。断るもの: `FM` と `B` を一緒に使う書式、数字も小数点も無い書式（`L` だけなど） |
+| `TO_NUMBER(v)` | `Plsql.toNumber(v)` | なし | 小数点は `nls.numericCharacters` の 1 文字目だけを読みます |
+| `TO_NUMBER(v, 書式)` | `Plsql.toNumber(v, 書式)` | なし | 書式どおりに読めなければ ORA-06502（`Plsql.ValueError`。VALUE_ERROR で捕まる）: 桁区切りは書式の位置に要り、`0` の桁は省けず、小数の桁は少なくてよく多いと誤り、前の空白は読み飛ばし後ろの空白は誤り、`RN`・`TM`・`V` は読めません（26ai で測定、#157）。SQL 文の中の書式つき `TO_NUMBER` は SQL の外へ出しません（出すと ORA-01722 と ORA-06502 の違いが要るため） |
 | `TO_DATE(v, 書式)` | `Plsql.toDate(v, 書式)` | なし | 要素ごとに Oracle と同じ読み方をします（桁の少ない数字、RR の世紀、省いた年月は現在、入力が時刻の要素の前で終わるのは可・日付の要素の前で終わると ORA-01840）。読めないときは Oracle と同じ番号の `Plsql.FunctionError`（ORA-01830・01841・01843・01847・01839・01850・01849・01851・01852・01855・01858）で、VALUE_ERROR では捕まりません。WHEN OTHERS では `SQLCODE` がその番号になります（#140。以前は ORA-06502） |
-| `TO_TIMESTAMP(v[, 書式])` | `Plsql.toTimestamp(v, 書式)` | なし | TO_DATE の読み方に `FF` / `FFn`（小数秒。桁が多いと ORA-01830）と `X`（小数点）を足したもの。書式を省くと `DD-MON-RR HH.MI.SSXFF AM`（#140） |
+| `TO_TIMESTAMP(v[, 書式])` | `Plsql.toTimestamp(v, 書式)` | なし | TO_DATE の読み方に `FF` / `FFn`（小数秒。桁が多いと ORA-01830）と `X`（`nls.numericCharacters` の小数点）を足したもの。書式を省くと `nls.timestampFormat`（既定 `DD-MON-RR HH.MI.SSXFF AM`、#140） |
+| `TO_DATE` の NLS | 同上 | なし | 書式を省くと `nls.dateFormat`（既定 `DD-MON-RR`）。月の名前と午前・午後は `nls.dateLanguage` のもの（JAPANESE なら `9月`、`午前`）。`MM` は月の名前も読み、名前のあとの空白は読み飛ばします。4 桁を読んだ `RR` のあとに残りがあると ORA-01861（#157） |
 | `ADD_MONTHS`、`LAST_DAY` | `Plsql.addMonths`、`lastDay` | なし | |
 | `MONTHS_BETWEEN(d1, d2)` | `Plsql.monthsBetween` | なし | 同じ日か両方が月末なら整数（時刻は無視）、ほかは 31 日を 1 か月とした小数を NUMBER と同じ 40 桁に丸めます。規則は実行計画の H2 が使う `OracleFunctions.monthsBetween` と共有します。TIMESTAMP は秒未満を落とし、文字は TO_DATE の既定の書式で読みます（#140） |
 | `EXTRACT(field FROM d)` | `Plsql.extract("YEAR", d)` | なし | YEAR・MONTH・DAY・HOUR・MINUTE・SECOND（小数つき）と、WITH TIME ZONE の TIMEZONE_HOUR・TIMEZONE_MINUTE。WITH TIME ZONE の日時の field は Oracle と同じく UTC のものです。INTERVAL（日時の差）からの EXTRACT は、生成コードでは差が日数なので断ります。TIMEZONE_REGION / ABBR も断ります（#140） |
@@ -569,7 +572,7 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `SYS_CONTEXT` | 変換しない | SEM-013（REDESIGN） | |
 | `DECODE`、`DUMP` | 変換しない（`UnsupportedOperationException`） | ルールは下がらない | Oracle でも PL/SQL の式では使えません（PLS-00204）。理由をそう書いて断ります（#140） |
 | `SYS.STANDARD.BITAND(...)` など `SYS.STANDARD.` / `STANDARD.` を付けた組み込み | 付けない名前と同じ | なし | 同じ名前の package の関数が組み込みを隠しているときの書き方です。解析の範囲に無い routine の呼び出し（CALL-001）にも数えません（#140） |
-| 対応表に無い関数（`SOUNDEX`、`NUMTODSINTERVAL`、`TO_CHAR` の書式つき、`TO_NUMBER` の書式つきなど） | 変換しない（`UnsupportedOperationException`） | ルールは下がらない | 判定は下がらないので、`AUTO but not cleanly generated` で気づきます |
+| 対応表に無い関数（`SOUNDEX`、`NUMTODSINTERVAL` など） | 変換しない（`UnsupportedOperationException`） | ルールは下がらない | 判定は下がらないので、`AUTO but not cleanly generated` で気づきます |
 
 ### 制御構造
 
@@ -812,6 +815,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `constraints.enforce` | NOT NULL / CHECK / 外部キーの検査を書く前に入れる。親をキーで消す DELETE には子を数える検査を入れる | CONS-001 が外れる。UNIQUE と、キーで名指さない親の DELETE、`ON DELETE CASCADE` / `SET NULL` は検査せず CONS-002 | |
 | `dbLinks` | `表@link` を namespace に書き換える | LINK-001 は REDESIGN のまま | |
 | `conditionalCompilation` | 条件付きコンパイルのフラグとバージョン | | |
+| `nls` | 生成した Service がクラスの初期化で `Plsql.useNls(...)` を呼び、日付・数値と文字の変換（`TO_CHAR` / `TO_NUMBER` / `TO_DATE` / `TO_TIMESTAMP` と書式なしの変換）を決めた設定で行う | ランタイムが計算する変換の SEM-008 / SEM-012 が外れる（NLS_DECIDED）。移行先 DB が評価する SQL に残った変換は外れない | project に 1 つ。`reason` だけが必須で、書かない値は地域の既定。言語・地域はランタイムが知るものだけ書けます（#157） |
 
 ### ルールが REVIEW / REDESIGN にするもの（ルール ID ごと）
 
@@ -853,11 +857,12 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | SEM-005 | REVIEW | そのまま実行できると判定されなかった結合 | |
 | SEM-006 | REVIEW | 割っていない `MERGE` | `rowLocks.optimistic` |
 | SEM-007 | REVIEW | 時計（SYSDATE など）を、文と宣言部の初期値で合わせて 2 回以上読む | 1 回読んで使い回す |
-| SEM-008 | REVIEW | 言語で変わる `TO_CHAR` の書式 | |
+| SEM-008 | REVIEW | 言語で変わる `TO_CHAR` の書式（`nls` を決めていない、または移行先 DB が評価する SQL に残ったもの） | `nls` |
 | SEM-009 | REVIEW | 移行先 DB が評価する `CAST(... AS DATE)` | |
 | SEM-010 | REVIEW | `SYSTIMESTAMP` を列へ書く INSERT / UPDATE / MERGE | 時刻の正確さを業務で決める |
-| SEM-012 | REVIEW | 日付・TIMESTAMP を書式なしで文字にする | 書式を明示する |
+| SEM-012 | REVIEW | 日付・TIMESTAMP を書式なしで文字にする（`nls` を決めていない、または移行先 DB が評価する SQL に残ったもの） | `nls`。または書式を明示する |
 | SEM-014 | REVIEW | `DBMS_RANDOM`、`SYS_GUID` | 乱数の出所を決める |
+| SEM-015 | REVIEW | ランタイムが実装しない書式の形（`FM` と `B`、数字の無い数値書式）、型の分からない値への `FF` / `X` / `TZR` | 書式を書き直す。値を TIMESTAMP の変数に入れる |
 | CUR-001 | REVIEW | 書き換えられなかった明示 cursor の OPEN / FETCH / CLOSE | |
 | CUR-002 | REVIEW | 行数上限の決まっていない cursor FOR ループ | `scanRows` |
 | CUR-003 | REVIEW | 先読みに書き換えた明示 cursor で、routine が COMMIT などを持つ | |
@@ -891,7 +896,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | 対応表に無い組み込み関数（`SOUNDEX`、`NUMTODSINTERVAL` など）、PL/SQL では使えない `DECODE` / `DUMP` | `UnsupportedOperationException` | 関数による | 組み込み関数の節を参照 |
 | INTERVAL 型と、日時の差からの `EXTRACT` | `UnsupportedOperationException` | 判定は下がらない | 生成コードでは日時の差が日数（数値）です |
 | Oracle と同じ意味にできない正規表現（等価クラス `[[=e=]]`、`(?` で始まる括弧、量指定子の重ね） | 実行時に `UnsupportedOperationException` | 判定は下がらない | パターンは実行時に訳すので、生成時には分かりません |
-| `TO_CHAR` の 4 つ以外の書式、書式つき `TO_NUMBER` | 実行時に `UnsupportedOperationException` | 書式による | |
+| 書式モデルのうちランタイムが実装しない形（`FM` と `B`、数字の無い数値書式、1582-10-15 より前の日付、型の分からない値の `FF` / `X` / `TZR`） | 実行時に要素を名指しした `UnsupportedOperationException` | SEM-015（生成時に分かるもの） | #157 |
 | 既定値を省いた呼び出しのうち、既定値が package の変数（`packageState.carried` の決定が無いとき）、`USER` / `SYSTIMESTAMP`、sequence を読むもの、routine を呼ぶ既定値を 2 つ以上省くもの | 同上 | 判定は下がらない | ほかの式の既定値は、呼ばれる側の `defaultOf...()` で補います（単位の節を参照） |
 | 別の package の変数の直接参照（`pkg.var`） | `UnsupportedOperationException` | STATE-001 | `packageState.carried` を書いても断ります |
 | 持ち上げられない入れ子の subprogram（単位の節の条件） | 本体ごと断る | LOWER-001（REVIEW） | |
