@@ -357,6 +357,10 @@ def _match(rule: Rule, module: M.Module, routine: M.Routine, analysis: ProgramAn
                 hits.append(Match(rule, statement.id, _detail(statement)))
         if anywhere and "textMatches" in criteria:
             for declaration in _declarations(routine):
+                # a note a decision left on the declaration (NLS_DECIDED, #157) counts as it does on a statement
+                if "lacksDiagnostic" in criteria and {d.code for d in declaration.diagnostics} & \
+                        _as_set(criteria["lacksDiagnostic"]):
+                    continue
                 if re.search(criteria["textMatches"], _text(declaration), re.IGNORECASE):
                     hits.append(Match(rule, declaration.id, f"{declaration.name}: {_text(declaration)}"[:120]))
         return hits

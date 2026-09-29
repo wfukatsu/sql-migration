@@ -69,7 +69,16 @@ def mark_decided(program: M.Program, settings) -> None:
         return
     for module in program.modules:
         for routine in module.routines:
-            for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
+            statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
+            # the initial values and defaults the rules read as expressions too (`v VARCHAR2(9) := TO_CHAR(d, 'DAY')`)
+            holders = [h for h in list(routine.declarations) + list(routine.parameters)
+                       + [d for s in statements for d in getattr(s, "declarations", []) or []]
+                       if getattr(h, "initial", None) or getattr(h, "default", None)]
+            for holder in holders:
+                text = str(getattr(holder, "initial", None) or getattr(holder, "default", None) or "")
+                if _CONVERSION.search(text) and not any(d.code == "NLS_DECIDED" for d in holder.diagnostics):
+                    holder.add("INFO", "NLS_DECIDED", _decided(settings))
+            for statement in statements:
                 implicit = any(d.code == "IMPLICIT_DATE_TEXT" for d in statement.diagnostics)
                 if not implicit and not _CONVERSION.search(_statement_text(statement)):
                     continue
@@ -77,9 +86,12 @@ def mark_decided(program: M.Program, settings) -> None:
                     continue
                 if statement.kind == "SqlOperation" and _target_converts(statement, implicit):
                     continue
-                statement.add("INFO", "NLS_DECIDED",
-                              f"the project decided the source sessions' NLS settings (limits.yaml nls: "
-                              f"{settings.date_language} / {settings.territory}; {settings.reason})")
+                statement.add("INFO", "NLS_DECIDED", _decided(settings))
+
+
+def _decided(settings) -> str:
+    return (f"the project decided the source sessions' NLS settings (limits.yaml nls: {settings.date_language} / "
+            f"{settings.territory}; {settings.reason})")
 
 
 def _target_converts(statement: M.Statement, implicit: bool) -> bool:
@@ -93,8 +105,11 @@ def _target_converts(statement: M.Statement, implicit: bool) -> bool:
 
 
 def _statement_text(statement: M.Statement) -> str:
-    arguments = [str(a) for a in getattr(statement, "arguments", []) or []]
-    return " ".join(str(getattr(statement, f, "") or "") for f in _TEXT_FIELDS) + " " + " ".join(arguments)
+    """What the rules read of a statement (`rules.engine._text`): its expression fields, an IF's conditions, a call's
+    arguments."""
+    from .rules.engine import _text
+
+    return _text(statement)
 
 
 # `TO_CHAR(<first>, '<format>'` and `TO_NUMBER(<first>, '<format>'`: the first argument without a top-level comma
