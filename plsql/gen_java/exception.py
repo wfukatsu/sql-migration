@@ -272,6 +272,16 @@ ALWAYS = ("NO_DATA_FOUND", "TOO_MANY_ROWS", "ZERO_DIVIDE", "VALUE_ERROR")
 # A handler for one of these runs in Oracle and never here.
 NEVER_RAISED_BY_TARGET = ("DUP_VAL_ON_INDEX", "INVALID_NUMBER")
 
+# The same, by the Oracle number a `PRAGMA EXCEPTION_INIT` binds (#148 H3), with the name rule EXC-001 knows it by.
+# The constraint errors are the database's: ScalarDB has no UNIQUE, NOT NULL, CHECK, FOREIGN KEY or column length,
+# so nothing raises them unless a guard the project decided on (`constraints.enforce`) does. -6502 is VALUE_ERROR,
+# which EXC-001 names as well. -54 (row lock busy) is left out: that handler is dropped by decision (#9 §B)
+NEVER_RAISED_CODES = {
+    -1: "DUP_VAL_ON_INDEX", -1722: "INVALID_NUMBER", -6502: "VALUE_ERROR",
+    -1400: "ORA-01400", -1407: "ORA-01407", -1438: "ORA-01438", -12899: "ORA-12899",
+    -2290: "ORA-02290", -2291: "ORA-02291", -2292: "ORA-02292",
+}
+
 
 def generate(program: M.Program, package: str, used=()) -> tuple[list[JavaFile], Registry]:
     """`used`: predefined exceptions the generated services throw without the PL/SQL naming them."""

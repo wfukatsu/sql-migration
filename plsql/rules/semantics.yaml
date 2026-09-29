@@ -272,6 +272,19 @@ rules:
     requiredTests:
       - exception_path
 
+  # #148 M5: 生成コードの WHEN OTHERS は移行した例外（MigratedException）だけを捕まえる（変換の一覧に記載）。DB の誤りを
+  # 捕まえて値を返していた handler は、移行先では走らず、SQLException が呼び出し側へ抜ける
+  - id: EXC-003
+    match: {othersCoversWrite: true}
+    decision: REVIEW
+    severity: critical
+    message: WHEN OTHERS の handler が書き込み（INSERT / UPDATE / DELETE / MERGE、または書き込む routine の呼び出し）を囲んでいます。Oracle では重複・NOT NULL・長さなど DB の誤りもここで捕まえていましたが、移行先の WHEN OTHERS は移行した例外だけを捕まえ、DB の誤りは呼び出し側へ抜けます
+    remediation:
+      - 捕まえたい DB の誤りを名前で書く（DUP_VAL_ON_INDEX など）か、書く前に値を検査して業務例外にする
+      - 捕まえる必要が無ければ handler を外すか、最後に RAISE で投げ直す
+    requiredTests:
+      - exception_path
+
   - id: SQL-003
     match: {statementKind: SqlOperation, hasDiagnostic: BIND_SHADOWED}
     decision: REVIEW
@@ -288,14 +301,20 @@ rules:
     requiredTests:
       - row_count
 
+  # #148 H3: `PRAGMA EXCEPTION_INIT(e, <番号>)` で番号に結んだ例外も、その番号の名前で当たる（-1 は DUP_VAL_ON_INDEX、
+  # -2291 は ORA-02291）。制約の番号は、constraints.enforce で決めた guard がその番号を投げる routine では当たらない
   - id: EXC-001
-    match: {handlesException: [DUP_VAL_ON_INDEX, INVALID_NUMBER, VALUE_ERROR]}
+    match:
+      handlesException: [DUP_VAL_ON_INDEX, INVALID_NUMBER, VALUE_ERROR, ORA-01400, ORA-01407, ORA-01438, ORA-12899,
+                         ORA-02290, ORA-02291, ORA-02292]
     decision: REVIEW
     severity: critical
-    message: 移行先では自然には起こらない例外の handler があります。Oracle では DB 自身の誤りでも走っていた処理が、移行先では走りません
+    message: 移行先では自然には起こらない例外の handler があります。Oracle では DB 自身の誤り（一意制約・NOT NULL・CHECK・外部キー・列の長さなど）でも走っていた処理が、移行先では走りません
     remediation:
-      - DUP_VAL_ON_INDEX は「読んで、無ければ INSERT、あれば UPDATE」か UPSERT に書き直す（ScalarDB は重複 INSERT のあとトランザクションを続けられない）
+      - DUP_VAL_ON_INDEX（-1）は「読んで、無ければ INSERT、あれば UPDATE」か UPSERT に書き直す（ScalarDB は重複 INSERT のあとトランザクションを続けられない）
       - INVALID_NUMBER / VALUE_ERROR は、変換の前に値を検査する形に書き直す
+      - CHECK（-2290）と外部キー（-2291）は、表を limits.yaml の constraints.enforce に書くと書く前に検査し、同じ番号で投げる
+      - NOT NULL（-1400 / -1407）、子のある親の削除（-2292）、列の長さ（-12899 / -1438）は、書く前に値を検査する形に書き直す
     requiredTests:
       - exception_path
 

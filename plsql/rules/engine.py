@@ -199,6 +199,7 @@ ROUTINE_KEYS = {
     "dbLink": bool, "externalPackage": bool, "callSpec": bool, "writeThenScan": bool, "recursive": bool,
     "handlesException": None, "unresolvedCallee": bool, "swallowsOthers": bool, "rowCountUntracked": bool,
     "clockReadsAtLeast": int, "cursorLocking": bool, "saveExceptions": bool, "packageInitialisation": bool,
+    "othersCoversWrite": bool,
 }
 DIAGNOSTIC_KEYS = ("hasDiagnostic", "hasAllDiagnostics", "lacksDiagnostic")
 
@@ -509,10 +510,14 @@ def _routine_level(criteria: dict, module: M.Module, routine: M.Routine, analysi
         # a call that resolves to no routine in the program: code nobody analysed, which may commit, send mail,
         # or take a lock. `externalPackage` only knows a short list of names; this is everything else
         # a handler for one of these names, anywhere in the routine (nested blocks included)
-        "handlesException": lambda v: bool(_handled(routine) & {n.upper() for n in _as_set(v)}),
+        "handlesException": lambda v: bool(set(_handled(routine, module, analysis)) & {n.upper() for n in _as_set(v)}),
         "unresolvedCallee": lambda v: bool(_unresolved_callees(routine, analysis)) is v,
         # `WHEN OTHERS THEN NULL`, anywhere in the routine
         "swallowsOthers": lambda v: _swallows_others(routine) is v,
+        # `WHEN OTHERS THEN <something>` around a write: in Oracle it caught the database's own errors (a duplicate,
+        # a NOT NULL, a value too long) and did something else. The generated catch takes migrated exceptions
+        # only, so the SQLException goes past it (#148 M5)
+        "othersCoversWrite": lambda v: bool(_others_covering_writes(routine, analysis)) is v,
         # SQL%ROWCOUNT read in a routine where something other than a static statement sets it
         "rowCountUntracked": lambda v: bool(_untracked_row_count(routine)) is v,
         # P4-3: how many times the routine reads the database clock. Two reads can return two values, and
@@ -595,10 +600,78 @@ def _state_touchers(analysis: ProgramAnalysis) -> set[str]:
     return analysis._state_touchers
 
 
-def _handled(routine: M.Routine) -> set[str]:
+def _handled(routine: M.Routine, module: M.Module | None = None,
+             analysis: ProgramAnalysis | None = None) -> dict[str, str]:
+    """What the routine's handlers catch, by the name a rule uses -> the handler's own name.
+
+    A declared exception bound to an Oracle number (`PRAGMA EXCEPTION_INIT(e_dup, -1)`) is also known by what that
+    number is: `e_dup` catches DUP_VAL_ON_INDEX, `e_fk` (-2291) catches ORA-02291. Only the name was looked at, so a
+    handler for a unique or a foreign-key violation written by its number reached no rule, and the target raises
+    neither (#148 H3). A constraint guard the project decided on (`constraints.enforce`) does raise its number; where
+    one is in the routine or what it calls, that number is not listed."""
+    from ..gen_java.exception import NEVER_RAISED_CODES, declared_code
+
     handlers = list(routine.exception_handlers) + [
         h for s in _statements(routine) for h in getattr(s, "exception_handlers", []) or []]
-    return {name.upper() for h in handlers for name in h.exceptions}
+    out = {name.upper(): name.upper() for h in handlers for name in h.exceptions}
+    raised = None
+    for name in list(out):
+        code = declared_code(name, *(h for h in (routine, module) if h is not None))
+        alias = NEVER_RAISED_CODES.get(code) if code is not None else None
+        if alias is None:
+            continue
+        if raised is None:
+            raised = _raised_codes(routine, analysis)
+        if code not in raised:
+            out.setdefault(alias, f"{name} (EXCEPTION_INIT {code})")
+    return out
+
+
+def _raised_codes(routine: M.Routine, analysis: ProgramAnalysis | None) -> set[int]:
+    """The Oracle numbers a RAISE in the routine, or in what it calls, raises -- the guards the lowering wrote among
+    them (`constraints._refusal`: -2290 / -2291)."""
+    routines = [routine]
+    if analysis is not None:
+        reached = analysis.call_graph.reachable_from(routine.id) - {routine.id}
+        routines += [r for m in analysis.program.modules for r in m.routines if r.id in reached]
+    return {s.error_code for r in routines for s in _statements(r) if s.kind == "Raise" and s.error_code is not None}
+
+
+DML = ("INSERT", "UPDATE", "DELETE", "MERGE")
+
+
+def _others_covering_writes(routine: M.Routine, analysis: ProgramAnalysis) -> list[str]:
+    """The writes a `WHEN OTHERS` handler (one that does more than re-raise) protects: in its block, or in what a
+    call in the block reaches. `THEN NULL` is EXC-002's."""
+    def covers(handler: M.ExceptionHandler) -> bool:
+        if "OTHERS" not in {e.upper() for e in handler.exceptions}:
+            return False
+        body = [s for s in handler.body if s.kind != "Null"]
+        if not body:
+            return False   # EXC-002
+        last = body[-1]
+        # `WHEN OTHERS THEN log(...); RAISE;` lets the error out as Oracle did; what it did first is the lost part,
+        # and a write there is rolled back with the rest
+        return not (last.kind == "Raise" and not last.exception and last.error_code is None)
+
+    def writes(statements: list[M.Statement]) -> list[str]:
+        found = []
+        for statement in with_variants(_walk(statements)):
+            if statement.kind == "SqlOperation" and (statement.sql_kind or "").upper() in DML:
+                found.append(f"{statement.sql_kind.upper()} {', '.join(statement.write_set)}".strip())
+            elif statement.kind == "Call" and getattr(statement, "resolved_to", None):
+                effects = analysis.effective.get(statement.resolved_to)
+                if effects is not None and effects.writes:
+                    found.append(f"call to {statement.resolved_to}")
+        return found
+
+    out: list[str] = []
+    if any(covers(h) for h in routine.exception_handlers):
+        out += writes(routine.body)
+    for statement in _statements(routine, variants=False):
+        if any(covers(h) for h in getattr(statement, "exception_handlers", []) or []):
+            out += writes(getattr(statement, "body", []) or [])
+    return sorted(set(out))
 
 
 def _swallows_others(routine: M.Routine) -> bool:
@@ -693,7 +766,11 @@ def _routine_detail(criteria: dict, module: M.Module, routine: M.Routine, analys
     if criteria.get("rowCountUntracked"):
         return ", ".join(_untracked_row_count(routine))
     if criteria.get("handlesException"):
-        return ", ".join(sorted(_handled(routine) & {n.upper() for n in _as_set(criteria["handlesException"])}))
+        handled = _handled(routine, module, analysis)
+        return ", ".join(sorted(name if handled[name] == name else f"{name}: {handled[name]}"
+                                for name in set(handled) & {n.upper() for n in _as_set(criteria["handlesException"])}))
+    if criteria.get("othersCoversWrite"):
+        return ", ".join(_others_covering_writes(routine, analysis))
     if criteria.get("unresolvedCallee"):
         return ", ".join(_unresolved_callees(routine, analysis))
     if criteria.get("controlsTransaction") and effects:
