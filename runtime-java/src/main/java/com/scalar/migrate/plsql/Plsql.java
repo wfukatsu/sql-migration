@@ -40,6 +40,7 @@ public final class Plsql {
     if (a instanceof java.util.List<?> x && b instanceof java.util.List<?> y) return Boolean.TRUE.equals(sameMultiset(x, y));
     // two RAWs are equal byte for byte: HEXTORAW('ab') = HEXTORAW('AB') (#140)
     if (a instanceof byte[] x && b instanceof byte[] y) return java.util.Arrays.equals(x, y);
+    if (zonedPair(a, b)) return instant(a).equals(instant(b));
     return Objects.equals(a, b);
   }
 
@@ -100,7 +101,36 @@ public final class Plsql {
       return num(a).compareTo(num(b));
     }
     if (a instanceof byte[] x && b instanceof byte[] y) return java.util.Arrays.compareUnsigned(x, y);
+    if (zonedPair(a, b)) return instant(a).compareTo(instant(b));
     return ((Comparable) a).compareTo(b);
+  }
+
+  /**
+   * Two date-times of which at least one carries a zone (#149). Oracle compares TIMESTAMP WITH TIME ZONE as an
+   * instant, and a DATE or a TIMESTAMP next to one as the instant it names in the session's zone -- UTC, by the
+   * decision {@link #systimestamp()} follows. Measured on Oracle 26ai with TIME_ZONE = 'UTC':
+   * {@code TIMESTAMP '2026-01-01 10:00:00 +09:00' = TIMESTAMP '2026-01-01 01:00:00 +00:00'} is TRUE, and so is the
+   * same instant against the TIMESTAMP / DATE {@code 2026-01-01 01:00:00}. Java's OffsetDateTime compares the offset
+   * as well ({@code equals}) or breaks the tie by the local time ({@code compareTo}), and a LocalDateTime against an
+   * OffsetDateTime -- {@code p_expires < SYSTIMESTAMP} -- was a ClassCastException no WHEN OTHERS could see.
+   */
+  private static boolean zonedPair(Object a, Object b) {
+    return (a instanceof java.time.OffsetDateTime || b instanceof java.time.OffsetDateTime
+            || a instanceof java.time.Instant || b instanceof java.time.Instant)
+        && instantLike(a) && instantLike(b);
+  }
+
+  private static boolean instantLike(Object value) {
+    return value instanceof java.time.OffsetDateTime || value instanceof java.time.Instant
+        || value instanceof LocalDateTime || value instanceof java.time.LocalDate;
+  }
+
+  /** The instant a date-time names, a value without a zone read in the session's zone (UTC). */
+  private static java.time.Instant instant(Object value) {
+    if (value instanceof java.time.OffsetDateTime moment) return moment.toInstant();
+    if (value instanceof java.time.Instant moment) return moment;
+    if (value instanceof LocalDateTime moment) return moment.toInstant(java.time.ZoneOffset.UTC);
+    return ((java.time.LocalDate) value).atStartOfDay().toInstant(java.time.ZoneOffset.UTC);
   }
 
   private static boolean numeric(Object a, Object b) {
@@ -410,6 +440,12 @@ public final class Plsql {
     return arith(a, b, BigDecimal::add);
   }
 
+  /** An OffsetDateTime moved to UTC, keeping its instant; anything else as it is. */
+  private static Object inUtc(Object value) {
+    return value instanceof java.time.OffsetDateTime moment
+        ? moment.withOffsetSameInstant(java.time.ZoneOffset.UTC) : value;
+  }
+
   private static boolean isTemporal(Object value) {
     return value instanceof LocalDateTime || value instanceof java.time.OffsetDateTime;
   }
@@ -477,7 +513,11 @@ public final class Plsql {
     if (isTemporal(a) && isTemporal(b)) {
       // Oracle subtracts two DATEs into a number of days, fraction included
       // (the division rounds as Oracle's NUMBER does: #64)
-      return OracleNumbers.divide(BigDecimal.valueOf(java.time.Duration.between(castDate(b), castDate(a)).toSeconds()),
+      // with a zone on either side the difference is between the two instants (#149): castDate drops the offset,
+      // and the same instant written as +09:00 and as UTC came out 0.375 days apart. Oracle 26ai: 0 (see zonedPair)
+      LocalDateTime from = zonedPair(a, b) ? castDate(inUtc(b)) : castDate(b);
+      LocalDateTime to = zonedPair(a, b) ? castDate(inUtc(a)) : castDate(a);
+      return OracleNumbers.divide(BigDecimal.valueOf(java.time.Duration.between(from, to).toSeconds()),
           BigDecimal.valueOf(86400));
     }
     // `SYSTIMESTAMP - 30` は 30 日前の DATE である。日数として数値に直すと落ちる
