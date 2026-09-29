@@ -25,6 +25,7 @@ ScalarDB は複数のストレージを仮想的に統合し、それらをま�
 |---|---|---|
 | `col IN (a, b)` / `col NOT IN (a, b)` | `col = a OR col = b` / `col <> a AND col <> b` | INFO `IN`（NOT IN は出ない） |
 | `NOT (...)` | 比較演算子を反転して押し下げる。`NOT BETWEEN` は `col < low OR col > high`。`IS NOT NULL` と `NOT LIKE` はそのまま | なし（反転できなければ ERROR `NOT`） |
+| クラスタリングキーの列の `<>` / `!=`（`NOT (id = 1)`、`NOT IN` から出たものも） | `(id < 1 OR id > 1)`。ScalarDB SQL 3.19.1 は、パーティションキーを `=` で決めた走査でクラスタリングキーの `<>` を受けると内部エラー（UNKNOWN、クラスタのログは ScanOperator.setClusteringKeyBoundariesForScan の AssertionError）になる。キーの列は NULL にならないので、読む行は同じ | INFO `KEY_NEQ`（#168） |
 | DNF でも CNF でもない AND / OR の入れ子 | DNF と CNF の短いほうにし、括弧を付ける | INFO `NORMAL_FORM` |
 | `10 < col` | `col > 10` | なし |
 | `WHERE ROWNUM <= n`（`< n`、`= 1`、`<= ?` も） | `LIMIT n`（`< n` は `LIMIT n-1`） | WARN `ROWNUM`（ScalarDB の LIMIT は ORDER BY の後に効く。Oracle の ROWNUM は前）。`<= ?` には WARN `LIMIT` も付く（下） |

@@ -154,6 +154,7 @@ SQL 文の各項目を、変換器（`scalardb_migrate/`）がどう扱うかの
 | `WHERE dept_id NOT IN (10, 20)` | `dept_id <> 10 AND dept_id <> 20` | OK | |
 | `WHERE NOT (salary > 100)` | `salary <= 100` | OK | 比較を反転して押し下げる。反転できなければ ERROR `NOT` |
 | `NOT BETWEEN 1 AND 5` | `salary < 1 OR salary > 5` | OK | |
+| クラスタリングキーの列の `<>` / `!=`（`WHERE grp = 1 AND id <> 1`。`NOT (id = 1)` と `NOT IN` から出たものも） | `grp = 1 AND (id < 1 OR id > 1)` | OK（INFO `KEY_NEQ`） | ScalarDB SQL 3.19.1 は、パーティションキーを `=` で決めた走査でクラスタリングキー（2 列目以降は前の列を `=` で決めたとき）の `<>` を受けると、`Unexpected error (UNKNOWN: Application error processing RPC)` で失敗する（クラスタのログは `ScanOperator.setClusteringKeyBoundariesForScan` の AssertionError。SELECT・UPDATE・DELETE、書き込みの有無、ASC / DESC に関係なく、実クラスタで確認、#168）。範囲 2 つなら通り、キーの列は NULL にならないので読む行は同じ。パーティションをまたぐ走査でも同じに書く。実行計画の取得の SQL も同じに書く（計画の述語は `<>` のまま。Core API の走査は `<>` を読める）。位置のバインド変数は 2 回並ぶ（WARN `BIND_ORDER`） |
 | PostgreSQL の `BETWEEN SYMMETRIC 10 AND 1` | 2 通りの順の BETWEEN を OR | OK | |
 | `IS NULL` / `IS NOT NULL` / `NOT LIKE` | そのまま | OK | |
 | AND と OR の入れ子（標準形でない） | DNF と CNF の短いほう、括弧つき | OK（INFO `NORMAL_FORM`） | 直せなければ ERROR `NORMAL_FORM` |

@@ -455,7 +455,7 @@ class Decomposer:
                     full_scans.append(part.table)
                     break
                 cross_partition |= part.access_path == "CROSS_PARTITION"
-                part.scalardb_sql = self._fetch_sql(part, self.session_zone)
+                part.scalardb_sql = self._fetch_sql(part, self.session_zone, meta.clustering_key if meta else ())
                 fetch.append(part)
         blocked = {t.lower() for t in full_scans}
         for table in full_scans:
@@ -739,12 +739,24 @@ class Decomposer:
         return None, col.name.lower()
 
     @staticmethod
-    def _fetch_sql(spec: FetchSpec, zone=None) -> str:
+    def _fetch_sql(spec: FetchSpec, zone=None, clustering=()) -> str:
+        """The fetch as ScalarDB SQL. A `<>` on a clustering-key column is written as two ranges, `(ck < v OR ck > v)`:
+        ScalarDB SQL 3.19.1 fails with an internal error on the `<>` (#168). The predicate in the plan stays `<>` --
+        the Core API scan reads it (measured), and the residual SQL applies it again anyway."""
+        ck = {c.lower() for c in clustering}
+
+        def split(p: Predicate) -> list[Predicate]:
+            if p.op == "<>" and p.column.lower() in ck:
+                return [replace(p, op="<"), replace(p, op=">")]
+            return [p]
+
+        groups = []
+        for g in spec.predicates:
+            parts = [q for p in (g if isinstance(g, list) else [g]) for q in split(_fit_temporal(p, spec.column_types, zone))]
+            groups.append(Decomposer._group_sql(parts[0] if len(parts) == 1 else parts))
         cols = ", ".join(map(quoted, spec.columns)) if spec.columns else "*"
         name = f"{quoted(spec.namespace)}.{quoted(spec.table)}" if spec.namespace else quoted(spec.table)
-        where = " AND ".join(Decomposer._group_sql(
-            _fit_temporal(g, spec.column_types, zone) if isinstance(g, Predicate)
-            else [_fit_temporal(p, spec.column_types, zone) for p in g]) for g in spec.predicates)
+        where = " AND ".join(groups)
         return f"SELECT {cols} FROM {name}" + (f" WHERE {where}" if where else "")
 
     # -- residual -----------------------------------------------------------------------------------
