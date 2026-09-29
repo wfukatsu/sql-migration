@@ -19,7 +19,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .ir import model as M
-from .limits import Constraints, PackageState, Boundaries, DbLinks, DynamicTables, Limits, NlsSettings, RowLocks
+from .limits import (Constraints, PackageState, Boundaries, DbLinks, DynamicSqlHoles, DynamicTables, Limits,
+                     NlsSettings, RowLocks)
 
 STATES = ("undecided", "decided", "verified")
 LABELS = {"undecided": "未決定", "decided": "決定済み（実 DB では未検証、または相違あり）",
@@ -51,20 +52,22 @@ class Decided:
     package_state: PackageState = field(default_factory=PackageState)
     constraints: Constraints = field(default_factory=Constraints)
     nls: NlsSettings = field(default_factory=NlsSettings)
+    dynamic_sql: DynamicSqlHoles = field(default_factory=DynamicSqlHoles)
 
     @classmethod
     def load(cls, path: str | Path | None) -> "Decided":
         if path is None:
             return cls()
         return cls(RowLocks.load(path), Boundaries.load(path), DynamicTables.load(path), Limits.load(path),
-                   DbLinks.load(path), PackageState.load(path), Constraints.load(path), NlsSettings.load(path))
+                   DbLinks.load(path), PackageState.load(path), Constraints.load(path), NlsSettings.load(path),
+                   DynamicSqlHoles.load(path))
 
     def for_analysis(self) -> dict:
         # dynamic_tables: the report has to judge the statements the generator writes, one per accepted table name.
         # Left out, `plsql.cli` still reported DYN-002 on a statement `plsql.generate` had already expanded (#133)
         return {"row_locks": self.row_locks, "boundaries": self.boundaries, "limits": self.limits,
                 "db_links": self.db_links, "package_state": self.package_state, "constraints": self.constraints,
-                "dynamic_tables": self.dynamic_tables, "nls": self.nls}
+                "dynamic_tables": self.dynamic_tables, "nls": self.nls, "dynamic_sql": self.dynamic_sql}
 
 
 @dataclass
@@ -73,11 +76,13 @@ class Status:
     state: str = "undecided"
     decisions: list[dict] = field(default_factory=list)   # {rule, decidedBy, why}
     open: list[str] = field(default_factory=list)         # REDESIGN rules (or callees) nobody has answered
+    why_open: dict[str, str] = field(default_factory=dict)   # rule -> what is missing, when a decision falls short
     evidence: tuple[int, int] | None = None               # (scenarios that agreed, scenarios compared)
     through: list[str] = field(default_factory=list)      # callers whose evidence stands in (trigger bodies)
 
     def as_dict(self) -> dict:
         return {"state": self.state, "label": LABELS[self.state], "decisions": self.decisions, "open": self.open,
+                "openReasons": self.why_open,
                 "evidence": None if self.evidence is None else {"agreed": self.evidence[0], "compared": self.evidence[1]},
                 "verifiedThrough": self.through}
 
@@ -99,9 +104,8 @@ def _answer(rule_id: str, routine: M.Routine, module: M.Module | None, decided: 
         return None
     if rule_id == "STATE-001" and module is not None and decided.package_state.decided(module.name):
         return "limits.yaml: packageState.carried", decided.package_state.why(module.name) or ""
-    if rule_id == "DYN-001" and decided.dynamic_tables.for_routine(name):
-        tables = ", ".join(decided.dynamic_tables.for_routine(name))
-        return "limits.yaml: dynamicTables", f"受け付ける表名を決めてある: {tables}。それ以外は実行時に拒否する"
+    if rule_id == "DYN-001":
+        return _dynamic_answer(routine, decided)
     if rule_id == "TRG-001" and module is not None and module.module_kind == "trigger":
         from .triggers import CORRELATION
         from .lower import _walk
@@ -122,6 +126,48 @@ def _answer(rule_id: str, routine: M.Routine, module: M.Module | None, decided: 
             return SEQUENCE_DECISION
         return FOLD_DECISION if shape.foldable_assignments() is not None else None
     return None
+
+
+def _unexpanded(routine: M.Routine) -> list[M.DynamicSql]:
+    """The dynamic statements that splice an identifier (DYN-001) and were not expanded into static statements."""
+    from .dynamic import interpolates_identifier
+    from .lower import _walk
+
+    body = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
+    return [s for s in body if s.kind == "DynamicSql" and not s.constant_sql and not s.variants
+            and interpolates_identifier(routine, s)]
+
+
+def _dynamic_answer(routine: M.Routine, decided: Decided) -> tuple[str, str] | None:
+    """DYN-001 is decided when a list was written for the routine **and** every statement it covers was expanded
+    (#165). A two-hole statement (ORDER BY column and direction) used to count as decided by `dynamicTables`, which
+    expands a statement with one hole only, and was refused at run time."""
+    tables = decided.dynamic_tables.for_routine(routine.id)
+    holes = decided.dynamic_sql.for_routine(routine.id)
+    if not (tables or holes) or _unexpanded(routine):
+        return None
+    where, why = [], []
+    if holes:
+        where.append("dynamicSql")
+        listed = "; ".join(f"{hole}: {', '.join(values)}" for hole, values in holes.items())
+        why.append(f"穴ごとに受け付ける値を決めてある（{listed}）: {decided.dynamic_sql.why(routine.id)}")
+    if tables:
+        where.append("dynamicTables")
+        why.append(f"受け付ける表名を決めてある: {', '.join(tables)}")
+    return f"limits.yaml: {' / '.join(where)}", "。".join(why) + "。一覧に無い値は実行時に拒否する"
+
+
+def _short_of(rule_id: str, routine: M.Routine, decided: Decided) -> str | None:
+    """What a recorded decision leaves unanswered, when there is one that falls short (#165)."""
+    if rule_id != "DYN-001":
+        return None
+    tables = decided.dynamic_tables.for_routine(routine.id)
+    holes = decided.dynamic_sql.for_routine(routine.id)
+    if not (tables or holes):
+        return None
+    from .dynamic import unexpanded_reason
+
+    return "。".join(dict.fromkeys(unexpanded_reason(routine, s, holes, tables) for s in _unexpanded(routine))) or None
 
 
 def statuses(program: M.Program, decisions: dict, call_graph, decided: Decided | None, evidence=None) -> dict[str, Status]:
@@ -145,6 +191,9 @@ def statuses(program: M.Program, decisions: dict, call_graph, decided: Decided |
             answer = _answer(match.rule.id, routine, module, decided) if routine is not None else None
             if answer is None:
                 status.open.append(match.rule.id)
+                short = _short_of(match.rule.id, routine, decided) if routine is not None else None
+                if short:
+                    status.why_open[match.rule.id] = short
             else:
                 status.decisions.append({"rule": match.rule.id, "decidedBy": answer[0], "why": answer[1]})
         # a routine that is REDESIGN only because of what it calls is as decided as what it calls

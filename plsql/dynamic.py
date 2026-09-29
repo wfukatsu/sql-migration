@@ -32,7 +32,7 @@ Three rules keep this from claiming more than it knows:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .ir import model as M
 from .source import Issue
@@ -40,6 +40,8 @@ from .source import Issue
 # How many variants are worth enumerating. Ten is already a lot to review; past that the honest answer is that
 # nobody knows what this statement runs, which is what REVIEW means.
 MAX_VARIANTS = 8
+
+from .limits import MAX_HOLE_COMBINATIONS  # noqa: E402 - #165: the cap on one statement's combinations
 
 # `v := 'text'` and `v := v || 'text'`, the two shapes a SQL string is built with
 ASSIGN_LITERAL = re.compile(r"^\s*'(?P<text>(?:[^']|'')*)'\s*$")
@@ -68,25 +70,37 @@ def enumerate_variants(routine: M.Routine, statement: M.DynamicSql,
     folded = _unquote(target)
     if folded is not None:
         return [Variant(guard="", sql=folded)]
-    if not re.fullmatch(r"[\w$#]+", target):
+    lists = hole_lists(routine.id)
+    bare = re.fullmatch(r"[\w$#]+", target) is not None
+    if not bare and not lists:
         # an expression, not a variable: `'DELETE FROM ' || p_table_name` and the like. Knowable only when
         # a person has listed the table names it may take (2026-09-19)
         return _allowed(routine, target)
 
+    def otherwise() -> list[Variant] | None:
+        return None if bare else _allowed(routine, target)
+
     context = _Context(locals={p.name.lower() for p in routine.parameters}
                               | {d.name.lower() for d in routine.declarations if d.declaration_kind != "cursor"},
-                       carried=_carried_back(routine, module))
+                       carried=_carried_back(routine, module), lists=lists)
     states = _trace(routine.body, statement.id, [_State(guard=(), values={})], context)
     if states is None:
-        return None
-    variants: list[Variant] = []
+        return otherwise()
+    built: list[tuple[_State, str]] = []
     for state in states:
         if state.tainted:
-            return None   # its guard may no longer say what it said when the string was built (#107)
-        value = state.values.get(target.lower())
+            return otherwise()   # its guard may no longer say what it said when the string was built (#107)
+        value = state.values.get(target.lower()) if bare else _concat(state, target, context)
         if value is None:
-            return None  # one path leaves the statement unknown, so the set is not knowable
-        variants.append(Variant(guard=" AND ".join(state.guard), sql=value))
+            return otherwise()  # one path leaves the statement unknown, so the set is not knowable
+        built.append((state, value))
+    if any(_MARK in value for _, value in built):
+        # #165: a hole with a list of values: one statement per combination
+        return _combinations(built, lists) or otherwise()
+    # each condition in parentheses: `p_a = 1 OR p_b = 2` under `p_c = 3` is `(p_a = 1 OR p_b = 2) AND (p_c = 3)`, not
+    # `p_a = 1 OR p_b = 2 AND p_c = 3` -- AND binds tighter, and the other variant was picked (#165)
+    variants = [Variant(guard=" AND ".join(f"({c})" for c in state.guard) if len(state.guard) > 1
+                        else "".join(state.guard), sql=value) for state, value in built]
     unique = list(dict.fromkeys(variants))
     return unique if 0 < len(unique) <= MAX_VARIANTS else None
 
@@ -98,6 +112,128 @@ _ALLOWED: "contextvars.ContextVar[dict[str, list[str]]]" = contextvars.ContextVa
 
 def set_allowed_tables(allowed: dict[str, list[str]]) -> None:
     _ALLOWED.set(dict(allowed))
+
+
+# #165: limits.yaml `dynamicSql` -- routine id -> hole (the variable's name, lower case) -> the values it may take
+_HOLES: "contextvars.ContextVar[dict[str, dict[str, list[str]]]]" = contextvars.ContextVar("holes", default={})
+
+
+def set_hole_lists(lists: dict[str, dict[str, list[str]]]) -> None:
+    _HOLES.set({routine: {k.lower(): list(v) for k, v in by_hole.items()} for routine, by_hole in lists.items()})
+
+
+def hole_lists(routine_id: str) -> dict[str, list[str]]:
+    return _HOLES.get().get(routine_id) or {}
+
+
+# a listed hole spliced into the string being traced: \x01name\x1fexpression\x02, replaced by each value at the end
+_MARK = "\x01"
+_MARKED = re.compile("\x01([^\x1f]*)\x1f([^\x02]*)\x02")
+
+
+def hole_key(expression: str) -> str | None:
+    """The name a person writes for a hole in limits.yaml `dynamicSql`: the variable spliced in, or the one a
+    `DBMS_ASSERT` function wraps. None for any other expression (`UPPER(p)`, `f(x)`): its value is not the value of
+    one variable, so a list of the variable's values would not say what is spliced."""
+    text = (expression or "").strip()
+    wrapped = ASSERT.match(text)
+    name = wrapped.group("name") if wrapped else text
+    return name.lower() if re.fullmatch(r"[A-Za-z][\w$#]*", name) else None
+
+
+def _concat(state: "_State", expression: str, context: "_Context") -> str | None:
+    """#165: the text a concatenation makes on one path, with each listed hole marked; None when a term is unknown.
+
+    A term is a literal, a number, a variable this path has a text for, or a hole with a list in limits.yaml
+    `dynamicSql` (a parameter or a local of the routine). The hole's variable is watched from here on: written
+    after it was spliced, the value the generated code compares at the EXECUTE IMMEDIATE is no longer the one the
+    string was built with (#107)."""
+    out = ""
+    for term in _terms(expression):
+        literal = _unquote(term)
+        if literal is not None:
+            out += literal
+            continue
+        key = hole_key(term)
+        if key is not None and key in context.lists and key in context.locals:
+            out += f"{_MARK}{key}\x1f{term}\x02"
+            state.watched = state.watched | {key}
+        elif re.fullmatch(r"[A-Za-z][\w$#]*", term) and term.lower() in state.values:
+            out += state.values[term.lower()]
+        elif re.fullmatch(r"-?\d+(\.\d+)?", term):
+            out += term
+        else:
+            return None
+    return out
+
+
+def _combinations(built: list[tuple["_State", str]], lists: dict[str, list[str]]) -> list[Variant] | None:
+    """#165: every combination of the listed values, each a static statement guarded by the values it was made with.
+
+    A hole that lands where an identifier or a keyword goes (a column, the ORDER BY direction) is compared without
+    regard to case, as Oracle reads an unquoted name; one inside a quoted literal or a value position is compared
+    exactly, because there the case is part of the value. A value nobody listed matches no variant, and the
+    generated code refuses it at run time."""
+    import itertools
+
+    total = 0
+    for _, text in built:
+        names = list(dict.fromkeys(m.group(1) for m in _MARKED.finditer(text)))
+        count = 1
+        for name in names:
+            count *= len(lists[name])
+        total += count
+    if len(built) > MAX_VARIANTS or total > MAX_HOLE_COMBINATIONS:
+        return None
+    variants: list[Variant] = []
+    for state, text in built:
+        names = list(dict.fromkeys(m.group(1) for m in _MARKED.finditer(text)))
+        exact = {name: False for name in names}
+        for match in _MARKED.finditer(text):
+            before = _MARKED.sub(f" {_HOLE} ", text[:match.start()])
+            after = _MARKED.sub(f" {_HOLE} ", text[match.end():])
+            quoted = before.rstrip().endswith('"') or after.lstrip().startswith('"')
+            if quoted or not Hole(match.group(2), _position(match.group(2), before, after)).identifier:
+                exact[match.group(1)] = True
+        branch = [f"({condition})" for condition in state.guard]   # an OR in a branch condition stays inside
+        for values in itertools.product(*(lists[name] for name in names)):
+            chosen = dict(zip(names, values))
+            sql = _MARKED.sub(lambda m: chosen[m.group(1)], text)
+            checks = [f"{name} = '{_quote(value)}'" if exact[name] else f"UPPER({name}) = '{_quote(value.upper())}'"
+                      for name, value in chosen.items()]
+            variants.append(Variant(guard=" AND ".join(branch + checks), sql=sql))
+    unique = list(dict.fromkeys(variants))
+    return unique or None
+
+
+def _quote(text: str) -> str:
+    return text.replace("'", "''")
+
+
+def unexpanded_reason(routine: M.Routine, statement: M.Statement, lists: dict[str, list[str]],
+                      tables: list[str]) -> str:
+    """#165: why a dynamic statement in a routine that has a list (`dynamicSql` or `dynamicTables`) was not expanded,
+    for the person deciding: which holes have no list, or how far past the limit the combinations go."""
+    lists = {k.lower(): v for k, v in (lists or {}).items()}
+    found = list(dict.fromkeys(h.text for h in holes(routine, statement)))
+    if not lists:
+        if len(found) > 1:
+            return (f"連結する箇所（穴）が {len(found)} つある（{', '.join(found)}）。dynamicTables は穴が 1 つの文にしか"
+                    f"効かない。limits.yaml の dynamicSql.{routine.id}.holes に穴ごとの一覧を書く")
+        return ("dynamicTables の表名で展開できない（表名を 1 つの引数か局所変数で連結する形でない、表名が "
+                f"{MAX_VARIANTS} を超える、など）")
+    missing = [text for text in found if hole_key(text) not in lists]
+    if missing:
+        return (f"穴 {', '.join(missing)} に limits.yaml dynamicSql.{routine.id}.holes の一覧が無い。"
+                f"一覧が要るのは連結している変数（引数か局所変数）で、式で加工した値は変数に入れてから連結する")
+    count = 1
+    for key in dict.fromkeys(hole_key(text) for text in found):
+        count *= len(lists[key])
+    if count > MAX_HOLE_COMBINATIONS:
+        return (f"穴ごとの一覧の組み合わせが {count} 通りあり、上限 {MAX_HOLE_COMBINATIONS} を超える。"
+                f"一覧を絞るか、文を分ける")
+    return ("穴ごとの一覧はあるが、文の組み立てを追えない（ループの中で連結する、連結したあとで変数を書き換える、"
+            "条件が関数やパッケージ変数を読む、など）")
 
 
 _OMITTED_DDL: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("omitted_ddl", default={})
@@ -382,6 +518,7 @@ class _State:
 class _Context:
     locals: set[str]
     carried: dict[str, set[str]]   # a lifted routine's name -> the enclosing variables it hands back
+    lists: dict[str, list[str]] = field(default_factory=dict)   # #165: limits.yaml dynamicSql, hole -> values
 
 
 # the built-ins a guard may call: they give the same answer for the same arguments, however often they run
@@ -460,7 +597,7 @@ def _trace(statements: list[M.Statement], stop_at: str, states: list[_State],
             for state in states:
                 state.written({re.split(r"[.(]", (statement.target or "").strip(), maxsplit=1)[0].lower()},
                               by_assignment=True)
-                _apply(state, statement)
+                _apply(state, statement, context)
         elif statement.kind in ("If", "Case"):
             if statement.kind == "Case" and statement.selector:
                 return None   # `CASE x WHEN 1`: the branch value alone is not a condition to evaluate again
@@ -508,8 +645,10 @@ def _contains(statements: list[M.Statement], statement_id: str) -> bool:
     return any(s.id == statement_id for s in _walk(statements))
 
 
-def _apply(state: _State, statement: M.Assignment) -> None:
-    """Update one variable, or mark it unknown. An unknown value never becomes known again."""
+def _apply(state: _State, statement: M.Assignment, context: _Context | None = None) -> None:
+    """Update one variable, or mark it unknown. An unknown value never becomes known again.
+
+    With hole lists (#165) a concatenation of literals, known variables and listed holes is followed too."""
     name = (statement.target or "").strip().lower()
     if not name:
         return
@@ -522,6 +661,11 @@ def _apply(state: _State, statement: M.Assignment) -> None:
     if append and append.group("var").lower() in state.values:
         state.values[name] = state.values[append.group("var").lower()] + _unescape(append.group("text"))
         return
+    if context is not None and context.lists:
+        value = _concat(state, expression, context)
+        if value is not None:
+            state.values[name] = value
+            return
     state.values.pop(name, None)
 
 
@@ -541,6 +685,12 @@ def annotate(routine: M.Routine, statement: M.DynamicSql,
     """Record the variants on the statement, with what folding does *not* establish."""
     variants = enumerate_variants(routine, statement, module)
     if variants is None:
+        lists, tables = hole_lists(routine.id), _ALLOWED.get().get(routine.id)
+        if (lists or tables) and interpolates_identifier(routine, statement) and \
+                not any(d.code == HOLES_UNDECIDED for d in statement.diagnostics):
+            statement.diagnostics.append(Issue("WARN", HOLES_UNDECIDED,
+                                               unexpanded_reason(routine, statement, lists, tables or []),
+                                               statement.source_range))
         return None
     statement.variants = [v.as_dict() for v in variants]
     if len(variants) == 1 and not variants[0].guard:
@@ -563,6 +713,10 @@ def annotate(routine: M.Routine, statement: M.DynamicSql,
         "EXECUTE IMMEDIATE runs with the privileges of the executing user, which a static statement may not "
         "have; confirm the caller is allowed to run this", where))
     return variants
+
+
+# #165: a routine has a list, and this statement was still not expanded: it stays REDESIGN, and this says why
+HOLES_UNDECIDED = "DYN_HOLES_UNDECIDED"
 
 
 PLACEHOLDER = re.compile(r":(?P<name>[\w$#]+)")

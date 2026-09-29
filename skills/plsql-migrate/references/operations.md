@@ -46,7 +46,13 @@ transactions:                     # 1 つの routine は次の 3 つのどれか
   callerBoundary:
     pkg_x.y: <routine の中の COMMIT / ROLLBACK / SAVEPOINT を呼び出し側へ移す理由>
 dynamicTables:
-  pkg_util.truncate_staging: [staging_orders, staging_lines]   # 動的 SQL が受け付ける表名
+  pkg_util.truncate_staging: [staging_orders, staging_lines]   # 動的 SQL が受け付ける表名（連結する箇所が 1 つの文）
+dynamicSql:                       # 連結する箇所（穴）が 2 つ以上の動的 SQL。すべての穴に一覧が要る（1 文 64 通りまで）
+  pkg_report.list_orders:
+    holes:                        # 穴の名前は連結している変数（DBMS_ASSERT で包んでいれば中の変数）
+      p_sort_col: [order_id, ordered_at]
+      p_sort_dir: [ASC, DESC]
+    reason: <受け付ける値をそれだけにする理由>                    # 理由が空なら読み込みで失敗する
 ddl:
   omit:
     pkg_x.y: <routine の中の DDL を移行先で実行しない理由>      # 理由が空なら読み込みで失敗する
