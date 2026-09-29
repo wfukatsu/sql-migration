@@ -1,6 +1,6 @@
 # 実案件の PL/SQL を corpus に入れるときの匿名化の方針
 
-[文書の入口](../README.md) ｜ [KPI](plsql-kpi.md) ｜ [実装計画](plsql-conversion-implementation-plan.md) ｜ [corpus](../../fixtures/plsql/README.md)
+[文書の入口](../README.md) ｜ [KPI](plsql-kpi.md) ｜ [実装計画](plsql-conversion-implementation-plan.md) ｜ corpus（`fixtures/plsql/`、開発側のリポジトリだけ）
 
 2026-09-20 の決定（Issue #15）。実案件のコードを corpus に足して KPI を出自別に出すための、前提の決まりです。**道具は「置き換える」ところまでで、「公開してよい」と判断するのは人です。**
 
@@ -12,7 +12,7 @@
 | 元のコード | **このリポジトリに入れない。** 置き場所は、顧客との取り決めに従う場所 | リポジトリは GitLab と GitHub の両方に出る |
 | 対応表（元の名前 → 置き換え後） | **このリポジトリに入れない。** 元のコードと同じ場所に置く。道具は、リポジトリの中への書き出しを拒む | 対応表は、匿名化を元に戻す鍵である |
 | 期待判定（AUTO / REVIEW / REDESIGN）と理由 | **匿名化の前に、元のコードを読んで付ける。** 理由の文は、匿名化後の名前で書く | 匿名化すると業務上の意味が読めなくなる。期待判定を、ツールの出力を見る前に決めるのは holdout と同じ規律 |
-| 出自の記録 | `manifest.yaml` の `origin: real-anonymized`。実案件の unit は、**入れた時点で holdout（独立）** として扱う | 実案件のコードは、ルールを書いた人が見ていない。いちばん強い holdout になる（[corpus の README](../../fixtures/plsql/README.md)） |
+| 出自の記録 | `manifest.yaml` の `origin: real-anonymized`。実案件の unit は、**入れた時点で holdout（独立）** として扱う | 実案件のコードは、ルールを書いた人が見ていない。いちばん強い holdout になる（corpus の README（`fixtures/plsql/`、開発側のリポジトリだけ）） |
 | 数字を出す時期 | 仕組みは先に作る。**実案件の数字を出すのは、判定者（Issue #6）が決まってから** | 数字が動いたあとで判定者と基準を決めると、基準を数字に合わせたのか、基準に照らして数字を見たのかを区別できない |
 | 最後の確認 | **人が、匿名化後のコードを全部読んでからコミットする** | 道具はトークンを置き換えるだけで、意味は分からない（下の 4） |
 
@@ -80,7 +80,7 @@
 | 参照済みの holdout（`holdout/`） | 5 / 10 | 100%（10/10） |
 | 開発用 | 20 / 49 | 100%（49/49） |
 
-**この 62.5% を、「ルールが未知のコードで 4 割外す」と読んではいけません。** 食い違う 3 件は、どれも `holdout2/` の `pkg_shipment`（`is_shippable`・`line_count`・`days_in_transit`）で、期待値が REVIEW、判定が AUTO です。原因は、期待判定を固定した**あと**で判定の方針が変わったこと（2026-09-20: REVIEW は移行の可否が未解決のときだけ）で、AUTO 禁止条件の取りこぼしではありません。holdout の期待値は書き換えない決まりなので、食い違いのまま数えています（[corpus の README](../../fixtures/plsql/README.md)、[KPI](plsql-kpi.md) の KPI-3）。
+**この 62.5% を、「ルールが未知のコードで 4 割外す」と読んではいけません。** 食い違う 3 件は、どれも `holdout2/` の `pkg_shipment`（`is_shippable`・`line_count`・`days_in_transit`）で、期待値が REVIEW、判定が AUTO です。原因は、期待判定を固定した**あと**で判定の方針が変わったこと（2026-09-20: REVIEW は移行の可否が未解決のときだけ）で、AUTO 禁止条件の取りこぼしではありません。holdout の期待値は書き換えない決まりなので、食い違いのまま数えています（corpus の README（`fixtures/plsql/`、開発側のリポジトリだけ）、[KPI](plsql-kpi.md) の KPI-3）。
 
 それでも、分けて出す意味は 2 つあります。
 

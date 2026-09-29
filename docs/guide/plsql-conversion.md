@@ -143,30 +143,27 @@ routine の NUMBER 引数に列由来の Long / Integer を渡すときは `Plsq
 | 判定（2026-09-20 の実測。金額の 2 規約とも同じ） | AUTO 35 / REVIEW 5 / REDESIGN 27。プロジェクトの決定（`--limits fixtures/plsql/limits.yaml`）を適用すると AUTO 40 / REVIEW 0 / REDESIGN 27 |
 | REDESIGN 27 件の状態（決定の適用後） | **27 件すべて、再設計を決定済みで実 DB でも一致** / 未決定 0。DB Link の `prc_remote_sync` は、失敗時の例外の種類の差 1 点を「受け入れた差」として記録してある（2026-09-20。比較の報告には理由つきで出る）。判定は REDESIGN のまま動かさない（AUTO 禁止条件） |
 
-**構文カタログ上の値**（[samples/oracle-samples](../../samples/oracle-samples/README.md)、Oracle 公式ドキュメントの構成に沿った SQL 4 本 + PL/SQL 3 本、2026-09-24〜25）:
-41 routine が AUTO 候補 7 / REVIEW 10 / REDESIGN 24、41 routine 全部が javac を通り、実 DB の 31 シナリオで一致 26 / 相違 5（2026-09-25 の 5 回目の対応後。相違は値の差ではなく、下の「まだ模していない構文」で止まるもの）。
-この検証で直した生成器の穴は 22 件（Issue #30〜#45）+ 4 回目の 5 件 + 5 回目の 4 件（#47〜#50）で、記録の「Issue の修正後」以降の節にある。
+**構文カタログ上の値**（`samples/oracle-samples/`（開発側のリポジトリだけ）、Oracle 公式ドキュメントの構成に沿った SQL 4 本 + PL/SQL 3 本。2026-09-24〜26 の 11 回目の対応のあと）:
+41 routine の証拠つきの判定は AUTO 16 / REVIEW 2 / REDESIGN 23 で、41 routine 全部が javac を通り、実 DB の 34 シナリオで一致 33 / 相違 1 です。
+相違の 1 つ（`b06_3`）は値の差ではなく、移行先で再設計すると決めて記録したものです。この検証で見つけた生成器の穴は Issue #30〜#58 で直しました。
 
-### 移行先で模していない構文（2026-09-25 時点）
+### 構文カタログで見つかり、まだ模していない形（2026-09-26 時点）
 
-構文カタログで見つかり、Issue にしてある穴。判定は REDESIGN / REVIEW のまま、生成物はその文で `UnsupportedOperationException` を投げる（コンパイルはできる）。
+同じ検証で見つかった穴のうち、次のものは直した Issue の中でも**まだ断る**部分として残っています。判定は REDESIGN / REVIEW のまま、
+生成物はその文で `UnsupportedOperationException` を投げます（コンパイルはできます）。ほかの「まだ変換しないもの」も含めた一覧は
+[変換の一覧の「まだ変換しないもの」](conversion-catalog.md#まだ変換しないもの) にあります。
 
-| 構文 | 止まり方 | Issue |
+| 形 | 止まり方 | Issue |
 |---|---|---|
-| `:NEW` の値を書き換える BEFORE trigger（`:NEW.email := UPPER(:NEW.email)`） | 対応済み（無条件で :NEW / :OLD だけを読む代入は書く値に畳み込む、`TRIGGER_FOLDED`）。条件つき・局所変数を読む代入は `TRIGGER_REDESIGN` のまま | #47 |
-| 式の中の別 module の関数呼び出し（`v := pkg.f(...)`） | 対応済み（注入した Service を呼ぶ）。OUT / IN OUT 引数（運ぶ package 変数を含む）のある関数は式の中では断る（理由つき） | #48 |
-| `transactions.separate` の routine を呼ぶ側 | 対応済み（呼ぶ側が `SeparateTransactions` の口を受け取り、その connection の上に呼び先を組み立てて呼ぶ）。OUT 引数 / 戻り値を境界の外へ持ち出す形は無い | #49 |
-| CHECK / FK 制約の代わり | 決定済み（2026-09-25「表ごとに決めて guard を生成」、`constraints.enforce`）。決めていない表は `CONSTRAINT_UNDECIDED` | #50 |
-| `FORALL … RETURNING BULK COLLECT INTO`、`SQL%BULK_ROWCOUNT(i)` | 対応済み（RMW を割った 1 行ごとに書いた値を List に足す。FORALL の前で空にする。要素ごとの件数は `bulkRowCount`）。RMW なので `rowLocks.optimistic` の決定が要る | #51 |
-| 動的 UPDATE の `RETURNING INTO`、動的 PL/SQL ブロック、`OPEN FOR '定数'` | 対応済み（文字列が定数なら静的な文として下ろす、`DYN_STATIC` / `DYN_INLINED`）。routine の中の DDL は断る（`ddl.omit` で省ける） | #52 |
-| `DBMS_SQL` | PARSE の文字列が定数の問合せなら対応済み（静的な cursor FOR ループ、`DBMS_SQL_STATIC`。列番号で読む `COLUMN_VALUE` と `col_name` は列ごとの CASE）。文字列が実行時に決まるもの、DML、BIND_VARIABLE などは `DBMS_SQL_DYNAMIC` で断る | #53 |
-| select list のオブジェクト型コンストラクタ、`TABLE(コレクション)`、PIPELINED | 対応済み（スキーマの `CREATE TYPE … AS OBJECT` は Java の record、`AS TABLE OF` はその List。コンストラクタを選ぶ SELECT は列を読んでアプリで組む `OBJECT_BUILT`、`TABLE(v)` への `COUNT(*)` は List を回す `TABLE_COLLECTION`、PIPELINED は List を返す関数）。`TABLE(v)` への COUNT(*) 以外の問合せは断る | #54 |
-| program の外の routine への名前付き引数（`DBMS_APPLICATION_INFO`） | 対応済み（組み込み package の対応表 `plsql/builtins.py`）。表に無い package は断る | #55 |
-| view への INSTEAD OF trigger | trigger 本体は対応済み（:NEW / :OLD は view の列の型で受け取る。SET の相関の無いスカラ副問合せは先に読む `SUBQUERY_READ_FIRST`、0 行は NULL、2 行以上は ORA-01427）。view へ書く routine に本体を織り込む形はまだ無い（view へ書く文は ScalarDB に view が無いので断られる） | #56 |
+| `:NEW` を書き換える BEFORE trigger のうち、条件つきの代入や局所変数を読む代入 | `TRIGGER_REDESIGN`（無条件で `:NEW` / `:OLD` だけを読む代入は畳み込む） | #47 |
+| OUT / IN OUT 引数（運ぶ package 変数を含む）のある関数を、式の中で呼ぶ | 理由つきで断る（別 module の関数呼び出しそのものは対応済み） | #48 |
+| CHECK / FK 制約の代わりの guard を、決めていない表 | `CONSTRAINT_UNDECIDED`（`constraints.enforce` で表ごとに決める） | #50 |
+| routine の中の DDL | 断る（`ddl.omit` で省ける。定数の動的 SQL は静的な文として下ろす） | #52 |
+| 文字列が実行時に決まる `DBMS_SQL`、`DBMS_SQL` の DML と `BIND_VARIABLE` | `DBMS_SQL_DYNAMIC`（定数の問合せは静的な cursor FOR ループにする） | #53 |
+| `TABLE(コレクション)` への `COUNT(*)` 以外の問合せ | 断る（オブジェクト型のコンストラクタ、PIPELINED は対応済み） | #54 |
+| 対応表（`plsql/builtins.py`）に無い組み込み package | 断る | #55 |
+| view へ書く routine に `INSTEAD OF` trigger の本体を織り込む形 | 無い（view へ書く文は、ScalarDB に view が無いので断られる。trigger 本体の変換は対応済み） | #56 |
 
-模せるようになったもの（同じ検証で直した）: DDL の `DEFAULT` 句（省いた列を INSERT に足す）、trigger 本体の `UPDATING('列')`（書く側が静的に決めて渡す）、`INSERT … VALUES (seq.NEXTVAL, …) RETURNING id INTO v`（INSERT の前に代入）、
-CHECK / FOREIGN KEY の guard（`constraints.enforce`、#50）、`PRAGMA EXCEPTION_INIT` の番号を持つ例外クラス、`:NEW` を書き換える BEFORE trigger の畳み込み（#47）、式の中の別 module の関数呼び出しと OUT 引数のある関数の巻き上げ（#48）、別トランザクションの routine を呼ぶ側（#49）。
-`WHERE p IS NULL OR col = p`（引数が NULL なら絞らない）は、p が NULL のときの問合せと等号で絞る問合せに分けて、実行時に選ぶ（`OPTIONAL_FILTER`）。
 
 **数値は合成 corpus 上のものであり、実案件耐性の証拠ではありません。** 非 AUTO の 27 件（決定の適用後。すべて REDESIGN で、全件が再設計を決定済み・実 DB で一致）を塞いでいるのは
 変換できない構文ではなく、**人が決めるべきこと**です（走査行数の上限、採番方式、トランザクション境界など。
@@ -179,5 +176,5 @@ CHECK / FOREIGN KEY の guard（`constraints.enforce`、#50）、`PRAGMA EXCEPTI
 | 判定（AUTO / REVIEW / REDESIGN）と確信度の定義、計測コマンド | [KPI](../design/plsql-kpi.md) |
 | REVIEW / REDESIGN になった routine をどう直すか | [cursor](../plsql-migration/plsql-cursor-patterns.md) / [トランザクションと行ロック](../plsql-migration/plsql-transaction-patterns.md) / [trigger と外部副作用](../plsql-migration/plsql-trigger-patterns.md) |
 | 生成器が決めずに残す問い（運用・呼び出し側・業務） | [生成コードの外で決めること](../plsql-migration/plsql-decisions-outside-generator.md)、[業務ロジックとの整合の問い](../plsql-migration/plsql-biz-alignment-questions.md) |
-| corpus とシナリオの作り、corpus の外の routine を流す手順 | [fixtures/plsql/](../../fixtures/plsql/README.md)、[fixtures/plsql-external/](../../fixtures/plsql-external/README.md) |
+| corpus とシナリオの作り、corpus の外の routine を流す手順 | `fixtures/plsql/`（開発側のリポジトリだけ）、`fixtures/plsql-external/`（開発側のリポジトリだけ） |
 | なぜこの構成か、これまでの決定 | [移行基盤の設計](../design/plsql-migration-platform-design.md)、[実装計画](../design/plsql-conversion-implementation-plan.md)（§9 が決定事項） |

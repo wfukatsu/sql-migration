@@ -2,7 +2,7 @@
 
 [文書の入口](../README.md) ｜ [はじめに](getting-started.md) ｜ [チュートリアル](tutorial.md) ｜ [SQL の変換](sql-conversion.md) ｜ [PL/SQL の変換](plsql-conversion.md) ｜ [スキル](skills.md) ｜ [検証環境](verification.md)
 
-移行の手順をコーディングエージェントから進めるためのスキルが 4 つあります。どれも `skills/<名前>/` に `SKILL.md`・`scripts/`・`references/`・`examples/` を持ちます。
+移行の手順をコーディングエージェントから進めるためのスキルが 4 つあります。どれも `skills/<名前>/` に `SKILL.md`・`scripts/`・`references/` を持ちます（書き上がった例の `examples/` は開発側のリポジトリにだけあり、プラグインには入りません）。
 Claude Code と Codex（codex-cli 0.154.0 で確認）のどちらからも使えます。
 
 ## インストール
@@ -26,9 +26,10 @@ GitLab のほう（非公開）から入れるときは、`wfukatsu/sql-migratio
 - 要るのは **Python 3.10 以上**だけです。スキルは `<プラグインの場所>/bin/python` 経由でスクリプトを動かし、これが初回に仮想環境を作って `requirements.txt` を入れます（1 分ほど。
   場所は Claude Code のプラグイン用データ領域、無ければ `~/.cache/sql-migration/venv`。`SQL_MIGRATION_VENV` で変えられ、`requirements.txt` が変わると作り直します）
 - 作業ディレクトリは**利用者のプロジェクトのまま**で、入力の PL/SQL / SQL も、出力（`out/migrate/<名前>/` など）も、決定の記録もそちらに置きます。プラグインの場所には書きません（更新で消えます）
-- プラグインはリポジトリ全体（約 18 MB。`plsql/`・`scalardb_migrate/`・`runtime-java/`・`fixtures/` を含む）です。プラグインは自分のディレクトリの外を読めないので、`skills/` だけを配ることはできません
+- プラグインは公開の GitHub のリポジトリの中身全体（約 19 MB。変換器 `scalardb_migrate/`・`plsql/`、ランタイムの本体 `runtime-java/src/main/` と Gradle の設定、スキル、文書）です。
+  corpus（`fixtures/`）・サンプル（`samples/`）・テスト・実 DB のハーネス（`difftest/`）・スキルの `examples/` は入りません。プラグインは自分のディレクトリの外を読めないので、`skills/` だけを配ることはできません
 - Java のコンパイルの確認（`plsql.generate --verify-compile`）には Java 17 とネットワーク（Gradle の依存の取得）が要ります。実 DB での比較（`difftest/`）は Docker と ScalarDB Cluster のライセンスが要り、
-  これはチェックアウトから動かすほうが向いています（[検証環境](verification.md)）
+  ハーネスは開発側のリポジトリにだけあります（[検証環境](verification.md)）
 - Claude Code では、スクリプトのパスが絶対パスになるので `allowed-tools` のパターンに合わず、コマンドごとに許可を聞かれます
 
 ### チェックアウトから使う（このリポジトリを開発するとき）
@@ -65,8 +66,8 @@ Claude Code と Codex での違い:
 | スキル | 役割 | 手順の本体 |
 |---|---|---|
 | migrate-flow | 移行を決まった順で最後まで進める（仕様 → 承認 → 変換と判断 → 承認 → 変換後の仕様 → 承認 → テスト） | [SKILL.md](../../skills/migrate-flow/SKILL.md)、[承認の求め方](../../skills/migrate-flow/references/approval.md)、[SQL 文だけの移行](../../skills/migrate-flow/references/sql.md) |
-| plsql-spec | 既存の PL/SQL のいまの動作を仕様書にする | [SKILL.md](../../skills/plsql-spec/SKILL.md)、[仕様書の書き方](../../skills/plsql-spec/references/writing.md)、[例](../../skills/plsql-spec/examples/create_order/README.md) |
-| plsql-migrate | PL/SQL を Java に変換し、人の判断を記録し、変換後の文書を作る | [SKILL.md](../../skills/plsql-migrate/SKILL.md)、[ルール ID から決めることへ](../../skills/plsql-migrate/references/decisions-by-rule.md)、[業務ロジックとの整合](../../skills/plsql-migrate/references/alignment.md)、[変換後の文書の書き方](../../skills/plsql-migrate/references/documenting.md)、[運用の手順](../../skills/plsql-migrate/references/operations.md)、[例](../../skills/plsql-migrate/examples/create_order/README.md) |
+| plsql-spec | 既存の PL/SQL のいまの動作を仕様書にする | [SKILL.md](../../skills/plsql-spec/SKILL.md)、[仕様書の書き方](../../skills/plsql-spec/references/writing.md)、例（`skills/plsql-spec/examples/create_order/`、開発側のリポジトリだけ） |
+| plsql-migrate | PL/SQL を Java に変換し、人の判断を記録し、変換後の文書を作る | [SKILL.md](../../skills/plsql-migrate/SKILL.md)、[ルール ID から決めることへ](../../skills/plsql-migrate/references/decisions-by-rule.md)、[業務ロジックとの整合](../../skills/plsql-migrate/references/alignment.md)、[変換後の文書の書き方](../../skills/plsql-migrate/references/documenting.md)、[運用の手順](../../skills/plsql-migrate/references/operations.md)、例（`skills/plsql-migrate/examples/create_order/`、開発側のリポジトリだけ） |
 | sql-transpile | SQL を任意の方言どうし、または ScalarDB SQL に変換する | [SKILL.md](../../skills/sql-transpile/SKILL.md)、[scalardb-grammar.md](../../skills/sql-transpile/references/scalardb-grammar.md)、[dialect-notes.md](../../skills/sql-transpile/references/dialect-notes.md)、[app-side-notes.md](../../skills/sql-transpile/references/app-side-notes.md)、[運用](../../skills/sql-transpile/references/operations.md) |
 
 スキルの仕組み（段階と承認、事実の欄と文章、人への確認）は [アーキテクチャ](../design/architecture.md) の 10 章と 14 章にあります。
@@ -145,7 +146,7 @@ routine の範囲や原文の外を指す引用、原文に無いファイルの
 object type（`.tps` `.tpb` `.typ`）と、知らない拡張子で `CREATE PACKAGE` などを含むファイルは読まず、標準エラーと
 `inventory.json` の `kpi.skippedFiles` に理由つきで出します（仕様書の索引にも出ます）。ディレクトリが無いときと、
 PL/SQL が 1 つも無いときは終了コード 2 です。解析できなかったファイル（終了コード 1）は仕様書の頁を作りません。
-書き上がった例は [`skills/plsql-spec/examples/create_order/`](../../skills/plsql-spec/examples/create_order/README.md) にあります。
+書き上がった例は `skills/plsql-spec/examples/create_order/`（開発側のリポジトリだけ） にあります。
 
 ```bash
 .venv/bin/python -m plsql.cli fixtures/plsql-external/create_order/src --out-dir out/plsql-spec/create_order/analysis --quiet
@@ -187,7 +188,7 @@ Java の入口と constructor、引数の対応、例外、**原文の文 → Re
 判定ルール、`limits.yaml` の決定、実 DB の比較の結果と受け入れた差は、生成物・解析・決定・比較から機械的に出します
 （事実の欄）。文章は生成された Java を読んで書き、`check` が、判定の理由・受け入れた差・決定・「比較していないこと」を
 文章が落としていないか、生成物に無い Java の名前を引いていないかを確かめます。
-書き上がった例は [`skills/plsql-migrate/examples/create_order/`](../../skills/plsql-migrate/examples/create_order/README.md) にあります。
+書き上がった例は `skills/plsql-migrate/examples/create_order/`（開発側のリポジトリだけ） にあります。
 
 ```bash
 .venv/bin/python -m plsql.cli fixtures/plsql/src --scalardb-schema fixtures/plsql/scalardb-schema.json \

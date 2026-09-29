@@ -49,7 +49,7 @@ flowchart LR
 | plsql-spec スキル | `skills/plsql-spec/` | 既存の PL/SQL を調べ、いまの動作を Markdown の仕様書にまとめる Claude Code スキル。引数・表・SQL・エラーコード・trigger などの事実は IR から出し、動作と業務ルールは原文の位置つきで書き、`check` で突き合わせる |
 | plsql-migrate スキル | `skills/plsql-migrate/` | PL/SQL を Java に変換し、生成コードの外で決めること（運用・呼び出し側・業務ロジックとの整合）を確認して記録する Claude Code スキル。利用者に判断を求めるときは、推奨・理由・選択肢ごとの影響・決めないとどうなるかを示してから聞く。最後に、変換後のコードの文書（アーキテクチャ・仕様・使い方・制限・どのように移行したか）を `<out>/docs/` にまとめる |
 | sql-transpile スキル | `skills/sql-transpile/` | 任意の SQLGlot 方言どうし、または ScalarDB SQL への変換を行う Claude Code スキル（`scalardb_migrate/` を import せず、同梱コピーで動く） |
-| 検証基盤 | `difftest/` | Docker Compose の DB 群と、差分テスト・ベンチマーク・スキルの実行検証のハーネス |
+| 検証基盤 | `difftest/` | Docker Compose の DB 群と、差分テスト・ベンチマーク・スキルの実行検証のハーネス（開発側のリポジトリだけ） |
 
 ---
 
@@ -129,26 +129,29 @@ python3 -m venv .venv                               # Python 3.10 以上
 
 | 目的 | 文書 |
 |---|---|
-| まず動かす | [はじめに](docs/guide/getting-started.md)、[チュートリアル](docs/guide/tutorial.md)（サンプルの SQL と PL/SQL をスキルで移し、実 DB で確かめるまで） |
+| まず動かす | [はじめに](docs/guide/getting-started.md)、[チュートリアル](docs/guide/tutorial.md)（サンプルの SQL と PL/SQL をスキルで移し、実 DB で確かめるまで。開発側のリポジトリで通した記録） |
 | SQL 文を移す | [SQL の変換と実行計画](docs/guide/sql-conversion.md)、[変換ルールと指摘コード](skills/sql-transpile/references/scalardb-grammar.md)、[方言ごとの注意](skills/sql-transpile/references/dialect-notes.md) |
 | PL/SQL を移す | [PL/SQL → Java 変換](docs/guide/plsql-conversion.md)、[人が決めること（cursor / トランザクション / trigger / 生成コードの外）](docs/README.md#plsql-の移行で人が決めることplsql-migration) |
 | Claude Code / Codex から進める | [スキル](docs/guide/skills.md) |
 | 実 DB で確かめる | [検証環境](docs/guide/verification.md) |
 | 仕組みを知る | [アーキテクチャと仕組み](docs/design/architecture.md)、[KPI・AUTO 禁止条件・確信度](docs/design/plsql-kpi.md)、[設計と決定の記録](docs/README.md#仕組みと設計design) |
-| 移行の例を見る | [個別の SQL の移行例](docs/README.md#個別の-sql-の移行例examples)、[現行の仕様の例](skills/plsql-spec/examples/create_order/README.md)、[変換後の文書の例](skills/plsql-migrate/examples/create_order/README.md) |
-| 測った結果を見る | [検証レポートの一覧](docs/README.md#検証レポート) |
+| 移行の例を見る | 個別の SQL の移行例（`docs/examples/`）、現行の仕様の例（`skills/plsql-spec/examples/create_order/`）、変換後の文書の例（`skills/plsql-migrate/examples/create_order/`）。どれも開発側のリポジトリにだけある |
+| 測った結果を見る | [検証レポートの一覧](docs/README.md#検証レポート)（レポートそのものは開発側のリポジトリだけ） |
 
 ---
 
 ## 主な検証結果
 
-| 検証 | 結果 | 詳細 |
+実 DB で測った記録（`docs/reports/`）は、開発側のリポジトリにだけあります。数値は Apple M3 Pro 上の Docker（1 ノードの ScalarDB Cluster、単一クライアント）のものです。
+仕組みから見た性能の特性は [アーキテクチャの 13 章](docs/design/architecture.md#13-性能の特性) にあります。
+
+| 検証 | 結果 | 詳細（開発側のリポジトリだけ） |
 |---|---|---|
-| 差分テスト（PostgreSQL 15 文 / Oracle 17 文） | ScalarDB SQL 経路ですべて一致（15/15、17/17） | [test-report](docs/reports/test-report.md) |
-| DML テスト SQL（3 方言 × 51 文） | ScalarDB で実行できるのは 31〜32 文。書き込み 3〜6 ms（COMMIT 込み）、キーの読み取り 4〜6 ms、実行計画の読み取り 0.6 秒前後 | [dml-benchmark-report](docs/reports/dml-benchmark-report.md) |
-| H2 の索引（`--h2-indexes`） | 3 表結合（2 万注文・5 万明細）が 26〜28 秒 → 1.7〜1.9 秒 | [dml-benchmark-report](docs/reports/dml-benchmark-report.md) 3.4 |
-| 並列取得 | 表の並列取得は 1.2〜1.3 倍、`scan_fetch_size` 10 → 1000 で 1.5〜2.4 倍 | [dml-followup-research](docs/reports/dml-followup-research.md) |
-| バックエンドの比較 | PostgreSQL と Oracle は同じ互換性。Cassandra はパーティションをまたぐ走査の制約で読める文が減る | [scalardb-backend-comparison](docs/reports/scalardb-backend-comparison.md) |
+| 差分テスト（PostgreSQL 15 文 / Oracle 17 文） | ScalarDB SQL 経路ですべて一致（15/15、17/17） | `docs/reports/test-report.md` |
+| DML テスト SQL（3 方言 × 51 文） | ScalarDB で実行できるのは 31〜32 文。書き込み 3〜6 ms（COMMIT 込み）、キーの読み取り 4〜6 ms、実行計画の読み取り 0.6 秒前後 | `docs/reports/dml-benchmark-report.md` |
+| H2 の索引（`--h2-indexes`） | 3 表結合（2 万注文・5 万明細）が 26〜28 秒 → 1.7〜1.9 秒 | `docs/reports/dml-benchmark-report.md` 3.4 |
+| 並列取得 | 表の並列取得は 1.2〜1.3 倍、`scan_fetch_size` 10 → 1000 で 1.5〜2.4 倍 | `docs/reports/dml-followup-research.md` |
+| バックエンドの比較 | PostgreSQL と Oracle は同じ互換性。Cassandra はパーティションをまたぐ走査の制約で読める文が減る | `docs/reports/scalardb-backend-comparison.md` |
 
 ---
 
@@ -156,6 +159,8 @@ python3 -m venv .venv                               # Python 3.10 以上
 
 公開の GitHub 版には、変換するコード（変換器・生成した Java のランタイム・スキル）とドキュメントだけを入れている
 （`bin/github-paths.txt`）。テスト、検証ハーネス、corpus、サンプルは含まない。
+下の構成のうち `difftest/`、`fixtures/`、`samples/`、`spikes/`、`tests/` と、`docs/` の `examples/`・`reports/`・`slides/`、スキルの `examples/` は、
+開発側のリポジトリ（非公開）にだけある。
 
 ```text
 scalardb_migrate/          変換ツール
