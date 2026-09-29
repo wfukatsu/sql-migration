@@ -145,7 +145,7 @@ JVM が無いとき（Gradle は `runtime-java/gradlew` が取ってくる。ネ
 |---|---|---|
 | PL/SQL のディレクトリ | —（利用者のもの） | 利用者に聞く。**下のディレクトリも再帰して読む**。一部だけを変換したいなら、そのディレクトリを渡す |
 | Oracle の DDL | `<src>/schema.sql` があれば自動 | `%TYPE` / `%ROWTYPE` が解けず精度が落ちる。持っていないか聞く |
-| ScalarDB の Schema Loader JSON | `<src>/../scalardb-schema.json` があれば自動 | ScalarDB が受け付けない SQL を判定できない。聞く |
+| ScalarDB の Schema Loader JSON | `<src>/../scalardb-schema.json` があれば自動 | ScalarDB が受け付けない SQL を判定できず、SQL は変換されない（生成物は Oracle の SQL をそのまま実行する。生成は標準エラーと要約の行で `SQL not checked against ScalarDB` と言い、`generation-report.json` の `summary.sqlChecked` が `false`）。聞く |
 | routine ごとの決定（`limits.yaml`） | —（利用者の案件のもの） | **`--limits` を外して回し**、Step 3b で決まったことから作る。別の案件（corpus など）の `limits.yaml` を当てない |
 | 移行元の `PLSQL_CCFLAGS` と Oracle の版 | — | ソースに `$IF` があるときだけ要る。書かないとフラグは NULL、版は 19.0 として解かれる。「判断を求めるときの形」で聞き、`conditionalCompilation` に書く |
 | 移行元のセッションの NLS | — | SEM-008 / SEM-012 が出たときに要る。書かないと Oracle の既定（AMERICAN / AMERICA、`DD-MON-RR`）で書き、その 2 つは REVIEW のまま。「判断を求めるときの形」で聞き、`nls` に書く |

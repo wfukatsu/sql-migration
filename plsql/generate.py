@@ -161,6 +161,11 @@ def main(argv: list[str] | None = None) -> int:
     trigger_checks, types, namespaces = _trigger_checks(analysis, scalardb)
     project = generate(analysis.program, args.out_dir, args.package, decisions, plans,
                        trigger_checks, types, namespaces)
+    project.sql_checked = scalardb is not None
+    if scalardb is None:
+        # #161 (PL/SQL L5): without the target's schema nothing is checked or converted -- the repositories run the
+        # Oracle SQL as written. Said on stderr, quiet or not, and on the summary line below instead of "refuses 0"
+        print(NO_SCALARDB_SCHEMA, file=sys.stderr)
     unconverted = _unconverted(analysis)
     written = write(project, decisions, unconverted=unconverted)
 
@@ -182,8 +187,12 @@ def main(argv: list[str] | None = None) -> int:
               f"verdict: AUTO {sum(1 for d in decisions.values() if d.verdict == 'AUTO')}  "
               f"REVIEW {sum(1 for d in decisions.values() if d.verdict == 'REVIEW')}  "
               f"REDESIGN {sum(1 for d in decisions.values() if d.verdict == 'REDESIGN')}")
-        print(f"untranslated statements {summary['untranslatedStatements']}  "
-              f"SQL ScalarDB refuses {summary['unsupportedSql']}  planned {summary['plannedSql']}")
+        if project.sql_checked:
+            print(f"untranslated statements {summary['untranslatedStatements']}  "
+                  f"SQL ScalarDB refuses {summary['unsupportedSql']}  planned {summary['plannedSql']}")
+        else:
+            print(f"untranslated statements {summary['untranslatedStatements']}  "
+                  f"SQL not checked against ScalarDB (no --scalardb-schema): the Oracle SQL is kept as written")
         if summary["unknownNames"]:
             print(f"names the translator could not place: {', '.join(summary['unknownNames'])}")
         for routine in dirty:
@@ -210,6 +219,11 @@ def main(argv: list[str] | None = None) -> int:
     if failed:
         return 1
     return 3 if unconverted else 0
+
+
+NO_SCALARDB_SCHEMA = (
+    "warning: no ScalarDB schema (--scalardb-schema, or scalardb-schema.json next to the source directory): the SQL "
+    "was not checked against ScalarDB nor converted, and the generated repositories run the Oracle SQL as written")
 
 
 def _unconverted(analysis) -> list[dict]:
