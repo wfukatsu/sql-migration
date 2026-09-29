@@ -2277,13 +2277,46 @@ public final class Plsql {
     return isNull(value) ? null : BigDecimal.valueOf(num(value).signum());
   }
 
+  /**
+   * CHR(n): the character whose bytes in the database character set (AL32UTF8) are n, big-endian, as Oracle reads it
+   * -- not the Unicode code point (#161). Measured on Oracle 26ai (23.26.3, AL32UTF8), 2026-09-30, in PL/SQL:
+   * CHR(14909826) is 'あ' (E3 81 82), CHR(4036991104) is U+1F600 (F0 9F 98 80), CHR(12354) is '0B' (bytes 30 42,
+   * not 'あ'), CHR(65.7) is 'A' (the fraction is dropped), CHR(0) is one NUL byte, and a negative n or one of 2^32 or
+   * more is ORA-06502. Oracle also returns a byte sequence that is no character (CHR(128) is the single byte 80);
+   * a Java String cannot hold one, so that is refused with ORA-06502 rather than turned into a different character.
+   */
   public static String chr(Object code) {
-    return isNull(code) ? null : new String(Character.toChars(num(code).intValue()));
+    if (isNull(code)) return null;
+    BigDecimal n = num(code);
+    if (n.signum() < 0 || n.compareTo(CHR_LIMIT) >= 0) throw new ValueError();
+    long value = n.setScale(0, java.math.RoundingMode.DOWN).longValueExact();
+    int length = value > 0xFFFFFFL ? 4 : value > 0xFFFFL ? 3 : value > 0xFFL ? 2 : 1;
+    byte[] bytes = new byte[length];
+    for (int i = length - 1; i >= 0; i--, value >>>= 8) bytes[i] = (byte) value;
+    try {
+      return java.nio.charset.StandardCharsets.UTF_8.newDecoder()
+          .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+          .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+          .decode(java.nio.ByteBuffer.wrap(bytes)).toString();
+    } catch (java.nio.charset.CharacterCodingException e) {
+      throw new ValueError("CHR(" + n.toPlainString() + ") is not a character in AL32UTF8 (Oracle keeps the bytes; "
+          + "the migrated code cannot)");
+    }
   }
 
+  private static final BigDecimal CHR_LIMIT = BigDecimal.valueOf(1L << 32);
+
+  /**
+   * ASCII(s): the bytes of the first character of s in AL32UTF8, read as one big-endian number (#161). Oracle 26ai
+   * (AL32UTF8), 2026-09-30: ASCII('あ') is 14909826 (E3 81 82), ASCII('é') 50089, ASCII of U+1F600 4036991104.
+   */
   public static BigDecimal ascii(Object value) {
     if (isNull(value) || text(value).isEmpty()) return null;
-    return BigDecimal.valueOf(text(value).codePointAt(0));
+    String text = text(value);
+    byte[] bytes = new String(Character.toChars(text.codePointAt(0))).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    long n = 0;
+    for (byte b : bytes) n = (n << 8) | (b & 0xFF);
+    return BigDecimal.valueOf(n);
   }
 
   /** TO_DATE(text[, format]). Without a format the session's NLS_DATE_FORMAT, DD-MON-RR in English. */
