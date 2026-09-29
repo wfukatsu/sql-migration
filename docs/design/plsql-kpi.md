@@ -172,7 +172,7 @@ compile 率 = compile が通った AUTO 対象 routine 数 / AUTO 判定され�
 | 1 | routine 内の `COMMIT` / `ROLLBACK` / `SAVEPOINT` / `ROLLBACK TO` | IR の文種別 | REDESIGN |
 | 2 | `PRAGMA AUTONOMOUS_TRANSACTION` | IR の routine 属性 | REDESIGN |
 | 3 | Package 変数を読む・書く routine（直接か、呼び出し先を通して。変数を持つ package の routine すべてではない。#119） | Symbol Table + 呼び出しグラフ | REDESIGN |
-| 4 | 動的 SQL（`EXECUTE IMMEDIATE` / `DBMS_SQL`）。表名など識別子を実行時に組み立てるもの（DYN-001）と `DBMS_SQL`（DYN-003）は REDESIGN。それ以外で、とりうる文をすべて静的な文に展開して ScalarDB がそのまま実行できると確かめられないもの（DYN-002） | IR の DynamicSql | REVIEW 以上（DYN-001 / DYN-003 は REDESIGN） |
+| 4 | 動的 SQL（`EXECUTE IMMEDIATE` / `DBMS_SQL`）。表名・列名・ORDER BY・WHERE の断片など、識別子や SQL の構文を実行時に組み立てるもの（DYN-001、設計書 §6.8。#157 で列名・ORDER BY・routine 名にも広げた）と `DBMS_SQL`（DYN-003）は REDESIGN。それ以外で、とりうる文をすべて静的な文に展開して ScalarDB がそのまま実行できると確かめられないもの（DYN-002） | IR の DynamicSql | REVIEW 以上（DYN-001 / DYN-003 は REDESIGN） |
 | 5 | Trigger | IR の module 種別 | REDESIGN |
 | 6 | `AUTHID CURRENT_USER`（単独の routine に書いたものと、package の仕様に書いたもの。後者は本体の routine すべてに当たる。#128） | IR の routine 属性 | REDESIGN |
 | 7 | DB Link を介した参照 | 識別子の `@link` | REDESIGN |
