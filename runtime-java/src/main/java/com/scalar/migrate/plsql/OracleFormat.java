@@ -783,8 +783,11 @@ public final class OracleFormat {
           if (kind != DateKind.TIMESTAMP_TZ) throw dateFormatNotRecognized();
         }
         case TZR, TZD -> {
-          // a TIMESTAMP without a zone takes the session's for TZR (and has no TZD), where TZH / TZM refuse it --
-          // measured in PL/SQL on 26ai. The session's zone is UTC, as for SYSTIMESTAMP
+          // a TIMESTAMP without a zone writes +00:00 for TZR and nothing for TZD, where TZH / TZM refuse it -- and
+          // +00:00 whatever the session's TIME_ZONE: measured in PL/SQL on 26ai with UTC, +09:00, Asia/Tokyo,
+          // America/New_York and -05:30 (#167). It is not the session's zone, so nothing here depends on one. A
+          // TIMESTAMP WITH TIME ZONE writes its own offset (+09:00, TZD empty); a region (ASIA/TOKYO, TZD JST) never
+          // reaches the runtime, which holds an OffsetDateTime
           if (kind == DateKind.DATE) throw dateFormatNotRecognized();
           if (kind == DateKind.UNKNOWN) {
             if (t.getNano() == 0) {
@@ -886,7 +889,7 @@ public final class OracleFormat {
           out.append(String.format("%s%02d:%02d", seconds < 0 ? "-" : "+", Math.abs(seconds) / 3600,
               Math.abs(seconds) / 60 % 60));
         }
-        case TZD -> { }   // a zone given as an offset has no daylight-saving abbreviation
+        case TZD -> { }   // a zone given as an offset has no daylight-saving abbreviation (26ai writes nothing)
         default -> throw new IllegalStateException(token.element().name());
       }
     }
