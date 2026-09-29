@@ -132,7 +132,7 @@ spike #158）。「相手の医師が当番なら自分は外れる」（相手�
 * 決めることは「生成コードの外で決めること」の **CALL-7** である: クラスタ全体を SERIALIZABLE にするか、その routine を
   呼ぶトランザクションだけ `BEGIN WITH 'cc-transaction-isolation' = 'SERIALIZABLE'` で始めるか、routine を読んで
   「ロックした行を必ず書く」と確かめて SNAPSHOT のままにするか。JDBC の `setTransactionIsolation` は ScalarDB SQL の
-  ドライバでは何もしない
+  ドライバでは何もしない。推奨の既定は、呼ぶトランザクションだけを SERIALIZABLE で始めること（2026-09-30 の決定）
 * 比較ハーネスの検証クラスタ（`difftest/conf`）は SERIALIZABLE なので、比較では差が見えない
 
 ## B. 待たない（`NOWAIT`）
