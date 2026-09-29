@@ -395,6 +395,10 @@ def _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundarie
 
     from .nls import annotate as annotate_nls
     annotate_nls(program)   # 書式なしで日付を文字にする所（#94）。スキーマが無くても言える
+    # P4-7: 中身の分かる EXECUTE IMMEDIATE を静的な文に畳む。IR の書き換えなので、スキーマが無くても行う
+    # （capability の中にあったころは、--scalardb-schema が無いと ddl.omit が黙って効かなかった。#152）
+    from .dynamic import fold as fold_dynamic
+    fold_dynamic(program)
 
     if scalardb_schema is not None:
         from .capability import annotate, check

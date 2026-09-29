@@ -372,6 +372,32 @@ def annotate(routine: M.Routine, statement: M.DynamicSql,
     return variants
 
 
+def fold(program: M.Program) -> None:
+    """Fold every dynamic statement whose text is knowable into its variants (`variant_statements`).
+
+    This rewrites the IR, so it runs with the other rewrites (`report._analyse`) and not inside the capability
+    check: that check only runs with a target schema (`--scalardb-schema`), and without one a constant
+    `EXECUTE IMMEDIATE 'CREATE TABLE ...'` stayed unknowable, so `ddl.omit` in limits.yaml silently did nothing
+    (#152). The check then converts each variant like a static statement.
+    """
+    from .lower import _walk
+
+    for module in program.modules:
+        for routine in module.routines:
+            statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
+            for statement in statements:
+                if statement.kind != "DynamicSql" or statement.variant_statements:
+                    continue
+                for index, variant in enumerate(annotate(routine, statement, module) or [], start=1):
+                    # `USING` は**位置で**束縛される。placeholder を渡す変数の名前に直して
+                    # おくと、畳んだ文がそのあと静的な文とまったく同じ道を通る（P4-7）
+                    statement.variant_statements.append(M.SqlOperation(
+                        id=f"{statement.id}#variant-{index}", kind="SqlOperation",
+                        source_range=statement.source_range,
+                        original_sql=bind_using(variant.sql, statement.using),
+                        binds=list(statement.using), into_targets=list(statement.into_targets)))
+
+
 PLACEHOLDER = re.compile(r":(?P<name>[\w$#]+)")
 
 
