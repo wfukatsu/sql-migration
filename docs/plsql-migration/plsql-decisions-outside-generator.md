@@ -216,6 +216,9 @@ B（拒否）/ D（別表検証）の trigger が掛かる表は、アプリ以�
   'SERIALIZABLE'`。JDBC の `setTransactionIsolation` は効かない）、(c) routine を読み、ロックした行を必ず書くので
   SNAPSHOT のままでよいと確かめる。SERIALIZABLE は読んだ行も commit で確かめるので、弾かれる回数が増える（CALL-5 の
   再試行と組で決める）
+- **推奨の既定は (b)**（2026-09-30 の決定）: その routine を呼ぶトランザクションだけを SERIALIZABLE で始める。ほかの処理は
+  今の分離レベルのまま動く（SERIALIZABLE は走査を commit で読み直すので、クラスタ全体に広げると遅くなる）。(a) は
+  そうした routine が多く、呼び出し側を 1 つずつ直せないときに選ぶ。(c) は routine を読んで確かめられたときだけ
 - **出たら確認**: 診断 `OPTIMISTIC`、生成コードのコメント「FOR UPDATE を落とした（rowLocks.optimistic）」
 - **記録先**: クラスタの設定（運用）、または呼び出し側の設計書
 
