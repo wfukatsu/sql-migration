@@ -403,23 +403,52 @@ class _Parser:
     def parse_term(self) -> str:
         return self._binary(self.MULTIPLICATIVE, self.parse_unary)
 
-    def _pls_integer(self, start: int) -> bool:
-        """Whether the operand parsed from `start` is one PLS_INTEGER local (`p1`), marked `#pls_integer` in scope."""
+    def _int32(self, start: int) -> str | None:
+        """What the operand parsed from `start` is, when it is a 32-bit integer of PL/SQL: one PLS_INTEGER local
+        (`p1`, marked `#pls_integer` in scope), one SIMPLE_INTEGER local (`#simple_integer`), or an integer literal
+        in the 32-bit range, which Oracle computes with them in 32 bits (`v + 1 - 1` is ORA-01426 at 2147483647,
+        #148 M4). None for anything else."""
+        spans = getattr(self, "_int32_spans", {})
         if self.position != start + 1:
-            return False
+            # `s * 2 + 1`: the operand is itself 32-bit arithmetic, parsed by `_binary` (in parentheses or not)
+            found = spans.get((start, self.position))
+            if found is None and self.tokens[start][1] == "(" and self.tokens[self.position - 1][1] == ")":
+                found = spans.get((start + 1, self.position - 1))
+            return found
         kind, value = self.tokens[start]
-        return kind == "name" and f"{value.lower()}#pls_integer" in self.scope
+        if kind == "name" and f"{value.lower()}#pls_integer" in self.scope:
+            return "pls"
+        if kind == "name" and f"{value.lower()}#simple_integer" in self.scope:
+            return "simple"
+        if re.fullmatch(r"\d+", str(value)) and int(value) <= 2147483647:
+            return "literal"
+        return None
+
+    @staticmethod
+    def _int32_result(left: str | None, right: str | None, operator: str) -> str | None:
+        """The 32-bit arithmetic `left operator right` is done in, or None for NUMBER arithmetic. SIMPLE_INTEGER
+        with SIMPLE_INTEGER (or a literal) wraps in two's complement; with a PLS_INTEGER, or PLS_INTEGER with either,
+        it raises ORA-01426 past the range. Division yields a NUMBER, and two literals are left to NUMBER."""
+        if operator == "/" or left is None or right is None or (left == right == "literal"):
+            return None
+        if {left, right} <= {"simple", "literal"}:
+            return "simple"
+        return "pls"
 
     def _binary(self, operators: tuple[str, ...], operand) -> str:
-        start = self.position
+        start = begin = self.position
         left = operand()
-        left_pls = self._pls_integer(start)
+        left_int = self._int32(start)
         while True:
             token = self.peek()
             # `n MOD j`: PL/SQL's infix MOD is a word at the level of * and / (4-29, #137). Left to the name path it
             # became `nPlsql.modj`, which javac refused
             infix_mod = operators is self.MULTIPLICATIVE and self.at_word("MOD")
             if not infix_mod and (token is None or token[0] != "op" or token[1] not in operators):
+                if left_int in ("pls", "simple") and self.position > begin + 1:
+                    if not hasattr(self, "_int32_spans"):
+                        self._int32_spans = {}
+                    self._int32_spans[(begin, self.position)] = left_int
                 return left
             operator = self.take()[1].upper()
             if operator == "*" and self.peek() is not None and self.peek()[1] == "*":
@@ -428,15 +457,19 @@ class _Parser:
                 self.result.unknown.append("**")
             start = self.position
             right = operand()
-            right_pls = self._pls_integer(start)
+            right_int = self._int32(start)
             self.result.imports.add(HELPER_IMPORT)
             left = f"{HELPER}.{self.ARITHMETIC[operator]}({left}, {right})"
-            if left_pls and right_pls and operator != "/":
+            left_int = self._int32_result(left_int, right_int, operator)
+            if left_int == "pls":
                 # PLS_INTEGER op PLS_INTEGER is computed in 32 bits: past the range it is ORA-01426 even when the
-                # result goes into a NUMBER (samples/oracle-plsql-docs 3-4, #60). Division yields a NUMBER
+                # result goes into a NUMBER (samples/oracle-plsql-docs 3-4, #60), and so is each step of
+                # `v + 1 - 1` -- the value that comes back into range raised first (#148 M4)
                 left = f"{HELPER}.plsInteger({left})"
-            else:
-                left_pls = False
+            elif left_int == "simple":
+                # SIMPLE_INTEGER wraps instead of raising: 2147483647 + 1 is -2147483648 (Oracle 26ai, #148 M4).
+                # BigDecimal.intValue keeps the low 32 bits, which is that wrap
+                left = f"Integer.valueOf(((Number) {left}).intValue())"
 
     def parse_unary(self) -> str:
         """`-x` and `+x`. Without this the leading sign was read as a binary operator with nothing on its

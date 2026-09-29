@@ -542,6 +542,8 @@ def _scope(routine: M.Routine, module: M.Module | None = None) -> dict[str, str]
             names[f"{holder.name.lower()}#blank_padded"] = "1"
         if declared.upper() in _PLS_INTEGER_TYPES:
             names[f"{holder.name.lower()}#pls_integer"] = "1"
+        elif declared.upper() == "SIMPLE_INTEGER":
+            names[f"{holder.name.lower()}#simple_integer"] = "1"   # wraps instead of raising (#148 M4)
         text = _text_rendering(declared)
         if text:
             names[f"{holder.name.lower()}#text"] = text
