@@ -37,6 +37,8 @@ public class Residual implements AutoCloseable {
   // table -> indexes from the plan (primary key, join columns); built once, after every fetch is loaded
   private final Map<String, List<List<String>>> indexes = new LinkedHashMap<>();
   private final boolean buildIndexes;
+  // the H2 session's zone: the source session's when the plan names it (#160), else UTC
+  private final java.time.ZoneId zone;
   private boolean indexed;
 
   /** Without indexes: the right default for small requests, where building them costs more than it saves. */
@@ -50,8 +52,26 @@ public class Residual implements AutoCloseable {
    *     the index memory (about 1.6x the rows, docs/reports/dml-followup-research.md).
    */
   public Residual(String mode, boolean buildIndexes) throws Exception {
+    this(mode, buildIndexes, null);
+  }
+
+  /** The residual engine a plan asks for: its mode, its indexes, and the source session's time zone. */
+  public static Residual of(Plan.Residual residual, boolean forceIndexes) throws Exception {
+    return new Residual(residual.mode, residual.build_indexes || forceIndexes, residual.time_zone);
+  }
+
+  /**
+   * @param timeZone the source session's time zone ({@code Asia/Tokyo}, {@code +09:00}); null is UTC. PostgreSQL
+   *     truncates, casts and extracts in the session's TimeZone: with {@code TimeZone = 'Asia/Tokyo'},
+   *     {@code date_trunc('week', DATE '2024-01-03')} is {@code 2024-01-01 00:00:00+09}, and a timestamptz of
+   *     {@code 2024-01-03 20:30:00+00} casts to DATE {@code 2024-01-04} with EXTRACT(HOUR) 5 (PostgreSQL 16.15). The
+   *     H2 session runs in that zone and TIMESTAMPTZ values are loaded at its offset (the same instants), and H2
+   *     2.5.250 then answers the same (#160).
+   */
+  public Residual(String mode, boolean buildIndexes, String timeZone) throws Exception {
     englishDateNames();
     this.buildIndexes = buildIndexes;
+    this.zone = zone(timeZone);
     // the mode comes from a plan file and goes into a JDBC URL, where `;INIT=...` would run whatever it says
     this.mode = MODES.stream().filter(m -> m.equalsIgnoreCase(mode)).findFirst()
         .orElseThrow(() -> new IllegalArgumentException("unknown H2 mode " + mode + " (expected one of " + MODES + ")"));
@@ -60,9 +80,10 @@ public class Residual implements AutoCloseable {
     // NON_KEYWORDS: `key` and `value` are ordinary column names that H2 reserves. (Words H2 needs to parse SQL at
     //   all -- ORDER, USER, END, OFFSET -- cannot be released this way; a column named so still fails, loudly.)
     // TIME ZONE: TIMESTAMPTZ values arrive as UTC instants. With the session in the JVM's zone, CAST(ts AS DATE)
-    //   or EXTRACT(HOUR ...) in the residual SQL gave a different answer on a different host.
+    //   or EXTRACT(HOUR ...) in the residual SQL gave a different answer on a different host. It is the source
+    //   session's zone when the plan names one (#160), UTC otherwise; never the host's.
     String url = "jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=" + this.mode + ";DATABASE_TO_UPPER=FALSE"
-        + ";CASE_INSENSITIVE_IDENTIFIERS=TRUE;NON_KEYWORDS=KEY,VALUE;TIME ZONE=UTC";
+        + ";CASE_INSENSITIVE_IDENTIFIERS=TRUE;NON_KEYWORDS=KEY,VALUE;TIME ZONE=" + this.zone.getId();
     h2 = DriverManager.getConnection(url);
     if ("Oracle".equals(this.mode)) OracleFunctions.register(h2);
     String password = UUID.randomUUID().toString();
@@ -71,6 +92,22 @@ public class Residual implements AutoCloseable {
       s.execute("GRANT SELECT ON SCHEMA PUBLIC TO " + READER);
     }
     reader = DriverManager.getConnection(url, READER, password);
+  }
+
+  /**
+   * The zone a plan names, checked: it goes into the JDBC URL, where {@code ;INIT=...} would run whatever it says,
+   * so only what {@link java.time.ZoneId#of} reads is accepted, and its own spelling of it is what goes in.
+   */
+  static java.time.ZoneId zone(String name) {
+    if (name == null || name.isEmpty()) return java.time.ZoneOffset.UTC;
+    try {
+      java.time.ZoneId zone = java.time.ZoneId.of(name);
+      if (!zone.getId().matches("[A-Za-z0-9_/+:-]+")) throw new java.time.DateTimeException(name);
+      return zone;
+    } catch (java.time.DateTimeException e) {
+      throw new IllegalArgumentException("time_zone in the plan is not a time zone: " + name
+          + " (expected an IANA name such as Asia/Tokyo or an offset such as +09:00)", e);
+    }
   }
 
   static boolean englishNames;   // package-private: the test starts over as a fresh JVM would
@@ -215,7 +252,7 @@ public class Residual implements AutoCloseable {
       for (int i = 0; i < exact.length; i++) exact[i] = exactType(spec, rows, rows.columns.get(i));
       for (Object[] r : rows.rows) {
         for (int i = 0; i < r.length; i++) {
-          ps.setObject(i + 1, exact[i] != null && r[i] instanceof Number n ? decimal(n, exact[i]) : Values.toH2(r[i]));
+          ps.setObject(i + 1, exact[i] != null && r[i] instanceof Number n ? decimal(n, exact[i]) : Values.toH2(r[i], zone));
         }
         ps.addBatch();
       }

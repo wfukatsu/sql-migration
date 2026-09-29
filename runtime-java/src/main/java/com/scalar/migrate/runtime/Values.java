@@ -195,10 +195,17 @@ final class Values {
     }
   }
 
-  /** Value as accepted by H2's setObject. */
-  static Object toH2(Object v) {
-    if (v instanceof Instant) return OffsetDateTime.ofInstant((Instant) v, ZoneOffset.UTC);
-    // the java.sql types are instants read in the JVM's zone; the session is UTC, so they would land shifted
+  /**
+   * Value as accepted by H2's setObject, in a session in {@code zone}. A TIMESTAMPTZ goes in at the zone's offset
+   * for that instant: H2 truncates, casts and extracts a TIMESTAMP WITH TIME ZONE at the value's own offset, where
+   * PostgreSQL uses the session's TimeZone (#160). The instant, and so every comparison, stays the same.
+   */
+  static Object toH2(Object v, java.time.ZoneId zone) {
+    if (v instanceof Instant) return OffsetDateTime.ofInstant((Instant) v, zone);
+    if (v instanceof OffsetDateTime && !ZoneOffset.UTC.equals(zone)) {
+      return ((OffsetDateTime) v).atZoneSameInstant(zone).toOffsetDateTime();
+    }
+    // the java.sql types are instants read in the JVM's zone; the session is not in it, so they would land shifted
     if (v instanceof java.sql.Timestamp) return ((java.sql.Timestamp) v).toLocalDateTime();
     if (v instanceof java.sql.Date) return ((java.sql.Date) v).toLocalDate();
     if (v instanceof java.sql.Time) return ((java.sql.Time) v).toLocalTime();

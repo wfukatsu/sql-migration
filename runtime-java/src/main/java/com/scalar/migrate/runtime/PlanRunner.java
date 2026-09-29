@@ -106,7 +106,7 @@ public final class PlanRunner {
 
     long t0 = System.nanoTime();
     int fetched = 0;
-    try (Residual h2 = new Residual(residual.mode, residual.build_indexes || forceH2Indexes)) {
+    try (Residual h2 = Residual.of(residual, forceH2Indexes)) {
       if (needsFetch) {
         if (fetcher == null) throw new IllegalArgumentException("plan needs a fetcher: " + plan.source_sql);
         if (owns) fetcher.begin();

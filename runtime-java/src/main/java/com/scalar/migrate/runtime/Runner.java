@@ -112,7 +112,7 @@ public class Runner {
     Plan plan = GSON.fromJson(Files.readString(Path.of(opt.get("plan"))), Plan.class);
     Plan.Residual residual = plan.residual.get("java");
     List<String> problems = new ArrayList<>();
-    try (Residual h2 = new Residual(residual.mode)) {
+    try (Residual h2 = new Residual(residual.mode, false, residual.time_zone)) {
       for (Plan.Fetch f : plan.fetch) {
         if (f.column_types == null || f.column_types.isEmpty()) {
           problems.add("table " + f.table + ": column types unknown (no schema), cannot validate offline");

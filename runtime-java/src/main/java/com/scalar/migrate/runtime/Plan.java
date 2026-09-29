@@ -34,6 +34,7 @@ public class Plan {
     public String mode;
     public String sql;
     public boolean build_indexes;  // build the fetches' index_columns in H2 before the query (off by default)
+    public String time_zone;       // the source session's zone (PostgreSQL plans, #160); null = UTC
   }
 
   public static class Predicate {

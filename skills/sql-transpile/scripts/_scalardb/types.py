@@ -355,6 +355,18 @@ def session_zone(name: str | None) -> tzinfo | None:
                          f"(+09:00)") from e
 
 
+def session_zone_id(name: str | None) -> str | None:
+    """The source session's time zone as the plan records it for the residual engine (#160): an IANA name as given
+    ('Asia/Tokyo'), an offset as ``+09:00``. None when no zone was named. Raises ValueError as session_zone does."""
+    zone = session_zone(name)
+    if zone is None:
+        return None
+    if isinstance(zone, ZoneInfo):
+        return zone.key
+    minutes = int(zone.utcoffset(None).total_seconds()) // 60
+    return f"{'-' if minutes < 0 else '+'}{abs(minutes) // 60:02d}:{abs(minutes) % 60:02d}"
+
+
 def fit_temporal_literal(kind: str | None, text: str, zone: tzinfo | None = None) -> tuple[str, str | None]:
     """``text`` made to fit a ScalarDB column of type ``kind``, and what changed: None, "midnight", "time", "padded",
     or for time zones "assumed_utc" (the literal had none), "session_zone" (it had none and ``zone``, the source
