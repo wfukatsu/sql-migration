@@ -42,7 +42,7 @@ SKILL.md の Step 7 で、`migration_doc.py facts` が作った文書の `（未
 
 | 診断・決定 | 変わること（routine の言葉に直して書く） |
 |---|---|
-| `ROW_LOCK` / `OPTIMISTIC`（`rowLocks.optimistic`） | 待たせる・即座に断る → commit で弾く。呼び出し側に再試行が要る |
+| `ROW_LOCK` / `OPTIMISTIC`（`rowLocks.optimistic`） | 待たせる・即座に断る → commit で弾く。呼び出し側に再試行が要る。FOR UPDATE と同じ保証は SERIALIZABLE で動かすときだけ（CALL-7） |
 | `RMW_SPLIT` | `SET col = col ± x` を、読んでからアプリで計算して書く 2 文に割った。同じトランザクションの中なので結果は同じ |
 | `NOW` | `SYSDATE` はアプリの時計（`Plsql.sysdate()`）、`SYSTIMESTAMP` と `USER` は呼び出し側が渡す `AuditContext`。**`NOW` が出ないこともある**: PL/SQL の式として先に計算して bind する文（`INSERT … VALUES (SYSTIMESTAMP)` など）には付かない。事実の欄が「文に付いた診断は無い」でも、原文に `SYSDATE` / `SYSTIMESTAMP` / `USER` があれば、生成された Java（`audit.now()`、`Plsql.sysdate()`）で確かめて書く |
 | 生成コードが断る文（事実の欄の「生成コードが断る文」。generation-report の `refused`） | 外部の package の呼び出し（`CALL-001`）、変換できなかった文、ScalarDB が受け付けない文。呼ぶとそこで `UnsupportedOperationException` になる。診断が付かないこともあるので、この一覧で書く |

@@ -1424,6 +1424,8 @@ def draws_a_sequence(statement: M.Statement) -> bool:
 
 def _statement(file: JavaFile, statement: M.Statement, routine: M.Routine, result: ServiceFile) -> None:
     _source_comment(file, statement)
+    if _lock_dropped(statement):
+        file.comment(OPTIMISTIC_PREMISE)
     if _REFUSES_LATER.get() and draws_a_sequence(statement):
         # この routine は完走できない。採番だけはトランザクションを抜けるので、**引く前に止める**
         # ——拒否された routine が欠番を作らないようにする（#25 / 2026-09-18 の決定）。
@@ -2182,6 +2184,23 @@ def _scan_precedes_writes(routine: M.Routine, loop: M.Loop, tables: set[str]) ->
 def _locked_and_decided(query: M.SqlOperation) -> bool:
     """走査が行ロックを持っていて、それを楽観制御へ移すと記録されているか（capability が付けた印）。"""
     return bool(query.locking_mode) and any(d.code == "OPTIMISTIC" for d in query.diagnostics)
+
+
+# #157: 楽観制御が FOR UPDATE と同じ保証になるのは SERIALIZABLE のときだけである。Consensus Commit が commit で
+# 弾くのは**書いた**行の衝突で、ロックして読んだだけの行を他が変えたことまで見るのは SERIALIZABLE だけ
+# （SNAPSHOT / READ_COMMITTED では write skew が通る。spike #158 で、生成したコードを 3.19.1 の実クラスタに流して
+# 確かめた）。分離レベルは呼び出し側がトランザクションを始めるときに決めるので、生成コードは確かめられない。
+# ロックを落とした文の所に前提を書き、決めることは CALL-7 に置く
+OPTIMISTIC_PREMISE = (
+    "FOR UPDATE を落とした（rowLocks.optimistic）。同じ行を書く衝突は commit で弾かれる。\n"
+    "読んだだけで書かない行まで守られる（FOR UPDATE と同じ保証になる）のは、呼び出し側がこのトランザクションを\n"
+    "SERIALIZABLE で動かすときだけ。SNAPSHOT / READ_COMMITTED では write skew が通る（CALL-7 / #157）")
+
+
+def _lock_dropped(statement: M.Statement) -> bool:
+    """この文（または cursor FOR ループの読み）が、楽観制御へ移すと決めた行ロックを持っていたか。"""
+    query = statement if statement.kind == "SqlOperation" else getattr(statement, "query", None)
+    return isinstance(query, M.SqlOperation) and _locked_and_decided(query)
 
 
 _CODE_CLASSES: dict[int, dict[int, str]] = {}

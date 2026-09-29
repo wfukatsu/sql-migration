@@ -268,7 +268,8 @@ MEANING, SHAPE, INFO, UNKNOWN = "意味が変わる", "形が変わる（結果�
 CHANGES = {
     "ROW_LOCK": (MEANING, "行ロック（待たせる・即座に断る）が無くなる"),
     "LOCK": (MEANING, "FOR UPDATE などのロック句を外した"),
-    "OPTIMISTIC": (MEANING, "楽観制御へ移した。同時の書き込みは commit で弾かれ、呼び出し側の再試行が要る"),
+    "OPTIMISTIC": (MEANING, "楽観制御へ移した。同時の書き込みは commit で弾かれ、呼び出し側の再試行が要る。"
+                   "読んだだけの行まで FOR UPDATE と同じに守られるのは SERIALIZABLE で動かすときだけ（CALL-7）"),
     "TRANSACTION_IN_ROUTINE": (MEANING, "routine の中の COMMIT / ROLLBACK / SAVEPOINT が消え、境界が呼び出し側へ移った"),
     "PAGED": (MEANING, "対象をページごとに読む。途中で増えた行も処理されうる"),
     "CUR_SCAN": (MEANING, "カーソルを、先に行を読んでから回す形にした。行数の上限が付く"),
