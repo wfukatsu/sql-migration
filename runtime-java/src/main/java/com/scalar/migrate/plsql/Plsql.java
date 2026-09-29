@@ -242,7 +242,8 @@ public final class Plsql {
    * Oracle's text for a binary floating-point value, as Oracle 26ai writes it: the exact binary value rounded to 9
    * (BINARY_FLOAT) or 17 (BINARY_DOUBLE) significant digits, trailing zeros dropped but one kept after the point,
    * and a signed three-digit exponent -- 4.0E+000, 1.00000001E-001, 3.3333333333333335E+000. Zero is "0", and
-   * NaN and the infinities are "Nan", "Inf", "-Inf".
+   * NaN and the infinities are "Nan", "Inf", "-Inf". The point is the session's decimal character: 4,0E+000 with
+   * NLS_NUMERIC_CHARACTERS ',.' (#167, measured on 26ai).
    */
   static String binaryText(double value, int digits) {
     if (Double.isNaN(value)) return "Nan";
@@ -253,7 +254,7 @@ public final class Plsql {
     String unscaled = rounded.unscaledValue().abs().toString();
     int exponent = rounded.precision() - rounded.scale() - 1;
     String fraction = unscaled.length() > 1 ? unscaled.substring(1) : "0";
-    return (rounded.signum() < 0 ? "-" : "") + unscaled.charAt(0) + "." + fraction
+    return (rounded.signum() < 0 ? "-" : "") + unscaled.charAt(0) + nls.decimal() + fraction
         + "E" + (exponent < 0 ? "-" : "+") + String.format("%03d", Math.abs(exponent));
   }
 
