@@ -45,6 +45,9 @@ TOOLCHAIN = (
 )
 # what the generated code is generated from besides the PL/SQL, next to the source directory or one level up
 PROJECT_INPUTS = (("", "schema.sql"), ("..", "scalardb-schema.json"), ("..", "limits.yaml"), ("", "limits.yaml"))
+# what Oracle's side of a comparison (difftest/plsql_run.py) ran on: the PL/SQL and the DDL deployed with it. The
+# ScalarDB schema and the decisions shape only the generated code, so changing them leaves an Oracle capture valid
+ORACLE_INPUTS = (("", "schema.sql"), ("", "type_bodies.sql"))
 
 
 def _sha(parts: list[bytes]) -> str:
@@ -64,7 +67,7 @@ def toolchain(root: Path = ROOT) -> str:
     return _sha(parts)
 
 
-def sources(program: M.Program, source_root: str | Path) -> dict[str, str]:
+def sources(program: M.Program, source_root: str | Path, inputs=PROJECT_INPUTS) -> dict[str, str]:
     """Routine id -> hash of the source its behaviour depends on (see the module docstring). Whitespace at line
     ends is not a change.
 
@@ -87,7 +90,7 @@ def sources(program: M.Program, source_root: str | Path) -> dict[str, str]:
         elif shared.get(module.name, "") is not None:
             shared[module.name] = (shared.get(module.name) or "") + "\n" + (rest or "")
     triggers = [own[r.id] for m in program.modules if m.module_kind == "trigger" for r in m.routines]
-    common = [_project_inputs(root)] + sorted(t or "" for t in triggers)
+    common = [_project_inputs(root, inputs)] + sorted(t or "" for t in triggers)
     graph = build_call_graph(program)
     out: dict[str, str] = {}
     for routine_id, text in own.items():
@@ -134,9 +137,9 @@ class _Files:
                                                                  start=span.start_line) if n not in skipped)
 
 
-def _project_inputs(root: Path) -> str:
+def _project_inputs(root: Path, inputs=PROJECT_INPUTS) -> str:
     parts = []
-    for directory, name in PROJECT_INPUTS:
+    for directory, name in inputs:
         path = (root / directory / name).resolve()
         if path.is_file():
             parts.append(f"{directory}/{name}\n{path.read_text(encoding='utf-8')}")
