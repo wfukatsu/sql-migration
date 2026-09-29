@@ -1768,7 +1768,10 @@ def _block(file: JavaFile, statement: M.Block, routine: M.Routine, result: Servi
         for d in statement.declarations:
             if d.declaration_kind not in ("type", "exception", "cursor"):
                 qualified[f"{label}.{d.name}"] = renamed[d.name]
-    _BLOCK_LOCALS.set({**outer, **renamed, **qualified})
+    # a block's own declaration hides a loop index's 32-bit mark of the same name (#160)
+    _BLOCK_LOCALS.set({**{k: v for k, v in outer.items()
+                          if not any(k.lower() == f"{d.name.lower()}#pls_integer" for d in statement.declarations)},
+                       **renamed, **qualified})
     outer_holders = _BLOCK_HOLDERS.get()
     _BLOCK_HOLDERS.set(outer_holders + tuple(statement.declarations))
     outer_qualified = _QUALIFIED_NAMES.get()
@@ -1874,7 +1877,8 @@ def _loop(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Service
     if index_name:
         # `outer_loop.i` is this loop's index past an inner loop's i (4-22, #138)
         qualified = {f"{statement.label}.{index_name}": index} if statement.label else {}
-        _BLOCK_LOCALS.set({**outer_locals, index_name: index, **qualified})
+        # the index is a PLS_INTEGER: `i + 1` at 2147483647 is ORA-01426 (Oracle 26ai, #160)
+        _BLOCK_LOCALS.set({**outer_locals, index_name: index, f"{index_name.lower()}#pls_integer": "1", **qualified})
     outer_qualified = _QUALIFIED_NAMES.get()
     if index_name and statement.label:
         _QUALIFIED_NAMES.set({**outer_qualified, f"{statement.label}.{index_name}".lower(): (index, None)})

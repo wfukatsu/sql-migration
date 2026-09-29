@@ -519,8 +519,8 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `x IS NULL` / `IS NOT NULL` | `Plsql.isNull(x)` / `Plsql.isNotNull(x)` | なし | `''` も NULL です |
 | `a \|\| b` | `Plsql.concat(a, b)` | なし | NULL は空文字として扱い、結果が空なら NULL です |
 | `+`、`-`、`*`、`/` | `Plsql.add`、`sub`、`mul`、`div` | なし | NULL は NULL を返します。結果は NUMBER と同じく 40 桁に丸めます。0 で割ると ORA-01476（`Plsql.ZeroDivide`） |
-| PLS_INTEGER どうし、PLS_INTEGER と 32 ビットに収まる整数リテラルの `+`、`-`、`*` | 1 回の演算ごとに `Plsql.plsInteger(...)` | なし | 途中で 32 ビットを超えると ORA-01426 です（`v + 1 - 1` は v が 2147483647 なら例外。最後に範囲へ戻っても同じ。Oracle 26ai で確認）。`/` と、32 ビットを超えるリテラルとの演算は NUMBER です |
-| SIMPLE_INTEGER どうし、SIMPLE_INTEGER と整数リテラルの `+`、`-`、`*` | 1 回の演算ごとに下位 32 ビットを取る（`Integer.valueOf(((Number) ...).intValue())`） | なし | 2 の補数で折り返します。PLS_INTEGER と混ぜた演算は PLS_INTEGER として扱います（Oracle で未確認） |
+| PLS_INTEGER（FOR ループの添字を含む）どうし、PLS_INTEGER と 32 ビットに収まる整数リテラル、整数リテラルどうしの `+`、`-`、`*`、単項の `-` | 1 回の演算ごとに `Plsql.plsInteger(...)` | なし | 途中で 32 ビットを超えると ORA-01426 です（`v + 1 - 1` は v が 2147483647 なら例外。最後に範囲へ戻っても同じ。`2147483647 + 1` や `65536 * 65536` のようにリテラルだけでも同じ。-2147483648 の `-p` も同じ）。`/` と、32 ビットを超えるリテラルや NUMBER との演算は NUMBER です（Oracle 26ai で 53 通りを確認、#160） |
+| SIMPLE_INTEGER どうし、SIMPLE_INTEGER と整数リテラルの `+`、`-`、`*`、SIMPLE_INTEGER の単項の `-` | 1 回の演算ごとに下位 32 ビットを取る（`Integer.valueOf(((Number) ...).intValue())`） | なし | 2 の補数で折り返します（`s * 2147483647` も、-2147483648 の `-s` も）。PLS_INTEGER と混ぜた演算（`s + p`、`p + s`、`s * p`）は PLS_INTEGER として ORA-01426 になります。符号を付けたリテラルは PLS_INTEGER の式なので、`s - 1` は折り返し、`s + (-1)` は ORA-01426 です。左から順に型が決まるので、`s + 1 + p` は先に折り返し、`p + s + 1` は例外です（Oracle 26ai で確認、#160） |
 | 中置の `n MOD j` | `Plsql.mod(n, j)`（関数の `MOD(n, j)` と同じ） | なし | `*` と `/` と同じ強さで結びます（`a + b MOD 3 * 2` は `a + ((b MOD 3) * 2)`） |
 | `DATE + n`、`DATE - n`、`DATE - DATE` | `Plsql.add` / `Plsql.sub` | なし | 日数の足し引きです。DATE どうしの差は日数（小数つき）です |
 | 単項の `-x` | `Plsql.neg(x)` | なし | |
@@ -636,7 +636,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `SYS_REFCURSOR` を `OPEN rc FOR SELECT ...; RETURN rc;` | 行の `List<...Row>` を返すメソッド | 行数上限は CUR-002 と同じ | 呼び出し側は FETCH の代わりに List を受け取ります（生成で確認） |
 | 局所の `SYS_REFCURSOR` を OPEN して FETCH するループ | cursor FOR ループ | CUR-002 | 生成で確認 |
 | `OPEN rc FOR '定数の文字列' USING p` | 静的な問合せとして生成 | なし | 生成で確認 |
-| OUT 引数の `SYS_REFCURSOR`（`OPEN p_rc FOR SELECT ...`） | 行を読み、`List<...Row>` を結果の record の要素にして返す | 行数上限は CUR-002 と同じ | `RETURN rc` の形と同じく、呼び出し側は FETCH の代わりに List を受け取ります。routine の中でその cursor から FETCH する形や、2 回以上 OPEN する形はこの形にしません（生成で確認） |
+| OUT 引数の `SYS_REFCURSOR`（`OPEN p_rc FOR SELECT ...`） | 行を読み、`List<...Row>` を結果の record の要素にして返す | 行数上限は CUR-002 と同じ | `RETURN rc` の形と同じく、呼び出し側は FETCH の代わりに List を受け取ります。routine の中でその cursor から FETCH する形や、2 回以上 OPEN する形はこの形にしません。その形では OPEN が routine の中の cursor の状態に読むだけで、結果の record の引数は null のままです（CUR-001 で REVIEW）。Oracle では最後の OPEN が渡り（別の列の問合せでも）、routine の中で FETCH した行の続きから呼び出し側が読みます（%ROWCOUNT も続きから。26ai で確認）。行の型と位置をどう渡すかは未決です（#160） |
 | `FOR UPDATE` の cursor、`WHERE CURRENT OF c` | 行ロックの節を参照 | LOCK-001 / LOCK-002（REDESIGN） | |
 
 ### コレクション
