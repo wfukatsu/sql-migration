@@ -1480,6 +1480,17 @@ def _statement(file: JavaFile, statement: M.Statement, routine: M.Routine, resul
             result.untranslated.append(statement.id)
         return
     try:
+        refused = next((d for d in statement.diagnostics if d.code == "CUR_OUT_REFUSED"), None)
+        if refused is not None:
+            # #160: an OUT cursor argument this OPEN cannot hand over. Reading into a cursor of the routine's own
+            # would return the argument null -- the caller silently getting nothing
+            file.comment(refused.message)
+            why = "the routine CLOSEs it" if "CLOSE" in refused.message else \
+                "the routine FETCHes from it" if "FETCH" in refused.message else \
+                "its OPENs select different columns" if "列の違う" in refused.message else "its query is not readable"
+            cursor = getattr(statement, "opens_cursor", None) or getattr(statement, "cursor", None)
+            raise Untranslatable([f"OUT cursor {cursor} cannot be handed to the caller: {why} (#160)"],
+                                 getattr(statement, "original_sql", None) or getattr(statement, "query_sql", None) or "")
         _translate_statement(file, statement, routine, result)
     except Untranslatable as e:
         file.comment(f"not translated: {e.text.strip()[:120]}")
@@ -2108,6 +2119,14 @@ def _forall(file: JavaFile, statement: M.Loop, routine: M.Routine, result: Servi
         _BLOCK_LOCALS.set(outer_locals)
 
 
+def _row_shape(query: M.SqlOperation) -> list[tuple[str | None, str]]:
+    """The components a loop's row record gets from `query` (`dto.loop_row_record`): names and Java types."""
+    from .dto import loop_component_type
+
+    return [(name, loop_component_type(oracle).name)
+            for name, oracle in zip(query.into_columns or [], query.into_oracle_types or [])]
+
+
 def _reads_bulk_rowcount(routine: M.Routine) -> bool:
     return bool(re.search(r"SQL\s*%\s*BULK_ROWCOUNT", repr(routine), re.IGNORECASE))
 
@@ -2162,7 +2181,14 @@ def _cursor_for(file: JavaFile, statement: M.Loop, routine: M.Routine, result: S
         file.line(f"return {rows};")
         return
     if statement.rows_into:
-        # `OPEN p_rc FOR q` of an OUT cursor (#125): the argument, and so the result record, gets the rows
+        # `OPEN p_rc FOR q` of an OUT cursor (#125): the argument, and so the result record, gets the rows. An
+        # argument opened more than once (#160) is assigned at each OPEN: Oracle hands the caller the last one that
+        # ran, and so does the result record. All of them share the first OPEN's row record
+        from .repository import rows_into_first
+        first = rows_into_first(routine, statement)
+        if first is not statement and _row_shape(first.query) != _row_shape(query):
+            raise Untranslatable([f"OUT cursor {statement.rows_into} opened on queries of different columns (#160)"],
+                                 query.original_sql)
         file.line(f"{java_name(statement.rows_into)} = {rows};")
         return
     if statement.chunk:
