@@ -91,15 +91,19 @@ rules:
     requiredTests:
       - date_time_component
 
+  # NLS の言語設定で出力が変わる TO_CHAR 書式。ランタイム（OracleFormat）は書式の全体を実装しているが、どの言語で
+  # 書くかは移行元のセッションの設定で、生成器には分からない。#157（2026-09-30 の利用者の決定）: limits.yaml の
+  # `nls` で決めた project では、ランタイムが計算する変換に NLS_DECIDED が付き、この規則は当たらない。移行先
+  # （ScalarDB / 実行計画の H2）が評価する SQL に残った TO_CHAR は、決めた設定では書かれないので当たったまま
   - id: SEM-008
     match:
       statementKind: [SqlOperation, Expression]
-      # NLS の言語設定で出力が変わる TO_CHAR 書式。Plsql.text は未対応の書式で例外を上げるが、
-      # 実行時に落ちるより先に人が見るべきものである
       textMatches: "TO_CHAR\\s*\\([^)]*'[^']*(DAY|DY|MONTH|MON|AM|PM|RM)[^']*'"
+      lacksDiagnostic: NLS_DECIDED
     decision: REVIEW
-    message: TO_CHAR の書式が NLS の言語設定に依存します。NLS_DATE_LANGUAGE で出力が変わります
+    message: TO_CHAR の書式が NLS の言語設定に依存します。NLS_DATE_LANGUAGE で出力が変わり、移行元のセッションの設定はまだ決まっていません
     remediation:
+      - 移行元のセッションの NLS を確かめて limits.yaml の nls に書く（言語・地域・書式・数値の文字・通貨）
       - 言語に依存しない書式（YYYY-MM-DD など）にするか、表示層で変換する
     requiredTests:
       - timezone
@@ -168,13 +172,27 @@ rules:
   # 書式なしの TO_CHAR / || / PUT_LINE で日付・TIMESTAMP を文字にする所（#94）。生成コードは Oracle の既定の NLS
   # （DD-MON-RR、AMERICAN）で書き、実 DB の比較も既定で流すので、一致しても移行元のセッション設定までは確かめていない。
   # 既定の DD-MON-RR は月の名前を含み、書式に MON を書いた SEM-008 と同じく言語設定で変わるので、同じ REVIEW にした
+  # #157: limits.yaml の `nls` で決めた project では、生成コードは決めた書式で書く（NLS_DECIDED）ので当たらない
   - id: SEM-012
-    match: {statementKind: [SqlOperation, Expression], hasDiagnostic: IMPLICIT_DATE_TEXT}
+    match: {statementKind: [SqlOperation, Expression], hasDiagnostic: IMPLICIT_DATE_TEXT, lacksDiagnostic: NLS_DECIDED}
     decision: REVIEW
-    message: 日付・TIMESTAMP を書式なしで文字にしています。形は移行元のセッションの NLS_DATE_FORMAT / NLS_TIMESTAMP_FORMAT / NLS_DATE_LANGUAGE で決まり、生成コードは Oracle の既定（DD-MON-RR、AMERICAN）で書きます
+    message: 日付・TIMESTAMP を書式なしで文字にしています。形は移行元のセッションの NLS_DATE_FORMAT / NLS_TIMESTAMP_FORMAT / NLS_DATE_LANGUAGE で決まり、決めていないので生成コードは Oracle の既定（DD-MON-RR、AMERICAN）で書きます
     remediation:
+      - 移行元のセッションの NLS を確かめて limits.yaml の nls に書く
       - 書式を明示する（TO_CHAR(d, 'YYYY-MM-DD') など）
-      - 移行元のセッションが既定の NLS 設定で動いていることを確かめて、そのまま受け入れる
+      - 移行元のセッションが既定の NLS 設定で動いていることを確かめて、そのまま受け入れる（nls に AMERICAN / AMERICA と理由を書く）
+    requiredTests:
+      - equivalent_result
+
+  # #157: 書式モデルのうちランタイムが実装しない形（FM と B、数字の無い書式）と、FF / X / TZR を型の分からない値に
+  # 使う所。ランタイムは要素を名指しして断る（黙って違う文字を返さない）ので、実行時に落ちる前に人が見る
+  - id: SEM-015
+    match: {statementKind: [SqlOperation, Expression], hasDiagnostic: FORMAT_UNSUPPORTED}
+    decision: REVIEW
+    message: TO_CHAR / TO_NUMBER の書式に、ランタイムが実装しない形があります。生成コードは実行時にその要素を名指しして断ります
+    remediation:
+      - 書式を書き直す（FM と B を一緒に使わない、など）
+      - FF / X / TZR を使う値は、TIMESTAMP と宣言した変数に入れてから TO_CHAR する
     requiredTests:
       - equivalent_result
 

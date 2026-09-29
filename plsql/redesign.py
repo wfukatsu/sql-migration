@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .ir import model as M
-from .limits import Constraints, PackageState, Boundaries, DbLinks, DynamicTables, Limits, RowLocks
+from .limits import Constraints, PackageState, Boundaries, DbLinks, DynamicTables, Limits, NlsSettings, RowLocks
 
 STATES = ("undecided", "decided", "verified")
 LABELS = {"undecided": "未決定", "decided": "決定済み（実 DB では未検証、または相違あり）",
@@ -50,20 +50,21 @@ class Decided:
     db_links: DbLinks = field(default_factory=DbLinks)
     package_state: PackageState = field(default_factory=PackageState)
     constraints: Constraints = field(default_factory=Constraints)
+    nls: NlsSettings = field(default_factory=NlsSettings)
 
     @classmethod
     def load(cls, path: str | Path | None) -> "Decided":
         if path is None:
             return cls()
         return cls(RowLocks.load(path), Boundaries.load(path), DynamicTables.load(path), Limits.load(path),
-                   DbLinks.load(path), PackageState.load(path), Constraints.load(path))
+                   DbLinks.load(path), PackageState.load(path), Constraints.load(path), NlsSettings.load(path))
 
     def for_analysis(self) -> dict:
         # dynamic_tables: the report has to judge the statements the generator writes, one per accepted table name.
         # Left out, `plsql.cli` still reported DYN-002 on a statement `plsql.generate` had already expanded (#133)
         return {"row_locks": self.row_locks, "boundaries": self.boundaries, "limits": self.limits,
                 "db_links": self.db_links, "package_state": self.package_state, "constraints": self.constraints,
-                "dynamic_tables": self.dynamic_tables}
+                "dynamic_tables": self.dynamic_tables, "nls": self.nls}
 
 
 @dataclass

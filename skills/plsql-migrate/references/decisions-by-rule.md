@@ -32,6 +32,7 @@
 | DYN-004（動的な DDL: `EXECUTE IMMEDIATE 'CREATE …'`） | ScalarDB はトランザクションの中で DDL を流さない。Oracle の DDL は前後で COMMIT する。決定が無ければ断る | その DDL がデータに何も残さない（作ってすぐ消す一時表など）ので、移行先で省いてよいか。TRUNCATE は省けない（行を消す）ので、下の「外れないもの」の DYN-004 を聞く | `ddl.omit.<routine>: <理由>` | 運用 |
 | LINK-001 | DB link 越しの操作 | link の先の表を ScalarDB の管理下に置き、別の namespace として同じトランザクションで書くか。その namespace | `dbLinks.<link>: {namespace: …, reason: …}` | 運用 |
 | CONS-001 | CHECK / 外部キー / UNIQUE が移行先に無い（子のある親の DELETE を含む） | 表ごとに、書く前に生成コードで検査するか（NOT NULL・CHECK・外部キー）、アプリに任せるか | `constraints.enforce.<表>: <理由>` | 業務 |
+| SEM-008 / SEM-012 | 言語で変わる TO_CHAR の書式（`'DAY'`、`'MON'`、`'AM'`）、書式なしで日付を文字にする所（`'…' \|\| d`、`TO_CHAR(d)`）。生成コードは決めた NLS で書き、決めていなければ Oracle の既定（AMERICAN / AMERICA）で書く | 移行元のセッションの NLS（ログオン trigger、クライアントの `NLS_LANG`、`ALTER SESSION`）: 言語、地域、日付・TIMESTAMP の書式、小数点と桁区切り、通貨。既定のままならそう確かめたこと | `nls: {reason: …, dateLanguage: …, territory: …, dateFormat: …, …}`（project に 1 つ。言語は AMERICAN / ENGLISH / JAPANESE、地域は AMERICA / JAPAN） | 運用 |
 | 診断 `CONDITIONAL_COMPILATION`（ルールではない、INFO） | `$IF` を移行元の PLSQL_CCFLAGS と版を仮定して解いた。書いていないフラグは NULL | 移行元の `PLSQL_CCFLAGS` の値と Oracle の版 | `conditionalCompilation: {flags: {…}, dbVersion: "19.0"}` | 運用 |
 
 ## limits.yaml では外れないもの（直し方か、受け入れるかを聞く）
@@ -46,7 +47,8 @@
 | SEM-013 | `SYS_CONTEXT` | 要る値（ユーザ、クライアント情報など）を呼び出し側が渡す形にしてよいか | 呼び出し |
 | SEM-014 | `DBMS_RANDOM`、`SYS_GUID` | 乱数・一意値の出所（Oracle と同じ値にはならない）を業務が受け入れるか | 業務 |
 | SEM-007 | 時計を 2 回以上読む | 1 回読んで使い回す形に直してよいか | 業務 |
-| SEM-001 / 003 / 009 / 012、SEM-008 | 移行先 DB が評価する ROUND・空文字・CAST、言語で変わる書式 | 式を SQL の外へ出すか、書式を明示するか | 業務 |
+| SEM-001 / 003 / 009、SEM-008 / 012（移行先 DB が評価する SQL に残ったもの） | 移行先 DB が評価する ROUND・空文字・CAST、言語で変わる書式。`nls` を決めても、ScalarDB / 実行計画の H2 が書く文字は決めた設定に従わない | 式を SQL の外へ出すか、書式を明示するか | 業務 |
+| SEM-015 | ランタイムが実装しない書式の形（`FM` と `B` を一緒に使う、数字の無い数値書式）、型の分からない値（record の列など）への `FF` / `X` / `TZR` | 書式を書き直すか、値を TIMESTAMP と宣言した変数に入れてから TO_CHAR するか | 呼び出し |
 | AUTHID-001 | `AUTHID CURRENT_USER`（package の仕様に書いたものは本体の routine すべて） | 呼び出した人の権限で動いていたことを、移行先の認証・認可でどう保つか | 運用 |
 | TX-004 / SCAN-001 | 同じトランザクションで書いた表を走査する（呼び先を含む）。ScalarDB は拒む | routine を境界で割るか、読み取りをキーにするか | 業務 + 呼び出し |
 | LOWER-002 | 組み直せない `GOTO` | 制御構造を元の PL/SQL で組み直すか | 呼び出し |

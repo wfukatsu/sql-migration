@@ -260,7 +260,7 @@ _ORACLE_PACKAGES = ("DBMS_", "UTL_", "SYS", "OWA", "HTP", "APEX_", "CTX_")
 def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: str = "corpus",
             scalardb_schema: str | Path | None = None,
             row_locks: "RowLocks | None" = None, boundaries=None, limits=None, db_links=None,
-            package_state=None, constraints=None, dynamic_tables=None) -> Analysis:
+            package_state=None, constraints=None, dynamic_tables=None, nls=None) -> Analysis:
     """Parse, resolve and lower every source file under `root`. Nothing raises; failures become diagnostics.
 
     With `scalardb_schema`, every SQL statement is also checked against the target (P2-4) and the answer lands on
@@ -269,22 +269,25 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
     `dynamic_tables` (limits.yaml `dynamicTables`) are the table names a dynamic SQL statement may be given; the
     statement is then expanded into one per name, as `plsql.generate` does (#133). Without it the allowlist already
     set (`dynamic.set_allowed_tables`, which `plsql.generate` calls) is used as it is.
+
+    `nls` (limits.yaml `nls`, #157) is the source sessions' NLS settings: the conversions the runtime makes under them
+    are marked decided, and SEM-008 / SEM-012 stop asking about them.
     """
     if dynamic_tables is None:
         return _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundaries, limits, db_links,
-                        package_state, constraints)
+                        package_state, constraints, nls)
     from .dynamic import _ALLOWED
 
     token = _ALLOWED.set(dict(dynamic_tables.allowed))
     try:
         return _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundaries, limits, db_links,
-                        package_state, constraints)
+                        package_state, constraints, nls)
     finally:
         _ALLOWED.reset(token)
 
 
 def _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundaries, limits, db_links,
-             package_state, constraints) -> Analysis:
+             package_state, constraints, nls=None) -> Analysis:
     root = Path(root)
     schema = OracleSchema.from_ddl(schema_ddl) if schema_ddl else None
     program = M.Program(id=program_id, kind="Program",
@@ -398,7 +401,7 @@ def _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundarie
     _record_row_limits(program, limits, boundaries)
 
     from .nls import annotate as annotate_nls
-    annotate_nls(program)   # 書式なしで日付を文字にする所（#94）。スキーマが無くても言える
+    annotate_nls(program)   # 書式なしで日付を文字にする所（#94）、ランタイムが断る書式（#157）。スキーマが無くても言える
 
     if scalardb_schema is not None:
         from .capability import annotate, check
@@ -408,6 +411,10 @@ def _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundarie
         analysis.capability = check(program, registry, analysis.symbol_table(), schema=schema,
                                     row_locks=row_locks)
         annotate(program, analysis.capability)
+    # #157: the conversions the runtime makes under the NLS the project decided. After the capability check, which
+    # says what the target evaluates instead
+    from .nls import mark_decided
+    mark_decided(program, nls)
     return analysis
 
 

@@ -753,6 +753,23 @@ class _Parser:
             self.take()   # )
             self.result.imports.add(HELPER_IMPORT)
             return value
+        if (plsql_name.upper() == "TO_CHAR" and self.position + 3 < len(self.tokens)
+                and self.tokens[self.position + 1][1] == "(" and self.tokens[self.position + 3][1] == ","
+                and self.scope.get(f"{self.tokens[self.position + 2][1].lower()}#datetime")):
+            # TO_CHAR(d, fmt) of a local declared DATE or TIMESTAMP: FF, X and TZR are ORA-01821 on a DATE and are
+            # written on a TIMESTAMP, and both are a LocalDateTime in Java (#157)
+            kind = self.scope[f"{self.tokens[self.position + 2][1].lower()}#datetime"]
+            self.take()
+            self.take()   # (
+            value = self.parse_or()
+            self.take()   # ,
+            model = self.parse_or()
+            if self.peek() is not None and self.peek()[1] == ")":
+                self.take()
+                self.result.imports.add(HELPER_IMPORT)
+                return f"{HELPER}.text{kind}({value}, {model})"
+            self.result.unknown.append("TO_CHAR with more than two arguments")
+            return "null"
         head, _, tail = plsql_name.partition(".")
         collection = self.scope.get(f"{head.lower()}#collection")
         constructor = self.scope.get(f"{plsql_name.lower()}#constructor")

@@ -6,6 +6,7 @@
 * **行ロックを落として楽観制御へ移すと決めた routine**（#9 / 2026-09-18 の決定）
 * **トランザクション境界を 1 反復 = 1 トランザクションに割ると決めた routine**（#3 / #24 / #14）
 * **動的 SQL が受け付けてよい表名**（2026-09-19 の決定）
+* **移行元のセッションの NLS**（#157。`nls:`、project に 1 つ。`NlsSettings`）
 
 どちらも「決めた人がいるときだけ、決めたと書ける」という同じ形である。書いていない routine に
 既定の答えを当てると、**誰も決めていないことが決まったように見える**。
@@ -390,6 +391,121 @@ class DbLinks:
         return self.reasons.get(link.lower())
 
 
+@dataclass
+class NlsSettings:
+    """The NLS settings of the source database's sessions (#157): `nls:` in limits.yaml, one for the project.
+
+        nls:
+          reason: ログオン trigger とクライアントの NLS_LANG を確認した（AMERICAN_AMERICA.AL32UTF8）
+          dateLanguage: AMERICAN          # MON / MONTH / DAY / DY / AM / AD の言語。AMERICAN / ENGLISH / JAPANESE
+          territory: AMERICA              # D（週の始まり）、DS / DL / TS、下の既定。AMERICA / JAPAN
+          dateFormat: DD-MON-RR           # 書かなければ地域の既定
+          timestampFormat: DD-MON-RR HH.MI.SSXFF AM
+          timestampTzFormat: DD-MON-RR HH.MI.SSXFF AM TZR
+          numericCharacters: ".,"         # D と G
+          currency: "$"                   # L
+          isoCurrency: AMERICA            # C（地域の名前で書く。AMERICA は USD）
+          dualCurrency: "$"               # U
+
+    Only `reason` is required: what is left out is what ALTER SESSION SET NLS_TERRITORY sets, as in Oracle. With the
+    section the generated code writes and reads text under these settings (`Plsql.useNls`), and SEM-008 / SEM-012 no
+    longer hold a routine at REVIEW for what they decide. Without it the runtime writes Oracle's defaults (AMERICAN /
+    AMERICA) and the rules keep asking -- a match on the comparison database says nothing about a source whose
+    sessions set them otherwise.
+    """
+
+    reason: str | None = None
+    date_language: str = "AMERICAN"
+    territory: str = "AMERICA"
+    date_format: str | None = None
+    timestamp_format: str | None = None
+    timestamp_tz_format: str | None = None
+    numeric_characters: str | None = None
+    currency: str | None = None
+    iso_currency: str | None = None
+    dual_currency: str | None = None
+    source: str | None = None
+
+    KEYS = {"reason": "reason", "dateLanguage": "date_language", "territory": "territory",
+            "dateFormat": "date_format", "timestampFormat": "timestamp_format",
+            "timestampTzFormat": "timestamp_tz_format", "numericCharacters": "numeric_characters",
+            "currency": "currency", "isoCurrency": "iso_currency", "dualCurrency": "dual_currency"}
+    # what the runtime knows (`Nls`): the names and formats measured on Oracle 26ai
+    LANGUAGES = ("AMERICAN", "ENGLISH", "JAPANESE")
+    TERRITORIES = ("AMERICA", "JAPAN")
+    ISO_CURRENCIES = ("AMERICA", "JAPAN", "GERMANY", "FRANCE", "ITALY", "SPAIN", "UNITED KINGDOM", "CHINA", "KOREA",
+                      "CANADA")
+
+    @classmethod
+    def load(cls, path: str | Path | None) -> "NlsSettings":
+        if path is None:
+            return cls()
+        file = Path(path)
+        if not file.exists():
+            raise FileNotFoundError(f"{file} が無い")
+        data = yaml.safe_load(file.read_text(encoding="utf-8")) or {}
+        section = data.get("nls")
+        if not section:
+            return cls()
+        values = {cls.KEYS[k]: (str(v).strip() if k in ("reason", "dateLanguage", "territory", "isoCurrency")
+                                else str(v))
+                  for k, v in section.items() if k in cls.KEYS and v is not None}
+        for name in ("date_language", "territory", "iso_currency"):
+            if name in values:
+                values[name] = values[name].upper()
+        return cls(**values, source=str(file))
+
+    @property
+    def decided(self) -> bool:
+        return bool(self.reason)
+
+    def problems(self) -> list[str]:
+        """What the runtime would refuse, or read otherwise than the person meant. Empty when nothing is wrong."""
+        from .formats import check_date
+
+        out = []
+        if not self.reason:
+            out.append("nls.reason が無い。移行元のセッションの設定をどう確かめたかを書く")
+        if self.date_language not in self.LANGUAGES:
+            out.append(f"nls.dateLanguage {self.date_language!r} はランタイムが知らない（書けるのは {', '.join(self.LANGUAGES)}）")
+        if self.territory not in self.TERRITORIES:
+            out.append(f"nls.territory {self.territory!r} はランタイムが知らない（書けるのは {', '.join(self.TERRITORIES)}）")
+        if self.iso_currency is not None and self.iso_currency not in self.ISO_CURRENCIES:
+            out.append(f"nls.isoCurrency {self.iso_currency!r} は地域の名前で書く（{', '.join(self.ISO_CURRENCIES)}）")
+        characters = self.numeric_characters
+        if characters is not None and (len(characters) != 2 or characters[0] == characters[1]
+                                       or any(c.isdigit() or c in "+-<>" for c in characters)):
+            out.append(f"nls.numericCharacters {characters!r} は小数点と桁区切りの 2 文字（違う文字で、数字でも符号でもない）")
+        for key, value in (("currency", self.currency), ("dualCurrency", self.dual_currency)):
+            if value is not None and not 1 <= len(value) <= 10:
+                out.append(f"nls.{key} は 1〜10 文字")
+        for key, value in (("dateFormat", self.date_format), ("timestampFormat", self.timestamp_format),
+                           ("timestampTzFormat", self.timestamp_tz_format)):
+            if value is None:
+                continue
+            check = check_date(value)
+            if check.state != "ok":
+                out.append(f"nls.{key} {value!r} は日付の書式として読めない（{check.detail}）")
+            elif key == "dateFormat" and check.elements & {"FF", "X", "TZH", "TZM", "TZR", "TZD"}:
+                out.append(f"nls.dateFormat {value!r} に DATE が持たない要素がある（FF / X / TZ*）")
+        return out
+
+    def java(self) -> str:
+        """The `Nls` the generated code hands to `Plsql.useNls`."""
+        out = f"Nls.of({_java_string(self.date_language)}, {_java_string(self.territory)})"
+        for method, value in (("withDateFormat", self.date_format), ("withTimestampFormat", self.timestamp_format),
+                              ("withTimestampTzFormat", self.timestamp_tz_format),
+                              ("withNumericCharacters", self.numeric_characters), ("withCurrency", self.currency),
+                              ("withIsoCurrency", self.iso_currency), ("withDualCurrency", self.dual_currency)):
+            if value is not None:
+                out += f".{method}({_java_string(value)})"
+        return out
+
+
+def _java_string(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 # --- checking the file (#145) -------------------------------------------------------------------------------
 #
 # Each loader above reads its own section and ignores the rest, so a misspelt section (`rowlocks:`), a routine id
@@ -412,6 +528,7 @@ SECTIONS: dict[str, set[str] | None] = {
     "constraints": {"enforce"},
     "dbLinks": None,
     "conditionalCompilation": {"flags", "dbVersion"},
+    "nls": set(NlsSettings.KEYS),
 }
 # the places whose value is the reason for the decision: an empty one is a decision nobody explained
 REASONED = [("scanRows", "notLimited"), ("rowLocks", "optimistic"), ("transactions", "perIteration"),
@@ -460,6 +577,8 @@ def validate(path: str | Path) -> None:
         extra = sorted(str(k) for k in value if k not in keys)
         if extra:
             raise LimitsError(f"{file}: {section} に知らないキー {extra}。書けるのは {sorted(keys)}")
+        if section == "nls":
+            continue   # values, not mappings: checked below
         for key in keys - {"default", "dbVersion"}:
             if value.get(key) is not None and not isinstance(value[key], dict):
                 raise LimitsError(f"{file}: {section}.{key} は対応（id: 値）で書く")
@@ -476,6 +595,10 @@ def validate(path: str | Path) -> None:
         DynamicDdl.load(file)
     except (ValueError, TypeError) as error:
         raise LimitsError(f"{file}: {error}") from None
+    if data.get("nls") is not None:
+        problems = NlsSettings.load(file).problems()
+        if problems:
+            raise LimitsError(f"{file}: " + "。".join(problems))
     cc = data.get("conditionalCompilation") or {}
     major, _, minor = str(cc.get("dbVersion", "19.0")).partition(".")
     if not major.isdigit() or (minor and not minor.isdigit()):
