@@ -255,7 +255,7 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 |---|---|---|
 | 文字列 | `SUBSTR`、`UPPER`、`LENGTH`、連結 `\|\|` | Oracle の空文字列 `''` は NULL（変換できた文にも WARN `SEMANTICS`）。MySQL の文字列比較は大文字小文字を区別しない（INFO `SEMANTICS`） |
 | 数値 | `ROUND(salary)`、`salary / 2` | 丸めは 0 から遠いほうへ（-2.5 は -3）。0 で割ったときは方言で違う（Oracle は失敗、MySQL は NULL）。アプリで書くときの注意として `APP_SEMANTICS` に出る |
-| 日付 | `ADD_MONTHS(hired, 1)`、`TRUNC(hired, 'MM')`、日付どうしの引き算 | `ADD_MONTHS` は月末をそろえる（`APP_SEMANTICS`）。実行計画では H2 向けに `TRUNC(d, 'MM')` を `DATE_TRUNC('MONTH', d)` に書き換える。週（Oracle の `IW` / `WW` / `W`、PostgreSQL の `date_trunc('week', d)`）は H2 の `DATE_TRUNC('WEEK')` が日曜始まりなので、始まりの曜日を合わせた `DATEADD` の式にする。日付どうしの引き算は Oracle なら `DAYS_BETWEEN`（小数の日数）、PostgreSQL の DATE どうしなら `DATEDIFF('DAY', b, a)`、MySQL（YYYYMMDD の数の引き算）は ERROR `RESIDUAL_H2` |
+| 日付 | `ADD_MONTHS(hired, 1)`、`TRUNC(hired, 'MM')`、日付どうしの引き算 | `ADD_MONTHS` は月末をそろえる（`APP_SEMANTICS`）。実行計画では H2 向けに `TRUNC(d, 'MM')` を `DATE_TRUNC('MONTH', d)` に書き換える。週（Oracle の `IW` / `WW` / `W`、PostgreSQL の `date_trunc('week', d)`）は H2 の `DATE_TRUNC('WEEK')` が日曜始まりなので、始まりの曜日を合わせた `DATEADD` の式にする。`TRUNC(d, 'DAY')`（`DY`、`D` も）は週の始まりを NLS_TERRITORY が決めるので計画にせず ERROR `RESIDUAL_H2`（`IW` を使うか、アプリで計算する）。H2 が書き換えられない単位も同じ。小数秒の無い `TIMESTAMP '...'` は、H2 が `FF6` の書式で読めないので、小数秒の無い書式で書く（#153）。日付どうしの引き算は Oracle なら `DAYS_BETWEEN`（小数の日数）、PostgreSQL の DATE どうしなら `DATEDIFF('DAY', b, a)`、MySQL（YYYYMMDD の数の引き算）は ERROR `RESIDUAL_H2` |
 | 書式・変換 | `TO_CHAR(hired, 'YYYY-MM')`、MySQL の `DATE_FORMAT`、`CAST(x AS ...)`、`name::text` | 日付の書式はセッションのタイムゾーンと言語に従う（`APP_SEMANTICS`）。実行計画では MySQL の `DATE_FORMAT` を H2 の `FORMATDATETIME` に書き換える（`'%Y年%m月%d日'` のような文字も書ける。H2 に無い `%U` などは ERROR `RESIDUAL_H2`）。値の位置の `CAST('5' AS NUMBER)` は ERROR `UNSUPPORTED` |
 | 割り算 | `COUNT(*) / 4`、`7 / 2`、`COUNT(*) * 100 / 3` | Oracle・MySQL の実行計画では、H2 が整数どうしを整数で割らないよう、列から来ない整数（整数リテラル、`COUNT`、`LENGTH` など）の左辺を `CAST(... AS NUMBER(19))` で包む。PostgreSQL は整数の割り算のまま |
 | NULL の処理 | `NVL`、`COALESCE`、MySQL の `IFNULL` | 集約は NULL を除き、全部 NULL なら NULL（`APP_SEMANTICS`） |
@@ -379,7 +379,7 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 | Oracle | 外部結合 `(+)`、`ROWNUM`、`CONNECT BY`、`KEEP`、`MINUS` | 上の各表 |
 | Oracle | 整数型、`FLOAT`、`DATE`、精度なし `NUMBER`、`LONG`、`LONG RAW`、`XMLTYPE` | すべて WARN `TYPE`（上の「データ型」） |
 | Oracle | `/` だけの行 | 文の切れ目として扱う |
-| Oracle | 数字の bind（`:1`、`:2`。JDBC・OCI、V$SQL の形） | 変換後の SQL では、出てくる順に `?` にする（ScalarDB SQL に数字の bind は無い）。番号の順と違う・同じ番号が繰り返すときは WARN `BIND_ORDER` で渡す順を示す。計画では `:1` のまま（名前として渡す） |
+| Oracle | 数字の bind（`:1`、`:2`。JDBC・OCI、V$SQL の形） | 変換後の SQL では、出てくる順に `?` にする（ScalarDB SQL に数字の bind は無い）。番号の順と違う・同じ番号が繰り返すときは WARN `BIND_ORDER` で渡す順を示す。計画でも文の中の位置で `:1`、`:2`… と名前を付け直し、番号の順と違うときは WARN `BIND_ORDER` で渡す順を示す（#153） |
 | Oracle | q 引用（`q'[it's]'`、`nq'{...}'`） | 通常のリテラル（`'it''s'`）に直してから読む |
 | Oracle | DB link（`emp@remote`） | ERROR `DBLINK`（上の「INSERT / UPDATE / DELETE / MERGE」） |
 | Oracle | PL/SQL のブロック（`CREATE PROCEDURE` など、`BEGIN` / `DECLARE` の無名ブロック） | ERROR `PLSQL_BLOCK`。始まる所から `/` までを 1 文にする（前に `;` で終わる文があっても割らない）。PL/SQL の移行ツールで扱う |
@@ -614,7 +614,7 @@ PL/SQL の中の SQL 文は、Repository のメソッドになります。SQL �
 | 結合 | そのまま実行できれば Repository の 1 文 | そのまま実行できない（警告・実行計画・拒否・スキーマ無し）と SEM-005（REVIEW） | |
 | `WHERE p IS NULL OR col = p` | p が NULL のときの文と、等号で絞る文に分け、実行時に選ぶ | なし | ScalarDB SQL は bind の NULL 判定を WHERE に書けないためです |
 | DDL の `DEFAULT` 列、`IDENTITY` 列を省いた INSERT | 省いた列を INSERT に足す（IDENTITY は採番） | なし | ScalarDB は主キーの無い INSERT を断るためです |
-| CHECK 制約・外部キー・UNIQUE のある表への書き込み、子の表の外部キーが指す親の DELETE | `constraints.enforce` に書いた表だけ、書く前に検査（NOT NULL は ORA-01400 / ORA-01407、CHECK は ORA-02290、外部キーは ORA-02291 の例外。この順） | 書いていない表は診断 `CONSTRAINT_UNDECIDED` で CONS-001（REVIEW）。決めた表でも検査していないものは `CONSTRAINT_NOT_GUARDED` で CONS-002（REVIEW） | 外部キーは親の行をキーで読みます。UPDATE は書く列に掛かる制約だけを見ます。`CREATE TABLE` の中の制約、`ALTER TABLE ... ADD [CONSTRAINT 名前] CHECK / FOREIGN KEY / UNIQUE`、`CREATE UNIQUE INDEX` を読みます。名前の無い制約は `<表>_check<n>` / `<表>_fk<n>` / `<表>_unique<n>` と呼びます。NOT NULL だけの表は未決に数えません（決めた表でだけ検査します） |
+| CHECK 制約・外部キー・UNIQUE のある表への書き込み、子の表の外部キーが指す親の DELETE | `constraints.enforce` に書いた表だけ、書く前に検査（NOT NULL は ORA-01400 / ORA-01407、CHECK は ORA-02290、外部キーは ORA-02291 の例外。この順）。子のある親の DELETE は、外部キーが指すキーを等号で名指す DELETE なら、消す前に子の行を数えて ORA-02292（#154） | 書いていない表は診断 `CONSTRAINT_UNDECIDED` で CONS-001（REVIEW）。決めた表でも検査していないものは `CONSTRAINT_NOT_GUARDED` で CONS-002（REVIEW） | 外部キーは親の行をキーで読みます。UPDATE は書く列に掛かる制約だけを見ます。`CREATE TABLE` の中の制約、`ALTER TABLE ... ADD [CONSTRAINT 名前] CHECK / FOREIGN KEY / UNIQUE`、`CREATE UNIQUE INDEX` を読みます。名前の無い制約は `<表>_check<n>` / `<表>_fk<n>` / `<表>_unique<n>` と呼びます。NOT NULL だけの表は未決に数えません（決めた表でだけ検査します） |
 | PL/SQL の変数と表の列が同じ名前 | そのまま生成 | SQL-003（REVIEW） | Oracle は列として読みます |
 | データ辞書（`USER_*`、`ALL_*`、`DBA_*`、`V$*`）を読む | SQL をそのまま生成 | DICT-001（REDESIGN） | 移行先には無い表です |
 | 同じトランザクションで書いた表を走査する | 生成はするが、ScalarDB が実行時に拒否 | TX-004 / SCAN-001（REDESIGN） | `ScanAfterWriteException` になります。数えるのは走査（キーで届かない読み）だけで、キーで読むのは数えません。`COMMIT` と `ROLLBACK`（`ROLLBACK TO` を除く）のあとの読みは新しいトランザクションなので数えません。どの道でも通る `COMMIT` だけが効き、IF の片方の枝や、回らないかもしれないループの中の `COMMIT` は効きません。ScalarDB のスキーマ（`--scalardb-schema`）が無いときは読み方が分からないので、書いた表の読みをすべて TX-004 にします |
@@ -717,7 +717,8 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | 畳んだ文が trigger・制約のある表へ書く | 文はそのまま生成し、trigger の呼び出しも制約の検査も入れない | trigger は TRG-002（REDESIGN）、制約は CONS-001 / CONS-002（REVIEW） | 静的な文に書き直せば、trigger の呼び出しと検査が入ります（#148） |
 | 本体で定数を代入・連結した変数（`v_sql := '...'; v_sql := v_sql \|\| '...'`） | とりうる文（8 通りまで）を全部生成し、実行時に条件で選ぶ | 同上 | 宣言部の初期値で組んだ文字列はたどりません（生成で確認）。条件の変数を途中で書き換えると断ります |
 | 表名などの識別子を連結（`'... FROM ' \|\| p_tab`） | 決定が無ければ断る。`dynamicTables` に表名を書けば表ごとの文を生成し、`UPPER(p_tab)` で選ぶ | DYN-001（REDESIGN） | 書いていない表名は `IllegalArgumentException`（生成で確認）。`plsql.cli --limits` の判定も表ごとの文を見るので、展開できた文に DYN-002 は付きません |
-| 動的な DDL（`'CREATE TABLE ...'`、`'TRUNCATE TABLE ...'` など） | 断る。`ddl.omit` に書けば省く | DYN-004（REDESIGN）。`ddl.omit` に書いた routine は当たりません | スキーマは Schema Loader が持ちます。Oracle の DDL は前後で COMMIT します。TRUNCATE も DDL です（生成で確認） |
+| 動的な DDL（`'CREATE TABLE ...'` など） | 断る。`ddl.omit` に書けば省く | DYN-004（REDESIGN）。`ddl.omit` に書いた routine は当たりません | スキーマは Schema Loader が持ちます。Oracle の DDL は前後で COMMIT します |
+| 動的な `'TRUNCATE TABLE t'`（STORAGE の指定だけは付いてよい） | 全行の DELETE（`DELETE FROM t`）にする | 診断 `TRUNCATE_AS_DELETE`（INFO）。外部キーが指す表なら CONS-002 | Oracle の TRUNCATE は前後で COMMIT して取り消せませんが、移行先の DELETE はトランザクションの一部で、失敗すれば一緒に戻ります。DELETE の trigger は Oracle と同じく掛けません。Oracle は外部キーが指す表の TRUNCATE を ORA-02266 で断ります（#154） |
 | 動的な PL/SQL ブロック（`'BEGIN ... END;'` の定数） | ブロックを展開して生成 | 中身の判定しだい | 生成で確認 |
 | `DBMS_SQL` で `PARSE` の文字列が定数の問合せ | 静的な cursor FOR ループ。`COLUMN_VALUE` は列番号で選ぶ | ループなので CUR-002 | 生成で確認 |
 | それ以外の `DBMS_SQL`（DML、実行時に決まる文字列、`BIND_VARIABLE` など） | 変換しない | DYN-003（REDESIGN） | 生成で確認 |
@@ -808,7 +809,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `dynamicTables` | 識別子を連結する動的 SQL を表ごとの文にする | DYN-001 は REDESIGN のまま。表ごとの文を判定するので、展開できた文の DYN-002 は外れる（`plsql.cli --limits` も同じ） | |
 | `ddl.omit` | 動的な DDL を省く | | |
 | `packageState.carried` | package 変数を引数と結果で運ぶ | STATE-001 は REDESIGN のまま | |
-| `constraints.enforce` | NOT NULL / CHECK / 外部キーの検査を書く前に入れる | CONS-001 が外れる。UNIQUE と子のある親の DELETE は検査せず CONS-002 | |
+| `constraints.enforce` | NOT NULL / CHECK / 外部キーの検査を書く前に入れる。親をキーで消す DELETE には子を数える検査を入れる | CONS-001 が外れる。UNIQUE と、キーで名指さない親の DELETE、`ON DELETE CASCADE` / `SET NULL` は検査せず CONS-002 | |
 | `dbLinks` | `表@link` を namespace に書き換える | LINK-001 は REDESIGN のまま | |
 | `conditionalCompilation` | 条件付きコンパイルのフラグとバージョン | | |
 
@@ -828,7 +829,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | AUTHID-001 | REDESIGN | routine の `AUTHID CURRENT_USER`（package の仕様に書いたものは本体の routine すべて） | 認証・認可を別に設計する |
 | DYN-001 | REDESIGN | 識別子を実行時に組む動的 SQL | `dynamicTables` |
 | DYN-003 | REDESIGN | `DBMS_SQL`（定数の問合せに書き換えられなかったもの） | 実行ログから文を洗い出す |
-| DYN-004 | REDESIGN | 畳んだ動的 SQL が DDL（`CREATE`、`DROP`、`ALTER`、`TRUNCATE` など） | `ddl.omit`（省いてよい DDL のとき） |
+| DYN-004 | REDESIGN | 畳んだ動的 SQL が DDL（`CREATE`、`DROP`、`ALTER` など。表だけの `TRUNCATE TABLE` は全行の DELETE にするので当たらない） | `ddl.omit`（省いてよい DDL のとき） |
 | LOWER-002 | REDESIGN | ブロックとループに組み直せなかった `GOTO`（範囲が交差して入れ子にできない、Oracle が拒む飛び先） | 制御構造を組み直す |
 | LOCK-001 | REDESIGN | 行ロックのある SQL 文 | `rowLocks.optimistic` |
 | LOCK-002 | REDESIGN | 行ロックする cursor の宣言 | 同上 |
@@ -866,7 +867,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | EXC-002 | REVIEW | `WHEN OTHERS THEN NULL` | 無視する例外を名前で書く |
 | EXC-003 | REVIEW | `WHEN OTHERS THEN <NULL 以外>` が書き込みを囲む（投げ直す handler を除く） | 捕まえたい DB の誤りを名前で書く、書く前に検査する |
 | CONS-001 | REVIEW | CHECK / 外部キー / UNIQUE のある表への書き込み、子のある親の DELETE で、`constraints.enforce` に無い表 | `constraints.enforce` |
-| CONS-002 | REVIEW | 決めた表の制約のうち書く前に検査しないもの（UNIQUE、子のある親の DELETE、書く値が文から読めない、動的 SQL の文） | 設計する（先に読む、呼び出し側で保証する） |
+| CONS-002 | REVIEW | 決めた表の制約のうち書く前に検査しないもの（UNIQUE、キーで名指さない親の DELETE、`ON DELETE CASCADE` / `SET NULL`、書く値が文から読めない、動的 SQL の文、外部キーの指す表の TRUNCATE） | 設計する（先に読む、呼び出し側で保証する） |
 | SQL-001 | REVIEW | ScalarDB SQL で実行できない文 | RMW なら `rowLocks.optimistic` |
 | SQL-002 | REVIEW | 実行計画に分解される文 | |
 | SQL-003 | REVIEW | 変数と列が同じ名前 | 名前を変える、列を修飾する |
@@ -885,7 +886,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `SQL%BULK_EXCEPTIONS` | 同上 | 判定は下がらない | |
 | `DBMS_SQL`（定数の問合せ以外） | 同上 | DYN-003 | |
 | とりうる文を数えられない `EXECUTE IMMEDIATE` | 同上 | DYN-002 / DYN-001 | 宣言部の初期値で組んだ文字列も含みます |
-| UNIQUE（主キー以外）、子のある親の DELETE（ORA-02292） | 検査しない（`constraints.enforce` に書いても） | CONS-001 / CONS-002 | 守るには書く前に読む必要があります |
+| UNIQUE（主キー以外）、キーで名指さない親の DELETE（ORA-02292）、`ON DELETE CASCADE` / `SET NULL` | 検査しない（`constraints.enforce` に書いても） | CONS-001 / CONS-002 | 守るには書く前に読む必要があります。子の行を消す・NULL にする処理は生成しません |
 | 畳んだ動的 SQL の書き込みへの trigger の呼び出しと制約の検査 | 入れない | TRG-002 / CONS-001 / CONS-002 | 静的な文に書き直せば入ります |
 | 対応表に無い組み込み関数（`SOUNDEX`、`NUMTODSINTERVAL` など）、PL/SQL では使えない `DECODE` / `DUMP` | `UnsupportedOperationException` | 関数による | 組み込み関数の節を参照 |
 | INTERVAL 型と、日時の差からの `EXTRACT` | `UnsupportedOperationException` | 判定は下がらない | 生成コードでは日時の差が日数（数値）です |

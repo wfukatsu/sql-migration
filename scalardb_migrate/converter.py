@@ -230,19 +230,24 @@ def name_numbered_binds(src: str, dialect: str) -> str:
     for colon, number in zip(tokens, tokens[1:]):
         if colon.token_type == TokenType.COLON and number.token_type == TokenType.NUMBER \
                 and number.start == colon.end + 1 and number.text.isdigit():
-            out.append(src[last:number.start] + NUMBERED_BIND)
+            out.append(src[last:number.start] + f"{NUMBERED_BIND}{len(out) + 1}_")
             last = number.start
     return "".join(out) + src[last:] if out else src
 
 
-def restore_numbered_binds(value):
-    """``value`` (text, or lists and dicts of it) with `:__sdbm_bind1` written `:1` again."""
+# `:__sdbm_bind<position>_<number>`: the bind's place in the statement and the number the source gave it
+NAMED_BIND = re.compile(NUMBERED_BIND + r"(\d+)_(\d+)")
+
+
+def restore_numbered_binds(value, by_position: bool = False):
+    """``value`` (text, or lists and dicts of it) with `:__sdbm_bind2_1` written `:1` again -- or, ``by_position``,
+    `:2`: the bind's place in the statement."""
     if isinstance(value, str):
-        return value.replace(NUMBERED_BIND, "")
+        return NAMED_BIND.sub(lambda m: m.group(1 if by_position else 2), value)
     if isinstance(value, list):
-        return [restore_numbered_binds(v) for v in value]
+        return [restore_numbered_binds(v, by_position) for v in value]
     if isinstance(value, dict):
-        return {k: restore_numbered_binds(v) for k, v in value.items()}
+        return {k: restore_numbered_binds(v, by_position and k != "source_sql") for k, v in value.items()}
     return value
 
 
@@ -481,7 +486,10 @@ class StatementConverter:
                 res.issues.append(order_issue)
                 if res.status == "OK":
                     res.status = "WARN"
-            res.plan = restore_numbered_binds(res.plan)
+            if res.plan is not None:
+                res.plan, plan_issue = self._plan_binds_by_position(res.plan)
+                if plan_issue is not None:
+                    res.issues.append(plan_issue)
             res.issues = [Issue(i.severity, i.code, restore_numbered_binds(i.message)) for i in res.issues]
         return res
 
@@ -492,14 +500,13 @@ class StatementConverter:
         3.19.1, 2026-09-29), so restoring the number made an OK statement that could not run. Oracle itself binds
         `:n` by position when the values are given as a list -- the order they appear, not their numbers -- so `?`
         in that order keeps what an application passing a list did. When the numbers are not 1, 2, ... in order,
-        or one repeats, an application that passed them by name has to pass them in the new order: say which.
-        The plan keeps `:1` (the runner binds it by name)."""
-        pattern = re.compile(":" + NUMBERED_BIND + r"(\d+)")
+        or one repeats, an application that passed them by name has to pass them in the new order: say which."""
+        pattern = re.compile(":" + NAMED_BIND.pattern)
         order: list[int] = []
 
         def positional(text: str) -> str:
             def mark(match):
-                order.append(int(match.group(1)))
+                order.append(int(match.group(2)))
                 return "?"
             return pattern.sub(mark, text)
 
@@ -509,6 +516,23 @@ class StatementConverter:
                               "(ScalarDB SQL has no ':1'): bind, in order, the values of "
                               + ", ".join(f":{n}" for n in order))
         return out, None
+
+    def _plan_binds_by_position(self, plan: dict) -> tuple[dict, Issue | None]:
+        """The plan with each numbered bind named by its place in the source statement.
+
+        The runner binds a plan's `:1` by name (`params("1", v)`), and kept the source's numbers: `:2 ... :1 ... :2`
+        took two values where Oracle, given a list, binds three -- by position, as the converted SQL's `?` do (#153).
+        Named by position, a plan takes the values the application passed to Oracle in the same order; when the
+        numbers were not :1, :2, ... in order, an application that passed them by name has to pass them in that
+        order: say which."""
+        order = [int(n) for _, n in NAMED_BIND.findall(self._parsed)]
+        issue = None
+        if order != list(range(1, len(order) + 1)):
+            issue = Issue("WARN", "BIND_ORDER", "the plan binds Oracle's numbered binds by their place in the "
+                          "statement, as Oracle binds a list of values: pass, in order, the values of "
+                          + ", ".join(f":{n}" for n in order)
+                          + " (the plan names them " + ", ".join(f":{k}" for k in range(1, len(order) + 1)) + ")")
+        return restore_numbered_binds(plan, by_position=True), issue
 
     def _convert(self, sql: str) -> Result:
         self.issues = []

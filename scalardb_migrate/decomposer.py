@@ -827,8 +827,24 @@ class Decomposer:
             elif unit in self._TRUNC_UNITS:
                 dt.replace(exp.Anonymous(this="DATE_TRUNC", expressions=[exp.Literal.string(self._TRUNC_UNITS[unit]), dt.this]))
                 changed = True
+            elif unit in ("DAY", "DY", "D"):
+                # the first day of the week, which NLS_TERRITORY decides (Sunday for AMERICA and JAPAN, Monday for
+                # GERMANY); left as it was, H2 failed with `Invalid parameter count for "TRUNC"` (#153)
+                raise PlanBlocked([("RESIDUAL_H2", f"TRUNC(date, '{unit}') starts the week on the day NLS_TERRITORY "
+                                                   f"names, which the plan cannot know: use 'IW' (Monday), or "
+                                                   f"compute it in the application")])
             else:
-                unresolved.append(f"java: TRUNC(date, '{unit}') has no H2 equivalent")
+                raise PlanBlocked([("RESIDUAL_H2", f"TRUNC(date, '{unit}') has no H2 equivalent; compute it in the "
+                                                   f"application")])
+        # TIMESTAMP '2024-01-01 10:30:00' is parsed as TO_TIMESTAMP(..., 'YYYY-MM-DD HH24:MI:SS.FF6'). Oracle reads a
+        # value without the fraction with that format, H2 2.5.250 does not ("Issue happened when parsing token 'FF'")
+        # -- the residual failed whenever it was rewritten, e.g. for ORDER BY (#153). Such a literal gets the format
+        # without the fraction; it is not a change of its own, the source SQL runs as it is.
+        for ts in node.find_all(exp.StrToTime):
+            value, fmt = ts.this, ts.args.get("format")
+            if isinstance(value, exp.Literal) and value.is_string and "." not in value.this \
+                    and isinstance(fmt, exp.Literal) and fmt.this == "%Y-%m-%d %H:%M:%S.%f":
+                ts.set("format", exp.Literal.string("%Y-%m-%d %H:%M:%S"))
         # NULL ordering differs per engine and H2's compatibility modes do not reproduce it: Oracle and PostgreSQL
         # sort NULLs last for ASC (first for DESC), MySQL and H2 sort them first for ASC. sqlglot keeps the source
         # default in the AST, so it is enough to render the residual SQL with a generator that treats NULLs as small

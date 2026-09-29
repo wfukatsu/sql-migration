@@ -31,6 +31,7 @@ from __future__ import annotations
 import sqlglot
 from sqlglot import exp
 
+from .dynamic import TRUNCATE_AS_DELETE
 from .identity import RETURNING_INTO
 from .ir import model as M
 from .limits import Constraints
@@ -81,8 +82,7 @@ def _guards(statement: M.Statement, routine: M.Routine, decided: Constraints, sc
         return []
     kind = (statement.sql_kind or "").upper()
     if kind == "DELETE":
-        _children(statement, decided, schema)
-        return []
+        return _children(statement, decided, schema, routine, counter)
     if kind not in ("INSERT", "UPDATE"):
         return []
     original = statement.original_sql or ""
@@ -207,30 +207,112 @@ def _guards(statement: M.Statement, routine: M.Routine, decided: Constraints, sc
     return out
 
 
-def _children(statement: M.SqlOperation, decided: Constraints, schema: OracleSchema) -> None:
+def _children(statement: M.SqlOperation, decided: Constraints, schema: OracleSchema,
+              routine: M.Routine | None = None, counter: list[int] | None = None) -> list[M.Statement]:
     """A DELETE of a table other tables' FOREIGN KEYs point at: Oracle refuses it while a child row exists (ORA-02292).
-    Keeping that needs a read of every child table before the delete, which is not written (#148 M1)."""
+
+    For a table the project decided to enforce, the children are counted before the delete when the DELETE names
+    the parent's key the child refers to (`DELETE FROM customers WHERE customer_id = p_id`), and the delete is
+    refused with ORA-02292 as Oracle does (#154):
+
+        SELECT COUNT(*) INTO v_fk_1 FROM orders WHERE customer_id = p_id;
+        IF v_fk_1 > 0 THEN RAISE_APPLICATION_ERROR(-2292, ...); END IF;
+
+    Any other DELETE (a range, a key the child does not refer to), a dynamic one, and a key with ON DELETE CASCADE /
+    SET NULL -- what Oracle does to the children, not a refusal -- are reported, not guarded (#148 M1)."""
     try:
         tree = sqlglot.parse_one(statement.original_sql or "", dialect="oracle")
     except Exception:
-        return
+        return []
     target = tree.this if isinstance(tree, exp.Delete) else None
     if not isinstance(target, exp.Table):
-        return
+        return []
     table = target.name.lower()
-    children = [(child, key.name) for child, keys in schema.foreign_keys.items() for key in keys
-                if key.parent == table]
+    children = [(child, key) for child, keys in schema.foreign_keys.items() for key in keys if key.parent == table]
     if not children:
-        return
-    named = ", ".join(f"{child}.{name}" for child, name in children)
-    if decided.decided(table) or any(decided.decided(child) for child, _ in children):
-        statement.add("WARN", "CONSTRAINT_NOT_GUARDED",
-                      f"{table} を指す FOREIGN KEY（{named}）: 子のある行の DELETE を断らない。Oracle は ORA-02292 で断る。"
-                      f"守るには消す前に子の表を読む必要がある（#148）")
-    else:
+        return []
+    named = ", ".join(f"{child}.{key.name}" for child, key in children)
+    if not (decided.decided(table) or any(decided.decided(child) for child, _ in children)):
         statement.add("INFO", "CONSTRAINT_UNDECIDED",
                       f"{table} を指す FOREIGN KEY（{named}）が移行先には無い。子のある行の DELETE を Oracle は断る"
                       f"（ORA-02292）。書く側で守るかは決定である（limits.yaml constraints.enforce）")
+        return []
+    stored = set(schema.columns(table) or {})
+    equalities = _key_equalities(tree, routine, stored) if routine is not None and counter is not None else None
+    out: list[M.Statement] = []
+    guarded, unguarded = [], []
+    for child, key in children:
+        parent_columns = key.parent_columns or tuple(schema.primary_key(table))
+        if key.on_delete:
+            unguarded.append(f"{child}.{key.name}（ON DELETE {key.on_delete}: Oracle は子の行を"
+                             f"{'消す' if key.on_delete == 'CASCADE' else 'NULL にする'}が、移行先では何もしない）")
+            continue
+        if equalities is None or not parent_columns or not set(parent_columns) <= set(equalities) \
+                or len(parent_columns) != len(key.columns):
+            unguarded.append(f"{child}.{key.name}（" + ("動的 SQL の文の前には guard を置かない" if routine is None
+                                                    else "消す行をこの文のキーの等号から読めない") + "）")
+            continue
+        counter[0] += 1
+        flag = f"fk{counter[0]}"
+        variable = _free_name(routine)
+        where = " AND ".join(f"{column} = {equalities[parent].sql(dialect='oracle', normalize_functions=False)}"
+                             for column, parent in zip(key.columns, parent_columns))
+        count = M.SqlOperation(id=f"{statement.id}{flag}", kind="SqlOperation", source_range=statement.source_range,
+                               sql_kind="SELECT", cardinality="EXACTLY_ONE",
+                               original_sql=f"SELECT COUNT(*) FROM {child} WHERE {where}", into_targets=[variable])
+        count.add("INFO", "CONSTRAINT_GUARD",
+                  f"FOREIGN KEY {key.name} の子（{child}）を消す前に数える。あれば ORA-02292 を投げる"
+                  f"（limits.yaml constraints.enforce: {decided.why(table) or decided.why(child)}）")
+        routine.declarations.append(M.Declaration(id=f"{routine.id}#decl-{variable}", kind="Declaration",
+                                                  name=variable, source_range=statement.source_range,
+                                                  type=M.TypeRef(oracle="NUMBER", resolved="NUMBER",
+                                                                 origin="column-type")))
+        out.append(count)
+        out.append(_refusal(statement, flag, f"{variable} > 0", -2292,
+                            f"ORA-02292: integrity constraint ({key.name.upper()}) violated - child record found"))
+        guarded.append(f"{child}.{key.name}")
+    if guarded:
+        statement.add("INFO", "CONSTRAINT_GUARD",
+                      f"{table} を指す FOREIGN KEY（{', '.join(guarded)}）: 消す前に子の行を数え、あれば Oracle と同じ"
+                      f" ORA-02292 で断る（#154）")
+    if unguarded:
+        statement.add("WARN", "CONSTRAINT_NOT_GUARDED",
+                      f"{table} を指す FOREIGN KEY（{', '.join(unguarded)}）: 子のある行の DELETE を断らない。"
+                      f"Oracle は ORA-02292 で断る（#148）")
+    return out
+
+
+def _key_equalities(tree: exp.Delete, routine: M.Routine, stored: set[str]) -> dict[str, exp.Expression] | None:
+    """`WHERE a = p_a AND b = 3`: each column's value, when the WHERE is nothing but such equalities on PL/SQL values
+    and literals. None otherwise -- which rows go is then not something a count by key can say."""
+    where = tree.args.get("where")
+    if where is None:
+        return None
+    names = _plsql_names(routine)
+    out: dict[str, exp.Expression] = {}
+    for term in _conjuncts(where.this):
+        if not isinstance(term, exp.EQ):
+            return None
+        column, value = term.this, term.expression
+        if not isinstance(column, exp.Column):
+            column, value = value, column
+        if not isinstance(column, exp.Column) or not (
+                isinstance(value, exp.Literal) or
+                # a name that is also a column of the table is the column in Oracle, not the variable
+                (isinstance(value, exp.Column) and not value.table and value.name.lower() in names
+                 and value.name.lower() not in stored) or
+                isinstance(value, (exp.Placeholder, exp.Parameter))):
+            return None
+        out[column.name.lower()] = value
+    return out
+
+
+def _conjuncts(e: exp.Expression) -> list[exp.Expression]:
+    while isinstance(e, exp.Paren):
+        e = e.this
+    if isinstance(e, exp.And):
+        return _conjuncts(e.this) + _conjuncts(e.expression)
+    return [e]
 
 
 def _dynamic(statement: M.DynamicSql, decided: Constraints, schema: OracleSchema) -> None:
@@ -239,6 +321,9 @@ def _dynamic(statement: M.DynamicSql, decided: Constraints, schema: OracleSchema
     decided table is said to be unguarded, and an undecided one undecided -- as for a static write."""
     for variant in statement.variant_statements or []:
         kind = (variant.sql_kind or "").upper()
+        if kind == "DELETE" and any(d.code == TRUNCATE_AS_DELETE for d in variant.diagnostics):
+            _truncated_parent(variant, schema)
+            continue
         if kind == "DELETE":
             _children(variant, decided, schema)
             continue
@@ -266,6 +351,22 @@ def _dynamic(statement: M.DynamicSql, decided: Constraints, schema: OracleSchema
             variant.add("WARN", "CONSTRAINT_NOT_GUARDED",
                         f"{table} の制約（{', '.join(names)}）を guard していない: 動的 SQL の文の前には"
                         f" guard を置かない（#148）。静的な文に書き直せば置く")
+
+
+def _truncated_parent(variant: M.SqlOperation, schema: OracleSchema) -> None:
+    """Oracle refuses to TRUNCATE a table an enabled FOREIGN KEY points at (ORA-02266), child rows or not; the
+    DELETE it was made (#154) is not refused. Said, whether the project decided the table or not."""
+    try:
+        tree = sqlglot.parse_one(variant.original_sql or "", dialect="oracle")
+    except Exception:
+        return
+    table = tree.this.name.lower() if isinstance(tree, exp.Delete) and isinstance(tree.this, exp.Table) else None
+    children = [f"{child}.{key.name}" for child, keys in schema.foreign_keys.items() for key in keys
+                if key.parent == table]
+    if children:
+        variant.add("WARN", "CONSTRAINT_NOT_GUARDED",
+                    f"{table} を指す FOREIGN KEY（{', '.join(children)}）がある。Oracle はこの表の TRUNCATE を"
+                    f" ORA-02266 で断るが、移行先の DELETE は断らない（#154）")
 
 
 def _check_columns(condition: str) -> set[str] | None:

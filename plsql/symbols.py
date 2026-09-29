@@ -155,7 +155,7 @@ class OracleSchema:
         for table_name, keys in schema.foreign_keys.items():
             schema.foreign_keys[table_name] = [
                 k if k.parent_columns else ForeignKey(k.name, k.columns, k.parent,
-                                                      tuple(schema.keys.get(k.parent, [])))
+                                                      tuple(schema.keys.get(k.parent, [])), k.on_delete)
                 for k in keys]
         return schema
 
@@ -220,6 +220,7 @@ class ForeignKey:
     columns: tuple[str, ...]
     parent: str
     parent_columns: tuple[str, ...]
+    on_delete: str | None = None   # CASCADE / SET NULL; None is NO ACTION (Oracle refuses the parent's DELETE)
 
 
 def _constraints(schema: "OracleSchema", table: str, statement) -> None:
@@ -251,7 +252,10 @@ def _constraints(schema: "OracleSchema", table: str, statement) -> None:
             parent, parent_columns = target.name.lower(), ()
         else:
             return
-        schema.foreign_keys.setdefault(table, []).append(ForeignKey(name, tuple(columns), parent, parent_columns))
+        on_delete = next((o.upper().removeprefix("ON DELETE ").strip() for o in ref.args.get("options") or []
+                          if isinstance(o, str) and o.upper().startswith("ON DELETE")), None)
+        schema.foreign_keys.setdefault(table, []).append(ForeignKey(name, tuple(columns), parent, parent_columns,
+                                                                    on_delete))
 
     def unique(constraint, columns: tuple[str, ...]) -> None:
         # named apart from the CHECK / FOREIGN KEY numbering, which constraints.enforce may already name

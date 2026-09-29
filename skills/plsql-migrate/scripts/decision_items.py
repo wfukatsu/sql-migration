@@ -205,8 +205,9 @@ DETECTORS = {
     "TRIGGER_APPLIED": lambda t: t.with_code("TRIGGER_APPLIED", "TRIGGER_CALL"),
     "TRIGGER_REDESIGN": _redesign,
     "TIMESTAMP WITH TIME ZONE": _timestamptz,
-    # the statement, or (since #148, TRUNCATE is DDL) the generator's refusal of it
-    "TRUNCATE": lambda t: t.grep(r'"TRUNCATE\s+TABLE\s+\w+"|DDL（TRUNCATE）', re.IGNORECASE),
+    # the statement, the generator's refusal of it (#148: TRUNCATE is DDL), or the DELETE it was made (#154)
+    "TRUNCATE": lambda t: t.grep(r'"TRUNCATE\s+TABLE\s+\w+"|DDL（TRUNCATE）', re.IGNORECASE)
+    + t.with_code("TRUNCATE_AS_DELETE"),
 }
 
 
