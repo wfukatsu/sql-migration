@@ -33,7 +33,7 @@ import yaml
 
 from ..analysis import ProgramAnalysis
 from ..ir import model as M
-from ..lower import _walk, dynamic_texts
+from ..lower import _walk, dynamic_texts, with_variants
 from ..source import Issue
 
 RULES_DIR = Path(__file__).parent
@@ -290,8 +290,11 @@ def _emitted_codes() -> set[str]:
 # Each key a rule may use in `match:`. Keeping them here, small and named, is what lets a rule stay declarative:
 # a new rule is a YAML entry, and a new *kind* of condition is a function added below.
 
-def _statements(routine: M.Routine) -> list[M.Statement]:
-    return _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
+def _statements(routine: M.Routine, variants: bool = True) -> list[M.Statement]:
+    """Every statement of the routine, and the static statements each folded EXECUTE IMMEDIATE can run: a rule sees
+    `EXECUTE IMMEDIATE 'SELECT ... FOR UPDATE'` as it sees the static SELECT (#148 H1)."""
+    statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
+    return with_variants(statements) if variants else statements
 
 
 # `statementKind: Expression` in a rule: anywhere PL/SQL evaluates an expression. The text rules used to list
@@ -413,7 +416,12 @@ def _extra(criteria: dict, statement: M.Statement, module: M.Module, routine: M.
     # as it stands. Without a ScalarDB schema nothing was enumerated against the target, so it is not resolved.
     if "dynamicResolved" in criteria:
         variants = getattr(statement, "variant_statements", None) or []
-        resolved = bool(variants) and all(getattr(v, "target_status", None) in ("OK", "WARN") for v in variants)
+        # a DDL variant is never run by the target as it stands (#52 / #148 H1: TRUNCATE included), whatever the
+        # converter said about its text -- unless the project decided to leave it out (`ddl.omit`)
+        resolved = bool(variants) and all(
+            any(d.code == "DYNAMIC_DDL_OMITTED" for d in v.diagnostics)
+            or (getattr(v, "target_status", None) in ("OK", "WARN") and not any(d.code == "DYNAMIC_DDL" for d in v.diagnostics))
+            for v in variants)
         if resolved is not criteria["dynamicResolved"]:
             return False
     if "lacksDiagnostic" in criteria:
@@ -441,7 +449,8 @@ CLOCK = re.compile(r"\b(SYSDATE|SYSTIMESTAMP|CURRENT_DATE|CURRENT_TIMESTAMP|LOCA
 def _clock_reads(routine: M.Routine, program: "M.Program | None" = None) -> int:
     """How many times the routine asks the database what time it is."""
     total = _defaulted_clock_reads(routine, program)
-    for statement in _statements(routine):
+    # a folded variant's text is the EXECUTE IMMEDIATE's literal, counted there already
+    for statement in _statements(routine, variants=False):
         text = " ".join(str(getattr(statement, field, "") or "")
                         for field in ("original_sql", "expression", "cursor", "target", "condition"))
         total += len(CLOCK.findall(text))

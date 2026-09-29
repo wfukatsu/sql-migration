@@ -2892,7 +2892,8 @@ def _dynamic(file: JavaFile, statement: M.DynamicSql, routine: M.Routine,
     に検査された」と思わないよう、診断は文に残してある。
     """
     variants = statement.variant_statements or []
-    if not variants:
+    if not variants or any(v.target_status is None for v in variants):
+        # folded but never converted (no ScalarDB schema): the same answer as before the fold moved earlier (#148)
         raise Untranslatable(["EXECUTE IMMEDIATE whose statement is not a knowable set"],
                              statement.expression or "")
     file.comment(f"EXECUTE IMMEDIATE: 走りうる文は {len(variants)} 通り。畳んで静的な文として"
@@ -2924,7 +2925,7 @@ def _dynamic(file: JavaFile, statement: M.DynamicSql, routine: M.Routine,
                    f'（limits.yaml の dynamicTables に無い表名など）");')
 
 
-DDL = re.compile(r"^\s*(CREATE|DROP|ALTER|RENAME|GRANT|REVOKE|COMMENT|ANALYZE|PURGE|FLASHBACK)\b", re.IGNORECASE)
+from ..dynamic import DDL   # TRUNCATE included (#148 H1)
 
 
 def _variant(file: JavaFile, operation: M.SqlOperation, statement: M.DynamicSql,

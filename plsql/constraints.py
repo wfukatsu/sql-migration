@@ -74,6 +74,9 @@ def _sequence(statements: list[M.Statement], routine: M.Routine, decided: Constr
 
 def _guards(statement: M.Statement, routine: M.Routine, decided: Constraints, schema: OracleSchema,
             counter: list[int]) -> list[M.Statement]:
+    if statement.kind == "DynamicSql":
+        _dynamic(statement, decided, schema)
+        return []
     if statement.kind != "SqlOperation":
         return []
     kind = (statement.sql_kind or "").upper()
@@ -162,6 +165,34 @@ def _guards(statement: M.Statement, routine: M.Routine, decided: Constraints, sc
                       f"{table} の {', '.join(guarded)} を書く前に評価する。移行先に制約は無く、違反は Oracle と同じ番号の"
                       f"例外になる（limits.yaml constraints.enforce: {decided.why(table)}）")
     return out
+
+
+def _dynamic(statement: M.DynamicSql, decided: Constraints, schema: OracleSchema) -> None:
+    """#148 H1: a folded `EXECUTE IMMEDIATE 'INSERT ...'` writes the table as the static INSERT does. No guard is put
+    in front of it (the generator writes the variant where the EXECUTE IMMEDIATE is, chosen at run time), so a
+    decided table is said to be unguarded, and an undecided one undecided -- as for a static write."""
+    for variant in statement.variant_statements or []:
+        kind = (variant.sql_kind or "").upper()
+        if kind not in ("INSERT", "UPDATE"):
+            continue
+        try:
+            tree = sqlglot.parse_one(variant.original_sql or "", dialect="oracle")
+        except Exception:
+            continue
+        table = _table(tree)
+        if table is None:
+            continue
+        names = [n for n, _ in schema.checks.get(table, [])] + [k.name for k in schema.foreign_keys.get(table, [])]
+        if not names:
+            continue
+        if not decided.decided(table):
+            variant.add("INFO", "CONSTRAINT_UNDECIDED",
+                        f"{table} には CHECK / FOREIGN KEY（{', '.join(names)}）があるが移行先には無い。書く側で guard "
+                        f"するかは決定である（limits.yaml constraints.enforce）")
+        else:
+            variant.add("WARN", "CONSTRAINT_NOT_GUARDED",
+                        f"{table} の CHECK / FOREIGN KEY（{', '.join(names)}）を guard していない: 動的 SQL の文の前には"
+                        f" guard を置かない（#148）。静的な文に書き直せば置く")
 
 
 def _refusal(statement: M.Statement, tag: str, condition: str, code: int, message: str) -> M.If:

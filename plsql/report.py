@@ -23,7 +23,7 @@ from .frontend import ParsedFile, coverage, parse_file
 from .ir import model as M, serde
 from . import dblinks, merge, paging, rmw, triggers
 from .limits import RowLocks
-from .lower import _walk, lower_file
+from .lower import _walk, lower_file, with_variants
 from .source import Issue
 from .symbols import OracleSchema, SymbolTable, build, public_routines
 
@@ -374,6 +374,10 @@ def _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundarie
     # expression becomes a call statement of its own, so the generator can unpack its result record
     from . import hoist
     hoist.rewrite(program)
+    # #148 H1: 畳める動的 SQL を、書き込みを見る lowering（制約の guard・trigger）と規則より前に静的な文にする。
+    # 最後（capability）で畳んでいたときは、どの検査も畳んだ文を見ていなかった
+    from .dynamic import fold as fold_dynamic
+    fold_dynamic(program)
     # IDENTITY 列を INSERT に足す（採番は Sequences から）。trigger を織り込む前に行う: 織り込まれた trigger の INSERT も同じ
     from . import identity
     identity.rewrite(program, schema, analysis.symbol_table())
@@ -527,7 +531,7 @@ def auto_blockers(module: M.Module, routine: M.Routine) -> list[str]:
     if any(s.kind == "DynamicSql" and s.constant_sql is None for s in body):
         blockers.append("dynamic-sql")
     # row locking hides in two places: a statement, and a cursor declaration whose query carries FOR UPDATE
-    locked = any(s.kind == "SqlOperation" and s.locking_mode for s in body) or any(
+    locked = any(s.kind == "SqlOperation" and s.locking_mode for s in with_variants(body)) or any(
         d.declaration_kind == "cursor" and d.initial and "FOR UPDATE" in d.initial.upper()
         for d in routine.declarations)
     if locked:
