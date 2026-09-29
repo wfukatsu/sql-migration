@@ -355,13 +355,16 @@ def _match(rule: Rule, module: M.Module, routine: M.Routine, analysis: ProgramAn
             if (statement.kind in wanted or (anywhere and statement.kind != "SqlOperation")) \
                     and _extra(criteria, statement, module, routine, analysis):
                 hits.append(Match(rule, statement.id, _detail(statement)))
-        if anywhere and "textMatches" in criteria:
+        if anywhere and ("textMatches" in criteria or "hasDiagnostic" in criteria):
             for declaration in _declarations(routine):
+                codes = {d.code for d in declaration.diagnostics}
                 # a note a decision left on the declaration (NLS_DECIDED, #157) counts as it does on a statement
-                if "lacksDiagnostic" in criteria and {d.code for d in declaration.diagnostics} & \
-                        _as_set(criteria["lacksDiagnostic"]):
+                if "lacksDiagnostic" in criteria and codes & _as_set(criteria["lacksDiagnostic"]):
                     continue
-                if re.search(criteria["textMatches"], _text(declaration), re.IGNORECASE):
+                # and so does one the analysis left there (IMPLICIT_NUMBER_TEXT on `s VARCHAR2(9) := 'x' || n`, #167)
+                if "hasDiagnostic" in criteria and not codes & _as_set(criteria["hasDiagnostic"]):
+                    continue
+                if "textMatches" not in criteria or re.search(criteria["textMatches"], _text(declaration), re.IGNORECASE):
                     hits.append(Match(rule, declaration.id, f"{declaration.name}: {_text(declaration)}"[:120]))
         return hits
 

@@ -173,13 +173,16 @@ rules:
   # （DD-MON-RR、AMERICAN）で書き、実 DB の比較も既定で流すので、一致しても移行元のセッション設定までは確かめていない。
   # 既定の DD-MON-RR は月の名前を含み、書式に MON を書いた SEM-008 と同じく言語設定で変わるので、同じ REVIEW にした
   # #157: limits.yaml の `nls` で決めた project では、生成コードは決めた書式で書く（NLS_DECIDED）ので当たらない
+  # #167（2026-09-30 の決定「規則を広げて REVIEW」）: 小数を持てる数値（NUMBER、NUMBER(p,s>0)、FLOAT、BINARY_DOUBLE
+  # など）を書式なしで文字にする所も同じ。小数点は NLS_NUMERIC_CHARACTERS で決まる（',.' なら 1.5 は 1,5）。整数の型
+  # （PLS_INTEGER、INTEGER、NUMBER(p)）は小数点を書かないので当たらない。`v_text := n` のような代入と、宣言の初期値も見る
   - id: SEM-012
-    match: {statementKind: [SqlOperation, Expression], hasDiagnostic: IMPLICIT_DATE_TEXT, lacksDiagnostic: NLS_DECIDED}
+    match: {statementKind: [SqlOperation, Expression], hasDiagnostic: [IMPLICIT_DATE_TEXT, IMPLICIT_NUMBER_TEXT], lacksDiagnostic: NLS_DECIDED}
     decision: REVIEW
-    message: 日付・TIMESTAMP を書式なしで文字にしています。形は移行元のセッションの NLS_DATE_FORMAT / NLS_TIMESTAMP_FORMAT / NLS_DATE_LANGUAGE で決まり、決めていないので生成コードは Oracle の既定（DD-MON-RR、AMERICAN）で書きます
+    message: 日付・TIMESTAMP、または小数を持てる数値を書式なしで文字にしています。日付の形は移行元のセッションの NLS_DATE_FORMAT / NLS_TIMESTAMP_FORMAT / NLS_DATE_LANGUAGE、数値の小数点は NLS_NUMERIC_CHARACTERS で決まり、決めていないので生成コードは Oracle の既定（DD-MON-RR、AMERICAN、小数点は '.'）で書きます
     remediation:
       - 移行元のセッションの NLS を確かめて limits.yaml の nls に書く
-      - 書式を明示する（TO_CHAR(d, 'YYYY-MM-DD') など）
+      - 書式を明示する（TO_CHAR(d, 'YYYY-MM-DD')、TO_CHAR(n, 'FM9990D00') など）
       - 移行元のセッションが既定の NLS 設定で動いていることを確かめて、そのまま受け入れる（nls に AMERICAN / AMERICA と理由を書く）
     requiredTests:
       - equivalent_result
