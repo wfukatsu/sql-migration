@@ -2927,7 +2927,14 @@ def _dynamic(file: JavaFile, statement: M.DynamicSql, routine: M.Routine,
     に検査された」と思わないよう、診断は文に残してある。
     """
     variants = statement.variant_statements or []
-    if not variants or any(v.target_status is None for v in variants):
+    from ..dynamic import DDL, omitted_ddl
+
+    def _needs_conversion(v) -> bool:
+        # a DDL variant the project decided to leave out (`ddl.omit`) is written as a comment, never run: it does not
+        # need the ScalarDB conversion, so a run without --scalardb-schema still generates it (#152 M2)
+        return not (DDL.match(v.original_sql or "") and omitted_ddl(routine.id))
+
+    if not variants or any(v.target_status is None and _needs_conversion(v) for v in variants):
         # folded but never converted (no ScalarDB schema): the same answer as before the fold moved earlier (#148)
         raise Untranslatable(["EXECUTE IMMEDIATE whose statement is not a knowable set"],
                              statement.expression or "")
