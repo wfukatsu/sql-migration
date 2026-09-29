@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ..source import strip_ansi
+
 # While the migration is running, the generated tree is rewritten from the rules on every change, so editing it
 # by hand loses the edit at the next regeneration.
 HEADER = (
@@ -66,7 +68,8 @@ class JavaFile:
         # javac translates `\uXXXX` before it knows what a comment is: source text holding `\u000a` ended the
         # comment and turned the rest of the line into code, and `'C:\users\...'` was an illegal escape. The
         # space keeps the text readable and stops it being an escape
-        for part in text.splitlines():
+        # sqlglot's ParseError underlines with ANSI escapes; a comment is read in an editor, not a terminal (#161)
+        for part in strip_ansi(text).splitlines():
             self.line("// " + part.replace("\\u", "\\ u"))
         return self
 
