@@ -255,9 +255,9 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 |---|---|---|
 | 文字列 | `SUBSTR`、`UPPER`、`LENGTH`、連結 `\|\|` | Oracle の空文字列 `''` は NULL（変換できた文にも WARN `SEMANTICS`）。MySQL の文字列比較は大文字小文字を区別しない（INFO `SEMANTICS`） |
 | 数値 | `ROUND(salary)`、`salary / 2` | 丸めは 0 から遠いほうへ（-2.5 は -3）。0 で割ったときは方言で違う（Oracle は失敗、MySQL は NULL）。アプリで書くときの注意として `APP_SEMANTICS` に出る |
-| 日付 | `ADD_MONTHS(hired, 1)`、`TRUNC(hired, 'MM')`、日付どうしの引き算 | `ADD_MONTHS` は月末をそろえる（`APP_SEMANTICS`）。実行計画では H2 向けに `TRUNC(d, 'MM')` を `DATE_TRUNC('MONTH', d)` に書き換える。週（Oracle の `IW` / `WW` / `W`、PostgreSQL の `date_trunc('week', d)`）は H2 の `DATE_TRUNC('WEEK')` が日曜始まりなので、始まりの曜日を合わせた `DATEADD` の式にする。`TRUNC(d, 'DAY')`（`DY`、`D` も）は週の始まりを NLS_TERRITORY が決めるので計画にせず ERROR `RESIDUAL_H2`（`IW` を使うか、アプリで計算する）。H2 が書き換えられない単位も同じ。小数秒の無い `TIMESTAMP '...'` は、H2 が `FF6` の書式で読めないので、小数秒の無い書式で書く（#153）。日付どうしの引き算は Oracle なら `DAYS_BETWEEN`（小数の日数）、PostgreSQL の DATE どうしなら `DATEDIFF('DAY', b, a)`、MySQL（YYYYMMDD の数の引き算）は ERROR `RESIDUAL_H2` |
-| 書式・変換 | `TO_CHAR(hired, 'YYYY-MM')`、MySQL の `DATE_FORMAT`、`CAST(x AS ...)`、`name::text` | 日付の書式はセッションのタイムゾーンと言語に従う（`APP_SEMANTICS`）。実行計画では MySQL の `DATE_FORMAT` を H2 の `FORMATDATETIME` に書き換える（`'%Y年%m月%d日'` のような文字も書ける。H2 に無い `%U` などは ERROR `RESIDUAL_H2`）。値の位置の `CAST('5' AS NUMBER)` は ERROR `UNSUPPORTED` |
-| 割り算 | `COUNT(*) / 4`、`7 / 2`、`COUNT(*) * 100 / 3` | Oracle・MySQL の実行計画では、H2 が整数どうしを整数で割らないよう、列から来ない整数（整数リテラル、`COUNT`、`LENGTH` など）の左辺を `CAST(... AS NUMBER(19))` で包む。PostgreSQL は整数の割り算のまま |
+| 日付 | `ADD_MONTHS(hired, 1)`、`TRUNC(hired, 'MM')`、日付どうしの引き算 | `ADD_MONTHS` は月末をそろえる（`APP_SEMANTICS`）。実行計画では H2 向けに `TRUNC(d, 'MM')` を `DATE_TRUNC('MONTH', d)` に書き換える。週（Oracle の `IW` / `WW` / `W`、PostgreSQL の `date_trunc('week', d)`）は H2 の `DATE_TRUNC('WEEK')` が日曜始まりなので、始まりの曜日を合わせた `DATEADD` の式にする。PostgreSQL の `date_trunc(単位, DATE の値)` は、PostgreSQL が DATE をセッションの TimeZone の 0 時の timestamptz にして返す。計画の H2（PostgreSQL モード、セッションは UTC）も timestamptz を返すが UTC の 0 時になる。DATE との比較や並べ替えの結果は同じで、返す値が違うのは移行元のセッションが UTC 以外のときだけ（Asia/Tokyo なら `2024-01-01 00:00:00+09` に対して `2024-01-01 00:00:00+00`。未決、#160）。`TRUNC(d, 'DAY')`（`DY`、`D` も）は週の始まりを NLS_TERRITORY が決めるので計画にせず ERROR `RESIDUAL_H2`（`IW` を使うか、アプリで計算する）。H2 が書き換えられない単位も同じ。小数秒の無い `TIMESTAMP '...'` は、H2 が `FF6` の書式で読めないので、小数秒の無い書式で書く（#153）。日付どうしの引き算は Oracle なら `DAYS_BETWEEN`（小数の日数）、PostgreSQL の DATE どうしなら `DATEDIFF('DAY', b, a)`、MySQL（YYYYMMDD の数の引き算）は ERROR `RESIDUAL_H2` |
+| 書式・変換 | `TO_CHAR(hired, 'YYYY-MM')`、MySQL の `DATE_FORMAT`、`CAST(x AS ...)`、`name::text` | 日付の書式はセッションのタイムゾーンと言語に従う（`APP_SEMANTICS`）。実行計画では MySQL の `DATE_FORMAT` を H2 の `FORMATDATETIME` に書き換える（`'%Y年%m月%d日'` のような文字も書ける。H2 に無い `%U` などは ERROR `RESIDUAL_H2`）。月や曜日の名前（Oracle の `MON` / `DAY` / `DY` / `AM`、MySQL の `%b` / `%a` / `%p`）は、計画を動かす JVM の言語設定によらず英語で読み書きする（Oracle の NLS_DATE_LANGUAGE の既定 AMERICAN、MySQL の lc_time_names の既定 en_US と同じ。日本語の JVM では H2 が `NOV` を読めなかった、#160）。値の位置の `CAST('5' AS NUMBER)` は ERROR `UNSUPPORTED` |
+| 割り算 | `COUNT(*) / 4`、`7 / 2`、`COUNT(*) * 100 / 3`、`c / 4`（`c` は派生表・CTE の `COUNT(*)`） | Oracle・MySQL の実行計画では、H2 が整数どうしを整数で割らないよう、取得した列から来ない整数（整数リテラル、`COUNT`、`LENGTH` など、それらの `MAX` / `MIN` / `SUM`、それを返すスカラー副問合せ、それを持つ派生表・CTE の列）の左辺を `CAST(... AS NUMBER(19))` で包む（#160）。修飾の無い列名で FROM に複数の表があると、どの表の列か決められないので包まない。PostgreSQL は整数の割り算のまま |
 | NULL の処理 | `NVL`、`COALESCE`、MySQL の `IFNULL` | 集約は NULL を除き、全部 NULL なら NULL（`APP_SEMANTICS`） |
 | 条件 | `CASE WHEN ...`、`DECODE` | |
 | 現在時刻 | `SYSDATE`、`SYSTIMESTAMP`、`CURRENT_TIMESTAMP`、`CURRENT_DATE`、`NOW()` | WHERE では PLANNED（`NOW`）、値では ERROR `NOW`。時刻はアプリで計算してバインドする。移行元ではデータベースサーバーの時計を使う |
@@ -423,7 +423,7 @@ ERROR か PLANNED になった読み取り文には、変換器が最初につ�
 | PL/SQL のブロック、`WITH FUNCTION` | ERROR `PLSQL_BLOCK` / `WITH_PLSQL` | 上の「方言ごとの差」 |
 | 移行元の方言として読めない文。文でなく式として読めたもの（綴りを誤った `SELEC * FRM t` など） | ERROR `PARSE` | `--source` と綴りを確かめる |
 | ScalarDB SQL の生成器が出せない構文が残った | ERROR `UNSUPPORTED` | |
-| 引用符の閉じ忘れなどで文に分けられない | ERROR `TOKENIZE` | `;` で終わる行ごとに分け直し、読めた文は変換する。読めない文だけが ERROR |
+| 引用符の閉じ忘れなどで文に分けられない | ERROR `TOKENIZE` | `;` で終わる行ごとに分け直し、読めた文は変換する。読めない文だけが ERROR。ScalarDB 以外の Target（`--target postgres` など）でも同じ（#160） |
 | 変換器が想定していなかった文 | ERROR `INTERNAL` | その文だけが ERROR になり、残りは変換を続ける |
 
 逆に、そのまま通る文は `BEGIN` / `START TRANSACTION`（`BEGIN` にする）、`COMMIT`、`ROLLBACK`、`USE shop` です。
