@@ -761,7 +761,36 @@ class Decomposer:
 
     _TRUNC_UNITS = {"MM": "MONTH", "MON": "MONTH", "MONTH": "MONTH", "RM": "MONTH", "YYYY": "YEAR", "YEAR": "YEAR",
                     "YY": "YEAR", "Y": "YEAR", "SYYYY": "YEAR", "DD": "DAY", "DDD": "DAY", "J": "DAY", "HH": "HOUR",
-                    "HH12": "HOUR", "HH24": "HOUR", "MI": "MINUTE", "Q": "QUARTER", "IW": "WEEK", "WW": "WEEK"}
+                    "HH12": "HOUR", "HH24": "HOUR", "MI": "MINUTE", "Q": "QUARTER"}
+    # H2's DATE_TRUNC('WEEK', d) starts the week on Sunday (H2 2.5.250: 1981-11-17 -> 1981-11-15). Oracle's IW and
+    # PostgreSQL's week are ISO weeks (Monday, 1981-11-16); Oracle's WW starts on the weekday of 1 January
+    # (1981-11-12) and W on the weekday of the 1st of the month. Each is the day minus the days since its start (#147)
+    _WEEK_STARTS = {"IW": ("ISO_DAY_OF_WEEK", 1), "WW": ("DAY_OF_YEAR", 7), "W": ("DAY_OF_MONTH", 7)}
+
+    @staticmethod
+    def _week_start(d: exp.Expression, unit: str) -> exp.Expression:
+        fn, _ = Decomposer._WEEK_STARTS[unit]
+        day = exp.Anonymous(this="DATE_TRUNC", expressions=[exp.Literal.string("DAY"), d.copy()])
+        if unit == "IW":
+            back = exp.Sub(this=exp.Literal.number(1), expression=exp.Anonymous(this=fn, expressions=[d.copy()]))
+        else:
+            back = exp.Neg(this=exp.Anonymous(this="MOD", expressions=[
+                exp.Sub(this=exp.Anonymous(this=fn, expressions=[d.copy()]), expression=exp.Literal.number(1)),
+                exp.Literal.number(7)]))
+        return exp.Anonymous(this="DATEADD", expressions=[exp.Var(this="DAY"), back, day])
+
+    def _is_date_only(self, e: exp.Expression) -> bool:
+        """A DATE (no time of day): PostgreSQL's date - date is a whole number of days, H2's an INTERVAL."""
+        e = _unparen(e)
+        if isinstance(e, exp.Column):
+            sel = e.find_ancestor(exp.Select, exp.SetOperation)
+            for meta in (self.registry.get(t.name) for t in sel.find_all(exp.Table)) if sel else []:
+                if meta and any(c.lower() == e.name.lower() and ty == "DATE" for c, ty in meta.columns.items()):
+                    return True
+            return False
+        if isinstance(e, exp.Cast):
+            return e.to.this == exp.DataType.Type.DATE
+        return isinstance(e, (exp.CurrentDate, exp.TsOrDsToDate, exp.StrToDate, exp.DateStrToDate))
 
     def _is_datelike(self, e: exp.Expression) -> bool:
         e = _unparen(e)
@@ -782,9 +811,17 @@ class Decomposer:
     def _h2_rewrites(self, node: exp.Expression, notes: list[str], unresolved: list[str]) -> bool:
         """Rewrite Oracle constructs H2 Oracle mode lacks. Returns True if the AST changed."""
         changed = False
-        for dt in list(node.find_all(exp.DateTrunc)):  # TRUNC(date, 'MM') -> DATE_TRUNC('MONTH', date)
+        for dt in list(node.find_all(exp.DateTrunc, exp.TimestampTrunc)):  # TRUNC(date, 'MM') -> DATE_TRUNC('MONTH', date)
             unit = (dt.args.get("unit").name if dt.args.get("unit") else "DD").upper()
-            if unit in self._TRUNC_UNITS:
+            if self.dialect != "oracle":
+                if unit == "WEEK":   # PostgreSQL's date_trunc('week', d) is the ISO week
+                    dt.replace(self._week_start(dt.this, "IW"))
+                    changed = True
+                continue
+            if unit in self._WEEK_STARTS:
+                dt.replace(self._week_start(dt.this, unit))
+                changed = True
+            elif unit in self._TRUNC_UNITS:
                 dt.replace(exp.Anonymous(this="DATE_TRUNC", expressions=[exp.Literal.string(self._TRUNC_UNITS[unit]), dt.this]))
                 changed = True
             else:
@@ -841,10 +878,40 @@ class Decomposer:
                 full = iso if " " in iso else iso + " 00:00:00"
                 conv.replace(sqlglot.parse_one(f"TO_DATE('{full}', 'YYYY-MM-DD HH24:MI:SS')", read="oracle"))
                 changed = True
-        for sub in list(node.find_all(exp.Sub)):  # date - date -> fractional days (Oracle) instead of an INTERVAL (H2)
-            if self._is_datelike(sub.this) and self._is_datelike(sub.expression):
+        for sub in list(node.find_all(exp.Sub)):
+            if not (self._is_datelike(sub.this) and self._is_datelike(sub.expression)):
+                continue
+            if self.dialect == "oracle":   # date - date -> fractional days (OracleFunctions) instead of an INTERVAL (H2)
                 sub.replace(exp.Anonymous(this="DAYS_BETWEEN", expressions=[sub.this, sub.expression]))
                 changed = True
+            elif self.dialect == "postgres" and self._is_date_only(sub.this) and self._is_date_only(sub.expression):
+                # DAYS_BETWEEN is registered in the Oracle mode only (`Function "DAYS_BETWEEN" not found`, #147);
+                # PostgreSQL's date - date is the whole number of days, H2's an INTERVAL
+                sub.replace(exp.Anonymous(this="DATEDIFF", expressions=[
+                    exp.Literal.string("DAY"), sub.expression, sub.this]))
+                changed = True
+            elif self.dialect == "mysql":
+                # MySQL subtracts the dates as numbers (20240301 - 20240201 = 100); H2 has nothing that does
+                raise PlanBlocked([("RESIDUAL_H2", f"{sub.sql(dialect=self.dialect)}: MySQL subtracts two dates as the "
+                                                   f"numbers YYYYMMDD, which the H2 residual engine does not; use "
+                                                   f"DATEDIFF() or compute it in the application")])
+        if self.dialect == "mysql":
+            for fmt_call in list(node.find_all(exp.TimeToStr)):
+                # H2's MySQL mode has no DATE_FORMAT. FORMATDATETIME takes a Java pattern, built on the AST so the
+                # generator doubles its quotes: written into the SQL text, '%Y年' became 'yyyy'年'' and closed the
+                # string (#147)
+                fmt = fmt_call.args.get("format")
+                java = _strftime_to_java(fmt.name) if isinstance(fmt, exp.Literal) else None
+                if java is None:
+                    raise PlanBlocked([("RESIDUAL_H2", f"{fmt_call.sql(dialect=self.dialect)}: the format has a "
+                                                       f"specifier H2 cannot write (or is not a constant); format the "
+                                                       f"value in the application")])
+                fmt_call.replace(exp.Anonymous(this="FORMATDATETIME",
+                                               expressions=[fmt_call.this.copy(), exp.Literal.string(java)]))
+                notes.append("java: DATE_FORMAT rewritten to FORMATDATETIME for H2")
+                changed = True
+        if self.dialect == "postgres":
+            changed |= self._distinct_on(node)
         if changed:
             notes.append("java: Oracle semantics made explicit for H2 (date functions, NULL ordering)")
         # Two things H2 2.5 cannot run as written, both found against a real Oracle (statements 34 and 53 of
@@ -872,19 +939,66 @@ class Decomposer:
                 changed = True
         return changed
 
+    def _distinct_on(self, node: exp.Expression) -> bool:
+        """`SELECT DISTINCT ON (a) a, b FROM t ORDER BY a, c DESC`: H2 runs DISTINCT ON only when every ORDER BY
+        expression is in the select list (`Order by expression "sal" must be in the result list`, H2 2.5.250), and
+        "the first row of each group" is written this way on purpose (#147). The missing expressions are selected
+        under names of their own, and an outer query returns the original columns in the original order."""
+        changed = False
+        for sel in list(node.find_all(exp.Select)):
+            distinct, order = sel.args.get("distinct"), sel.args.get("order")
+            if distinct is None or distinct.args.get("on") is None or order is None:
+                continue
+            projections = sel.expressions
+            inner_sql = [p.unalias().sql() for p in projections]
+            names = [p.alias_or_name for p in projections]
+
+            def position(o: exp.Ordered) -> int | None:
+                t = o.this
+                if isinstance(t, exp.Column) and not t.table and t.name in names:
+                    return names.index(t.name)
+                return inner_sql.index(t.sql()) if t.sql() in inner_sql else None
+
+            missing = [o for o in order.expressions if position(o) is None]
+            if not missing:
+                continue
+            if any(isinstance(p, exp.Star) or isinstance(p.unalias(), exp.Star) for p in projections) \
+                    or len(set(n.lower() for n in names)) != len(names) or not all(names):
+                raise PlanBlocked([("RESIDUAL_H2", "DISTINCT ON with an ORDER BY expression that is not selected, and a "
+                                                   "select list H2 cannot name one by one (* or repeated names): list "
+                                                   "the columns, or keep the first row of each group in the application")])
+            inner = sel.copy()
+            inner.set("expressions", [exp.alias_(p.unalias().copy(), f"__c{i}") for i, p in enumerate(projections)]
+                      + [exp.alias_(o.this.copy(), f"__o{j}") for j, o in enumerate(missing)])
+            for k in ("limit", "offset"):
+                inner.set(k, None)
+            outer_order = []
+            for o in order.expressions:
+                i = position(o)
+                name = f"__c{i}" if i is not None else f"__o{[id(m) for m in missing].index(id(o))}"
+                outer_order.append(exp.Ordered(this=exp.column(name), desc=o.args.get("desc"),
+                                               nulls_first=o.args.get("nulls_first")))
+            outer = exp.select(*[exp.alias_(exp.column(f"__c{i}"), p.args["alias"].copy() if isinstance(p, exp.Alias)
+                                            else p.unalias().this.copy() if isinstance(p.unalias(), exp.Column)
+                                            else n)
+                                 for i, (p, n) in enumerate(zip(projections, names))]) \
+                .from_(exp.Subquery(this=inner, alias=exp.TableAlias(this=exp.to_identifier("__d"))))
+            outer.set("order", exp.Order(expressions=outer_order))
+            for k in ("limit", "offset"):
+                if sel.args.get(k) is not None:
+                    outer.set(k, sel.args[k].copy())
+            for k in list(sel.args):
+                sel.set(k, None)
+            for k, v in outer.args.items():
+                sel.set(k, v)
+            changed = True
+        return changed
+
     def _java_residual(self, node: exp.Expression, source_sql: str, unresolved: list[str], notes: list[str]) -> str:
         work = node.copy()
         if self._h2_rewrites(work, notes, unresolved):
             self._rewritten = True
         sql = work.sql(dialect=_h2_target_dialect(self.dialect)) if self._rewritten else source_sql
-        if self.dialect == "mysql":
-            # H2 MySQL mode lacks DATE_FORMAT; FORMATDATETIME takes a Java pattern
-            def repl(m):
-                return f"FORMATDATETIME({m.group(1)}, '{_mysql_fmt_to_java(m.group(2))}')"
-            new = re.sub(r"DATE_FORMAT\(\s*([^,]+?)\s*,\s*'([^']*)'\s*\)", repl, sql, flags=re.I)
-            if new != sql:
-                notes.append("java: DATE_FORMAT rewritten to FORMATDATETIME for H2")
-                sql = new
         # strip schema qualifiers from table names: fetched tables live unqualified in H2
         for t in node.find_all(exp.Table):
             if t.db:
@@ -936,18 +1050,38 @@ def _whole_number(e: exp.Expression) -> bool:
     return False
 
 
-def _mysql_fmt_to_java(fmt: str) -> str:
-    table = {"%Y": "yyyy", "%y": "yy", "%m": "MM", "%c": "M", "%d": "dd", "%e": "d", "%H": "HH", "%k": "H",
-             "%h": "hh", "%I": "hh", "%i": "mm", "%s": "ss", "%S": "ss", "%f": "SSSSSS", "%p": "a", "%M": "MMMM",
-             "%b": "MMM", "%W": "EEEE", "%a": "EEE", "%j": "DDD", "%%": "%"}
-    out = ""
-    i = 0
+# SQLGlot keeps a MySQL DATE_FORMAT format in strftime form (%i -> %M, %M -> %B, %c -> %-m, %T -> %H:%M:%S ...)
+_STRFTIME_TO_JAVA = {"%Y": "yyyy", "%y": "yy", "%m": "MM", "%-m": "M", "%d": "dd", "%-d": "d", "%H": "HH",
+                     "%-H": "H", "%I": "hh", "%-I": "h", "%M": "mm", "%S": "ss", "%f": "SSSSSS", "%p": "a",
+                     "%B": "MMMM", "%b": "MMM", "%A": "EEEE", "%a": "EEE", "%j": "DDD"}
+
+
+def _strftime_to_java(fmt: str) -> str | None:
+    """A Java date pattern for a strftime format, or None when a specifier has none (%U, %V, %X, %D, %w, ...).
+    Text between specifiers that Java would read as pattern letters is quoted as one run -- 'at', not 'a''t', which Java reads as a't -- with its own
+    quotes doubled."""
+    out, text, i = [], "", 0
+
+    def flush():
+        if text and re.search(r"[A-Za-z'\[\]{}#]", text):   # the characters Java reads as pattern syntax
+            out.append("'" + text.replace("'", "''") + "'")
+        elif text:
+            out.append(text)
+
     while i < len(fmt):
-        if fmt[i] == "%" and i + 1 < len(fmt) and fmt[i:i + 2] in table:
-            out += table[fmt[i:i + 2]]
-            i += 2
+        if fmt[i] == "%":
+            spec = fmt[i:i + 3] if fmt[i + 1:i + 2] == "-" else fmt[i:i + 2]
+            if spec == "%%":
+                text += "%"
+            elif spec in _STRFTIME_TO_JAVA:
+                flush()
+                text = ""
+                out.append(_STRFTIME_TO_JAVA[spec])
+            else:
+                return None
+            i += len(spec)
         else:
-            ch = fmt[i]
-            out += f"'{ch}'" if ch.isalpha() else ch
+            text += fmt[i]
             i += 1
-    return out
+    flush()
+    return "".join(out)

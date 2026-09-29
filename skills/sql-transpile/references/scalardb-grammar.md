@@ -253,9 +253,13 @@ ERROR になった読み取り文（SELECT、UNION などの集合演算、CTE �
 | コード | 重要度 | 意味 | 次の手 |
 |---|---|---|---|
 | `DATE_LIT` | INFO | 日付・時刻のリテラルを ScalarDB のリテラルに書き換えた（0 時の時刻を落とした、0 時を補った、UTC に直した、`--session-time-zone` のゾーンで読んで UTC に直した） | なし |
-| `DATE_LIT` | WARN | DATE 列に 0 時以外の時刻を書いている（時刻は落ちる）。TIMESTAMP 列にゾーンつきの値を書いている（ゾーンは落ちる） | 時刻が要るなら列を TIMESTAMP にする |
+| `DATE_LIT` | WARN | DATE 列に 0 時以外の時刻を書いている（INSERT・SET では時刻は落ちる）。比較では同じ日付が当たるように境界を直した（`< t` → `<= d`、`>= t` → `> d`、BETWEEN の下限は翌日、`<> t` → `IS NOT NULL`）。TIMESTAMP 列にゾーンつきの値を書いている（ゾーンは落ちる） | 時刻が要るなら列を TIMESTAMP にする |
+| `DATE_LIT` | ERROR | DATE 列と 0 時以外の時刻の `=`（常に偽）。読み取りは実行計画に回る | 日付で比べるか、列を TIMESTAMP にする |
 | `DATE_FMT` | WARN | 書式の無い `TO_DATE('...')`。移行元はセッションの日付書式で読むので、ISO の形の文字列をそのまま書いた | 書式を確かめる |
-| `DATE_FMT` | ERROR | 書式が定数でない、ScalarDB のリテラル（`YYYY-MM-DD [HH:MM:SS.FFF]`）に直せない | アプリで変換してバインドする |
+| `DATE_FMT` | ERROR | 書式が定数でない、ScalarDB のリテラル（`YYYY-MM-DD [HH:MM:SS.FFF]`）に直せない。2 桁の年（Oracle の `RR`・`RRRR`・`YY`、PostgreSQL・MySQL の 2 桁の年）は移行元の規則で読む（`RR` は今年に近い世紀なので、INFO `DATE_LIT` で今年の規則で読んだと伝える） | アプリで変換してバインドする |
+| `TYPE_LIT` | INFO / WARN | リテラルを列の型に合わせた。数値の列の `'1'` → `1`、整数の列の `2.0` → `2`、端数のある範囲の境界（`< 2.5` → `<= 2`、`> 2.5` → `>= 3`）は INFO。`<> 2.5` → `IS NOT NULL`、VALUES / SET の小数を整数の列に四捨五入、数値を TEXT 列に文字列で書いた、は WARN（ScalarDB は型の違うリテラルを DB-SQL-10053/10054/10055 で断る） | WARN は値を確かめる |
+| `TYPE_MISMATCH` | ERROR | 列の型に合わせられないリテラル: 数字でない文字列と数値の列、TEXT 列と数値の比較（移行元は数値として比べる）、整数の列と端数のある値の `=`、型の範囲外。読み取りは実行計画に回る | 列の型のリテラルかバインドにする |
+| `NULL_CMP` | ERROR / WARN | `= NULL`・`<> NULL`・`NOT IN (…, NULL)` は移行元で常に偽、ScalarDB は述語の NULL を断る（DB-SQL-10045）。ERROR（読み取りは実行計画に回る）。`IN (…, NULL)` からは NULL を除いた（WARN） | `IS [NOT] NULL` にするか条件を外す |
 | `TZ_ASSUMED_UTC` | WARN | ゾーンの無いリテラルを TIMESTAMPTZ 列に書いている。移行元はセッションのタイムゾーンで読むが、ここでは分からないので UTC と見なした（ScalarDB は末尾 `Z` の TIMESTAMPTZ リテラルしか受け付けない） | `--session-time-zone`（`Asia/Tokyo`、`+09:00`）で再変換する |
 | `BOOL_LIT` | INFO | TRUE / FALSE を数値の列に 1 / 0 で書いた | なし |
 
