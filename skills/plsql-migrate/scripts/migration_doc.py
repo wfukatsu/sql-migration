@@ -601,7 +601,10 @@ def limits_facts(p: Project) -> str:
     out = ["**事実**（生成物・決定・比較から機械的に出した。手で書き換えない）", "",
            "- 判定: " + " / ".join(f"{k} {v}" for k, v in sorted(counts.items())),
            f"- 変換できなかった文 {summary.get('untranslatedStatements', 0)} / ScalarDB が受け付けない SQL "
-           f"{summary.get('unsupportedSql', 0)} / 実行計画に回した文 {summary.get('plannedSql', 0)}"]
+           f"{summary.get('unsupportedSql', 0)} / 実行計画に回した文 {summary.get('plannedSql', 0)}"
+           if summary.get("sqlChecked", True) else
+           f"- 変換できなかった文 {summary.get('untranslatedStatements', 0)} / SQL は ScalarDB に照らしていない"
+           "（ScalarDB のスキーマを渡さずに生成した。生成物は Oracle の SQL をそのまま実行する）"]
     if p.unconverted:
         out += ["", "**変換していないファイル**（解析できなかった。生成物に無いか、解析器が読み飛ばした部分が欠けている）", ""]
         out += _table(["ファイル", "理由", "生成物", "最初の誤り"], [

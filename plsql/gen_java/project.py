@@ -46,6 +46,9 @@ class GeneratedProject:
     restricted: list[str] = field(default_factory=list)
     # A-3: 照合の控えの表を作る namespace（照合を生成したときだけ）
     baseline_namespace: str | None = None
+    # False when no ScalarDB schema was given: the SQL was neither checked against ScalarDB nor converted, so the
+    # repositories run the Oracle SQL as written and `unsupportedSql` counts nothing (#161, PL/SQL L5)
+    sql_checked: bool = True
 
     @property
     def app_package(self) -> str:
@@ -60,13 +63,18 @@ class GeneratedProject:
         return f"{self.base_package}.infrastructure"
 
     def summary(self) -> dict:
-        return {
+        out = {
             "files": len(self.files),
             "untranslatedStatements": len(self.untranslated),
             "unsupportedSql": len(self.unsupported_sql),
             "plannedSql": len(self.planned_sql),
             "unknownNames": sorted(set(self.unknown_names)),
         }
+        if not self.sql_checked:
+            # written only then, so a report of a checked run is unchanged. `unsupportedSql` 0 here is "nobody
+            # asked", not "ScalarDB accepts every statement"
+            out["sqlChecked"] = False
+        return out
 
 
 def handover_banner(date: str) -> None:

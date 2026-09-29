@@ -228,7 +228,7 @@ public final class OracleFormat {
     NumberModel m = numberModel(format);
     return switch (m.kind) {
       case TM -> {
-        String text = minimal(value, nls);
+        String text = plain(value, nls);
         yield text.length() > 64 ? scientific(value, nls) : text;
       }
       case TME -> scientific(value, nls);
@@ -238,12 +238,41 @@ public final class OracleFormat {
     };
   }
 
-  /** The text of a NUMBER without a format: no zero before the point, the session's decimal character. */
+  /**
+   * The text of a NUMBER without a format, as PL/SQL writes it (`v := n`, `'x' || n`, `TO_CHAR(n)` in PL/SQL): no zero
+   * before the point, the session's decimal character, and fixed notation while that takes at most 100 characters.
+   * Longer, it is scientific notation zero-padded to exactly 100 characters (#161). Measured on Oracle 26ai
+   * (23.26.3), 2026-09-30: 10^99 is 100 digits, 10^100 is {@code 1.000…000E+100} (93 zeros), -10^98 is fixed and
+   * -10^99 is {@code -1.00…0E+99}, 10^-99 is {@code .000…01} (100 characters) and 10^-100 is {@code 1.0…0E-100}; with
+   * NLS_NUMERIC_CHARACTERS ',.' the mantissa is {@code 1,000…}. SQL's TO_CHAR(n) is another rule (40 characters,
+   * rounded: {@code 1.000000000000000000000000000000000E+100}); the runtime writes PL/SQL's.
+   */
   public static String minimal(BigDecimal value, Nls nls) {
+    String text = plain(value, nls);
+    return text.length() <= PLAIN_WIDTH ? text : padded(value, nls);
+  }
+
+  private static final int PLAIN_WIDTH = 100;
+
+  /** Fixed notation with no zero before the point: 0.5 is '.5', -0.5 is '-.5'. */
+  private static String plain(BigDecimal value, Nls nls) {
     String plain = value.stripTrailingZeros().toPlainString();
     if (plain.startsWith("0.")) plain = plain.substring(1);
     else if (plain.startsWith("-0.")) plain = "-" + plain.substring(2);
     return nls.decimal() == '.' ? plain : plain.replace('.', nls.decimal());
+  }
+
+  /** Scientific notation whose mantissa is zero-padded to make the whole text {@link #PLAIN_WIDTH} characters. */
+  private static String padded(BigDecimal value, Nls nls) {
+    BigDecimal stripped = value.stripTrailingZeros();
+    String unscaled = stripped.unscaledValue().abs().toString();
+    int exponent = unscaled.length() - 1 - stripped.scale();
+    String tail = exponent(exponent);
+    String sign = value.signum() < 0 ? "-" : "";
+    int fraction = PLAIN_WIDTH - sign.length() - 2 - tail.length();   // "d" + point + fraction digits + E±nn
+    String digits = unscaled.substring(1);
+    if (digits.length() < fraction) digits = digits + "0".repeat(fraction - digits.length());
+    return sign + unscaled.charAt(0) + nls.decimal() + digits + tail;
   }
 
   /** TME: the fewest digits the value needs, 1.2345E+03, 0E+00. */

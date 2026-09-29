@@ -218,6 +218,7 @@ def _drop_order_nobody_reads(routine: M.Routine, schema: OracleSchema | None) ->
         try:
             tree = sqlglot.parse_one(query.original_sql or "", dialect="oracle")
         except Exception:
+            # unreadable: the ORDER BY stays as written -- the safe side, nothing is dropped (#161)
             continue
         select = tree if isinstance(tree, exp.Select) else None
         if select is None or not select.args.get("order") or row_cap(select)[0] is not None \
