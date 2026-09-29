@@ -18,7 +18,8 @@
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt          # 変換器の依存（sqlglot、ANTLR のランタイム、PyYAML、jsonschema）とテストの依存
+.venv/bin/pip install -r requirements-dev.txt      # 変換ツールの依存と pytest / hypothesis
+.venv/bin/pip install -r requirements-difftest.txt # DB ドライバと DuckDB。difftest/ のハーネスを動かすときだけ
 (cd runtime-java && ./gradlew installDist)          # Java 17。実行計画を動かすときだけ
 ```
 

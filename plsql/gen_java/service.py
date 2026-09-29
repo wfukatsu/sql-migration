@@ -74,6 +74,21 @@ _QUALIFIED_NAMES: "contextvars.ContextVar[dict[str, tuple]]" = contextvars.Conte
 _DEFAULT_ARGUMENTS: "contextvars.ContextVar[dict[str, str]]" = contextvars.ContextVar("default_arguments", default={})
 # the routine whose body is being generated: whose carried package variables an omitted DEFAULT may name (#141)
 _CALLER: "contextvars.ContextVar[M.Routine | None]" = contextvars.ContextVar("caller", default=None)
+# what a routine's whole body says (its cursors, its callees, its trigger row, whether it needs the audit), asked once
+# per expression: walking the body each time made generation quadratic in the statements of a routine (#152, H3).
+# Only a cache: live while one module is generated, and each value is what the walk returns for the same objects
+_FACTS: "contextvars.ContextVar[dict | None]" = contextvars.ContextVar("routine_facts", default=None)
+
+
+def _remembered(kind: str, key: tuple, compute):
+    """`compute()`, once per `generate_module` for the same objects in `key` (compared by identity)."""
+    cache = _FACTS.get()
+    if cache is None:
+        return compute()
+    slot = (kind, *map(id, key))
+    if slot not in cache:
+        cache[slot] = (key, compute())   # the key objects are held too, so that their ids are not reused
+    return cache[slot][1]
 
 
 @dataclass
@@ -94,6 +109,15 @@ def generate_module(module: M.Module, package: str, repository_package: str,
     `program` is needed when this module calls a trigger (#12): the trigger's body lives in another
     module, and its signature is what decides the argument order.
     """
+    token = _FACTS.set({})
+    try:
+        return _generate_module(module, package, repository_package, domain_package, program)
+    finally:
+        _FACTS.reset(token)
+
+
+def _generate_module(module: M.Module, package: str, repository_package: str,
+                     domain_package: str, program: "M.Program | None") -> ServiceFile:
     if program is not None:
         _PROGRAM.set(program)
     elif (current := _PROGRAM.get()) is not None and not any(m is module for m in current.modules):
@@ -188,6 +212,11 @@ _STRING = re.compile(r"'(?:[^']|'')*'")
 
 
 def _expression_callees(routine: M.Routine, module: "M.Module | None") -> dict[str, tuple[str, M.Routine]]:
+    return dict(_remembered("callees", (routine, module, _PROGRAM.get()),
+                            lambda: _find_expression_callees(routine, module)))
+
+
+def _find_expression_callees(routine: M.Routine, module: "M.Module | None") -> dict[str, tuple[str, M.Routine]]:
     """`pkg.fn` names inside the routine's expressions that resolve to a routine of another module of the
     program: {"pkg.fn": (module name, routine)}. Overloads are left out (which one is meant is not resolved
     from an expression), as is anything the program does not contain.
@@ -312,7 +341,7 @@ def needs_audit(routine: M.Routine) -> bool:
     a statement carries is translated instead, less the ones that are not expressions, so a node added to the
     IR is covered the day it arrives rather than the day someone remembers to add it here.
     """
-    return _needs_audit(routine, set())
+    return _remembered("audit", (routine, _MODULE.get(), _PROGRAM.get()), lambda: _needs_audit(routine, set()))
 
 
 def _needs_audit(routine: M.Routine, visiting: set[str]) -> bool:
@@ -361,6 +390,10 @@ def _expression_texts(statement: M.Statement):
 
 
 def correlation_row(routine: M.Routine) -> dict[str, "M.BindVariable"]:
+    return dict(_remembered("correlation", (routine, _MODULE.get()), lambda: _correlation_row(routine)))
+
+
+def _correlation_row(routine: M.Routine) -> dict[str, "M.BindVariable"]:
     """`NEW.status` / `OLD.status` -> それを渡す bind。trigger の行は呼び出し側から来る（#12）。
 
     **並びを決めているのは `plsql/triggers.py` である。** 呼ぶ側（書き込む文のところ）と呼ばれる側
@@ -3336,6 +3369,10 @@ def _cursor_state(cursor: str) -> str:
 
 def _general_cursors(routine: M.Routine) -> dict[str, bool]:
     """The cursors whose OPEN reads the rows its FETCHes take (#81), each with whether it is a cursor variable."""
+    return dict(_remembered("cursors", (routine,), lambda: _find_general_cursors(routine)))
+
+
+def _find_general_cursors(routine: M.Routine) -> dict[str, bool]:
     out: dict[str, bool] = {}
     for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
         cursor = getattr(statement, "opens_cursor", None)
@@ -3748,6 +3785,10 @@ class Untranslatable(Exception):
 
 def _not_found_flags(routine: M.Routine) -> list[str]:
     """The cursors whose `%NOTFOUND` this routine's rewritten reads answer, in the order they are read."""
+    return list(_remembered("not_found", (routine,), lambda: _find_not_found_flags(routine)))
+
+
+def _find_not_found_flags(routine: M.Routine) -> list[str]:
     out: list[str] = []
     for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
         flag = getattr(statement, "not_found_flag", None)

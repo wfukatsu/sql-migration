@@ -260,9 +260,19 @@ def _bad_join_mark_rewrite(node: exp.Expression) -> bool:
     return False
 
 
-# possessive (*+): a run of `----` lines, the usual banner of a SQL*Plus script, made the backtracking
-# (`--` + `[^\n]*` cut at every dash) exponential -- 80 dashes never returned (2026-09-24, samples/oracle-samples)
-_LEAD = r"(?:\s|--[^\n]*+(?:\n|$)|/\*.*?\*/)*+"
+# Never backtracks into the run it matched: a run of `----` lines, the usual banner of a SQL*Plus script, made the
+# backtracking (`--` + `[^\n]*` cut at every dash) exponential -- 80 dashes never returned (2026-09-24,
+# samples/oracle-samples). Possessive `*+` would say it, but that is Python 3.11+ and the tools support 3.10 (#152):
+# `(?=(?P<n>X*))(?P=n)` is the 3.10 spelling of `X*+` -- the lookahead takes the greedy run once, and the
+# backreference consumes exactly that text, so nothing after it can make the engine try a shorter run.
+_COMMENT_RUN = r"(?:\s|--[^\n]*(?:\n|$)|/\*.*?\*/)*"
+
+
+def _possessive(pattern: str, name: str) -> str:
+    return rf"(?=(?P<{name}>{pattern}))(?P={name})"
+
+
+_LEAD = _possessive(_COMMENT_RUN, "lead")
 # a stored program or an anonymous block: its semicolons end PL/SQL statements, not the SQL statement
 PLSQL_BLOCK = re.compile(_LEAD + r"(?:CREATE\s+(?:OR\s+REPLACE\s+)?(?:(?:NON)?EDITIONABLE\s+)?"
                          r"(?:PROCEDURE|FUNCTION|PACKAGE|TRIGGER|TYPE\s+BODY)\b|DECLARE\b|BEGIN\b)", re.I | re.S)
@@ -271,7 +281,7 @@ _SLASH_LINE = re.compile(r"^[ \t]*/[ \t]*\r?$", re.M)
 # SQL*Plus needs a `/` after it. Kept whole like a block and refused by name (#30)
 WITH_PLSQL = re.compile(_LEAD + r"WITH\s+(?:FUNCTION|PROCEDURE)\b", re.I | re.S)
 # a chunk holding nothing but comments and whitespace (possessive for the same reason as _LEAD)
-_COMMENTS_ONLY = re.compile(r"(?:\s|--[^\n]*+\n?|/\*.*?\*/)*+", re.S)
+_COMMENTS_ONLY = re.compile(_possessive(r"(?:\s|--[^\n]*\n?|/\*.*?\*/)*", "only"), re.S)
 
 
 def _split_statements(text: str, dialect: str) -> list[str]:
