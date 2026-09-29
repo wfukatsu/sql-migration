@@ -3,8 +3,9 @@ package com.scalar.migrate.plsql;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
 /**
@@ -24,6 +25,14 @@ import java.util.function.Supplier;
  *       採番のたびに同じ行を触るので<b>衝突しやすい</b>。移行元が {@code NOCACHE} と書いていたもの。
  * </ul>
  *
+ * <p><b>別の番号を配れるかどうかを、接続の分離レベルに頼らない</b>（#149）。更新は読んだ値を条件にした
+ * {@code UPDATE ... WHERE counter_name = ? AND next_value = ?} で、更新件数が 1 でなければ衝突として取り直す。
+ * 以前は読んだあとに無条件で書いていたので、READ COMMITTED の接続（ScalarDB を通さない RDBMS、H2 の既定）
+ * を渡すと、2 つのインスタンスが同じ値を読んで両方 commit し、同じ番号を配った（H2 で 2000 回中 735 件）。
+ *
+ * <p>ロックは sequence 名ごとで、DB への往復は別の sequence の採番を待たせない。再試行の間には、ゆらぎ付きの
+ * 短い待ちを入れる（すぐ打ち直すと、衝突した相手とまた衝突する）。
+ *
  * <p>ここでの再試行は採番トランザクションだけのもので、業務トランザクションの再試行
  * （use case 境界が持つ、計画 §9）とは別物である。
  */
@@ -34,7 +43,8 @@ public final class CountersSequences implements Sequences {
   private final Supplier<Connection> connections;
   private final String table;
   private final Map<String, Integer> blocks;
-  private final Map<String, long[]> held = new HashMap<>();   // name -> {次に配る値, この範囲の終わり}
+  private final Map<String, long[]> held = new ConcurrentHashMap<>();   // name -> {次に配る値, この範囲の終わり}
+  private final Map<String, Object> locks = new ConcurrentHashMap<>();   // name -> その sequence だけのロック
 
   /**
    * @param connections 採番専用の接続を返すもの。呼ばれるたびに新しいものを返すこと——
@@ -48,30 +58,38 @@ public final class CountersSequences implements Sequences {
   }
 
   @Override
-  public synchronized long next(String name) {
+  public long next(String name) {
     Integer block = blocks.get(name);
     if (block == null) {
       throw new IllegalArgumentException(
           "知らない sequence: " + name + "。移行元の DDL から導いた方式を渡していない可能性がある。"
               + "黙って 1 から始めると、採番の連続性が壊れたことに気づけない");
     }
-    long[] range = held.get(name);
-    if (range != null && range[0] < range[1]) {
-      return range[0]++;
+    synchronized (locks.computeIfAbsent(name, k -> new Object())) {
+      long[] range = held.get(name);
+      if (range != null && range[0] < range[1]) {
+        return range[0]++;
+      }
+      long from = allocate(name, block);
+      held.put(name, new long[] {from + 1, from + block});
+      return from;
     }
-    long from = allocate(name, block);
-    held.put(name, new long[] {from + 1, from + block});
-    return from;
   }
 
   /** `next_value` を block だけ進め、進める前の値を返す。衝突したら再試行する。 */
   private long allocate(String name, int block) {
     RuntimeException last = null;
     for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      if (attempt > 0) pause(attempt);
       try (Connection connection = connections.get()) {
         connection.setAutoCommit(false);
         long current = read(connection, name);
-        update(connection, name, current + block);
+        if (!update(connection, name, current, current + block)) {
+          // 読んでから書くまでに別のトランザクションが進めた。この確保は捨てて読み直す
+          connection.rollback();
+          last = new IllegalStateException(name + ": 読んだ " + current + " が書く前に変わっていた");
+          continue;
+        }
         connection.commit();
         return current;
       } catch (NotRetryable e) {
@@ -109,12 +127,25 @@ public final class CountersSequences implements Sequences {
     }
   }
 
-  private void update(Connection connection, String name, long value) throws Exception {
+  /** 読んだ値のままなら進めて true。別のトランザクションが先に進めていたら何もせず false。 */
+  private boolean update(Connection connection, String name, long read, long value) throws Exception {
     try (PreparedStatement statement = connection.prepareStatement(
-        "UPDATE " + table + " SET next_value = ? WHERE counter_name = ?")) {
+        "UPDATE " + table + " SET next_value = ? WHERE counter_name = ? AND next_value = ?")) {
       statement.setLong(1, value);
       statement.setString(2, name);
-      statement.executeUpdate();
+      statement.setLong(3, read);
+      return statement.executeUpdate() == 1;
+    }
+  }
+
+  /** 再試行の前の待ち。回数とともに伸ばし、ゆらぎで相手とずらす（最大でおよそ 50 ms）。 */
+  private static void pause(int attempt) {
+    long bound = Math.min(50L, 2L << attempt);
+    try {
+      Thread.sleep(ThreadLocalRandom.current().nextLong(1, bound + 1));
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("採番の再試行を待つ間に割り込まれた", e);
     }
   }
 }

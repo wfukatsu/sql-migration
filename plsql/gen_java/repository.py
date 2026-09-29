@@ -126,8 +126,8 @@ def _planned_rows(file: JavaFile, name: str, statement: M.SqlOperation, record: 
         f.line(f'var plan = PlanRunner.resource("plans/{plan}");')
         # 計画の取得も ScalarDB SQL へ渡すので、直接の文と同じく列の型で渡す。素の値を渡すと、
         # BigDecimal が型ごと拒否される（DB-SQL-10016。keyset の起点で実際に落ちた / 2026-09-19）
-        binds = ", ".join(f'"{b.name}", {_bound(file, b)}' for b in statement.binds)
-        f.line(f"var planned = PlanRunner.join(connection, plan, Map.of({binds}));")
+        binds = ", ".join(f'"{b.name}", {_bound(file, b)}' for b in _distinct(statement.binds))
+        f.line(f"var planned = PlanRunner.join(connection, plan, PlanRunner.params({binds}));")
         f.line(f"List<{record}> rows = new ArrayList<>();")
         with f.block("for (List<Object> row : planned.rows())") as g:
             if limit is not None:
@@ -425,6 +425,21 @@ def _select_into(file: JavaFile, reader: str, statement: M.SqlOperation) -> None
         f.line("return value;")
 
 
+def _distinct(binds):
+    """計画へ渡す bind を名前ごとに 1 つにする。計画は名前で引くので、同じ名前の 2 つ目は同じ値である。
+
+    `Map.of` は NULL の値で NPE、11 組以上でコンパイルできず、名前の重複で IllegalArgumentException だった
+    （#149）。受け取り側は `PlanRunner.params`（NULL を許し、重複を断る）なので、ここで重複を落とす。
+    """
+    seen: set[str] = set()
+    out = []
+    for bind in binds:
+        if bind.name not in seen:
+            seen.add(bind.name)
+            out.append(bind)
+    return out
+
+
 def _planned(file: JavaFile, name: str, statement: M.SqlOperation, result: RepositoryFile) -> None:
     """ScalarDB SQL cannot run this one, so the plan does: fetch through ScalarDB, then H2."""
     file.add_import(RUNNER_IMPORT, "java.util.Map")
@@ -437,8 +452,8 @@ def _planned(file: JavaFile, name: str, statement: M.SqlOperation, result: Repos
         # 計画の取得も ScalarDB SQL へ渡すので、直接の文と同じく列の型で渡す。素の値を渡すと、
         # BigDecimal が型ごと拒否される（DB-SQL-10016。keyset の起点で実際に落ちた / 2026-09-19）
         written = (statement.write_set or [None])[0]
-        binds = ", ".join(f'"{b.name}", {_bound(file, b, None, written)}' for b in statement.binds)
-        f.line(f"return PlanRunner.join(connection, plan, Map.of({binds}));")
+        binds = ", ".join(f'"{b.name}", {_bound(file, b, None, written)}' for b in _distinct(statement.binds))
+        f.line(f"return PlanRunner.join(connection, plan, PlanRunner.params({binds}));")
     result.methods.append(name)
     result.planned.append(statement.id)
 

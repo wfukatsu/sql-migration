@@ -40,6 +40,7 @@ public final class Plsql {
     if (a instanceof java.util.List<?> x && b instanceof java.util.List<?> y) return Boolean.TRUE.equals(sameMultiset(x, y));
     // two RAWs are equal byte for byte: HEXTORAW('ab') = HEXTORAW('AB') (#140)
     if (a instanceof byte[] x && b instanceof byte[] y) return java.util.Arrays.equals(x, y);
+    if (zonedPair(a, b)) return instant(a).equals(instant(b));
     return Objects.equals(a, b);
   }
 
@@ -100,7 +101,36 @@ public final class Plsql {
       return num(a).compareTo(num(b));
     }
     if (a instanceof byte[] x && b instanceof byte[] y) return java.util.Arrays.compareUnsigned(x, y);
+    if (zonedPair(a, b)) return instant(a).compareTo(instant(b));
     return ((Comparable) a).compareTo(b);
+  }
+
+  /**
+   * Two date-times of which at least one carries a zone (#149). Oracle compares TIMESTAMP WITH TIME ZONE as an
+   * instant, and a DATE or a TIMESTAMP next to one as the instant it names in the session's zone -- UTC, by the
+   * decision {@link #systimestamp()} follows. Measured on Oracle 26ai with TIME_ZONE = 'UTC':
+   * {@code TIMESTAMP '2026-01-01 10:00:00 +09:00' = TIMESTAMP '2026-01-01 01:00:00 +00:00'} is TRUE, and so is the
+   * same instant against the TIMESTAMP / DATE {@code 2026-01-01 01:00:00}. Java's OffsetDateTime compares the offset
+   * as well ({@code equals}) or breaks the tie by the local time ({@code compareTo}), and a LocalDateTime against an
+   * OffsetDateTime -- {@code p_expires < SYSTIMESTAMP} -- was a ClassCastException no WHEN OTHERS could see.
+   */
+  private static boolean zonedPair(Object a, Object b) {
+    return (a instanceof java.time.OffsetDateTime || b instanceof java.time.OffsetDateTime
+            || a instanceof java.time.Instant || b instanceof java.time.Instant)
+        && instantLike(a) && instantLike(b);
+  }
+
+  private static boolean instantLike(Object value) {
+    return value instanceof java.time.OffsetDateTime || value instanceof java.time.Instant
+        || value instanceof LocalDateTime || value instanceof java.time.LocalDate;
+  }
+
+  /** The instant a date-time names, a value without a zone read in the session's zone (UTC). */
+  private static java.time.Instant instant(Object value) {
+    if (value instanceof java.time.OffsetDateTime moment) return moment.toInstant();
+    if (value instanceof java.time.Instant moment) return moment;
+    if (value instanceof LocalDateTime moment) return moment.toInstant(java.time.ZoneOffset.UTC);
+    return ((java.time.LocalDate) value).atStartOfDay().toInstant(java.time.ZoneOffset.UTC);
   }
 
   private static boolean numeric(Object a, Object b) {
@@ -410,6 +440,12 @@ public final class Plsql {
     return arith(a, b, BigDecimal::add);
   }
 
+  /** An OffsetDateTime moved to UTC, keeping its instant; anything else as it is. */
+  private static Object inUtc(Object value) {
+    return value instanceof java.time.OffsetDateTime moment
+        ? moment.withOffsetSameInstant(java.time.ZoneOffset.UTC) : value;
+  }
+
   private static boolean isTemporal(Object value) {
     return value instanceof LocalDateTime || value instanceof java.time.OffsetDateTime;
   }
@@ -477,7 +513,11 @@ public final class Plsql {
     if (isTemporal(a) && isTemporal(b)) {
       // Oracle subtracts two DATEs into a number of days, fraction included
       // (the division rounds as Oracle's NUMBER does: #64)
-      return OracleNumbers.divide(BigDecimal.valueOf(java.time.Duration.between(castDate(b), castDate(a)).toSeconds()),
+      // with a zone on either side the difference is between the two instants (#149): castDate drops the offset,
+      // and the same instant written as +09:00 and as UTC came out 0.375 days apart. Oracle 26ai: 0 (see zonedPair)
+      LocalDateTime from = zonedPair(a, b) ? castDate(inUtc(b)) : castDate(b);
+      LocalDateTime to = zonedPair(a, b) ? castDate(inUtc(a)) : castDate(a);
+      return OracleNumbers.divide(BigDecimal.valueOf(java.time.Duration.between(from, to).toSeconds()),
           BigDecimal.valueOf(86400));
     }
     // `SYSTIMESTAMP - 30` は 30 日前の DATE である。日数として数値に直すと落ちる
@@ -1401,9 +1441,11 @@ public final class Plsql {
       java.util.List<Object> list = (java.util.List<Object>) raw;
       int i = num(at).intValueExact();
       if (i < 1) throw new SubscriptOutsideLimit();
-      // an INDEX BY PLS_INTEGER table takes any key: the List grows to it, the skipped slots being gaps. (A nested
-      // table would raise SUBSCRIPT_BEYOND_COUNT here; both are Lists, so the lenient rule serves both)
-      while (list.size() < i) list.add(GAP);
+      // only a nested table or a VARRAY is a List: an INDEX BY table is a Map since #93. Past COUNT is
+      // SUBSCRIPT_BEYOND_COUNT, as in Oracle (`nt(4) := x` with COUNT 3; EXTEND first). It used to fill the gap
+      // and grow, silently -- `set(list, 100_000_000, x)` built a List of a hundred million slots (#149).
+      // A deleted element inside COUNT takes the value again, as Oracle's does
+      if (i > list.size()) throw new SubscriptBeyondCount();
       list.set(i - 1, value);
       return;
     }
@@ -1573,27 +1615,80 @@ public final class Plsql {
 
   // DBMS_OUTPUT: the session's output buffer. Per thread here; nothing is written to a table, so a comparison
   // of table state never sees it. `output()` hands the lines back and clears the buffer.
-  private static final ThreadLocal<java.util.List<String>> OUTPUT = ThreadLocal.withInitial(java.util.ArrayList::new);
-  private static final ThreadLocal<StringBuilder> OUTPUT_LINE = ThreadLocal.withInitial(StringBuilder::new);
+  //
+  // Off until the caller enables it (#149), as in an Oracle session that never called DBMS_OUTPUT.ENABLE: the
+  // lines are dropped. It used to collect every line on the thread with no limit, and the generated code never
+  // reads it -- on a pooled thread that was memory that only grew, and the next request's output() read the
+  // lines of the one before. Enabled, it holds what Oracle's buffer holds. Measured on 26ai with ENABLE(2000):
+  // the limit counts the bytes (UTF-8) of what PUT / PUT_LINE wrote, not the line ends (20 lines of 100 bytes
+  // fit, the 21st raises; 3000 empty lines fit); the item that goes over is not kept, and the error is
+  // ORA-20000: ORU-10027. ENABLE(NULL) has no limit.
+  private static final class OutputBuffer {
+    final java.util.List<String> lines = new java.util.ArrayList<>();
+    final StringBuilder line = new StringBuilder();
+    long limit = -1;   // bytes; -1 means no limit
+    long used;
+  }
+
+  private static final ThreadLocal<OutputBuffer> OUTPUT = new ThreadLocal<>();
+
+  /** ORU-10027 (ORA-20000): DBMS_OUTPUT went over the limit ENABLE set. Text as Oracle 26ai gives it. */
+  public static final class OutputBufferOverflow extends OracleError {
+    public OutputBufferOverflow(long limit) {
+      super(-20000, "ORA-20000: ORU-10027: buffer overflow, limit of " + limit + " bytes");
+    }
+  }
+
+  /** `DBMS_OUTPUT.ENABLE(NULL)` for this thread: keep the lines, with no limit. */
+  public static void enableOutput() {
+    enableOutput(null);
+  }
+
+  /**
+   * `DBMS_OUTPUT.ENABLE(limit)` for this thread: keep the lines until {@code limit} bytes (null: no limit). An
+   * enabled buffer keeps what it holds and takes the new limit, as Oracle's does.
+   */
+  public static void enableOutput(Object limit) {
+    OutputBuffer buffer = OUTPUT.get();
+    if (buffer == null) OUTPUT.set(buffer = new OutputBuffer());
+    buffer.limit = isNull(limit) ? -1 : num(limit).longValue();
+  }
+
+  /** `DBMS_OUTPUT.DISABLE` for this thread: drop what is held, and drop what is written from now on. */
+  public static void disableOutput() {
+    OUTPUT.remove();
+  }
 
   public static void putLine(Object value) {
-    OUTPUT_LINE.get().append(isNull(value) ? "" : text(value));
+    put(value);
     newLine();
   }
 
   public static void put(Object value) {
-    OUTPUT_LINE.get().append(isNull(value) ? "" : text(value));
+    OutputBuffer buffer = OUTPUT.get();
+    if (buffer == null || isNull(value)) return;
+    String piece = text(value);
+    long bytes = piece.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+    if (buffer.limit >= 0 && buffer.used + bytes > buffer.limit) throw new OutputBufferOverflow(buffer.limit);
+    buffer.used += bytes;
+    buffer.line.append(piece);
   }
 
   public static void newLine() {
-    OUTPUT.get().add(OUTPUT_LINE.get().toString());
-    OUTPUT_LINE.get().setLength(0);
+    OutputBuffer buffer = OUTPUT.get();
+    if (buffer == null) return;
+    buffer.lines.add(buffer.line.toString());
+    buffer.line.setLength(0);
   }
 
+  /** The lines this thread's enabled buffer holds, which it then forgets (`DBMS_OUTPUT.GET_LINES`). */
   public static java.util.List<String> output() {
-    java.util.List<String> lines = java.util.List.copyOf(OUTPUT.get());
-    OUTPUT.get().clear();
-    OUTPUT_LINE.get().setLength(0);
+    OutputBuffer buffer = OUTPUT.get();
+    if (buffer == null) return java.util.List.of();
+    java.util.List<String> lines = java.util.List.copyOf(buffer.lines);
+    buffer.lines.clear();
+    buffer.line.setLength(0);
+    buffer.used = 0;
     return lines;
   }
 
@@ -1641,9 +1736,16 @@ public final class Plsql {
     return emptyIsNull(out.toString());
   }
 
-  /** `DBMS_UTILITY.GET_TIME`: a clock in hundredths of a second, for differences only (its origin is arbitrary). */
+  /**
+   * `DBMS_UTILITY.GET_TIME`: a clock in hundredths of a second, for differences only (its origin is arbitrary).
+   *
+   * <p>Oracle wraps it around within 32 bits (-2^31 .. 2^31-1), so the usual
+   * {@code l_start PLS_INTEGER := DBMS_UTILITY.GET_TIME} always fits. {@code System.nanoTime()} counts from an
+   * origin the JVM does not fix (the host's uptime on HotSpot / Linux), and after about 248 days the value no longer
+   * fitted a PLS_INTEGER: ORA-01426 from {@code toInt} (#149). It wraps the same way here.
+   */
   public static BigDecimal getTime() {
-    return BigDecimal.valueOf(System.nanoTime() / 10_000_000L);
+    return BigDecimal.valueOf((int) (System.nanoTime() / 10_000_000L));
   }
 
   /** `RTRIM(x)`: the trailing blanks (U+0020) only, as {@link #trim} (#112: `RTRIM(' a '||CHR(9))` keeps the tab). */
@@ -2912,7 +3014,10 @@ public final class Plsql {
     java.util.List<java.util.List<T>> out = new java.util.ArrayList<>();
     if (rows == null) return out;
     for (int at = 0; at < rows.size(); at += n) {
-      out.add(java.util.List.copyOf(rows.subList(at, Math.min(at + n, rows.size()))));
+      // not List.copyOf: it throws on a null element, and a NULL in the column is an ordinary element of
+      // `FETCH c BULK COLLECT INTO v_ids LIMIT 100` (#149)
+      out.add(java.util.Collections.unmodifiableList(
+          new java.util.ArrayList<>(rows.subList(at, Math.min(at + n, rows.size())))));
     }
     return out;
   }
