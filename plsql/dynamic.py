@@ -97,7 +97,10 @@ def enumerate_variants(routine: M.Routine, statement: M.DynamicSql,
     if any(_MARK in value for _, value in built):
         # #165: a hole with a list of values: one statement per combination
         return _combinations(built, lists) or otherwise()
-    variants = [Variant(guard=" AND ".join(state.guard), sql=value) for state, value in built]
+    # each condition in parentheses: `p_a = 1 OR p_b = 2` under `p_c = 3` is `(p_a = 1 OR p_b = 2) AND (p_c = 3)`, not
+    # `p_a = 1 OR p_b = 2 AND p_c = 3` -- AND binds tighter, and the other variant was picked (#165)
+    variants = [Variant(guard=" AND ".join(f"({c})" for c in state.guard) if len(state.guard) > 1
+                        else "".join(state.guard), sql=value) for state, value in built]
     unique = list(dict.fromkeys(variants))
     return unique if 0 < len(unique) <= MAX_VARIANTS else None
 
