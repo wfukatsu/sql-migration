@@ -296,7 +296,8 @@ def _redesign_lines(status) -> list[str]:
     for item in status.decisions:
         lines.append(f"- `{item['rule']}` は決定済み（{item['decidedBy']}）: {item['why']}")
     for rule in status.open:
-        lines.append(f"- `{rule}` は**未決定**。下の代替案から決めて、決定を記録する（limits.yaml）")
+        short = getattr(status, "why_open", {}).get(rule)
+        lines.append(f"- `{rule}` は**未決定**。" + (f"{short}" if short else "下の代替案から決めて、決定を記録する（limits.yaml）"))
     if status.evidence is not None:
         lines.append(f"- 実 DB の比較: {status.evidence[0]} / {status.evidence[1]} シナリオが Oracle と一致")
     elif status.through:

@@ -6,6 +6,7 @@
 * **行ロックを落として楽観制御へ移すと決めた routine**（#9 / 2026-09-18 の決定）
 * **トランザクション境界を 1 反復 = 1 トランザクションに割ると決めた routine**（#3 / #24 / #14）
 * **動的 SQL が受け付けてよい表名**（2026-09-19 の決定）
+* **動的 SQL の連結する箇所（穴）ごとに受け付けてよい値**（#165、2026-09-30 の決定。`dynamicSql:`）
 * **移行元のセッションの NLS**（#157。`nls:`、project に 1 つ。`NlsSettings`）
 
 どちらも「決めた人がいるときだけ、決めたと書ける」という同じ形である。書いていない routine に
@@ -31,6 +32,7 @@ Oracle の cursor は 1 行ずつ取るので 1000 万行でも動いた。Scala
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -168,6 +170,91 @@ class DynamicTables:
 
     def for_routine(self, routine: str) -> list[str]:
         return list(self.allowed.get(routine, []))
+
+
+# 穴ごとの一覧を掛け合わせた数の上限（#165）。1 つの文から生成する静的な文の数で、ORDER BY の列 8 つと方向 2 つ
+# （16 通り）に、もう 1 つ 4 通りの穴が付いても収まる。これを超える文は、人が 1 つずつ見られる数ではないので、
+# 展開せずに理由を言って断る
+MAX_HOLE_COMBINATIONS = 64
+
+_HOLE_NAME = re.compile(r"^[A-Za-z][\w$#]*$")
+
+
+@dataclass
+class DynamicSqlHoles:
+    """動的 SQL の**連結する箇所（穴）ごと**に、受け付けてよい値を並べた一覧（#165、2026-09-30 の決定）。
+
+        dynamicSql:
+          pkg_report.list_orders:
+            holes:
+              p_sort_col: [order_id, ordered_at]    # ORDER BY の列
+              p_sort_dir: [ASC, DESC]               # 並べる向き
+            reason: 画面の並べ替えは列 2 つと向き 2 つだけ（2026-09-30、業務担当が確認）
+
+    穴の名前は、文に連結している**変数（引数か局所変数）の名前**である。`DBMS_ASSERT.SIMPLE_SQL_NAME(p_col)` の
+    ように包んでいれば中の `p_col` を書く。大文字小文字は区別しない。
+
+    文の穴が**すべて**一覧を持つときだけ、値の組み合わせごとに静的な文を生成する（上限 `MAX_HOLE_COMBINATIONS`）。
+    1 つでも一覧の無い穴があれば、その文は展開せず REDESIGN のまま未決定で、どの穴に一覧が無いかを言う。
+    穴が 1 つの文は、いままでどおり `dynamicTables` でも決められる。
+    """
+
+    holes: dict[str, dict[str, list[str]]] = field(default_factory=dict)
+    reasons: dict[str, str] = field(default_factory=dict)
+    source: str | None = None
+
+    @classmethod
+    def load(cls, path: str | Path | None) -> "DynamicSqlHoles":
+        if path is None:
+            return cls()
+        file = Path(path)
+        if not file.exists():
+            raise FileNotFoundError(f"{file} が無い")
+        data = yaml.safe_load(file.read_text(encoding="utf-8")) or {}
+        section = data.get("dynamicSql") or {}
+        if not isinstance(section, dict):
+            raise ValueError("dynamicSql は対応（routine id: {holes, reason}）で書く")
+        holes: dict[str, dict[str, list[str]]] = {}
+        reasons: dict[str, str] = {}
+        for routine, entry in section.items():
+            where = f"dynamicSql.{routine}"
+            if not isinstance(entry, dict):
+                raise ValueError(f"{where} は holes と reason を持つ対応で書く")
+            extra = sorted(str(k) for k in entry if k not in ("holes", "reason"))
+            if extra:
+                raise ValueError(f"{where} に知らないキー {extra}。書けるのは holes と reason")
+            why = " ".join(str(entry.get("reason") or "").split())
+            if not why:
+                raise ValueError(f"{where} に理由（reason）が無い。誰がなぜその値だけを受け付けると決めたかを書く")
+            listed = entry.get("holes")
+            if not isinstance(listed, dict) or not listed:
+                raise ValueError(f"{where}.holes に穴ごとの一覧が無い（`holes: {{p_sort_col: [order_id, ordered_at]}}`）")
+            by_hole: dict[str, list[str]] = {}
+            for hole, values in listed.items():
+                name = str(hole).strip()
+                if not _HOLE_NAME.match(name):
+                    raise ValueError(f"{where}.holes.{hole}: 穴の名前は連結している変数の名前で書く"
+                                     f"（DBMS_ASSERT で包んでいれば中の変数名）")
+                if name.lower() in by_hole:
+                    raise ValueError(f"{where}.holes.{hole} が 2 度ある（大文字小文字は区別しない）")
+                if not isinstance(values, list) or not values:
+                    raise ValueError(f"{where}.holes.{hole} は受け付ける値の並び（[a, b]）で書く。空の並びは何も"
+                                     f"受け付けないので、決定にならない")
+                texts = []
+                for value in values:
+                    if value is None or isinstance(value, (bool, dict, list)):
+                        raise ValueError(f"{where}.holes.{hole}: 値 {value!r} は文字列か数で書く")
+                    texts.append(str(value))
+                by_hole[name.lower()] = list(dict.fromkeys(texts))
+            holes[str(routine)] = by_hole
+            reasons[str(routine)] = why
+        return cls(holes=holes, reasons=reasons, source=str(file))
+
+    def for_routine(self, routine: str) -> dict[str, list[str]]:
+        return {k: list(v) for k, v in self.holes.get(routine, {}).items()}
+
+    def why(self, routine: str) -> str | None:
+        return self.reasons.get(routine)
 
 
 def conditional_compilation(path: str | Path | None) -> None:
@@ -523,6 +610,7 @@ SECTIONS: dict[str, set[str] | None] = {
     "rowLocks": {"optimistic"},
     "transactions": {"perIteration", "separate", "callerBoundary"},
     "dynamicTables": None,
+    "dynamicSql": None,
     "ddl": {"omit"},
     "packageState": {"carried"},
     "constraints": {"enforce"},
@@ -537,7 +625,8 @@ REASONED = [("scanRows", "notLimited"), ("rowLocks", "optimistic"), ("transactio
 # the places keyed by routine id
 ROUTINE_KEYED = [("scanRows", "routines"), ("scanRows", "notLimited"), ("rowLocks", "optimistic"),
                  ("transactions", "perIteration"), ("transactions", "separate"),
-                 ("transactions", "callerBoundary"), ("ddl", "omit"), ("dynamicTables", None)]
+                 ("transactions", "callerBoundary"), ("ddl", "omit"), ("dynamicTables", None),
+                 ("dynamicSql", None)]
 
 
 def _read(path: str | Path) -> dict:
@@ -593,6 +682,7 @@ def validate(path: str | Path) -> None:
         Boundaries.load(file)
         DbLinks.load(file)
         DynamicDdl.load(file)
+        DynamicSqlHoles.load(file)
     except (ValueError, TypeError) as error:
         raise LimitsError(f"{file}: {error}") from None
     if data.get("nls") is not None:

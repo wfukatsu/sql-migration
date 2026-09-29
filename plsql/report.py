@@ -260,7 +260,7 @@ _ORACLE_PACKAGES = ("DBMS_", "UTL_", "SYS", "OWA", "HTP", "APEX_", "CTX_")
 def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: str = "corpus",
             scalardb_schema: str | Path | None = None,
             row_locks: "RowLocks | None" = None, boundaries=None, limits=None, db_links=None,
-            package_state=None, constraints=None, dynamic_tables=None, nls=None) -> Analysis:
+            package_state=None, constraints=None, dynamic_tables=None, nls=None, dynamic_sql=None) -> Analysis:
     """Parse, resolve and lower every source file under `root`. Nothing raises; failures become diagnostics.
 
     With `scalardb_schema`, every SQL statement is also checked against the target (P2-4) and the answer lands on
@@ -268,22 +268,24 @@ def analyse(root: str | Path, schema_ddl: str | Path | None = None, program_id: 
 
     `dynamic_tables` (limits.yaml `dynamicTables`) are the table names a dynamic SQL statement may be given; the
     statement is then expanded into one per name, as `plsql.generate` does (#133). Without it the allowlist already
-    set (`dynamic.set_allowed_tables`, which `plsql.generate` calls) is used as it is.
+    set (`dynamic.set_allowed_tables`, which `plsql.generate` calls) is used as it is. `dynamic_sql` (limits.yaml
+    `dynamicSql`, #165) is the same for the lists of values per hole (`dynamic.set_hole_lists`).
 
     `nls` (limits.yaml `nls`, #157) is the source sessions' NLS settings: the conversions the runtime makes under them
     are marked decided, and SEM-008 / SEM-012 stop asking about them.
     """
-    if dynamic_tables is None:
-        return _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundaries, limits, db_links,
-                        package_state, constraints, nls)
-    from .dynamic import _ALLOWED
+    from .dynamic import _ALLOWED, _HOLES
 
-    token = _ALLOWED.set(dict(dynamic_tables.allowed))
+    tables = _ALLOWED.set(dict(dynamic_tables.allowed)) if dynamic_tables is not None else None
+    holes = _HOLES.set({r: dict(h) for r, h in dynamic_sql.holes.items()}) if dynamic_sql is not None else None
     try:
         return _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundaries, limits, db_links,
                         package_state, constraints, nls)
     finally:
-        _ALLOWED.reset(token)
+        if holes is not None:
+            _HOLES.reset(holes)
+        if tables is not None:
+            _ALLOWED.reset(tables)
 
 
 def _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundaries, limits, db_links,
