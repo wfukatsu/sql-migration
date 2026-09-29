@@ -42,7 +42,7 @@ PREFIX = "v_fk_"
 
 def rewrite(program: M.Program, constraints: Constraints | None, schema: OracleSchema | None,
             symbols: SymbolTable | None = None) -> None:
-    if schema is None or not (schema.checks or schema.foreign_keys):
+    if schema is None or not (schema.checks or schema.foreign_keys or schema.uniques or schema.not_null):
         return
     decided = constraints or Constraints()
     for module in program.modules:
@@ -80,6 +80,9 @@ def _guards(statement: M.Statement, routine: M.Routine, decided: Constraints, sc
     if statement.kind != "SqlOperation":
         return []
     kind = (statement.sql_kind or "").upper()
+    if kind == "DELETE":
+        _children(statement, decided, schema)
+        return []
     if kind not in ("INSERT", "UPDATE"):
         return []
     original = statement.original_sql or ""
@@ -93,23 +96,60 @@ def _guards(statement: M.Statement, routine: M.Routine, decided: Constraints, sc
         return []
     checks = schema.checks.get(table, [])
     keys = schema.foreign_keys.get(table, [])
-    if not checks and not keys:
+    key = set(schema.primary_key(table))
+    # the key is the target's too: ScalarDB refuses a NULL or a second row with it. Anything else it does not keep
+    uniques = [(n, c) for n, c in schema.uniques.get(table, []) if not set(c) <= key]
+    not_null = sorted(schema.not_null.get(table, set()) - key)
+    written = _written(tree, kind, table, schema)
+    if kind == "UPDATE":
+        # a constraint on columns the UPDATE leaves alone holds as it did: the stored row already met it (#148 M1)
+        touched = set(written or {})
+        checks = [(n, c) for n, c in checks if _check_columns(c) is None or _check_columns(c) & touched]
+        keys = [k for k in keys if set(k.columns) & touched]
+        uniques = [(n, c) for n, c in uniques if set(c) & touched]
+        not_null = [c for c in not_null if c in touched]
+    constrained = [n for n, _ in checks] + [k.name for k in keys] + [n for n, _ in uniques]
+    if not constrained and not not_null:
         return []
     if not decided.decided(table):
-        statement.add("INFO", "CONSTRAINT_UNDECIDED",
-                      f"{table} には CHECK / FOREIGN KEY（{', '.join([n for n, _ in checks] + [k.name for k in keys])}）"
-                      f"があるが移行先には無い。書く側で guard するかは決定である（limits.yaml constraints.enforce）")
+        # NOT NULL alone does not make the table undecided: nearly every table has one, and guarding it is part of
+        # deciding the table (#148 M1). CHECK, FOREIGN KEY and UNIQUE do
+        if constrained:
+            statement.add("INFO", "CONSTRAINT_UNDECIDED",
+                          f"{table} には CHECK / FOREIGN KEY / UNIQUE（{', '.join(constrained)}）があるが移行先には無い。"
+                          f"書く側で guard するかは決定である（limits.yaml constraints.enforce）")
         return []
-    written = _written(tree, kind, table, schema)
     if written is None:
         statement.add("WARN", "CONSTRAINT_NOT_GUARDED",
-                      f"{table} の CHECK / FOREIGN KEY を guard できない: 書く値がこの文から読めない"
+                      f"{table} の制約を guard できない: 書く値がこの文から読めない"
                       f"（INSERT … SELECT、または列の並びが DDL と合わない）")
         return []
     names = _plsql_names(routine)
     stored = set(schema.columns(table) or {})
     out: list[M.Statement] = []
     guarded: list[str] = []
+    # NOT NULL first: Oracle reports ORA-01400 for a row that also breaks a CHECK (#148 M1)
+    for column in not_null:
+        if kind == "UPDATE" and column not in written:
+            continue   # an UPDATE that does not set the column leaves it as it is
+        value = written.get(column, exp.Null())   # a column the INSERT leaves out (and has no DEFAULT) is NULL
+        if isinstance(value, exp.Literal) and (not value.is_string or value.this != ""):
+            continue   # a number or a non-empty string ('' is NULL in Oracle)
+        if _reads_stored(value, stored, names):
+            statement.add("WARN", "CONSTRAINT_NOT_GUARDED",
+                          f"NOT NULL {column} の値が表の値を読む式である。書く前に評価できない")
+            continue
+        counter[0] += 1
+        code, verb = (-1400, "insert") if kind == "INSERT" else (-1407, "update")
+        out.append(_refusal(statement, f"nn{counter[0]}", f"{value.sql(dialect='oracle', normalize_functions=False)} IS NULL",
+                            code, f'ORA-{abs(code):05d}: cannot {verb} NULL into ("{table.upper()}"."{column.upper()}")'))
+        guarded.append(f"NOT NULL {column}")
+    for name, columns in uniques:
+        if kind == "UPDATE" and not set(columns) & set(written):
+            continue
+        statement.add("WARN", "CONSTRAINT_NOT_GUARDED",
+                      f"UNIQUE {name}（{', '.join(columns)}）は守らない: 重複を知るには書く前に同じ値の行を読む必要がある"
+                      f"（索引か走査）。Oracle は ORA-00001 で断る（#148）")
     for name, condition in checks:
         try:
             check = sqlglot.parse_one(condition, dialect="oracle")
@@ -167,12 +207,41 @@ def _guards(statement: M.Statement, routine: M.Routine, decided: Constraints, sc
     return out
 
 
+def _children(statement: M.SqlOperation, decided: Constraints, schema: OracleSchema) -> None:
+    """A DELETE of a table other tables' FOREIGN KEYs point at: Oracle refuses it while a child row exists (ORA-02292).
+    Keeping that needs a read of every child table before the delete, which is not written (#148 M1)."""
+    try:
+        tree = sqlglot.parse_one(statement.original_sql or "", dialect="oracle")
+    except Exception:
+        return
+    target = tree.this if isinstance(tree, exp.Delete) else None
+    if not isinstance(target, exp.Table):
+        return
+    table = target.name.lower()
+    children = [(child, key.name) for child, keys in schema.foreign_keys.items() for key in keys
+                if key.parent == table]
+    if not children:
+        return
+    named = ", ".join(f"{child}.{name}" for child, name in children)
+    if decided.decided(table) or any(decided.decided(child) for child, _ in children):
+        statement.add("WARN", "CONSTRAINT_NOT_GUARDED",
+                      f"{table} を指す FOREIGN KEY（{named}）: 子のある行の DELETE を断らない。Oracle は ORA-02292 で断る。"
+                      f"守るには消す前に子の表を読む必要がある（#148）")
+    else:
+        statement.add("INFO", "CONSTRAINT_UNDECIDED",
+                      f"{table} を指す FOREIGN KEY（{named}）が移行先には無い。子のある行の DELETE を Oracle は断る"
+                      f"（ORA-02292）。書く側で守るかは決定である（limits.yaml constraints.enforce）")
+
+
 def _dynamic(statement: M.DynamicSql, decided: Constraints, schema: OracleSchema) -> None:
     """#148 H1: a folded `EXECUTE IMMEDIATE 'INSERT ...'` writes the table as the static INSERT does. No guard is put
     in front of it (the generator writes the variant where the EXECUTE IMMEDIATE is, chosen at run time), so a
     decided table is said to be unguarded, and an undecided one undecided -- as for a static write."""
     for variant in statement.variant_statements or []:
         kind = (variant.sql_kind or "").upper()
+        if kind == "DELETE":
+            _children(variant, decided, schema)
+            continue
         if kind not in ("INSERT", "UPDATE"):
             continue
         try:
@@ -182,17 +251,29 @@ def _dynamic(statement: M.DynamicSql, decided: Constraints, schema: OracleSchema
         table = _table(tree)
         if table is None:
             continue
-        names = [n for n, _ in schema.checks.get(table, [])] + [k.name for k in schema.foreign_keys.get(table, [])]
+        key = set(schema.primary_key(table))
+        names = [n for n, _ in schema.checks.get(table, [])] + [k.name for k in schema.foreign_keys.get(table, [])] \
+            + [n for n, c in schema.uniques.get(table, []) if not set(c) <= key]
+        if decided.decided(table) and schema.not_null.get(table, set()) - key:
+            names.append("NOT NULL")
         if not names:
             continue
         if not decided.decided(table):
             variant.add("INFO", "CONSTRAINT_UNDECIDED",
-                        f"{table} には CHECK / FOREIGN KEY（{', '.join(names)}）があるが移行先には無い。書く側で guard "
+                        f"{table} には CHECK / FOREIGN KEY / UNIQUE（{', '.join(names)}）があるが移行先には無い。書く側で guard "
                         f"するかは決定である（limits.yaml constraints.enforce）")
         else:
             variant.add("WARN", "CONSTRAINT_NOT_GUARDED",
-                        f"{table} の CHECK / FOREIGN KEY（{', '.join(names)}）を guard していない: 動的 SQL の文の前には"
+                        f"{table} の制約（{', '.join(names)}）を guard していない: 動的 SQL の文の前には"
                         f" guard を置かない（#148）。静的な文に書き直せば置く")
+
+
+def _check_columns(condition: str) -> set[str] | None:
+    """The columns a CHECK reads; None when it does not parse (then it counts as touched, and is not waved through)."""
+    try:
+        return {c.name.lower() for c in sqlglot.parse_one(condition, dialect="oracle").find_all(exp.Column)}
+    except Exception:
+        return None
 
 
 def _refusal(statement: M.Statement, tag: str, condition: str, code: int, message: str) -> M.If:
