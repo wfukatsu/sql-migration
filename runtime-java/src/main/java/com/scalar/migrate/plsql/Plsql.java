@@ -1613,27 +1613,80 @@ public final class Plsql {
 
   // DBMS_OUTPUT: the session's output buffer. Per thread here; nothing is written to a table, so a comparison
   // of table state never sees it. `output()` hands the lines back and clears the buffer.
-  private static final ThreadLocal<java.util.List<String>> OUTPUT = ThreadLocal.withInitial(java.util.ArrayList::new);
-  private static final ThreadLocal<StringBuilder> OUTPUT_LINE = ThreadLocal.withInitial(StringBuilder::new);
+  //
+  // Off until the caller enables it (#149), as in an Oracle session that never called DBMS_OUTPUT.ENABLE: the
+  // lines are dropped. It used to collect every line on the thread with no limit, and the generated code never
+  // reads it -- on a pooled thread that was memory that only grew, and the next request's output() read the
+  // lines of the one before. Enabled, it holds what Oracle's buffer holds. Measured on 26ai with ENABLE(2000):
+  // the limit counts the bytes (UTF-8) of what PUT / PUT_LINE wrote, not the line ends (20 lines of 100 bytes
+  // fit, the 21st raises; 3000 empty lines fit); the item that goes over is not kept, and the error is
+  // ORA-20000: ORU-10027. ENABLE(NULL) has no limit.
+  private static final class OutputBuffer {
+    final java.util.List<String> lines = new java.util.ArrayList<>();
+    final StringBuilder line = new StringBuilder();
+    long limit = -1;   // bytes; -1 means no limit
+    long used;
+  }
+
+  private static final ThreadLocal<OutputBuffer> OUTPUT = new ThreadLocal<>();
+
+  /** ORU-10027 (ORA-20000): DBMS_OUTPUT went over the limit ENABLE set. Text as Oracle 26ai gives it. */
+  public static final class OutputBufferOverflow extends OracleError {
+    public OutputBufferOverflow(long limit) {
+      super(-20000, "ORA-20000: ORU-10027: buffer overflow, limit of " + limit + " bytes");
+    }
+  }
+
+  /** `DBMS_OUTPUT.ENABLE(NULL)` for this thread: keep the lines, with no limit. */
+  public static void enableOutput() {
+    enableOutput(null);
+  }
+
+  /**
+   * `DBMS_OUTPUT.ENABLE(limit)` for this thread: keep the lines until {@code limit} bytes (null: no limit). An
+   * enabled buffer keeps what it holds and takes the new limit, as Oracle's does.
+   */
+  public static void enableOutput(Object limit) {
+    OutputBuffer buffer = OUTPUT.get();
+    if (buffer == null) OUTPUT.set(buffer = new OutputBuffer());
+    buffer.limit = isNull(limit) ? -1 : num(limit).longValue();
+  }
+
+  /** `DBMS_OUTPUT.DISABLE` for this thread: drop what is held, and drop what is written from now on. */
+  public static void disableOutput() {
+    OUTPUT.remove();
+  }
 
   public static void putLine(Object value) {
-    OUTPUT_LINE.get().append(isNull(value) ? "" : text(value));
+    put(value);
     newLine();
   }
 
   public static void put(Object value) {
-    OUTPUT_LINE.get().append(isNull(value) ? "" : text(value));
+    OutputBuffer buffer = OUTPUT.get();
+    if (buffer == null || isNull(value)) return;
+    String piece = text(value);
+    long bytes = piece.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+    if (buffer.limit >= 0 && buffer.used + bytes > buffer.limit) throw new OutputBufferOverflow(buffer.limit);
+    buffer.used += bytes;
+    buffer.line.append(piece);
   }
 
   public static void newLine() {
-    OUTPUT.get().add(OUTPUT_LINE.get().toString());
-    OUTPUT_LINE.get().setLength(0);
+    OutputBuffer buffer = OUTPUT.get();
+    if (buffer == null) return;
+    buffer.lines.add(buffer.line.toString());
+    buffer.line.setLength(0);
   }
 
+  /** The lines this thread's enabled buffer holds, which it then forgets (`DBMS_OUTPUT.GET_LINES`). */
   public static java.util.List<String> output() {
-    java.util.List<String> lines = java.util.List.copyOf(OUTPUT.get());
-    OUTPUT.get().clear();
-    OUTPUT_LINE.get().setLength(0);
+    OutputBuffer buffer = OUTPUT.get();
+    if (buffer == null) return java.util.List.of();
+    java.util.List<String> lines = java.util.List.copyOf(buffer.lines);
+    buffer.lines.clear();
+    buffer.line.setLength(0);
+    buffer.used = 0;
     return lines;
   }
 

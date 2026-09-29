@@ -704,7 +704,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 
 | PL/SQL の書き方 | 生成される Java | 判定への影響（ルール ID） | 注意 |
 |---|---|---|---|
-| `DBMS_OUTPUT.PUT_LINE` / `PUT` / `NEW_LINE` | `Plsql.putLine` / `put` / `newLine` | なし | スレッドごとの出力バッファで、`Plsql.output()` で読みます。日付は既定の NLS の形（SEM-012） |
+| `DBMS_OUTPUT.PUT_LINE` / `PUT` / `NEW_LINE` | `Plsql.putLine` / `put` / `newLine` | なし | スレッドごとの出力バッファです。既定では捨てます（ENABLE していない Oracle のセッションと同じ）。読むときは `Plsql.enableOutput(上限のバイト数)` で有効にし、`Plsql.output()` で読み、`Plsql.disableOutput()` で止めます。上限を超えると ORA-20000（ORU-10027）です。日付は既定の NLS の形（SEM-012） |
 | `DBMS_RANDOM.VALUE` / `STRING` | `Plsql.randomValue` / `randomString` | SEM-014（REVIEW） | Oracle と同じ値にはなりません。乱数の出所は業務で決めます（生成で確認） |
 | `DBMS_UTILITY.GET_TIME` | `Plsql.getTime()` | なし | 差を取るための値で、起点は Oracle と違います |
 | `DBMS_SESSION.SLEEP` / `DBMS_LOCK.SLEEP` | `Plsql.sleep(秒)` | なし | 待つ間トランザクションは開いたままです（生成で確認） |
