@@ -131,7 +131,30 @@ def _h2_target_dialect(name: str):
     with the source dialect would silently drop the source engine's NULL ordering.
     """
     base = type(sqlglot.Dialect.get_or_raise(name))
-    return type(f"H2{base.__name__}", (base,), {"NULL_ORDERING": "nulls_are_small"})
+    attrs = {"NULL_ORDERING": "nulls_are_small"}
+    if name == "postgres":
+        attrs["Generator"] = type("H2PostgresGenerator", (base.Generator,), {
+            "TRANSFORMS": {**base.Generator.TRANSFORMS, _AtLocal: lambda self, e: f"{self.sql(e, 'this')} AT LOCAL"},
+            "datatype_sql": _h2_zoned_type_sql})
+    return type(f"H2{base.__name__}", (base,), attrs)
+
+
+class _AtLocal(exp.Expression):
+    """H2's `value AT LOCAL`: a TIMESTAMP WITH TIME ZONE moved to the session's zone (the same instant)."""
+    arg_types = {"this": True}
+
+
+_ZONED = {exp.DataType.Type.TIMESTAMPTZ: "TIMESTAMP", exp.DataType.Type.TIMETZ: "TIME"}
+
+
+def _h2_zoned_type_sql(self, expression: exp.DataType) -> str:
+    """PostgreSQL's timestamptz / timetz spelt as H2 2.5.250 reads them: `Unknown data type: "TIMESTAMPTZ"` (and
+    "TIMETZ"), while TIMESTAMP [(p)] WITH TIME ZONE and TIME WITH TIME ZONE run (#169)."""
+    base = _ZONED.get(expression.this)
+    if base is None or expression.args.get("nested"):
+        return type(self).__mro__[1].datatype_sql(self, expression)
+    size = expression.expressions
+    return f"{base}{'(' + self.expressions(expression, flat=True) + ')' if size else ''} WITH TIME ZONE"
 
 
 def _unparen(e: exp.Expression) -> exp.Expression:
@@ -957,6 +980,18 @@ class Decomposer:
                 changed = True
         if self.dialect == "postgres":
             changed |= self._distinct_on(node)
+            # `x::timestamptz`, CAST(x AS timestamptz): H2 2.5.250 knows no TIMESTAMPTZ or TIMETZ and failed with
+            # `Unknown data type` whenever the residual was the source SQL as written (#169). Rendered, they read
+            # TIMESTAMP WITH TIME ZONE / TIME WITH TIME ZONE (_h2_zoned_type_sql). PostgreSQL shows a timestamptz in the
+            # session's TimeZone; H2 keeps the offset the text gave: '2024-01-03 20:30:00+00' was 20:30+00 in H2 and
+            # 05:30+09 in PostgreSQL under Asia/Tokyo, and EXTRACT(HOUR) answered 20 and 5. AT LOCAL moves it to the
+            # session's zone (the plan's time_zone, #160), and then both answer 5 and the DATE 2024-01-04
+            for cast in list(node.find_all(exp.Cast)):
+                to = cast.args.get("to")
+                if isinstance(to, exp.DataType) and to.this in _ZONED:
+                    if to.this == exp.DataType.Type.TIMESTAMPTZ:
+                        cast.replace(exp.Paren(this=_AtLocal(this=cast.copy())))
+                    changed = True
         if changed:
             notes.append("java: Oracle semantics made explicit for H2 (date functions, NULL ordering)")
         # Two things H2 2.5 cannot run as written, both found against a real Oracle (statements 34 and 53 of
