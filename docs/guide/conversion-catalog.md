@@ -379,7 +379,7 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 | Oracle | 外部結合 `(+)`、`ROWNUM`、`CONNECT BY`、`KEEP`、`MINUS` | 上の各表 |
 | Oracle | 整数型、`FLOAT`、`DATE`、精度なし `NUMBER`、`LONG`、`LONG RAW`、`XMLTYPE` | すべて WARN `TYPE`（上の「データ型」） |
 | Oracle | `/` だけの行 | 文の切れ目として扱う |
-| Oracle | 数字の bind（`:1`、`:2`。JDBC・OCI、V$SQL の形） | そのまま通す（解析のときだけ名前に置き換え、出力と計画では `:1` に戻す） |
+| Oracle | 数字の bind（`:1`、`:2`。JDBC・OCI、V$SQL の形） | 変換後の SQL では、出てくる順に `?` にする（ScalarDB SQL に数字の bind は無い）。番号の順と違う・同じ番号が繰り返すときは WARN `BIND_ORDER` で渡す順を示す。計画では `:1` のまま（名前として渡す） |
 | Oracle | q 引用（`q'[it's]'`、`nq'{...}'`） | 通常のリテラル（`'it''s'`）に直してから読む |
 | Oracle | DB link（`emp@remote`） | ERROR `DBLINK`（上の「INSERT / UPDATE / DELETE / MERGE」） |
 | Oracle | PL/SQL のブロック（`CREATE PROCEDURE` など、`BEGIN` / `DECLARE` の無名ブロック） | ERROR `PLSQL_BLOCK`。始まる所から `/` までを 1 文にする（前に `;` で終わる文があっても割らない）。PL/SQL の移行ツールで扱う |

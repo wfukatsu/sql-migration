@@ -249,7 +249,7 @@ ERROR になった読み取り文（SELECT、UNION などの集合演算、CTE �
 | `UPSERT` | INFO / WARN / ERROR | upsert を `UPSERT INTO` にした（INFO）。上書きする列が元より多い、主キーと見なした一意制約の前提（WARN）。条件つきの DO UPDATE、`列 = EXCLUDED.列` でない更新、主キー以外での衝突（ERROR） | ERROR は 1 つのトランザクションで読んで判断して書く |
 | `MERGE` | WARN / ERROR | 定数 1 行の MERGE を UPSERT にした（WARN。WHEN MATCHED が設定しない列も上書きする）。表や問合せをソースにする MERGE、条件つきの枝、`WHEN MATCHED THEN DELETE`、主キー以外での突き合わせ（ERROR） | ERROR は存在確認と書き込みを 1 つのトランザクションにまとめる |
 | `REPLACE` | WARN | `REPLACE INTO` を UPSERT にした | 列リストに無い列の値が残ってよいか確かめる |
-| `BIND_ORDER` | WARN | 書き換えで位置バインド `?` の順か数が変わった | メッセージの対応どおりにバインドし直す |
+| `BIND_ORDER` | WARN | 書き換えで位置バインド `?` の順か数が変わった。Oracle の数字の bind（`:2 ... :1`）を出てくる順の `?` にした | メッセージの対応どおりにバインドし直す |
 
 ### 値とリテラル
 

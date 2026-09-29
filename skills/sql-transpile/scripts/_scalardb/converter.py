@@ -476,10 +476,39 @@ class StatementConverter:
     def convert(self, sql: str) -> Result:
         res = self._convert(sql)
         if NUMBERED_BIND in repr((res.converted, res.plan, res.issues)):
-            res.converted = restore_numbered_binds(res.converted)
+            res.converted, order_issue = self._numbered_as_positional(res.converted)
+            if order_issue is not None:
+                res.issues.append(order_issue)
+                if res.status == "OK":
+                    res.status = "WARN"
             res.plan = restore_numbered_binds(res.plan)
             res.issues = [Issue(i.severity, i.code, restore_numbered_binds(i.message)) for i in res.issues]
         return res
+
+    def _numbered_as_positional(self, converted: list[str]) -> tuple[list[str], Issue | None]:
+        """Oracle's `:1` in the converted SQL, written `?` in the order they appear.
+
+        ScalarDB SQL has no numbered bind: `:1` is a syntax error there (DB-SQL-10026, measured on ScalarDB Cluster
+        3.19.1, 2026-09-29), so restoring the number made an OK statement that could not run. Oracle itself binds
+        `:n` by position when the values are given as a list -- the order they appear, not their numbers -- so `?`
+        in that order keeps what an application passing a list did. When the numbers are not 1, 2, ... in order,
+        or one repeats, an application that passed them by name has to pass them in the new order: say which.
+        The plan keeps `:1` (the runner binds it by name)."""
+        pattern = re.compile(":" + NUMBERED_BIND + r"(\d+)")
+        order: list[int] = []
+
+        def positional(text: str) -> str:
+            def mark(match):
+                order.append(int(match.group(1)))
+                return "?"
+            return pattern.sub(mark, text)
+
+        out = [positional(c) if isinstance(c, str) else c for c in converted]
+        if order and order != list(range(1, len(order) + 1)):
+            return out, Issue("WARN", "BIND_ORDER", "Oracle's numbered binds are written '?' in the order they appear "
+                              "(ScalarDB SQL has no ':1'): bind, in order, the values of "
+                              + ", ".join(f":{n}" for n in order))
+        return out, None
 
     def _convert(self, sql: str) -> Result:
         self.issues = []
