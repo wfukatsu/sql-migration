@@ -199,20 +199,6 @@ rules:
     requiredTests:
       - equivalent_result
 
-  # #167（2026-09-30 の決定「SQL の外で計算する」）: SQL の中の TO_NUMBER は、引数が文の外から来るなら生成コードが
-  # 先に計算して bind する（TO_NUMBER_HOISTED、読めなければ INVALID_NUMBER）。INSERT の VALUES は Oracle も 1 回必ず
-  # 評価するので同じだが、UPDATE の SET・WHERE・MERGE の枝は、行が届いたときだけ評価する。行が無いと Oracle は何も
-  # 上げない（26ai で測った）のに、先に計算すると上げる。読めない値が来うるかは業務の知識なので人が見る
-  - id: SEM-016
-    match: {statementKind: SqlOperation, hasDiagnostic: TO_NUMBER_BEFORE_ROWS}
-    decision: REVIEW
-    message: SQL の中の TO_NUMBER を文の前に計算します。Oracle は行が届いたときだけ評価するので、読めない値でも当たる行が無ければ INVALID_NUMBER になりませんが、移行先では行が無くても INVALID_NUMBER になります
-    remediation:
-      - 渡る値がいつも数値として読めること（画面や呼び出し側で検査済み）を確かめて、そのまま受け入れる
-      - 読めない値が来うるなら、当たる行が無いときの扱い（何もしない / 誤りにする）を決め、TO_NUMBER の前に値を検査する
-    requiredTests:
-      - exception_path
-
   # 2026-09-27（#15 の公開の PL/SQL で見つけた）: SYS_CONTEXT を見るルールが無く、Logger の get_sys_context が AUTO に
   # なった（期待は REDESIGN）。セッション・接続・インスタンスの情報で、移行先に相当するものが無い。USER は
   # AuditContext で呼び出し側が渡すが、SYS_CONTEXT の名前空間と属性は開いていて、どれを渡すかは設計である

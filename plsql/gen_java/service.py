@@ -891,7 +891,7 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
     from .exception import NEVER_RAISED_BY_TARGET, PREDEFINED, class_of, hoists_to_number, user_class
 
     never_raised = NEVER_RAISED_BY_TARGET
-    if hoists_to_number(_PROGRAM.get()):
+    if hoists_to_number(_PROGRAM.get(), routine):
         never_raised = tuple(n for n in never_raised if n != "INVALID_NUMBER")
 
     ordered = sorted(handlers,

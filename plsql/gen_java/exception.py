@@ -274,14 +274,28 @@ NEVER_RAISED_BY_TARGET = ("DUP_VAL_ON_INDEX", "INVALID_NUMBER")
 
 # ... except INVALID_NUMBER where a TO_NUMBER was lifted out of a SQL statement (#167): the repository computes it with
 # `Plsql.sqlToNumber`, which raises ORA-01722 as the statement did, and the handler runs again.
-def hoists_to_number(program: M.Program | None) -> bool:
-    """Whether any statement of the program carries a TO_NUMBER lifted out of SQL (`sqlbridge`, TO_NUMBER_HOISTED)."""
+def hoists_to_number(program: M.Program | None, routine: M.Routine | None = None) -> bool:
+    """Whether a statement carries a TO_NUMBER lifted out of SQL (`sqlbridge`, TO_NUMBER_HOISTED): in `routine` or a
+    routine its calls reach (Oracle's error goes up to the caller's handler, and so does the runtime's), or anywhere in
+    the program when no routine is given."""
     if program is None:
         return False
-    return any(d.code == "TO_NUMBER_HOISTED"
-               for m in program.modules for r in m.routines
-               for s in _walk(r.body) + [x for h in r.exception_handlers for x in _walk(h.body)]
-               for d in s.diagnostics)
+    routines = {r.id: r for m in program.modules for r in m.routines}
+
+    def statements(r: M.Routine):
+        return _walk(r.body) + [x for h in r.exception_handlers for x in _walk(h.body)]
+
+    if routine is None:
+        todo = list(routines.values())
+    else:
+        todo, seen = [routine], {routine.id}
+        for current in todo:
+            for statement in statements(current):
+                callee = routines.get(getattr(statement, "resolved_to", None) or "")
+                if callee is not None and callee.id not in seen:
+                    seen.add(callee.id)
+                    todo.append(callee)
+    return any(d.code == "TO_NUMBER_HOISTED" for r in todo for s in statements(r) for d in s.diagnostics)
 
 
 # The same, by the Oracle number a `PRAGMA EXCEPTION_INIT` binds (#148 H3), with the name rule EXC-001 knows it by.
