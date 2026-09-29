@@ -118,6 +118,9 @@ def analyse(operation: SqlOperation, scope: str, symbols: SymbolTable | None = N
         result.issues.append(_issue(issue))
     if lift:
         lift_expressions(tree, binds, scope, symbols)
+    for issue in _to_number_issues(tree, binds, operation):
+        operation.diagnostics.append(issue)
+        result.issues.append(_issue(issue))
     attribute_columns(tree, binds, operation, registry, symbols)
     operation.binds = binds
     result.binds = [asdict(b) for b in binds]
@@ -177,6 +180,12 @@ def strip_into(tree: exp.Expression) -> list[str]:
 # refuse -- a function nobody has implemented would otherwise be lifted out and then fail to compile.
 EVALUABLE = {"NVL", "ROUND", "TRUNC", "SYSDATE", "SYSTIMESTAMP", "MOD", "ABS", "GREATEST", "LEAST",
              "UPPER", "LOWER", "RTRIM", "LTRIM", "TRIM", "LENGTH", "SUBSTR", "TO_CHAR", "COALESCE"}
+
+# #167: TO_NUMBER is lifted out of SQL too (the user's decision 2026-09-30, 「SQL の外で計算する」), but not by the
+# triggers' folding, which reads EVALUABLE as "what the PL/SQL helper computes with PL/SQL's errors". Lifted out of a
+# statement, the helper computes it with the statement's error: an unreadable value is ORA-01722 INVALID_NUMBER in
+# SQL where PL/SQL raises ORA-06502 (measured on 26ai), so the repository calls `Plsql.sqlToNumber`
+SQL_EVALUABLE = EVALUABLE | {"TO_NUMBER"}
 
 LIFTABLE_ARITHMETIC = (exp.Add, exp.Sub, exp.Mul, exp.Div, exp.Neg, exp.Paren, exp.Concat)
 
@@ -298,8 +307,11 @@ def _liftable(value: exp.Expression) -> bool:
         # Java that does not compile, which is the one outcome this function exists to avoid.
         return False
     for node in value.walk():
-        if isinstance(node, (exp.Func, exp.Anonymous)) and _function_name(node) not in EVALUABLE:
+        if isinstance(node, (exp.Func, exp.Anonymous)) and _function_name(node) not in SQL_EVALUABLE:
             return False
+        if isinstance(node, exp.ToNumber) and (node.args.get("nlsparam") is not None
+                                               or node.args.get("default") is not None):
+            return False  # the NLS argument and DEFAULT ... ON CONVERSION ERROR: the helper has neither
     return isinstance(value, LIFTABLE_ARITHMETIC) or isinstance(value, (exp.Func, exp.Anonymous))
 
 
@@ -328,9 +340,54 @@ def _function_name(node: exp.Expression) -> str:
         return str(node.this).upper()
     return {"Nvl": "NVL", "Coalesce": "COALESCE", "Round": "ROUND", "Trunc": "TRUNC", "Mod": "MOD",
             "Abs": "ABS", "Upper": "UPPER", "Lower": "LOWER", "Length": "LENGTH", "Substring": "SUBSTR",
-            "ToChar": "TO_CHAR", "Greatest": "GREATEST", "Least": "LEAST", "Trim": "TRIM",
+            "ToChar": "TO_CHAR", "ToNumber": "TO_NUMBER", "Greatest": "GREATEST", "Least": "LEAST", "Trim": "TRIM",
             "CurrentDate": "SYSDATE", "CurrentTimestamp": "SYSTIMESTAMP"}.get(
         type(node).__name__, str(name).upper())
+
+
+# the positions Oracle evaluates once per row that reaches them, not once per statement (#167, measured on 26ai):
+# `UPDATE t SET c = TO_NUMBER('x') WHERE id = 2` with no row 2, and `SELECT COUNT(*) ... WHERE c = TO_NUMBER('x')`
+# over an empty table, raise nothing. Computed before the statement, the unreadable value raises all the same.
+# Only an INSERT's VALUES is evaluated exactly once, whatever the table holds
+
+
+def _to_number_issues(tree: exp.Expression, binds: list[BindVariable], operation: SqlOperation) -> list[Issue]:
+    """What became of the statement's TO_NUMBER (#167).
+
+    Lifted (its arguments come from outside the statement): the application computes it under the project's NLS and
+    raises INVALID_NUMBER as the statement did (TO_NUMBER_HOISTED), which makes a handler for it reachable (EXC-001).
+    Where Oracle evaluates it only for a row that reaches it -- an UPDATE's SET, a WHERE, a MERGE branch -- an
+    unreadable value now raises even when no row matches (TO_NUMBER_BEFORE_ROWS, SEM-016).
+
+    Left in the SQL (it reads a column, carries the NLS argument or DEFAULT ... ON CONVERSION ERROR, or sits in a
+    select list): the target evaluates it or refuses the statement, as before -- TO_NUMBER_IN_SQL says so."""
+    out: list[Issue] = []
+    lifted = [b for b in binds if b.expression and re.search(r"\bTO_NUMBER\s*\(", b.expression, re.IGNORECASE)]
+    if lifted:
+        expressions = ", ".join(b.expression for b in lifted)
+        out.append(Issue("INFO", "TO_NUMBER_HOISTED",
+                         f"{expressions}: computed by the application before the statement (Plsql.sqlToNumber, under "
+                         f"the project's NLS) and bound as a value; an unreadable value raises INVALID_NUMBER "
+                         f"(ORA-01722) as the SQL statement does, not VALUE_ERROR", operation.source_range))
+        if isinstance(tree, (exp.Update, exp.Delete, exp.Merge, exp.Select)):
+            out.append(Issue("WARN", "TO_NUMBER_BEFORE_ROWS",
+                             f"{expressions}: Oracle evaluates this only for a row that reaches it, so an unreadable "
+                             f"value raises INVALID_NUMBER only when a row matches. Computed before the statement, "
+                             f"it raises even when none does", operation.source_range))
+    for node in tree.find_all(exp.ToNumber):
+        text = node.sql(dialect="oracle")
+        if any(isinstance(n, exp.Column) and not _is_pseudo_column(n) for n in node.walk()):
+            why = "it reads a column, which only the database holds"
+        elif node.args.get("nlsparam") is not None or node.args.get("default") is not None:
+            why = "the runtime has no NLS argument or DEFAULT ... ON CONVERSION ERROR for it"
+        else:
+            why = "it is not in a position the generator computes (a VALUES / SET value or a side of a WHERE comparison)"
+        out.append(Issue("INFO", "TO_NUMBER_IN_SQL",
+                         f"{text} stays in the SQL: {why}. The target evaluates it (the execution plan's H2) or "
+                         f"refuses the statement, as before; it does not follow the project's NLS and does not raise "
+                         f"INVALID_NUMBER, so the statement's verdict stays with its SQL rule (SQL-001 / SQL-002)",
+                         operation.source_range))
+    return out
 
 
 def _target_name(node: exp.Expression) -> str:

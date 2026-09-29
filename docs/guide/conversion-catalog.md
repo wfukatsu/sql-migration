@@ -491,7 +491,7 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `INTEGER` / `INT` / `SMALLINT` | `BigDecimal` | なし | 変数への代入は `Plsql.fit(v, 38, 0)` で整数に丸めます。引数と戻り値では丸めません |
 | `PLS_INTEGER` / `BINARY_INTEGER` / `NATURAL` など | `Integer` | なし | 代入は `Plsql.toInt` が 32 ビットを超えると ORA-01426（`Plsql.NumericOverflow`）。演算は式と演算子の節を参照 |
 | `SIMPLE_INTEGER` | `Integer` | なし | NOT NULL（`Plsql.notNull`）。演算は 32 ビットで折り返し、例外になりません（`2147483647 + 1` は `-2147483648`。Oracle 26ai で確認） |
-| `BINARY_FLOAT` / `BINARY_DOUBLE`、`FLOAT` / `REAL` | `Float` / `Double` | なし | 文字にするときは Oracle の書き方（`4.0E+000` など）に合わせます |
+| `BINARY_FLOAT` / `BINARY_DOUBLE`、`FLOAT` / `REAL` | `Float` / `Double` | なし | 文字にするときは Oracle の書き方（`4.0E+000` など）に合わせます。小数点は `nls.numericCharacters`（`',.'` なら `4,0E+000`、#167） |
 | `VARCHAR2(n)` / `NVARCHAR2` / `VARCHAR` / `STRING` | `String` | なし | 代入は `Plsql.fit(v, n, 文字単位か)`。長すぎると ORA-06502。`''` は NULL として扱います |
 | `CHAR(n)` | `String` | なし | 代入は `Plsql.pad` で空白を詰めます。比較は `Plsql.unpad` で末尾の空白を無視します（生成で確認） |
 | `CLOB` / `NCLOB` / `LONG` | `String` | なし | 大きな値の扱いは別に決めます |
@@ -509,6 +509,20 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `SYS_REFCURSOR` / `REF CURSOR` | cursor の節を参照 | | |
 | `CREATE TYPE ... AS OBJECT`（スキーマのオブジェクト型） | 生成した record。`AS TABLE OF` はその `List` | なし | コンストラクタ `t_point(1, 2)` は `new TPoint(...)`（生成で確認） |
 | 解決できない型（どこにも宣言の無い名前、対応の無い型） | `Object` | 型解決の因子が 0 になり REVIEW | 生成器は型を推測しません。`SYS_REFCURSOR`、`REF CURSOR` の型、`ROWID` など、意図して `Object` にする型は因子を下げません |
+
+#### データベースの文字集合（AL32UTF8 を前提にする）
+
+ランタイムは、移行元のデータベースの文字集合を AL32UTF8（Oracle 12.2 からの既定）と決めて数えます。決める場所は無く、
+ほかの文字集合（JA16SJISTG、WE8MSWIN1252 など）の移行元では、次の値が Oracle と違います（#167 で棚卸し）。
+
+| バイトで数えるもの | ランタイム | AL32UTF8 以外だと |
+|---|---|---|
+| `VARCHAR2(n)` / `VARCHAR2(n BYTE)` / `CHAR(n)` の長さの検査（ORA-06502）、列へ書く値の長さ（ORA-12899） | UTF-8 のバイト数（`Plsql.fit` / `pad` / `columnText`） | 1 文字 2 バイトの文字集合では、日本語の長さの超過が起きる所が変わる |
+| `LENGTHB`、`CHR` / `ASCII` の数 | UTF-8 のバイト列（`ASCII('あ')` は 14909826） | 別の数になる |
+| 書式の `L` / `U` / `C` の幅、月・曜日の名前の詰め物 | UTF-8 のバイト数（`¥` は 2 バイト） | 詰める空白の数が変わる |
+| `DBMS_OUTPUT` のバッファの上限 | UTF-8 のバイト数 | ORA-20000 になる行が変わる |
+
+文字（`VARCHAR2(n CHAR)`、`LENGTH`、`SUBSTR`）で数えるものは文字集合によりません。
 
 ### 式と演算子
 
@@ -532,7 +546,8 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | 問い合わせ指令 `$$PLSQL_UNIT`、`$$PLSQL_LINE`、`$$flag` | 単位の名前（大文字）の文字列、行番号の数、`limits.yaml` の `conditionalCompilation.flags` の値（無ければ NULL） | なし | `$$PLSQL_LINE` は読み込むときに、単位の中の行番号（`PROCEDURE` などのある行が 1）に置き換えます。桁は空白で埋め、列はずらしません。`$$PLSQL_CCFLAGS` はフラグを 1 つも決めていなければ NULL、決めていれば断ります（Oracle の書き方を再現しない）。ほかの `$$PLSQL_CODE_TYPE` などは移行元の設定なので断ります（#140） |
 | CASE 式 | 三項演算子（`Plsql.eq(p, 1) ? "one" : "many"`） | なし | 生成で確認 |
 | 文字列を NUMBER に代入 | `Plsql.dec(...)` | なし | 数値にならないと ORA-06502（`Plsql.ValueError`） |
-| 日付・TIMESTAMP を書式なしで文字にする（`'d=' \|\| d`、`TO_CHAR(d)`） | `Plsql.concat` / `Plsql.text` / `Plsql.timestampText` が `limits.yaml` の `nls` の `dateFormat` / `timestampFormat` / `timestampTzFormat`（決めていなければ Oracle の既定 `DD-MON-RR` など、AMERICAN）で書く | `nls` を決めていなければ SEM-012（REVIEW）。決めていれば外れる（NLS_DECIDED） | TIMESTAMP(p) の `FF` は宣言の桁、TIMESTAMP(0) は小数点ごと書きません（#94、#157） |
+| 日付・TIMESTAMP を書式なしで文字にする（`'d=' \|\| d`、`TO_CHAR(d)`） | `Plsql.concat` / `Plsql.text` / `Plsql.timestampText` が `limits.yaml` の `nls` の `dateFormat` / `timestampFormat` / `timestampTzFormat`（決めていなければ Oracle の既定 `DD-MON-RR` など、AMERICAN）で書く | `nls` を決めていなければ SEM-012（REVIEW）。決めていれば外れる（NLS_DECIDED） | TIMESTAMP(p) の `FF` は宣言の桁、TIMESTAMP(0) は小数点ごと書きません（#94、#157）。文字の変数への代入（`v_text := d`）と宣言の初期値も同じです（#167） |
+| 小数を持てる数値を書式なしで文字にする（`'n=' \|\| n`、`v_text := n`、`TO_CHAR(n)`、`PUT_LINE(n)`） | `Plsql.concat` / `Plsql.text` / `Plsql.binaryDouble` が小数点を `nls.numericCharacters` の 1 文字目（決めていなければ `.`）で書く | NUMBER・`NUMBER(p, s)`（s > 0）・FLOAT・BINARY_FLOAT / BINARY_DOUBLE などと宣言した値で、`nls` を決めていなければ SEM-012（REVIEW）。決めていれば外れる（NLS_DECIDED）。整数の型（PLS_INTEGER、INTEGER、`NUMBER(p)`）は小数点を書かないので当たらない | 26ai で測定（#167）: `NLS_NUMERIC_CHARACTERS = ',.'` で `n NUMBER := 1.5` の `'x' \|\| n` は `x1,5`、BINARY_FLOAT 4 は `4,0E+000`、BINARY_DOUBLE 1.5 は `1,5E+000`。record の列や式の結果など、型を宣言から読めない値は見ていません |
 | 数値を文字にする | `Plsql.text(n)` | なし | 1 未満は `.5` のように先頭の 0 を書きません（Oracle と同じ）。小数点は `nls.numericCharacters` の 1 文字目（`,.` なら `1234,5`）。文字を数値にする暗黙の変換も同じ文字を読みます（#157）。固定小数点で 100 文字を超える数は、仮数を 0 で埋めて全体を 100 文字にした指数形式で書きます（`1e100` は `1.000…000E+100`。PL/SQL の書き方で、Oracle 26ai で測った。SQL の `TO_CHAR(n)` は 40 文字で丸める別の規則。#161） |
 | 丸め（`ROUND`） | `Plsql.round`（half-up） | PL/SQL の式ならなし。移行先 DB が評価する SQL の中なら SEM-001（REVIEW） | |
 | `CAST(ts AS DATE)` | `Plsql.castDate`（秒未満を切り捨て） | 移行先 DB が評価する SQL の中なら SEM-009（REVIEW） | |
@@ -549,10 +564,11 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `MOD`、`ABS`、`POWER`、`SQRT`、`CEIL`、`FLOOR`、`SIGN` | 同じ名前の `Plsql` の関数 | なし | |
 | `GREATEST`、`LEAST` | `Plsql.greatest`、`least` | なし | |
 | `UPPER`、`LOWER`、`INITCAP`、`LENGTH`、`SUBSTR`、`INSTR`、`REPLACE`、`LPAD`、`RPAD`、`TRIM`、`LTRIM`、`RTRIM`、`CONCAT`、`CHR`、`ASCII` | 同じ名前の `Plsql` の関数 | なし | NULL と空文字は Oracle と同じに扱います。`CHR` / `ASCII` の数はコードポイントでなく AL32UTF8 のバイト列です（`ASCII('あ')` は 14909826、`CHR(12354)` は `'0B'`。Oracle 26ai で測った、#161）。負の数と 2^32 以上の `CHR` は ORA-06502。Oracle は文字にならないバイト列（`CHR(128)`）もそのまま返しますが、ランタイムは持てないので ORA-06502 で断ります |
-| `TO_CHAR(日付, 書式)` | `Plsql.text(v, 書式)`。DATE / TIMESTAMP と宣言した変数は `Plsql.textDate` / `Plsql.textTimestamp` | 書式に DAY・MON・AM など言語で変わる要素があり、`nls` を決めていなければ SEM-008（REVIEW）。ランタイムが断る形なら SEM-015（REVIEW） | 書式モデルの全体を Oracle 26ai で測ったとおりに書きます（#157、`OracleFormat`）: `YYYY YYY YY Y RRRR RR SYYYY Y,YYY IYYY IYY IY I CC SCC Q MM MON MONTH RM WW W IW D DD DDD DY DAY J HH HH12 HH24 MI SS SSSSS FF FF1-9 X AM PM A.M. P.M. AD BC A.D. B.C. TZH TZM TZR TZD YEAR SYEAR DS DL TS`、`FM`（切り替え）、`FX`、`"文字"`、句読点、`SP` / `TH` / `SPTH`、名前の大文字小文字（`Month` → `September`）と詰め物（英語は 9 文字）。言語は `nls.dateLanguage`（AMERICAN / ENGLISH / JAPANESE）、`D` と DS / DL / TS は `nls.territory`（AMERICA / JAPAN）。Oracle が断る書式は同じ番号（ORA-01821・01801・01822）。FF・X・TZH・TZM は DATE では ORA-01821、TIMESTAMP の TZR はセッションのタイムゾーン（UTC）。PL/SQL の `TO_CHAR(t, 'FF')` は宣言の桁によらず 9 桁です。断るもの: 1582-10-15 より前の日付（Oracle はユリウス暦で数える）、型の分からない値（record の列など）で秒の端数が 0 のものへの FF・X・TZR |
+| `TO_CHAR(日付, 書式)` | `Plsql.text(v, 書式)`。DATE / TIMESTAMP と宣言した変数は `Plsql.textDate` / `Plsql.textTimestamp` | 書式に DAY・MON・AM など言語で変わる要素があり、`nls` を決めていなければ SEM-008（REVIEW）。ランタイムが断る形なら SEM-015（REVIEW） | 書式モデルの全体を Oracle 26ai で測ったとおりに書きます（#157、`OracleFormat`）: `YYYY YYY YY Y RRRR RR SYYYY Y,YYY IYYY IYY IY I CC SCC Q MM MON MONTH RM WW W IW D DD DDD DY DAY J HH HH12 HH24 MI SS SSSSS FF FF1-9 X AM PM A.M. P.M. AD BC A.D. B.C. TZH TZM TZR TZD YEAR SYEAR DS DL TS`、`FM`（切り替え）、`FX`、`"文字"`、句読点、`SP` / `TH` / `SPTH`、名前の大文字小文字（`Month` → `September`）と詰め物（英語は 9 文字）。言語は `nls.dateLanguage`（AMERICAN / ENGLISH / JAPANESE）、`D` と DS / DL / TS は `nls.territory`（AMERICA / JAPAN）。Oracle が断る書式は同じ番号（ORA-01821・01801・01822）。FF・X・TZH・TZM は DATE では ORA-01821、TIMESTAMP（ゾーン無し）の TZR は `+00:00`、TZD は空で、セッションの TIME_ZONE によりません（UTC・+09:00・Asia/Tokyo・America/New_York・-05:30 で測定、#167）。TIMESTAMP WITH TIME ZONE の TZR は値の時差（`+09:00`、TZD は空）。地域名のゾーン（TZR `ASIA/TOKYO`、TZD `JST`）はランタイムに届きません（TIMESTAMP リテラルと `FROM_TZ` は断り、`CURRENT_TIMESTAMP` は SEM-002）。ScalarDB の TIMESTAMPTZ 列から読んだ値は瞬間を UTC で持つので、Oracle の列が持っていた時差・地域名ではなく `+00:00` を書きます。TIMESTAMP WITH LOCAL TIME ZONE はセッションのゾーンで表示されますが（セッションが `UTC` なら TZR `UTC`・TZD `GMT`）、ランタイムは UTC の時差で書き、ルールも見ていません。PL/SQL の `TO_CHAR(t, 'FF')` は宣言の桁によらず 9 桁です。断るもの: 1582-10-15 より前の日付（Oracle はユリウス暦で数える）、型の分からない値（record の列など）で秒の端数が 0 のものへの FF・X・TZR |
 | `TO_CHAR(数値, 書式)` | `Plsql.text(v, 書式)` | ランタイムが断る形なら SEM-015（REVIEW） | 書式モデルの全体（#157）: `9 0 , . G D $ L C U S MI PR B EEEE V X RN TM TM9 TME`、`FM`。丸めは 0 から遠い方、入らなければ幅いっぱいの `#`、幅は「要素の数 + 符号の 1 桁」、`L` / `U` は 10 バイト・`C` は 7 バイト（`¥` は 2 バイトとして数える。データベースの文字コードは AL32UTF8 を前提）。`G` / `D` は `nls.numericCharacters`、`L` は `nls.currency`、`C` は `nls.isoCurrency`、`U` は `nls.dualCurrency`。Oracle が断る書式は ORA-01481。断るもの: `FM` と `B` を一緒に使う書式、数字も小数点も無い書式（`L` だけなど） |
-| `TO_NUMBER(v)` | `Plsql.toNumber(v)` | なし | 小数点は `nls.numericCharacters` の 1 文字目だけを読みます |
-| `TO_NUMBER(v, 書式)` | `Plsql.toNumber(v, 書式)` | なし | 書式どおりに読めなければ ORA-06502（`Plsql.ValueError`。VALUE_ERROR で捕まる）: 桁区切りは書式の位置に要り、`0` の桁は省けず、小数の桁は少なくてよく多いと誤り、前の空白は読み飛ばし後ろの空白は誤り、`RN`・`TM`・`V` は読めません（26ai で測定、#157）。SQL 文の中の書式つき `TO_NUMBER` は SQL の外へ出しません（出すと ORA-01722 と ORA-06502 の違いが要るため） |
+| `TO_NUMBER(v)` | `Plsql.toNumber(v)` | なし | 小数点は `nls.numericCharacters` の 1 文字目だけを読みます。読めなければ ORA-06502（VALUE_ERROR） |
+| `TO_NUMBER(v, 書式)` | `Plsql.toNumber(v, 書式)` | なし | 書式どおりに読めなければ ORA-06502（`Plsql.ValueError`。VALUE_ERROR で捕まる）: 桁区切りは書式の位置に要り、`0` の桁は省けず、小数の桁は少なくてよく多いと誤り、前の空白は読み飛ばし後ろの空白は誤り、`RN`・`TM`・`V` は読めません（26ai で測定、#157）。小数の要素の無い書式が拒むのはセッションの小数点で、`',.'` なら `TO_NUMBER('1.234', '9G999')` は 1234（#167） |
+| SQL 文の中の `TO_NUMBER(v)` / `TO_NUMBER(v, 書式)`（引数が文の外から来るもの: リテラル、PL/SQL の変数・引数） | 文の前に `Plsql.sqlToNumber(v[, 書式])` で計算して bind する（INFO `TO_NUMBER_HOISTED`）。INSERT の VALUES、UPDATE の SET、WHERE の比較の列を含まない側、MERGE の枝 | UPDATE の SET・WHERE・MERGE の枝は SEM-016（REVIEW）。INSERT の VALUES は当たらない | 2026-09-30 の決定「SQL の外で計算する」（#167）。読めない値は SQL の中と同じ ORA-01722 INVALID_NUMBER（`Plsql.InvalidNumber`。WHEN INVALID_NUMBER で捕まる）で、PL/SQL の ORA-06502 ではありません。文言も Oracle と同じ（書式つきは先頭の文字、書式なしは数として読めなくなる位置の文字を名指す）。Oracle は UPDATE / WHERE の TO_NUMBER を行が届いたときだけ評価し、当たる行が無ければ読めない値でも誤りにしません（26ai で測定）。先に計算するとその場合も誤りになるので SEM-016 で人が見ます。NLS の第 3 引数と `DEFAULT ... ON CONVERSION ERROR` つき、列を読むもの、選択リストのものは SQL に残り（INFO `TO_NUMBER_IN_SQL` が理由を書く）、判定はこれまでどおり SQL-001 / SQL-002 |
 | `TO_DATE(v, 書式)` | `Plsql.toDate(v, 書式)` | なし | 要素ごとに Oracle と同じ読み方をします（桁の少ない数字、RR の世紀、省いた年月は現在、入力が時刻の要素の前で終わるのは可・日付の要素の前で終わると ORA-01840）。読めないときは Oracle と同じ番号の `Plsql.FunctionError`（ORA-01830・01841・01843・01847・01839・01850・01849・01851・01852・01855・01858）で、VALUE_ERROR では捕まりません。WHEN OTHERS では `SQLCODE` がその番号になります（#140。以前は ORA-06502） |
 | `TO_TIMESTAMP(v[, 書式])` | `Plsql.toTimestamp(v, 書式)` | なし | TO_DATE の読み方に `FF` / `FFn`（小数秒。桁が多いと ORA-01830）と `X`（`nls.numericCharacters` の小数点）を足したもの。書式を省くと `nls.timestampFormat`（既定 `DD-MON-RR HH.MI.SSXFF AM`、#140） |
 | `TO_DATE` の NLS | 同上 | なし | 書式を省くと `nls.dateFormat`（既定 `DD-MON-RR`）。月の名前と午前・午後は `nls.dateLanguage` のもの（JAPANESE なら `9月`、`午前`）。`MM` は月の名前も読み、名前のあとの空白は読み飛ばします。4 桁を読んだ `RR` のあとに残りがあると ORA-01861（#157） |
@@ -560,7 +576,7 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `MONTHS_BETWEEN(d1, d2)` | `Plsql.monthsBetween` | なし | 同じ日か両方が月末なら整数（時刻は無視）、ほかは 31 日を 1 か月とした小数を NUMBER と同じ 40 桁に丸めます。規則は実行計画の H2 が使う `OracleFunctions.monthsBetween` と共有します。TIMESTAMP は秒未満を落とし、文字は TO_DATE の既定の書式で読みます（#140） |
 | `EXTRACT(field FROM d)` | `Plsql.extract("YEAR", d)` | なし | YEAR・MONTH・DAY・HOUR・MINUTE・SECOND（小数つき）と、WITH TIME ZONE の TIMEZONE_HOUR・TIMEZONE_MINUTE。WITH TIME ZONE の日時の field は Oracle と同じく UTC のものです。INTERVAL（日時の差）からの EXTRACT は、生成コードでは差が日数なので断ります。TIMEZONE_REGION / ABBR も断ります（#140） |
 | `NULLIF(a, b)` | `Plsql.nullif` | なし | 比較は `=` と同じ（`NULLIF('1', 1)` は NULL、数値にならない文字は ORA-06502）（#140） |
-| `LENGTHB(s)` | `Plsql.lengthb` | なし | データベースの文字集合が AL32UTF8 である前提で、UTF-8 のバイト数を数えます（'日本a' は 7）。ほかの文字集合の移行元では値が変わります（#140） |
+| `LENGTHB(s)` | `Plsql.lengthb` | なし | データベースの文字集合が AL32UTF8 である前提で、UTF-8 のバイト数を数えます（'日本a' は 7）。ほかの文字集合の移行元では値が変わります（#140）。前提の全体は下の「データベースの文字集合」 |
 | `TRANSLATE(s, from, to)` | `Plsql.translate` | なし | 文字（コードポイント）ごとの置き換え。`to` に対応の無い文字は消え、引数のどれかが NULL（`''` も）なら NULL（#140） |
 | `BITAND(a, b)` | `Plsql.bitand` | なし | 整数部（切り捨て）どうしの 2 の補数のビット積。-2^127〜2^127-1 の外は ORA-06502（#140） |
 | `RAWTOHEX(r)`、`HEXTORAW(s)` | `Plsql.rawToHex`、`Plsql.hexToRaw`（RAW は `byte[]`） | なし | PL/SQL の意味です。PL/SQL の `RAWTOHEX('ab')` は文字を 16 進として読んで 'AB'（SQL では文字のバイトで '6162'）。16 進でない文字は ORA-06502。奇数桁は先頭に 0 を足します。RAW を文字にすると大文字の 16 進、RAW どうしの `=` はバイトの比較です（#140） |
@@ -688,7 +704,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 |---|---|---|---|
 | `EXCEPTION WHEN x THEN ...` | `try { ... } catch (XException e) { ... }` | なし | handler の順を保ち、`WHEN OTHERS` は最後に置きます |
 | 定義済み例外 | `NoDataFoundException`（100）、`TooManyRowsException`（-1422）、`DuplicateValueException`（-1）、`InvalidNumberException`（-1722）、`ZeroDivideException`（-1476）、`ValueErrorException`（-6502）、`SubscriptBeyondCountException`（-6533）、`SubscriptOutsideLimitException`（-6532）、`CollectionIsNullException`（-6531）、`InvalidCursorException`（-1001）、`CursorAlreadyOpenException`（-6511）、`CaseNotFoundException`（-6592） | なし | 全部 `MigratedException(code, message)` の子で、Oracle の番号を持ちます。ランタイムの誤り（`Plsql.ZeroDivide` など）は handler のある所で対応する例外に付け替えます（生成で確認） |
-| `WHEN DUP_VAL_ON_INDEX` / `WHEN INVALID_NUMBER` | catch は出すが、移行先ではこの例外が自然には起きない | EXC-001（REVIEW） | 明示の RAISE のときだけ走ります。重複 INSERT のあと ScalarDB はトランザクションを続けられません |
+| `WHEN DUP_VAL_ON_INDEX` / `WHEN INVALID_NUMBER` | catch は出すが、移行先ではこの例外が自然には起きない | EXC-001（REVIEW） | 明示の RAISE のときだけ走ります。重複 INSERT のあと ScalarDB はトランザクションを続けられません。例外: SQL の中の TO_NUMBER を生成コードが計算する routine（呼び先を含む）では、INVALID_NUMBER（-1722）は起きるので当たりません（#167） |
 | `PRAGMA EXCEPTION_INIT(e, 番号)` で DB の誤りに結んだ例外の handler（-1、-1400、-1407、-1438、-1722、-2290、-2291、-2292、-6502、-12899） | catch は出すが、移行先ではその番号の誤りが起きない | EXC-001（REVIEW） | `constraints.enforce` の検査がその番号を投げる routine（呼び先を含む）では当たりません |
 | `WHEN VALUE_ERROR` | `catch (ValueErrorException e)` | EXC-001（REVIEW） | 宣言の長さ・桁の超過と、数値にならない文字は届きます。CHAR の詰め物と SQL の中の変換は届きません |
 | `WHEN OTHERS` | `catch (MigratedException e)` | `THEN NULL` だけなら EXC-002（REVIEW）。それ以外の処理で書き込み（DML、書き込む routine の呼び出し）を囲むと EXC-003（REVIEW） | 移行した例外だけを捕まえます。`SQLException` や ScalarDB の競合、Java の不具合は捕まえません。Oracle では重複・NOT NULL・長さなど DB の誤りもここで捕まえていました。最後に `RAISE;` で投げ直す handler は EXC-003 に当たりません |
@@ -869,16 +885,17 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | SEM-008 | REVIEW | 言語で変わる `TO_CHAR` の書式（`nls` を決めていない、または移行先 DB が評価する SQL に残ったもの） | `nls` |
 | SEM-009 | REVIEW | 移行先 DB が評価する `CAST(... AS DATE)` | |
 | SEM-010 | REVIEW | `SYSTIMESTAMP` を列へ書く INSERT / UPDATE / MERGE | 時刻の正確さを業務で決める |
-| SEM-012 | REVIEW | 日付・TIMESTAMP を書式なしで文字にする（`nls` を決めていない、または移行先 DB が評価する SQL に残ったもの） | `nls`。または書式を明示する |
+| SEM-012 | REVIEW | 日付・TIMESTAMP、または小数を持てる数値を書式なしで文字にする（`nls` を決めていない、または移行先 DB が評価する SQL に残ったもの） | `nls`。または書式を明示する |
 | SEM-014 | REVIEW | `DBMS_RANDOM`、`SYS_GUID` | 乱数の出所を決める |
 | SEM-015 | REVIEW | ランタイムが実装しない書式の形（`FM` と `B`、数字の無い数値書式）、型の分からない値への `FF` / `X` / `TZR` | 書式を書き直す。値を TIMESTAMP の変数に入れる |
+| SEM-016 | REVIEW | SQL の中の TO_NUMBER を文の前に計算する、行が届いたときだけ評価される位置（UPDATE の SET、WHERE、MERGE の枝） | 渡る値がいつも数値として読めることを確かめる。読めない値が来うるなら、当たる行が無いときの扱いを決めて値を先に検査する |
 | CUR-001 | REVIEW | 書き換えられなかった明示 cursor の OPEN / FETCH / CLOSE | |
 | CUR-002 | REVIEW | 行数上限の決まっていない cursor FOR ループ | `scanRows` |
 | CUR-003 | REVIEW | 先読みに書き換えた明示 cursor で、routine が COMMIT などを持つ | |
 | CUR-004 | REDESIGN | OUT 引数の `SYS_REFCURSOR` を routine の中で FETCH / CLOSE する、または列の違う問合せで OPEN する（生成器が断る） | 読んだ行と残りの行の渡し方を決めて書き直す。CLOSE を消す。問合せごとに OUT 引数を分ける |
 | BULK-001 | REVIEW | `BULK COLLECT` を含む SQL 文 | |
 | BULK-003 | REVIEW | 行数上限の決まっていない分割読み | `scanRows` |
-| EXC-001 | REVIEW | `DUP_VAL_ON_INDEX`、`INVALID_NUMBER`、`VALUE_ERROR` の handler。`PRAGMA EXCEPTION_INIT` でそれらや制約の誤り（-1400、-2290、-2291、-2292 など）の番号に結んだ例外の handler | 読んでから選ぶ形、事前の検査に書き直す。CHECK と外部キーは `constraints.enforce` |
+| EXC-001 | REVIEW | `DUP_VAL_ON_INDEX`、`INVALID_NUMBER`（SQL の中の TO_NUMBER を生成コードが計算する routine を除く）、`VALUE_ERROR` の handler。`PRAGMA EXCEPTION_INIT` でそれらや制約の誤り（-1400、-2290、-2291、-2292 など）の番号に結んだ例外の handler | 読んでから選ぶ形、事前の検査に書き直す。CHECK と外部キーは `constraints.enforce` |
 | EXC-002 | REVIEW | `WHEN OTHERS THEN NULL` | 無視する例外を名前で書く |
 | EXC-003 | REVIEW | `WHEN OTHERS THEN <NULL 以外>` が書き込みを囲む（投げ直す handler を除く） | 捕まえたい DB の誤りを名前で書く、書く前に検査する |
 | CONS-001 | REVIEW | CHECK / 外部キー / UNIQUE のある表への書き込み、子のある親の DELETE で、`constraints.enforce` に無い表 | `constraints.enforce` |

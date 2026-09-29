@@ -173,13 +173,16 @@ rules:
   # （DD-MON-RR、AMERICAN）で書き、実 DB の比較も既定で流すので、一致しても移行元のセッション設定までは確かめていない。
   # 既定の DD-MON-RR は月の名前を含み、書式に MON を書いた SEM-008 と同じく言語設定で変わるので、同じ REVIEW にした
   # #157: limits.yaml の `nls` で決めた project では、生成コードは決めた書式で書く（NLS_DECIDED）ので当たらない
+  # #167（2026-09-30 の決定「規則を広げて REVIEW」）: 小数を持てる数値（NUMBER、NUMBER(p,s>0)、FLOAT、BINARY_DOUBLE
+  # など）を書式なしで文字にする所も同じ。小数点は NLS_NUMERIC_CHARACTERS で決まる（',.' なら 1.5 は 1,5）。整数の型
+  # （PLS_INTEGER、INTEGER、NUMBER(p)）は小数点を書かないので当たらない。`v_text := n` のような代入と、宣言の初期値も見る
   - id: SEM-012
-    match: {statementKind: [SqlOperation, Expression], hasDiagnostic: IMPLICIT_DATE_TEXT, lacksDiagnostic: NLS_DECIDED}
+    match: {statementKind: [SqlOperation, Expression], hasDiagnostic: [IMPLICIT_DATE_TEXT, IMPLICIT_NUMBER_TEXT], lacksDiagnostic: NLS_DECIDED}
     decision: REVIEW
-    message: 日付・TIMESTAMP を書式なしで文字にしています。形は移行元のセッションの NLS_DATE_FORMAT / NLS_TIMESTAMP_FORMAT / NLS_DATE_LANGUAGE で決まり、決めていないので生成コードは Oracle の既定（DD-MON-RR、AMERICAN）で書きます
+    message: 日付・TIMESTAMP、または小数を持てる数値を書式なしで文字にしています。日付の形は移行元のセッションの NLS_DATE_FORMAT / NLS_TIMESTAMP_FORMAT / NLS_DATE_LANGUAGE、数値の小数点は NLS_NUMERIC_CHARACTERS で決まり、決めていないので生成コードは Oracle の既定（DD-MON-RR、AMERICAN、小数点は '.'）で書きます
     remediation:
       - 移行元のセッションの NLS を確かめて limits.yaml の nls に書く
-      - 書式を明示する（TO_CHAR(d, 'YYYY-MM-DD') など）
+      - 書式を明示する（TO_CHAR(d, 'YYYY-MM-DD')、TO_CHAR(n, 'FM9990D00') など）
       - 移行元のセッションが既定の NLS 設定で動いていることを確かめて、そのまま受け入れる（nls に AMERICAN / AMERICA と理由を書く）
     requiredTests:
       - equivalent_result
@@ -195,6 +198,20 @@ rules:
       - FF / X / TZR を使う値は、TIMESTAMP と宣言した変数に入れてから TO_CHAR する
     requiredTests:
       - equivalent_result
+
+  # #167（2026-09-30 の決定「SQL の外で計算する」）: SQL の中の TO_NUMBER は、引数が文の外から来るなら生成コードが
+  # 先に計算して bind する（TO_NUMBER_HOISTED、読めなければ INVALID_NUMBER）。INSERT の VALUES は Oracle も 1 回必ず
+  # 評価するので同じだが、UPDATE の SET・WHERE・MERGE の枝は、行が届いたときだけ評価する。行が無いと Oracle は何も
+  # 上げない（26ai で測った）のに、先に計算すると上げる。読めない値が来うるかは業務の知識なので人が見る
+  - id: SEM-016
+    match: {statementKind: SqlOperation, hasDiagnostic: TO_NUMBER_BEFORE_ROWS}
+    decision: REVIEW
+    message: SQL の中の TO_NUMBER を文の前に計算します。Oracle は行が届いたときだけ評価するので、読めない値でも当たる行が無ければ INVALID_NUMBER になりませんが、移行先では行が無くても INVALID_NUMBER になります
+    remediation:
+      - 渡る値がいつも数値として読めること（画面や呼び出し側で検査済み）を確かめて、そのまま受け入れる
+      - 読めない値が来うるなら、当たる行が無いときの扱い（何もしない / 誤りにする）を決め、TO_NUMBER の前に値を検査する
+    requiredTests:
+      - exception_path
 
   # 2026-09-27（#15 の公開の PL/SQL で見つけた）: SYS_CONTEXT を見るルールが無く、Logger の get_sys_context が AUTO に
   # なった（期待は REDESIGN）。セッション・接続・インスタンスの情報で、移行先に相当するものが無い。USER は

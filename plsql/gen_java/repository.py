@@ -573,7 +573,9 @@ def _java_value(file: JavaFile, bind: M.BindVariable, scope: dict[str, str] | No
         return java_name(bind.name)
     rendered = translate(bind.expression, scope or {})
     file.add_import(*rendered.imports)
-    return rendered.java
+    # a TO_NUMBER lifted out of SQL is still the statement's (#167): text it cannot read is ORA-01722
+    # INVALID_NUMBER there, where the PL/SQL helper raises ORA-06502 VALUE_ERROR (both measured on 26ai)
+    return rendered.java.replace("Plsql.toNumber(", "Plsql.sqlToNumber(")
 
 
 def _read(file: JavaFile, statement: M.SqlOperation, index: int) -> str:
