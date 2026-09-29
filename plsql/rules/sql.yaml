@@ -74,3 +74,29 @@ rules:
     requiredTests:
       - equivalent_result
 
+
+  # #148 M1: 移行先に CHECK / FOREIGN KEY / UNIQUE は無い。書く側で守るか（limits.yaml constraints.enforce）は決定で、
+  # 決めると生成コードが変わる（guard が入る）。決めていない表へ書く routine は AUTO にしない
+  - id: CONS-001
+    match: {statementKind: SqlOperation, hasDiagnostic: CONSTRAINT_UNDECIDED}
+    decision: REVIEW
+    severity: warning
+    message: 移行先に無い制約（CHECK / FOREIGN KEY / UNIQUE、子のある親の DELETE）のある表へ書いています。Oracle が断った書き込みが移行先では通ります。書く側で守るかを決めてください
+    remediation:
+      - 守るなら表を limits.yaml の constraints.enforce に理由つきで書く（CHECK・外部キー・NOT NULL は書く前に検査し、Oracle と同じ番号で投げる）
+      - 守らないなら、その理由（呼び出し側が検査している、など）を記録する
+    requiredTests:
+      - constraint_violation
+
+  # #148 M1: 守ると決めた表でも、書く前に検査できない制約がある（UNIQUE、子のある親の DELETE、書く値を表から読む式、
+  # INSERT … SELECT、動的 SQL の文）。その書き込みは Oracle と違う結果になりうる
+  - id: CONS-002
+    match: {statementKind: SqlOperation, hasDiagnostic: CONSTRAINT_NOT_GUARDED}
+    decision: REVIEW
+    severity: warning
+    message: 守ると決めた表の制約のうち、この書き込みでは検査していないものがあります（UNIQUE、子のある親の DELETE、書く値が文から読めない、など）。Oracle が断る書き込みが移行先では通ります
+    remediation:
+      - UNIQUE は、同じ値の行を先に読む（索引か、キーを変える設計）か、重複しないことを呼び出し側で保証する
+      - 子のある親の DELETE は、先に子の表を読んで断るか、子を消す順序を設計する
+    requiredTests:
+      - constraint_violation

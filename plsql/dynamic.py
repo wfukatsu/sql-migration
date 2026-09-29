@@ -372,32 +372,6 @@ def annotate(routine: M.Routine, statement: M.DynamicSql,
     return variants
 
 
-def fold(program: M.Program) -> None:
-    """Fold every dynamic statement whose text is knowable into its variants (`variant_statements`).
-
-    This rewrites the IR, so it runs with the other rewrites (`report._analyse`) and not inside the capability
-    check: that check only runs with a target schema (`--scalardb-schema`), and without one a constant
-    `EXECUTE IMMEDIATE 'CREATE TABLE ...'` stayed unknowable, so `ddl.omit` in limits.yaml silently did nothing
-    (#152). The check then converts each variant like a static statement.
-    """
-    from .lower import _walk
-
-    for module in program.modules:
-        for routine in module.routines:
-            statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
-            for statement in statements:
-                if statement.kind != "DynamicSql" or statement.variant_statements:
-                    continue
-                for index, variant in enumerate(annotate(routine, statement, module) or [], start=1):
-                    # `USING` は**位置で**束縛される。placeholder を渡す変数の名前に直して
-                    # おくと、畳んだ文がそのあと静的な文とまったく同じ道を通る（P4-7）
-                    statement.variant_statements.append(M.SqlOperation(
-                        id=f"{statement.id}#variant-{index}", kind="SqlOperation",
-                        source_range=statement.source_range,
-                        original_sql=bind_using(variant.sql, statement.using),
-                        binds=list(statement.using), into_targets=list(statement.into_targets)))
-
-
 PLACEHOLDER = re.compile(r":(?P<name>[\w$#]+)")
 
 
@@ -426,3 +400,78 @@ def bind_using(sql: str, using: list) -> str:
         return name
 
     return PLACEHOLDER.sub(replace, sql)
+
+
+# What Oracle runs as DDL: each commits the transaction before and after it, and on the target the schema is Schema
+# Loader's, never a statement of the routine (#52). TRUNCATE is one of them, not a DELETE (#148 H1)
+DDL = re.compile(r"^\s*(CREATE|DROP|ALTER|TRUNCATE|RENAME|GRANT|REVOKE|COMMENT|ANALYZE|AUDIT|NOAUDIT|ASSOCIATE|"
+                 r"DISASSOCIATE|PURGE|FLASHBACK)\b", re.IGNORECASE)
+
+
+def fold(program: M.Program) -> None:
+    """#148 H1: fold every dynamic statement whose text is knowable, **before** the lowering that works on statements.
+
+    The folded statements used to be made by the capability check, the last step of the analysis. Everything that
+    looks at a statement before it -- the trigger calls, the constraint guards, the row-lock and DDL checks -- had
+    run already, and the rules and the write-then-scan walk did not look at `variant_statements` at all. The same
+    `UPDATE` on a table with a trigger was REDESIGN written statically and AUTO written as `EXECUTE IMMEDIATE '...'`.
+    Folding here gives each variant what a static statement has at this point: its kind, its tables, its row lock,
+    and the DDL mark. The capability check then converts these same nodes.
+    """
+    from .lower import _walk
+
+    for module in program.modules:
+        for routine in module.routines:
+            for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
+                if statement.kind == "DynamicSql" and not statement.variants:
+                    expand(routine, statement, module)
+
+
+def expand(routine: M.Routine, statement: M.DynamicSql, module: M.Module | None = None) -> list[M.SqlOperation]:
+    """The static statements `statement` can run, made into SqlOperations on `statement.variant_statements`."""
+    from .lower import mark_row_lock
+
+    for index, variant in enumerate(annotate(routine, statement, module) or [], start=1):
+        # `USING` は**位置で**束縛される。placeholder を渡す変数の名前に直しておくと、畳んだ文がそのあと
+        # 静的な文とまったく同じ道を通る（P4-7）
+        sql = bind_using(variant.sql, statement.using)
+        keyword = re.match(r"\s*([A-Za-z]+)", sql)
+        operation = M.SqlOperation(id=f"{statement.id}#variant-{index}", kind="SqlOperation",
+                                   source_range=statement.source_range, original_sql=sql,
+                                   sql_kind=keyword.group(1).upper() if keyword else "UNKNOWN",
+                                   binds=list(statement.using), into_targets=list(statement.into_targets))
+        mark_row_lock(operation, sql)
+        operation.read_set, operation.write_set = _tables(sql)
+        ddl = DDL.match(sql)
+        if ddl:
+            why = omitted_ddl(routine.id)
+            if why:
+                operation.add("INFO", "DYNAMIC_DDL_OMITTED",
+                              f"{ddl.group(1).upper()} は移行先では実行しない（limits.yaml ddl.omit: {why}）")
+            else:
+                operation.add("ERROR", "DYNAMIC_DDL",
+                              f"routine の中の DDL（{ddl.group(1).upper()}）。Oracle では前後で COMMIT し、移行先では "
+                              f"スキーマを Schema Loader が持つので、routine からは実行しない（#52）")
+        statement.variant_statements.append(operation)
+    # the dynamic statement touches what any of its variants does: the walks that read `read_set` / `write_set`
+    # (write-then-scan, the routine's effects) see it without knowing about variants
+    statement.read_set = list(dict.fromkeys(t for v in statement.variant_statements for t in v.read_set))
+    statement.write_set = list(dict.fromkeys(t for v in statement.variant_statements for t in v.write_set))
+    return statement.variant_statements
+
+
+def _tables(sql: str) -> tuple[list[str], list[str]]:
+    import sqlglot
+    from sqlglot import exp
+
+    from .sqlbridge import read_write_sets
+
+    try:
+        tree = sqlglot.parse_one(sql, dialect="oracle")
+    except Exception:  # noqa: BLE001 - an unparsable variant is refused by the converter, with the reason
+        return [], []
+    if isinstance(tree, exp.TruncateTable):
+        return [], list(dict.fromkeys(t.name.lower() for t in tree.expressions if isinstance(t, exp.Table)))
+    if tree is None or not isinstance(tree, (exp.Select, exp.Union, exp.Insert, exp.Update, exp.Delete, exp.Merge)):
+        return [], []
+    return read_write_sets(tree)

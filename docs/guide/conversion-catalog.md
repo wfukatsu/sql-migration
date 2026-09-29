@@ -486,7 +486,8 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `NUMBER(p, s)`（s > 0） | `BigDecimal` | なし | 代入は `Plsql.fit(v, p, s)`（half-up）。ScalarDB には 10^s 倍した BIGINT で置き、`Plsql.bind` / `Plsql.read` で往復します |
 | 精度なしの `NUMBER` | `BigDecimal` | なし | 保存形は TEXT。今のデータが long に収まっても long にしません |
 | `INTEGER` / `INT` / `SMALLINT` | `BigDecimal` | なし | 変数への代入は `Plsql.fit(v, 38, 0)` で整数に丸めます。引数と戻り値では丸めません |
-| `PLS_INTEGER` / `BINARY_INTEGER` / `SIMPLE_INTEGER` / `NATURAL` など | `Integer` | なし | `Plsql.toInt` が 32 ビットを超えると ORA-01426（`Plsql.NumericOverflow`） |
+| `PLS_INTEGER` / `BINARY_INTEGER` / `NATURAL` など | `Integer` | なし | 代入は `Plsql.toInt` が 32 ビットを超えると ORA-01426（`Plsql.NumericOverflow`）。演算は式と演算子の節を参照 |
+| `SIMPLE_INTEGER` | `Integer` | なし | NOT NULL（`Plsql.notNull`）。演算は 32 ビットで折り返し、例外になりません（`2147483647 + 1` は `-2147483648`。Oracle 26ai で確認） |
 | `BINARY_FLOAT` / `BINARY_DOUBLE`、`FLOAT` / `REAL` | `Float` / `Double` | なし | 文字にするときは Oracle の書き方（`4.0E+000` など）に合わせます |
 | `VARCHAR2(n)` / `NVARCHAR2` / `VARCHAR` / `STRING` | `String` | なし | 代入は `Plsql.fit(v, n, 文字単位か)`。長すぎると ORA-06502。`''` は NULL として扱います |
 | `CHAR(n)` | `String` | なし | 代入は `Plsql.pad` で空白を詰めます。比較は `Plsql.unpad` で末尾の空白を無視します（生成で確認） |
@@ -518,6 +519,8 @@ PL/SQL の各項目が、`plsql/` の生成器でどんな Java になるかを�
 | `x IS NULL` / `IS NOT NULL` | `Plsql.isNull(x)` / `Plsql.isNotNull(x)` | なし | `''` も NULL です |
 | `a \|\| b` | `Plsql.concat(a, b)` | なし | NULL は空文字として扱い、結果が空なら NULL です |
 | `+`、`-`、`*`、`/` | `Plsql.add`、`sub`、`mul`、`div` | なし | NULL は NULL を返します。結果は NUMBER と同じく 40 桁に丸めます。0 で割ると ORA-01476（`Plsql.ZeroDivide`） |
+| PLS_INTEGER どうし、PLS_INTEGER と 32 ビットに収まる整数リテラルの `+`、`-`、`*` | 1 回の演算ごとに `Plsql.plsInteger(...)` | なし | 途中で 32 ビットを超えると ORA-01426 です（`v + 1 - 1` は v が 2147483647 なら例外。最後に範囲へ戻っても同じ。Oracle 26ai で確認）。`/` と、32 ビットを超えるリテラルとの演算は NUMBER です |
+| SIMPLE_INTEGER どうし、SIMPLE_INTEGER と整数リテラルの `+`、`-`、`*` | 1 回の演算ごとに下位 32 ビットを取る（`Integer.valueOf(((Number) ...).intValue())`） | なし | 2 の補数で折り返します。PLS_INTEGER と混ぜた演算は PLS_INTEGER として扱います（Oracle で未確認） |
 | 中置の `n MOD j` | `Plsql.mod(n, j)`（関数の `MOD(n, j)` と同じ） | なし | `*` と `/` と同じ強さで結びます（`a + b MOD 3 * 2` は `a + ((b MOD 3) * 2)`） |
 | `DATE + n`、`DATE - n`、`DATE - DATE` | `Plsql.add` / `Plsql.sub` | なし | 日数の足し引きです。DATE どうしの差は日数（小数つき）です |
 | 単項の `-x` | `Plsql.neg(x)` | なし | |
@@ -611,7 +614,7 @@ PL/SQL の中の SQL 文は、Repository のメソッドになります。SQL �
 | 結合 | そのまま実行できれば Repository の 1 文 | そのまま実行できない（警告・実行計画・拒否・スキーマ無し）と SEM-005（REVIEW） | |
 | `WHERE p IS NULL OR col = p` | p が NULL のときの文と、等号で絞る文に分け、実行時に選ぶ | なし | ScalarDB SQL は bind の NULL 判定を WHERE に書けないためです |
 | DDL の `DEFAULT` 列、`IDENTITY` 列を省いた INSERT | 省いた列を INSERT に足す（IDENTITY は採番） | なし | ScalarDB は主キーの無い INSERT を断るためです |
-| CHECK 制約・外部キーのある表への書き込み | `constraints.enforce` に書いた表だけ、書く前に検査（ORA-02290 / ORA-02291 の例外） | 書いていない表は診断 `CONSTRAINT_UNDECIDED`（判定は下がらない） | 外部キーは親の行をキーで読みます。`CREATE TABLE` の中の制約と、`ALTER TABLE ... ADD [CONSTRAINT 名前] CHECK / FOREIGN KEY` で足した制約を読みます。名前の無い制約は `<表>_check<n>` / `<表>_fk<n>` と呼びます |
+| CHECK 制約・外部キー・UNIQUE のある表への書き込み、子の表の外部キーが指す親の DELETE | `constraints.enforce` に書いた表だけ、書く前に検査（NOT NULL は ORA-01400 / ORA-01407、CHECK は ORA-02290、外部キーは ORA-02291 の例外。この順） | 書いていない表は診断 `CONSTRAINT_UNDECIDED` で CONS-001（REVIEW）。決めた表でも検査していないものは `CONSTRAINT_NOT_GUARDED` で CONS-002（REVIEW） | 外部キーは親の行をキーで読みます。UPDATE は書く列に掛かる制約だけを見ます。`CREATE TABLE` の中の制約、`ALTER TABLE ... ADD [CONSTRAINT 名前] CHECK / FOREIGN KEY / UNIQUE`、`CREATE UNIQUE INDEX` を読みます。名前の無い制約は `<表>_check<n>` / `<表>_fk<n>` / `<表>_unique<n>` と呼びます。NOT NULL だけの表は未決に数えません（決めた表でだけ検査します） |
 | PL/SQL の変数と表の列が同じ名前 | そのまま生成 | SQL-003（REVIEW） | Oracle は列として読みます |
 | データ辞書（`USER_*`、`ALL_*`、`DBA_*`、`V$*`）を読む | SQL をそのまま生成 | DICT-001（REDESIGN） | 移行先には無い表です |
 | 同じトランザクションで書いた表を走査する | 生成はするが、ScalarDB が実行時に拒否 | TX-004 / SCAN-001（REDESIGN） | `ScanAfterWriteException` になります。数えるのは走査（キーで届かない読み）だけで、キーで読むのは数えません。`COMMIT` と `ROLLBACK`（`ROLLBACK TO` を除く）のあとの読みは新しいトランザクションなので数えません。どの道でも通る `COMMIT` だけが効き、IF の片方の枝や、回らないかもしれないループの中の `COMMIT` は効きません。ScalarDB のスキーマ（`--scalardb-schema`）が無いときは読み方が分からないので、書いた表の読みをすべて TX-004 にします |
@@ -678,8 +681,9 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `EXCEPTION WHEN x THEN ...` | `try { ... } catch (XException e) { ... }` | なし | handler の順を保ち、`WHEN OTHERS` は最後に置きます |
 | 定義済み例外 | `NoDataFoundException`（100）、`TooManyRowsException`（-1422）、`DuplicateValueException`（-1）、`InvalidNumberException`（-1722）、`ZeroDivideException`（-1476）、`ValueErrorException`（-6502）、`SubscriptBeyondCountException`（-6533）、`SubscriptOutsideLimitException`（-6532）、`CollectionIsNullException`（-6531）、`InvalidCursorException`（-1001）、`CursorAlreadyOpenException`（-6511）、`CaseNotFoundException`（-6592） | なし | 全部 `MigratedException(code, message)` の子で、Oracle の番号を持ちます。ランタイムの誤り（`Plsql.ZeroDivide` など）は handler のある所で対応する例外に付け替えます（生成で確認） |
 | `WHEN DUP_VAL_ON_INDEX` / `WHEN INVALID_NUMBER` | catch は出すが、移行先ではこの例外が自然には起きない | EXC-001（REVIEW） | 明示の RAISE のときだけ走ります。重複 INSERT のあと ScalarDB はトランザクションを続けられません |
+| `PRAGMA EXCEPTION_INIT(e, 番号)` で DB の誤りに結んだ例外の handler（-1、-1400、-1407、-1438、-1722、-2290、-2291、-2292、-6502、-12899） | catch は出すが、移行先ではその番号の誤りが起きない | EXC-001（REVIEW） | `constraints.enforce` の検査がその番号を投げる routine（呼び先を含む）では当たりません |
 | `WHEN VALUE_ERROR` | `catch (ValueErrorException e)` | EXC-001（REVIEW） | 宣言の長さ・桁の超過と、数値にならない文字は届きます。CHAR の詰め物と SQL の中の変換は届きません |
-| `WHEN OTHERS` | `catch (MigratedException e)` | `THEN NULL` だけなら EXC-002（REVIEW） | 移行した例外だけを捕まえます。`SQLException` や ScalarDB の競合、Java の不具合は捕まえません |
+| `WHEN OTHERS` | `catch (MigratedException e)` | `THEN NULL` だけなら EXC-002（REVIEW）。それ以外の処理で書き込み（DML、書き込む routine の呼び出し）を囲むと EXC-003（REVIEW） | 移行した例外だけを捕まえます。`SQLException` や ScalarDB の競合、Java の不具合は捕まえません。Oracle では重複・NOT NULL・長さなど DB の誤りもここで捕まえていました。最後に `RAISE;` で投げ直す handler は EXC-003 に当たりません |
 | ユーザ定義の例外（`e_x EXCEPTION`） | `EXException`（生成器が内部で -900000 台の番号を振る） | なし | `SQLCODE` は 1、`SQLERRM` は `User-Defined Exception` を返します（Oracle と同じ） |
 | `PRAGMA EXCEPTION_INIT(e_x, -n)` | `CODE = -n` を持つ `EXException` | なし | 同じ番号の `RAISE_APPLICATION_ERROR` はこのクラスを投げるので、`WHEN e_x` で捕まります |
 | `PRAGMA EXCEPTION_INIT(e, -54)`（行ロックが取れない）の handler | catch を出さない | なし | ScalarDB は待たないので起こりません。衝突は commit で分かります |
@@ -709,10 +713,11 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 
 | PL/SQL の書き方 | 生成される Java | 判定への影響（ルール ID） | 注意 |
 |---|---|---|---|
-| `EXECUTE IMMEDIATE '定数' [INTO v] [USING p]` | 静的な文として Repository に生成 | ScalarDB がそのまま実行できれば DYN-OPT-002（注記）。できなければ DYN-002（REVIEW） | 生成で確認 |
+| `EXECUTE IMMEDIATE '定数' [INTO v] [USING p]` | 静的な文として Repository に生成 | ScalarDB がそのまま実行できれば DYN-OPT-002（注記）。できなければ DYN-002（REVIEW）。畳んだ文には静的な文と同じ規則が当たります（`FOR UPDATE` は LOCK-001、書いた表の走査は SCAN-001 / TX-004 など） | 生成で確認 |
+| 畳んだ文が trigger・制約のある表へ書く | 文はそのまま生成し、trigger の呼び出しも制約の検査も入れない | trigger は TRG-002（REDESIGN）、制約は CONS-001 / CONS-002（REVIEW） | 静的な文に書き直せば、trigger の呼び出しと検査が入ります（#148） |
 | 本体で定数を代入・連結した変数（`v_sql := '...'; v_sql := v_sql \|\| '...'`） | とりうる文（8 通りまで）を全部生成し、実行時に条件で選ぶ | 同上 | 宣言部の初期値で組んだ文字列はたどりません（生成で確認）。条件の変数を途中で書き換えると断ります |
 | 表名などの識別子を連結（`'... FROM ' \|\| p_tab`） | 決定が無ければ断る。`dynamicTables` に表名を書けば表ごとの文を生成し、`UPPER(p_tab)` で選ぶ | DYN-001（REDESIGN） | 書いていない表名は `IllegalArgumentException`（生成で確認）。`plsql.cli --limits` の判定も表ごとの文を見るので、展開できた文に DYN-002 は付きません |
-| 動的な DDL（`'CREATE TABLE ...'`） | 断る。`ddl.omit` に書けば省く | DYN-002（REVIEW） | スキーマは Schema Loader が持ちます（生成で確認） |
+| 動的な DDL（`'CREATE TABLE ...'`、`'TRUNCATE TABLE ...'` など） | 断る。`ddl.omit` に書けば省く | DYN-004（REDESIGN）。`ddl.omit` に書いた routine は当たりません | スキーマは Schema Loader が持ちます。Oracle の DDL は前後で COMMIT します。TRUNCATE も DDL です（生成で確認） |
 | 動的な PL/SQL ブロック（`'BEGIN ... END;'` の定数） | ブロックを展開して生成 | 中身の判定しだい | 生成で確認 |
 | `DBMS_SQL` で `PARSE` の文字列が定数の問合せ | 静的な cursor FOR ループ。`COLUMN_VALUE` は列番号で選ぶ | ループなので CUR-002 | 生成で確認 |
 | それ以外の `DBMS_SQL`（DML、実行時に決まる文字列、`BIND_VARIABLE` など） | 変換しない | DYN-003（REDESIGN） | 生成で確認 |
@@ -803,7 +808,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `dynamicTables` | 識別子を連結する動的 SQL を表ごとの文にする | DYN-001 は REDESIGN のまま。表ごとの文を判定するので、展開できた文の DYN-002 は外れる（`plsql.cli --limits` も同じ） | |
 | `ddl.omit` | 動的な DDL を省く | | |
 | `packageState.carried` | package 変数を引数と結果で運ぶ | STATE-001 は REDESIGN のまま | |
-| `constraints.enforce` | CHECK / 外部キーの検査を書く前に入れる | | |
+| `constraints.enforce` | NOT NULL / CHECK / 外部キーの検査を書く前に入れる | CONS-001 が外れる。UNIQUE と子のある親の DELETE は検査せず CONS-002 | |
 | `dbLinks` | `表@link` を namespace に書き換える | LINK-001 は REDESIGN のまま | |
 | `conditionalCompilation` | 条件付きコンパイルのフラグとバージョン | | |
 
@@ -823,6 +828,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | AUTHID-001 | REDESIGN | routine の `AUTHID CURRENT_USER`（package の仕様に書いたものは本体の routine すべて） | 認証・認可を別に設計する |
 | DYN-001 | REDESIGN | 識別子を実行時に組む動的 SQL | `dynamicTables` |
 | DYN-003 | REDESIGN | `DBMS_SQL`（定数の問合せに書き換えられなかったもの） | 実行ログから文を洗い出す |
+| DYN-004 | REDESIGN | 畳んだ動的 SQL が DDL（`CREATE`、`DROP`、`ALTER`、`TRUNCATE` など） | `ddl.omit`（省いてよい DDL のとき） |
 | LOWER-002 | REDESIGN | ブロックとループに組み直せなかった `GOTO`（範囲が交差して入れ子にできない、Oracle が拒む飛び先） | 制御構造を組み直す |
 | LOCK-001 | REDESIGN | 行ロックのある SQL 文 | `rowLocks.optimistic` |
 | LOCK-002 | REDESIGN | 行ロックする cursor の宣言 | 同上 |
@@ -856,8 +862,11 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | CUR-003 | REVIEW | 先読みに書き換えた明示 cursor で、routine が COMMIT などを持つ | |
 | BULK-001 | REVIEW | `BULK COLLECT` を含む SQL 文 | |
 | BULK-003 | REVIEW | 行数上限の決まっていない分割読み | `scanRows` |
-| EXC-001 | REVIEW | `DUP_VAL_ON_INDEX`、`INVALID_NUMBER`、`VALUE_ERROR` の handler | 読んでから選ぶ形、事前の検査に書き直す |
+| EXC-001 | REVIEW | `DUP_VAL_ON_INDEX`、`INVALID_NUMBER`、`VALUE_ERROR` の handler。`PRAGMA EXCEPTION_INIT` でそれらや制約の誤り（-1400、-2290、-2291、-2292 など）の番号に結んだ例外の handler | 読んでから選ぶ形、事前の検査に書き直す。CHECK と外部キーは `constraints.enforce` |
 | EXC-002 | REVIEW | `WHEN OTHERS THEN NULL` | 無視する例外を名前で書く |
+| EXC-003 | REVIEW | `WHEN OTHERS THEN <NULL 以外>` が書き込みを囲む（投げ直す handler を除く） | 捕まえたい DB の誤りを名前で書く、書く前に検査する |
+| CONS-001 | REVIEW | CHECK / 外部キー / UNIQUE のある表への書き込み、子のある親の DELETE で、`constraints.enforce` に無い表 | `constraints.enforce` |
+| CONS-002 | REVIEW | 決めた表の制約のうち書く前に検査しないもの（UNIQUE、子のある親の DELETE、書く値が文から読めない、動的 SQL の文） | 設計する（先に読む、呼び出し側で保証する） |
 | SQL-001 | REVIEW | ScalarDB SQL で実行できない文 | RMW なら `rowLocks.optimistic` |
 | SQL-002 | REVIEW | 実行計画に分解される文 | |
 | SQL-003 | REVIEW | 変数と列が同じ名前 | 名前を変える、列を修飾する |
@@ -876,6 +885,8 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `SQL%BULK_EXCEPTIONS` | 同上 | 判定は下がらない | |
 | `DBMS_SQL`（定数の問合せ以外） | 同上 | DYN-003 | |
 | とりうる文を数えられない `EXECUTE IMMEDIATE` | 同上 | DYN-002 / DYN-001 | 宣言部の初期値で組んだ文字列も含みます |
+| UNIQUE（主キー以外）、子のある親の DELETE（ORA-02292） | 検査しない（`constraints.enforce` に書いても） | CONS-001 / CONS-002 | 守るには書く前に読む必要があります |
+| 畳んだ動的 SQL の書き込みへの trigger の呼び出しと制約の検査 | 入れない | TRG-002 / CONS-001 / CONS-002 | 静的な文に書き直せば入ります |
 | 対応表に無い組み込み関数（`SOUNDEX`、`NUMTODSINTERVAL` など）、PL/SQL では使えない `DECODE` / `DUMP` | `UnsupportedOperationException` | 関数による | 組み込み関数の節を参照 |
 | INTERVAL 型と、日時の差からの `EXTRACT` | `UnsupportedOperationException` | 判定は下がらない | 生成コードでは日時の差が日数（数値）です |
 | Oracle と同じ意味にできない正規表現（等価クラス `[[=e=]]`、`(?` で始まる括弧、量指定子の重ね） | 実行時に `UnsupportedOperationException` | 判定は下がらない | パターンは実行時に訳すので、生成時には分かりません |

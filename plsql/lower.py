@@ -1585,6 +1585,19 @@ def _walk(statements: list[M.Statement]) -> list[M.Statement]:
     return out
 
 
+def with_variants(statements: list[M.Statement]) -> list[M.Statement]:
+    """`statements` with each folded dynamic statement followed by the static statements it can run (#148 H1).
+
+    `_walk` leaves them out on purpose: the generator writes a folded statement where the EXECUTE IMMEDIATE is, and
+    a walk that also yielded the variants would give it two of each. A check -- a rule, the write-then-scan walk --
+    has to see them, or `EXECUTE IMMEDIATE 'SELECT ... FOR UPDATE'` passes where the static SELECT does not."""
+    out: list[M.Statement] = []
+    for statement in statements:
+        out.append(statement)
+        out.extend(getattr(statement, "variant_statements", None) or [])
+    return out
+
+
 def walk_scoped(statements: list[M.Statement],
                 loops: dict[str, M.Loop] | None = None) -> list[tuple[M.Statement, dict[str, M.Loop]]]:
     """`_walk`, but each statement is paired with the cursor FOR loops whose variable is in scope where it sits.

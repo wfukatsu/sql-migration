@@ -286,6 +286,9 @@ B（拒否）/ D（別表検証）の trigger が掛かる表は、アプリ以�
 - Oracle の `TRUNCATE` は DDL で、直前の作業ごと暗黙に commit する。ScalarDB では直前の作業は commit されない
   （TRUNCATE 自体が rollback で戻らないのは同じ）
 - 聞くこと: TRUNCATE の前に書いた内容が、TRUNCATE の時点で確定していることに依存している業務があるか
+- #148 から、routine の中の TRUNCATE は DDL として扱う。判定は DYN-004（REDESIGN）で、生成器は断る
+  （`ddl.omit` は「実行しない」決定なので、行を消す TRUNCATE には使わない）。答えに応じて、トランザクションの外の
+  運用の処理へ移すか、キーで DELETE する形に元の PL/SQL を直す
 
 ---
 

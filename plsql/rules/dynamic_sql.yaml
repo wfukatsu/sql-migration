@@ -31,6 +31,20 @@ rules:
     severity: info
     message: 動的 SQL は、とりうる文をすべて静的な文に展開して生成しました（どれも ScalarDB がそのまま実行できます）。Oracle で EXECUTE IMMEDIATE に与えていた権限に相当するものが移行先に要るかは、運用で確認することを推奨します
 
+  # #148 H1: 畳んだ文が DDL（TRUNCATE を含む）。Oracle の DDL は前後で COMMIT する（AUTO 禁止条件 1 と同じ性質）。
+  # 移行先ではスキーマを Schema Loader が持ち、routine からは流さない（#52）。limits.yaml の ddl.omit で省くと決めた
+  # routine の DDL は DYNAMIC_DDL_OMITTED になり、この規則には当たらない
+  - id: DYN-004
+    match: {statementKind: SqlOperation, hasDiagnostic: DYNAMIC_DDL}
+    decision: REDESIGN
+    severity: critical
+    message: 動的 SQL の中に DDL（CREATE / DROP / ALTER / TRUNCATE など）があります。Oracle では暗黙に COMMIT し、移行先では routine から DDL を流しません
+    remediation:
+      - TRUNCATE は、トランザクションの外で行う運用の処理（バッチの前処理など）に移すか、キーで DELETE する形にする
+      - 作ってすぐ消す一時表なら、用途を再設計するか、省くと決めて limits.yaml の ddl.omit に理由を書く
+    requiredTests:
+      - transaction_boundary
+
   - id: DYN-003
     match: {statementKind: [SqlOperation, Expression], textMatches: '\bDBMS_SQL\b'}
     decision: REDESIGN

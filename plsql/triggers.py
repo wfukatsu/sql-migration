@@ -259,11 +259,34 @@ def _sequence(statements: list[M.Statement], routine: M.Routine, found: dict[str
             branch.body = _sequence(branch.body, routine, found, schema)
         for handler in getattr(statement, "exception_handlers", []) or []:
             handler.body = _sequence(handler.body, routine, found, schema)
+        _dynamic(statement, found)
         head, tail = _apply(statement, routine, found, schema)
         out.extend(head)
         out.append(statement)
         out.extend(tail)
     return out
+
+
+def _dynamic(statement: M.Statement, found: dict[str, list[Trigger]]) -> None:
+    """#148 H1: a folded `EXECUTE IMMEDIATE 'UPDATE items ...'` fires the trigger in Oracle as the static UPDATE does.
+
+    The call is not woven in: the generator writes the variant where the EXECUTE IMMEDIATE is, one of several chosen
+    at run time, and has no place for the call and the `:OLD` read. So the variant says the trigger is not applied,
+    which is what the rule reads (TRG-002) -- the statement used to pass as if the table had no trigger."""
+    for variant in getattr(statement, "variant_statements", None) or []:
+        kind = (variant.sql_kind or "").upper()
+        if kind not in ("INSERT", "UPDATE", "DELETE", "MERGE"):
+            continue
+        try:
+            tree = sqlglot.parse_one(variant.original_sql or "", dialect="oracle")
+        except Exception:
+            continue
+        table = _table(tree)
+        for trigger in found.get((table or "").lower(), []):
+            if _fires(trigger, kind, tree):
+                variant.add("WARN", "TRIGGER_NOT_APPLIED",
+                            f"{trigger.module.name} が掛かる書き込みだが、**掛けていない**。動的 SQL の文には trigger の"
+                            f"呼び出しを織り込まない（#148）。静的な文に書き直せば織り込む")
 
 
 def _apply(statement: M.Statement, routine: M.Routine, found: dict[str, list[Trigger]],

@@ -73,6 +73,10 @@ class OracleSchema:
     # (`limits.yaml` constraints.enforce, #50). `REFERENCES parent` without columns means the parent's primary key
     checks: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
     foreign_keys: dict[str, list["ForeignKey"]] = field(default_factory=dict)
+    # {table: {column}} declared NOT NULL, and {table: [(name, columns)]} for UNIQUE (a constraint or a unique index).
+    # ScalarDB keeps neither; a guarded table checks NOT NULL before the write, and says a UNIQUE is not kept (#148 M1)
+    not_null: dict[str, set[str]] = field(default_factory=dict)
+    uniques: dict[str, list[tuple[str, tuple[str, ...]]]] = field(default_factory=dict)
     # `CREATE TYPE t AS OBJECT (a NUMBER, b VARCHAR2(25))` -> {t: [(a, NUMBER), (b, VARCHAR2(25))]}, and
     # `CREATE TYPE ts AS TABLE OF t` -> {ts: t}. A local of such a type is a record / a collection of records in
     # the generated code (#54, samples/oracle-samples b06_4)
@@ -106,6 +110,15 @@ class OracleSchema:
                 # `ALTER TABLE t ADD CONSTRAINT ... CHECK / FOREIGN KEY`: the same constraints written after the table.
                 # Only CREATE TABLE was read, and constraints.enforce named a constraint nobody had seen (#129)
                 _constraints(schema, alter.this.name.lower(), alter)
+                continue
+            if isinstance(statement, exp.Create) and statement.kind == "INDEX" and statement.args.get("unique"):
+                index = statement.this
+                owner = index.args.get("table") if isinstance(index, exp.Index) else None
+                params = index.args.get("params") if isinstance(index, exp.Index) else None
+                columns = tuple(c.name.lower() for o in (params.args.get("columns") or [] if params else [])
+                                for c in [o.this if isinstance(o, exp.Ordered) else o] if isinstance(c, exp.Column))
+                if isinstance(owner, exp.Table) and columns:
+                    schema.uniques.setdefault(owner.name.lower(), []).append((index.name.lower(), columns))
                 continue
             if not isinstance(statement, exp.Create) or statement.kind != "TABLE":
                 continue
@@ -240,6 +253,14 @@ def _constraints(schema: "OracleSchema", table: str, statement) -> None:
             return
         schema.foreign_keys.setdefault(table, []).append(ForeignKey(name, tuple(columns), parent, parent_columns))
 
+    def unique(constraint, columns: tuple[str, ...]) -> None:
+        # named apart from the CHECK / FOREIGN KEY numbering, which constraints.enforce may already name
+        this = constraint.args.get("this") if constraint is not None else None
+        found = schema.uniques.setdefault(table, [])
+        name = this.name.lower() if isinstance(this, exp.Identifier) else f"{table}_unique{len(found) + 1}"
+        if columns:
+            found.append((name, columns))
+
     for column in statement.find_all(exp.ColumnDef):
         for constraint in column.constraints:
             kind = constraint.kind
@@ -247,6 +268,17 @@ def _constraints(schema: "OracleSchema", table: str, statement) -> None:
                 check(name_of(constraint, "check"), kind)
             elif isinstance(kind, exp.Reference):
                 reference(name_of(constraint, "fk"), [column.name.lower()], kind)
+            elif isinstance(kind, exp.NotNullColumnConstraint) and not kind.args.get("allow_null"):
+                schema.not_null.setdefault(table, set()).add(column.name.lower())
+            elif isinstance(kind, exp.UniqueColumnConstraint):
+                unique(constraint, (column.name.lower(),))
+    for kind in statement.find_all(exp.UniqueColumnConstraint):
+        if isinstance(kind.parent, exp.ColumnConstraint):
+            continue   # read with its column above
+        target = kind.args.get("this")
+        columns = tuple(i.name.lower() for i in (target.expressions if isinstance(target, exp.Schema) else [])
+                        if isinstance(i, (exp.Identifier, exp.Column)))
+        unique(kind.parent if isinstance(kind.parent, exp.Constraint) else None, columns)
     for constraint in statement.find_all(exp.Constraint):
         for kind in constraint.expressions:
             if isinstance(kind, exp.CheckColumnConstraint):
