@@ -9,7 +9,8 @@ So the capture records two things, and the evidence only counts where both still
 
 * per routine, a hash of the PL/SQL source its behaviour depends on: its own lines, the rest of its package (the
   spec, the package's variables, constants, types and initialisation), every routine it calls directly or not and
-  their packages, the triggers, and the project's inputs (the Oracle DDL, the ScalarDB schema, limits.yaml). Only
+  their packages, the packages it only names (`pkg_b.t_qty`, `pkg_b.c_rate`: a SUBTYPE or a constant, #148), the
+  triggers, and the project's inputs (the Oracle DDL, the ScalarDB schema, limits.yaml). Only
   the routine's own lines were hashed before, so `c_rate CONSTANT NUMBER := 0.08` changed to 0.10 left a
   routine that used it verified (#96). Editing a routine it does not call still leaves it alone
 * one hash of the toolchain that turns that source into behaviour: the generator and everything feeding it (the
@@ -26,6 +27,7 @@ evidence it reports on.
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 
 from .ir import model as M
@@ -85,21 +87,46 @@ def sources(program: M.Program, source_root: str | Path) -> dict[str, str]:
         if rest is None and module.source_range is not None:
             shared[module.name] = None
         elif shared.get(module.name, "") is not None:
-            shared[module.name] = (shared.get(module.name) or "") + "\n" + (rest or "")
+            # the specification beside the body (`pkg.pks` next to `pkg.pkb`): the analysis merges its declarations
+            # into the body's module, whose range is the body file only, so its SUBTYPEs and constants were not
+            # hashed (#148 H2). A package whose spec is its own module is hashed through that module as before
+            spec = files.spec(module.source_range)
+            shared[module.name] = (shared.get(module.name) or "") + "\n" + (rest or "") + (f"\n{spec}" if spec else "")
     triggers = [own[r.id] for m in program.modules if m.module_kind == "trigger" for r in m.routines]
     common = [_project_inputs(root)] + sorted(t or "" for t in triggers)
     graph = build_call_graph(program)
+    packages = sorted({m.name for m in program.modules if m.module_kind != "trigger" and m.name}, key=len,
+                      reverse=True)
+    named = re.compile(r"(?<![\w$#.])(" + "|".join(re.escape(n) for n in packages) + r")\s*\.", re.IGNORECASE) \
+        if packages else None
+    canonical = {n.lower(): n for n in packages}
     out: dict[str, str] = {}
     for routine_id, text in own.items():
         if not text:
             continue
-        parts = [text, shared.get(module_of[routine_id].name, "")]
+        home = module_of[routine_id].name
+        parts = [text, shared.get(home, "")]
         for callee in sorted(graph.reachable_from(routine_id) - {routine_id}):
             # an external callee is outside the program; nothing to hash. A trigger is in `common` already, and the
             # edge to it exists only when the analysis was given the ScalarDB schema: the capture analyses without
             # one and `plsql.cli` with one, and 9 routines of samples/oracle-samples read as stale
             if callee in own and module_of[callee].module_kind != "trigger":
                 parts += [callee, own[callee], shared.get(module_of[callee].name, "")]
+        # #148 H2: a package the routine only names -- `v pkg_b.t_qty;`, `pkg_b.c_rate`, `pkg_b.e_busy` -- without
+        # calling it. Its SUBTYPE, constant or type is part of what the routine does (NUMBER(3) narrowed to NUMBER(1)
+        # changed the generated `fitInt`), and only called packages were hashed. Followed through what the added
+        # specifications name in turn. Over-including only makes evidence stale more often, the safe direction
+        included = {home.lower()} | {module_of[c].name.lower() for c in graph.reachable_from(routine_id) if c in own}
+        pending = [p for p in parts if p]
+        while named is not None and pending:
+            for found in named.finditer(pending.pop()):
+                name = canonical[found.group(1).lower()]
+                if name.lower() in included:
+                    continue
+                included.add(name.lower())
+                parts += [name, shared.get(name, "")]
+                if shared.get(name):
+                    pending.append(shared[name])
         if any(part is None for part in parts):
             continue   # a file it depends on is missing or ambiguous: stale rather than half-hashed
         out[routine_id] = _sha([part.encode() for part in parts + common])
@@ -112,6 +139,7 @@ class _Files:
     def __init__(self, root: Path) -> None:
         self.root = root
         self.lines: dict[str, list[str] | None] = {}
+        self.paths: dict[str, Path | None] = {}
 
     def _lines(self, name: str) -> list[str] | None:
         if name not in self.lines:
@@ -119,8 +147,21 @@ class _Files:
             if not found.is_file():
                 matches = sorted(self.root.rglob(Path(name).name))
                 found = matches[0] if len(matches) == 1 else None   # none, or ambiguous: not guessed
+            self.paths[name] = found
             self.lines[name] = found.read_text(encoding="utf-8").splitlines() if found else None
         return self.lines[name]
+
+    def spec(self, span) -> str | None:
+        """The whole of the specification file beside the body `span` is in, when there is one."""
+        if span is None or not span.file or Path(span.file).suffix.lower() not in (".pkb", ".bdy"):
+            return None
+        self._lines(span.file)
+        body = self.paths.get(span.file)
+        if body is None:
+            return None
+        found = next((p for p in sorted(body.parent.iterdir())
+                      if p.stem == body.stem and p.suffix.lower() in (".pks", ".spc")), None)
+        return "\n".join(line.rstrip() for line in found.read_text(encoding="utf-8").splitlines()) if found else None
 
     def text(self, span, without=()) -> str | None:
         if span is None or not span.file:
