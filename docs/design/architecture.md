@@ -332,6 +332,7 @@ classDiagram
         mode : Oracle, PostgreSQL, MySQL
         sql
         build_indexes : bool
+        time_zone : 移行元のセッションのゾーン（PostgreSQL の計画だけ、無ければ UTC）
     }
     class Guardrails {
         requires_cross_partition_scan : bool

@@ -24,7 +24,7 @@ SQL 文を ScalarDB SQL に変換し、変換できない読み取り文を実�
 | `--isolation` | 見積もりの前提にする分離レベル（既定 `SERIALIZABLE`） |
 | `--row-limit N` | 実行計画が 1 表から取得する行数の上限（既定 10,000） |
 | `--h2-indexes` | 実行計画に「H2 に索引を作る」指定を入れる（既定オフ。大きな表を結合するバッチ処理向け） |
-| `--session-time-zone ZONE` | 移行元のセッションのタイムゾーン（`Asia/Tokyo`、`+09:00`）。ゾーンの無いリテラルを TIMESTAMPTZ 列に書くとき、そのゾーンの時刻として読んで UTC に直す（指定しないと UTC と仮定し、`TZ_ASSUMED_UTC` を出す） |
+| `--session-time-zone ZONE` | 移行元のセッションのタイムゾーン（`Asia/Tokyo`、`+09:00`）。ゾーンの無いリテラルを TIMESTAMPTZ 列に書くとき、そのゾーンの時刻として読んで UTC に直す（指定しないと UTC と仮定し、`TZ_ASSUMED_UTC` を出す）。PostgreSQL の実行計画には `residual.java.time_zone` として載り、ランタイムが H2 をそのゾーンで動かす（`date_trunc`、timestamptz の `CAST(.. AS DATE)`・`EXTRACT`・`to_char` が移行元と同じになる）。時差は ISO の向き（`+09:00` は UTC より 9 時間進んでいる）で書く。PostgreSQL の `SET TimeZone = '+09:00'` は POSIX の向きで UTC より 9 時間遅れなので、そのまま写さない |
 
 出力（`--out-dir`）:
 
