@@ -67,7 +67,7 @@ python3 -m venv .venv
 runtime-java/build/install/residual-runner/bin/residual-runner validate --plan out/plans/library.7.plan.json
 ```
 
-H2 で元の SQL がコンパイルできることだけを確かめます（`{"ok":true,...}` が出ます）。実際に ScalarDB から取得して動かすのは、
+H2 で元の SQL がコンパイルできることだけを確かめます（`{"problems":[],"ok":true,"unresolved":[]}` が出ます）。実際に ScalarDB から取得して動かすのは、
 [検証環境](verification.md) を立ててからです。
 
 ## 4. PL/SQL を解析して判定を見る
