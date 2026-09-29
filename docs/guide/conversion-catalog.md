@@ -255,7 +255,7 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 |---|---|---|
 | 文字列 | `SUBSTR`、`UPPER`、`LENGTH`、連結 `\|\|` | Oracle の空文字列 `''` は NULL（変換できた文にも WARN `SEMANTICS`）。MySQL の文字列比較は大文字小文字を区別しない（INFO `SEMANTICS`） |
 | 数値 | `ROUND(salary)`、`salary / 2` | 丸めは 0 から遠いほうへ（-2.5 は -3）。0 で割ったときは方言で違う（Oracle は失敗、MySQL は NULL）。アプリで書くときの注意として `APP_SEMANTICS` に出る |
-| 日付 | `ADD_MONTHS(hired, 1)`、`TRUNC(hired, 'MM')`、日付どうしの引き算 | `ADD_MONTHS` は月末をそろえる（`APP_SEMANTICS`）。実行計画では H2 向けに `TRUNC(d, 'MM')` を `DATE_TRUNC('MONTH', d)` に書き換える。週（Oracle の `IW` / `WW` / `W`、PostgreSQL の `date_trunc('week', d)`）は H2 の `DATE_TRUNC('WEEK')` が日曜始まりなので、始まりの曜日を合わせた `DATEADD` の式にする。日付どうしの引き算は Oracle なら `DAYS_BETWEEN`（小数の日数）、PostgreSQL の DATE どうしなら `DATEDIFF('DAY', b, a)`、MySQL（YYYYMMDD の数の引き算）は ERROR `RESIDUAL_H2` |
+| 日付 | `ADD_MONTHS(hired, 1)`、`TRUNC(hired, 'MM')`、日付どうしの引き算 | `ADD_MONTHS` は月末をそろえる（`APP_SEMANTICS`）。実行計画では H2 向けに `TRUNC(d, 'MM')` を `DATE_TRUNC('MONTH', d)` に書き換える。週（Oracle の `IW` / `WW` / `W`、PostgreSQL の `date_trunc('week', d)`）は H2 の `DATE_TRUNC('WEEK')` が日曜始まりなので、始まりの曜日を合わせた `DATEADD` の式にする。`TRUNC(d, 'DAY')`（`DY`、`D` も）は週の始まりを NLS_TERRITORY が決めるので計画にせず ERROR `RESIDUAL_H2`（`IW` を使うか、アプリで計算する）。H2 が書き換えられない単位も同じ。小数秒の無い `TIMESTAMP '...'` は、H2 が `FF6` の書式で読めないので、小数秒の無い書式で書く（#153）。日付どうしの引き算は Oracle なら `DAYS_BETWEEN`（小数の日数）、PostgreSQL の DATE どうしなら `DATEDIFF('DAY', b, a)`、MySQL（YYYYMMDD の数の引き算）は ERROR `RESIDUAL_H2` |
 | 書式・変換 | `TO_CHAR(hired, 'YYYY-MM')`、MySQL の `DATE_FORMAT`、`CAST(x AS ...)`、`name::text` | 日付の書式はセッションのタイムゾーンと言語に従う（`APP_SEMANTICS`）。実行計画では MySQL の `DATE_FORMAT` を H2 の `FORMATDATETIME` に書き換える（`'%Y年%m月%d日'` のような文字も書ける。H2 に無い `%U` などは ERROR `RESIDUAL_H2`）。値の位置の `CAST('5' AS NUMBER)` は ERROR `UNSUPPORTED` |
 | 割り算 | `COUNT(*) / 4`、`7 / 2`、`COUNT(*) * 100 / 3` | Oracle・MySQL の実行計画では、H2 が整数どうしを整数で割らないよう、列から来ない整数（整数リテラル、`COUNT`、`LENGTH` など）の左辺を `CAST(... AS NUMBER(19))` で包む。PostgreSQL は整数の割り算のまま |
 | NULL の処理 | `NVL`、`COALESCE`、MySQL の `IFNULL` | 集約は NULL を除き、全部 NULL なら NULL（`APP_SEMANTICS`） |
@@ -379,7 +379,7 @@ SELECT・UPDATE・DELETE ごとに、ScalarDB がどう読むかを判定しま�
 | Oracle | 外部結合 `(+)`、`ROWNUM`、`CONNECT BY`、`KEEP`、`MINUS` | 上の各表 |
 | Oracle | 整数型、`FLOAT`、`DATE`、精度なし `NUMBER`、`LONG`、`LONG RAW`、`XMLTYPE` | すべて WARN `TYPE`（上の「データ型」） |
 | Oracle | `/` だけの行 | 文の切れ目として扱う |
-| Oracle | 数字の bind（`:1`、`:2`。JDBC・OCI、V$SQL の形） | 変換後の SQL では、出てくる順に `?` にする（ScalarDB SQL に数字の bind は無い）。番号の順と違う・同じ番号が繰り返すときは WARN `BIND_ORDER` で渡す順を示す。計画では `:1` のまま（名前として渡す） |
+| Oracle | 数字の bind（`:1`、`:2`。JDBC・OCI、V$SQL の形） | 変換後の SQL では、出てくる順に `?` にする（ScalarDB SQL に数字の bind は無い）。番号の順と違う・同じ番号が繰り返すときは WARN `BIND_ORDER` で渡す順を示す。計画でも文の中の位置で `:1`、`:2`… と名前を付け直し、番号の順と違うときは WARN `BIND_ORDER` で渡す順を示す（#153） |
 | Oracle | q 引用（`q'[it's]'`、`nq'{...}'`） | 通常のリテラル（`'it''s'`）に直してから読む |
 | Oracle | DB link（`emp@remote`） | ERROR `DBLINK`（上の「INSERT / UPDATE / DELETE / MERGE」） |
 | Oracle | PL/SQL のブロック（`CREATE PROCEDURE` など、`BEGIN` / `DECLARE` の無名ブロック） | ERROR `PLSQL_BLOCK`。始まる所から `/` までを 1 文にする（前に `;` で終わる文があっても割らない）。PL/SQL の移行ツールで扱う |
