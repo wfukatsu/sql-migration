@@ -351,7 +351,10 @@ class Decomposer:
         for c in node.find_all(exp.Column):
             if c.name.upper() in ("ROWID", "ROWSCN", "ORA_ROWSCN"):
                 raise NotDecomposable(f"pseudo-column {c.name.upper()} cannot be fetched from ScalarDB")
-        from .converter import _oracle_partition_extension, _sequence_use
+        from .converter import _db_link, _oracle_partition_extension, _sequence_use
+        link = _db_link(node, self.dialect)
+        if link:
+            raise NotDecomposable(f"{link} is read over a database link; there is nothing in ScalarDB to fetch it from")
         sequence = _sequence_use(node, self.dialect)
         if sequence:
             raise NotDecomposable(f"{sequence}: a sequence value cannot be computed from fetched rows; generate it "

@@ -27,8 +27,10 @@ ScalarDB は複数のストレージを仮想的に統合し、それらをま�
 | `NOT (...)` | 比較演算子を反転して押し下げる。`NOT BETWEEN` は `col < low OR col > high`。`IS NOT NULL` と `NOT LIKE` はそのまま | なし（反転できなければ ERROR `NOT`） |
 | DNF でも CNF でもない AND / OR の入れ子 | DNF と CNF の短いほうにし、括弧を付ける | INFO `NORMAL_FORM` |
 | `10 < col` | `col > 10` | なし |
-| `WHERE ROWNUM <= n`（`< n`、`= 1`、`<= ?` も） | `LIMIT n`（`< n` は `LIMIT n-1`） | WARN `ROWNUM`（ScalarDB の LIMIT は ORDER BY の後に効く。Oracle の ROWNUM は前） |
+| `WHERE ROWNUM <= n`（`< n`、`= 1`、`<= ?` も） | `LIMIT n`（`< n` は `LIMIT n-1`） | WARN `ROWNUM`（ScalarDB の LIMIT は ORDER BY の後に効く。Oracle の ROWNUM は前）。`<= ?` には WARN `LIMIT` も付く（下） |
 | `FETCH FIRST n ROWS ONLY` | `LIMIT n` | INFO `LIMIT` |
+| 上限が 0 以下（`ROWNUM <= 0`、`ROWNUM < 1`、`FETCH FIRST 0`、`LIMIT 0`） | 書き換えない。ScalarDB SQL の `LIMIT 0` は「上限なし」で全件を返す（移行元は 0 件） | ERROR `LIMIT`（読み取りは実行計画に回り、H2 が 0 件を返す）。バインド変数の LIMIT は WARN `LIMIT`（0 を渡すと全件になる） |
+| ORDER BY が選択リストの別名を指す（`SELECT name AS n ... ORDER BY n`） | 別名の元の列（か集約）で書く。ScalarDB は列の別名を解決せず、列と同じ名前の別名は列として読む | INFO `ORDER` |
 | `FROM a, b WHERE a.x = b.y` | `FROM a INNER JOIN b ON a.x = b.y` | WARN `COMMA_JOIN` |
 | Oracle の外部結合 `a.x = b.y(+)` | `LEFT JOIN b ON a.x = b.y`（向きによって RIGHT） | WARN `ORACLE_JOIN_MARK` |
 | `JOIN ... USING (c)` | `JOIN ... ON a.c = b.c`。結合した列 `c` は、行が全部残る側（内部結合・LEFT は FROM の表、RIGHT は結合先の表）で修飾する | INFO `JOIN` |
@@ -122,7 +124,7 @@ ScalarDB の型は 11 種（`BOOLEAN` / `INT` / `BIGINT` / `FLOAT` / `DOUBLE` / 
 | 列の追加・削除・改名、表の改名、型の変更以外の `ALTER TABLE` の操作（制約・索引・パーティションなど）、主キーの列の `DROP COLUMN`、型を変えない Oracle の `MODIFY (c NOT NULL)` | 変換しない | ERROR `ALTER`（読めない操作を名指しする） |
 | ビュー・シーケンス・トリガー・プロシージャの `CREATE`、表・スキーマ・索引以外の `DROP` | 変換しない | ERROR `DDL`（SQLGlot が文として解析しなかったものは ERROR `UNPARSED`） |
 
-キーの分け方は `--keys 表=パーティションキー/クラスタリングキー`（複数列はカンマ区切り）で上書きできる。存在しない列を指すと ERROR `KEYS`。
+キーの分け方は `--keys 表=パーティションキー/クラスタリングキー`（複数列はカンマ区切り、列名の大文字小文字は問わない）で上書きできる。主キーの無い表にも使える。存在しない列を指す、パーティションキーが空、同じ列を 2 回書くと ERROR `KEYS`。キーの列が元の主キーと違う（主キーの無い表を含む）と WARN `KEYS`（行を区別する列が変わり、元では別の行が 1 行になる）。
 
 ```bash
 --keys orders=customer_id/order_no     # customer_id でパーティション、order_no で並べる
@@ -216,8 +218,9 @@ ERROR になった読み取り文（SELECT、UNION などの集合演算、CTE �
 | `WINDOW` / `KEEP` / `PIVOT` | ERROR | ウィンドウ関数、`KEEP (DENSE_RANK FIRST/LAST)`、`PIVOT` / `UNPIVOT` | 実行計画か、アプリで処理する |
 | `GROUP` | ERROR | `ROLLUP` / `CUBE` / `GROUPING SETS`、列でない GROUP BY | 同上 |
 | `ORDER` | ERROR | ORDER BY に列・別名・集約以外の式がある（パーティション SCAN の並びの WARN は上の節） | アプリで並べる |
-| `LIMIT` | ERROR | `FETCH … PERCENT`、`FETCH … WITH TIES`（LIMIT n では同順位の行が落ちる）、リテラルでもバインド変数でもない LIMIT | 順に読み、ソートキーが同じ間は読み続ける |
-| `ROWNUM` | ERROR | DISTINCT・GROUP BY・集約・ウィンドウ関数と一緒の ROWNUM（ROWNUM は入力の行、LIMIT は出力の行を数える）、整数でない比較、OR の中、LIMIT との併用、射影の `SELECT ROWNUM, ...`（ScalarDB に行番号は無い） | 先に絞ってから、アプリで集約する。行番号はアプリで振る（実行計画なら H2 が振る） |
+| `LIMIT` | ERROR | `FETCH … PERCENT`、`FETCH … WITH TIES`（LIMIT n では同順位の行が落ちる）、リテラルでもバインド変数でもない LIMIT、上限が 0 以下（ScalarDB の `LIMIT 0` は上限なし） | 順に読み、ソートキーが同じ間は読み続ける。上限 0 はアプリで問い合わせを飛ばす |
+| `LIMIT` | WARN | バインド変数の LIMIT（`ROWNUM <= :n` を含む）。0 を渡すと ScalarDB は全件を返す | 値が 0 以下ならアプリで問い合わせを飛ばす |
+| `ROWNUM` | ERROR | DISTINCT・GROUP BY・集約・ウィンドウ関数と一緒の ROWNUM（ROWNUM は入力の行、LIMIT は出力の行を数える）、整数でない比較、OR の中、LIMIT との併用、射影の `SELECT ROWNUM, ...`（ScalarDB に行番号は無い）、UPDATE / DELETE の ROWNUM | 先に絞ってから、アプリで集約する。行番号はアプリで振る（実行計画なら H2 が振る）。UPDATE / DELETE は先に `SELECT ... LIMIT n` でキーを読み、主キーで書く |
 | `FROM` | ERROR | FROM が 1 つの実表でない（派生表など） | 実行計画か、アプリで評価する |
 | `JOIN` | ERROR | CROSS / NATURAL / FULL JOIN、結合先が実表でない、RIGHT JOIN が最初の結合でない、結合条件の無いカンマ結合 | 同上 |
 | `JOIN_ON` | ERROR | 結合条件が `列 = 列` の AND でない | 同上 |
@@ -225,7 +228,7 @@ ERROR になった読み取り文（SELECT、UNION などの集合演算、CTE �
 | `JOIN_KEY` | ERROR | 結合が相手の主キー全体も副次索引も覆っていない（ScalarDB Cluster が DB-SQL-10067 で断る） | 相手の列を主キーにするか索引を足す。読み取りは実行計画に回る |
 | `CLAUSE` | ERROR | `TABLESAMPLE`、`QUALIFY`・`WINDOW`・`LATERAL`・`INTO` などの句、表に付く対応外の句（Oracle の `PARTITION (p1)` / `SUBPARTITION (...)` を含むパーティション指定、Oracle のフラッシュバック `AS OF TIMESTAMP` / `AS OF SCN` / `VERSIONS BETWEEN` など） | 句を外して書き直す。パーティション指定は分ける列の範囲の条件に、フラッシュバックはアプリが持つ履歴の表に置き換える |
 | `LOCK` | WARN | `FOR UPDATE` などのロック句を落とした | 行ロックに頼っていた処理は、commit 時の衝突と再試行に変わる |
-| `NULLS` | WARN | ORDER BY の `NULLS FIRST / LAST` を落とした | NULL の並びを確かめる |
+| `NULLS` | WARN | ORDER BY の `NULLS FIRST / LAST` を落とした。MySQL が移行元で、ORDER BY の列が NULL を持ちうる（主キーでなく、渡した DDL に NOT NULL が無い）とき（MySQL は昇順で NULL を先に、ScalarDB は後に並べる） | NULL の並びを確かめる。NULL を持たない列は DDL に NOT NULL を書く |
 | `MODIFIER` | WARN / INFO | MySQL の修飾子を落とした。`SQL_CALC_FOUND_ROWS` は WARN（続く `SELECT FOUND_ROWS()` には別に `COUNT(*)` が要る）、サーバーへの助言だけのものは INFO | — |
 | `HINT` | INFO | オプティマイザヒント・索引ヒントを落とした | なし |
 | `ONLY` | WARN | PostgreSQL の `ONLY t` を落とした | t に子の表があるなら、その行を t に移さない |
@@ -273,6 +276,7 @@ ERROR になった読み取り文（SELECT、UNION などの集合演算、CTE �
 | `STATEMENT` / `UNPARSED` | ERROR | ScalarDB SQL に無い種類の文。SQLGlot が文として解析しなかったもの（ビュー、トリガー、シーケンス、GRANT、セッションの設定など） | 設計を変えるか、ScalarDB の管理手段で行う |
 | `TABLE` | ERROR | 表名が来るべき所に表名が無い | 文を見直す |
 | `ROWID` | ERROR | `ROWID` / `ROWSCN` / `ORA_ROWSCN` | 主キーで行を特定する |
+| `DBLINK` | ERROR | Oracle の DB link（`emp@remote`）。ScalarDB に DB link は無い。実行計画も作らない | 相手の表を ScalarDB に移して名前空間で指すか、アプリから相手の DB に問い合わせる |
 | `PARSE` / `UNSUPPORTED` | ERROR | Source 方言として読めない（文でなく式として読めたもの、たとえば綴りを誤った `SELEC * FRM t` も含む。メッセージは `not a SQL statement`） / ScalarDB SQL の生成器が出せない構文が残った | `--source` と綴りを確かめる / 書き直す |
 
 ### アプリ側に移す処理

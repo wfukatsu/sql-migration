@@ -167,6 +167,17 @@ def _sequence_use(node: exp.Expression, dialect: str) -> str | None:
     return None
 
 
+def _db_link(node: exp.Expression, dialect: str) -> str | None:
+    """The first `table@link` of an Oracle statement, as written, or None."""
+    if dialect != "oracle":
+        return None
+    for t in node.find_all(exp.Table):
+        parts = [p for p in (t.catalog, t.db, t.name) if p]
+        if any("@" in p for p in parts):
+            return ".".join(parts)
+    return None
+
+
 def _oracle_partition_extension(t: exp.Table, dialect: str) -> str | None:
     """Oracle's partition-extended name `t PARTITION (p1)` / `SUBPARTITION (p1)`, which SQLGlot reads as the table
     alias PARTITION with a column list; None for anything else. Oracle has no column list on a table alias, so the
@@ -199,6 +210,40 @@ def spell_long_raw(src: str, dialect: str) -> str:
             span = second.end - first.start + 1
             out = out[:first.start] + "LONG_RAW".ljust(span) + out[second.end + 1:]
     return out
+
+
+# Oracle's numbered binds (`:1`, `:2`) -- the form JDBC / OCI applications and V$SQL show -- are not read by SQLGlot
+# ("Required keyword: 'expression' missing"). They are given a name for the parse and get their number back in
+# everything the converter returns (#147)
+NUMBERED_BIND = "__sdbm_bind"
+
+
+def name_numbered_binds(src: str, dialect: str) -> str:
+    """``src`` with each Oracle `:1` outside strings and comments written `:__sdbm_bind1`."""
+    if dialect != "oracle" or ":" not in src:
+        return src
+    try:
+        tokens = sqlglot.tokenize(src, read=dialect)
+    except TokenError:
+        return src
+    out, last = [], 0
+    for colon, number in zip(tokens, tokens[1:]):
+        if colon.token_type == TokenType.COLON and number.token_type == TokenType.NUMBER \
+                and number.start == colon.end + 1 and number.text.isdigit():
+            out.append(src[last:number.start] + NUMBERED_BIND)
+            last = number.start
+    return "".join(out) + src[last:] if out else src
+
+
+def restore_numbered_binds(value):
+    """``value`` (text, or lists and dicts of it) with `:__sdbm_bind1` written `:1` again."""
+    if isinstance(value, str):
+        return value.replace(NUMBERED_BIND, "")
+    if isinstance(value, list):
+        return [restore_numbered_binds(v) for v in value]
+    if isinstance(value, dict):
+        return {k: restore_numbered_binds(v) for k, v in value.items()}
+    return value
 
 
 def flashback_clause(src: str, dialect: str) -> str | None:
@@ -289,6 +334,8 @@ def _split_statements(text: str, dialect: str) -> list[str]:
     reads it; only the statements before it are cut at their semicolons (#146).
     """
     text = text.removeprefix("\ufeff")
+    if dialect == "oracle":
+        text = respell_q_quotes(text)
     if dialect != "oracle":
         return _split_on_semicolons(text, dialect)
     stmts = []
@@ -298,6 +345,64 @@ def _split_statements(text: str, dialect: str) -> list[str]:
         else:
             stmts.extend(_split_on_semicolons(segment, dialect, until_plsql=True))
     return [s for s in stmts if s]
+
+
+_Q_CLOSE = {"[": "]", "(": ")", "{": "}", "<": ">"}
+_Q_START = re.compile(r"[nN]?[qQ]'(\S)")
+
+
+def respell_q_quotes(text: str) -> str:
+    """``text`` with Oracle's alternative quoting (`q'[it's]'`, `nq'{...}'`) written as ordinary literals
+    (`'it''s'`). SQLGlot's tokenizer cannot read it, and one such literal made the whole script a single
+    TOKEN_ERROR (#147). Strings, quoted names and comments are skipped as they stand."""
+    if "'" not in text:
+        return text
+    out, i, n = [], 0, len(text)
+    while i < n:
+        if text.startswith("--", i):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+        elif (m := _Q_START.match(text, i)) and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] in "_$#")):
+            close = _Q_CLOSE.get(m.group(1), m.group(1)) + "'"
+            end = text.find(close, m.end())
+            if end < 0:
+                out.append(text[i:])
+                break
+            body = text[m.end():end]
+            out.append(("N" if text[i] in "nN" else "") + "'" + body.replace("'", "''") + "'")
+            i = end + 2
+            continue
+        elif text[i] in "'\"":
+            quote, j = text[i], i + 1
+            while j < n:
+                if text[j] == quote:
+                    if text[j + 1:j + 2] == quote:
+                        j += 2
+                        continue
+                    break
+                j += 1
+            j = min(j + 1, n)
+        else:
+            j = i + 1
+        out.append(text[i:j])
+        i = j
+    return "".join(out)
+
+
+def _split_loosely(text: str, dialect: str) -> list[str]:
+    """What is left when the tokenizer cannot read the script (an unterminated string, usually): statements end
+    at a semicolon that ends a line, so the statements that can be read are still converted one by one."""
+    segments = _SLASH_LINE.split(text) if dialect == "oracle" else [text]
+    stmts = []
+    for segment in segments:
+        if dialect == "oracle" and PLSQL_BLOCK.match(segment):
+            stmts.append(segment.strip())
+            continue
+        stmts.extend(p.strip() for p in re.split(r";[ \t]*(?:\r?\n|$)", segment))
+    return [s for s in stmts if s and not _COMMENTS_ONLY.fullmatch(s)]
 
 
 def _starts_plsql(text: str, pos: int) -> bool:
@@ -359,6 +464,14 @@ class StatementConverter:
 
     # -- entry point --------------------------------------------------------------------------------
     def convert(self, sql: str) -> Result:
+        res = self._convert(sql)
+        if NUMBERED_BIND in repr((res.converted, res.plan, res.issues)):
+            res.converted = restore_numbered_binds(res.converted)
+            res.plan = restore_numbered_binds(res.plan)
+            res.issues = [Issue(i.severity, i.code, restore_numbered_binds(i.message)) for i in res.issues]
+        return res
+
+    def _convert(self, sql: str) -> Result:
         self.issues = []
         self._source = sql
         self._parsed = sql   # the text the AST was parsed from (the REPLACE rewrite below changes it)
@@ -382,10 +495,14 @@ class StatementConverter:
             res.issues.append(Issue("ERROR", "PLSQL_BLOCK", "a PL/SQL block (stored program or anonymous block) is not a SQL "
                                                             "statement; migrate it with the plsql-migrate skill (python -m plsql.generate)"))
             return res
-        src = spell_long_raw(src, self.dialect)
+        src = name_numbered_binds(spell_long_raw(src, self.dialect), self.dialect)
         self._parsed = src
         try:
             node = sqlglot.parse_one(src, read=self.dialect)
+        except TokenError as e:
+            res.kind, res.status = "TOKEN_ERROR", "ERROR"
+            res.issues.append(Issue("ERROR", "TOKENIZE", f"the statement could not be read: {str(e).splitlines()[0]}"))
+            return res
         except ParseError as e:
             res.kind, res.status = "PARSE_ERROR", "ERROR"
             flashback = flashback_clause(src, self.dialect)
@@ -622,6 +739,13 @@ class StatementConverter:
         for col in node.find_all(exp.Column):
             if col.name.upper() in ("ROWID", "ROWSCN", "ORA_ROWSCN"):
                 self.fail("ROWID", f"pseudo-column {col.name.upper()} does not exist in ScalarDB; use the primary key")
+        link = _db_link(node, self.dialect)
+        if link:
+            # `emp@remote` came out as the table "emp@remote", which does not exist (#147). The PL/SQL side stops at
+            # LINK-001 and can map the link to a namespace by a decision
+            self.fail("DBLINK", f"{link} reads over an Oracle database link; ScalarDB has none. Migrate the remote "
+                                f"table into ScalarDB and name its namespace, or query the remote database from the "
+                                f"application")
         sequence = _sequence_use(node, self.dialect)
         if sequence:
             # only VALUES and SET were checked, so `SELECT seq.NEXTVAL FROM dual` went through as a column (#123)
@@ -1197,6 +1321,7 @@ class StatementConverter:
         # ORDER BY
         if s.args.get("order"):
             self._order_by_aliases(s)
+            self._mysql_null_order(s)
             for o in s.args["order"].expressions:
                 if o.args.get("nulls_first") is not None:
                     if re.search(r"NULLS\s+(FIRST|LAST)", self._source, re.I):
@@ -1226,6 +1351,33 @@ class StatementConverter:
         self._access_path(self._meta(from_.this), s.args["where"].this if s.args.get("where") else None,
                           s.args.get("order"), ctx, grouped)
         return s
+
+    def _mysql_null_order(self, s: exp.Select) -> None:
+        """MySQL sorts NULLs first for ASC and last for DESC; Oracle, PostgreSQL and ScalarDB (measured on the
+        PostgreSQL backend: `ORDER BY comm` put the NULLs last) the other way. Only an explicit NULLS FIRST / LAST was
+        reported, so a MySQL `ORDER BY salary ... LIMIT n` returned other rows without a word (#147). A key column and
+        one the source DDL declares NOT NULL hold no NULL."""
+        if self.dialect != "mysql" or re.search(r"NULLS\s+(FIRST|LAST)", self._source, re.I):
+            return
+        nullable = []
+        for o in s.args["order"].expressions:
+            col = o.this
+            if not isinstance(col, exp.Column):
+                continue
+            meta = next((self.registry.get(t.name, t.db or None) for t in getattr(self, "_tables", [])
+                         if self.registry.get(t.name, t.db or None) is not None
+                         and (not col.table or col.table.lower() in ((t.alias or "").lower(), t.name.lower()))
+                         and any(c.lower() == col.name.lower() for c in self.registry.get(t.name, t.db or None).columns)),
+                        None)
+            if meta is not None and col.name.lower() in {c.lower() for c in meta.primary_key} | \
+                    {c.lower() for c in meta.not_null}:
+                continue
+            nullable.append(col.sql(dialect=self.dialect))
+        if nullable:
+            self.warn("NULLS", f"ORDER BY {', '.join(nullable)}: MySQL puts NULLs first in ascending order (last in "
+                               f"descending), ScalarDB puts them last (first). If the column can hold NULL, the rows "
+                               f"come in another order and a LIMIT keeps other rows; declare it NOT NULL in the DDL "
+                               f"given here if it cannot, or place the NULLs in the application")
 
     def _check_limit(self, s: exp.Select) -> None:
         """ScalarDB SQL reads `LIMIT 0` as "no limit": `SELECT ... LIMIT 0` returned every row where the source
@@ -1752,8 +1904,17 @@ class StatementConverter:
                                    "another row")
 
     # -- UPDATE / DELETE ---------------------------------------------------------------------------
+    def _no_rownum_in_dml(self, node: exp.Expression, verb: str) -> None:
+        """`DELETE FROM emp WHERE ROWNUM <= 10` (deleting in batches) went to ScalarDB with ROWNUM as a column:
+        DB-SQL-10002 The column ROWNUM does not exist (#147)."""
+        if self.dialect == "oracle" and any(c.name.upper() == "ROWNUM" and not c.table for c in node.find_all(exp.Column)):
+            self.fail("ROWNUM", f"{verb} with ROWNUM limits the rows it touches; ScalarDB has no row number. Read the "
+                                f"keys first (SELECT ... LIMIT n), then {verb} each row by its primary key in the same "
+                                f"transaction")
+
     def update(self, u: exp.Update) -> exp.Update:
         self._tables = [u.this] if isinstance(u.this, exp.Table) else []
+        self._no_rownum_in_dml(u, "UPDATE")
         if _from(u) or u.args.get("joins") or (isinstance(u.this, exp.Table) and u.this.args.get("joins")):
             self.fail("UPDATE_JOIN", "UPDATE with FROM/JOIN is not supported; SELECT the keys first, then UPDATE by key")
         if u.args.get("returning"):
@@ -1788,6 +1949,7 @@ class StatementConverter:
 
     def delete(self, d: exp.Delete) -> exp.Delete:
         self._tables = [d.this] if isinstance(d.this, exp.Table) else []
+        self._no_rownum_in_dml(d, "DELETE")
         # MySQL multi-table DELETE (DELETE t FROM t JOIN u ...): sqlglot keeps the targets in `tables` and the joins on
         # the table itself
         if d.args.get("using") or d.args.get("joins") or d.args.get("tables") or \
@@ -1865,14 +2027,30 @@ class StatementConverter:
                     self.warn("INDEX", f"inline composite index {cols} dropped (ScalarDB indexes are single-column)")
             else:
                 self.warn("DDL", f"table element '{item.sql(dialect=self.dialect)[:50]}' dropped")
-        if not pk:
-            self.fail("PK", "table has no PRIMARY KEY; ScalarDB requires a partition key (add PRIMARY KEY or pass --keys)")
+        # the hint is read before the PRIMARY KEY check: the message below tells a table without one to pass --keys,
+        # and passing it changed nothing (#147)
         hint = self.key_hints.get(bare.lower())
         if hint:
-            pkey, ckey = hint
-            unknown = [c for c in pkey + ckey if c not in columns]
+            by_name = {c.lower(): c for c in columns}
+            unknown = [c for c in hint[0] + hint[1] if c.lower() not in by_name]
             if unknown:
                 self.fail("KEYS", f"--keys references unknown columns {unknown}")
+            if not hint[0]:
+                self.fail("KEYS", f"--keys for {bare} names no partition key (write table=p1[,p2][/c1,...])")
+            pkey, ckey = [by_name[c.lower()] for c in hint[0]], [by_name[c.lower()] for c in hint[1]]
+            key = pkey + ckey
+            if len({c.lower() for c in key}) != len(key):
+                self.fail("KEYS", f"--keys for {bare} names a column twice: {key}")
+            if not pk:
+                self.warn("KEYS", f"{bare} has no PRIMARY KEY in the source; --keys makes {key} its key. Rows with the "
+                                  f"same {key} are one record in ScalarDB: a second INSERT fails and an UPSERT "
+                                  f"overwrites. Make sure the source has no such duplicates")
+            elif {c.lower() for c in key} != {c.lower() for c in pk}:
+                self.warn("KEYS", f"--keys makes {key} the key of {bare}, where the source's PRIMARY KEY is {pk}: "
+                                  f"what makes a row unique changes. Rows the source keeps apart can collide (a second "
+                                  f"INSERT fails, an UPSERT overwrites), or ones it refused are accepted")
+        elif not pk:
+            self.fail("PK", "table has no PRIMARY KEY; ScalarDB requires a partition key (add PRIMARY KEY or pass --keys)")
         else:
             pkey, ckey = pk[:1], pk[1:]
             if ckey:
@@ -1883,6 +2061,9 @@ class StatementConverter:
                                if isinstance(cd, exp.ColumnDef) and cd.kind is not None
                                and (exact := self._map_type(cd).residual_type)}
         meta.secondary_indexes.extend(inline_indexes)
+        meta.not_null = {cd.this.name for cd in c.this.expressions if isinstance(cd, exp.ColumnDef)
+                         and any(isinstance(k.kind, exp.NotNullColumnConstraint) and not k.kind.args.get("allow_null")
+                                 for k in cd.args.get("constraints") or [])}
         self.registry.add(meta)
         cols_sql = ",\n  ".join(f"{quoted(n)} {t}" for n, t in columns.items())
         if len(pkey) == 1 and not ckey:
@@ -2173,13 +2354,12 @@ def convert_script(text: str, dialect: str, registry: SchemaRegistry | None = No
     results = []
     try:
         statements = _split_statements(text, dialect)
-    except TokenError as e:
-        # the tokenizer cannot say where statements end (an unterminated string, usually), so there is nothing to
-        # convert one by one. One ERROR that says where, instead of a traceback and no report
-        failed = Result(1, text.strip()[:2000], "TOKEN_ERROR", status="ERROR")
-        failed.issues.append(Issue("ERROR", "TOKENIZE", f"the script could not be split into statements: "
-                                                        f"{str(e).splitlines()[0]}"))
-        return [failed], registry
+    except TokenError:
+        # the tokenizer cannot say where statements end (an unterminated string, usually). Split where a semicolon
+        # ends a line instead: the statements that read are converted, the one that does not is a TOKENIZE ERROR
+        # of its own -- it was one ERROR for the whole file (#147)
+        statements = _split_loosely(respell_q_quotes(text.removeprefix("\ufeff")) if dialect == "oracle"
+                                    else text.removeprefix("\ufeff"), dialect)
     for i, stmt in enumerate(statements, start=1):
         try:
             r = conv.convert(stmt)
