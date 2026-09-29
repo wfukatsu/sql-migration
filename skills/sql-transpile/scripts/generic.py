@@ -39,8 +39,9 @@ from sqlglot.optimizer.qualify import qualify
 from sqlglot.transforms import eliminate_distinct_on, eliminate_join_marks
 
 from _scalardb.converter import (PLSQL_BLOCK, Issue, Result, StatementConverter, Unconvertible,
-                                  _bad_join_mark_rewrite, _flatten, _oracle_partition_extension, _split_statements,
-                                  _unparen, flashback_clause, is_statement, spell_long_raw, written_type)
+                                  _bad_join_mark_rewrite, _flatten, _oracle_partition_extension, _split_loosely,
+                                  _split_statements, _unparen, flashback_clause, is_statement, respell_q_quotes,
+                                  spell_long_raw, written_type)
 from _scalardb.schema import SchemaRegistry
 
 CATALOG_DIR = Path(__file__).resolve().parent / "catalogs"
@@ -1196,6 +1197,10 @@ def convert_statement(stmt: str, source: str, target: str, schema: dict | None =
     parsed = spell_long_raw(src, source) if source != target else src
     try:
         node = sqlglot.parse_one(parsed, read=source)
+    except TokenError as e:
+        # 閉じていない文字列など。この文だけの ERROR にする（ScalarDB の経路と同じ、#160）
+        return Result(index=0, source_sql=src, kind="TOKEN_ERROR", status="ERROR",
+                      issues=[Issue("ERROR", "TOKENIZE", f"文を読めない: {str(e).splitlines()[0][:200]}")])
     except ParseError as e:
         flashback = flashback_clause(src, source) if source != target else None
         if flashback:
@@ -1271,7 +1276,7 @@ def schema_from_ddl(statements: list[str], dialect: str) -> dict:
     for stmt in statements:
         try:
             node = sqlglot.parse_one(stmt, read=dialect)
-        except ParseError:
+        except (ParseError, TokenError):
             continue
         if not (isinstance(node, exp.Create) and str(node.args.get("kind") or "").upper() == "TABLE"
                 and isinstance(node.this, exp.Schema) and isinstance(node.this.this, exp.Table)):
@@ -1288,11 +1293,12 @@ def convert_script(text: str, source: str, target: str, schema: dict | None = No
     """スクリプト全体を変換する。スクリプト内の CREATE TABLE と schema を合わせて型の判定に使う。"""
     try:
         statements = _split_statements(text, source)
-    except TokenError as e:
-        # 文の切れ目が決められない（たいていは閉じていない文字列）。1 文ずつには変換できないので、どこで
-        # つまずいたかを 1 件の ERROR として返す——トレースバックで終わると、レポートが何も残らない
-        return [Result(index=1, source_sql=text.strip()[:2000], kind="TOKEN_ERROR", status="ERROR",
-                       issues=[Issue("ERROR", "TOKENIZE", f"スクリプトを文に分けられない: {str(e).splitlines()[0][:200]}")])]
+    except TokenError:
+        # 文の切れ目が tokenizer では決められない（たいていは閉じていない文字列）。行末の `;` で分け、読める文は
+        # 1 文ずつ変換し、読めない文だけをその文の TOKENIZE の ERROR にする。以前はファイル全体で 1 件の ERROR
+        # だった（ScalarDB の経路と同じ、#147 M8 / #160）
+        text = text.removeprefix("\ufeff")
+        statements = _split_loosely(respell_q_quotes(text) if source == "oracle" else text, source)
     merged = dict(schema or {})
     merged.update(schema_from_ddl(statements, source))
     results = []

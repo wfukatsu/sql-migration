@@ -423,7 +423,7 @@ ERROR か PLANNED になった読み取り文には、変換器が最初につ�
 | PL/SQL のブロック、`WITH FUNCTION` | ERROR `PLSQL_BLOCK` / `WITH_PLSQL` | 上の「方言ごとの差」 |
 | 移行元の方言として読めない文。文でなく式として読めたもの（綴りを誤った `SELEC * FRM t` など） | ERROR `PARSE` | `--source` と綴りを確かめる |
 | ScalarDB SQL の生成器が出せない構文が残った | ERROR `UNSUPPORTED` | |
-| 引用符の閉じ忘れなどで文に分けられない | ERROR `TOKENIZE` | `;` で終わる行ごとに分け直し、読めた文は変換する。読めない文だけが ERROR |
+| 引用符の閉じ忘れなどで文に分けられない | ERROR `TOKENIZE` | `;` で終わる行ごとに分け直し、読めた文は変換する。読めない文だけが ERROR。ScalarDB 以外の Target（`--target postgres` など）でも同じ（#160） |
 | 変換器が想定していなかった文 | ERROR `INTERNAL` | その文だけが ERROR になり、残りは変換を続ける |
 
 逆に、そのまま通る文は `BEGIN` / `START TRANSACTION`（`BEGIN` にする）、`COMMIT`、`ROLLBACK`、`USE shop` です。
