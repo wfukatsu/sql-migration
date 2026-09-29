@@ -1681,9 +1681,16 @@ public final class Plsql {
     return emptyIsNull(out.toString());
   }
 
-  /** `DBMS_UTILITY.GET_TIME`: a clock in hundredths of a second, for differences only (its origin is arbitrary). */
+  /**
+   * `DBMS_UTILITY.GET_TIME`: a clock in hundredths of a second, for differences only (its origin is arbitrary).
+   *
+   * <p>Oracle wraps it around within 32 bits (-2^31 .. 2^31-1), so the usual
+   * {@code l_start PLS_INTEGER := DBMS_UTILITY.GET_TIME} always fits. {@code System.nanoTime()} counts from an
+   * origin the JVM does not fix (the host's uptime on HotSpot / Linux), and after about 248 days the value no longer
+   * fitted a PLS_INTEGER: ORA-01426 from {@code toInt} (#149). It wraps the same way here.
+   */
   public static BigDecimal getTime() {
-    return BigDecimal.valueOf(System.nanoTime() / 10_000_000L);
+    return BigDecimal.valueOf((int) (System.nanoTime() / 10_000_000L));
   }
 
   /** `RTRIM(x)`: the trailing blanks (U+0020) only, as {@link #trim} (#112: `RTRIM(' a '||CHR(9))` keeps the tab). */
@@ -2952,7 +2959,10 @@ public final class Plsql {
     java.util.List<java.util.List<T>> out = new java.util.ArrayList<>();
     if (rows == null) return out;
     for (int at = 0; at < rows.size(); at += n) {
-      out.add(java.util.List.copyOf(rows.subList(at, Math.min(at + n, rows.size()))));
+      // not List.copyOf: it throws on a null element, and a NULL in the column is an ordinary element of
+      // `FETCH c BULK COLLECT INTO v_ids LIMIT 100` (#149)
+      out.add(java.util.Collections.unmodifiableList(
+          new java.util.ArrayList<>(rows.subList(at, Math.min(at + n, rows.size())))));
     }
     return out;
   }
