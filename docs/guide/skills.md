@@ -215,9 +215,7 @@ Java の入口と constructor、引数の対応、例外、**原文の文 → Re
 ln -s "$PWD/skills/sql-transpile" ~/.claude/skills/sql-transpile      # Claude Code から使う
 ```
 
-スキルは `scalardb_migrate/` のコピーを `scripts/_scalardb/` に同梱しています。本体を変えたら同期してください。
-
-```bash
-.venv/bin/python skills/sql-transpile/scripts/vendor_sync.py --check    # 差分があれば終了コード 1
-.venv/bin/python skills/sql-transpile/scripts/vendor_sync.py --update
-```
+スキルはリポジトリのルートの `scalardb_migrate/` を読みます（`scripts/_converter.py`。上のシンボリックリンクでも、
+リンク先のリポジトリを見つけます）。開発側のリポジトリにはコピーを置きません。公開の GitHub の版の `skills/sql-transpile` には、
+公開するときに `bin/publish-github` が作ったコピー `scripts/_scalardb/`（本体の 7 モジュールと同じ中身）が入っているので、
+そのディレクトリだけを写しても変換できます。

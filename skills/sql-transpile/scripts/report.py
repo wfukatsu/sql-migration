@@ -10,7 +10,8 @@ from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
-from _scalardb.appside import group_issues
+import _converter  # noqa: F401  scalardb_migrate を読めるようにする
+from scalardb_migrate.appside import group_issues
 
 ICON = {"OK": "✅", "WARN": "⚠️", "ERROR": "❌", "PLANNED": "🧩"}
 SEVERITY_ORDER = {"ERROR": 2, "WARN": 1, "INFO": 0}

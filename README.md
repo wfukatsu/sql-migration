@@ -48,7 +48,7 @@ flowchart LR
 | **migrate-flow スキル** | `skills/migrate-flow/` | **PL/SQL / SQL の移行を、決まった順で最後まで進める Claude Code スキル**: 現行の仕様（Markdown + Mermaid）→ 承認 → 変換と人の判断 → 承認 → 変換後の仕様と「何がどう変わったか」→ 承認 → テスト。承認した人・日付・承認したときの中身の指紋を控え、そろうまでテストに進めない |
 | plsql-spec スキル | `skills/plsql-spec/` | 既存の PL/SQL を調べ、いまの動作を Markdown の仕様書にまとめる Claude Code スキル。引数・表・SQL・エラーコード・trigger などの事実は IR から出し、動作と業務ルールは原文の位置つきで書き、`check` で突き合わせる |
 | plsql-migrate スキル | `skills/plsql-migrate/` | PL/SQL を Java に変換し、生成コードの外で決めること（運用・呼び出し側・業務ロジックとの整合）を確認して記録する Claude Code スキル。利用者に判断を求めるときは、推奨・理由・選択肢ごとの影響・決めないとどうなるかを示してから聞く。最後に、変換後のコードの文書（アーキテクチャ・仕様・使い方・制限・どのように移行したか）を `<out>/docs/` にまとめる |
-| sql-transpile スキル | `skills/sql-transpile/` | 任意の SQLGlot 方言どうし、または ScalarDB SQL への変換を行う Claude Code スキル（`scalardb_migrate/` を import せず、同梱コピーで動く） |
+| sql-transpile スキル | `skills/sql-transpile/` | 任意の SQLGlot 方言どうし、または ScalarDB SQL への変換を行う Claude Code スキル（`scalardb_migrate/` をそのまま使う。公開版のスキルには、ディレクトリだけを写しても動くよう、そのコピーを入れてある） |
 | 検証基盤 | `difftest/` | Docker Compose の DB 群と、差分テスト・ベンチマーク・スキルの実行検証のハーネス（開発側のリポジトリだけ） |
 
 ---
@@ -200,7 +200,7 @@ skills/                    Claude Code / Codex のスキル（どれも SKILL.md
   plsql-spec/                現行の PL/SQL の仕様。scripts/spec_facts.py が IR から事実の欄と Mermaid の図を出し、check で突き合わせる
   plsql-migrate/             PL/SQL の変換。scripts/decision_items.py（生成コードの外で決めることの確認・記録）、
                              scripts/migration_doc.py（変換後のコードの文書。何がどう変わったかの分類と図）
-  sql-transpile/             SQL の方言変換（scalardb_migrate/ の同梱コピーで動く）
+  sql-transpile/             SQL の方言変換（scalardb_migrate/ を使う）
 difftest/                  検証基盤（docker-compose.yml、conf/、cases/、ハーネス、experiments/）
   plsql_run.py               Oracle 側の capture
   plsql_capture.py           ScalarDB 側の capture（金額の 2 規約）

@@ -38,10 +38,11 @@ from sqlglot.optimizer.annotate_types import annotate_types
 from sqlglot.optimizer.qualify import qualify
 from sqlglot.transforms import eliminate_distinct_on, eliminate_join_marks
 
-from _scalardb.converter import (PLSQL_BLOCK, Issue, Result, StatementConverter, Unconvertible,
-                                  _bad_join_mark_rewrite, _flatten, _oracle_partition_extension, _split_statements,
-                                  _unparen, flashback_clause, is_statement, spell_long_raw, written_type)
-from _scalardb.schema import SchemaRegistry
+import _converter  # noqa: F401  scalardb_migrate を読めるようにする
+from scalardb_migrate.converter import (PLSQL_BLOCK, Issue, Result, StatementConverter, Unconvertible,
+                                         _bad_join_mark_rewrite, _flatten, _oracle_partition_extension, _split_statements,
+                                         _unparen, flashback_clause, is_statement, spell_long_raw, written_type)
+from scalardb_migrate.schema import SchemaRegistry
 
 CATALOG_DIR = Path(__file__).resolve().parent / "catalogs"
 FROM_KEY = "from_" if "from_" in exp.Select.arg_types else "from"
