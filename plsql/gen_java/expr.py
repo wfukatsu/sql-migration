@@ -97,7 +97,7 @@ KEYWORDS = {"AND", "OR", "NOT", "NULL", "IS", "TRUE", "FALSE", "MOD", "BETWEEN",
 # collection methods (`v.FIRST`, `v.NEXT(k)`, `v.EXTEND`): the generated List does not have them (#40)
 COLLECTION_ATTRIBUTES = {"FIRST", "LAST", "NEXT", "PRIOR", "EXISTS", "DELETE", "EXTEND", "TRIM", "LIMIT", "COUNT"}
 # what each becomes on a local collection the scope knows (`name#collection`), see Plsql (#45). LIMIT is not
-# here: the VARRAY bound is not kept, so it stays unknown
+# here: it is the declared bound, read from the scope (`v#limit`)
 COLLECTION_METHODS = {"COUNT": "count", "FIRST": "first", "LAST": "last", "NEXT": "next", "PRIOR": "prior",
                       "EXISTS": "exists", "DELETE": "delete", "EXTEND": "extend", "TRIM": "trimTable"}
 
@@ -805,6 +805,10 @@ class _Parser:
             self.result.imports.add(HELPER_IMPORT)
             if self.scope.get(f"{plsql_name.lower()}#element") == "BigDecimal":
                 arguments = [a if a == "null" or a.startswith(f"{HELPER}.dec(") else f"{HELPER}.dec({a})" for a in arguments]
+            bound = self.scope.get(f"{plsql_name.lower()}#varray")
+            if bound:
+                # a VARRAY's constructor: the List keeps the bound, so EXTEND past it raises ORA-06532 (#160)
+                return f"{HELPER}.varray({', '.join([bound] + arguments)})"
             return f"{HELPER}.table({', '.join(arguments)})"
         if collection:
             self.result.imports.add(HELPER_IMPORT)

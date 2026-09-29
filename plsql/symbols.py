@@ -641,7 +641,13 @@ class _Builder:
         # List (#45). `VARRAY(n) OF` is a nested table with a bound the generated code does not enforce
         key = f" INDEX BY {match.group('key').strip()}" if match.group("key") else ""
         limit = f" LIMIT {match.group('limit')}" if match.group("limit") else ""
-        return TypeRef(_text(declaration).split()[1], f"TABLE OF {element.resolved or element.oracle}{key}{limit}",
+        held = element.resolved or element.oracle
+        if re.match(r"^TABLE\s+OF\s", held, re.IGNORECASE):
+            # a collection of collections: the inner one in parentheses, so that its INDEX BY / LIMIT cannot be
+            # read as the outer's -- `TABLE OF TABLE OF INTEGER LIMIT 10` was both a VARRAY(10) of nested tables and
+            # a nested table of VARRAY(10)s (#160)
+            held = f"({held})"
+        return TypeRef(_text(declaration).split()[1], f"TABLE OF {held}{key}{limit}",
                        "collection", self.table.schema_snapshot)
 
     # -- types ---------------------------------------------------------------------------------------------

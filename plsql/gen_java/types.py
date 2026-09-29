@@ -127,6 +127,13 @@ COLLECTION = re.compile(r"^TABLE\s+OF\s+(?P<element>.+?)(?:\s+INDEX\s+BY\s+(?P<k
                         re.IGNORECASE | re.DOTALL)
 
 
+def collection_element(collection: re.Match) -> str:
+    """The element of a COLLECTION match. A collection element is written in parentheses (`TABLE OF (TABLE OF
+    INTEGER LIMIT 10)`), so that its own INDEX BY / LIMIT is not the outer one's (#160); they are dropped here."""
+    element = collection.group("element").strip()
+    return element[1:-1] if element.startswith("(") and element.endswith(")") else element
+
+
 def java_type(oracle: str | None, *, money: bool = False) -> JavaType:
     """Map one Oracle type. `money=True` selects the scaled-integer storage P0-3 chose for amounts."""
     if not oracle:
@@ -207,7 +214,7 @@ def java_type(oracle: str | None, *, money: bool = False) -> JavaType:
         # `TYPE t IS TABLE OF NUMBER(19)` は Java では要素の List である。要素の型が分からなければ
         # `List<Object>` にはせず Object のままにする——`List` と書けることと、中身が何か分かって
         # いることは別である
-        element = java_type(collection.group("element"), money=money)
+        element = java_type(collection_element(collection), money=money)
         if element is UNKNOWN or element.name == "Object":
             return JavaType("Object", "TEXT", note=f"collection of an unmapped type: {written!r}")
         key = java_type(collection.group("key").strip(), money=False) if collection.group("key") else None

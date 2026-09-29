@@ -515,10 +515,10 @@ def _collection_elements(tree: exp.Expression, scope: str, symbols: SymbolTable 
         placeholder = _unique(f"{name}_{index}", found, variable)
         # the element type alone: a VARRAY resolves to `TABLE OF NUMBER LIMIT 20`, and the partition kept the
         # `LIMIT 20`, which types nothing (12-7)
-        from .gen_java.types import COLLECTION
+        from .gen_java.types import COLLECTION, collection_element
 
         of = COLLECTION.match((symbol.type.resolved or "").strip())
-        element = of.group("element").strip() if of else None
+        element = collection_element(of) if of else None
         found[placeholder] = BindVariable(name=placeholder, direction="IN", oracle_type=element,
                                           plsql_variable=variable)
         node.replace(exp.Placeholder(this=placeholder))

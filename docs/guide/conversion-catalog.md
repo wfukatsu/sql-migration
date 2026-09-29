@@ -646,11 +646,11 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | `TABLE OF x INDEX BY VARCHAR2(n)` | `Map<String, x>`（`Plsql.indexBy()`、キー順の TreeMap） | なし | FIRST / NEXT はキー順に回ります（生成で確認） |
 | `TABLE OF x INDEX BY PLS_INTEGER` | `Map<Integer, x>` | なし | 0 や負のキーも取れます（生成で確認） |
 | `TABLE OF x`（ネスト表） | `List<x>`（1 始まり）。コンストラクタ `t(1, 2)` は `Plsql.table(...)` | なし | 初期化しないと `null` で、使うと ORA-06531 |
-| `VARRAY(n) OF x` | `List<x>` | なし | `v.LIMIT` は定数 n になります（生成で確認） |
-| 要素の読み `v(i)` / 書き `v(i) := x` | `Plsql.at(v, i)` / `Plsql.set(v, i, x)` | なし | 範囲外は ORA-06532 / ORA-06533、無いキーは NO_DATA_FOUND、NULL のキーは ORA-06502 |
+| `VARRAY(n) OF x` | `List<x>`。コンストラクタ `t(1, 2)` は `Plsql.varray(n, ...)` で、上限 n を持つ List（`Plsql.Varray`）を作る。BULK COLLECT で入れるときは `Plsql.varrayOf(n, ...)` | なし | `v.LIMIT` は定数 n になります。上限は代入（複製）・引数・外側のコレクションの要素になっても値について回ります。n を超える要素のコンストラクタ、n を超える EXTEND、n を超える添字は ORA-06532（EXTEND は 1 つも足しません）。n を超える行の BULK COLLECT は ORA-22165（Oracle 26ai で確認、#160） |
+| 要素の読み `v(i)` / 書き `v(i) := x` | `Plsql.at(v, i)` / `Plsql.set(v, i, x)` | なし | 1 未満と VARRAY の上限を超える添字は ORA-06532、COUNT を超える添字は ORA-06533、無いキーは NO_DATA_FOUND、NULL のキーは ORA-06502 |
 | `COUNT`、`FIRST`、`LAST`、`NEXT(i)`、`PRIOR(i)`、`EXISTS(i)` | `Plsql.count`、`first`、`last`、`next`、`prior`、`exists` | なし | 生成で確認 |
 | `DELETE`、`DELETE(i)`、`DELETE(i, j)` | `Plsql.delete` | なし | ネスト表の途中の DELETE は隙間として持ちます |
-| `EXTEND`、`EXTEND(n)`、`EXTEND(n, i)`、`TRIM`、`TRIM(n)` | `Plsql.extend`、`Plsql.trimTable` | なし | 生成で確認 |
+| `EXTEND`、`EXTEND(n)`、`EXTEND(n, i)`、`TRIM`、`TRIM(n)` | `Plsql.extend`、`Plsql.trimTable` | なし | VARRAY の上限を超える EXTEND は ORA-06532（上の VARRAY の行）。生成で確認 |
 | ネスト表どうしの `=` | 要素を多重集合として比べる | なし | |
 | コレクションの代入 | 値を複製する | なし | PL/SQL の代入は複製なので |
 | record の要素・コレクションの要素の record の field への代入 | record を作り直して置き換える | なし | |
