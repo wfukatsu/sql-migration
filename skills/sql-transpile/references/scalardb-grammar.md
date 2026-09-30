@@ -114,7 +114,8 @@ ScalarDB の型は 11 種（`BOOLEAN` / `INT` / `BIGINT` / `FLOAT` / `DOUBLE` / 
 | `COMMENT` / `COLLATE` / `CHARACTER SET`、そのほかの列の修飾 | 落とす | INFO / WARN `COL_OPT` |
 | 表のオプション（`ENGINE=`、表領域など） | 落とす | INFO `TABLE_OPTS` |
 | `AUTO_INCREMENT` / `IDENTITY` | 変換しない。アプリで採番する（UUID を TEXT で持つなど） | ERROR `AUTO_INC` |
-| 生成列・計算列 | 変換しない | ERROR `GENERATED` |
+| 仮想列（Oracle の `GENERATED ALWAYS AS (式) VIRTUAL` / `AS (式)`、MySQL の `AS (式) VIRTUAL`） | 列を作らない（値は保存されない）。その列を名指す文・列名なしの INSERT・`SELECT *` は変換せず、読むなら式をアプリで計算する（書き込みは移行元も ORA-54013 / ORA-54017 で断る） | WARN / ERROR `VIRTUAL_COLUMN` |
+| 保存する生成列・計算列（`STORED` / `PERSISTED`） | 変換しない | ERROR `GENERATED` |
 | 一時表 | 変換しない | ERROR `TEMP` |
 | `CREATE TABLE ... AS SELECT` / `LIKE`、型の無い列 | 変換しない | ERROR `DDL` |
 | `tx_id`・`tx_state`・`tx_version`・`tx_prepared_at`・`tx_committed_at`、キーでない `before_` で始まる列 | ScalarDB がトランザクションのメタデータに使う名前。移行元で改名する | ERROR `RESERVED_COLUMN` |

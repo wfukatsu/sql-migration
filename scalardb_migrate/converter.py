@@ -222,6 +222,27 @@ def spell_long_raw(src: str, dialect: str) -> str:
     return out
 
 
+def spell_virtual_columns(src: str, dialect: str) -> str:
+    """Oracle's virtual column `c DATE GENERATED ALWAYS AS (expr) VIRTUAL` spelled `c DATE AS (expr) VIRTUAL`: the
+    short form, which SQLGlot reads (a `ComputedColumnConstraint`). The long form stops the parse at `VIRTUAL`
+    (`Expecting )`, #172 -- the language reference's examples 5-42 / 5-43). `GENERATED ... AS IDENTITY` is left alone.
+    Read from the tokens and padded with blanks, as `spell_long_raw` does, so the offsets the parser records hold."""
+    if dialect != "oracle" or not re.search(r"\bGENERATED\s+ALWAYS\s+AS\s*\(", src, re.I):
+        return src
+    try:
+        tokens = [t for t in sqlglot.tokenize(src, read=dialect)]
+    except TokenError:
+        return src
+    out = src
+    for i in range(len(tokens) - 3):
+        generated, always, as_, paren = tokens[i:i + 4]
+        if generated.text.upper() == "GENERATED" and always.text.upper() == "ALWAYS" \
+                and as_.token_type == TokenType.ALIAS and paren.token_type == TokenType.L_PAREN \
+                and generated.token_type != TokenType.STRING:
+            out = out[:generated.start] + " " * (always.end - generated.start + 1) + out[always.end + 1:]
+    return out
+
+
 # Oracle's numbered binds (`:1`, `:2`) -- the form JDBC / OCI applications and V$SQL show -- are not read by SQLGlot
 # ("Required keyword: 'expression' missing"). They are given a name for the parse and get their number back in
 # everything the converter returns (#147)
@@ -477,6 +498,7 @@ class StatementConverter:
         self.issues: list[Issue] = []
         self._aggregate_notes: list[Issue] = []   # the converted statement's DOUBLE aggregate notes (#161)
         self._spellings: dict[str, str] = {}   # table name, lower-cased -> the spelling first seen in the script
+        self._virtual: dict[str, str] = {}   # the virtual columns of the CREATE TABLE being converted (#172)
 
     # -- issue helpers ------------------------------------------------------------------------------
     def info(self, code: str, msg: str) -> None:
@@ -570,7 +592,7 @@ class StatementConverter:
             res.issues.append(Issue("ERROR", "PLSQL_BLOCK", "a PL/SQL block (stored program or anonymous block) is not a SQL "
                                                             "statement; migrate it with the plsql-migrate skill (python -m plsql.generate)"))
             return res
-        src = name_numbered_binds(spell_long_raw(src, self.dialect), self.dialect)
+        src = name_numbered_binds(spell_virtual_columns(spell_long_raw(src, self.dialect), self.dialect), self.dialect)
         self._parsed = src
         try:
             node = sqlglot.parse_one(src, read=self.dialect)
@@ -685,6 +707,11 @@ class StatementConverter:
     def _try_plan(self, res: Result, src: str) -> None:
         """ERROR statement that is read-only: build a fetch + residual plan (docs/design/app-side-processing-plan.md)."""
         codes = {i.code for i in res.issues if i.severity == "ERROR"}
+        if "VIRTUAL_COLUMN" in codes:
+            # the plan fetches the named columns from ScalarDB, and a virtual column is not there (#172)
+            res.issues.append(Issue("INFO", "PLAN", "not decomposable: the statement reads a virtual column, which "
+                                                    "ScalarDB does not store"))
+            return
         try:
             fresh = sqlglot.parse_one(src, read=self.dialect)  # the converter mutated the first AST
             _number_positional_binds(fresh)
@@ -805,6 +832,7 @@ class StatementConverter:
     def _dispatch(self, node: exp.Expression) -> list:
         self._source_only_syntax(node)
         self._drop_catalogs(node)
+        self._virtual_references(node)
         if isinstance(node, exp.Select):
             return [self.select(node)]
         if isinstance(node, (exp.Union, exp.Intersect, exp.Except)):
@@ -838,6 +866,44 @@ class StatementConverter:
             self.fail("UNPARSED", f"statement type '{node.this}' is not supported "
                                   f"(views, triggers, procedures, sequences, grants, session settings ...)")
         self.fail("STATEMENT", f"{type(node).__name__} statements are not supported by ScalarDB SQL")
+
+    def _virtual_references(self, node: exp.Expression) -> None:
+        """A statement that names a virtual column of the source (#172): the target has no such column, so it is
+        refused rather than sent to ScalarDB, which would fail on an unknown column (or, for `SELECT *`, return a row
+        without it). A write is refused by the source too -- Oracle ORA-54013 for an INSERT that names the column or
+        gives every column a value, ORA-54017 for an UPDATE -- and a read has to compute the expression in the
+        application. Known only when the CREATE TABLE came through the converter (a Schema Loader file does not
+        say which columns were virtual)."""
+        if not isinstance(node, (exp.Query, exp.Insert, exp.Update, exp.Delete, exp.Merge)):
+            return
+        for table in node.find_all(exp.Table):
+            meta = self.registry.get(table.name, table.db or None)
+            if meta is None or not meta.virtual_columns:
+                continue
+            virtual = {c.lower(): c for c in meta.virtual_columns}
+            names = {table.name.lower(), table.alias_or_name.lower()}
+            named = sorted({virtual[c.name.lower()] for c in node.find_all(exp.Column, exp.Identifier)
+                            if c.name.lower() in virtual
+                            and (not isinstance(c, exp.Column) or not c.table or c.table.lower() in names)})
+            where = f"{meta.name}.{', '.join(named) or ', '.join(virtual.values())}"
+            expressions = "; ".join(f"{c} AS ({e})" for c, e in meta.virtual_columns.items())
+            if isinstance(node, exp.Insert) and not isinstance(node.this, exp.Schema) and table is node.this:
+                self.fail("VIRTUAL_COLUMN", f"INSERT without a column list into {meta.name}, which has the virtual "
+                                            f"column(s) {', '.join(virtual.values())}: the source takes a value for "
+                                            f"every column and refuses one for a virtual column (Oracle ORA-54013). "
+                                            f"Name the stored columns")
+            if named:
+                self.fail("VIRTUAL_COLUMN", f"{where} is a virtual column ({expressions}); ScalarDB has no such "
+                                            f"column. A read has to compute the expression in the application; a "
+                                            f"write is refused by the source (Oracle ORA-54013 INSERT / ORA-54017 "
+                                            f"UPDATE)")
+            if any(isinstance(star, exp.Star) and (not isinstance(star.parent, exp.Column) or not star.parent.table
+                                                   or star.parent.table.lower() in names)
+                   for star in node.find_all(exp.Star)) and not isinstance(node, (exp.Delete,)):
+                if not any(isinstance(star.parent, exp.Count) for star in node.find_all(exp.Star)):
+                    self.fail("VIRTUAL_COLUMN", f"* over {meta.name} includes its virtual column(s) ({expressions}) "
+                                                f"in the source, and ScalarDB has none: name the columns, and compute "
+                                                f"the virtual ones in the application")
 
     # -- identifiers --------------------------------------------------------------------------------
     def _normalize_identifiers(self, node: exp.Expression) -> None:
@@ -2155,6 +2221,7 @@ class StatementConverter:
         ns, _, bare = tname.rpartition(".")
         columns: dict[str, str] = {}
         pk: list[str] = []
+        self._virtual = {}
         extra_stmts: list[str] = []
         inline_indexes: list[str] = []
         for item in c.this.expressions:
@@ -2228,6 +2295,7 @@ class StatementConverter:
                                 if isinstance(cd, exp.ColumnDef) and cd.kind is not None
                                 and (source := self._map_type(cd).decimal_source)}
         meta.secondary_indexes.extend(inline_indexes)
+        meta.virtual_columns = dict(self._virtual)
         meta.not_null = {cd.this.name for cd in c.this.expressions if isinstance(cd, exp.ColumnDef)
                          and any(isinstance(k.kind, exp.NotNullColumnConstraint) and not k.kind.args.get("allow_null")
                                  for k in cd.args.get("constraints") or [])}
@@ -2264,6 +2332,19 @@ class StatementConverter:
                          for c in cd.args.get("constraints") or [])
         self._check_reserved(cd.name, inline_key or cd.name.lower() in [k.lower() for k in pk])
         name = cd.this.name
+        computed = next((c.kind for c in cd.args.get("constraints") or []
+                         if isinstance(c.kind, exp.ComputedColumnConstraint)), None)
+        if computed is not None and not computed.args.get("persisted"):
+            # a virtual column (Oracle `AS (expr) [VIRTUAL]`, MySQL `AS (expr) VIRTUAL`): the source computes it on
+            # every read and stores nothing. The target has no such column -- a stored copy would go stale the moment
+            # anything wrote the columns it is computed from. A statement that names it is refused (#172)
+            expression = computed.this.unnest() if isinstance(computed.this, exp.Paren) else computed.this
+            self._virtual[name] = expression.sql(dialect=self.dialect)
+            self.warn("VIRTUAL_COLUMN", f"column {name}: virtual column AS ({self._virtual[name]}) is not created on "
+                                        f"ScalarDB (nothing is stored). A read of it has to compute the expression in "
+                                        f"the application; the source refuses a write to it (Oracle ORA-54013 / "
+                                        f"ORA-54017), and a statement that names it is not converted")
+            return
         if cd.kind is None:
             self.fail("DDL", f"column {name} has no data type")
         tm = self._map_type(cd)
@@ -2311,6 +2392,12 @@ class StatementConverter:
             self.warn("UNIQUE", "UNIQUE index converted to a plain secondary index (uniqueness not enforced)")
         col = cols[0].name
         tname = self._table_name(idx.args["table"])
+        meta = self.registry.get(tname.rpartition(".")[2])
+        if meta is not None and col.lower() in {c.lower() for c in meta.virtual_columns}:
+            # Oracle builds a function-based index on it (#172); the target has no column to index
+            self.fail("VIRTUAL_COLUMN", f"index on the virtual column {meta.name}.{col}: ScalarDB does not store it, "
+                                        f"so there is nothing to index. Look rows up by the columns it is computed "
+                                        f"from, or store the value as a column of its own (a design decision)")
         self.registry.add_index(tname.rpartition(".")[2], col)
         self.info("INDEX", f"index name '{idx.name}' dropped: ScalarDB identifies indexes by table + column")
         return (f"CREATE INDEX {'IF NOT EXISTS ' if c.args.get('exists') else ''}ON "
