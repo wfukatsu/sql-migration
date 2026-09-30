@@ -383,6 +383,10 @@ def _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundarie
     # 最後（capability）で畳んでいたときは、どの検査も畳んだ文を見ていなかった
     from .dynamic import fold as fold_dynamic
     fold_dynamic(program)
+    # #172: 仮想列に書く文は Oracle と同じ ORA-54013 / ORA-54017 を上げる文にする。書き込みを見る lowering（IDENTITY・
+    # 制約の guard・trigger）より前: 断られる文に採番も guard も trigger も要らない
+    from . import virtual_columns
+    virtual_columns.rewrite(program, schema)
     # IDENTITY 列を INSERT に足す（採番は Sequences から）。trigger を織り込む前に行う: 織り込まれた trigger の INSERT も同じ
     from . import identity
     identity.rewrite(program, schema, analysis.symbol_table())
@@ -410,6 +414,7 @@ def _analyse(root, schema_ddl, program_id, scalardb_schema, row_locks, boundarie
         from scalardb_migrate.schema import SchemaRegistry
 
         registry = SchemaRegistry.from_schema_loader_json(str(scalardb_schema))
+        virtual_columns.mark_registry(registry, schema)   # a read of a virtual column is refused (#172)
         analysis.capability = check(program, registry, analysis.symbol_table(), schema=schema,
                                     row_locks=row_locks)
         annotate(program, analysis.capability)

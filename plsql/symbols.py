@@ -85,6 +85,11 @@ class OracleSchema:
     # `CREATE VIEW v AS SELECT e.a, d.b FROM ...`: the view's columns, typed from the tables they come from. A
     # view is not a table of the target, but an INSTEAD OF trigger on it reads :NEW / :OLD by these (#56)
     views: dict[str, dict[str, str]] = field(default_factory=dict)
+    # {table: {column: "<expression>"}} for virtual columns (`c DATE GENERATED ALWAYS AS (expr) VIRTUAL`, `c AS (expr)`).
+    # Still a column of the table for Oracle -- `%ROWTYPE` has a field for it, `SELECT *` returns it -- but nothing
+    # is stored, and the target has no such column. A write to one is refused (ORA-54013 / ORA-54017), a read is
+    # refused by the generator (`plsql.virtual_columns`, #172)
+    virtual: dict[str, dict[str, str]] = field(default_factory=dict)
 
     def object_record(self, name: str) -> str | None:
         fields = self.object_types.get((name or "").strip().lower())
@@ -95,13 +100,16 @@ class OracleSchema:
         import sqlglot
         from sqlglot import exp
 
+        from scalardb_migrate.converter import spell_virtual_columns
+
         path = Path(path)
         text = path.read_text(encoding="utf-8")
         digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
         schema = cls(snapshot=f"{path.name}@{digest}")
         _object_types(schema, text)
         views = []
-        for statement in sqlglot.parse(text, dialect="oracle"):
+        # `GENERATED ALWAYS AS (expr) VIRTUAL` stopped the whole schema at the parse (#172); spelled `AS (expr)`
+        for statement in sqlglot.parse(spell_virtual_columns(text, "oracle"), dialect="oracle"):
             if isinstance(statement, exp.Create) and statement.kind == "VIEW":
                 views.append(statement)
                 continue
@@ -128,7 +136,17 @@ class OracleSchema:
             columns: dict[str, str] = {}
             _constraints(schema, table.name.lower(), statement)
             for column in statement.find_all(exp.ColumnDef):
-                columns[column.name.lower()] = column.args["kind"].sql(dialect="oracle")
+                computed = next((c.kind for c in column.constraints
+                                 if isinstance(c.kind, exp.ComputedColumnConstraint)), None)
+                if computed is not None:
+                    expression = computed.this.unnest() if isinstance(computed.this, exp.Paren) else computed.this
+                    for name in expression.find_all(exp.Column):   # `"DEPARTURE_TIME"`, as the dictionary writes it
+                        name.set("this", exp.to_identifier(name.name.lower()))
+                    schema.virtual.setdefault(table.name.lower(), {})[column.name.lower()] = \
+                        expression.sql(dialect="oracle")
+                kind = column.args.get("kind")
+                columns[column.name.lower()] = kind.sql(dialect="oracle") if kind is not None else \
+                    _virtual_type(computed, columns)
                 for constraint in column.constraints:
                     if isinstance(constraint.kind, exp.DefaultColumnConstraint):
                         default = constraint.kind.this
@@ -160,13 +178,51 @@ class OracleSchema:
         return schema
 
     def column(self, table: str, column: str) -> str | None:
-        return self.tables.get(table.lower(), {}).get(column.lower())
+        found = self.tables.get(table.lower(), {}).get(column.lower())
+        return None if found == UNRESOLVED_VIRTUAL else found   # a virtual column whose type was not inferred
 
     def columns(self, table: str) -> dict[str, str] | None:
         return self.tables.get(table.lower()) or self.views.get(table.lower())
 
     def primary_key(self, table: str) -> list[str]:
         return self.keys.get(table.lower(), [])
+
+
+UNRESOLVED_VIRTUAL = "UNRESOLVED"
+
+
+def _virtual_type(computed, columns: dict[str, str]) -> str:
+    """The type Oracle gives a virtual column written without one (`b AS (a * 2)`), when the expression says it plainly:
+    arithmetic over NUMBER columns and numbers is NUMBER, a DATE plus or minus a number is a DATE, a concatenation is
+    VARCHAR2(4000). Anything else is not guessed: the type stays unresolved (`%TYPE` of it says so)."""
+    from sqlglot import exp
+
+    if computed is None:
+        return UNRESOLVED_VIRTUAL
+
+    def kind(node) -> str | None:
+        if isinstance(node, exp.Paren):
+            return kind(node.this)
+        if isinstance(node, exp.Literal):
+            return "VARCHAR2(4000)" if node.is_string else "NUMBER"
+        if isinstance(node, exp.Column):
+            declared = (columns.get(node.name.lower()) or "").upper()
+            return "NUMBER" if declared.startswith(("NUMBER", "INTEGER", "INT", "DECIMAL")) else \
+                "DATE" if declared == "DATE" else "VARCHAR2(4000)" if declared.startswith(("VARCHAR", "CHAR")) \
+                else None
+        if isinstance(node, exp.DPipe):
+            return "VARCHAR2(4000)"
+        if isinstance(node, (exp.Add, exp.Sub, exp.Mul, exp.Div, exp.Neg)):
+            parts = [kind(node.this)] + ([kind(node.expression)] if not isinstance(node, exp.Neg) else [])
+            if all(p == "NUMBER" for p in parts):
+                return "NUMBER"
+            if isinstance(node, (exp.Add, exp.Sub)) and sorted(parts) == ["DATE", "NUMBER"] \
+                    and (isinstance(node, exp.Add) or parts[0] == "DATE"):
+                return "DATE"
+        return None
+
+    expression = computed.this
+    return kind(expression) or UNRESOLVED_VIRTUAL
 
 
 _CREATE_OBJECT = re.compile(r"CREATE\s+(?:OR\s+REPLACE\s+)?TYPE\s+(?P<name>[\w$#]+)(?:\s+FORCE)?\s+(?:AS|IS)\s+OBJECT\s*"
