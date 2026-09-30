@@ -425,15 +425,27 @@ def _ancestors(node: exp.Expression):
 
 
 def _target_name(node: exp.Expression) -> str:
-    """`v_rec.name` stays `v_rec.name`; a bare identifier stays itself."""
+    """`v_rec.name` stays `v_rec.name`; a bare identifier stays itself.
+
+    Spelled as the lowering spells it (`lower._select_into`, #171): the analysis rewrites the list the lowering set,
+    and the two used to disagree -- one `INTO :NEW.id` came back `id` (several came back `:NEW.id`), and
+    `INTO v_tab(1)` came back `v_tab (1)`, whose variable read as `v_tab ` -- no variable."""
     if isinstance(node, exp.Column) and node.table:
-        return f"{node.table}.{node.name}"
+        return ".".join(p for p in (node.catalog, node.db, node.table, node.name) if p)
     if isinstance(node, exp.Dot):
         return node.sql(dialect="oracle")
+    if isinstance(node, exp.Table) and isinstance(node.args.get("db"), exp.Placeholder):
+        # one target, `INTO :NEW.id`, parses as a table `id` in the schema `:NEW`
+        return f":{node.args['db'].name}.{node.name}"
     if isinstance(node, exp.Table) and node.db:
-        # one target, `INTO rec.dept_name`, parses as a table `dept_name` in schema `rec` (8-37, #74)
-        return f"{node.db}.{node.name}"
-    return node.name or node.sql(dialect="oracle")
+        # one target, `INTO rec.dept_name`, parses as a table `dept_name` in schema `rec` (8-37, #74); `INTO r.f.g`
+        # as `g` in `r.f`
+        return ".".join(p for p in (node.catalog, node.db, node.name) if p)
+    if isinstance(node, exp.Anonymous):
+        # one of several targets, `INTO a, v_tab(i)`: its name alone dropped the subscript, and the whole
+        # collection read as the target
+        return re.sub(r"^([\w$#]+)\s+\(", r"\1(", node.sql(dialect="oracle", normalize_functions=False))
+    return re.sub(r"^([\w$#]+)\s+\(", r"\1(", node.name or node.sql(dialect="oracle"))
 
 
 def expand_star(tree: exp.Expression, symbols: SymbolTable | None) -> None:
