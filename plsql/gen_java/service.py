@@ -888,7 +888,11 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
     would swallow the specific ones. Keeping the PL/SQL order for everything else matters: two handlers can both
     match, and PL/SQL takes the first.
     """
-    from .exception import NEVER_RAISED_BY_TARGET, PREDEFINED, class_of, user_class
+    from .exception import NEVER_RAISED_BY_TARGET, PREDEFINED, class_of, hoists_to_number, user_class
+
+    never_raised = NEVER_RAISED_BY_TARGET
+    if hoists_to_number(_PROGRAM.get(), routine):
+        never_raised = tuple(n for n in never_raised if n != "INVALID_NUMBER")
 
     ordered = sorted(handlers,
                      key=lambda h: 1 if any(e.upper() == "OTHERS" for e in h.exceptions) else 0)
@@ -925,7 +929,10 @@ def _handlers(file: JavaFile, handlers: list[M.ExceptionHandler], routine: M.Rou
                 comment += ("\nVALUE_ERROR: the size errors of a constrained declaration (Plsql.fit) and text that "
                             "is not a number (Plsql.dec / toNumber / arithmetic) reach this handler. CHAR(n) "
                             "padding and a conversion inside a SQL statement do not (rule EXC-001)")
-            unreachable = [n for n in names if n in NEVER_RAISED_BY_TARGET]
+            if "INVALID_NUMBER" in names and "INVALID_NUMBER" not in never_raised:
+                comment += ("\nINVALID_NUMBER: a TO_NUMBER lifted out of a SQL statement raises it (Plsql.sqlToNumber, "
+                            "ORA-01722 as the statement did); other conversions inside SQL do not (rule EXC-001)")
+            unreachable = [n for n in names if n in never_raised]
             if unreachable:
                 comment += (f"\n{', '.join(unreachable)}: nothing on the target raises this by itself, so this "
                             f"handler only runs for an explicit RAISE. In Oracle it also ran for the database's "
@@ -976,7 +983,7 @@ def _guarded(file: JavaFile, handlers: list[M.ExceptionHandler], body: list[M.St
     bound to its number, or OTHERS -- it becomes the migrated class first, so that the catch is one it can reach.
     `catch (ZeroDivideException e)` on its own was dead code: the helper threw ArithmeticException. And a missing
     element of a collection was an IllegalStateException that no handler caught at all (#99)."""
-    from .exception import PREDEFINED, class_of
+    from .exception import PREDEFINED, class_of, hoists_to_number
 
     names = {e.upper() for h in handlers for e in h.exceptions}
     classes = {name: class_of(name, routine, _MODULE.get(), program=_PROGRAM.get())
@@ -986,6 +993,9 @@ def _guarded(file: JavaFile, handlers: list[M.ExceptionHandler], body: list[M.St
     if any(getattr(s, "loop_kind", None) == "forall" for s in _walk(body)):
         # ORA-22160, which only a FORALL raises: listed only where one is, so no other routine changes (#136)
         helpers = helpers + ((None, "ElementNotExist", -22160),)
+    if hoists_to_number(_PROGRAM.get()):
+        # ORA-01722, which only a TO_NUMBER lifted out of SQL raises (#167): listed only where the program has one
+        helpers = helpers + (("INVALID_NUMBER", "InvalidNumber", -1722),)
     if any(re.search(r"\bBULK\s+COLLECT\b", getattr(s, "original_sql", None) or "", re.IGNORECASE) for s in _walk(body)):
         # ORA-22165, a BULK COLLECT into a VARRAY of more rows than its bound (#160): listed only where one is
         helpers = helpers + ((None, "IndexOutOfRange", -22165),)
@@ -3060,7 +3070,7 @@ def _dynamic(file: JavaFile, statement: M.DynamicSql, routine: M.Routine,
         # 決めていない——許された表名の一覧に無い表名がここに来る。黙って何もしないのは最悪なので、拒む
         with file.block("else") as f:
             f.line(f'throw new IllegalArgumentException("{routine.id}: 走りうる文のどれにも当たらない'
-                   f'（limits.yaml の dynamicTables に無い表名など）");')
+                   f'（limits.yaml の dynamicTables / dynamicSql の一覧に無い値など）");')
 
 
 from ..dynamic import DDL   # TRUNCATE included (#148 H1)

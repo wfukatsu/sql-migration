@@ -133,6 +133,7 @@ tests/plsql/                pytest
 `SELECT INTO` は sqlglot が `Select.args["into"]` として保持することを確認済みのため、
 **bridge 側で `into` を剥がして `intoTargets` に移し**、SELECT 本体だけを converter に渡す。
 （`into` は代入先が 1 個のときと複数のときで内部表現の形が変わるため、bridge は両形を扱う。）
+代入先は lowering でも構文木の `into_clause` から取って `into_targets` に置く（#166）。bridge が埋めるのを待っていたときは、その前に走る処理（動的 SQL の畳み込み、trigger の `:OLD` / `:NEW` の検査、`RETURNING` の巻き上げ）から SELECT INTO が何も書かない文に見えていた。
 
 バインド変数は**序数付きの無名 `?` ではなく、文中で一意な名前付きプレースホルダ**（`:p_id`）に置換する。
 既存の `decomposer._literal_value()` は無名プレースホルダを `{"param": "?"}` に潰し、Java 側の
@@ -864,6 +865,10 @@ offset の両方を持つが、ScalarDB の TIMESTAMPTZ は瞬間だけを持つ
 
 **どの variant にも当たらないときは実行時に拒否する。** 元ならどの表でも走ったが、それを許すことこそ
 移行で塞ぎたい穴である。
+
+連結する箇所（穴）が 2 つ以上の文（ORDER BY の列と方向など）は `dynamicTables` では決まらない（#165、2026-09-30 の
+決定）。`limits.yaml` の `dynamicSql` に穴ごとの一覧と理由を書くと、値の組み合わせごとに variant を作る（1 文 64 通り
+まで）。一覧の無い穴が 1 つでもあれば展開せず、DYN-001 は未決定のまま、どの穴に一覧が無いかを言う。
 
 `TRUNCATE` を実クラスタで測った（`TruncateIT`）: 呼び出し側のトランザクションの中で走らせても、
 rollback で行は戻らない——Oracle と同じ。違うのは、**Oracle の TRUNCATE は直前の作業ごと暗黙に commit

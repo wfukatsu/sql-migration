@@ -109,7 +109,7 @@ def collect(program: M.Program) -> Registry:
                                  statement.message or "", routine.id)
                 elif statement.exception:
                     name = statement.exception.upper()
-                    known = PREDEFINED.get(name)
+                    known = PREDEFINED.get(predefined_name(name, routine, module) or "")
                     if known:
                         registry.add(known[1], known[0], name, known[2], routine.id)
                     else:
@@ -119,9 +119,10 @@ def collect(program: M.Program) -> Registry:
                 h for s in statements for h in getattr(s, "exception_handlers", []) or []]
             for handler in handlers:
                 for name in handler.exceptions:
-                    known = PREDEFINED.get(name.upper())
+                    known = PREDEFINED.get(predefined_name(name, routine, module) or "")
                     if known:
-                        registry.add(known[1], known[0], name.upper(), known[2], routine.id)
+                        registry.add(known[1], known[0], (predefined_name(name, routine, module) or ""), known[2],
+                                     routine.id)
                     elif name.upper() != "OTHERS":
                         # a handler catches this class by name, so the class has to exist even when the RAISE is
                         # in another routine (or nowhere: `PRAGMA EXCEPTION_INIT` binds it to an Oracle error)
@@ -153,6 +154,29 @@ def _scopes(holder) -> list:
     return [s for s in statements if s.kind == "Block" and getattr(s, "declarations", None)] + [holder]
 
 
+def predefined_name(name: str, *holders) -> str | None:
+    """The predefined exception `name` means where it is written, or None.
+
+    `STANDARD.INVALID_NUMBER` / `SYS.STANDARD.INVALID_NUMBER` is the predefined one whatever is declared. A bare
+    `INVALID_NUMBER` is the predefined one unless the routine or its package declares an exception of that name,
+    which hides it (`invalid_number EXCEPTION;` -- then `WHEN INVALID_NUMBER` does not catch ORA-01722: measured on
+    Oracle 26ai 23.26.3, the language reference's 11-9). Both were read as the predefined one, and the qualified
+    name as an exception of a package called STANDARD."""
+    upper = name.upper()
+    for prefix in ("SYS.STANDARD.", "STANDARD."):
+        if upper.startswith(prefix) and upper[len(prefix):] in PREDEFINED:
+            return upper[len(prefix):]
+    if upper in PREDEFINED and not _declares(upper, *holders):
+        return upper
+    return None
+
+
+def _declares(name: str, *holders) -> bool:
+    return any(declaration.declaration_kind == "exception" and declaration.name.upper() == name
+               for holder in holders for scope in _scopes(holder)
+               for declaration in getattr(scope, "declarations", None) or [])
+
+
 def class_of(name: str, *holders, program=None) -> tuple[int, str]:
     """(code, Java class) for a PL/SQL exception name: predefined, PRAGMA-bound, or a pseudo-code of its own.
 
@@ -161,8 +185,9 @@ def class_of(name: str, *holders, program=None) -> tuple[int, str]:
     pseudo-code and the two never met. A number Oracle already names (-1 is DUP_VAL_ON_INDEX) is that class.
     """
     upper = name.upper()
-    if upper in PREDEFINED:
-        return PREDEFINED[upper][1], PREDEFINED[upper][0]
+    predefined = predefined_name(upper, *holders)
+    if predefined is not None:
+        return PREDEFINED[predefined][1], PREDEFINED[predefined][0]
     if "." in upper and program is not None:
         # `WHEN emp_api.e_invalid_raise`: the package's exception, so the package's class -- the one its own
         # `RAISE e_invalid_raise` throws. Named from the qualified text it was `EmpApiEInvalidRaiseException`,
@@ -192,8 +217,11 @@ def bound_class(code: int, program) -> str | None:
 
 
 def user_class(name: str) -> str:
-    """The Java class of a PL/SQL-declared exception. One place, because RAISE and WHEN have to agree on it."""
-    return java_class_name(name) + "Exception"
+    """The Java class of a PL/SQL-declared exception. One place, because RAISE and WHEN have to agree on it.
+    A declared exception named like a predefined one (`invalid_number EXCEPTION;`) is not that one, so its class
+    is not the predefined class either."""
+    base = java_class_name(name)
+    return ("Declared" if name.upper() in PREDEFINED else "") + base + "Exception"
 
 
 def _class_for(statement: M.Raise, module: M.Module, program: M.Program | None = None) -> str:
@@ -271,6 +299,32 @@ ALWAYS = ("NO_DATA_FOUND", "TOO_MANY_ROWS", "ZERO_DIVIDE", "VALUE_ERROR")
 # the helper has already read (a failure there is a VALUE_ERROR, as it is for a PL/SQL expression in Oracle).
 # A handler for one of these runs in Oracle and never here.
 NEVER_RAISED_BY_TARGET = ("DUP_VAL_ON_INDEX", "INVALID_NUMBER")
+
+# ... except INVALID_NUMBER where a TO_NUMBER was lifted out of a SQL statement (#167): the repository computes it with
+# `Plsql.sqlToNumber`, which raises ORA-01722 as the statement did, and the handler runs again.
+def hoists_to_number(program: M.Program | None, routine: M.Routine | None = None) -> bool:
+    """Whether a statement carries a TO_NUMBER lifted out of SQL (`sqlbridge`, TO_NUMBER_HOISTED): in `routine` or a
+    routine its calls reach (Oracle's error goes up to the caller's handler, and so does the runtime's), or anywhere in
+    the program when no routine is given."""
+    if program is None:
+        return False
+    routines = {r.id: r for m in program.modules for r in m.routines}
+
+    def statements(r: M.Routine):
+        return _walk(r.body) + [x for h in r.exception_handlers for x in _walk(h.body)]
+
+    if routine is None:
+        todo = list(routines.values())
+    else:
+        todo, seen = [routine], {routine.id}
+        for current in todo:
+            for statement in statements(current):
+                callee = routines.get(getattr(statement, "resolved_to", None) or "")
+                if callee is not None and callee.id not in seen:
+                    seen.add(callee.id)
+                    todo.append(callee)
+    return any(d.code == "TO_NUMBER_HOISTED" for r in todo for s in statements(r) for d in s.diagnostics)
+
 
 # The same, by the Oracle number a `PRAGMA EXCEPTION_INIT` binds (#148 H3), with the name rule EXC-001 knows it by.
 # The constraint errors are the database's: ScalarDB has no UNIQUE, NOT NULL, CHECK, FOREIGN KEY or column length,

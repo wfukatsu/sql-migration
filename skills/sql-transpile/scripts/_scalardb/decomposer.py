@@ -131,7 +131,30 @@ def _h2_target_dialect(name: str):
     with the source dialect would silently drop the source engine's NULL ordering.
     """
     base = type(sqlglot.Dialect.get_or_raise(name))
-    return type(f"H2{base.__name__}", (base,), {"NULL_ORDERING": "nulls_are_small"})
+    attrs = {"NULL_ORDERING": "nulls_are_small"}
+    if name == "postgres":
+        attrs["Generator"] = type("H2PostgresGenerator", (base.Generator,), {
+            "TRANSFORMS": {**base.Generator.TRANSFORMS, _AtLocal: lambda self, e: f"{self.sql(e, 'this')} AT LOCAL"},
+            "datatype_sql": _h2_zoned_type_sql})
+    return type(f"H2{base.__name__}", (base,), attrs)
+
+
+class _AtLocal(exp.Expression):
+    """H2's `value AT LOCAL`: a TIMESTAMP WITH TIME ZONE moved to the session's zone (the same instant)."""
+    arg_types = {"this": True}
+
+
+_ZONED = {exp.DataType.Type.TIMESTAMPTZ: "TIMESTAMP", exp.DataType.Type.TIMETZ: "TIME"}
+
+
+def _h2_zoned_type_sql(self, expression: exp.DataType) -> str:
+    """PostgreSQL's timestamptz / timetz spelt as H2 2.5.250 reads them: `Unknown data type: "TIMESTAMPTZ"` (and
+    "TIMETZ"), while TIMESTAMP [(p)] WITH TIME ZONE and TIME WITH TIME ZONE run (#169)."""
+    base = _ZONED.get(expression.this)
+    if base is None or expression.args.get("nested"):
+        return type(self).__mro__[1].datatype_sql(self, expression)
+    size = expression.expressions
+    return f"{base}{'(' + self.expressions(expression, flat=True) + ')' if size else ''} WITH TIME ZONE"
 
 
 def _unparen(e: exp.Expression) -> exp.Expression:
@@ -455,7 +478,7 @@ class Decomposer:
                     full_scans.append(part.table)
                     break
                 cross_partition |= part.access_path == "CROSS_PARTITION"
-                part.scalardb_sql = self._fetch_sql(part, self.session_zone)
+                part.scalardb_sql = self._fetch_sql(part, self.session_zone, meta.clustering_key if meta else ())
                 fetch.append(part)
         blocked = {t.lower() for t in full_scans}
         for table in full_scans:
@@ -739,12 +762,24 @@ class Decomposer:
         return None, col.name.lower()
 
     @staticmethod
-    def _fetch_sql(spec: FetchSpec, zone=None) -> str:
+    def _fetch_sql(spec: FetchSpec, zone=None, clustering=()) -> str:
+        """The fetch as ScalarDB SQL. A `<>` on a clustering-key column is written as two ranges, `(ck < v OR ck > v)`:
+        ScalarDB SQL 3.19.1 fails with an internal error on the `<>` (#168). The predicate in the plan stays `<>` --
+        the Core API scan reads it (measured), and the residual SQL applies it again anyway."""
+        ck = {c.lower() for c in clustering}
+
+        def split(p: Predicate) -> list[Predicate]:
+            if p.op == "<>" and p.column.lower() in ck:
+                return [replace(p, op="<"), replace(p, op=">")]
+            return [p]
+
+        groups = []
+        for g in spec.predicates:
+            parts = [q for p in (g if isinstance(g, list) else [g]) for q in split(_fit_temporal(p, spec.column_types, zone))]
+            groups.append(Decomposer._group_sql(parts[0] if len(parts) == 1 else parts))
         cols = ", ".join(map(quoted, spec.columns)) if spec.columns else "*"
         name = f"{quoted(spec.namespace)}.{quoted(spec.table)}" if spec.namespace else quoted(spec.table)
-        where = " AND ".join(Decomposer._group_sql(
-            _fit_temporal(g, spec.column_types, zone) if isinstance(g, Predicate)
-            else [_fit_temporal(p, spec.column_types, zone) for p in g]) for g in spec.predicates)
+        where = " AND ".join(groups)
         return f"SELECT {cols} FROM {name}" + (f" WHERE {where}" if where else "")
 
     # -- residual -----------------------------------------------------------------------------------
@@ -766,9 +801,13 @@ class Decomposer:
         # loads TIMESTAMPTZ values at its offset (same instant), and then answers as the source does (#160). Without
         # the field the session is UTC, as before. Oracle's plans leave it out: Oracle's DATE and TIMESTAMP carry no
         # zone, EXTRACT from a TIMESTAMP WITH TIME ZONE answers in UTC, and the PL/SQL runtime keeps every instant in
-        # UTC (plan §9, 2026-09-17). MySQL reads a TIMESTAMP in its session time_zone as PostgreSQL does, but was not
-        # measured, so it is left out too.
-        if self.dialect == "postgres" and self.session_zone_id:
+        # UTC (plan §9, 2026-09-17). MySQL's TIMESTAMP (TIMESTAMPTZ in ScalarDB) is read in the session's time_zone
+        # too: stored as 2024-01-03 20:30:00 UTC, MySQL 8.4 answered DATE 2024-01-04, HOUR 5, DATE_FORMAT
+        # '2024-01-04 05:30' and `tz > '2024-01-04 00:00:00'` true under time_zone '+09:00' / 'Asia/Tokyo', and 12 / 13
+        # (daylight saving) under America/Los_Angeles; the H2 residual in the same zone answered the same, and 20 in
+        # UTC. A DATETIME carries no zone and read the same everywhere (#169). MySQL writes offsets with ISO signs
+        # ('-05:30' is west of Greenwich), as the zone given here
+        if self.dialect in ("postgres", "mysql") and self.session_zone_id:
             java["time_zone"] = self.session_zone_id
         return {"java": java, "python": {"engine": "sqlite3", "sql": python_sql}}
 
@@ -945,6 +984,18 @@ class Decomposer:
                 changed = True
         if self.dialect == "postgres":
             changed |= self._distinct_on(node)
+            # `x::timestamptz`, CAST(x AS timestamptz): H2 2.5.250 knows no TIMESTAMPTZ or TIMETZ and failed with
+            # `Unknown data type` whenever the residual was the source SQL as written (#169). Rendered, they read
+            # TIMESTAMP WITH TIME ZONE / TIME WITH TIME ZONE (_h2_zoned_type_sql). PostgreSQL shows a timestamptz in the
+            # session's TimeZone; H2 keeps the offset the text gave: '2024-01-03 20:30:00+00' was 20:30+00 in H2 and
+            # 05:30+09 in PostgreSQL under Asia/Tokyo, and EXTRACT(HOUR) answered 20 and 5. AT LOCAL moves it to the
+            # session's zone (the plan's time_zone, #160), and then both answer 5 and the DATE 2024-01-04
+            for cast in list(node.find_all(exp.Cast)):
+                to = cast.args.get("to")
+                if isinstance(to, exp.DataType) and to.this in _ZONED:
+                    if to.this == exp.DataType.Type.TIMESTAMPTZ:
+                        cast.replace(exp.Paren(this=_AtLocal(this=cast.copy())))
+                    changed = True
         if changed:
             notes.append("java: Oracle semantics made explicit for H2 (date functions, NULL ordering)")
         # Two things H2 2.5 cannot run as written, both found against a real Oracle (statements 34 and 53 of

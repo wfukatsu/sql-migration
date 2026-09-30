@@ -25,6 +25,7 @@ ScalarDB は複数のストレージを仮想的に統合し、それらをま�
 |---|---|---|
 | `col IN (a, b)` / `col NOT IN (a, b)` | `col = a OR col = b` / `col <> a AND col <> b` | INFO `IN`（NOT IN は出ない） |
 | `NOT (...)` | 比較演算子を反転して押し下げる。`NOT BETWEEN` は `col < low OR col > high`。`IS NOT NULL` と `NOT LIKE` はそのまま | なし（反転できなければ ERROR `NOT`） |
+| クラスタリングキーの列の `<>` / `!=`（`NOT (id = 1)`、`NOT IN` から出たものも） | `(id < 1 OR id > 1)`。ScalarDB SQL 3.19.1 は、パーティションキーを `=` で決めた走査でクラスタリングキーの `<>` を受けると内部エラー（UNKNOWN、クラスタのログは ScanOperator.setClusteringKeyBoundariesForScan の AssertionError）になる。キーの列は NULL にならないので、読む行は同じ | INFO `KEY_NEQ`（#168） |
 | DNF でも CNF でもない AND / OR の入れ子 | DNF と CNF の短いほうにし、括弧を付ける | INFO `NORMAL_FORM` |
 | `10 < col` | `col > 10` | なし |
 | `WHERE ROWNUM <= n`（`< n`、`= 1`、`<= ?` も） | `LIMIT n`（`< n` は `LIMIT n-1`） | WARN `ROWNUM`（ScalarDB の LIMIT は ORDER BY の後に効く。Oracle の ROWNUM は前）。`<= ?` には WARN `LIMIT` も付く（下） |
@@ -171,7 +172,7 @@ ERROR になった読み取り文（SELECT、UNION などの集合演算、CTE �
 
 - 計画は表ごとに 1 つの取得（`fetch`）と、H2 で実行する SQL（`residual`）を持つ。取得ごとに行数の上限（`max_rows`、1 万行）が付く。`transpile.py` にはこの上限を変えるオプションが無い
 - 取得ごとに、H2 に作ると結合が速くなる索引の列（`index_columns`: 取得した主キーと、結合・相関サブクエリ・IN 副問合せで比べる列）が付く。索引を作るかは既定でオフ。`--h2-indexes` を付けると計画に `build_indexes: true` が入り、ランタイムが問い合わせの前に索引を作る。数万行以上の表を結合するバッチ処理では速くなる。1 表だけの計画や小さな要求では、索引を作る時間（投入と同程度）とメモリ（H2 のメモリが約 1.6 倍）の分だけ遅くなる
-- `--session-time-zone` を渡すと、PostgreSQL の計画に `time_zone`（`residual.java.time_zone`）が入り、ランタイムが H2 のセッションをそのゾーンで開き、TIMESTAMPTZ の値もそのゾーンの時差で入れる。`date_trunc`（DATE の値も）、timestamptz の `CAST(.. AS DATE)`・`EXTRACT(HOUR ..)`・`to_char` が移行元のセッションと同じ値になる。渡さないと UTC で動く。Oracle と MySQL の計画には入らない
+- `--session-time-zone` を渡すと、PostgreSQL と MySQL の計画に `time_zone`（`residual.java.time_zone`）が入り、ランタイムが H2 のセッションをそのゾーンで開き、TIMESTAMPTZ の値もそのゾーンの時差で入れる。`date_trunc`（DATE の値も）、timestamptz の `CAST(.. AS DATE)`・`EXTRACT(HOUR ..)`・`to_char` が移行元のセッションと同じ値になる。MySQL では TIMESTAMP の `DATE()`・`HOUR()`・`DATE_FORMAT`・文字列との比較が移行元のセッションの time_zone と同じ値になる（#169）。渡さないと UTC で動く。Oracle の計画には入らない
 - 次の構文は H2 が実行できないので計画を作らず、ERROR `RESIDUAL_H2` にする: `CONNECT BY`、`ROLLUP` / `CUBE` / `GROUPING SETS`、`PIVOT` / `UNPIVOT`、`KEEP`、`FULL OUTER JOIN`、`LATERAL` / `CROSS APPLY`、`SAMPLE`、再帰 WITH の `SEARCH` 句、`JSON_TABLE`。H2 で動く形への書き換えは `app-side-notes.md`
 - `ROWID`・`ORA_ROWSCN` を使う文など、分解できなかった読み取り文には INFO `PLAN` で理由が出る。書き込み文と DDL は分解の対象にしない
 

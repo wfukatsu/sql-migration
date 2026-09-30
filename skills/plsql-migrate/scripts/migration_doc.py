@@ -136,7 +136,11 @@ def _decisions(limits: dict, path: str = "") -> list[tuple[str, str, str]]:
     """limits.yaml を (決定の種類, 対象, 値・理由) の並びにする。対象は routine の id（`dbLinks` は link の名前）。"""
     out = []
     for key, value in (limits or {}).items():
-        if isinstance(value, dict) and path != "dbLinks":
+        if isinstance(value, dict) and path == "dynamicSql":
+            # #165: {holes: {hole: [values]}, reason}: one row per routine, as a person reads it
+            holes = "; ".join(f"{h}: {'、'.join(map(str, v or []))}" for h, v in (value.get("holes") or {}).items())
+            out.append((path, str(key), f"{holes} / reason: {' '.join(str(value.get('reason') or '').split())}"))
+        elif isinstance(value, dict) and path != "dbLinks":
             out += _decisions(value, f"{path}.{key}" if path else str(key))
         elif isinstance(value, dict):
             out.append((path, str(key), " / ".join(f"{k}: {' '.join(str(v).split())}" for k, v in value.items())))
@@ -299,6 +303,9 @@ CHANGES = {
     "BULK_COLLECT": (MEANING, "BULK COLLECT は全部の行をメモリに読む。行数とメモリの上限を決める"),
     "PAGING_REFUSED": (MEANING, "キー順のページに割れない問合せなので 1 回で読む。走査行数の上限を超えると止まる"),
     "IMPLICIT_DATE_TEXT": (MEANING, "書式なしで日付を文字にしている。形は limits.yaml の nls で決めた設定、決めていなければ Oracle の既定（DD-MON-RR）で、移行元の NLS 設定とは違いうる"),
+    "IMPLICIT_NUMBER_TEXT": (MEANING, "小数を持てる数値を書式なしで文字にしている。小数点は limits.yaml の nls で決めた数値の文字、決めていなければ Oracle の既定（'.'）で、移行元の NLS_NUMERIC_CHARACTERS とは違いうる"),
+    "TO_NUMBER_HOISTED": (SHAPE, "SQL の中の TO_NUMBER をアプリで計算して値として渡す。読めない値は SQL の中と同じく INVALID_NUMBER（ORA-01722）"),
+    "TO_NUMBER_IN_SQL": (INFO, "SQL の中の TO_NUMBER（列を読むなど）はそのまま移行先が評価するか、文ごと断られる。決めた NLS には従わない"),
     "NLS_DECIDED": (MEANING, "日付・数値と文字の変換を、limits.yaml の nls で決めた移行元のセッションの設定で行う。決めた設定が実際と違えば結果も違う"),
     "FORMAT_UNSUPPORTED": (MEANING, "ランタイムが実装しない書式の形。実行時にその要素を名指しして断る"),
     "BIND_SHADOWED": (MEANING, "PL/SQL の変数と同じ名前の列がある。Oracle と同じく列として読み、変数は使わない。元の意図を確かめる"),
@@ -389,6 +396,7 @@ CHANGES = {
     "DATE_LIT": (SHAPE, "日付・日時のリテラルを ScalarDB の形に書き換えた"),
     "TYPE_LIT": (SHAPE, "リテラルを列の型に合わせた（数字の文字列を数に、整数の列の範囲の境界、四捨五入）"),
     "IN": (SHAPE, "IN のリストを = の OR に展開した"),
+    "KEY_NEQ": (SHAPE, "クラスタリングキーの列の <> を範囲 2 つ（< の OR >）にした。ScalarDB SQL 3.19.1 は <> で内部エラーになる（#168）"),
     "LIKE": (SHAPE, "LIKE に ESCAPE を足した（Oracle と同じ意味にする）"),
     "NAMESPACE": (SHAPE, "スキーマ名を ScalarDB の namespace にした"),
     "ONLY": (SHAPE, "ONLY を落とした（ScalarDB の表に継承は無い）"),

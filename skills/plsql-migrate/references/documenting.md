@@ -52,7 +52,7 @@ SKILL.md の Step 7 で、`migration_doc.py facts` が作った文書の `（未
 | `scanRows` | 先に全部読む routine に行数の上限が付いた。超えると例外で止まる（Oracle では止まらなかった） |
 | `TRIGGER_APPLIED` / `TRIGGER_CALL` | trigger は、生成コードが書く経路でだけ動く。PL/SQL の外からの書き込みには掛からない（照合で追う） |
 | `TRIGGER_INLINED` | 採番 trigger を INSERT の値として織り込んだ。キーを渡さない INSERT は、生成コードの外の経路では採番されない |
-| `dynamicTables` | 動的 SQL の表名は一覧にあるものだけ。それ以外は実行時に拒否する |
+| `dynamicTables` / `dynamicSql` | 動的 SQL の表名・列名・並べ替えの向きなど、連結する値は一覧にあるものだけ。それ以外は実行時に拒否する |
 | `DYN_STATIC` / `DYN_INLINED` | 文字列が定数の動的 SQL を静的な文として下ろした（`RETURNING INTO` 付きの DML、`OPEN FOR '定数'`、動的 PL/SQL ブロック）。`EXECUTE IMMEDIATE` の実行者の権限で走っていたことは `DYN_PRIVILEGE` に残る |
 | `OBJECT_BUILT` / `TABLE_COLLECTION` / `PIPELINED` | スキーマのオブジェクト型は Java の record。コンストラクタを選ぶ SELECT は列を読んでアプリで組み、`TABLE(コレクション)` を 1 つだけ読む問合せは List を回して絞り・並べ（#135）、PIPELINED 関数は List をまとめて返す（行が出るそばから読むのではない） |
 | `DBMS_SQL_STATIC` | 定数の問合せを PARSE する DBMS_SQL の一連を、静的な cursor FOR ループにした |
@@ -63,7 +63,7 @@ SKILL.md の Step 7 で、`migration_doc.py facts` が作った文書の `（未
 | `constraints.enforce.<table>` | 移行先に無い CHECK / FOREIGN KEY を書く側で評価する表。CHECK は書く値で式を評価し、FOREIGN KEY は親を先に読み、違反は Oracle と同じ番号（-2290 / -2291）の例外になる。書かない表は `CONSTRAINT_UNDECIDED` で、アプリ側の検証に任せたことが見える |
 | `packageState.carried` | package 変数（セッション状態）は呼び出し側が運ぶ。その変数を読み書きする routine（呼び先経由も含む）は IN OUT 引数として受け取り、結果で返す |
 | `dbLinks` | DB link の先の表は、別の namespace として同じトランザクションで書く |
-| `EXC-001` | `DUP_VAL_ON_INDEX` / `INVALID_NUMBER` / `VALUE_ERROR` の handler は、移行先では走らない。重複 INSERT はその文では弾かれず、commit 時の衝突として返る |
+| `EXC-001` | `DUP_VAL_ON_INDEX` / `INVALID_NUMBER` / `VALUE_ERROR` の handler は、移行先では走らない。重複 INSERT はその文では弾かれず、commit 時の衝突として返る。SQL の中の TO_NUMBER を生成コードが計算する routine では INVALID_NUMBER は走る（EXC-001 は当たらない） |
 | 例外で抜けたとき | Oracle の文単位のロールバックは無い。呼び出し側が rollback しなければ、途中までの書き込みが残る |
 
 `transactions.separate` の routine を呼ぶ Service は、constructor で `SeparateTransactions`（runtime-java）を受け取り、

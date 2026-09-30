@@ -7,10 +7,15 @@ Oracle writes with the settings the project decided in limits.yaml (`nls:`), or 
 AMERICAN) when it decided none -- and the comparison against Oracle runs with the defaults too, so a match there
 says nothing about a source database whose sessions set them otherwise.
 
-This layer states where it happens (IMPLICIT_DATE_TEXT), which literal formats the runtime refuses
-(FORMAT_UNSUPPORTED), and, once somebody decided the settings, that the decision covers it (NLS_DECIDED). The rule
-file says what each means (`rules/semantics.yaml` SEM-008, SEM-012, SEM-015). A BOOLEAN is TRUE / FALSE whatever the
-session says, so it is not one of them.
+A number written as text without a format takes its decimal character from NLS_NUMERIC_CHARACTERS the same way:
+`'x' || n`, `v_text := n`, `TO_CHAR(n)` and `DBMS_OUTPUT.PUT_LINE(n)` write 1.5 as `1,5` under `',.'` (#167). Only a
+type that can hold a fraction is meant -- an integer type (PLS_INTEGER, INTEGER, NUMBER(p)) writes no decimal
+character whatever the session says.
+
+This layer states where it happens (IMPLICIT_DATE_TEXT, IMPLICIT_NUMBER_TEXT), which literal formats the runtime
+refuses (FORMAT_UNSUPPORTED), and, once somebody decided the settings, that the decision covers it (NLS_DECIDED). The
+rule file says what each means (`rules/semantics.yaml` SEM-008, SEM-012, SEM-015). A BOOLEAN is TRUE / FALSE whatever
+the session says, so it is not one of them.
 """
 
 from __future__ import annotations
@@ -23,6 +28,12 @@ from .lower import _walk
 
 _DATE_LIKE = re.compile(r"^\s*(?:DATE|TIMESTAMP\b.*)\s*$", re.IGNORECASE)
 _TIMESTAMP = re.compile(r"^\s*TIMESTAMP\b", re.IGNORECASE)
+# a numeric type, with the precision and scale that tell an integer from one that can hold a fraction (#167)
+_NUMERIC = re.compile(r"^\s*(?P<name>NUMBER|NUMERIC|DECIMAL|DEC|FLOAT|REAL|DOUBLE\s+PRECISION|BINARY_FLOAT|BINARY_DOUBLE)"
+                      r"\s*(?:\(\s*(?P<precision>\*|\d+)\s*(?:,\s*(?P<scale>-?\d+)\s*)?\))?\s*$", re.IGNORECASE)
+_TEXT_TYPE = re.compile(r"^\s*(?:VARCHAR2|VARCHAR|NVARCHAR2|CHAR|NCHAR|CHARACTER|STRING|CLOB|NCLOB|LONG)\b",
+                        re.IGNORECASE)
+_IMPLICIT = ("IMPLICIT_DATE_TEXT", "IMPLICIT_NUMBER_TEXT")
 # what the session gives as a date whatever the routine declares
 _CLOCKS = ("sysdate", "systimestamp", "current_date", "current_timestamp", "localtimestamp")
 # clocks the runtime holds as a value with a zone: FF and TZR on them never need the declared type
@@ -34,8 +45,9 @@ _CONVERSION = re.compile(r"\bTO_(?:CHAR|DATE|NUMBER|TIMESTAMP)\s*\(", re.IGNOREC
 
 
 def annotate(program: M.Program) -> None:
-    """IMPLICIT_DATE_TEXT where a date is written without a format, FORMAT_UNSUPPORTED where a literal format has
-    what the runtime refuses. Neither depends on the decision; `mark_decided` runs after the capability check."""
+    """IMPLICIT_DATE_TEXT where a date is written without a format, IMPLICIT_NUMBER_TEXT where a number that can
+    hold a fraction is (#167), FORMAT_UNSUPPORTED where a literal format has what the runtime refuses. None depends
+    on the decision; `mark_decided` runs after the capability check."""
     for module in program.modules:
         for routine in module.routines:
             statements = _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]
@@ -46,15 +58,41 @@ def annotate(program: M.Program) -> None:
             names = {n for n, t in declared.items() if _DATE_LIKE.match(t)}
             timestamps = {n for n, t in declared.items() if _TIMESTAMP.match(t)}
             names.update(_CLOCKS)
+            numbers = {n for n, t in declared.items() if _fractional(t)}
+            texts = {n for n, t in declared.items() if _TEXT_TYPE.match(t)}
             for statement in statements:
-                written = _written_as_text(statement, names)
-                if written and not any(d.code == "IMPLICIT_DATE_TEXT" for d in statement.diagnostics):
-                    statement.add("INFO", "IMPLICIT_DATE_TEXT",
-                                  f"{written} is written as text without a format; its shape comes from the "
-                                  f"session's NLS settings")
+                _mark_implicit(statement, names, numbers, texts)
                 for problem in _unsupported_formats(_statement_text(statement), declared, timestamps):
                     if not any(d.code == "FORMAT_UNSUPPORTED" and d.message == problem for d in statement.diagnostics):
                         statement.add("WARN", "FORMAT_UNSUPPORTED", problem)
+            # an initial value or a default converts the same way (`s VARCHAR2(20) := 'at ' || n`)
+            for holder in holders:
+                if getattr(holder, "initial", None) or getattr(holder, "default", None):
+                    _mark_implicit(holder, names, numbers, texts)
+
+
+def _mark_implicit(node, dates: set[str], numbers: set[str], texts: set[str]) -> None:
+    written = _written_as_text(node, dates, texts)
+    if written and not any(d.code == "IMPLICIT_DATE_TEXT" for d in node.diagnostics):
+        node.add("INFO", "IMPLICIT_DATE_TEXT",
+                 f"{written} is written as text without a format; its shape comes from the session's NLS settings")
+    written = _written_as_text(node, numbers, texts)
+    if written and not any(d.code == "IMPLICIT_NUMBER_TEXT" for d in node.diagnostics):
+        node.add("INFO", "IMPLICIT_NUMBER_TEXT",
+                 f"{written} is written as text without a format; its decimal character comes from the session's "
+                 f"NLS_NUMERIC_CHARACTERS")
+
+
+def _fractional(declared: str) -> bool:
+    """A numeric type that can hold a fraction: NUMBER, NUMBER(p, s > 0), FLOAT, BINARY_DOUBLE. NUMBER(p) and
+    NUMBER(p, 0) are integers, and so are PLS_INTEGER and INTEGER, which this does not match."""
+    match = _NUMERIC.match(declared or "")
+    if match is None:
+        return False
+    if match.group("name").upper() in ("NUMBER", "NUMERIC", "DECIMAL", "DEC") and match.group("precision") \
+            and match.group("precision") != "*":
+        return int(match.group("scale") or 0) > 0
+    return True
 
 
 def mark_decided(program: M.Program, settings) -> None:
@@ -76,10 +114,11 @@ def mark_decided(program: M.Program, settings) -> None:
                        if getattr(h, "initial", None) or getattr(h, "default", None)]
             for holder in holders:
                 text = str(getattr(holder, "initial", None) or getattr(holder, "default", None) or "")
-                if _CONVERSION.search(text) and not any(d.code == "NLS_DECIDED" for d in holder.diagnostics):
+                implicit = any(d.code in _IMPLICIT for d in holder.diagnostics)
+                if (implicit or _CONVERSION.search(text)) and not any(d.code == "NLS_DECIDED" for d in holder.diagnostics):
                     holder.add("INFO", "NLS_DECIDED", _decided(settings))
             for statement in statements:
-                implicit = any(d.code == "IMPLICIT_DATE_TEXT" for d in statement.diagnostics)
+                implicit = any(d.code in _IMPLICIT for d in statement.diagnostics)
                 if not implicit and not _CONVERSION.search(_statement_text(statement)):
                     continue
                 if any(d.code == "NLS_DECIDED" for d in statement.diagnostics):
@@ -147,12 +186,23 @@ def _unsupported_formats(text: str, declared: dict[str, str], timestamps: set[st
     return out
 
 
-def _written_as_text(statement: M.Statement, names: set[str]) -> str | None:
+def _written_as_text(statement, names: set[str], texts: set[str] = frozenset()) -> str | None:
+    """The name in `names` the statement (or a declaration's initial value) writes as text without a format: a
+    PUT_LINE of it, TO_CHAR of it with no format, either side of `||`, or the whole value assigned to a variable
+    declared as text (`v_text := n`, #167)."""
     arguments = [str(a) for a in getattr(statement, "arguments", []) or []]
     if (getattr(statement, "callee", None) or "").upper() in _OUTPUT and len(arguments) == 1 \
             and arguments[0].strip().lower() in names:
         return arguments[0].strip()
-    text = _statement_text(statement)
+    assigned = getattr(statement, "expression", None) if getattr(statement, "kind", None) == "Assignment" \
+        else getattr(statement, "initial", None) or getattr(statement, "default", None) \
+        if getattr(statement, "type", None) is not None else None
+    target = (getattr(statement, "target", None) if getattr(statement, "kind", None) == "Assignment"
+              else getattr(statement, "name", None)) or ""
+    if isinstance(assigned, str) and assigned.strip().lower() in names and target.strip().lower() in texts:
+        return assigned.strip()
+    text = _statement_text(statement) if isinstance(statement, M.Statement) else \
+        str(getattr(statement, "initial", None) or getattr(statement, "default", None) or "")
     for name in sorted(names):
         word = re.escape(name)
         # TO_CHAR(d) with no format, and d on either side of || -- not d.field, d(i), or TO_CHAR(d, 'fmt')

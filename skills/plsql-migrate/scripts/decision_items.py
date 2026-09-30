@@ -176,7 +176,11 @@ def _scan_rows(tree: Tree) -> list[str]:
 
 
 def _dynamic(tree: Tree) -> list[str]:
-    return [f"dynamicTables.{r}: {', '.join(v)}" for r, v in (tree.limits.get("dynamicTables") or {}).items()]
+    tables = [f"dynamicTables.{r}: {', '.join(v)}" for r, v in (tree.limits.get("dynamicTables") or {}).items()]
+    # #165: the lists per hole
+    holes = [f"dynamicSql.{r}: " + "; ".join(f"{h}: {', '.join(map(str, v))}" for h, v in ((e or {}).get("holes") or {}).items())
+             for r, e in (tree.limits.get("dynamicSql") or {}).items()]
+    return tables + holes
 
 
 def _timestamptz(tree: Tree) -> list[str]:

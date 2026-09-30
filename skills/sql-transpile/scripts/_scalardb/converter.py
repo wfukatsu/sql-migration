@@ -1252,6 +1252,8 @@ class StatementConverter:
     def _build_condition(self, cond: exp.Expression, ctx: str, allow_agg: bool = False) -> exp.Expression:
         """Rewrite a WHERE/HAVING condition into ScalarDB-compatible DNF or CNF with explicit parentheses."""
         cond = self._expand_in(self._push_not(cond, False))
+        if ctx == "WHERE":
+            cond = self._split_clustering_neq(cond, ctx)
         # keep the author's shape when it is already an OR-of-ANDs (DNF) or an AND-of-ORs (CNF)
         if not (self._is_normal_form(cond, exp.Or, exp.And) or self._is_normal_form(cond, exp.And, exp.Or)):
             dnf = normalize(cond.copy(), dnf=True, max_distance=128)
@@ -1274,6 +1276,34 @@ class StatementConverter:
         if len(groups) == 1:
             return groups[0]
         return (exp.and_ if outer is exp.And else exp.or_)(*groups)
+
+    def _split_clustering_neq(self, e: exp.Expression, ctx: str) -> exp.Expression:
+        """`ck <> v` on a clustering-key column written as `(ck < v OR ck > v)` (#168).
+
+        ScalarDB SQL 3.19.1 fails with an internal error (UNKNOWN: Application error processing RPC; the cluster logs
+        an AssertionError in ScanOperator.setClusteringKeyBoundariesForScan) on a `<>` / `!=` against a clustering-key
+        column in a partition scan -- `grp = 1 AND id <> 1`, `NOT (id = 1)`, `id NOT IN (1, 2)`, in SELECT, UPDATE and
+        DELETE alike. The two ranges run and read the same rows: a key column is never NULL. It is written so on every
+        scan, not only a partition scan, since which scan ScalarDB picks for an OR is its own decision."""
+        e = _unparen(e)
+        if isinstance(e, (exp.And, exp.Or)):
+            return type(e)(this=self._split_clustering_neq(e.this, ctx),
+                           expression=self._split_clustering_neq(e.expression, ctx))
+        if not isinstance(e, exp.NEQ):
+            return e
+        col, value = e.this, e.expression
+        if not isinstance(col, exp.Column) and isinstance(value, exp.Column):
+            col, value = value, col
+        owner = self._column_meta(col) if isinstance(col, exp.Column) else None
+        if owner is None or owner[1].lower() not in {c.lower() for c in owner[0].clustering_key} \
+                or isinstance(_unparen(value), exp.Null):
+            return e
+        written = e.sql(dialect=self.dialect)
+        self.info("KEY_NEQ", f"{ctx}: '{written}' on the clustering key of {owner[0].name} written as two ranges "
+                             f"(< OR >): ScalarDB SQL 3.19.1 fails with an internal error on <> against a "
+                             f"clustering-key column (#168)")
+        return exp.Paren(this=exp.Or(this=exp.LT(this=col.copy(), expression=value.copy()),
+                                     expression=exp.GT(this=col.copy(), expression=value.copy())))
 
     @staticmethod
     def _is_normal_form(e: exp.Expression, outer: type, inner: type) -> bool:

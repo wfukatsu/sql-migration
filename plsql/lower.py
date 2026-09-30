@@ -103,6 +103,27 @@ def lower_file(parsed: ParsedFile, symbols: SymbolTable | None = None,
     return modules
 
 
+def _into_list(text: str) -> list[str]:
+    """`v_a, r.b , v_tab(1)` -> the targets as written, whitespace collapsed."""
+    return [" ".join(t.split()) for t in text.split(",") if t.strip()]
+
+
+def _select_into(context) -> list[str]:
+    """The targets of `SELECT ... [BULK COLLECT] INTO a, b FROM ...`, as written (#166).
+
+    Lowering used to leave `into_targets` empty for every SELECT INTO: the SQL analysis (`sqlbridge.analyse`,
+    through `capability.check`) filled it later from sqlglot's tree. Everything that runs before it -- the
+    rewrites in `report._analyse` (dynamic SQL folding, `identity`, `triggers`) and the checks made while lowering
+    (`_old_assignments`, `_inline_dynamic_blocks`) -- saw a SELECT INTO that wrote nothing, and without a target
+    schema nothing ever filled it. The grammar puts INTO only on the outermost query block, so the first
+    `into_clause` in the statement is it. The analysis still rewrites the list in its own form afterwards.
+    """
+    for clause in _descend(context, {"Into_clauseContext"}):
+        return [" ".join(_text(clause.getChild(i)).split()) for i in range(clause.getChildCount())
+                if type(clause.getChild(i)).__name__ in ("General_elementContext", "Bind_variableContext")]
+    return []
+
+
 _OLD_REFERENCE = re.compile(r"^\s*:?\s*OLD\s*\.", re.IGNORECASE)
 
 
@@ -1297,6 +1318,7 @@ class _Lowerer:
         read = M.SqlOperation(id=ids.next("stmt"), kind="SqlOperation", source_range=source, sql_kind="SELECT",
                               original_sql=f"SELECT {match.group('columns').strip()} {'BULK COLLECT ' if bulk else ''}"
                                            f"INTO {match.group('targets').strip()} FROM {match.group('rest').strip()}")
+        read.into_targets = _into_list(match.group("targets"))   # #166: written here, not only after the SQL analysis
         if bulk:
             read.cardinality = "MANY"
             read.add("WARN", "BULK_COLLECT", "BULK COLLECT needs a row limit and a memory bound")
@@ -1324,6 +1346,8 @@ class _Lowerer:
                 break
         node = M.SqlOperation(id=ids.next("stmt"), kind="SqlOperation", source_range=source,
                               sql_kind=kind, original_sql=text.strip().rstrip(";").strip())
+        if kind == "SELECT":
+            node.into_targets = _select_into(context)
         if kind in ("INSERT", "UPDATE"):
             # `INSERT INTO t VALUES rec` / `UPDATE t SET ROW = rec`: written out column by column, so everything
             # after this reads the columns the statement writes (#92)

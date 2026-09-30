@@ -112,6 +112,11 @@ def main(argv: list[str] | None = None) -> int:
     from .limits import DynamicTables
 
     set_allowed_tables((DynamicTables.load(args.limits) if args.limits else DynamicTables()).allowed)
+    # #165: 連結する箇所（穴）ごとの、受け付けてよい値。すべての穴に一覧がある文だけを、組み合わせごとに展開する
+    from .dynamic import set_hole_lists
+    from .limits import DynamicSqlHoles
+
+    set_hole_lists((DynamicSqlHoles.load(args.limits) if args.limits else DynamicSqlHoles()).holes)
     # #52: routine の中の DDL を移行先で実行しないと決めた routine。書いていなければ理由つきで断る
     from .dynamic import set_omitted_ddl
     from .limits import DynamicDdl
@@ -268,7 +273,7 @@ def _handover_blockers(program, decisions: dict, limits_path) -> list[str]:
                 for name, d in sorted(decisions.items()) if d.rule_verdict == "REVIEW"]
     found = redesign.statuses(program, decisions, analyse_program(program).call_graph,
                               redesign.Decided.load(limits_path))
-    blockers += [f"{name}: 再設計が未決定（{', '.join(status.open) or '決定の記録が無い'}）"
+    blockers += [f"{name}: 再設計が未決定（{', '.join(f'{r}: {status.why_open[r]}' if r in status.why_open else r for r in status.open) or '決定の記録が無い'}）"
                  for name, status in sorted(found.items()) if status.state == "undecided"]
     return blockers
 

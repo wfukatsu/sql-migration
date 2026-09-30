@@ -30,7 +30,7 @@ PL/SQL を変換するとき、生成器は**決めてよいことだけ**を決
 | 診断 `OPTIMISTIC` / `RMW_SPLIT` / `MERGE_SPLIT`（楽観制御へ移したもの） | CALL-5、CALL-7、BIZ-4、BIZ-5 |
 | `AuditContext audit` 引数 | CALL-6、BIZ-6 |
 | `limits.yaml` の `scanRows.routines` の値 | BIZ-7 |
-| `limits.yaml` の `dynamicTables` | BIZ-8 |
+| `limits.yaml` の `dynamicTables` / `dynamicSql` | BIZ-8 |
 | 診断 `TRIGGER_APPLIED` / `TRIGGER_CALL`（書き込む側が trigger を呼ぶ） | OPS-6、BIZ-9 |
 | 診断 `TRIGGER_REDESIGN`（値を書き換える trigger）、または `TriggerChecks` の C 型（採番）の照合 | BIZ-10 |
 | TIMESTAMP WITH TIME ZONE の列（ScalarDB の `TIMESTAMPTZ`） | BIZ-11 |
@@ -283,7 +283,9 @@ B（拒否）/ D（別表検証）の trigger が掛かる表は、アプリ以�
 - 聞くこと: 呼び出し側が渡しうる表名はどれか。一覧に無い表名で呼ばれる経路が無いか
   （例: `truncate_staging` の一覧は corpus のシナリオに合わせて `inventory_tx` にしてある——名前は staging だが、
   staging 用の表は schema に無い。移行先で staging 表を作るなら、その名前を足す）
-- **記録先**: `limits.yaml` の `dynamicTables`
+- 連結する箇所が 2 つ以上ある文（ORDER BY の列と向きなど）は、箇所ごとの一覧を `dynamicSql` に書き、その組み合わせだけを
+  受け付ける（#165）。聞くことは同じで、箇所ごとに渡しうる値を聞く
+- **記録先**: `limits.yaml` の `dynamicTables`（連結する箇所が 1 つ）、`dynamicSql`（箇所ごとの一覧と理由）
 
 #### BIZ-9 trigger が掛かるのは生成コードの経路だけ
 
