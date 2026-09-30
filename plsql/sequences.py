@@ -110,7 +110,10 @@ class Policies(dict):
         import sqlglot
         from sqlglot import exp
 
-        for statement in sqlglot.parse(COMMENT.sub(" ", text), dialect="oracle"):
+        from scalardb_migrate.converter import spell_virtual_columns
+
+        # a virtual column's long form does not parse (#172)
+        for statement in sqlglot.parse(spell_virtual_columns(COMMENT.sub(" ", text), "oracle"), dialect="oracle"):
             if not isinstance(statement, exp.Create) or statement.kind != "TABLE":
                 continue
             table = statement.find(exp.Table)
