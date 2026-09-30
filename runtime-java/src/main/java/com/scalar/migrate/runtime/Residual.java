@@ -67,7 +67,8 @@ public class Residual implements AutoCloseable {
    *     {@code 2024-01-03 20:30:00+00} casts to DATE {@code 2024-01-04} with EXTRACT(HOUR) 5 (PostgreSQL 16.15). The
    *     H2 session runs in that zone and TIMESTAMPTZ values are loaded at its offset (the same instants), and H2
    *     2.5.250 then answers the same (#160). MySQL reads a TIMESTAMP (TIMESTAMPTZ in ScalarDB) in its session
-   *     time_zone the same way, and its plans carry the zone too (#169).
+   *     time_zone the same way, and its plans carry the zone too (#169); there the values are held as the date and
+   *     time in that zone, which is all a MySQL TIMESTAMP shows (#170).
    */
   public Residual(String mode, boolean buildIndexes, String timeZone) throws Exception {
     englishDateNames();
@@ -148,6 +149,11 @@ public class Residual implements AutoCloseable {
    * which divides exactly. PostgreSQL truncates integer division itself, so there the integer types are right.
    */
   String columnType(String scalardbType) {
+    // MySQL's TIMESTAMP (ScalarDB TIMESTAMPTZ) has no offset of its own: MySQL shows it, casts it to text and
+    // compares it as the date and time in the session's time_zone. As an H2 TIMESTAMP WITH TIME ZONE it became text
+    // with the offset (CAST(tz AS CHAR) '2024-01-04 05:30:00+09', CONCAT too) and came back as 2024-01-04T05:30+09:00
+    // where MySQL 8.4 answers '2024-01-04 05:30:00'. It is held as that local date and time (#170)
+    if ("MySQL".equals(mode) && "TIMESTAMPTZ".equals(scalardbType)) return "TIMESTAMP";
     if (!"PostgreSQL".equals(mode)) {
       if ("INT".equals(scalardbType)) return "NUMERIC(10)";
       if ("BIGINT".equals(scalardbType)) return "NUMERIC(19)";
@@ -253,7 +259,7 @@ public class Residual implements AutoCloseable {
       for (int i = 0; i < exact.length; i++) exact[i] = exactType(spec, rows, rows.columns.get(i));
       for (Object[] r : rows.rows) {
         for (int i = 0; i < r.length; i++) {
-          ps.setObject(i + 1, exact[i] != null && r[i] instanceof Number n ? decimal(n, exact[i]) : Values.toH2(r[i], zone));
+          ps.setObject(i + 1, exact[i] != null && r[i] instanceof Number n ? decimal(n, exact[i]) : h2Value(r[i]));
         }
         ps.addBatch();
       }
@@ -268,6 +274,17 @@ public class Residual implements AutoCloseable {
         s.execute("DROP TABLE " + target);
       }
     }
+  }
+
+  /** A fetched value as the H2 session holds it; in the MySQL mode an instant is its date and time in the zone. */
+  private Object h2Value(Object v) {
+    Object h2 = Values.toH2(v, zone);
+    return "MySQL".equals(mode) ? local(h2) : h2;
+  }
+
+  /** An instant as the session's date and time, as MySQL shows a TIMESTAMP; anything else as it is. */
+  private Object local(Object v) {
+    return v instanceof java.time.OffsetDateTime o ? o.atZoneSameInstant(zone).toLocalDateTime() : v;
   }
 
   private static List<String> lower(List<String> names) {
@@ -290,7 +307,12 @@ public class Residual implements AutoCloseable {
         List<List<Object>> out = new ArrayList<>();
         while (rs.next()) {
           List<Object> row = new ArrayList<>();
-          for (int i = 1; i <= columns.size(); i++) row.add(Values.toJson(read(rs, m, i)));
+          for (int i = 1; i <= columns.size(); i++) {
+            Object v = read(rs, m, i);
+            // MySQL has no TIMESTAMP WITH TIME ZONE: what H2 still makes one (CURRENT_TIMESTAMP) is shown as MySQL's
+            // NOW() is, the session's date and time (#170)
+            row.add(Values.toJson("MySQL".equals(mode) ? local(v) : v));
+          }
           out.add(row);
         }
         return Map.of("columns", columns, "rows", out);

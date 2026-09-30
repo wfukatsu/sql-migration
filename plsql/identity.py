@@ -93,7 +93,7 @@ def trigger_writing(triggers: dict | None, table: str | None, event: str, column
 
     RETURNING gives the value the row was stored with, and such a trigger changes it after the writer computed it.
     Folding the trigger (`triggers.rewrite`) comes later and changes the written value, not the returned one."""
-    from .lower import _walk
+    from .lower import _walk, written_targets
     from .triggers import CORRELATION
 
     wanted = {c.lower() for c in columns}
@@ -104,8 +104,9 @@ def trigger_writing(triggers: dict | None, table: str | None, event: str, column
                                                     for s in _walk(h.body)]
         for statement in statements:
             written = [statement.target or ""] if statement.kind == "Assignment" else []
-            # INTO, and an argument a procedure may write through (OUT / IN OUT)
-            written += list(getattr(statement, "into_targets", None) or [])
+            # INTO (a DML statement's RETURNING INTO too, #171), and an argument a procedure may write through
+            # (OUT / IN OUT)
+            written += written_targets(statement)
             written += list(getattr(statement, "arguments", None) or []) if statement.kind == "Call" else []
             for text in written:
                 for match in CORRELATION.finditer(text):
@@ -203,6 +204,7 @@ def _returned(statement: M.SqlOperation, routine: M.Routine | None, schema: Orac
         after.append(M.Assignment(id=f"{statement.id}returning_{column}", kind="Assignment",
                                   source_range=statement.source_range, target=target, expression=local))
     statement.original_sql = tree.sql(dialect="oracle")
+    statement.returning_targets = []   # the assignments after the INSERT write them now (#171)
     statement.add("INFO", "RETURNING_HOISTED",
                   f"RETURNING {', '.join(returned)} INTO {', '.join(targets)}: 書く値は呼び出し側が計算したものなので、"
                   f"INSERT の前に列の型の変数へ代入してその変数を書き、INSERT の後で返す（ScalarDB SQL に RETURNING は無い）")

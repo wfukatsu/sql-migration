@@ -136,7 +136,34 @@ def _h2_target_dialect(name: str):
         attrs["Generator"] = type("H2PostgresGenerator", (base.Generator,), {
             "TRANSFORMS": {**base.Generator.TRANSFORMS, _AtLocal: lambda self, e: f"{self.sql(e, 'this')} AT LOCAL"},
             "datatype_sql": _h2_zoned_type_sql})
+    if name == "mysql":
+        attrs["Generator"] = type("H2MySQLGenerator", (base.Generator,), {"cast_sql": _h2_mysql_cast_sql})
     return type(f"H2{base.__name__}", (base,), attrs)
+
+
+# MySQL's CAST(x AS CHAR) / CONVERT(x, CHAR) / NCHAR / CONVERT(x USING cs): a string of any length (#170)
+_MYSQL_STRING_CASTS = {exp.DataType.Type.CHAR, exp.DataType.Type.NCHAR, exp.DataType.Type.VARCHAR,
+                       exp.DataType.Type.NVARCHAR, exp.DataType.Type.TEXT, exp.DataType.Type.CHARACTER_SET}
+
+
+def _is_mysql_string_cast(e: exp.Expression) -> bool:
+    return isinstance(e, exp.Cast) and isinstance(e.to, exp.DataType) and e.to.this in _MYSQL_STRING_CASTS
+
+
+def _h2_mysql_cast_sql(self, expression: exp.Cast, safe_prefix: str | None = None) -> str:
+    """MySQL's CAST(x AS CHAR) is a string of any length, and CAST(x AS CHAR(n)) keeps the first n characters without
+    padding ('abcdef' -> 'abc', 'ab' AS CHAR(5) -> 'ab'; CHAR(0) -> '', MySQL 8.4.11). H2 2.5.250 reads CHAR as
+    CHARACTER(1) in every mode and answered '2' for a timestamp and 'a' for 'abcdef' (#170); VARCHAR(n) keeps n
+    characters as MySQL does, and VARCHAR(0) is refused (`"positive long" ... "0"`). sqlglot's MySQL generator writes
+    every string cast as CHAR, so the residual spells VARCHAR itself."""
+    if not _is_mysql_string_cast(expression):
+        return type(self).__mro__[1].cast_sql(self, expression, safe_prefix)
+    size = expression.to.expressions
+    n = int(size[0].name) if size and isinstance(size[0].this, exp.Literal) and size[0].this.is_int else None
+    whole = f"CAST({self.sql(expression, 'this')} AS VARCHAR)"
+    if n is None:
+        return whole
+    return f"LEFT({whole}, 0)" if n == 0 else f"CAST({self.sql(expression, 'this')} AS VARCHAR({n}))"
 
 
 class _AtLocal(exp.Expression):
@@ -360,6 +387,7 @@ class Decomposer:
         # build the fetch's index_columns in H2 before the query: worth it for joins over large fetches (batch jobs),
         # pure overhead for small requests and single-table plans, so off unless asked for
         self.h2_indexes = h2_indexes
+        self._source_sql = ""   # the statement being decomposed, as written (decompose sets it)
 
     # -- entry point --------------------------------------------------------------------------------
     def decompose(self, node: exp.Expression, source_sql: str, error_codes: set[str]) -> Plan:
@@ -372,6 +400,7 @@ class Decomposer:
         problems = [("RESIDUAL_H2", f"the H2 residual engine cannot run {what}; implement this part in the application")
                     for what in h2_unsupported(node)]
         self._rewritten = False
+        self._source_sql = source_sql
         for c in node.find_all(exp.Column):
             if c.name.upper() in ("ROWID", "ROWSCN", "ORA_ROWSCN"):
                 raise NotDecomposable(f"pseudo-column {c.name.upper()} cannot be fetched from ScalarDB")
@@ -964,6 +993,15 @@ class Decomposer:
                                                    f"numbers YYYYMMDD, which the H2 residual engine does not; use "
                                                    f"DATEDIFF() or compute it in the application")])
         if self.dialect == "mysql":
+            # CAST(x AS CHAR) was one character in H2 (#170): _h2_mysql_cast_sql writes VARCHAR when the residual is
+            # rendered. sqlglot drops the length of CAST(x AS CHAR(n) CHARACTER SET cs) (and CHARSET), which MySQL
+            # cuts to n characters: that one cannot be written for H2 without the length, so it is not planned
+            if any(_is_mysql_string_cast(c) for c in node.find_all(exp.Cast)):
+                if re.search(r"\bN?CHAR\s*\(\s*\d+\s*\)\s*(CHARACTER\s+SET|CHARSET)\b", self._source_sql or "", re.I):
+                    raise PlanBlocked([("RESIDUAL_H2", "CAST(x AS CHAR(n) CHARACTER SET ...): the length is lost when the "
+                                                       "statement is parsed, and MySQL keeps only n characters; drop "
+                                                       "the CHARACTER SET or cut the value in the application")])
+                changed = True
             for fmt_call in list(node.find_all(exp.TimeToStr)):
                 # H2's MySQL mode has no DATE_FORMAT. FORMATDATETIME takes a Java pattern, built on the AST so the
                 # generator doubles its quotes: written into the SQL text, '%Y年' became 'yyyy'年'' and closed the

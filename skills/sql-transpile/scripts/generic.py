@@ -42,7 +42,7 @@ import _converter  # noqa: F401  scalardb_migrate を読めるようにする
 from scalardb_migrate.converter import (PLSQL_BLOCK, Issue, Result, StatementConverter, Unconvertible,
                                          _bad_join_mark_rewrite, _flatten, _oracle_partition_extension, _split_loosely,
                                          _split_statements, _unparen, flashback_clause, is_statement, respell_q_quotes,
-                                         spell_long_raw, written_type)
+                                         spell_long_raw, spell_virtual_columns, written_type)
 from scalardb_migrate.schema import SchemaRegistry
 
 CATALOG_DIR = Path(__file__).resolve().parent / "catalogs"
@@ -1195,7 +1195,8 @@ def convert_statement(stmt: str, source: str, target: str, schema: dict | None =
                       issues=[Issue("ERROR", "PLSQL_BLOCK", "PL/SQL のブロック（ストアドプログラムか無名ブロック）。SQL 文ではないので、"
                                                             "このスキルでは変換しない。plsql-migrate スキルで移行する")])
     # Oracle の LONG RAW は 2 語のままでは SQLGlot が読めないので、同じ長さの LONG_RAW にしてから読む（ScalarDB の経路と共通）
-    parsed = spell_long_raw(src, source) if source != target else src
+    # 仮想列の長い書き方（GENERATED ALWAYS AS (式) VIRTUAL）も読めないので、同じ長さの短い書き方にする（#172）
+    parsed = spell_virtual_columns(spell_long_raw(src, source), source) if source != target else src
     try:
         node = sqlglot.parse_one(parsed, read=source)
     except TokenError as e:
@@ -1222,6 +1223,12 @@ def convert_statement(stmt: str, source: str, target: str, schema: dict | None =
                       issues=[Issue("ERROR", "PARSE", "SQL の文ではなく、式として解析された（キーワードの綴りの誤り、"
                                                       "文の切れ目のずれ、PL/SQL の断片）")])
     kind = type(node).__name__.upper()
+    if source != target and any(not c.args.get("persisted") for c in node.find_all(exp.ComputedColumnConstraint)):
+        _add(issues, "WARN", "VIRTUAL_COLUMN",
+             "仮想列（値を保存せず、読むたびに式で計算する列）。"
+             + ("PostgreSQL 17 までは仮想列が無く、STORED の生成列（書くときに計算して保存する）になる。" if target == "postgres"
+                else "")
+             + f"式が {target} でも同じ値になるか（日付の算術、関数）と、列に書く文が {target} でも断られるかを確かめる（#172）")
 
     converted: list[str] = []
     alter = _alter_actions(node, parsed, source, target, issues) if source != target else None
@@ -1276,7 +1283,7 @@ def schema_from_ddl(statements: list[str], dialect: str) -> dict:
     schema: dict[str, dict[str, str]] = {}
     for stmt in statements:
         try:
-            node = sqlglot.parse_one(stmt, read=dialect)
+            node = sqlglot.parse_one(spell_virtual_columns(stmt, dialect), read=dialect)
         except (ParseError, TokenError):
             continue
         if not (isinstance(node, exp.Create) and str(node.args.get("kind") or "").upper() == "TABLE"

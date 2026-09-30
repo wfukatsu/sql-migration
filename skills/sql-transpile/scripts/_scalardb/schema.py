@@ -57,6 +57,9 @@ class TableMeta:
     # AVG are binary floating point on the target (#161). None when the source types are not known -- a Schema Loader
     # file has ScalarDB types and nothing else -- and then any DOUBLE column may have been a decimal
     decimal_columns: dict[str, str] | None = None
+    # column -> expression of each virtual column of the source (`c AS (expr) VIRTUAL`). Not a column of the target:
+    # nothing is stored (#172). Known only from the source DDL
+    virtual_columns: dict[str, str] = field(default_factory=dict)
 
     @property
     def primary_key(self) -> list[str]:

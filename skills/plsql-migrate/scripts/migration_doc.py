@@ -335,6 +335,8 @@ CHANGES = {
     "SQLPLUS_SUBSTITUTION": (MEANING, "SQL*Plus の置換変数（&name）がある。値は実行時に SQL*Plus が決めていた"),
     "RMW_SPLIT": (SHAPE, "SET col = col ± x を、読んでからアプリで計算して書く 2 文に割った"),
     "IDENTITY_FILLED": (SHAPE, "IDENTITY 列を INSERT に足し、Sequences から採番する"),
+    "VIRTUAL_COLUMN": (SHAPE, "仮想列に書く文を、Oracle と同じ ORA-54013 / ORA-54017 を上げる文にした（Oracle も値によらず断る）。"
+                              "仮想列への DEFAULT は文から外した。移行先に仮想列は無い"),
     "DEFAULT_FILLED": (SHAPE, "DDL の DEFAULT 句を持つ列を INSERT に足した（省くと移行先では NULL になる）"),
     "RETURNING_HOISTED": (SHAPE, "INSERT の RETURNING を、列の型の変数に入れて書き、INSERT の後で返す形に変えた"),
     "TRIGGER_FOLDED": (SHAPE, "trigger の :NEW への代入を、書く値に畳み込んだ"),
