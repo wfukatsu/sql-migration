@@ -703,6 +703,7 @@ ScalarDB にはトランザクションをまたぐ cursor がありません。
 | PL/SQL の書き方 | 生成される Java | 判定への影響（ルール ID） | 注意 |
 |---|---|---|---|
 | `EXCEPTION WHEN x THEN ...` | `try { ... } catch (XException e) { ... }` | なし | handler の順を保ち、`WHEN OTHERS` は最後に置きます |
+| 事前定義の例外と同じ名前で宣言した例外（`invalid_number EXCEPTION;`）、`WHEN STANDARD.INVALID_NUMBER` | 宣言した方は `DeclaredInvalidNumberException`（事前定義のクラスとは別）、`STANDARD.` を付けた方は事前定義のクラス | なし | 宣言すると、その routine の `WHEN INVALID_NUMBER` は宣言した例外だけを捕まえ、ORA-01722 は素通りします。`STANDARD.` を付ければ宣言によらず事前定義の例外です（Oracle 26ai で確認、言語リファレンスの 11-9） |
 | 定義済み例外 | `NoDataFoundException`（100）、`TooManyRowsException`（-1422）、`DuplicateValueException`（-1）、`InvalidNumberException`（-1722）、`ZeroDivideException`（-1476）、`ValueErrorException`（-6502）、`SubscriptBeyondCountException`（-6533）、`SubscriptOutsideLimitException`（-6532）、`CollectionIsNullException`（-6531）、`InvalidCursorException`（-1001）、`CursorAlreadyOpenException`（-6511）、`CaseNotFoundException`（-6592） | なし | 全部 `MigratedException(code, message)` の子で、Oracle の番号を持ちます。ランタイムの誤り（`Plsql.ZeroDivide` など）は handler のある所で対応する例外に付け替えます（生成で確認） |
 | `WHEN DUP_VAL_ON_INDEX` / `WHEN INVALID_NUMBER` | catch は出すが、移行先ではこの例外が自然には起きない | EXC-001（REVIEW） | 明示の RAISE のときだけ走ります。重複 INSERT のあと ScalarDB はトランザクションを続けられません。例外: SQL の中の TO_NUMBER を生成コードが計算する routine（呼び先を含む）では、INVALID_NUMBER（-1722）は起きるので当たりません（#167） |
 | `PRAGMA EXCEPTION_INIT(e, 番号)` で DB の誤りに結んだ例外の handler（-1、-1400、-1407、-1438、-1722、-2290、-2291、-2292、-6502、-12899） | catch は出すが、移行先ではその番号の誤りが起きない | EXC-001（REVIEW） | `constraints.enforce` の検査がその番号を投げる routine（呼び先を含む）では当たりません |
