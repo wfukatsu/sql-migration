@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 
 from ..ir import model as M
 from ..limits import Boundaries
-from ..lower import _walk
+from ..lower import _walk, written_targets
 from .emit import JavaFile
 from .types import signature_type, java_name, routine_stem
 
@@ -716,7 +716,7 @@ def _used_names(statements: list[M.Statement]) -> set[str]:
     for statement in _walk(statements):
         texts = list(_expression_texts(statement))
         texts += [b.plsql_variable or "" for b in (getattr(statement, "binds", None) or [])]
-        texts += list(getattr(statement, "into_targets", None) or [])
+        texts += written_targets(statement)   # RETURNING INTO too (#171)
         for text in texts:
             out.update(m.group().lower() for m in re.finditer(r"[A-Za-z][\w$#]*", text or ""))
     return out

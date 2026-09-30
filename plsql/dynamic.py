@@ -558,17 +558,18 @@ def _carried_back(routine: M.Routine, module: M.Module | None) -> dict[str, set[
 
 
 def _writes(statement: M.Statement, context: _Context) -> set[str]:
-    """What a statement other than a plain assignment may write, read conservatively: every INTO target, a
-    variable handed as a call's argument whatever the parameter's mode, `USING OUT`, and what a lifted procedure
-    hands back. A nested statement's writes count as its own."""
-    from .lower import _walk
+    """What a statement other than a plain assignment may write, read conservatively: every INTO target (a DML
+    statement's RETURNING INTO too, #171), a variable handed as a call's argument whatever the parameter's mode,
+    `USING OUT`, and what a lifted procedure hands back. A nested statement's writes count as its own."""
+    from .lower import _walk, target_variable, written_targets
 
     names: set[str] = set()
     for node in [statement] + _walk([statement])[1:]:
         if node.kind == "Assignment" and node.target:
-            names.add(re.split(r"[.(]", node.target.strip(), maxsplit=1)[0].lower())
-        for target in getattr(node, "into_targets", None) or []:
-            names.add(re.split(r"[.(]", target.strip(), maxsplit=1)[0].lower())
+            names.add(target_variable(node.target))
+        # SELECT INTO / FETCH / EXECUTE IMMEDIATE INTO, and a DML statement's RETURNING INTO (#171)
+        for target in written_targets(node):
+            names.add(target_variable(target))
         for bind in getattr(node, "using", None) or []:
             if (bind.direction or "IN").upper() != "IN":
                 names.add((bind.plsql_variable or bind.name or "").lower())
@@ -793,10 +794,15 @@ def expand(routine: M.Routine, statement: M.DynamicSql, module: M.Module | None 
         if truncated:
             sql = f"DELETE FROM {truncated.group('table')}"
         keyword = re.match(r"\s*([A-Za-z]+)", sql)
+        kind = keyword.group(1).upper() if keyword else "UNKNOWN"
+        # `EXECUTE IMMEDIATE '<DML> ... RETURNING c INTO :r' ... RETURNING INTO v`: v is what the DML returns, not a
+        # query's row -- `into_targets` means the latter everywhere a SqlOperation is read (#171)
+        query = kind in ("SELECT", "WITH")
         operation = M.SqlOperation(id=f"{statement.id}#variant-{index}", kind="SqlOperation",
-                                   source_range=statement.source_range, original_sql=sql,
-                                   sql_kind=keyword.group(1).upper() if keyword else "UNKNOWN",
-                                   binds=list(statement.using), into_targets=list(statement.into_targets))
+                                   source_range=statement.source_range, original_sql=sql, sql_kind=kind,
+                                   binds=list(statement.using),
+                                   into_targets=list(statement.into_targets) if query else [],
+                                   returning_targets=[] if query else list(statement.into_targets))
         mark_row_lock(operation, sql)
         operation.read_set, operation.write_set = _tables(sql)
         ddl = DDL.match(sql)

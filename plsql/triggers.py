@@ -103,8 +103,9 @@ class Trigger:
         any assignment is not of that shape -- then the trigger stays a redesign (trigger-patterns C)."""
         from .lower import _walk
 
-        anywhere = [s for s in _walk(self.routine.body)
-                    if s.kind == "Assignment" and CORRELATION.match((s.target or "").strip())]
+        # a write of :NEW through INTO (`SELECT ... INTO :NEW.c`, `RETURNING ... INTO :NEW.c`, #171) is not an
+        # assignment the writer can fold: it counts here, and is never in `top`
+        anywhere = [s for s in _walk(self.routine.body) if writes_correlation(s)]
         top = [s for s in self.routine.body
                if s.kind == "Assignment" and CORRELATION.match((s.target or "").strip())]
         if not anywhere or len(anywhere) != len(top):
@@ -129,8 +130,22 @@ class Trigger:
         """
         from .lower import _walk
 
-        return any(s.kind == "Assignment" and CORRELATION.match((s.target or "").strip())
-                   for s in _walk(self.routine.body))
+        return any(writes_correlation(s) for s in _walk(self.routine.body))
+
+
+def correlation_writes(statement: M.Statement) -> list[str]:
+    """The `:NEW.c` / `:OLD.c` a statement writes: `:NEW.c := ...`, and INTO `:NEW.c` -- SELECT INTO, FETCH, and a
+    DML statement's RETURNING INTO (#171). The last two changed the written row as much as an assignment does, and
+    only the assignment was counted."""
+    from .lower import written_targets
+
+    targets = [statement.target or ""] if statement.kind == "Assignment" else []
+    targets += written_targets(statement)
+    return [t for t in targets if CORRELATION.match((t or "").strip())]
+
+
+def writes_correlation(statement: M.Statement) -> bool:
+    return bool(correlation_writes(statement))
 
 
 _KEYWORDS = {"NULL", "AND", "OR", "NOT", "IS", "TRUE", "FALSE", "IN", "LIKE", "BETWEEN", "CASE", "WHEN", "THEN",

@@ -259,6 +259,8 @@ def _split(statement: M.Statement, routine: M.Routine,
                           branches=[M.Branch(condition="SQL%ROWCOUNT > 0", body=after)])]
         if bulk:
             statement.bulk_returned_into = list(dict.fromkeys(targets))
+    if returning is not None:
+        statement.returning_targets = []   # the RETURNING left the SQL; the assignments after it write them (#171)
     if keyed:
         column, variable = reads[0]
         routine.declarations.append(_declaration(routine, variable, table, column, schema, statement))

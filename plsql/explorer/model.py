@@ -73,7 +73,8 @@ def _plsql_tables(node: dict) -> tuple[list[str], list[str], bool]:
     except sqlglot.errors.SqlglotError:
         tree = None
     if tree is None or isinstance(tree, exp.Command):
-        targets = {str(t).split(".")[0].lower() for t in node.get("intoTargets") or []}
+        targets = {str(t).split(".")[0].lower()
+                   for t in (node.get("intoTargets") or []) + (node.get("returningTargets") or [])}   # #171
         reads = [t for t in node.get("readSet") or [] if t not in targets and t not in NOT_TABLES]
         writes = [t for t in node.get("writeSet") or [] if t not in NOT_TABLES]
         return reads, writes, bool(reads or writes)
