@@ -107,11 +107,10 @@ def _answer(rule_id: str, routine: M.Routine, module: M.Module | None, decided: 
     if rule_id == "DYN-001":
         return _dynamic_answer(routine, decided)
     if rule_id == "TRG-001" and module is not None and module.module_kind == "trigger":
-        from .triggers import CORRELATION
+        from .triggers import writes_correlation
         from .lower import _walk
 
-        assigns = any(s.kind == "Assignment" and CORRELATION.match((s.target or "").strip())
-                      for s in _walk(routine.body))
+        assigns = any(writes_correlation(s) for s in _walk(routine.body))   # INTO :NEW.c too (#171)
         if not assigns:
             return TRIGGER_DECISION
         # `:NEW.id := seq.NEXTVAL` changes the written row, so a call cannot stand in for it (trigger-patterns C).

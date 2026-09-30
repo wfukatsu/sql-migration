@@ -228,6 +228,11 @@ class SqlOperation(Statement):
     original_sql: str = ""
     binds: list[BindVariable] = field(default_factory=list)
     into_targets: list[str] = field(default_factory=list)
+    # #171: the variables `INSERT / UPDATE / DELETE ... RETURNING ... [BULK COLLECT] INTO a, b` writes, as written.
+    # Not `into_targets`, which the generators read as the targets of a query's row. Everything that asks what a
+    # statement writes reads both (`lower.written_targets`). Emptied when the RETURNING is hoisted out of the SQL
+    # into assignments (`identity`, `rmw`): the assignments then say what was written.
+    returning_targets: list[str] = field(default_factory=list)
     # a multi-row RMW split into a loop of single-row UPDATEs (plsql.rmw): SQL%ROWCOUNT is the sum over the loop
     accumulates_rowcount: bool = False
     # the ScalarDB column and type behind each select item, positionally (P3-1). None where there is not

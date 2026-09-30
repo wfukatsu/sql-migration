@@ -134,6 +134,8 @@ tests/plsql/                pytest
 **bridge 側で `into` を剥がして `intoTargets` に移し**、SELECT 本体だけを converter に渡す。
 （`into` は代入先が 1 個のときと複数のときで内部表現の形が変わるため、bridge は両形を扱う。）
 代入先は lowering でも構文木の `into_clause` から取って `into_targets` に置く（#166）。bridge が埋めるのを待っていたときは、その前に走る処理（動的 SQL の畳み込み、trigger の `:OLD` / `:NEW` の検査、`RETURNING` の巻き上げ）から SELECT INTO が何も書かない文に見えていた。
+bridge が書き直すときも、lowering と同じ綴りにする（`:NEW.id` は 1 個でも `:NEW.id`、`v_tab(1)` は空白を入れない、複数のうちの `v_tab(i)` は添字を落とさない。#171）。
+`INSERT` / `UPDATE` / `DELETE` の `RETURNING ... INTO v` の代入先は `into_targets` ではなく `returning_targets` に置く（#171）。生成器は `into_targets` を問合せの行の代入先として読むからである。文が何を書くかを数える処理（動的 SQL の畳み込みと穴、ブロックの差し込み、`:OLD` への書き込みの検査、`:NEW` を書き換える trigger、RETURNING の巻き上げを止める trigger）は `lower.written_targets` で両方を読む。`identity` / `rmw` が RETURNING を代入に巻き上げたら `returning_targets` は空にする。
 
 バインド変数は**序数付きの無名 `?` ではなく、文中で一意な名前付きプレースホルダ**（`:p_id`）に置換する。
 既存の `decomposer._literal_value()` は無名プレースホルダを `{"param": "?"}` に潰し、Java 側の

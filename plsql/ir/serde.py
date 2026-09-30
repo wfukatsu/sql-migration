@@ -39,6 +39,7 @@ _CAMEL = {
     "source_range": "sourceRange", "schema_version": "schemaVersion", "declaration_kind": "declarationKind",
     "routine_kind": "routineKind", "module_kind": "moduleKind", "loop_kind": "loopKind",
     "sql_kind": "sqlKind", "original_sql": "originalSql", "into_targets": "intoTargets",
+    "returning_targets": "returningTargets",
     "read_set": "readSet", "write_set": "writeSet", "target_status": "targetStatus", "target_sql": "targetSql",
     "plan_id": "planId", "locking_mode": "lockingMode", "constant_sql": "constantSql",
     "error_code": "errorCode", "return_type": "returnType", "auth_id": "authId",

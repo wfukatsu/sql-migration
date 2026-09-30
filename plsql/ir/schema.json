@@ -1422,6 +1422,12 @@
             "type": "string"
           }
         },
+        "returningTargets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "accumulates_rowcount": {
           "type": "boolean"
         },

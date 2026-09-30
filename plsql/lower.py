@@ -119,9 +119,38 @@ def _select_into(context) -> list[str]:
     `into_clause` in the statement is it. The analysis still rewrites the list in its own form afterwards.
     """
     for clause in _descend(context, {"Into_clauseContext"}):
-        return [" ".join(_text(clause.getChild(i)).split()) for i in range(clause.getChildCount())
-                if type(clause.getChild(i)).__name__ in ("General_elementContext", "Bind_variableContext")]
+        return _into_clause_targets(clause)
     return []
+
+
+def _into_clause_targets(clause) -> list[str]:
+    return [" ".join(_text(clause.getChild(i)).split()) for i in range(clause.getChildCount())
+            if type(clause.getChild(i)).__name__ in ("General_elementContext", "Bind_variableContext")]
+
+
+def _returning_into(context) -> list[str]:
+    """The targets of `INSERT / UPDATE / DELETE ... RETURNING a, b [BULK COLLECT] INTO x, y`, as written (#171).
+
+    They are writes as much as SELECT INTO's, and were recorded nowhere: the lowering left them in the SQL text, and
+    the SQL analysis only takes a query's INTO. Every check that asks what a statement writes -- the dynamic SQL
+    folding, the ORA-04085 check, the triggers that change the written row -- missed them."""
+    for returning in _descend(context, {"Static_returning_clauseContext"}):
+        for clause in _descend(returning, {"Into_clauseContext"}):
+            return _into_clause_targets(clause)
+    return []
+
+
+def written_targets(statement) -> list[str]:
+    """Every variable a statement writes through INTO, as written: a query's or a FETCH's or an EXECUTE IMMEDIATE's
+    (`into_targets`), and a DML statement's RETURNING INTO (`returning_targets`, #171). What asks "does this write
+    v" reads this, not `into_targets` alone."""
+    return (list(getattr(statement, "into_targets", None) or [])
+            + list(getattr(statement, "returning_targets", None) or []))
+
+
+def target_variable(target: str) -> str:
+    """`v_tab(1)`, `v_tab (1)`, `r.f` -> the variable written, lower case (`v_tab`, `r`)."""
+    return re.split(r"[.(]", (target or "").strip(), maxsplit=1)[0].strip().lower()
 
 
 _OLD_REFERENCE = re.compile(r"^\s*:?\s*OLD\s*\.", re.IGNORECASE)
@@ -136,7 +165,7 @@ def _old_assignments(module: M.Module) -> list[M.Statement]:
     for routine in module.routines:
         for statement in _walk(routine.body) + [s for h in routine.exception_handlers for s in _walk(h.body)]:
             targets = [getattr(statement, "target", None) or ""] if statement.kind == "Assignment" else []
-            targets += list(getattr(statement, "into_targets", None) or [])
+            targets += written_targets(statement)   # SELECT INTO, and RETURNING INTO :OLD.x (#171)
             if any(_OLD_REFERENCE.match(t or "") for t in targets):
                 out.append(statement)
     return out
@@ -1348,6 +1377,8 @@ class _Lowerer:
                               sql_kind=kind, original_sql=text.strip().rstrip(";").strip())
         if kind == "SELECT":
             node.into_targets = _select_into(context)
+        else:
+            node.returning_targets = _returning_into(context)   # #171
         if kind in ("INSERT", "UPDATE"):
             # `INSERT INTO t VALUES rec` / `UPDATE t SET ROW = rec`: written out column by column, so everything
             # after this reads the columns the statement writes (#92)
@@ -1439,7 +1470,7 @@ class _Lowerer:
         sql = (bind_using(head, [M.BindVariable(name=n, direction="IN", plsql_variable=n) for n in using]).rstrip()
                + f" RETURNING{match.group('columns')}INTO {', '.join(into)}")
         node = M.SqlOperation(id=ids.next("stmt"), kind="SqlOperation", source_range=source,
-                              sql_kind=kind.group(1).upper(), original_sql=sql)
+                              sql_kind=kind.group(1).upper(), original_sql=sql, returning_targets=list(into))
         node.add("INFO", "DYN_STATIC", "定数の動的 DML で RETURNING INTO を持つので、USING を位置で戻して静的な文として"
                                        "下ろした。RETURNING は静的な文と同じ経路で扱う（#52）")
         node.add("WARN", "DYN_PRIVILEGE", "EXECUTE IMMEDIATE runs with the privileges of the executing user, which a "
@@ -1476,8 +1507,8 @@ class _Lowerer:
             if statement.kind == "Assignment" and statement.target:
                 values.setdefault(statement.target.strip().lower(), []).append(statement.expression)
                 where[statement.target.strip().lower()] = statement
-            for target in getattr(statement, "into_targets", None) or []:
-                values.setdefault(target.strip().lower(), []).append(None)
+            for target in written_targets(statement):   # SELECT INTO, FETCH, RETURNING INTO (#166, #171)
+                values.setdefault(target_variable(target), []).append(None)
             for bind in getattr(statement, "using", None) or []:
                 if (bind.direction or "IN").upper() != "IN":
                     values.setdefault((bind.plsql_variable or bind.name or "").lower(), []).append(None)

@@ -36,7 +36,7 @@ from sqlglot import exp
 from .ir import model as M
 from .lower import _walk
 from .symbols import OracleSchema
-from .triggers import CORRELATION, registry
+from .triggers import CORRELATION, correlation_writes, registry
 
 DAILY, HOURLY = "daily", "hourly"
 
@@ -98,6 +98,13 @@ def _for(trigger, table: str, key: list[str]) -> list[Check]:
             found.append(Check(name, "C", table, DAILY, key=[column],
                                sequence=sequence.group(1).lower() if sequence else None,
                                refused=None if sequence else "採番以外の代入。照合を組めない"))
+        elif statement.kind != "Assignment":
+            # `SELECT ... INTO :NEW.c`, `RETURNING ... INTO :NEW.c` (#171): the row's value comes from another read,
+            # and there is no sequence to reconcile against
+            for target in correlation_writes(statement):
+                column = CORRELATION.match(target.strip()).group("column").lower()
+                found.append(Check(name, "C", table, DAILY, key=[column],
+                                   refused="INTO で :NEW に書く。採番ではないので照合を組めない"))
 
     audit = next((a for a in (_audit(s, key) for s in body if s.kind == "SqlOperation") if a), None)
     if audit is not None:
