@@ -112,6 +112,8 @@ SQL 文の各項目を、変換器（`scalardb_migrate/`）がどう扱うかの
 | そのほかの列の修飾 | 落とす | WARN `COL_OPT` | |
 | `ENGINE=InnoDB` などの表のオプション | 落とす | OK（INFO `TABLE_OPTS`） | |
 | `AUTO_INCREMENT` / `GENERATED ... AS IDENTITY` | 変換しない | ERROR `AUTO_INC` | 採番はアプリで行う（UUID を TEXT で持つなど） |
+| 仮想列 `c DATE GENERATED ALWAYS AS (expr) VIRTUAL` / `c AS (expr)`（Oracle。MySQL の `AS (expr) VIRTUAL` も） | 列を作らない（表のほかの列は変換する） | WARN `VIRTUAL_COLUMN` | 値は保存されず、読むたびに式で計算される列です。移行先に写しを置くと、式が読む列を誰かが書いた時点で古くなるので置きません（#172） |
+| 仮想列を名指す文（SELECT・WHERE・INSERT・UPDATE・`CREATE INDEX`）、仮想列のある表への列名なしの `INSERT` と `SELECT *` | 変換しない。実行計画も作らない | ERROR `VIRTUAL_COLUMN` | 読むなら式をアプリで計算します。書き込みは移行元も断ります（下の表）。`SELECT COUNT(*)` と、保存される列だけを名指す文は変換します。どの列が仮想かは CREATE TABLE を通したときだけ分かります（Schema Loader の JSON には無い） |
 | 生成列 `GENERATED ALWAYS AS (expr) STORED` | 変換しない | ERROR `GENERATED` | |
 | 一時表 `CREATE GLOBAL TEMPORARY TABLE` / `CREATE TEMPORARY TABLE` | 変換しない | ERROR `TEMP` | |
 | `CREATE TABLE ... AS SELECT` / `CREATE TABLE ... LIKE`、型の無い列 | 変換しない | ERROR `DDL` | |
@@ -635,6 +637,8 @@ PL/SQL の中の SQL 文は、Repository のメソッドになります。SQL �
 | ScalarDB が実行できない文 | Repository のメソッドが理由つきで `UnsupportedOperationException` | SQL-001（REVIEW） | |
 | 結合 | そのまま実行できれば Repository の 1 文 | そのまま実行できない（警告・実行計画・拒否・スキーマ無し）と SEM-005（REVIEW） | |
 | `WHERE p IS NULL OR col = p` | p が NULL のときの文と、等号で絞る文に分け、実行時に選ぶ | なし | ScalarDB SQL は bind の NULL 判定を WHERE に書けないためです |
+| 仮想列に書く文（`INSERT` が仮想列を名指す・列名なしで全列に値を渡す・`INSERT ... SELECT`、`INSERT INTO t VALUES rec`、`UPDATE ... SET 仮想列 =`、`SET ROW = rec`、`MERGE` の UPDATE） | 文を実行せず、Oracle と同じ例外を上げる: INSERT は ORA-54013、UPDATE は ORA-54017（`RAISE_APPLICATION_ERROR` と同じ形なので、`WHEN OTHERS` や `PRAGMA EXCEPTION_INIT` の handler が受けます） | なし（診断 `VIRTUAL_COLUMN`） | Oracle は値によらず（NULL でも）断ります。仮想列への `DEFAULT` だけは Oracle も受け付けるので、文から外して書きます。Oracle 23.26 Free で確かめた動き（2026-09-30）は `tests/test_virtual_columns_172.py` の冒頭にあります。言語リファレンスの例 5-42 が ORA-54013 の例です（#172） |
+| 仮想列を読む文（`SELECT 仮想列 INTO`、WHERE で仮想列を使う、仮想列のある表の `SELECT *` と cursor FOR ループ） | Repository のメソッドが理由つきで `UnsupportedOperationException`（SQL 変換器の ERROR `VIRTUAL_COLUMN`） | SQL-001（REVIEW） | 移行先にはその列が無いので、無い列を読みには行きません。式をアプリで計算する形に書き直します。`%ROWTYPE` には仮想列の欄が残ります（Oracle と同じ）。型を書かない仮想列（`b AS (a * 2)`）の型は、数の算術は NUMBER、DATE と数の足し引きは DATE、連結は VARCHAR2(4000) と読み、関数などは推し量らずに未解決のままにします |
 | DDL の `DEFAULT` 列、`IDENTITY` 列を省いた INSERT | 省いた列を INSERT に足す（IDENTITY は採番） | なし | ScalarDB は主キーの無い INSERT を断るためです |
 | CHECK 制約・外部キー・UNIQUE のある表への書き込み、子の表の外部キーが指す親の DELETE | `constraints.enforce` に書いた表だけ、書く前に検査（NOT NULL は ORA-01400 / ORA-01407、CHECK は ORA-02290、外部キーは ORA-02291 の例外。この順）。子のある親の DELETE は、外部キーが指すキーを等号で名指す DELETE なら、消す前に子の行を数えて ORA-02292（#154） | 書いていない表は診断 `CONSTRAINT_UNDECIDED` で CONS-001（REVIEW）。決めた表でも検査していないもの（解析器が読めない CHECK の条件や書き込みの文を含む。#161 までは黙って飛ばしていた）は `CONSTRAINT_NOT_GUARDED` で CONS-002（REVIEW） | 外部キーは親の行をキーで読みます。UPDATE は書く列に掛かる制約だけを見ます。`CREATE TABLE` の中の制約、`ALTER TABLE ... ADD [CONSTRAINT 名前] CHECK / FOREIGN KEY / UNIQUE`、`CREATE UNIQUE INDEX` を読みます。名前の無い制約は `<表>_check<n>` / `<表>_fk<n>` / `<表>_unique<n>` と呼びます。NOT NULL だけの表は未決に数えません（決めた表でだけ検査します） |
 | PL/SQL の変数と表の列が同じ名前 | そのまま生成 | SQL-003（REVIEW） | Oracle は列として読みます |
